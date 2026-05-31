@@ -102,9 +102,7 @@ class GPUBackend(BaseBackend):
 
             # Warn when nvidia-smi exists but no GPU is visible.
             if not gpu_visible:
-                warnings.append(
-                    "nvidia-smi is available, but no visible NVIDIA GPU was detected."
-                )
+                warnings.append("nvidia-smi is available, but no visible NVIDIA GPU was detected.")
 
         # Warn when nvidia-smi is not available.
         else:
@@ -128,7 +126,7 @@ class GPUBackend(BaseBackend):
             # Store a non-fatal warning because RAPIDS-only GPU runs may not need torch.
             warnings.append("PyTorch is not installed. GPU model backends may be unavailable.")
 
-        # Treat the generic GPU backend as available only when either NVIDIA or torch CUDA is visible.
+        # Treat the generic GPU backend as available when either NVIDIA or torch CUDA is visible.
         available = bool(details["nvidia_gpu_visible"] or details["torch_cuda_available"])
 
         # Return structured backend status.

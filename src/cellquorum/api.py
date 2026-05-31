@@ -79,7 +79,7 @@ def run_pipeline(
         )
 
     # Run from a YAML config path.
-    if isinstance(config, (str, Path)):
+    if isinstance(config, str | Path):
         # Load the config file and bootstrap the pipeline run.
         return bootstrap_pipeline_run_from_config_file(
             config,

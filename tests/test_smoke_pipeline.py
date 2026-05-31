@@ -531,9 +531,7 @@ def test_pipeline_provenance_files_have_expected_content(tmp_path: Path) -> None
 
     # Load the written pipeline plan JSON.
     plan_payload = json.loads(
-        (result.context.paths.provenance / "pipeline_plan.json").read_text(
-            encoding="utf-8"
-        )
+        (result.context.paths.provenance / "pipeline_plan.json").read_text(encoding="utf-8")
     )
 
     # Confirm the plan payload contains the expected profile.
@@ -550,9 +548,7 @@ def test_pipeline_provenance_files_have_expected_content(tmp_path: Path) -> None
 
     # Load the written run metadata JSON.
     run_metadata = json.loads(
-        (result.context.paths.provenance / "run_metadata.json").read_text(
-            encoding="utf-8"
-        )
+        (result.context.paths.provenance / "run_metadata.json").read_text(encoding="utf-8")
     )
 
     # Confirm the run metadata stores the project-derived run ID.

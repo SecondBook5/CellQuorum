@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-# Import datetime so run metadata can include a UTC timestamp.
-from datetime import UTC, datetime
-
 # Import dataclass for structured run result objects.
 from dataclasses import dataclass
+
+# Import datetime so run metadata can include a UTC timestamp.
+from datetime import UTC, datetime
 
 # Import Path for output directory handling.
 from pathlib import Path

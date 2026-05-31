@@ -1,0 +1,40 @@
+# Pre-commit configuration for CellQuorum.
+#
+# These hooks enforce basic repository hygiene before commits:
+# formatting, linting, YAML validation, trailing whitespace removal,
+# and consistent end-of-file behavior.
+
+repos:
+  # Standard pre-commit maintenance hooks.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Prevent commits with broken YAML syntax.
+      - id: check-yaml
+
+      # Prevent commits with invalid TOML syntax.
+      - id: check-toml
+
+      # Prevent files from ending without a newline.
+      - id: end-of-file-fixer
+
+      # Remove trailing whitespace from text files.
+      - id: trailing-whitespace
+
+      # Prevent accidental large files from being committed.
+      - id: check-added-large-files
+        args: ["--maxkb=5000"]
+
+      # Detect unresolved merge conflict markers.
+      - id: check-merge-conflict
+
+  # Ruff handles linting and import sorting.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      # Run Ruff linting with automatic safe fixes.
+      - id: ruff
+        args: ["--fix"]
+
+      # Run Ruff formatter.
+      - id: ruff-format

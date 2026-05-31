@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
 from pydantic import ValidationError
@@ -65,8 +66,7 @@ def load_config(config_path: str | Path) -> CellQuorumConfig:
     # Validate that the config file has a supported suffix.
     if path.suffix.lower() not in {".yaml", ".yml"}:
         raise ConfigLoadError(
-            "CellQuorum configuration files must use '.yaml' or '.yml'. "
-            f"Received: {path.name}"
+            "CellQuorum configuration files must use '.yaml' or '.yml'. " f"Received: {path.name}"
         )
 
     # Try loading the YAML file through OmegaConf.
@@ -188,8 +188,7 @@ def save_resolved_config(config: CellQuorumConfig, output_path: str | Path) -> P
     # Validate that the output path uses a JSON suffix.
     if path.suffix.lower() != ".json":
         raise ValueError(
-            "Resolved configuration output must use a '.json' suffix. "
-            f"Received: {path.name}"
+            "Resolved configuration output must use a '.json' suffix. " f"Received: {path.name}"
         )
 
     # Create the parent directory if needed.

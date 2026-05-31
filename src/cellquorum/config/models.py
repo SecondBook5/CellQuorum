@@ -365,7 +365,7 @@ class CellQuorumConfig(StrictBaseModel):
     stages: StageSelectionConfig = Field(default_factory=StageSelectionConfig)
 
     @model_validator(mode="after")
-    def validate_backend_fallbacks(self) -> "CellQuorumConfig":
+    def validate_backend_fallbacks(self) -> CellQuorumConfig:
         """
         Validate consistency among compute backend settings.
 

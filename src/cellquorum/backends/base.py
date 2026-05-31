@@ -7,7 +7,6 @@ import shutil
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
-
 BackendKind = Literal["python", "r", "rscript", "gpu", "rapids", "external"]
 
 

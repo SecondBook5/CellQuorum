@@ -8,6 +8,9 @@ import json
 # Import Path for config and output directory arguments.
 from pathlib import Path
 
+# Import Annotated for Typer-compatible option metadata without B008 violations.
+from typing import Annotated
+
 # Import Typer for the command-line interface.
 import typer
 
@@ -28,6 +31,9 @@ from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 
 # Import the package version.
 from cellquorum.version import __version__
+
+# Store the default configuration path as a module-level constant.
+DEFAULT_CONFIG_PATH = Path("configs/config.yaml")
 
 
 # Create the Typer application.
@@ -174,12 +180,14 @@ def _print_planner_warnings(plan: PipelinePlan) -> None:
 @app.callback()
 def callback(
     context: typer.Context,
-    version: bool = typer.Option(
-        False,
-        "--version",
-        help="Show the CellQuorum version and exit.",
-        is_eager=True,
-    ),
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Show the CellQuorum version and exit.",
+            is_eager=True,
+        ),
+    ] = False,
 ) -> None:
     """
     Handle global CellQuorum CLI options.
@@ -208,17 +216,21 @@ def callback(
 
 @app.command("plan")
 def plan_command(
-    config: Path = typer.Option(
-        Path("configs/config.yaml"),
-        "--config",
-        "-c",
-        help="Path to a CellQuorum YAML configuration file.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        help="Print the pipeline plan as JSON instead of Rich tables.",
-    ),
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to a CellQuorum YAML configuration file.",
+        ),
+    ] = DEFAULT_CONFIG_PATH,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the pipeline plan as JSON instead of Rich tables.",
+        ),
+    ] = False,
 ) -> None:
     """
     Build and display a CellQuorum execution plan.
@@ -274,23 +286,29 @@ def plan_command(
 
 @app.command("run")
 def run_command(
-    config: Path = typer.Option(
-        Path("configs/config.yaml"),
-        "--config",
-        "-c",
-        help="Path to a CellQuorum YAML configuration file.",
-    ),
-    output_dir: Path | None = typer.Option(
-        None,
-        "--output-dir",
-        "-o",
-        help="Output directory for the CellQuorum run.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        help="Print the initialized run summary as JSON.",
-    ),
+    config: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to a CellQuorum YAML configuration file.",
+        ),
+    ] = DEFAULT_CONFIG_PATH,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help="Output directory for the CellQuorum run.",
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the initialized run summary as JSON.",
+        ),
+    ] = False,
 ) -> None:
     """
     Initialize a CellQuorum pipeline run.

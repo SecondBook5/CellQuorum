@@ -230,9 +230,7 @@ class RscriptBackend(BaseBackend):
 
         # Build a small R expression that exits 0 when the package is available.
         expression = (
-            "quit(status = ifelse("
-            f"requireNamespace('{package_name}', quietly = TRUE), 0, 1"
-            "))"
+            "quit(status = ifelse(" f"requireNamespace('{package_name}', quietly = TRUE), 0, 1" "))"
         )
 
         # Run the R package availability expression.

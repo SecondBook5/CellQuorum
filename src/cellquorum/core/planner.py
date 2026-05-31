@@ -8,7 +8,6 @@ from typing import Literal
 from cellquorum.backends.registry import BackendRegistry, build_default_backend_registry
 from cellquorum.config.models import CellQuorumConfig
 
-
 StagePlanStatus = Literal["enabled", "disabled"]
 
 

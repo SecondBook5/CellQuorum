@@ -35,7 +35,7 @@ class ArtifactManager:
     artifacts: list[StageArtifact] = field(default_factory=list)
 
     @classmethod
-    def from_root(cls, root: str | Path) -> "ArtifactManager":
+    def from_root(cls, root: str | Path) -> ArtifactManager:
         """
         Build an ArtifactManager from a root directory.
 
@@ -246,7 +246,7 @@ class ArtifactManager:
         """
 
         # Validate that the payload has a top-level JSON container type.
-        if not isinstance(payload, (dict, list)):
+        if not isinstance(payload, dict | list):
             raise TypeError(
                 "write_json expected a dictionary or list payload. "
                 f"Received: {type(payload).__name__}"
@@ -257,10 +257,7 @@ class ArtifactManager:
 
         # Validate the expected JSON suffix.
         if path.suffix.lower() != ".json":
-            raise ValueError(
-                "JSON artifacts must use a '.json' suffix. "
-                f"Received: {path.name}"
-            )
+            raise ValueError("JSON artifacts must use a '.json' suffix. " f"Received: {path.name}")
 
         # Create the parent directory if needed.
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -310,8 +307,7 @@ class ArtifactManager:
         # Validate that the text payload is actually a string.
         if not isinstance(text, str):
             raise TypeError(
-                "write_text expected a string payload. "
-                f"Received: {type(text).__name__}"
+                "write_text expected a string payload. " f"Received: {type(text).__name__}"
             )
 
         # Resolve the target path.
@@ -365,8 +361,7 @@ class ArtifactManager:
         # Validate the expected Markdown suffix.
         if path.suffix.lower() != ".md":
             raise ValueError(
-                "Markdown artifacts must use a '.md' suffix. "
-                f"Received: {path.name}"
+                "Markdown artifacts must use a '.md' suffix. " f"Received: {path.name}"
             )
 
         # Write the Markdown artifact through the generic text writer.

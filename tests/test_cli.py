@@ -17,7 +17,6 @@ from cellquorum.cli.app import app
 # Import the package version for version-output testing.
 from cellquorum.version import __version__
 
-
 # Create a reusable CLI runner for all tests in this file.
 runner = CliRunner()
 
@@ -244,6 +243,7 @@ run:
 
     # Confirm the validation failure message appears.
     assert "Invalid CellQuorum configuration" in result.stdout
+
 
 def test_cli_run_command_initializes_pipeline_run(tmp_path: Path) -> None:
     """

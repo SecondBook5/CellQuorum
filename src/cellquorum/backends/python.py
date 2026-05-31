@@ -104,7 +104,9 @@ class PythonOptionalBackend(BaseBackend):
                 name="leidenalg",
                 requirement_type="python_package",
                 required=False,
-                install_hint="Install Leiden clustering extras when clustering modules are enabled.",
+                install_hint=(
+                    "Install Leiden clustering extras when clustering modules are enabled."
+                ),
             ),
         ]
     )

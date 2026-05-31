@@ -68,9 +68,7 @@ class RapidsBackend(BaseBackend):
                 name="cugraph",
                 requirement_type="python_package",
                 required=False,
-                install_hint=(
-                    "Install RAPIDS cuGraph when GPU graph operations are enabled."
-                ),
+                install_hint=("Install RAPIDS cuGraph when GPU graph operations are enabled."),
             ),
         ]
     )
@@ -97,9 +95,7 @@ class RapidsBackend(BaseBackend):
 
         # Initialize additional backend details.
         details: dict[str, Any] = {
-            "rapids_singlecell_available": self._python_package_available(
-                "rapids_singlecell"
-            ),
+            "rapids_singlecell_available": self._python_package_available("rapids_singlecell"),
             "cupy_available": self._python_package_available("cupy"),
             "cuml_available": self._python_package_available("cuml"),
             "cugraph_available": self._python_package_available("cugraph"),

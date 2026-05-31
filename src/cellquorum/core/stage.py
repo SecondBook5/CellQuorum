@@ -21,7 +21,8 @@ class StageArtifact:
     Args:
         name: Stable artifact name used by reports and downstream stages.
         path: Filesystem path to the artifact.
-        kind: Artifact type, such as csv, parquet, json, markdown, figure, h5ad, or directory.
+        kind: Artifact type, such as csv, parquet, json, markdown, figure, h5ad,
+            or directory.
         description: Human-readable explanation of what the artifact contains.
     """
 
@@ -76,14 +77,14 @@ class PipelineStage(Protocol):
     Define the interface every CellQuorum stage must implement.
 
     Concrete stages should receive a PipelineContext and return a StageResult.
-    The context type is kept as Any here to avoid circular imports while the
+    The context is typed as object here to avoid circular imports while the
     execution spine is being bootstrapped.
     """
 
     # Store the stable stage name.
     name: str
 
-    def run(self, context: Any) -> StageResult:
+    def run(self, context: object) -> StageResult:
         """
         Execute the stage.
 

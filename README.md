@@ -95,4 +95,3 @@ CellQuorum is currently in early development. The first milestone is the executi
 * provenance tracking
 * CLI
 * smoke tests
-

@@ -147,7 +147,7 @@ class RBackend(BaseBackend):
             details=details,
         )
 
-    def run_expression(self, expression: str) -> Any:
+    def run_expression(self, expression: str) -> object:
         """
         Execute a short R expression through rpy2.
 

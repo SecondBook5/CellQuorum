@@ -58,7 +58,7 @@ class PipelinePaths:
     scratch: Path
 
     @classmethod
-    def from_output_dir(cls, output_dir: str | Path) -> "PipelinePaths":
+    def from_output_dir(cls, output_dir: str | Path) -> PipelinePaths:
         """
         Build the standard CellQuorum run directory layout.
 
@@ -213,7 +213,7 @@ class PipelineContext:
         # Return the active manifest table.
         return self.manifest
 
-    def with_adata(self, adata: ad.AnnData) -> "PipelineContext":
+    def with_adata(self, adata: ad.AnnData) -> PipelineContext:
         """
         Return a shallow context copy with an updated AnnData object.
 
