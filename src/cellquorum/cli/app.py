@@ -5,7 +5,7 @@ from __future__ import annotations
 # Import JSON for optional machine-readable CLI output.
 import json
 
-# Import Path for config path arguments.
+# Import Path for config and output directory arguments.
 from pathlib import Path
 
 # Import Typer for the command-line interface.
@@ -16,6 +16,9 @@ from rich.console import Console
 
 # Import Rich tables for stage and backend summaries.
 from rich.table import Table
+
+# Import the public pipeline API.
+from cellquorum.api import run_pipeline
 
 # Import configuration loading utilities.
 from cellquorum.config.loader import ConfigLoadError, load_config
@@ -267,6 +270,119 @@ def plan_command(
 
     # Print planner warnings.
     _print_planner_warnings(pipeline_plan)
+
+
+@app.command("run")
+def run_command(
+    config: Path = typer.Option(
+        Path("configs/config.yaml"),
+        "--config",
+        "-c",
+        help="Path to a CellQuorum YAML configuration file.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Output directory for the CellQuorum run.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print the initialized run summary as JSON.",
+    ),
+) -> None:
+    """
+    Initialize a CellQuorum pipeline run.
+
+    This command validates configuration, creates the standardized run directory
+    layout, builds the backend-aware execution plan, and writes initial
+    provenance artifacts. Real scRNA-seq analysis stages will plug into this
+    execution frame as they are implemented.
+
+    Args:
+        config: Path to the CellQuorum YAML configuration file.
+        output_dir: Optional output directory override.
+        json_output: Whether to print machine-readable JSON.
+    """
+
+    # Try to initialize the CellQuorum pipeline run.
+    try:
+        # Run the public pipeline API from the supplied config path.
+        result = run_pipeline(
+            config,
+            output_dir=output_dir,
+        )
+
+    # Convert configuration failures into CLI-friendly errors.
+    except ConfigLoadError as error:
+        # Print the configuration error message in red.
+        console.print(f"[bold red]Configuration error:[/bold red] {error}")
+
+        # Exit with a non-zero status code.
+        raise typer.Exit(code=1) from error
+
+    # Convert runtime bootstrap failures into CLI-friendly errors.
+    except (TypeError, ValueError, RuntimeError) as error:
+        # Print the run error message in red.
+        console.print(f"[bold red]Run error:[/bold red] {error}")
+
+        # Exit with a non-zero status code.
+        raise typer.Exit(code=1) from error
+
+    # Build a machine-readable run summary.
+    summary = {
+        "run_id": result.context.run_id,
+        "profile": result.plan.profile,
+        "output_dir": str(result.context.paths.root),
+        "provenance_dir": str(result.context.paths.provenance),
+        "artifact_manifest": str(result.context.paths.provenance / "artifact_manifest.csv"),
+        "pipeline_plan": str(result.context.paths.provenance / "pipeline_plan.json"),
+        "backend_status": str(result.context.paths.provenance / "backend_status.json"),
+        "enabled_stages": result.plan.enabled_stage_names(),
+        "warnings": list(result.plan.warnings),
+    }
+
+    # Print JSON output when requested.
+    if json_output:
+        # Serialize the run summary without Rich wrapping.
+        typer.echo(json.dumps(summary, indent=2))
+
+        # Return after printing JSON.
+        return
+
+    # Print the run initialization header.
+    console.print("[bold]CellQuorum run initialized[/bold]")
+
+    # Print the run identifier.
+    console.print(f"Run ID: [cyan]{summary['run_id']}[/cyan]")
+
+    # Print the selected profile.
+    console.print(f"Profile: [cyan]{summary['profile']}[/cyan]")
+
+    # Print the root output directory.
+    console.print(f"Output directory: [cyan]{summary['output_dir']}[/cyan]")
+
+    # Print the provenance directory.
+    console.print(f"Provenance: [cyan]{summary['provenance_dir']}[/cyan]")
+
+    # Print the artifact manifest path.
+    console.print(f"Artifact manifest: [cyan]{summary['artifact_manifest']}[/cyan]")
+
+    # Print the pipeline plan path.
+    console.print(f"Pipeline plan: [cyan]{summary['pipeline_plan']}[/cyan]")
+
+    # Print the backend status path.
+    console.print(f"Backend status: [cyan]{summary['backend_status']}[/cyan]")
+
+    # Print planner warnings when present.
+    if summary["warnings"]:
+        # Print a warning heading.
+        console.print("\n[bold yellow]Planner warnings[/bold yellow]")
+
+        # Print each warning as a bullet.
+        for warning in summary["warnings"]:
+            console.print(f"[yellow]- {warning}[/yellow]")
 
 
 def main() -> None:

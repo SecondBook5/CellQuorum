@@ -244,3 +244,218 @@ run:
 
     # Confirm the validation failure message appears.
     assert "Invalid CellQuorum configuration" in result.stdout
+
+def test_cli_run_command_initializes_pipeline_run(tmp_path: Path) -> None:
+    """
+    Verify that the run command initializes a CellQuorum execution frame.
+
+    The run command should validate configuration, create the standardized output
+    layout, write provenance artifacts, and report the important output paths to
+    the user.
+    """
+
+    # Create a temporary configuration file.
+    config_path = tmp_path / "config.yaml"
+
+    # Create a temporary output directory path.
+    output_dir = tmp_path / "run_output"
+
+    # Write a valid CellQuorum config with stable local settings.
+    config_path.write_text(
+        """
+project:
+  name: cli_run_project
+run:
+  profile: standard
+compute:
+  backend: cpu
+  prefer_gpu: false
+r:
+  enabled: false
+""",
+        encoding="utf-8",
+    )
+
+    # Invoke the run command.
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--output-dir", str(output_dir)],
+    )
+
+    # Confirm the command exited successfully.
+    assert result.exit_code == 0
+
+    # Confirm the run initialization message appears.
+    assert "CellQuorum run initialized" in result.stdout
+
+    # Confirm the run ID appears.
+    assert "cli_run_project" in result.stdout
+
+    # Confirm the output directory appears.
+    assert str(output_dir.resolve()) in result.stdout
+
+    # Confirm the provenance directory was created.
+    assert (output_dir / "provenance").exists()
+
+    # Confirm the artifact manifest was written.
+    assert (output_dir / "provenance" / "artifact_manifest.csv").exists()
+
+    # Confirm the pipeline plan was written.
+    assert (output_dir / "provenance" / "pipeline_plan.json").exists()
+
+    # Confirm the backend status was written.
+    assert (output_dir / "provenance" / "backend_status.json").exists()
+
+
+def test_cli_run_json_outputs_machine_readable_summary(tmp_path: Path) -> None:
+    """
+    Verify that the run command can emit a machine-readable JSON summary.
+
+    JSON output is useful for workflow wrappers, CI checks, and future Nextflow
+    integration.
+    """
+
+    # Create a temporary configuration file.
+    config_path = tmp_path / "config.yaml"
+
+    # Create a temporary output directory path.
+    output_dir = tmp_path / "json_run_output"
+
+    # Write a valid CellQuorum config.
+    config_path.write_text(
+        """
+project:
+  name: cli_run_json_project
+run:
+  profile: publication
+compute:
+  backend: cpu
+  prefer_gpu: false
+r:
+  enabled: false
+""",
+        encoding="utf-8",
+    )
+
+    # Invoke the run command with JSON output.
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+            "--json",
+        ],
+        terminal_width=240,
+    )
+
+    # Confirm the command exited successfully.
+    assert result.exit_code == 0
+
+    # Parse the JSON payload.
+    payload = json.loads(result.stdout)
+
+    # Confirm the run ID was serialized.
+    assert payload["run_id"] == "cli_run_json_project"
+
+    # Confirm the profile was serialized.
+    assert payload["profile"] == "publication"
+
+    # Confirm the output directory was serialized.
+    assert payload["output_dir"] == str(output_dir.resolve())
+
+    # Confirm the provenance directory was serialized.
+    assert payload["provenance_dir"] == str((output_dir / "provenance").resolve())
+
+    # Confirm the artifact manifest path was serialized.
+    assert payload["artifact_manifest"] == str(
+        (output_dir / "provenance" / "artifact_manifest.csv").resolve()
+    )
+
+    # Confirm enabled stages were serialized.
+    assert "qc" in payload["enabled_stages"]
+
+    # Confirm advanced gated stages were serialized.
+    assert "network_analysis" in payload["enabled_stages"]
+
+    # Confirm warnings were serialized as a list.
+    assert isinstance(payload["warnings"], list)
+
+    # Confirm provenance was actually written.
+    assert (output_dir / "provenance" / "artifact_manifest.csv").exists()
+
+
+def test_cli_run_rejects_missing_config_file(tmp_path: Path) -> None:
+    """
+    Verify that the run command reports missing config files clearly.
+
+    A missing config should fail before any run output is initialized.
+    """
+
+    # Define a missing config path.
+    missing_config_path = tmp_path / "missing.yaml"
+
+    # Define an output directory path.
+    output_dir = tmp_path / "missing_config_output"
+
+    # Invoke the run command with a missing config path.
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(missing_config_path), "--output-dir", str(output_dir)],
+    )
+
+    # Confirm the command exits with an error.
+    assert result.exit_code == 1
+
+    # Confirm the configuration error appears.
+    assert "Configuration error" in result.stdout
+
+    # Confirm the missing-file reason appears.
+    assert "does not exist" in result.stdout
+
+    # Confirm the output directory was not created.
+    assert not output_dir.exists()
+
+
+def test_cli_run_rejects_invalid_config_file(tmp_path: Path) -> None:
+    """
+    Verify that the run command reports invalid config files clearly.
+
+    YAML files that parse but fail Pydantic validation should not initialize a
+    run directory.
+    """
+
+    # Create a temporary invalid config file.
+    config_path = tmp_path / "invalid.yaml"
+
+    # Define an output directory path.
+    output_dir = tmp_path / "invalid_config_output"
+
+    # Write a config with an unsupported profile.
+    config_path.write_text(
+        """
+run:
+  profile: impossible_profile
+""",
+        encoding="utf-8",
+    )
+
+    # Invoke the run command with the invalid config.
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--output-dir", str(output_dir)],
+    )
+
+    # Confirm the command exits with an error.
+    assert result.exit_code == 1
+
+    # Confirm the configuration error appears.
+    assert "Configuration error" in result.stdout
+
+    # Confirm the validation failure appears.
+    assert "Invalid CellQuorum configuration" in result.stdout
+
+    # Confirm the output directory was not created.
+    assert not output_dir.exists()
