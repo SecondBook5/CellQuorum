@@ -1,0 +1,32 @@
+# Normalize text files to LF in the repository.
+* text=auto eol=lf
+
+# Python source files.
+*.py text eol=lf
+
+# Configuration files.
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.cff text eol=lf
+
+# Shell scripts.
+*.sh text eol=lf
+
+# CSV/TSV text artifacts and examples.
+*.csv text eol=lf
+*.tsv text eol=lf
+
+# Binary/data files.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.h5ad binary
+*.h5 binary
+*.loom binary
+*.rds binary
+*.rda binary
+*.qs binary
