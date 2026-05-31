@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# Import Iterator for typed manifest iteration.
+from collections.abc import Iterator
+
 # Import dataclass for structured manifest records.
 from dataclasses import dataclass, field
 
@@ -11,8 +14,11 @@ from pathlib import Path
 # Import pandas for CSV/TSV manifest loading and tabular validation.
 import pandas as pd
 
+# Import shared CellQuorum manifest exception.
+from cellquorum.core.exceptions import CellQuorumManifestError
 
-class ManifestError(ValueError):
+
+class ManifestError(CellQuorumManifestError):
     """
     Report manifest loading or validation failures.
 
@@ -31,7 +37,7 @@ class ManifestError(ValueError):
             message: Human-readable error message describing the manifest problem.
         """
 
-        # Initialize the parent ValueError with the provided message.
+        # Initialize the CellQuorumManifestError base class with the provided message.
         super().__init__(message)
 
 
@@ -198,7 +204,7 @@ class Manifest:
         # Return the record count.
         return len(self.records)
 
-    def __iter__(self) -> iter:
+    def __iter__(self) -> Iterator[ManifestRecord]:
         """
         Iterate over manifest records.
 

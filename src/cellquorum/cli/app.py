@@ -26,6 +26,9 @@ from cellquorum.api import run_pipeline
 # Import configuration loading utilities.
 from cellquorum.config.loader import ConfigLoadError, load_config
 
+# Import shared CellQuorum exception base.
+from cellquorum.core.exceptions import CellQuorumError
+
 # Import the planner entry point.
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 
@@ -340,9 +343,17 @@ def run_command(
         # Exit with a non-zero status code.
         raise typer.Exit(code=1) from error
 
-    # Convert runtime bootstrap failures into CLI-friendly errors.
-    except (TypeError, ValueError, RuntimeError) as error:
+    # Convert CellQuorum runtime failures into CLI-friendly errors.
+    except CellQuorumError as error:
         # Print the run error message in red.
+        console.print(f"[bold red]Run error:[/bold red] {error}")
+
+        # Exit with a non-zero status code.
+        raise typer.Exit(code=1) from error
+
+    # Convert unexpected bootstrap failures into CLI-friendly errors.
+    except (TypeError, ValueError, RuntimeError) as error:
+        # Print the unexpected run error message in red.
         console.print(f"[bold red]Run error:[/bold red] {error}")
 
         # Exit with a non-zero status code.
