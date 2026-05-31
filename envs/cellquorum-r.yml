@@ -1,0 +1,65 @@
+name: cellquorum-r
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  # Python runtime.
+  - python=3.12
+  - pip
+
+  # R runtime and bridge.
+  - r-base>=4.4
+  - rpy2>=3.5
+
+  # Core Python package dependencies needed to call CellQuorum adapters.
+  - numpy>=1.24
+  - scipy>=1.11
+  - pandas>=2.1
+  - anndata>=0.11
+  - scanpy>=1.10
+  - pyyaml>=6.0
+  - pydantic>=2.7
+  - typer>=0.12
+  - rich>=13.0
+
+  # R package management.
+  - r-remotes
+  - r-devtools
+  - r-optparse
+  - r-jsonlite
+  - r-yaml
+  - r-data.table
+  - r-dplyr
+  - r-tibble
+  - r-readr
+  - r-ggplot2
+  - r-patchwork
+
+  # Bioconductor core.
+  - bioconductor-biocgenerics
+  - bioconductor-summarizedexperiment
+  - bioconductor-singlecellexperiment
+  - bioconductor-scater
+  - bioconductor-scran
+  - bioconductor-biocparallel
+
+  # R/Bioconductor single-cell methods.
+  - bioconductor-scdblfinder
+  - bioconductor-batchelor
+  - bioconductor-singleR
+  - bioconductor-edger
+  - bioconductor-limma
+  - bioconductor-deseq2
+  - bioconductor-complexheatmap
+
+  # R regulatory/network methods.
+  - bioconductor-aucell
+  - bioconductor-genie3
+  - bioconductor-dorothea
+  - bioconductor-viper
+
+  # Install the local CellQuorum package in editable mode.
+  - pip:
+      - -e .

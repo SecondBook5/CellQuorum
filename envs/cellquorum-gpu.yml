@@ -1,0 +1,39 @@
+name: cellquorum-gpu
+
+channels:
+  - rapidsai
+  - conda-forge
+  - nvidia
+  - bioconda
+
+dependencies:
+  # Python runtime.
+  - python=3.12
+  - pip
+
+  # Core CPU stack.
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - anndata
+  - scanpy
+
+  # GPU/deep-learning stack.
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+
+  # RAPIDS stack.
+  - cuda-version=12.1
+  - cupy
+  - cudf
+  - cuml
+  - cugraph
+
+  # scRNA-seq deep generative models.
+  - pip:
+      - scvi-tools>=1.2
+      - rapids-singlecell
+      - -e .
