@@ -1,0 +1,48 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test, lint, and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Notebook noise
+.ipynb_checkpoints/
+
+# OS and editor noise
+.DS_Store
+.vscode/
+.idea/
+
+# CellQuorum run outputs
+runs/
+outputs/
+results/
+figures/
+reports/
+logs/
+objects/
+provenance/
+
+# Large single-cell data objects
+*.h5ad
+*.h5
+*.loom
+*.mtx
+*.rds
+*.rda
+*.qs
+
+# Local environment files
+.env
+.envrc

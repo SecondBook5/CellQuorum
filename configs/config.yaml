@@ -1,0 +1,59 @@
+# CellQuorum default configuration.
+#
+# This file defines the default user-facing configuration for a CellQuorum run.
+# Important analysis layers are enabled as capabilities by default, but the
+# planner and method gates decide whether each layer is appropriate for the
+# dataset before execution.
+
+project:
+  name: cellquorum_project
+  description: Default CellQuorum scRNA-seq analysis project.
+  organism: human
+  species_id: 9606
+
+paths:
+  data_root: /mnt/e/CellQuorumData
+  run_root: /mnt/e/CellQuorumRuns
+  scratch_root: /mnt/e/CellQuorumScratch
+  manifest: null
+  output_dir: null
+
+run:
+  profile: standard
+  run_id: null
+  random_seed: 1337
+  overwrite: false
+
+compute:
+  backend: auto
+  prefer_gpu: true
+  fallback_to_cpu: true
+  n_jobs: 1
+
+r:
+  enabled: true
+  preferred_backend: auto
+  fallback_to_rscript: true
+  rscript_path: Rscript
+  timeout_seconds: 30
+
+report:
+  enabled: true
+  html: true
+  markdown: true
+  pdf: false
+  fail_on_report_error: false
+
+stages:
+  qc: true
+  preprocessing: true
+  integration: true
+  annotation: true
+  state_scoring: true
+  discovery: true
+  subclustering: true
+  composition: true
+  differential_expression: true
+  molecular_inference: true
+  cell_cell_communication: true
+  network_analysis: true
