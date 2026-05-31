@@ -35,6 +35,9 @@ from cellquorum.core.context import PipelineContext, PipelinePaths
 # Import planner utilities.
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 
+# Import stage lifecycle records.
+from cellquorum.core.stage import StageExecutionRecord
+
 
 @dataclass(frozen=True)
 class PipelineRunResult:
@@ -248,24 +251,82 @@ def _backend_status_dataframe(plan: PipelinePlan) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["name", "kind", "available", "missing", "warnings"])
 
 
+def _stage_execution_records_dataframe(
+    records: list[StageExecutionRecord],
+) -> pd.DataFrame:
+    """
+    Convert stage execution records into a compact DataFrame.
+
+    The JSON artifact stores full nested execution records. The CSV artifact
+    stores a flattened summary that is easy to inspect in reports, spreadsheets,
+    and workflow logs.
+
+    Args:
+        records: Stage execution records to summarize.
+
+    Returns:
+        DataFrame containing one row per stage execution record.
+    """
+
+    # Convert each execution record into a compact table row.
+    rows = [
+        {
+            "stage_name": record.stage_name,
+            "status": record.status,
+            "started_at_utc": record.started_at_utc.isoformat(),
+            "ended_at_utc": record.ended_at_utc.isoformat(),
+            "duration_seconds": record.duration_seconds,
+            "backend_used": record.backend_used,
+            "n_input_artifacts": len(record.input_artifacts),
+            "n_output_artifacts": len(record.output_artifacts),
+            "n_notes": len(record.notes),
+            "n_warnings": len(record.warnings),
+            "has_skip_reason": record.skip_reason is not None,
+            "has_error": record.error is not None,
+        }
+        for record in records
+    ]
+
+    # Return the execution records table.
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "stage_name",
+            "status",
+            "started_at_utc",
+            "ended_at_utc",
+            "duration_seconds",
+            "backend_used",
+            "n_input_artifacts",
+            "n_output_artifacts",
+            "n_notes",
+            "n_warnings",
+            "has_skip_reason",
+            "has_error",
+        ],
+    )
+
+
 def write_pipeline_provenance(
     *,
     config: CellQuorumConfig,
     plan: PipelinePlan,
     context: PipelineContext,
+    stage_execution_records: list[StageExecutionRecord] | None = None,
 ) -> ArtifactManager:
     """
     Write initial CellQuorum provenance artifacts.
 
     Every run should begin with auditable provenance before heavy analysis
     starts. This function writes the validated config, full pipeline plan,
-    stage plan table, backend status table, planner warnings, run metadata, and
-    artifact manifest.
+    stage plan table, backend status table, planner warnings, run metadata,
+    stage execution records, and artifact manifest.
 
     Args:
         config: Validated CellQuorum configuration.
         plan: Generated pipeline plan.
         context: Initialized pipeline context.
+        stage_execution_records: Optional stage lifecycle records to write.
 
     Returns:
         ArtifactManager containing the registered provenance artifacts.
@@ -294,6 +355,18 @@ def write_pipeline_provenance(
             "write_pipeline_provenance expected context to be a PipelineContext. "
             f"Received: {type(context).__name__}"
         )
+
+    # Normalize stage execution records.
+    records = [] if stage_execution_records is None else list(stage_execution_records)
+
+    # Validate every stage execution record.
+    for record in records:
+        # Raise a clear error if the list contains the wrong type.
+        if not isinstance(record, StageExecutionRecord):
+            raise TypeError(
+                "stage_execution_records must contain StageExecutionRecord objects. "
+                f"Received: {type(record).__name__}"
+            )
 
     # Create an artifact manager rooted at the run directory.
     artifact_manager = ArtifactManager.from_root(context.paths.root)
@@ -376,6 +449,23 @@ def write_pipeline_provenance(
         description="Run identity, standardized paths, and runtime metadata.",
     )
 
+    # Write the full stage execution records as JSON.
+    artifact_manager.write_json(
+        [record.to_dict() for record in records],
+        name="stage_execution_records_json",
+        relative_path="provenance/stage_execution_records.json",
+        description="Structured lifecycle records for stage execution decisions.",
+    )
+
+    # Write the compact stage execution records table as CSV.
+    artifact_manager.write_dataframe(
+        _stage_execution_records_dataframe(records),
+        name="stage_execution_records_table",
+        relative_path="provenance/stage_execution_records.csv",
+        description="Tabular lifecycle records for stage execution decisions.",
+        index=False,
+    )
+
     # Write the artifact manifest.
     artifact_manager.write_manifest()
 
@@ -407,6 +497,9 @@ def bootstrap_pipeline_run(
         PipelineRunResult containing config, plan, context, and provenance artifacts.
     """
 
+    # Mark the start of the bootstrap lifecycle.
+    bootstrap_started_at = datetime.now(UTC)
+
     # Build the initialized pipeline context.
     context = build_pipeline_context(
         config,
@@ -420,11 +513,32 @@ def bootstrap_pipeline_run(
         backend_registry=context.backend_registry,
     )
 
+    # Mark the end of the bootstrap lifecycle before provenance writing.
+    bootstrap_ended_at = datetime.now(UTC)
+
+    # Build the bootstrap execution record.
+    bootstrap_record = StageExecutionRecord(
+        stage_name="bootstrap",
+        status="success",
+        started_at_utc=bootstrap_started_at,
+        ended_at_utc=bootstrap_ended_at,
+        duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
+        backend_used="python",
+        notes=["Initialized CellQuorum execution frame."],
+        warnings=list(plan.warnings),
+        metrics={
+            "n_planned_stages": len(plan.stages),
+            "n_enabled_stages": len(plan.enabled_stage_names()),
+            "n_backend_status_rows": len(plan.backend_status_table),
+        },
+    )
+
     # Write initial provenance artifacts.
     artifacts = write_pipeline_provenance(
         config=config,
         plan=plan,
         context=context,
+        stage_execution_records=[bootstrap_record],
     )
 
     # Return the pipeline run result.

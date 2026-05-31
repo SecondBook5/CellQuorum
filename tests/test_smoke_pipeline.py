@@ -278,6 +278,12 @@ def test_write_pipeline_provenance_creates_expected_files(tmp_path: Path) -> Non
     # Confirm the run metadata JSON exists.
     assert (context.paths.provenance / "run_metadata.json").exists()
 
+    # Confirm the stage execution records JSON exists.
+    assert (context.paths.provenance / "stage_execution_records.json").exists()
+
+    # Confirm the stage execution records CSV exists.
+    assert (context.paths.provenance / "stage_execution_records.csv").exists()
+
     # Confirm the artifact manifest CSV exists.
     assert (context.paths.provenance / "artifact_manifest.csv").exists()
 
@@ -330,6 +336,12 @@ def test_bootstrap_pipeline_run_returns_structured_result_and_writes_provenance(
     # Confirm the artifact manifest was written.
     assert (result.context.paths.provenance / "artifact_manifest.csv").exists()
 
+    # Confirm stage execution records JSON was written.
+    assert (result.context.paths.provenance / "stage_execution_records.json").exists()
+
+    # Confirm stage execution records CSV was written.
+    assert (result.context.paths.provenance / "stage_execution_records.csv").exists()
+
 
 def test_bootstrap_pipeline_run_from_config_file_loads_yaml_and_runs(tmp_path: Path) -> None:
     """
@@ -381,6 +393,9 @@ r:
     # Confirm provenance was written.
     assert (result.context.paths.provenance / "resolved_config.json").exists()
 
+    # Confirm stage execution records were written.
+    assert (result.context.paths.provenance / "stage_execution_records.json").exists()
+
 
 def test_public_run_pipeline_accepts_config_model(tmp_path: Path) -> None:
     """
@@ -408,6 +423,9 @@ def test_public_run_pipeline_accepts_config_model(tmp_path: Path) -> None:
 
     # Confirm provenance was written.
     assert (result.context.paths.provenance / "pipeline_plan.json").exists()
+
+    # Confirm stage execution records were written.
+    assert (result.context.paths.provenance / "stage_execution_records.json").exists()
 
 
 def test_public_run_pipeline_accepts_config_dictionary(tmp_path: Path) -> None:
@@ -444,6 +462,9 @@ def test_public_run_pipeline_accepts_config_dictionary(tmp_path: Path) -> None:
 
     # Confirm provenance was written.
     assert (result.context.paths.provenance / "run_metadata.json").exists()
+
+    # Confirm stage execution records were written.
+    assert (result.context.paths.provenance / "stage_execution_records.csv").exists()
 
 
 def test_public_run_pipeline_accepts_yaml_path(tmp_path: Path) -> None:
@@ -486,6 +507,9 @@ r:
 
     # Confirm provenance was written.
     assert (result.context.paths.provenance / "backend_status.csv").exists()
+
+    # Confirm stage execution records were written.
+    assert (result.context.paths.provenance / "stage_execution_records.json").exists()
 
 
 def test_public_run_pipeline_rejects_unsupported_config_input(tmp_path: Path) -> None:
@@ -556,3 +580,29 @@ def test_pipeline_provenance_files_have_expected_content(tmp_path: Path) -> None
 
     # Confirm the run metadata stores standardized paths.
     assert "paths" in run_metadata
+
+    # Load the written stage execution records JSON.
+    execution_records = json.loads(
+        (result.context.paths.provenance / "stage_execution_records.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    # Confirm one bootstrap execution record was written.
+    assert len(execution_records) == 1
+
+    # Confirm the bootstrap record was successful.
+    assert execution_records[0]["stage_name"] == "bootstrap"
+    assert execution_records[0]["status"] == "success"
+
+    # Confirm bootstrap metrics are present.
+    assert execution_records[0]["metrics"]["n_planned_stages"] > 0
+
+    # Load the written stage execution records CSV.
+    execution_table = pd.read_csv(result.context.paths.provenance / "stage_execution_records.csv")
+
+    # Confirm the bootstrap record appears in the execution table.
+    assert "bootstrap" in set(execution_table["stage_name"])
+
+    # Confirm the bootstrap status appears in the execution table.
+    assert "success" in set(execution_table["status"])
