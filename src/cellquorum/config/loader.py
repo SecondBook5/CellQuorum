@@ -10,9 +10,10 @@ from omegaconf import DictConfig, OmegaConf
 from pydantic import ValidationError
 
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.core.exceptions import CellQuorumConfigError
 
 
-class ConfigLoadError(RuntimeError):
+class ConfigLoadError(CellQuorumConfigError):
     """
     Report a configuration loading or validation failure.
 
@@ -29,7 +30,7 @@ class ConfigLoadError(RuntimeError):
             message: User-facing error message.
         """
 
-        # Initialize the RuntimeError base class with the user-facing message.
+        # Initialize the CellQuorumConfigError base class with the user-facing message.
         super().__init__(message)
 
 
