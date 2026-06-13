@@ -9,21 +9,13 @@ from pathlib import Path
 from typing import Literal
 
 # Import Pydantic primitives for strict runtime validation.
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
+# Import the shared strict base model used by CellQuorum configuration models.
+from cellquorum.config.base import StrictBaseModel
 
-class StrictBaseModel(BaseModel):
-    """
-    Base model for strict CellQuorum configuration schemas.
-
-    CellQuorum uses Hydra and OmegaConf for flexible config composition, but the
-    final resolved configuration must be validated strictly before execution.
-    This base model forbids unknown fields so spelling mistakes and unsupported
-    options fail early instead of silently changing pipeline behavior.
-    """
-
-    # Forbid unknown fields in all child configuration models.
-    model_config = ConfigDict(extra="forbid")
+# Import the QC configuration model.
+from cellquorum.qc.config import QCConfig
 
 
 class ProjectConfig(StrictBaseModel):
@@ -341,6 +333,7 @@ class CellQuorumConfig(StrictBaseModel):
         r: R backend preferences.
         report: Final report settings.
         stages: Major stage enablement flags.
+        qc: Quality-control settings.
     """
 
     # Store project-level metadata.
@@ -363,6 +356,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store major stage enablement flags.
     stages: StageSelectionConfig = Field(default_factory=StageSelectionConfig)
+
+    # Store quality-control settings.
+    qc: QCConfig = Field(default_factory=QCConfig)
 
     @model_validator(mode="after")
     def validate_backend_fallbacks(self) -> CellQuorumConfig:

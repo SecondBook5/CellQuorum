@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 # Import the strict base model used by CellQuorum configuration models.
-from cellquorum.config.models import StrictBaseModel
+from cellquorum.config.base import StrictBaseModel
 
 # Import reusable configuration validation helpers.
 from cellquorum.config.validation import (
