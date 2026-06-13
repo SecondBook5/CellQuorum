@@ -1,32 +1,29 @@
-"""Pipeline stage wrapper for the CellQuorum QC module."""
+"""QC pipeline stage for CellQuorum."""
 
 from __future__ import annotations
 
-# Import Mapping for dictionary-based QC config extraction.
+# Import Mapping for dictionary-like config resolution.
 from collections.abc import Mapping
 
-# Import dataclass helpers for structured workflow outputs.
-from dataclasses import dataclass, field
+# Import dataclass for the concrete stage object.
+from dataclasses import dataclass
 
-# Import Path for output-directory handling.
+# Import Path for stage output directory handling.
 from pathlib import Path
 
-# Import AnnData for runtime object checks and filtering.
+# Import AnnData for stage input and output typing.
 import anndata as ad
 
-# Import pandas for decision-table alignment checks.
+# Import pandas for AnnData obs/var decision annotation typing.
 import pandas as pd
-
-# Import top-level runtime context.
-from cellquorum.core.context import PipelineContext
 
 # Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
 
-# Import pipeline stage result and artifact records.
+# Import pipeline stage artifact and result contracts.
 from cellquorum.core.stage import StageArtifact, StageResult
 
-# Import QC artifact writing utilities.
+# Import QC artifact writer utilities.
 from cellquorum.qc.artifacts import QCArtifactManifest, write_qc_artifacts
 
 # Import QC configuration.
@@ -41,251 +38,109 @@ from cellquorum.qc.metrics import QCMetricsResult, calculate_qc_metrics
 # Import QC threshold construction.
 from cellquorum.qc.thresholds import QCThresholdResult, build_qc_thresholds
 
-# Import QC input validation.
-from cellquorum.qc.validation import QCInputValidationSummary, validate_qc_input_adata
-
 
 class QCStageError(CellQuorumDataError):
     """
-    Report QC stage orchestration failures.
+    Report QC stage execution failures.
 
-    The stage layer is responsible for connecting validation, metric calculation,
-    thresholding, decision construction, filtering, and artifact writing. Errors
-    here usually mean that individually valid pieces could not be composed safely.
+    The QC stage is the first full analysis stage. Errors here should explain
+    whether the failure came from missing context state, invalid QC configuration,
+    metric calculation, thresholding, decision construction, filtering, or
+    artifact writing.
     """
 
 
 @dataclass(frozen=True)
-class QCWorkflowResult:
-    """
-    Store all intermediate and final QC workflow outputs.
-
-    Args:
-        adata: AnnData object after optional QC filtering.
-        validation_summary: Input validation summary.
-        metrics_result: Calculated QC metrics.
-        threshold_result: Constructed QC thresholds.
-        decision_result: Applied QC decisions.
-        artifact_manifest: Optional written artifact manifest.
-        notes: Non-critical workflow notes.
-        warnings: Important workflow warnings.
-        metrics: JSON-friendly stage metrics.
-    """
-
-    # Store the AnnData object after optional QC filtering.
-    adata: ad.AnnData
-
-    # Store the input validation summary.
-    validation_summary: QCInputValidationSummary
-
-    # Store calculated QC metrics.
-    metrics_result: QCMetricsResult
-
-    # Store constructed QC thresholds.
-    threshold_result: QCThresholdResult
-
-    # Store applied QC decisions.
-    decision_result: QCDecisionResult
-
-    # Store optional artifact manifest.
-    artifact_manifest: QCArtifactManifest | None = None
-
-    # Store non-critical notes.
-    notes: list[str] = field(default_factory=list)
-
-    # Store important warnings.
-    warnings: list[str] = field(default_factory=list)
-
-    # Store JSON-friendly stage metrics.
-    metrics: dict[str, object] = field(default_factory=dict)
-
-
-@dataclass
 class QCStage:
     """
-    Execute CellQuorum quality control as a pipeline stage.
+    Execute the complete CellQuorum QC module.
+
+    The stage wires together the QC submodule layers:
+
+    1. validate and calculate QC metrics
+    2. build fixed and/or MAD thresholds
+    3. apply thresholds into explicit decision tables
+    4. optionally filter AnnData
+    5. write machine-readable artifacts
+    6. return a StageResult for provenance and downstream stages
 
     Args:
-        config: Optional explicit QC configuration. When omitted, the stage tries
-            to resolve a QC config from PipelineContext.config and falls back to
-            QCConfig().
-        output_subdir: Subdirectory under context.paths.results used for QC
-            artifacts.
-        write_artifacts: Whether to write QC artifacts during stage execution.
+        config: Optional QCConfig override. If omitted, the stage resolves QC
+            configuration from context.config.qc when available, otherwise it
+            uses QCConfig().
+        output_subdir: Subdirectory under context.paths.results where QC
+            artifacts should be written.
     """
 
-    # Store the stable pipeline stage name.
+    # Store the stable stage name expected by the pipeline contract.
     name: str = "qc"
 
-    # Store an optional explicit QC config.
+    # Store an optional explicit QC configuration override.
     config: QCConfig | None = None
 
-    # Store the artifact output subdirectory name.
+    # Store the results subdirectory used for QC artifacts.
     output_subdir: str = "qc"
-
-    # Store whether this stage should write artifacts.
-    write_artifacts: bool = True
 
     def run(self, context: object) -> StageResult:
         """
         Execute the QC stage.
 
         Args:
-            context: PipelineContext containing AnnData, config, and paths.
+            context: PipelineContext-like object containing config, paths, and
+                AnnData.
 
         Returns:
-            StageResult containing the post-QC AnnData object, artifacts, notes,
-            warnings, and summary metrics.
+            StageResult containing the QC-updated AnnData object, written
+            artifacts, notes, warnings, and structured QC metrics.
 
         Raises:
-            QCStageError: If the context or QC workflow is invalid.
+            QCStageError: If required context state is missing or QC execution
+                fails.
         """
 
-        # Validate the pipeline context.
-        if not isinstance(context, PipelineContext):
-            raise QCStageError(
-                "QCStage.run expected a PipelineContext. " f"Received: {type(context).__name__}."
-            )
+        # Retrieve the active AnnData object.
+        adata = get_context_adata(context)
 
-        # Resolve the QC configuration.
-        qc_config = resolve_qc_config(context=context, explicit_config=self.config)
+        # Resolve the effective QC configuration.
+        qc_config = resolve_qc_config(context, override=self.config)
 
-        # Require an AnnData object from the context.
-        input_adata = context.require_adata()
-
-        # Return a no-op result when QC is disabled.
-        if not qc_config.enabled:
-            return StageResult(
-                adata=input_adata,
-                artifacts=[],
-                notes=["QC stage was skipped because qc.enabled is false."],
-                warnings=[],
-                metrics={
-                    "enabled": False,
-                    "stage": self.name,
-                    "input_shape": summarize_adata_shape_for_stage(input_adata),
-                    "output_shape": summarize_adata_shape_for_stage(input_adata),
-                },
+        # Return an explicit no-op result when QC is disabled.
+        if not is_qc_stage_enabled(context, qc_config):
+            return build_disabled_qc_stage_result(
+                adata=adata,
+                stage_name=self.name,
+                qc_config=qc_config,
             )
 
         # Resolve the QC artifact output directory.
-        output_dir = context.paths.results / self.output_subdir
+        output_dir = get_qc_output_dir(context, self.output_subdir)
 
-        # Execute the full QC workflow.
-        workflow_result = run_qc_workflow(
-            adata=input_adata,
+        # Calculate cell-level, gene-level, and feature-family QC metrics.
+        metrics_result = calculate_qc_metrics(adata, qc_config)
+
+        # Build fixed and adaptive threshold records.
+        threshold_result = build_qc_thresholds(
+            cell_metrics=metrics_result.cell_metrics,
+            gene_metrics=metrics_result.gene_metrics,
             config=qc_config,
-            output_dir=output_dir,
-            write_artifacts=self.write_artifacts,
-            summary_extra={
-                "stage": self.name,
-                "run_id": context.run_id,
-                "random_seed": context.random_seed,
-            },
         )
 
-        # Convert QC artifact manifest records into generic stage artifacts.
-        stage_artifacts = (
-            []
-            if workflow_result.artifact_manifest is None
-            else stage_artifacts_from_qc_manifest(workflow_result.artifact_manifest)
+        # Apply threshold records to produce explicit decision tables.
+        decision_result = build_qc_decisions(
+            cell_metrics=metrics_result.cell_metrics,
+            gene_metrics=metrics_result.gene_metrics,
+            thresholds=threshold_result,
+            config=qc_config,
         )
 
-        # Return the generic stage result.
-        return StageResult(
-            adata=workflow_result.adata,
-            artifacts=stage_artifacts,
-            notes=workflow_result.notes,
-            warnings=workflow_result.warnings,
-            metrics=workflow_result.metrics,
+        # Build the output AnnData object, optionally filtered.
+        output_adata = build_qc_output_adata(
+            adata=adata,
+            decision_result=decision_result,
+            config=qc_config,
         )
 
-
-def run_qc_workflow(
-    *,
-    adata: ad.AnnData,
-    config: QCConfig | None = None,
-    output_dir: str | Path | None = None,
-    write_artifacts: bool = True,
-    summary_extra: dict[str, object] | None = None,
-) -> QCWorkflowResult:
-    """
-    Run the full QC workflow outside the generic pipeline executor.
-
-    This helper is useful for tests, notebooks, and future CLI integration. It
-    performs the same orchestration used by QCStage.run.
-
-    Args:
-        adata: Input AnnData object.
-        config: Optional QC configuration. Defaults to QCConfig().
-        output_dir: Optional artifact output directory.
-        write_artifacts: Whether to write QC artifacts.
-        summary_extra: Optional extra JSON-friendly values for qc_summary.json.
-
-    Returns:
-        QCWorkflowResult containing all intermediate outputs and stage metrics.
-
-    Raises:
-        QCStageError: If filtering or artifact settings are inconsistent.
-    """
-
-    # Resolve the QC configuration.
-    qc_config = QCConfig() if config is None else config
-
-    # Validate QC configuration type.
-    if not isinstance(qc_config, QCConfig):
-        raise QCStageError(
-            "run_qc_workflow expected config to be a QCConfig object. "
-            f"Received: {type(qc_config).__name__}."
-        )
-
-    # Validate AnnData input type.
-    if not isinstance(adata, ad.AnnData):
-        raise QCStageError(
-            "run_qc_workflow expected an AnnData object. " f"Received: {type(adata).__name__}."
-        )
-
-    # Prepare AnnData for QC, including configured duplicate-name handling.
-    qc_adata, preparation_notes = prepare_adata_for_qc(adata, qc_config)
-
-    # Validate the QC input.
-    validation_summary = validate_qc_input_adata(qc_adata, qc_config)
-
-    # Calculate QC metrics.
-    metrics_result = calculate_qc_metrics(qc_adata, qc_config)
-
-    # Build configured QC thresholds.
-    threshold_result = build_qc_thresholds(
-        cell_metrics=metrics_result.cell_metrics,
-        gene_metrics=metrics_result.gene_metrics,
-        config=qc_config,
-    )
-
-    # Build explicit QC decisions.
-    decision_result = build_qc_decisions(
-        cell_metrics=metrics_result.cell_metrics,
-        gene_metrics=metrics_result.gene_metrics,
-        thresholds=threshold_result,
-        config=qc_config,
-    )
-
-    # Apply filtering when requested.
-    output_adata = apply_qc_filter_to_adata(
-        adata=qc_adata,
-        decision_result=decision_result,
-        config=qc_config,
-    )
-
-    # Initialize artifact manifest.
-    artifact_manifest: QCArtifactManifest | None = None
-
-    # Write artifacts when requested.
-    if write_artifacts:
-        # Validate that an output directory was supplied.
-        if output_dir is None:
-            raise QCStageError("QC artifact writing requires an output_dir.")
-
-        # Write QC artifacts.
+        # Write all configured QC artifacts.
         artifact_manifest = write_qc_artifacts(
             output_dir=output_dir,
             metrics_result=metrics_result,
@@ -293,437 +148,587 @@ def run_qc_workflow(
             decision_result=decision_result,
             config=qc_config,
             adata=output_adata,
-            summary_extra=summary_extra,
+            summary_extra=build_qc_stage_summary_extra(
+                context=context,
+                qc_config=qc_config,
+                stage_name=self.name,
+            ),
         )
 
-    # Build stage notes.
-    notes = build_qc_stage_notes(
-        config=qc_config,
-        input_adata=qc_adata,
-        output_adata=output_adata,
-        preparation_notes=preparation_notes,
-    )
+        # Convert artifact manifest paths into StageArtifact records.
+        stage_artifacts = build_stage_artifacts_from_manifest(artifact_manifest)
 
-    # Build stage warnings.
-    warnings = collect_qc_stage_warnings(
-        validation_summary=validation_summary,
-        metrics_result=metrics_result,
-        threshold_result=threshold_result,
-        decision_result=decision_result,
-        artifact_manifest=artifact_manifest,
-    )
+        # Combine warnings from all QC layers.
+        warnings = collect_qc_stage_warnings(
+            metrics_result=metrics_result,
+            threshold_result=threshold_result,
+            decision_result=decision_result,
+            artifact_manifest=artifact_manifest,
+        )
 
-    # Build JSON-friendly stage metrics.
-    stage_metrics = build_qc_stage_metrics(
-        config=qc_config,
-        input_adata=qc_adata,
-        output_adata=output_adata,
-        validation_summary=validation_summary,
-        metrics_result=metrics_result,
-        threshold_result=threshold_result,
-        decision_result=decision_result,
-        artifact_manifest=artifact_manifest,
-    )
+        # Build human-readable stage notes.
+        notes = build_qc_stage_notes(
+            qc_config=qc_config,
+            decision_result=decision_result,
+            input_adata=adata,
+            output_adata=output_adata,
+        )
 
-    # Return the structured workflow result.
-    return QCWorkflowResult(
-        adata=output_adata,
-        validation_summary=validation_summary,
-        metrics_result=metrics_result,
-        threshold_result=threshold_result,
-        decision_result=decision_result,
-        artifact_manifest=artifact_manifest,
-        notes=notes,
-        warnings=warnings,
-        metrics=stage_metrics,
-    )
+        # Build structured stage metrics for provenance.
+        stage_metrics = build_qc_stage_metrics(
+            stage_name=self.name,
+            qc_config=qc_config,
+            metrics_result=metrics_result,
+            threshold_result=threshold_result,
+            decision_result=decision_result,
+            artifact_manifest=artifact_manifest,
+            input_adata=adata,
+            output_adata=output_adata,
+        )
+
+        # Return the stage result.
+        return StageResult(
+            adata=output_adata,
+            artifacts=stage_artifacts,
+            notes=notes,
+            warnings=warnings,
+            metrics=stage_metrics,
+        )
 
 
 def resolve_qc_config(
+    context: object,
     *,
-    context: PipelineContext,
-    explicit_config: QCConfig | None = None,
+    override: QCConfig | None = None,
 ) -> QCConfig:
     """
-    Resolve the QC configuration for stage execution.
+    Resolve the effective QC configuration for a stage run.
+
+    Resolution order:
+
+    1. explicit QCStage(config=...) override
+    2. context.config when it is already a QCConfig
+    3. context.config.qc when present
+    4. context.config["qc"] when present
+    5. QCConfig() defaults
 
     Args:
-        context: Pipeline context.
-        explicit_config: Optional explicit QC configuration supplied to QCStage.
+        context: PipelineContext-like object.
+        override: Optional explicit QCConfig override.
 
     Returns:
         Resolved QCConfig.
 
     Raises:
-        QCStageError: If a discovered QC configuration has an unsupported type.
+        QCStageError: If the resolved QC config is invalid.
     """
 
-    # Prefer an explicit stage-level QC configuration.
-    if explicit_config is not None:
-        # Validate explicit config type.
-        if not isinstance(explicit_config, QCConfig):
+    # Prefer the explicit stage-level override.
+    if override is not None:
+        # Validate override type.
+        if not isinstance(override, QCConfig):
             raise QCStageError(
-                "explicit_config must be a QCConfig object. "
-                f"Received: {type(explicit_config).__name__}."
+                "QCStage config override must be a QCConfig object. "
+                f"Received: {type(override).__name__}."
             )
 
-        # Return the explicit config.
-        return explicit_config
+        # Return the override.
+        return override
 
-    # Use context.config directly when it is already a QCConfig.
-    if isinstance(context.config, QCConfig):
-        return context.config
+    # Read the context-level config if present.
+    context_config = getattr(context, "config", None)
 
-    # Use context.config.qc when present.
-    if hasattr(context.config, "qc"):
-        # Read the qc attribute.
-        qc_config = context.config.qc
+    # Accept context.config as a QCConfig directly.
+    if isinstance(context_config, QCConfig):
+        return context_config
 
-        # Return when already validated.
-        if isinstance(qc_config, QCConfig):
-            return qc_config
+    # Resolve context.config["qc"] for dictionary-like configs.
+    if isinstance(context_config, Mapping) and "qc" in context_config:
+        return coerce_qc_config(context_config["qc"])
 
-        # Validate mappings into QCConfig.
-        if isinstance(qc_config, Mapping):
-            return validate_qc_config_dict(qc_config)
+    # Resolve context.config.qc for object-like configs.
+    if hasattr(context_config, "qc"):
+        return coerce_qc_config(context_config.qc)
 
-        # Reject unsupported qc attributes.
-        raise QCStageError(
-            "context.config.qc must be a QCConfig or mapping. "
-            f"Received: {type(qc_config).__name__}."
-        )
-
-    # Use mapping-based config["qc"] when present.
-    if isinstance(context.config, Mapping) and "qc" in context.config:
-        # Extract the QC config mapping or object.
-        qc_config = context.config["qc"]
-
-        # Return when already validated.
-        if isinstance(qc_config, QCConfig):
-            return qc_config
-
-        # Validate mappings into QCConfig.
-        if isinstance(qc_config, Mapping):
-            return validate_qc_config_dict(qc_config)
-
-        # Reject unsupported mapping values.
-        raise QCStageError(
-            "context.config['qc'] must be a QCConfig or mapping. "
-            f"Received: {type(qc_config).__name__}."
-        )
-
-    # Fall back to default QC configuration while top-level integration is still bootstrapping.
+    # Fall back to default QC configuration.
     return QCConfig()
 
 
-def prepare_adata_for_qc(adata: ad.AnnData, config: QCConfig) -> tuple[ad.AnnData, list[str]]:
+def coerce_qc_config(value: object) -> QCConfig:
     """
-    Prepare AnnData before QC metric calculation.
-
-    This currently implements configured duplicate-name repair for observation
-    and variable names. A copy is made only when a name repair is needed.
+    Coerce a candidate QC config value into QCConfig.
 
     Args:
-        adata: Input AnnData object.
-        config: QC configuration.
+        value: Candidate QC configuration value.
 
     Returns:
-        Tuple containing prepared AnnData and preparation notes.
+        Validated QCConfig.
+
+    Raises:
+        QCStageError: If the candidate cannot become QCConfig.
     """
 
-    # Initialize preparation notes.
-    notes: list[str] = []
+    # Preserve QCConfig objects.
+    if isinstance(value, QCConfig):
+        return value
 
-    # Track whether a copy is required.
-    needs_copy = (
-        not adata.obs_names.is_unique and config.duplicate_names.obs_names == "make_unique"
-    ) or (not adata.var_names.is_unique and config.duplicate_names.var_names == "make_unique")
+    # Validate dictionary-like QC configuration.
+    if isinstance(value, Mapping):
+        return validate_qc_config_dict(value)
 
-    # Copy only when duplicate-name repair is needed.
-    prepared = adata.copy() if needs_copy else adata
-
-    # Make duplicate observation names unique when configured.
-    if not prepared.obs_names.is_unique and config.duplicate_names.obs_names == "make_unique":
-        # Repair duplicate observation names.
-        prepared.obs_names_make_unique()
-
-        # Store a note.
-        notes.append("Made duplicate AnnData.obs_names unique before QC metric calculation.")
-
-    # Make duplicate variable names unique when configured.
-    if not prepared.var_names.is_unique and config.duplicate_names.var_names == "make_unique":
-        # Repair duplicate variable names.
-        prepared.var_names_make_unique()
-
-        # Store a note.
-        notes.append("Made duplicate AnnData.var_names unique before QC metric calculation.")
-
-    # Return prepared AnnData and notes.
-    return prepared, notes
+    # Reject unsupported values.
+    raise QCStageError(
+        "QC configuration must be a QCConfig object or mapping. "
+        f"Received: {type(value).__name__}."
+    )
 
 
-def apply_qc_filter_to_adata(
+def is_qc_stage_enabled(context: object, qc_config: QCConfig) -> bool:
+    """
+    Return whether the QC stage should execute.
+
+    The stage is enabled only when QCConfig.enabled is true and any top-level
+    context.config.stages.qc flag is also true.
+
+    Args:
+        context: PipelineContext-like object.
+        qc_config: Resolved QC configuration.
+
+    Returns:
+        True when QC should run, otherwise False.
+    """
+
+    # Respect the QC module-level enabled flag first.
+    if not qc_config.enabled:
+        return False
+
+    # Read the context-level config if present.
+    context_config = getattr(context, "config", None)
+
+    # Handle dictionary-style stage selection.
+    if isinstance(context_config, Mapping):
+        # Extract the stages mapping.
+        stages = context_config.get("stages")
+
+        # Respect a dictionary-style stages.qc flag when present.
+        if isinstance(stages, Mapping) and "qc" in stages:
+            return bool(stages["qc"])
+
+    # Handle object-style stage selection.
+    stages = getattr(context_config, "stages", None)
+
+    # Respect object-style stages.qc when present.
+    if stages is not None and hasattr(stages, "qc"):
+        return bool(stages.qc)
+
+    # Default to enabled when no top-level stage selection is present.
+    return True
+
+
+def get_context_adata(context: object) -> ad.AnnData:
+    """
+    Retrieve AnnData from a PipelineContext-like object.
+
+    Args:
+        context: PipelineContext-like object.
+
+    Returns:
+        Active AnnData object.
+
+    Raises:
+        QCStageError: If AnnData is missing or invalid.
+    """
+
+    # Prefer the formal PipelineContext helper when present.
+    require_adata = getattr(context, "require_adata", None)
+
+    # Use require_adata when callable.
+    if callable(require_adata):
+        try:
+            # Retrieve AnnData through the context helper.
+            adata = require_adata()
+
+        # Convert context errors into QC stage errors.
+        except Exception as error:
+            raise QCStageError("QC stage requires an AnnData object in context.") from error
+
+    # Fall back to a direct context.adata attribute.
+    else:
+        # Retrieve direct AnnData attribute.
+        adata = getattr(context, "adata", None)
+
+    # Validate AnnData type.
+    if not isinstance(adata, ad.AnnData):
+        raise QCStageError(
+            "QC stage requires context.adata to be an AnnData object. "
+            f"Received: {type(adata).__name__}."
+        )
+
+    # Return AnnData.
+    return adata
+
+
+def get_qc_output_dir(context: object, output_subdir: str) -> Path:
+    """
+    Resolve the QC stage output directory.
+
+    Args:
+        context: PipelineContext-like object with paths.results.
+        output_subdir: QC subdirectory under results.
+
+    Returns:
+        QC artifact output directory.
+
+    Raises:
+        QCStageError: If context paths are missing or invalid.
+    """
+
+    # Reject empty output subdirectories.
+    if not isinstance(output_subdir, str) or not output_subdir.strip():
+        raise QCStageError("QCStage output_subdir must be a non-empty string.")
+
+    # Retrieve the context paths object.
+    paths = getattr(context, "paths", None)
+
+    # Require context paths.
+    if paths is None:
+        raise QCStageError("QC stage requires context.paths with a results directory.")
+
+    # Require a results directory on the paths object.
+    if not hasattr(paths, "results"):
+        raise QCStageError("QC stage requires context.paths.results.")
+
+    # Resolve the results directory.
+    results_dir = Path(paths.results)
+
+    # Return the QC output directory.
+    return results_dir / output_subdir
+
+
+def build_qc_output_adata(
     *,
     adata: ad.AnnData,
     decision_result: QCDecisionResult,
     config: QCConfig,
 ) -> ad.AnnData:
     """
-    Apply QC filtering decisions to AnnData when configured.
+    Build the QC-updated AnnData object.
+
+    The output AnnData is always annotated with QC decision columns. It is
+    filtered only when config.mode is filter or both.
 
     Args:
-        adata: AnnData object used for QC.
+        adata: Input AnnData object.
         decision_result: QC decision result.
         config: QC configuration.
 
     Returns:
-        Original or filtered AnnData object.
-
-    Raises:
-        QCStageError: If decision tables do not align with AnnData.
+        Annotated and optionally filtered AnnData object.
     """
 
-    # Return the original object when filtering is disabled.
+    # Validate input AnnData.
+    if not isinstance(adata, ad.AnnData):
+        raise QCStageError(
+            "build_qc_output_adata expected an AnnData object. "
+            f"Received: {type(adata).__name__}."
+        )
+
+    # Validate decision result type.
+    if not isinstance(decision_result, QCDecisionResult):
+        raise QCStageError(
+            "decision_result must be a QCDecisionResult. "
+            f"Received: {type(decision_result).__name__}."
+        )
+
+    # Validate QC config type.
+    if not isinstance(config, QCConfig):
+        raise QCStageError("config must be a QCConfig. " f"Received: {type(config).__name__}.")
+
+    # Copy and annotate the AnnData object with QC decisions.
+    output_adata = annotate_adata_with_qc_decisions(adata, decision_result)
+
+    # Return annotated, unfiltered AnnData in report-only mode.
     if not config.should_filter():
-        return adata
+        return output_adata
+
+    # Return annotated and filtered AnnData in filter or both mode.
+    return filter_adata_by_qc_decisions(output_adata, decision_result)
+
+
+def annotate_adata_with_qc_decisions(
+    adata: ad.AnnData,
+    decision_result: QCDecisionResult,
+) -> ad.AnnData:
+    """
+    Add QC decision columns to AnnData.obs and AnnData.var.
+
+    Args:
+        adata: Input AnnData object.
+        decision_result: QC decision result.
+
+    Returns:
+        Copy of AnnData with QC decision annotations.
+
+    Raises:
+        QCStageError: If decision table indices do not match AnnData names.
+    """
 
     # Validate cell decision alignment.
     validate_decision_index_alignment(
-        expected_index=adata.obs_names,
-        observed_index=decision_result.cell_decisions.index,
-        axis_name="obs",
+        expected=list(adata.obs_names),
+        observed=list(decision_result.cell_decisions.index),
+        label="cell_decisions",
     )
 
     # Validate gene decision alignment.
     validate_decision_index_alignment(
-        expected_index=adata.var_names,
-        observed_index=decision_result.gene_decisions.index,
-        axis_name="var",
+        expected=list(adata.var_names),
+        observed=list(decision_result.gene_decisions.index),
+        label="gene_decisions",
     )
 
-    # Extract cell keep mask by position.
-    cell_keep = decision_result.cell_decisions["keep"].to_numpy(dtype=bool)
+    # Copy the AnnData object before mutation.
+    annotated = adata.copy()
 
-    # Extract gene keep mask by position.
-    gene_keep = decision_result.gene_decisions["keep"].to_numpy(dtype=bool)
+    # Add cell-level decision columns to obs.
+    add_decision_columns_to_axis(
+        axis_frame=annotated.obs,
+        decisions=decision_result.cell_decisions,
+        prefix="cellquorum_qc_",
+    )
 
-    # Return a filtered AnnData copy.
-    return adata[cell_keep, gene_keep].copy()
+    # Add gene-level decision columns to var.
+    add_decision_columns_to_axis(
+        axis_frame=annotated.var,
+        decisions=decision_result.gene_decisions,
+        prefix="cellquorum_qc_",
+    )
+
+    # Return annotated AnnData.
+    return annotated
+
+
+def add_decision_columns_to_axis(
+    *,
+    axis_frame: pd.DataFrame,
+    decisions: pd.DataFrame,
+    prefix: str,
+) -> None:
+    """
+    Add decision-table columns to AnnData obs or var.
+
+    Args:
+        axis_frame: AnnData obs or var DataFrame.
+        decisions: Decision table aligned to axis_frame by row order.
+        prefix: Prefix for stored QC decision columns.
+    """
+
+    # Iterate over decision columns.
+    for column in decisions.columns:
+        # Build the output column name.
+        output_column = f"{prefix}{column}"
+
+        # Store values by position to preserve duplicate-name compatibility.
+        axis_frame[output_column] = decisions[column].to_numpy()
+
+
+def filter_adata_by_qc_decisions(
+    adata: ad.AnnData,
+    decision_result: QCDecisionResult,
+) -> ad.AnnData:
+    """
+    Filter AnnData using QC decision tables.
+
+    Args:
+        adata: AnnData object already aligned to decision tables.
+        decision_result: QC decision result.
+
+    Returns:
+        Filtered AnnData object.
+
+    Raises:
+        QCStageError: If decision table indices are not aligned.
+    """
+
+    # Validate cell decision alignment.
+    validate_decision_index_alignment(
+        expected=list(adata.obs_names),
+        observed=list(decision_result.cell_decisions.index),
+        label="cell_decisions",
+    )
+
+    # Validate gene decision alignment.
+    validate_decision_index_alignment(
+        expected=list(adata.var_names),
+        observed=list(decision_result.gene_decisions.index),
+        label="gene_decisions",
+    )
+
+    # Build the cell keep mask.
+    keep_cells = decision_result.cell_decisions["keep"].to_numpy(dtype=bool)
+
+    # Build the gene keep mask.
+    keep_genes = decision_result.gene_decisions["keep"].to_numpy(dtype=bool)
+
+    # Return the filtered AnnData object.
+    return adata[keep_cells, keep_genes].copy()
 
 
 def validate_decision_index_alignment(
     *,
-    expected_index: pd.Index,
-    observed_index: pd.Index,
-    axis_name: str,
+    expected: list[str],
+    observed: list[str],
+    label: str,
 ) -> None:
     """
-    Validate that a decision table index matches an AnnData axis by position.
+    Validate that a decision table index matches AnnData axis names exactly.
 
     Args:
-        expected_index: AnnData axis index.
-        observed_index: Decision table index.
-        axis_name: Human-readable axis label.
+        expected: AnnData axis names in order.
+        observed: Decision table index values in order.
+        label: Human-readable decision table label.
 
     Raises:
-        QCStageError: If the index lengths or values do not match.
+        QCStageError: If indices differ.
     """
 
-    # Compare index lengths first.
-    if len(expected_index) != len(observed_index):
-        raise QCStageError(
-            f"QC {axis_name} decision index has length {len(observed_index)}, "
-            f"but AnnData.{axis_name} has length {len(expected_index)}."
-        )
+    # Return silently when indices match exactly.
+    if expected == observed:
+        return
 
-    # Compare stringified index values by position.
-    if [str(value) for value in observed_index] != [str(value) for value in expected_index]:
-        raise QCStageError(
-            f"QC {axis_name} decision index does not match AnnData.{axis_name}_names."
-        )
+    # Raise a clear alignment error.
+    raise QCStageError(
+        f"{label} index does not match the corresponding AnnData axis names. "
+        "QC decisions must be aligned before annotation or filtering."
+    )
 
 
-def build_qc_stage_notes(
+def build_disabled_qc_stage_result(
     *,
-    config: QCConfig,
-    input_adata: ad.AnnData,
-    output_adata: ad.AnnData,
-    preparation_notes: list[str],
-) -> list[str]:
+    adata: ad.AnnData,
+    stage_name: str,
+    qc_config: QCConfig,
+) -> StageResult:
     """
-    Build human-readable QC stage notes.
+    Build a no-op StageResult for disabled QC.
 
     Args:
-        config: QC configuration.
-        input_adata: AnnData object used for QC.
-        output_adata: AnnData object after optional filtering.
-        preparation_notes: Notes emitted during input preparation.
+        adata: Active AnnData object.
+        stage_name: Stable stage name.
+        qc_config: Resolved QC configuration.
 
     Returns:
-        Ordered stage notes.
+        StageResult representing a disabled QC no-op.
     """
 
-    # Start with preparation notes.
-    notes = list(preparation_notes)
-
-    # Add completion note.
-    notes.append(f"QC completed in {config.mode} mode.")
-
-    # Add filtering note when filtering ran.
-    if config.should_filter():
-        notes.append(
-            "QC filtering retained "
-            f"{output_adata.n_obs}/{input_adata.n_obs} cells and "
-            f"{output_adata.n_vars}/{input_adata.n_vars} genes."
-        )
-
-    # Add report-only note when filtering did not run.
-    else:
-        notes.append("QC decisions were reported but AnnData was not filtered.")
-
-    # Return notes.
-    return notes
+    # Return a no-op stage result.
+    return StageResult(
+        adata=adata,
+        artifacts=[],
+        notes=["QC stage skipped because QC is disabled."],
+        warnings=[],
+        metrics={
+            "stage_name": stage_name,
+            "enabled": False,
+            "mode": qc_config.mode,
+            "reason": "qc_disabled",
+        },
+    )
 
 
-def collect_qc_stage_warnings(
+def build_qc_stage_summary_extra(
     *,
-    validation_summary: QCInputValidationSummary,
-    metrics_result: QCMetricsResult,
-    threshold_result: QCThresholdResult,
-    decision_result: QCDecisionResult,
-    artifact_manifest: QCArtifactManifest | None,
-) -> list[str]:
-    """
-    Collect warnings emitted across the QC workflow.
-
-    Args:
-        validation_summary: Input validation summary.
-        metrics_result: QC metrics result.
-        threshold_result: QC threshold result.
-        decision_result: QC decision result.
-        artifact_manifest: Optional artifact manifest.
-
-    Returns:
-        De-duplicated warning list in first-seen order.
-    """
-
-    # Initialize warning messages.
-    warnings: list[str] = []
-
-    # Extend warnings from validation.
-    warnings.extend(validation_summary.warnings)
-
-    # Extend warnings from metrics.
-    warnings.extend(metrics_result.warnings)
-
-    # Extend warnings from thresholds.
-    warnings.extend(threshold_result.warnings)
-
-    # Extend warnings from decisions.
-    warnings.extend(decision_result.warnings)
-
-    # Extend warnings from artifacts when present.
-    if artifact_manifest is not None:
-        warnings.extend(artifact_manifest.warnings)
-
-    # Return de-duplicated warnings.
-    return deduplicate_strings(warnings)
-
-
-def build_qc_stage_metrics(
-    *,
-    config: QCConfig,
-    input_adata: ad.AnnData,
-    output_adata: ad.AnnData,
-    validation_summary: QCInputValidationSummary,
-    metrics_result: QCMetricsResult,
-    threshold_result: QCThresholdResult,
-    decision_result: QCDecisionResult,
-    artifact_manifest: QCArtifactManifest | None,
+    context: object,
+    qc_config: QCConfig,
+    stage_name: str,
 ) -> dict[str, object]:
     """
-    Build JSON-friendly metrics for the generic StageResult.
+    Build extra summary values for qc_summary.json.
 
     Args:
-        config: QC configuration.
-        input_adata: AnnData object used for QC.
-        output_adata: AnnData object after optional filtering.
-        validation_summary: Input validation summary.
-        metrics_result: QC metrics result.
-        threshold_result: QC threshold result.
-        decision_result: QC decision result.
-        artifact_manifest: Optional artifact manifest.
+        context: PipelineContext-like object.
+        qc_config: QC configuration.
+        stage_name: Stable stage name.
 
     Returns:
-        JSON-friendly stage metrics dictionary.
+        Extra JSON-friendly QC summary fields.
     """
 
-    # Return the structured stage metrics.
+    # Return stage-level context metadata.
     return {
-        "enabled": config.enabled,
-        "mode": config.mode,
-        "threshold_strategy": config.threshold_strategy,
-        "should_filter": config.should_filter(),
-        "input_shape": summarize_adata_shape_for_stage(input_adata),
-        "output_shape": summarize_adata_shape_for_stage(output_adata),
-        "validation": validation_summary.to_dict(),
-        "metrics": metrics_result.to_summary_dict(),
-        "thresholds": threshold_result.to_summary_dict(),
-        "decisions": decision_result.to_summary_dict(),
-        "artifacts": None if artifact_manifest is None else artifact_manifest.to_dict(),
+        "stage_name": stage_name,
+        "run_id": str(getattr(context, "run_id", "cellquorum-run")),
+        "random_seed": int(getattr(context, "random_seed", 1337)),
+        "mode": qc_config.mode,
+        "threshold_strategy": qc_config.threshold_strategy,
+        "enabled_metric_families": qc_config.enabled_metric_families(),
     }
 
 
-def stage_artifacts_from_qc_manifest(manifest: QCArtifactManifest) -> list[StageArtifact]:
+def build_stage_artifacts_from_manifest(
+    manifest: QCArtifactManifest,
+) -> list[StageArtifact]:
     """
-    Convert QC artifact manifest records into generic StageArtifact records.
+    Convert a QCArtifactManifest into stage artifact records.
 
     Args:
         manifest: QC artifact manifest.
 
     Returns:
-        StageArtifact records for written QC artifacts.
+        StageArtifact records.
     """
 
-    # Convert each written QC artifact into a generic stage artifact.
-    return [
-        StageArtifact(
-            name=artifact_name,
-            path=artifact_path,
-            kind=infer_artifact_kind(artifact_path),
-            description=describe_qc_artifact(artifact_name),
+    # Validate manifest type.
+    if not isinstance(manifest, QCArtifactManifest):
+        raise QCStageError(
+            "manifest must be a QCArtifactManifest. " f"Received: {type(manifest).__name__}."
         )
-        for artifact_name, artifact_path in manifest.artifacts.items()
-    ]
+
+    # Initialize stage artifacts.
+    artifacts: list[StageArtifact] = []
+
+    # Convert each written artifact into a stage artifact.
+    for artifact_name, artifact_path in manifest.artifacts.items():
+        artifacts.append(
+            StageArtifact(
+                name=f"qc_{artifact_name}",
+                path=artifact_path,
+                kind=infer_artifact_kind(artifact_path),
+                description=describe_qc_artifact(artifact_name),
+            )
+        )
+
+    # Return stage artifacts.
+    return artifacts
 
 
 def infer_artifact_kind(path: Path) -> str:
     """
-    Infer a generic artifact kind from a file extension.
+    Infer a StageArtifact kind from a path suffix.
 
     Args:
         path: Artifact path.
 
     Returns:
-        Artifact kind string.
+        Artifact kind label.
     """
 
-    # Resolve lower-case suffix.
+    # Normalize the file suffix.
     suffix = path.suffix.lower()
 
-    # Map CSV files to csv kind.
+    # Map CSV files.
     if suffix == ".csv":
         return "csv"
 
-    # Map JSON files to json kind.
+    # Map JSON files.
     if suffix == ".json":
         return "json"
 
-    # Map h5ad files to h5ad kind.
+    # Map AnnData h5ad files.
     if suffix == ".h5ad":
         return "h5ad"
 
-    # Fall back to file kind.
+    # Return a generic file kind otherwise.
     return "file"
 
 
@@ -735,91 +740,168 @@ def describe_qc_artifact(artifact_name: str) -> str:
         artifact_name: Stable QC artifact label.
 
     Returns:
-        Artifact description.
+        Description string.
     """
 
-    # Store known artifact descriptions.
+    # Define artifact descriptions.
     descriptions = {
         "cell_metrics": "Cell-level QC metric table.",
         "gene_metrics": "Gene-level QC metric table.",
-        "feature_masks": "Feature-family masks used for QC metrics.",
+        "feature_masks": "Feature-family QC mask table.",
         "thresholds": "QC threshold table.",
         "cell_decisions": "Cell-level QC keep/fail decision table.",
         "gene_decisions": "Gene-level QC keep/fail decision table.",
-        "qc_h5ad": "AnnData object after optional QC filtering.",
-        "summary": "QC summary JSON.",
+        "qc_h5ad": "QC-annotated AnnData object.",
+        "summary": "Structured QC summary JSON.",
     }
 
-    # Return known description or a generic fallback.
+    # Return a known description or a fallback.
     return descriptions.get(artifact_name, f"QC artifact: {artifact_name}.")
 
 
-def summarize_adata_shape_for_stage(adata: ad.AnnData) -> dict[str, int]:
+def collect_qc_stage_warnings(
+    *,
+    metrics_result: QCMetricsResult,
+    threshold_result: QCThresholdResult,
+    decision_result: QCDecisionResult,
+    artifact_manifest: QCArtifactManifest,
+) -> list[str]:
     """
-    Summarize AnnData shape for stage metrics.
+    Collect warnings from all QC stage layers.
 
     Args:
-        adata: AnnData object.
+        metrics_result: QC metrics result.
+        threshold_result: QC threshold result.
+        decision_result: QC decision result.
+        artifact_manifest: QC artifact manifest.
 
     Returns:
-        Shape summary dictionary.
+        Combined warning list.
     """
 
-    # Return observation and variable counts.
+    # Return warnings in execution order.
+    return [
+        *metrics_result.warnings,
+        *threshold_result.warnings,
+        *decision_result.warnings,
+        *artifact_manifest.warnings,
+    ]
+
+
+def build_qc_stage_notes(
+    *,
+    qc_config: QCConfig,
+    decision_result: QCDecisionResult,
+    input_adata: ad.AnnData,
+    output_adata: ad.AnnData,
+) -> list[str]:
+    """
+    Build human-readable QC stage notes.
+
+    Args:
+        qc_config: QC configuration.
+        decision_result: QC decision result.
+        input_adata: Input AnnData object.
+        output_adata: Output AnnData object.
+
+    Returns:
+        Stage note strings.
+    """
+
+    # Retrieve decision summary.
+    summary = decision_result.summary
+
+    # Initialize notes.
+    notes = [
+        f"QC completed in {qc_config.mode} mode.",
+        (
+            "Cells kept: "
+            f"{summary['n_cells_kept']}/{summary['n_cells']}; "
+            "genes kept: "
+            f"{summary['n_genes_kept']}/{summary['n_genes']}."
+        ),
+    ]
+
+    # Add an explicit filtering note when filtering occurred.
+    if qc_config.should_filter():
+        notes.append(
+            "QC filtering changed AnnData shape from "
+            f"{input_adata.n_obs} cells x {input_adata.n_vars} genes to "
+            f"{output_adata.n_obs} cells x {output_adata.n_vars} genes."
+        )
+
+    # Return stage notes.
+    return notes
+
+
+def build_qc_stage_metrics(
+    *,
+    stage_name: str,
+    qc_config: QCConfig,
+    metrics_result: QCMetricsResult,
+    threshold_result: QCThresholdResult,
+    decision_result: QCDecisionResult,
+    artifact_manifest: QCArtifactManifest,
+    input_adata: ad.AnnData,
+    output_adata: ad.AnnData,
+) -> dict[str, object]:
+    """
+    Build structured QC stage metrics for provenance.
+
+    Args:
+        stage_name: Stable stage name.
+        qc_config: QC configuration.
+        metrics_result: QC metrics result.
+        threshold_result: QC threshold result.
+        decision_result: QC decision result.
+        artifact_manifest: QC artifact manifest.
+        input_adata: Input AnnData object.
+        output_adata: Output AnnData object.
+
+    Returns:
+        JSON-friendly stage metrics.
+    """
+
+    # Return structured metrics.
     return {
-        "n_obs": int(adata.n_obs),
-        "n_vars": int(adata.n_vars),
+        "stage_name": stage_name,
+        "enabled": True,
+        "mode": qc_config.mode,
+        "threshold_strategy": qc_config.threshold_strategy,
+        "input_shape": {
+            "n_obs": int(input_adata.n_obs),
+            "n_vars": int(input_adata.n_vars),
+        },
+        "output_shape": {
+            "n_obs": int(output_adata.n_obs),
+            "n_vars": int(output_adata.n_vars),
+        },
+        "metric_summary": metrics_result.to_summary_dict(),
+        "threshold_summary": threshold_result.to_summary_dict(),
+        "decision_summary": decision_result.to_summary_dict(),
+        "artifact_manifest": artifact_manifest.to_dict(),
     }
-
-
-def deduplicate_strings(values: list[str]) -> list[str]:
-    """
-    De-duplicate strings while preserving first-seen order.
-
-    Args:
-        values: Input string values.
-
-    Returns:
-        De-duplicated string values.
-    """
-
-    # Initialize seen values.
-    seen: set[str] = set()
-
-    # Initialize output values.
-    deduplicated: list[str] = []
-
-    # Iterate over values in input order.
-    for value in values:
-        # Skip duplicate values.
-        if value in seen:
-            continue
-
-        # Mark value as seen.
-        seen.add(value)
-
-        # Store value.
-        deduplicated.append(value)
-
-    # Return de-duplicated values.
-    return deduplicated
 
 
 __all__ = [
     "QCStage",
     "QCStageError",
-    "QCWorkflowResult",
-    "apply_qc_filter_to_adata",
+    "add_decision_columns_to_axis",
+    "annotate_adata_with_qc_decisions",
+    "build_disabled_qc_stage_result",
+    "build_qc_output_adata",
     "build_qc_stage_metrics",
     "build_qc_stage_notes",
+    "build_qc_stage_summary_extra",
+    "build_stage_artifacts_from_manifest",
+    "coerce_qc_config",
     "collect_qc_stage_warnings",
-    "deduplicate_strings",
     "describe_qc_artifact",
+    "filter_adata_by_qc_decisions",
+    "get_context_adata",
+    "get_qc_output_dir",
     "infer_artifact_kind",
-    "prepare_adata_for_qc",
+    "is_qc_stage_enabled",
     "resolve_qc_config",
-    "run_qc_workflow",
-    "stage_artifacts_from_qc_manifest",
-    "summarize_adata_shape_for_stage",
     "validate_decision_index_alignment",
 ]

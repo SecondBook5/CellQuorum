@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-# Import dataclass for small config wrapper tests.
-from dataclasses import dataclass
+# Import JSON helpers for reading stage-written summary artifacts.
+import json
 
-# Import Path for filesystem-based stage tests.
+# Import Path for pytest tmp_path fixture annotations.
 from pathlib import Path
 
-# Import AnnData for tiny stage input objects.
+# Import SimpleNamespace for lightweight context/config tests.
+from types import SimpleNamespace
+
+# Import AnnData for test input objects.
 import anndata as ad
 
-# Import NumPy for deterministic matrices.
+# Import NumPy for deterministic test matrices.
 import numpy as np
 
 # Import pandas for AnnData metadata and decision tables.
@@ -20,11 +23,14 @@ import pandas as pd
 # Import pytest for exception assertions.
 import pytest
 
+# Import top-level CellQuorum config for stage-selection tests.
+from cellquorum.config.models import CellQuorumConfig
+
 # Import pipeline context and path contracts.
 from cellquorum.core.context import PipelineContext, PipelinePaths
 
-# Import generic stage result contract.
-from cellquorum.core.stage import StageArtifact, StageResult
+# Import QC artifact manifest for artifact conversion tests.
+from cellquorum.qc.artifacts import QCArtifactManifest
 
 # Import QC configuration.
 from cellquorum.qc.config import QCConfig
@@ -36,43 +42,29 @@ from cellquorum.qc.decisions import QCDecisionResult
 from cellquorum.qc.stage import (
     QCStage,
     QCStageError,
-    QCWorkflowResult,
-    apply_qc_filter_to_adata,
-    build_qc_stage_notes,
-    collect_qc_stage_warnings,
-    deduplicate_strings,
+    annotate_adata_with_qc_decisions,
+    build_disabled_qc_stage_result,
+    build_qc_output_adata,
+    build_qc_stage_summary_extra,
+    build_stage_artifacts_from_manifest,
+    coerce_qc_config,
     describe_qc_artifact,
+    filter_adata_by_qc_decisions,
+    get_context_adata,
+    get_qc_output_dir,
     infer_artifact_kind,
-    prepare_adata_for_qc,
+    is_qc_stage_enabled,
     resolve_qc_config,
-    run_qc_workflow,
-    stage_artifacts_from_qc_manifest,
-    summarize_adata_shape_for_stage,
     validate_decision_index_alignment,
 )
 
-# Import threshold record for hand-built decision tests.
 
-
-@dataclass
-class ConfigWithQC:
+def make_stage_test_adata() -> ad.AnnData:
     """
-    Minimal top-level config wrapper with a qc attribute.
+    Build a small AnnData object for QC stage tests.
 
-    Args:
-        qc: QC configuration payload.
-    """
-
-    # Store a QC config payload.
-    qc: object
-
-
-def make_stage_adata() -> ad.AnnData:
-    """
-    Build a tiny AnnData object for QC stage tests.
-
-    The fixed thresholds in the test config will fail one low-quality cell and
-    one low-detected gene while keeping a non-empty filtered result.
+    The data are chosen so fixed QC thresholds keep cell_1 and cell_3, remove
+    cell_2, keep MT-ND1 and ACTB, and remove RPS3 and MALAT1.
 
     Returns:
         Small AnnData object.
@@ -81,67 +73,54 @@ def make_stage_adata() -> ad.AnnData:
     # Build a deterministic count matrix.
     matrix = np.array(
         [
-            [5.0, 0.0, 0.0],
-            [0.0, 5.0, 0.0],
-            [0.0, 0.0, 5.0],
-            [1.0, 0.0, 0.0],
+            [5.0, 5.0, 0.0, 0.0],
+            [9.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 1.0, 1.0],
         ]
     )
 
     # Build observation metadata.
-    obs = pd.DataFrame(index=["cell_1", "cell_2", "cell_3", "cell_4"])
+    obs = pd.DataFrame(index=["cell_1", "cell_2", "cell_3"])
 
-    # Build variable metadata with one mitochondrial gene.
-    var = pd.DataFrame(index=["MT-ND1", "ACTB", "MALAT1"])
+    # Build variable metadata.
+    var = pd.DataFrame(index=["MT-ND1", "ACTB", "RPS3", "MALAT1"])
 
-    # Return the AnnData object.
+    # Return AnnData.
     return ad.AnnData(X=matrix, obs=obs, var=var)
 
 
-def make_stage_config(**overrides: object) -> QCConfig:
+def make_stage_qc_config(*, mode: str = "report_only") -> QCConfig:
     """
-    Build a deterministic QC stage test configuration.
+    Build a deterministic QC configuration for stage tests.
 
     Args:
-        **overrides: Optional top-level QCConfig overrides.
+        mode: QC execution mode.
 
     Returns:
-        QCConfig suitable for tiny test matrices.
+        QCConfig with fixed thresholds only and simple output settings.
     """
 
-    # Build the base configuration.
-    payload: dict[str, object] = {
-        "mode": "report_only",
-        "threshold_strategy": "fixed",
-        "basic": {
-            "min_genes_per_cell": 1,
-            "max_genes_per_cell": None,
-            "min_counts_per_cell": 2,
-            "max_counts_per_cell": None,
-            "min_cells_per_gene": 1,
-            "max_mito_percent": 90.0,
-            "max_ribo_percent": None,
-            "max_hemoglobin_percent": None,
+    # Return the deterministic stage QC configuration.
+    return QCConfig(
+        mode=mode,
+        threshold_strategy="fixed",
+        metrics={"percent_top": [2]},
+        basic={
+            "min_genes_per_cell": 2,
+            "min_cells_per_gene": 2,
+            "max_mito_percent": 60.0,
         },
-        "mad": {
-            "enabled": False,
-        },
-        "outputs": {
+        mad={"enabled": False},
+        outputs={
+            "write_h5ad": False,
             "write_figures": False,
-            "write_h5ad": True,
         },
-    }
-
-    # Apply top-level overrides.
-    payload.update(overrides)
-
-    # Return the validated config.
-    return QCConfig.model_validate(payload)
+    )
 
 
-def make_pipeline_context(
-    *,
+def make_context(
     tmp_path: Path,
+    *,
     adata: ad.AnnData | None = None,
     config: object | None = None,
 ) -> PipelineContext:
@@ -149,899 +128,731 @@ def make_pipeline_context(
     Build a PipelineContext for QC stage tests.
 
     Args:
-        tmp_path: Temporary directory root.
+        tmp_path: pytest temporary path.
         adata: Optional AnnData object.
-        config: Optional context configuration.
+        config: Optional runtime config.
 
     Returns:
-        PipelineContext with ensured output directories.
+        PipelineContext with initialized output paths.
     """
 
     # Build standardized pipeline paths.
     paths = PipelinePaths.from_output_dir(tmp_path / "run")
 
-    # Ensure all directories exist.
+    # Create the path directories.
     paths.ensure_directories()
 
-    # Return the pipeline context.
+    # Return a PipelineContext.
     return PipelineContext(
-        config=make_stage_config() if config is None else config,
+        config=CellQuorumConfig() if config is None else config,
         paths=paths,
-        adata=make_stage_adata() if adata is None else adata,
-        run_id="test-run",
+        adata=make_stage_test_adata() if adata is None else adata,
+        run_id="stage-test-run",
         random_seed=123,
     )
 
 
-def test_resolve_qc_config_prefers_explicit_config(tmp_path: Path) -> None:
+def make_decision_result() -> QCDecisionResult:
     """
-    Verify explicit QCStage config overrides context config.
+    Build a deterministic decision result for direct stage helper tests.
 
-    Stage-level explicit config should be the most deterministic option.
+    Returns:
+        QCDecisionResult aligned to make_stage_test_adata().
     """
-
-    # Build context with default config.
-    context = make_pipeline_context(tmp_path=tmp_path)
-
-    # Build explicit disabled config.
-    explicit = make_stage_config(enabled=False)
-
-    # Resolve the config.
-    observed = resolve_qc_config(context=context, explicit_config=explicit)
-
-    # Confirm the explicit config was used.
-    assert observed is explicit
-    assert observed.enabled is False
-
-
-def test_resolve_qc_config_accepts_context_qcconfig(tmp_path: Path) -> None:
-    """
-    Verify config resolution accepts PipelineContext.config as QCConfig.
-
-    This is the simplest notebook/test usage pattern.
-    """
-
-    # Build a QC config.
-    config = make_stage_config(mode="both")
-
-    # Build context using that config directly.
-    context = make_pipeline_context(tmp_path=tmp_path, config=config)
-
-    # Resolve the config.
-    observed = resolve_qc_config(context=context)
-
-    # Confirm the context config was used.
-    assert observed is config
-
-
-def test_resolve_qc_config_accepts_qc_attribute_object(tmp_path: Path) -> None:
-    """
-    Verify config resolution accepts context.config.qc as QCConfig.
-
-    This supports future top-level runtime configs that expose a qc attribute.
-    """
-
-    # Build a QC config.
-    config = make_stage_config(mode="both")
-
-    # Build wrapped config.
-    context = make_pipeline_context(tmp_path=tmp_path, config=ConfigWithQC(qc=config))
-
-    # Resolve the config.
-    observed = resolve_qc_config(context=context)
-
-    # Confirm the qc attribute was used.
-    assert observed is config
-
-
-def test_resolve_qc_config_accepts_qc_attribute_mapping(tmp_path: Path) -> None:
-    """
-    Verify config resolution validates mapping-style qc attributes.
-
-    This supports plain dictionaries and partially bootstrapped config objects.
-    """
-
-    # Build context with a qc mapping.
-    context = make_pipeline_context(
-        tmp_path=tmp_path,
-        config=ConfigWithQC(
-            qc={
-                "mode": "filter",
-                "threshold_strategy": "fixed",
-                "mad": {"enabled": False},
-            }
-        ),
-    )
-
-    # Resolve the config.
-    observed = resolve_qc_config(context=context)
-
-    # Confirm the mapping was validated.
-    assert isinstance(observed, QCConfig)
-    assert observed.mode == "filter"
-    assert observed.threshold_strategy == "fixed"
-
-
-def test_resolve_qc_config_accepts_mapping_with_qc_key(tmp_path: Path) -> None:
-    """
-    Verify config resolution accepts dictionary config['qc'] payloads.
-
-    This is useful for CLI/Hydra integration before the full config model includes
-    a first-class QC field.
-    """
-
-    # Build context with a qc dictionary.
-    context = make_pipeline_context(
-        tmp_path=tmp_path,
-        config={
-            "qc": {
-                "mode": "both",
-                "threshold_strategy": "fixed",
-                "mad": {"enabled": False},
-            }
-        },
-    )
-
-    # Resolve the config.
-    observed = resolve_qc_config(context=context)
-
-    # Confirm mapping config was validated.
-    assert observed.mode == "both"
-
-
-def test_resolve_qc_config_rejects_invalid_qc_attribute(tmp_path: Path) -> None:
-    """
-    Verify config resolution rejects unsupported qc attributes.
-
-    Invalid config objects should fail before stage execution.
-    """
-
-    # Build context with an invalid qc attribute.
-    context = make_pipeline_context(tmp_path=tmp_path, config=ConfigWithQC(qc=123))
-
-    # Confirm invalid qc attribute fails clearly.
-    with pytest.raises(QCStageError, match="context.config.qc must be"):
-        resolve_qc_config(context=context)
-
-
-def test_prepare_adata_for_qc_makes_duplicate_names_unique_when_configured() -> None:
-    """
-    Verify duplicate-name preparation repairs names when configured.
-
-    The QC stage should make names unique before metric calculation when the
-    duplicate-name policy says make_unique.
-    """
-
-    # Build an AnnData object with duplicate names.
-    adata = ad.AnnData(
-        X=np.ones((2, 2)),
-        obs=pd.DataFrame(index=["cell", "cell"]),
-        var=pd.DataFrame(index=["gene", "gene"]),
-    )
-
-    # Build config that repairs both axes.
-    config = make_stage_config(
-        duplicate_names={
-            "obs_names": "make_unique",
-            "var_names": "make_unique",
-        }
-    )
-
-    # Prepare AnnData for QC.
-    prepared, notes = prepare_adata_for_qc(adata, config)
-
-    # Confirm a copy was created.
-    assert prepared is not adata
-
-    # Confirm observation names were made unique.
-    assert prepared.obs_names.is_unique
-
-    # Confirm variable names were made unique.
-    assert prepared.var_names.is_unique
-
-    # Confirm preparation notes were emitted.
-    assert notes == [
-        "Made duplicate AnnData.obs_names unique before QC metric calculation.",
-        "Made duplicate AnnData.var_names unique before QC metric calculation.",
-    ]
-
-
-def test_prepare_adata_for_qc_returns_original_when_no_repair_needed() -> None:
-    """
-    Verify AnnData preparation avoids unnecessary copies.
-
-    Copying large single-cell objects unnecessarily would be expensive.
-    """
-
-    # Build a normal AnnData object.
-    adata = make_stage_adata()
-
-    # Prepare AnnData for QC.
-    prepared, notes = prepare_adata_for_qc(adata, make_stage_config())
-
-    # Confirm original object was reused.
-    assert prepared is adata
-
-    # Confirm no preparation notes were emitted.
-    assert notes == []
-
-
-def test_apply_qc_filter_to_adata_filters_cells_and_genes() -> None:
-    """
-    Verify QC filtering applies cell and gene keep masks by position.
-
-    Filtering should retain only rows and columns marked keep=True.
-    """
-
-    # Build AnnData.
-    adata = make_stage_adata()
 
     # Build cell decisions.
     cell_decisions = pd.DataFrame(
         {
-            "keep": [True, False, True, False],
-            "fail_any_qc": [False, True, False, True],
-            "failed_rules": ["", "rule", "", "rule"],
+            "keep": [True, False, True],
+            "fail_any_qc": [False, True, False],
+            "failed_rules": ["", "fixed_min_genes_per_cell", ""],
+            "fixed_min_genes_per_cell": [False, True, False],
         },
-        index=adata.obs_names,
+        index=["cell_1", "cell_2", "cell_3"],
     )
 
     # Build gene decisions.
     gene_decisions = pd.DataFrame(
         {
-            "keep": [False, True, True],
-            "fail_any_qc": [True, False, False],
-            "failed_rules": ["rule", "", ""],
+            "keep": [True, True, False, False],
+            "fail_any_qc": [False, False, True, True],
+            "failed_rules": ["", "", "fixed_min_cells_per_gene", "fixed_min_cells_per_gene"],
+            "fixed_min_cells_per_gene": [False, False, True, True],
         },
-        index=adata.var_names,
+        index=["MT-ND1", "ACTB", "RPS3", "MALAT1"],
     )
 
-    # Build decision result.
-    decision_result = QCDecisionResult(
+    # Return the structured decision result.
+    return QCDecisionResult(
         cell_decisions=cell_decisions,
         gene_decisions=gene_decisions,
-        summary={},
+        summary={
+            "n_cells": 3,
+            "n_cells_kept": 2,
+            "n_cells_failed": 1,
+            "n_genes": 4,
+            "n_genes_kept": 2,
+            "n_genes_failed": 2,
+        },
+        warnings=[],
     )
 
-    # Apply filtering.
-    filtered = apply_qc_filter_to_adata(
-        adata=adata,
-        decision_result=decision_result,
-        config=make_stage_config(mode="filter"),
+
+def test_qc_stage_has_stable_name_and_default_output_subdir() -> None:
+    """
+    Verify QCStage exposes a stable stage name and output subdirectory.
+
+    The pipeline stage contract uses the stage name in plans and provenance.
+    """
+
+    # Build the stage.
+    stage = QCStage()
+
+    # Confirm the stable stage name.
+    assert stage.name == "qc"
+
+    # Confirm the default output subdirectory.
+    assert stage.output_subdir == "qc"
+
+
+def test_resolve_qc_config_prefers_explicit_override(tmp_path: Path) -> None:
+    """
+    Verify explicit QCStage config overrides context configuration.
+
+    Stage-level overrides are useful in direct tests and programmatic runs.
+    """
+
+    # Build a context with default config.
+    context = make_context(tmp_path)
+
+    # Build a disabled override.
+    override = QCConfig(enabled=False)
+
+    # Resolve the QC config.
+    resolved = resolve_qc_config(context, override=override)
+
+    # Confirm the explicit override was used.
+    assert resolved is override
+
+
+def test_resolve_qc_config_accepts_context_qc_config(tmp_path: Path) -> None:
+    """
+    Verify context.config can be a QCConfig directly.
+
+    This keeps direct module testing simple without requiring top-level config.
+    """
+
+    # Build a QC config.
+    qc_config = make_stage_qc_config()
+
+    # Build a context whose config is already QCConfig.
+    context = make_context(tmp_path, config=qc_config)
+
+    # Resolve the QC config.
+    resolved = resolve_qc_config(context)
+
+    # Confirm the context QCConfig was used.
+    assert resolved is qc_config
+
+
+def test_resolve_qc_config_accepts_mapping_qc_field(tmp_path: Path) -> None:
+    """
+    Verify context.config['qc'] can be resolved into QCConfig.
+
+    Dictionary-like contexts are useful for lightweight adapters.
+    """
+
+    # Build a context with dictionary-style QC config.
+    context = make_context(
+        tmp_path,
+        config={
+            "qc": {
+                "enabled": False,
+                "mode": "report_only",
+            }
+        },
     )
 
-    # Confirm filtered shape.
-    assert filtered.shape == (2, 2)
+    # Resolve the QC config.
+    resolved = resolve_qc_config(context)
 
-    # Confirm retained cells.
+    # Confirm mapping config was validated.
+    assert isinstance(resolved, QCConfig)
+    assert resolved.enabled is False
+
+
+def test_resolve_qc_config_accepts_object_qc_field(tmp_path: Path) -> None:
+    """
+    Verify context.config.qc can be resolved into QCConfig.
+
+    This supports future top-level configs once QC is embedded directly.
+    """
+
+    # Build a context with object-style QC config.
+    context = make_context(
+        tmp_path,
+        config=SimpleNamespace(
+            qc={"mode": "filter", "threshold_strategy": "fixed", "mad": {"enabled": False}}
+        ),
+    )
+
+    # Resolve the QC config.
+    resolved = resolve_qc_config(context)
+
+    # Confirm object config was validated.
+    assert isinstance(resolved, QCConfig)
+    assert resolved.mode == "filter"
+
+
+def test_coerce_qc_config_rejects_invalid_value() -> None:
+    """
+    Verify QC config coercion rejects unsupported values.
+
+    Unsupported config values should fail before stage execution begins.
+    """
+
+    # Confirm invalid config values fail clearly.
+    with pytest.raises(QCStageError, match="QC configuration must be"):
+        coerce_qc_config(["not", "config"])
+
+
+def test_is_qc_stage_enabled_respects_qc_config_flag(tmp_path: Path) -> None:
+    """
+    Verify QCConfig.enabled disables the stage.
+
+    Module-level disabled flags should prevent execution even when top-level
+    stages allow QC.
+    """
+
+    # Build a context.
+    context = make_context(tmp_path)
+
+    # Confirm disabled QC config disables the stage.
+    assert is_qc_stage_enabled(context, QCConfig(enabled=False)) is False
+
+
+def test_is_qc_stage_enabled_respects_top_level_stage_selection(tmp_path: Path) -> None:
+    """
+    Verify top-level stages.qc=false disables the stage.
+
+    The planner should usually avoid running disabled stages, but the stage also
+    defends against direct execution.
+    """
+
+    # Build top-level config with QC disabled.
+    config = CellQuorumConfig(stages={"qc": False})
+
+    # Build a context.
+    context = make_context(tmp_path, config=config)
+
+    # Confirm top-level stage selection disables the stage.
+    assert is_qc_stage_enabled(context, QCConfig(enabled=True)) is False
+
+
+def test_get_context_adata_returns_active_anndata(tmp_path: Path) -> None:
+    """
+    Verify AnnData retrieval works through PipelineContext.require_adata.
+
+    QCStage should use the formal context helper when available.
+    """
+
+    # Build a context.
+    context = make_context(tmp_path)
+
+    # Retrieve AnnData.
+    adata = get_context_adata(context)
+
+    # Confirm the active AnnData object was returned.
+    assert adata is context.adata
+
+
+def test_get_context_adata_rejects_missing_anndata(tmp_path: Path) -> None:
+    """
+    Verify AnnData retrieval fails clearly when context lacks AnnData.
+
+    QC cannot run before ingestion/loading has produced an AnnData object.
+    """
+
+    # Build a context with missing AnnData.
+    context = make_context(tmp_path, adata=None)
+    context.adata = None
+
+    # Confirm missing AnnData fails clearly.
+    with pytest.raises(QCStageError, match="requires an AnnData object"):
+        get_context_adata(context)
+
+
+def test_get_context_adata_rejects_invalid_direct_adata() -> None:
+    """
+    Verify direct context.adata fallback validates AnnData type.
+
+    Lightweight context objects should still be type checked.
+    """
+
+    # Build a direct context with invalid adata.
+    context = SimpleNamespace(adata={"not": "anndata"})
+
+    # Confirm invalid AnnData fails clearly.
+    with pytest.raises(QCStageError, match="context.adata"):
+        get_context_adata(context)
+
+
+def test_get_qc_output_dir_resolves_under_results(tmp_path: Path) -> None:
+    """
+    Verify QC output directory resolves under context.paths.results.
+
+    QC artifacts should live in the standardized results namespace.
+    """
+
+    # Build a context.
+    context = make_context(tmp_path)
+
+    # Resolve the QC output directory.
+    output_dir = get_qc_output_dir(context, "qc")
+
+    # Confirm the path is under results.
+    assert output_dir == context.paths.results / "qc"
+
+
+def test_get_qc_output_dir_rejects_missing_paths() -> None:
+    """
+    Verify QC output resolution requires context paths.
+
+    Stages should not invent output locations without PipelinePaths.
+    """
+
+    # Build a context without paths.
+    context = SimpleNamespace(config=QCConfig(), adata=make_stage_test_adata())
+
+    # Confirm missing paths fail clearly.
+    with pytest.raises(QCStageError, match="context.paths"):
+        get_qc_output_dir(context, "qc")
+
+
+def test_validate_decision_index_alignment_accepts_exact_match() -> None:
+    """
+    Verify decision index alignment accepts exact ordered matches.
+
+    Annotation and filtering rely on positionally aligned decision tables.
+    """
+
+    # Confirm exact matching indices do not raise.
+    validate_decision_index_alignment(
+        expected=["a", "b"],
+        observed=["a", "b"],
+        label="cell_decisions",
+    )
+
+
+def test_validate_decision_index_alignment_rejects_mismatch() -> None:
+    """
+    Verify decision index alignment rejects mismatched names.
+
+    Mismatched decisions could filter the wrong cells or genes.
+    """
+
+    # Confirm mismatched indices fail clearly.
+    with pytest.raises(QCStageError, match="index does not match"):
+        validate_decision_index_alignment(
+            expected=["a", "b"],
+            observed=["b", "a"],
+            label="cell_decisions",
+        )
+
+
+def test_annotate_adata_with_qc_decisions_adds_obs_and_var_columns() -> None:
+    """
+    Verify QC decisions are added to AnnData.obs and AnnData.var.
+
+    The stage should retain audit columns even in report-only mode.
+    """
+
+    # Build AnnData and decisions.
+    adata = make_stage_test_adata()
+    decisions = make_decision_result()
+
+    # Annotate AnnData.
+    annotated = annotate_adata_with_qc_decisions(adata, decisions)
+
+    # Confirm input AnnData was not mutated.
+    assert "cellquorum_qc_keep" not in adata.obs.columns
+
+    # Confirm cell-level QC annotations were added.
+    assert annotated.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
+    assert annotated.obs["cellquorum_qc_fail_any_qc"].tolist() == [False, True, False]
+
+    # Confirm gene-level QC annotations were added.
+    assert annotated.var["cellquorum_qc_keep"].tolist() == [True, True, False, False]
+    assert annotated.var["cellquorum_qc_fail_any_qc"].tolist() == [False, False, True, True]
+
+
+def test_filter_adata_by_qc_decisions_subsets_cells_and_genes() -> None:
+    """
+    Verify QC filtering subsets AnnData by decision keep masks.
+
+    The filter step should remove failed cells and failed genes together.
+    """
+
+    # Build AnnData and decisions.
+    adata = make_stage_test_adata()
+    decisions = make_decision_result()
+
+    # Filter AnnData.
+    filtered = filter_adata_by_qc_decisions(adata, decisions)
+
+    # Confirm the expected cells were kept.
     assert list(filtered.obs_names) == ["cell_1", "cell_3"]
 
-    # Confirm retained genes.
-    assert list(filtered.var_names) == ["ACTB", "MALAT1"]
+    # Confirm the expected genes were kept.
+    assert list(filtered.var_names) == ["MT-ND1", "ACTB"]
+
+    # Confirm the filtered shape.
+    assert filtered.shape == (2, 2)
 
 
-def test_apply_qc_filter_to_adata_returns_original_when_not_filtering() -> None:
+def test_build_qc_output_adata_report_only_preserves_shape() -> None:
     """
-    Verify report-only mode does not filter AnnData.
+    Verify report-only QC annotates but does not filter AnnData.
 
-    QC report mode should calculate decisions without mutating the data object.
+    Report-only mode should be non-mutating with respect to the data matrix.
+    """
+
+    # Build AnnData and decisions.
+    adata = make_stage_test_adata()
+    decisions = make_decision_result()
+
+    # Build report-only output AnnData.
+    output = build_qc_output_adata(
+        adata=adata,
+        decision_result=decisions,
+        config=make_stage_qc_config(mode="report_only"),
+    )
+
+    # Confirm shape was preserved.
+    assert output.shape == adata.shape
+
+    # Confirm annotations were added.
+    assert "cellquorum_qc_keep" in output.obs.columns
+    assert "cellquorum_qc_keep" in output.var.columns
+
+
+def test_build_qc_output_adata_filter_mode_filters_shape() -> None:
+    """
+    Verify filter-mode QC annotates and filters AnnData.
+
+    Filter mode should return only cells and genes marked keep=True.
+    """
+
+    # Build AnnData and decisions.
+    adata = make_stage_test_adata()
+    decisions = make_decision_result()
+
+    # Build filtered output AnnData.
+    output = build_qc_output_adata(
+        adata=adata,
+        decision_result=decisions,
+        config=make_stage_qc_config(mode="filter"),
+    )
+
+    # Confirm cells and genes were filtered.
+    assert output.shape == (2, 2)
+
+    # Confirm annotations remain after filtering.
+    assert output.obs["cellquorum_qc_keep"].tolist() == [True, True]
+    assert output.var["cellquorum_qc_keep"].tolist() == [True, True]
+
+
+def test_build_disabled_qc_stage_result_returns_noop_result() -> None:
+    """
+    Verify disabled QC produces an explicit no-op StageResult.
+
+    Disabled stages should be visible in result metrics and notes.
     """
 
     # Build AnnData.
-    adata = make_stage_adata()
+    adata = make_stage_test_adata()
 
-    # Build empty-ish decision result.
-    decision_result = QCDecisionResult(
-        cell_decisions=pd.DataFrame(index=adata.obs_names),
-        gene_decisions=pd.DataFrame(index=adata.var_names),
-        summary={},
-    )
-
-    # Apply report-only behavior.
-    observed = apply_qc_filter_to_adata(
+    # Build disabled result.
+    result = build_disabled_qc_stage_result(
         adata=adata,
-        decision_result=decision_result,
-        config=make_stage_config(mode="report_only"),
+        stage_name="qc",
+        qc_config=QCConfig(enabled=False),
     )
 
-    # Confirm original object was returned.
-    assert observed is adata
-
-
-def test_validate_decision_index_alignment_accepts_matching_index() -> None:
-    """
-    Verify decision alignment accepts matching indexes.
-
-    Filtering uses positional masks, so the names and lengths must match exactly.
-    """
-
-    # Build expected index.
-    expected = pd.Index(["a", "b"])
-
-    # Confirm matching index passes.
-    validate_decision_index_alignment(
-        expected_index=expected,
-        observed_index=pd.Index(["a", "b"]),
-        axis_name="obs",
-    )
-
-
-def test_validate_decision_index_alignment_rejects_length_mismatch() -> None:
-    """
-    Verify decision alignment rejects length mismatches.
-
-    A length mismatch would filter the wrong rows or columns.
-    """
-
-    # Confirm length mismatch fails clearly.
-    with pytest.raises(QCStageError, match="has length"):
-        validate_decision_index_alignment(
-            expected_index=pd.Index(["a", "b"]),
-            observed_index=pd.Index(["a"]),
-            axis_name="obs",
-        )
-
-
-def test_validate_decision_index_alignment_rejects_value_mismatch() -> None:
-    """
-    Verify decision alignment rejects name mismatches.
-
-    A name mismatch means the decision table is stale or from a different object.
-    """
-
-    # Confirm value mismatch fails clearly.
-    with pytest.raises(QCStageError, match="does not match"):
-        validate_decision_index_alignment(
-            expected_index=pd.Index(["a", "b"]),
-            observed_index=pd.Index(["a", "c"]),
-            axis_name="var",
-        )
-
-
-def test_run_qc_workflow_report_only_writes_artifacts_without_filtering(tmp_path: Path) -> None:
-    """
-    Verify the standalone QC workflow runs in report-only mode.
-
-    Report-only mode should write artifacts and return the unfiltered AnnData
-    object while still producing decisions.
-    """
-
-    # Build input AnnData.
-    adata = make_stage_adata()
-
-    # Run the workflow.
-    result = run_qc_workflow(
-        adata=adata,
-        config=make_stage_config(mode="report_only"),
-        output_dir=tmp_path / "qc",
-        write_artifacts=True,
-        summary_extra={"run_id": "test"},
-    )
-
-    # Confirm structured workflow result.
-    assert isinstance(result, QCWorkflowResult)
-
-    # Confirm report-only mode did not filter.
+    # Confirm AnnData was returned unchanged.
     assert result.adata is adata
-    assert result.adata.shape == (4, 3)
 
-    # Confirm artifacts were written.
-    assert result.artifact_manifest is not None
-    assert result.artifact_manifest.get_path("summary").exists()
-    assert result.artifact_manifest.get_path("cell_metrics").exists()
-
-    # Confirm decisions exist.
-    assert result.decision_result.summary["n_cells"] == 4
-    assert result.decision_result.summary["n_genes"] == 3
-
-    # Confirm stage metrics include shapes.
-    assert result.metrics["input_shape"] == {"n_obs": 4, "n_vars": 3}
-    assert result.metrics["output_shape"] == {"n_obs": 4, "n_vars": 3}
-
-
-def test_run_qc_workflow_filter_mode_filters_cells_and_genes(tmp_path: Path) -> None:
-    """
-    Verify the standalone QC workflow filters AnnData in filter mode.
-
-    The test config should remove the low-count cell and the gene detected in
-    only that failed cell.
-    """
-
-    # Build input AnnData.
-    adata = make_stage_adata()
-
-    # Run the workflow in filter mode.
-    result = run_qc_workflow(
-        adata=adata,
-        config=make_stage_config(mode="filter"),
-        output_dir=tmp_path / "qc",
-        write_artifacts=True,
-    )
-
-    # Confirm a filtered copy was returned.
-    assert result.adata is not adata
-
-    # Confirm filtered shape.
-    assert result.adata.shape == (3, 2)
-
-    # Confirm low-count cell was removed.
-    assert list(result.adata.obs_names) == ["cell_1", "cell_2", "cell_3"]
-
-    # Confirm gene detected only in the failed low-count cell was removed.
-    assert list(result.adata.var_names) == ["ACTB", "MALAT1"]
-
-    # Confirm filtering note was emitted.
-    assert "QC filtering retained 3/4 cells and 2/3 genes." in result.notes
-
-
-def test_run_qc_workflow_without_artifacts_allows_missing_output_dir() -> None:
-    """
-    Verify standalone workflow can run without artifact writing.
-
-    This makes unit tests and notebook experiments faster.
-    """
-
-    # Run the workflow without artifacts.
-    result = run_qc_workflow(
-        adata=make_stage_adata(),
-        config=make_stage_config(),
-        output_dir=None,
-        write_artifacts=False,
-    )
-
-    # Confirm no artifact manifest was produced.
-    assert result.artifact_manifest is None
-
-    # Confirm metrics were still produced.
-    assert result.metrics["enabled"] is True
-
-
-def test_run_qc_workflow_requires_output_dir_when_writing_artifacts() -> None:
-    """
-    Verify artifact writing requires an explicit output directory.
-
-    This prevents artifacts from being silently written to the process working
-    directory.
-    """
-
-    # Confirm missing output_dir fails clearly when writing artifacts.
-    with pytest.raises(QCStageError, match="requires an output_dir"):
-        run_qc_workflow(
-            adata=make_stage_adata(),
-            config=make_stage_config(),
-            output_dir=None,
-            write_artifacts=True,
-        )
-
-
-def test_run_qc_workflow_rejects_invalid_config() -> None:
-    """
-    Verify standalone workflow rejects invalid config objects.
-
-    Invalid config types should fail before any QC work begins.
-    """
-
-    # Confirm invalid config fails clearly.
-    with pytest.raises(QCStageError, match="QCConfig object"):
-        run_qc_workflow(
-            adata=make_stage_adata(),
-            config={"bad": "config"},  # type: ignore[arg-type]
-            write_artifacts=False,
-        )
-
-
-def test_run_qc_workflow_rejects_invalid_anndata() -> None:
-    """
-    Verify standalone workflow rejects invalid AnnData objects.
-
-    The stage wrapper should provide a clear error before metric calculation.
-    """
-
-    # Confirm invalid AnnData input fails clearly.
-    with pytest.raises(QCStageError, match="AnnData object"):
-        run_qc_workflow(
-            adata={"bad": "adata"},  # type: ignore[arg-type]
-            config=make_stage_config(),
-            write_artifacts=False,
-        )
-
-
-def test_qc_stage_run_returns_stage_result_and_artifacts(tmp_path: Path) -> None:
-    """
-    Verify QCStage.run returns a generic StageResult.
-
-    This is the main test that the QC module satisfies the pipeline stage
-    contract.
-    """
-
-    # Build pipeline context.
-    context = make_pipeline_context(tmp_path=tmp_path)
-
-    # Build the QC stage.
-    stage = QCStage()
-
-    # Run the stage.
-    result = stage.run(context)
-
-    # Confirm a generic StageResult was returned.
-    assert isinstance(result, StageResult)
-
-    # Confirm report-only mode did not filter.
-    assert result.adata.shape == (4, 3)
-
-    # Confirm artifacts were converted to StageArtifact records.
-    assert result.artifacts
-    assert all(isinstance(artifact, StageArtifact) for artifact in result.artifacts)
-
-    # Confirm expected artifact names are present.
-    assert {artifact.name for artifact in result.artifacts} == {
-        "cell_metrics",
-        "gene_metrics",
-        "feature_masks",
-        "thresholds",
-        "cell_decisions",
-        "gene_decisions",
-        "qc_h5ad",
-        "summary",
-    }
-
-    # Confirm artifacts were written under results/qc.
-    assert all(
-        context.paths.results / "qc" in artifact.path.parents for artifact in result.artifacts
-    )
-
-    # Confirm stage metrics are populated.
-    assert result.metrics["enabled"] is True
-    assert result.metrics["mode"] == "report_only"
-
-
-def test_qc_stage_run_filters_when_configured(tmp_path: Path) -> None:
-    """
-    Verify QCStage.run returns filtered AnnData in filter mode.
-
-    The QC stage should use the same filtering behavior as run_qc_workflow.
-    """
-
-    # Build filter-mode context.
-    context = make_pipeline_context(
-        tmp_path=tmp_path,
-        config=make_stage_config(mode="filter"),
-    )
-
-    # Run the stage.
-    result = QCStage().run(context)
-
-    # Confirm filtered shape.
-    assert result.adata.shape == (3, 2)
-
-    # Confirm output-shape metrics.
-    assert result.metrics["output_shape"] == {"n_obs": 3, "n_vars": 2}
-
-
-def test_qc_stage_run_returns_noop_when_disabled(tmp_path: Path) -> None:
-    """
-    Verify disabled QC returns a no-op StageResult.
-
-    Disabled stages should be explicit and auditable without touching artifacts.
-    """
-
-    # Build disabled config.
-    config = make_stage_config(enabled=False)
-
-    # Build pipeline context.
-    context = make_pipeline_context(tmp_path=tmp_path, config=config)
-
-    # Run the stage.
-    result = QCStage().run(context)
-
-    # Confirm original AnnData was returned.
-    assert result.adata is context.adata
-
-    # Confirm no artifacts were written.
+    # Confirm no artifacts were emitted.
     assert result.artifacts == []
 
-    # Confirm skip note was emitted.
-    assert result.notes == ["QC stage was skipped because qc.enabled is false."]
+    # Confirm a note explains the no-op.
+    assert result.notes == ["QC stage skipped because QC is disabled."]
 
-    # Confirm disabled metrics were emitted.
+    # Confirm metrics describe the disabled state.
     assert result.metrics["enabled"] is False
+    assert result.metrics["reason"] == "qc_disabled"
 
 
-def test_qc_stage_run_rejects_invalid_context() -> None:
+def test_build_stage_artifacts_from_manifest_converts_written_artifacts(tmp_path: Path) -> None:
     """
-    Verify QCStage.run rejects non-PipelineContext objects.
+    Verify QC artifact manifest conversion produces StageArtifact records.
 
-    Pipeline stages should fail clearly when called with the wrong object.
-    """
-
-    # Confirm invalid context fails clearly.
-    with pytest.raises(QCStageError, match="PipelineContext"):
-        QCStage().run({"not": "context"})
-
-
-def test_qc_stage_run_requires_anndata(tmp_path: Path) -> None:
-    """
-    Verify QCStage.run requires AnnData in the context.
-
-    Context.require_adata should produce the missing-input error.
+    StageResult artifacts should use stage-prefixed names and inferred file
+    kinds.
     """
 
-    # Build context without AnnData.
-    context = make_pipeline_context(tmp_path=tmp_path, adata=None)
-
-    # Explicitly remove AnnData from the context.
-    context.adata = None
-
-    # Confirm missing AnnData fails.
-    with pytest.raises(RuntimeError, match="does not contain an AnnData object"):
-        QCStage().run(context)
-
-
-def test_stage_artifacts_from_qc_manifest_converts_written_artifacts(tmp_path: Path) -> None:
-    """
-    Verify QC artifact manifests convert into StageArtifact records.
-
-    Generic pipeline reports should not need to know about QCArtifactManifest.
-    """
-
-    # Run a workflow to create a real manifest.
-    workflow = run_qc_workflow(
-        adata=make_stage_adata(),
-        config=make_stage_config(),
-        output_dir=tmp_path / "qc",
-        write_artifacts=True,
+    # Build a manifest with representative artifacts.
+    manifest = QCArtifactManifest(
+        output_dir=tmp_path,
+        artifacts={
+            "cell_metrics": tmp_path / "cell_metrics.csv",
+            "summary": tmp_path / "qc_summary.json",
+            "qc_h5ad": tmp_path / "qc.h5ad",
+        },
     )
 
-    # Convert manifest to stage artifacts.
-    artifacts = stage_artifacts_from_qc_manifest(workflow.artifact_manifest)  # type: ignore[arg-type]
+    # Convert to stage artifacts.
+    artifacts = build_stage_artifacts_from_manifest(manifest)
 
-    # Confirm artifacts were converted.
-    assert artifacts
+    # Confirm stage-prefixed names.
+    assert [artifact.name for artifact in artifacts] == [
+        "qc_cell_metrics",
+        "qc_summary",
+        "qc_qc_h5ad",
+    ]
 
-    # Confirm artifact kinds were inferred.
-    assert {artifact.kind for artifact in artifacts} == {"csv", "json", "h5ad"}
-
-    # Confirm descriptions are populated.
-    assert all(artifact.description for artifact in artifacts)
+    # Confirm artifact kinds.
+    assert [artifact.kind for artifact in artifacts] == ["csv", "json", "h5ad"]
 
 
-def test_infer_artifact_kind_maps_known_suffixes() -> None:
+def test_infer_artifact_kind_maps_known_suffixes(tmp_path: Path) -> None:
     """
-    Verify artifact kind inference maps known file suffixes.
+    Verify artifact kind inference maps known QC file suffixes.
 
-    This keeps StageArtifact metadata concise and consistent.
+    StageArtifact.kind should be compact and predictable.
     """
 
-    # Confirm CSV kind.
-    assert infer_artifact_kind(Path("x.csv")) == "csv"
+    # Confirm known suffix mappings.
+    assert infer_artifact_kind(tmp_path / "table.csv") == "csv"
+    assert infer_artifact_kind(tmp_path / "summary.json") == "json"
+    assert infer_artifact_kind(tmp_path / "object.h5ad") == "h5ad"
 
-    # Confirm JSON kind.
-    assert infer_artifact_kind(Path("x.json")) == "json"
-
-    # Confirm h5ad kind.
-    assert infer_artifact_kind(Path("x.h5ad")) == "h5ad"
-
-    # Confirm fallback kind.
-    assert infer_artifact_kind(Path("x.txt")) == "file"
+    # Confirm unknown suffix fallback.
+    assert infer_artifact_kind(tmp_path / "artifact.txt") == "file"
 
 
 def test_describe_qc_artifact_returns_known_and_fallback_descriptions() -> None:
     """
-    Verify artifact descriptions are stable for known artifact names.
+    Verify QC artifact descriptions are human-readable.
 
-    Descriptions appear in stage summaries and reports.
+    Descriptions appear in StageResult summaries and provenance.
     """
 
-    # Confirm known description.
+    # Confirm known artifact description.
     assert describe_qc_artifact("cell_metrics") == "Cell-level QC metric table."
 
-    # Confirm fallback description.
-    assert describe_qc_artifact("custom") == "QC artifact: custom."
+    # Confirm fallback artifact description.
+    assert describe_qc_artifact("unknown") == "QC artifact: unknown."
 
 
-def test_summarize_adata_shape_for_stage_returns_counts() -> None:
+def test_build_qc_stage_summary_extra_uses_context_metadata(tmp_path: Path) -> None:
     """
-    Verify AnnData shape summaries are JSON-friendly.
+    Verify stage summary extras include run metadata and QC mode.
 
-    Stage metrics should contain simple integer counts.
-    """
-
-    # Build AnnData.
-    adata = make_stage_adata()
-
-    # Confirm shape summary.
-    assert summarize_adata_shape_for_stage(adata) == {"n_obs": 4, "n_vars": 3}
-
-
-def test_build_qc_stage_notes_reports_filtering_and_report_only() -> None:
-    """
-    Verify stage notes explain whether filtering happened.
-
-    Notes should be human-readable enough for reports.
+    These values are written into qc_summary.json through the artifact writer.
     """
 
-    # Build input and output AnnData.
-    input_adata = make_stage_adata()
-    output_adata = input_adata[:3, :2].copy()
+    # Build a context.
+    context = make_context(tmp_path)
 
-    # Build filter-mode notes.
-    filter_notes = build_qc_stage_notes(
-        config=make_stage_config(mode="filter"),
-        input_adata=input_adata,
-        output_adata=output_adata,
-        preparation_notes=["prepared"],
+    # Build QC config.
+    config = make_stage_qc_config(mode="both")
+
+    # Build summary extra payload.
+    payload = build_qc_stage_summary_extra(
+        context=context,
+        qc_config=config,
+        stage_name="qc",
     )
 
-    # Confirm filter notes include retention.
-    assert filter_notes == [
-        "prepared",
-        "QC completed in filter mode.",
-        "QC filtering retained 3/4 cells and 2/3 genes.",
-    ]
-
-    # Build report-only notes.
-    report_notes = build_qc_stage_notes(
-        config=make_stage_config(mode="report_only"),
-        input_adata=input_adata,
-        output_adata=input_adata,
-        preparation_notes=[],
-    )
-
-    # Confirm report-only notes mention no filtering.
-    assert report_notes == [
-        "QC completed in report_only mode.",
-        "QC decisions were reported but AnnData was not filtered.",
-    ]
+    # Confirm context metadata is present.
+    assert payload["stage_name"] == "qc"
+    assert payload["run_id"] == "stage-test-run"
+    assert payload["random_seed"] == 123
+    assert payload["mode"] == "both"
+    assert payload["threshold_strategy"] == "fixed"
+    assert payload["enabled_metric_families"] == ["basic", "doublets", "ambient_rna"]
 
 
-def test_collect_qc_stage_warnings_deduplicates_sources(tmp_path: Path) -> None:
+def test_qc_stage_run_report_only_writes_artifacts_and_preserves_shape(tmp_path: Path) -> None:
     """
-    Verify warning collection combines and de-duplicates all QC warning sources.
+    Verify the full QC stage runs in report-only mode.
 
-    Warnings can originate from validation, metrics, thresholds, decisions, and
-    artifacts.
+    Report-only mode should write QC artifacts, annotate AnnData, preserve the
+    input shape, and return structured stage metrics.
     """
 
-    # Run a workflow to get realistic result objects.
-    workflow = run_qc_workflow(
-        adata=make_stage_adata(),
-        config=make_stage_config(outputs={"write_figures": True, "write_h5ad": False}),
-        output_dir=tmp_path / "qc",
-        write_artifacts=True,
-    )
+    # Build context and stage.
+    context = make_context(tmp_path)
+    stage = QCStage(config=make_stage_qc_config(mode="report_only"))
 
-    # Collect warnings again from workflow pieces.
-    warnings = collect_qc_stage_warnings(
-        validation_summary=workflow.validation_summary,
-        metrics_result=workflow.metrics_result,
-        threshold_result=workflow.threshold_result,
-        decision_result=workflow.decision_result,
-        artifact_manifest=workflow.artifact_manifest,
-    )
+    # Run the QC stage.
+    result = stage.run(context)
 
-    # Confirm artifact warning is present only once.
-    assert (
-        warnings.count(
-            "QCOutputConfig.write_figures is true, but QC figure generation is not "
-            "implemented in artifacts.py yet."
-        )
-        == 1
-    )
+    # Confirm report-only mode preserved shape.
+    assert result.adata.shape == (3, 4)
 
+    # Confirm QC annotations exist.
+    assert "cellquorum_qc_keep" in result.adata.obs.columns
+    assert "cellquorum_qc_keep" in result.adata.var.columns
 
-def test_deduplicate_strings_preserves_first_seen_order() -> None:
-    """
-    Verify string de-duplication preserves first-seen order.
+    # Confirm expected cells and genes were marked keep/fail.
+    assert result.adata.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
+    assert result.adata.var["cellquorum_qc_keep"].tolist() == [True, True, False, False]
 
-    Warning order should remain deterministic.
-    """
+    # Confirm no warnings were emitted with the deterministic test config.
+    assert result.warnings == []
 
-    # Confirm duplicates are removed in first-seen order.
-    assert deduplicate_strings(["b", "a", "b", "c", "a"]) == ["b", "a", "c"]
+    # Confirm stage notes summarize QC.
+    assert result.notes[0] == "QC completed in report_only mode."
 
+    # Confirm stage metrics include input and output shapes.
+    assert result.metrics["input_shape"] == {"n_obs": 3, "n_vars": 4}
+    assert result.metrics["output_shape"] == {"n_obs": 3, "n_vars": 4}
 
-def test_apply_qc_filter_to_adata_rejects_misaligned_gene_decisions() -> None:
-    """
-    Verify filtering rejects gene decision indexes from a different object.
-
-    This protects raw.X or stale decision-table mismatches from silently removing
-    the wrong genes.
-    """
-
-    # Build AnnData.
-    adata = make_stage_adata()
-
-    # Build aligned cell decisions.
-    cell_decisions = pd.DataFrame(
-        {
-            "keep": [True, True, True, True],
-            "fail_any_qc": [False, False, False, False],
-            "failed_rules": ["", "", "", ""],
-        },
-        index=adata.obs_names,
-    )
-
-    # Build misaligned gene decisions.
-    gene_decisions = pd.DataFrame(
-        {
-            "keep": [True, True, True],
-            "fail_any_qc": [False, False, False],
-            "failed_rules": ["", "", ""],
-        },
-        index=["wrong_1", "wrong_2", "wrong_3"],
-    )
-
-    # Build decision result.
-    decision_result = QCDecisionResult(
-        cell_decisions=cell_decisions,
-        gene_decisions=gene_decisions,
-        summary={},
-    )
-
-    # Confirm filtering fails clearly.
-    with pytest.raises(QCStageError, match="does not match"):
-        apply_qc_filter_to_adata(
-            adata=adata,
-            decision_result=decision_result,
-            config=make_stage_config(mode="filter"),
-        )
-
-
-def test_run_qc_workflow_propagates_empty_filter_error() -> None:
-    """
-    Verify workflow propagates decision-layer empty filter errors.
-
-    This confirms the stage does not hide unsafe all-cell/all-gene filtering.
-    """
-
-    # Build config that filters every cell.
-    config = make_stage_config(
-        mode="filter",
-        basic={
-            "min_genes_per_cell": 999,
-            "max_genes_per_cell": None,
-            "min_counts_per_cell": None,
-            "max_counts_per_cell": None,
-            "min_cells_per_gene": None,
-            "max_mito_percent": None,
-            "max_ribo_percent": None,
-            "max_hemoglobin_percent": None,
-        },
-        fail_on_empty_result=True,
-    )
-
-    # Confirm all-cell filtering fails.
-    with pytest.raises(Exception, match="remove all cells"):
-        run_qc_workflow(
-            adata=make_stage_adata(),
-            config=config,
-            write_artifacts=False,
-        )
-
-
-def test_run_qc_workflow_contains_expected_threshold_rule() -> None:
-    """
-    Verify workflow threshold and decision outputs include expected rule names.
-
-    This gives a small integration check across metrics, thresholds, and
-    decisions.
-    """
-
-    # Run workflow without artifact writing.
-    result = run_qc_workflow(
-        adata=make_stage_adata(),
-        config=make_stage_config(),
-        write_artifacts=False,
-    )
-
-    # Confirm expected threshold rule exists.
-    assert {threshold.rule_name for threshold in result.threshold_result.thresholds} == {
-        "fixed_min_genes_per_cell",
-        "fixed_min_counts_per_cell",
-        "fixed_max_mito_percent",
-        "fixed_min_cells_per_gene",
+    # Confirm expected artifacts were reported.
+    artifact_names = {artifact.name for artifact in result.artifacts}
+    assert artifact_names == {
+        "qc_cell_metrics",
+        "qc_gene_metrics",
+        "qc_feature_masks",
+        "qc_thresholds",
+        "qc_cell_decisions",
+        "qc_gene_decisions",
+        "qc_summary",
     }
 
-    # Confirm corresponding decision columns exist.
-    assert "fixed_min_counts_per_cell" in result.decision_result.cell_decisions.columns
-    assert "fixed_min_cells_per_gene" in result.decision_result.gene_decisions.columns
+    # Confirm the summary artifact exists and contains stage extra metadata.
+    summary_artifact = next(
+        artifact for artifact in result.artifacts if artifact.name == "qc_summary"
+    )
+    summary = json.loads(summary_artifact.path.read_text(encoding="utf-8"))
+    assert summary["extra"]["stage_name"] == "qc"
+    assert summary["extra"]["run_id"] == "stage-test-run"
+
+
+def test_qc_stage_run_filter_mode_returns_filtered_anndata(tmp_path: Path) -> None:
+    """
+    Verify the full QC stage filters AnnData in filter mode.
+
+    Filter mode should remove failed cells and failed genes according to explicit
+    QC decision tables.
+    """
+
+    # Build context and stage.
+    context = make_context(tmp_path)
+    stage = QCStage(config=make_stage_qc_config(mode="filter"))
+
+    # Run the QC stage.
+    result = stage.run(context)
+
+    # Confirm AnnData was filtered.
+    assert result.adata.shape == (2, 2)
+
+    # Confirm expected cells and genes remain.
+    assert list(result.adata.obs_names) == ["cell_1", "cell_3"]
+    assert list(result.adata.var_names) == ["MT-ND1", "ACTB"]
+
+    # Confirm filtering note was emitted.
+    assert result.notes[-1] == (
+        "QC filtering changed AnnData shape from 3 cells x 4 genes to " "2 cells x 2 genes."
+    )
+
+    # Confirm stage metrics include filtered output shape.
+    assert result.metrics["output_shape"] == {"n_obs": 2, "n_vars": 2}
+
+
+def test_qc_stage_run_disabled_returns_no_artifacts(tmp_path: Path) -> None:
+    """
+    Verify disabled QC stage returns an explicit no-op result.
+
+    No artifacts should be written when QC is disabled.
+    """
+
+    # Build context and disabled stage.
+    context = make_context(tmp_path)
+    stage = QCStage(config=QCConfig(enabled=False))
+
+    # Run the stage.
+    result = stage.run(context)
+
+    # Confirm no artifacts were emitted.
+    assert result.artifacts == []
+
+    # Confirm disabled metrics were returned.
+    assert result.metrics["enabled"] is False
+
+    # Confirm the original shape is preserved.
+    assert result.adata.shape == (3, 4)
+
+
+def test_qc_stage_run_respects_top_level_stage_disabled_flag(tmp_path: Path) -> None:
+    """
+    Verify direct QCStage execution respects top-level stages.qc=false.
+
+    This protects direct execution paths in addition to planner gating.
+    """
+
+    # Build top-level config with QC disabled.
+    config = CellQuorumConfig(stages={"qc": False})
+
+    # Build context and stage.
+    context = make_context(tmp_path, config=config)
+    stage = QCStage(config=make_stage_qc_config())
+
+    # Run the stage.
+    result = stage.run(context)
+
+    # Confirm the stage was skipped as a no-op.
+    assert result.metrics["enabled"] is False
+    assert result.artifacts == []
+
+
+def test_qc_stage_run_rejects_missing_anndata(tmp_path: Path) -> None:
+    """
+    Verify full stage execution rejects missing AnnData.
+
+    QC cannot execute before a loading/ingestion stage has populated context.adata.
+    """
+
+    # Build context with no AnnData.
+    context = make_context(tmp_path)
+    context.adata = None
+
+    # Build stage.
+    stage = QCStage(config=make_stage_qc_config())
+
+    # Confirm stage execution fails clearly.
+    with pytest.raises(QCStageError, match="requires an AnnData object"):
+        stage.run(context)
+
+
+def test_qc_stage_run_rejects_missing_paths() -> None:
+    """
+    Verify full stage execution rejects contexts without paths.
+
+    QC artifact writing requires standardized PipelinePaths.
+    """
+
+    # Build a lightweight context without paths.
+    context = SimpleNamespace(
+        config=QCConfig(),
+        adata=make_stage_test_adata(),
+    )
+
+    # Build stage.
+    stage = QCStage(config=make_stage_qc_config())
+
+    # Confirm missing paths fail clearly.
+    with pytest.raises(QCStageError, match="context.paths"):
+        stage.run(context)
