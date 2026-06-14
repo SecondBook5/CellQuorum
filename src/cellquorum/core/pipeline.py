@@ -14,6 +14,9 @@ from pathlib import Path
 # Import Any for JSON-like runtime metadata typing.
 from typing import Any
 
+# Import AnnData for configured input-loading return typing.
+import anndata as ad
+
 # Import pandas so stage and backend plans can be written as tables.
 import pandas as pd
 
@@ -37,6 +40,9 @@ from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 
 # Import stage lifecycle records.
 from cellquorum.core.stage import StageExecutionRecord
+
+# Import AnnData input loading utility.
+from cellquorum.io import load_adata
 
 
 @dataclass(frozen=True)
@@ -122,18 +128,54 @@ def resolve_output_dir(config: CellQuorumConfig, output_dir: str | Path | None =
     )
 
 
+def load_input_adata_from_config(config: CellQuorumConfig) -> ad.AnnData | None:
+    """
+    Load the configured AnnData input file, if one is configured.
+
+    This helper connects the validated top-level input config to the AnnData I/O
+    layer. It intentionally returns None when no input path is configured so
+    programmatic workflows can still inject AnnData directly into the context.
+
+    Args:
+        config: Validated CellQuorum configuration.
+
+    Returns:
+        Loaded AnnData object, or None when config.input.h5ad is omitted.
+
+    Raises:
+        TypeError: If config is not a CellQuorumConfig.
+        AnnDataLoadError: If the configured h5ad path cannot be loaded.
+    """
+
+    # Validate the config type early so downstream errors are clear.
+    if not isinstance(config, CellQuorumConfig):
+        raise TypeError(
+            "load_input_adata_from_config expected a CellQuorumConfig object. "
+            f"Received: {type(config).__name__}"
+        )
+
+    # Return None when no h5ad file is configured.
+    if config.input.h5ad is None:
+        return None
+
+    # Load and return the configured AnnData object.
+    return load_adata(config.input.h5ad)
+
+
 def build_pipeline_context(
     config: CellQuorumConfig,
     *,
     output_dir: str | Path | None = None,
     backend_registry: BackendRegistry | None = None,
+    load_input: bool = False,
 ) -> PipelineContext:
     """
     Build the runtime context for a CellQuorum run.
 
     The context is the object every stage will receive. It centralizes validated
-    configuration, standardized paths, backend availability, run identity, random
-    seed, and runtime metadata. This keeps future QC, preprocessing, annotation,
+    configuration, standardized paths, optional AnnData input, backend
+    availability, run identity, random seed, and runtime metadata. This keeps
+    future QC, preprocessing, annotation,
     R-backed, GPU-backed, and report-generation stages from each inventing their
     own execution state.
 
@@ -141,6 +183,7 @@ def build_pipeline_context(
         config: Validated CellQuorum configuration.
         output_dir: Optional explicit output directory override.
         backend_registry: Optional backend registry for tests or custom execution.
+        load_input: Whether to load config.input.h5ad into context.adata.
 
     Returns:
         Initialized PipelineContext.
@@ -171,12 +214,18 @@ def build_pipeline_context(
     # Choose the run identifier from config or project name.
     run_id = config.run.run_id or config.project.name
 
+    # Optionally load the configured AnnData input.
+    loaded_adata = load_input_adata_from_config(config) if load_input else None
+
     # Build runtime metadata for provenance and reporting.
     metadata: dict[str, Any] = {
         "project_name": config.project.name,
         "profile": config.run.profile,
         "organism": config.project.organism,
         "species_id": config.project.species_id,
+        "input_h5ad": str(config.input.h5ad) if config.input.h5ad is not None else None,
+        "input_counts_layer": config.input.counts_layer,
+        "input_loaded": loaded_adata is not None,
         "bootstrap_time_utc": datetime.now(UTC).isoformat(),
     }
 
@@ -184,6 +233,7 @@ def build_pipeline_context(
     return PipelineContext(
         config=config,
         paths=paths,
+        adata=loaded_adata,
         backend_registry=resolved_backend_registry,
         run_id=run_id,
         random_seed=config.run.random_seed,
@@ -492,6 +542,7 @@ def bootstrap_pipeline_run(
         config: Validated CellQuorum configuration.
         output_dir: Optional explicit output directory override.
         backend_registry: Optional backend registry for tests or custom execution.
+        load_input: Whether to load config.input.h5ad into context.adata.
 
     Returns:
         PipelineRunResult containing config, plan, context, and provenance artifacts.
@@ -567,6 +618,7 @@ def bootstrap_pipeline_run_from_config_file(
         config_path: Path to a CellQuorum YAML configuration file.
         output_dir: Optional explicit output directory override.
         backend_registry: Optional backend registry for tests or custom execution.
+        load_input: Whether to load config.input.h5ad into context.adata.
 
     Returns:
         PipelineRunResult containing config, plan, context, and provenance artifacts.
