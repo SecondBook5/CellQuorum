@@ -35,6 +35,9 @@ from cellquorum.core.artifacts import ArtifactManager
 # Import pipeline context objects.
 from cellquorum.core.context import PipelineContext, PipelinePaths
 
+# Import the stage executor.
+from cellquorum.core.executor import PipelineExecutionResult, PipelineExecutor
+
 # Import planner utilities.
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 
@@ -62,6 +65,7 @@ class PipelineRunResult:
         plan: Pipeline plan generated from the validated configuration and backend registry.
         context: Pipeline context containing paths, config, backend registry, and metadata.
         artifacts: Artifact manager containing provenance artifacts written during bootstrap.
+        execution_result: Optional stage execution result for executed runs.
     """
 
     # Store the validated runtime configuration.
@@ -73,8 +77,11 @@ class PipelineRunResult:
     # Store the initialized pipeline context.
     context: PipelineContext
 
-    # Store the artifact manager used during bootstrap.
+    # Store the artifact manager used during bootstrap or execution.
     artifacts: ArtifactManager
+
+    # Store stage execution results when stages have been executed.
+    execution_result: PipelineExecutionResult | None = None
 
 
 def resolve_output_dir(config: CellQuorumConfig, output_dir: str | Path | None = None) -> Path:
@@ -601,6 +608,115 @@ def bootstrap_pipeline_run(
     )
 
 
+def execute_pipeline_run(
+    config: CellQuorumConfig,
+    *,
+    output_dir: str | Path | None = None,
+    backend_registry: BackendRegistry | None = None,
+    executor: PipelineExecutor | None = None,
+    load_input: bool = True,
+) -> PipelineRunResult:
+    """
+    Execute registered CellQuorum stages from a validated configuration.
+
+    This is the first true execution entry point. It builds the pipeline context,
+    optionally loads the configured AnnData input, builds the stage plan, executes
+    registered stages through PipelineExecutor, and writes provenance containing
+    both bootstrap and stage execution records.
+
+    Args:
+        config: Validated CellQuorum configuration.
+        output_dir: Optional explicit output directory override.
+        backend_registry: Optional backend registry for tests or custom execution.
+        executor: Optional PipelineExecutor override.
+        load_input: Whether to load config.input.h5ad into context.adata.
+
+    Returns:
+        PipelineRunResult containing config, plan, final context, provenance
+        artifacts, and PipelineExecutionResult.
+
+    Raises:
+        TypeError: If config is not a CellQuorumConfig.
+    """
+
+    # Validate the config type early.
+    if not isinstance(config, CellQuorumConfig):
+        raise TypeError(
+            "execute_pipeline_run expected a CellQuorumConfig object. "
+            f"Received: {type(config).__name__}"
+        )
+
+    # Mark the start of execution-frame setup.
+    bootstrap_started_at = datetime.now(UTC)
+
+    # Build the initialized pipeline context, loading AnnData when requested.
+    context = build_pipeline_context(
+        config,
+        output_dir=output_dir,
+        backend_registry=backend_registry,
+        load_input=load_input,
+    )
+
+    # Build the pipeline plan using the context backend registry.
+    plan = build_pipeline_plan(
+        config,
+        backend_registry=context.backend_registry,
+    )
+
+    # Mark the end of execution-frame setup before stage execution.
+    bootstrap_ended_at = datetime.now(UTC)
+
+    # Resolve the executor.
+    resolved_executor = executor or PipelineExecutor()
+
+    # Execute registered stages from the plan.
+    execution_result = resolved_executor.run(
+        context=context,
+        plan=plan,
+    )
+
+    # Build the bootstrap execution record.
+    bootstrap_record = StageExecutionRecord(
+        stage_name="bootstrap",
+        status="success",
+        started_at_utc=bootstrap_started_at,
+        ended_at_utc=bootstrap_ended_at,
+        duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
+        backend_used="python",
+        notes=["Initialized CellQuorum execution frame."],
+        warnings=list(plan.warnings),
+        metrics={
+            "n_planned_stages": len(plan.stages),
+            "n_enabled_stages": len(plan.enabled_stage_names()),
+            "n_backend_status_rows": len(plan.backend_status_table),
+            "input_loaded": execution_result.context.adata is not None,
+            "n_successful_stages": len(execution_result.succeeded_stage_names()),
+            "n_skipped_stages": len(execution_result.skipped_stage_names()),
+            "n_failed_stages": len(execution_result.failed_stage_names()),
+        },
+    )
+
+    # Write provenance with bootstrap and real stage execution records.
+    artifacts = write_pipeline_provenance(
+        config=config,
+        plan=plan,
+        context=execution_result.context,
+        stage_execution_records=[
+            bootstrap_record,
+            *execution_result.stage_execution_records,
+        ],
+    )
+
+    # Return the executed pipeline run result.
+    return PipelineRunResult(
+        config=config,
+        plan=plan,
+        context=execution_result.context,
+        artifacts=artifacts,
+        execution_result=execution_result,
+    )
+
+
 def bootstrap_pipeline_run_from_config_file(
     config_path: str | Path,
     *,
@@ -632,4 +748,40 @@ def bootstrap_pipeline_run_from_config_file(
         config,
         output_dir=output_dir,
         backend_registry=backend_registry,
+    )
+
+
+def execute_pipeline_run_from_config_file(
+    config_path: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    backend_registry: BackendRegistry | None = None,
+    executor: PipelineExecutor | None = None,
+    load_input: bool = True,
+) -> PipelineRunResult:
+    """
+    Load a config file and execute registered CellQuorum stages.
+
+    Args:
+        config_path: Path to a CellQuorum YAML configuration file.
+        output_dir: Optional explicit output directory override.
+        backend_registry: Optional backend registry for tests or custom execution.
+        executor: Optional PipelineExecutor override.
+        load_input: Whether to load config.input.h5ad into context.adata.
+
+    Returns:
+        PipelineRunResult containing config, plan, final context, provenance
+        artifacts, and PipelineExecutionResult.
+    """
+
+    # Load and validate the configuration file.
+    config = load_config(config_path)
+
+    # Execute the pipeline run from the validated config.
+    return execute_pipeline_run(
+        config,
+        output_dir=output_dir,
+        backend_registry=backend_registry,
+        executor=executor,
+        load_input=load_input,
     )
