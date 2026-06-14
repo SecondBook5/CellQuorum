@@ -107,6 +107,83 @@ class PathConfig(StrictBaseModel):
     output_dir: Path | None = None
 
 
+class InputConfig(StrictBaseModel):
+    """
+    Store input data configuration.
+
+    This config describes the primary input data object for a CellQuorum run.
+    The first supported input mode is an AnnData h5ad file. File existence is
+    checked later by the I/O layer so configs can remain portable across systems.
+
+    Args:
+        h5ad: Optional path to an AnnData h5ad file.
+        counts_layer: Optional AnnData layer containing raw counts.
+    """
+
+    # Store an optional AnnData h5ad input path.
+    h5ad: Path | None = None
+
+    # Store an optional AnnData layer containing raw counts.
+    counts_layer: str | None = None
+
+    @field_validator("h5ad")
+    @classmethod
+    def validate_h5ad_suffix(cls, value: Path | None) -> Path | None:
+        """
+        Validate the AnnData h5ad path suffix.
+
+        Args:
+            value: Candidate h5ad path.
+
+        Returns:
+            Validated h5ad path or None.
+
+        Raises:
+            ValueError: If the path does not end with .h5ad.
+        """
+
+        # Allow omitted h5ad paths for programmatic runs.
+        if value is None:
+            return None
+
+        # Reject unsupported suffixes without checking file existence.
+        if value.suffix.lower() != ".h5ad":
+            raise ValueError("input.h5ad must point to a '.h5ad' file. " f"Received: {value.name}")
+
+        # Return the validated path.
+        return value
+
+    @field_validator("counts_layer")
+    @classmethod
+    def validate_counts_layer(cls, value: str | None) -> str | None:
+        """
+        Validate the optional raw-counts layer name.
+
+        Args:
+            value: Candidate layer name.
+
+        Returns:
+            Cleaned layer name or None.
+
+        Raises:
+            ValueError: If the layer name is empty.
+        """
+
+        # Allow omitted layer names.
+        if value is None:
+            return None
+
+        # Strip harmless surrounding whitespace.
+        cleaned = value.strip()
+
+        # Reject empty layer names.
+        if not cleaned:
+            raise ValueError("input.counts_layer cannot be empty.")
+
+        # Return the cleaned layer name.
+        return cleaned
+
+
 class RunConfig(StrictBaseModel):
     """
     Store run-level execution settings.
@@ -328,6 +405,7 @@ class CellQuorumConfig(StrictBaseModel):
     Args:
         project: Project-level metadata.
         paths: Input/output path settings.
+        input: Input data settings.
         run: Run-level execution settings.
         compute: Compute backend preferences.
         r: R backend preferences.
@@ -341,6 +419,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store input/output path settings.
     paths: PathConfig = Field(default_factory=PathConfig)
+
+    # Store input data settings.
+    input: InputConfig = Field(default_factory=InputConfig)
 
     # Store run-level execution settings.
     run: RunConfig = Field(default_factory=RunConfig)
