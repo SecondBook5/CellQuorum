@@ -14,11 +14,13 @@ from cellquorum.config.loader import validate_config_dict
 # Import the validated top-level config model.
 from cellquorum.config.models import CellQuorumConfig
 
-# Import execution-frame bootstrap utilities.
+# Import bootstrap and execution pipeline utilities.
 from cellquorum.core.pipeline import (
     PipelineRunResult,
     bootstrap_pipeline_run,
     bootstrap_pipeline_run_from_config_file,
+    execute_pipeline_run,
+    execute_pipeline_run_from_config_file,
 )
 
 
@@ -27,15 +29,17 @@ def run_pipeline(
     *,
     output_dir: str | Path | None = None,
     backend_registry: BackendRegistry | None = None,
+    execute: bool = True,
+    load_input: bool = True,
 ) -> PipelineRunResult:
     """
     Run the CellQuorum pipeline through the public Python API.
 
     This is the main programmatic entry point for users who want to run
-    CellQuorum from Python instead of the command line. At the current execution
-    spine stage, this function bootstraps the run: it validates configuration,
-    creates standardized output directories, discovers backends, builds the
-    pipeline plan, writes provenance, and returns a structured run result.
+    CellQuorum from Python instead of the command line. By default, it executes
+    registered stages through the CellQuorum executor. Pass ``execute=False`` to
+    preserve the bootstrap-only behavior used for planning, provenance setup, or
+    dry-run-style infrastructure checks.
 
     The API accepts three configuration styles because different users work in
     different modes. YAML paths are best for reproducible projects. Pydantic
@@ -48,10 +52,15 @@ def run_pipeline(
             validated into CellQuorumConfig.
         output_dir: Optional explicit output directory override.
         backend_registry: Optional backend registry for custom execution or tests.
+        execute: Whether to execute registered stages. If False, only bootstrap
+            the run frame and write initial provenance.
+        load_input: Whether executed runs should load config.input.h5ad into
+            context.adata before stage execution.
 
     Returns:
         PipelineRunResult containing the validated config, pipeline plan,
-        initialized context, and registered bootstrap artifacts.
+        initialized or final context, provenance artifacts, and optional
+        execution result.
 
     Raises:
         TypeError: If config is not a supported configuration source.
@@ -59,7 +68,16 @@ def run_pipeline(
 
     # Run from an existing validated CellQuorumConfig object.
     if isinstance(config, CellQuorumConfig):
-        # Bootstrap the pipeline run directly from the validated config.
+        # Execute registered stages when requested.
+        if execute:
+            return execute_pipeline_run(
+                config,
+                output_dir=output_dir,
+                backend_registry=backend_registry,
+                load_input=load_input,
+            )
+
+        # Preserve bootstrap-only behavior when execution is disabled.
         return bootstrap_pipeline_run(
             config,
             output_dir=output_dir,
@@ -71,7 +89,16 @@ def run_pipeline(
         # Validate the dictionary into the strict top-level config model.
         validated_config = validate_config_dict(config)
 
-        # Bootstrap the pipeline run from the validated config.
+        # Execute registered stages when requested.
+        if execute:
+            return execute_pipeline_run(
+                validated_config,
+                output_dir=output_dir,
+                backend_registry=backend_registry,
+                load_input=load_input,
+            )
+
+        # Preserve bootstrap-only behavior when execution is disabled.
         return bootstrap_pipeline_run(
             validated_config,
             output_dir=output_dir,
@@ -80,7 +107,16 @@ def run_pipeline(
 
     # Run from a YAML config path.
     if isinstance(config, str | Path):
-        # Load the config file and bootstrap the pipeline run.
+        # Execute registered stages from the config file when requested.
+        if execute:
+            return execute_pipeline_run_from_config_file(
+                config,
+                output_dir=output_dir,
+                backend_registry=backend_registry,
+                load_input=load_input,
+            )
+
+        # Preserve bootstrap-only behavior from the config file.
         return bootstrap_pipeline_run_from_config_file(
             config,
             output_dir=output_dir,
