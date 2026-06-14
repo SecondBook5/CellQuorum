@@ -190,7 +190,6 @@ def build_pipeline_context(
         config: Validated CellQuorum configuration.
         output_dir: Optional explicit output directory override.
         backend_registry: Optional backend registry for tests or custom execution.
-        load_input: Whether to load config.input.h5ad into context.adata.
 
     Returns:
         Initialized PipelineContext.
@@ -549,7 +548,6 @@ def bootstrap_pipeline_run(
         config: Validated CellQuorum configuration.
         output_dir: Optional explicit output directory override.
         backend_registry: Optional backend registry for tests or custom execution.
-        load_input: Whether to load config.input.h5ad into context.adata.
 
     Returns:
         PipelineRunResult containing config, plan, context, and provenance artifacts.
@@ -734,7 +732,6 @@ def bootstrap_pipeline_run_from_config_file(
         config_path: Path to a CellQuorum YAML configuration file.
         output_dir: Optional explicit output directory override.
         backend_registry: Optional backend registry for tests or custom execution.
-        load_input: Whether to load config.input.h5ad into context.adata.
 
     Returns:
         PipelineRunResult containing config, plan, context, and provenance artifacts.
