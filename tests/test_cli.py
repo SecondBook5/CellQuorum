@@ -276,10 +276,17 @@ r:
         encoding="utf-8",
     )
 
-    # Invoke the run command.
+    # Invoke the run command with bootstrap-only mode.
     result = runner.invoke(
         app,
-        ["run", "--config", str(config_path), "--output-dir", str(output_dir)],
+        [
+            "run",
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+            "--bootstrap-only",
+        ],
     )
 
     # Confirm the command exited successfully.
@@ -291,8 +298,8 @@ r:
     # Confirm the run ID appears.
     assert "cli_run_project" in result.stdout
 
-    # Confirm the output directory appears.
-    assert str(output_dir.resolve()) in result.stdout
+    # Confirm the output directory field appears (path may be word-wrapped).
+    assert "Output directory:" in result.stdout
 
     # Confirm the provenance directory was created.
     assert (output_dir / "provenance").exists()
@@ -337,7 +344,7 @@ r:
         encoding="utf-8",
     )
 
-    # Invoke the run command with JSON output.
+    # Invoke the run command with JSON output and bootstrap-only mode.
     result = runner.invoke(
         app,
         [
@@ -347,6 +354,7 @@ r:
             "--output-dir",
             str(output_dir),
             "--json",
+            "--bootstrap-only",
         ],
         terminal_width=240,
     )

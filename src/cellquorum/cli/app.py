@@ -369,10 +369,11 @@ def run_command(
         raise typer.Exit(code=1) from error
 
     # Determine execution state from result.
-    executed = hasattr(result, "execution") and result.execution is not None
-    successful_stages = result.execution.succeeded_stage_names() if executed else []
-    skipped_stages = result.execution.skipped_stage_names() if executed else []
-    failed_stages = result.execution.failed_stage_names() if executed else []
+    execution_result = result.execution_result
+    executed = execution_result is not None
+    successful_stages = execution_result.succeeded_stage_names() if executed else []
+    skipped_stages = execution_result.skipped_stage_names() if executed else []
+    failed_stages = execution_result.failed_stage_names() if executed else []
 
     # Build a machine-readable run summary.
     summary = {

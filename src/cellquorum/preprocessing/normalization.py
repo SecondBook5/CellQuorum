@@ -494,6 +494,9 @@ def apply_recipe_pf_log1p_pf_v1(
     u_ij = x_ij / sum_j(x_ij)
     z_ij = log(u_ij + pseudocount) - mean_j(log(u_j + pseudocount))
 
+    Note: This transformation is mathematically dense (all values become non-zero
+    after centering). Sparse input matrices are densified before computation.
+
     Args:
         matrix: Input count matrix (cells x genes).
         pseudocount: Pseudocount added before log.
@@ -510,7 +513,7 @@ def apply_recipe_pf_log1p_pf_v1(
     zero_depth_mask = cell_totals == 0
     n_zero_depth = int(zero_depth_mask.sum())
 
-    # Build warnings for zero-depth cells.
+    # Build warnings.
     warnings = []
     if n_zero_depth > 0:
         warnings.append(
@@ -518,38 +521,39 @@ def apply_recipe_pf_log1p_pf_v1(
             "These will produce NaN or Inf normalized values."
         )
 
+    # Warn about densification for sparse input.
+    densified_sparse_input = False
+    if is_sparse:
+        warnings.append(
+            "CLR-like transformation densifies sparse matrices because centering produces "
+            "mathematically dense output."
+        )
+        densified_sparse_input = True
+
     # Avoid division by zero.
     safe_cell_totals = np.where(cell_totals > 0, cell_totals, 1.0)
 
+    # Densify sparse matrix for CLR-like computation.
+    working_matrix = matrix.toarray() if is_sparse else matrix
+
     # Compute proportional fractions u.
-    if is_sparse:
-        u = matrix.multiply(1.0 / safe_cell_totals[:, np.newaxis])
-        # Add pseudocount and apply log.
-        u_plus = u.copy()
-        u_plus.data = np.log(u_plus.data + pseudocount)
-    else:
-        u = matrix / safe_cell_totals[:, np.newaxis]
-        # Add pseudocount and apply log.
-        u_plus = np.log(u + pseudocount)
+    u = working_matrix / safe_cell_totals[:, np.newaxis]
+
+    # Add pseudocount and apply log.
+    u_plus = np.log(u + pseudocount)
 
     # Compute per-cell mean of log(u + pseudocount).
-    if is_sparse:
-        per_cell_mean = np.asarray(u_plus.mean(axis=1)).flatten()
-    else:
-        per_cell_mean = u_plus.mean(axis=1)
+    per_cell_mean = u_plus.mean(axis=1)
 
     # Center by subtracting per-cell mean.
-    if is_sparse:
-        output = u_plus.tocsr()
-        for i in range(output.shape[0]):
-            output.data[output.indptr[i] : output.indptr[i + 1]] -= per_cell_mean[i]
-    else:
-        output = u_plus - per_cell_mean[:, np.newaxis]
+    output = u_plus - per_cell_mean[:, np.newaxis]
 
     # Build diagnostics.
     diagnostics = {
         "n_zero_depth_cells": n_zero_depth,
         "pseudocount": pseudocount,
+        "densified_sparse_input": densified_sparse_input,
+        "output_is_dense": True,
     }
 
     # Return normalized matrix, diagnostics, and warnings.

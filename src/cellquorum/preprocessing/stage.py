@@ -104,6 +104,14 @@ class PreprocessingStage:
                 preprocessing_config=preprocessing_config,
             )
 
+        # Return an explicit no-op result when normalization is disabled.
+        if not preprocessing_config.normalization.enabled:
+            return build_disabled_normalization_stage_result(
+                adata=adata,
+                stage_name=self.name,
+                preprocessing_config=preprocessing_config,
+            )
+
         # Resolve the preprocessing artifact output directory.
         output_dir = get_preprocessing_output_dir(context, self.output_subdir)
 
@@ -415,6 +423,39 @@ def build_disabled_preprocessing_stage_result(
     )
 
 
+def build_disabled_normalization_stage_result(
+    *,
+    adata: ad.AnnData,
+    stage_name: str,
+    preprocessing_config: PreprocessingConfig,
+) -> StageResult:
+    """
+    Build a no-op StageResult for disabled normalization.
+
+    Args:
+        adata: Active AnnData object.
+        stage_name: Stable stage name.
+        preprocessing_config: Resolved preprocessing configuration.
+
+    Returns:
+        StageResult representing a disabled normalization no-op.
+    """
+
+    # Return a no-op stage result.
+    return StageResult(
+        adata=adata,
+        artifacts=[],
+        notes=["Preprocessing stage skipped because normalization is disabled."],
+        warnings=[],
+        metrics={
+            "stage_name": stage_name,
+            "enabled": True,
+            "normalization_enabled": False,
+            "reason": "normalization_disabled",
+        },
+    )
+
+
 def write_preprocessing_summary(
     *,
     output_dir: Path,
@@ -532,6 +573,7 @@ def build_preprocessing_stage_metrics(
 __all__ = [
     "PreprocessingStage",
     "PreprocessingStageError",
+    "build_disabled_normalization_stage_result",
     "build_disabled_preprocessing_stage_result",
     "build_preprocessing_stage_metrics",
     "build_preprocessing_stage_notes",
