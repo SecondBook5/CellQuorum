@@ -256,6 +256,37 @@ def test_zero_depth_cell_handling():
     assert "zero-depth" in result.warnings[0].lower()
 
 
+def test_zero_depth_cell_pf_log1p_pf_v1():
+    """Test that zero-depth cells produce all-zero rows in CLR-like recipe."""
+    # Create matrix with one zero-depth cell.
+    matrix = np.array(
+        [
+            [5, 5, 0, 0],
+            [0, 0, 0, 0],  # zero-depth cell
+        ],
+        dtype=np.float32,
+    )
+
+    adata = ad.AnnData(X=matrix)
+    config = NormalizationConfig(
+        recipe="cellquorum_pf_log1p_pf_v1",
+        pseudocount=1.0,
+        output_layer="normalized",
+    )
+
+    result = normalize_adata(adata, config)
+
+    # Should have warning about zero-depth cells with updated text.
+    assert len(result.warnings) > 0
+    zero_depth_warning = [w for w in result.warnings if "zero-depth" in w.lower()]
+    assert len(zero_depth_warning) > 0
+    assert "all-zero centered rows" in zero_depth_warning[0]
+
+    # Zero-depth cell should produce all-zero row.
+    normalized = result.adata.layers["normalized"]
+    assert np.allclose(normalized[1, :], 0.0)
+
+
 def test_negative_matrix_rejected():
     """Test that matrices with negative values are rejected."""
     matrix = np.array(

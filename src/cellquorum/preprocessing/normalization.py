@@ -518,7 +518,7 @@ def apply_recipe_pf_log1p_pf_v1(
     if n_zero_depth > 0:
         warnings.append(
             f"Found {n_zero_depth} zero-depth cells. "
-            "These will produce NaN or Inf normalized values."
+            "These will produce all-zero centered rows under the pseudocount transform."
         )
 
     # Warn about densification for sparse input.

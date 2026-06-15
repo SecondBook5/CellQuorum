@@ -194,3 +194,29 @@ def test_preprocessing_stage_output_adata_has_counts_layer(tmp_path):
     # Output AnnData should have counts layer matching original X.
     assert "counts" in result.adata.layers
     assert np.array_equal(result.adata.layers["counts"], input_adata.X)
+
+
+def test_preprocessing_stage_disabled_normalization_includes_shape_metrics(tmp_path):
+    """Test that disabled normalization includes n_cells and n_genes in metrics."""
+    # Build config with normalization disabled but preprocessing enabled.
+    from cellquorum.preprocessing.config import NormalizationConfig
+
+    config = CellQuorumConfig(
+        preprocessing=PreprocessingConfig(
+            enabled=True,
+            normalization=NormalizationConfig(enabled=False),
+        )
+    )
+    input_adata = make_test_adata()
+    context = make_context(tmp_path, config=config, adata=input_adata)
+
+    # Run preprocessing stage.
+    stage = PreprocessingStage()
+    result = stage.run(context)
+
+    # Should return disabled normalization result with shape metrics.
+    assert result.metrics.get("enabled") is True
+    assert result.metrics.get("normalization_enabled") is False
+    assert result.metrics.get("n_cells") == input_adata.n_obs
+    assert result.metrics.get("n_genes") == input_adata.n_vars
+    assert len(result.artifacts) == 0

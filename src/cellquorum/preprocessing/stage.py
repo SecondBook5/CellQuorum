@@ -452,6 +452,8 @@ def build_disabled_normalization_stage_result(
             "enabled": True,
             "normalization_enabled": False,
             "reason": "normalization_disabled",
+            "n_cells": int(adata.n_obs),
+            "n_genes": int(adata.n_vars),
         },
     )
 
