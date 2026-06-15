@@ -14,6 +14,9 @@ from pydantic import Field, field_validator, model_validator
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
+# Import the preprocessing configuration model.
+from cellquorum.preprocessing.config import PreprocessingConfig
+
 # Import the QC configuration model.
 from cellquorum.qc.config import QCConfig
 
@@ -440,6 +443,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store quality-control settings.
     qc: QCConfig = Field(default_factory=QCConfig)
+
+    # Store preprocessing settings.
+    preprocessing: PreprocessingConfig = Field(default_factory=PreprocessingConfig)
 
     @model_validator(mode="after")
     def validate_backend_fallbacks(self) -> CellQuorumConfig:

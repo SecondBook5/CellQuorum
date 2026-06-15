@@ -274,17 +274,18 @@ class FailingStage:
 
 def test_default_stage_registry_contains_qc() -> None:
     """
-    Verify the default registry exposes the implemented QC stage.
+    Verify the default registry exposes the implemented QC and preprocessing stages.
 
-    QC is currently the first real executable scientific stage.
+    QC and preprocessing are currently the first real executable scientific stages.
     """
 
     # Build the default registry.
     registry = build_default_stage_registry()
 
-    # Confirm QC is registered.
+    # Confirm QC and preprocessing are registered.
     assert registry.get("qc") is not None
-    assert registry.registered_stage_names() == ["qc"]
+    assert registry.get("preprocessing") is not None
+    assert registry.registered_stage_names() == ["preprocessing", "qc"]
 
 
 def test_stage_registry_with_stage_adds_custom_stage() -> None:
@@ -420,15 +421,15 @@ def test_executor_records_unimplemented_enabled_stage_as_skipped(tmp_path: Path)
     # Build context containing AnnData.
     context = build_test_context(tmp_path)
 
-    # Build a plan with an enabled future stage.
-    plan = make_plan(make_enabled_stage("preprocessing"))
+    # Build a plan with an enabled future stage (integration not yet implemented).
+    plan = make_plan(make_enabled_stage("integration"))
 
     # Execute the plan.
     execution_result = PipelineExecutor().run(context=context, plan=plan)
 
-    # Confirm preprocessing was skipped, not silently ignored.
+    # Confirm integration was skipped, not silently ignored.
     assert execution_result.succeeded_stage_names() == []
-    assert execution_result.skipped_stage_names() == ["preprocessing"]
+    assert execution_result.skipped_stage_names() == ["integration"]
 
     # Confirm skip reason explains missing implementation.
     record = execution_result.stage_execution_records[0]

@@ -24,6 +24,9 @@ from cellquorum.core.stage import (
     StageResult,
 )
 
+# Import the preprocessing stage.
+from cellquorum.preprocessing.stage import PreprocessingStage
+
 # Import the first fully implemented scientific stage.
 from cellquorum.qc.stage import QCStage
 
@@ -182,10 +185,11 @@ def build_default_stage_registry() -> StageRegistry:
         StageRegistry containing all currently implemented executable stages.
     """
 
-    # Register the first fully implemented scientific stage.
+    # Register fully implemented scientific stages.
     return StageRegistry(
         stages={
             "qc": QCStage(),
+            "preprocessing": PreprocessingStage(),
         }
     )
 

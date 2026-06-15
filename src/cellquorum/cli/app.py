@@ -305,6 +305,13 @@ def run_command(
             help="Output directory for the CellQuorum run.",
         ),
     ] = None,
+    bootstrap_only: Annotated[
+        bool,
+        typer.Option(
+            "--bootstrap-only",
+            help="Initialize directory structure without executing stages.",
+        ),
+    ] = False,
     json_output: Annotated[
         bool,
         typer.Option(
@@ -314,25 +321,27 @@ def run_command(
     ] = False,
 ) -> None:
     """
-    Initialize a CellQuorum pipeline run.
+    Execute a CellQuorum pipeline run.
 
     This command validates configuration, creates the standardized run directory
-    layout, builds the backend-aware execution plan, and writes initial
-    provenance artifacts. Real scRNA-seq analysis stages will plug into this
-    execution frame as they are implemented.
+    layout, builds the backend-aware execution plan, and executes enabled
+    pipeline stages. When --bootstrap-only is specified, it only initializes
+    the run structure without executing stages.
 
     Args:
         config: Path to the CellQuorum YAML configuration file.
         output_dir: Optional output directory override.
+        bootstrap_only: Whether to skip stage execution and only bootstrap.
         json_output: Whether to print machine-readable JSON.
     """
 
-    # Try to initialize the CellQuorum pipeline run.
+    # Try to initialize and optionally execute the CellQuorum pipeline run.
     try:
         # Run the public pipeline API from the supplied config path.
         result = run_pipeline(
             config,
             output_dir=output_dir,
+            execute=not bootstrap_only,
         )
 
     # Convert configuration failures into CLI-friendly errors.
@@ -359,6 +368,12 @@ def run_command(
         # Exit with a non-zero status code.
         raise typer.Exit(code=1) from error
 
+    # Determine execution state from result.
+    executed = hasattr(result, "execution") and result.execution is not None
+    successful_stages = result.execution.succeeded_stage_names() if executed else []
+    skipped_stages = result.execution.skipped_stage_names() if executed else []
+    failed_stages = result.execution.failed_stage_names() if executed else []
+
     # Build a machine-readable run summary.
     summary = {
         "run_id": result.context.run_id,
@@ -370,6 +385,10 @@ def run_command(
         "backend_status": str(result.context.paths.provenance / "backend_status.json"),
         "enabled_stages": result.plan.enabled_stage_names(),
         "warnings": list(result.plan.warnings),
+        "executed": executed,
+        "successful_stages": successful_stages,
+        "skipped_stages": skipped_stages,
+        "failed_stages": failed_stages,
     }
 
     # Print JSON output when requested.
@@ -377,11 +396,18 @@ def run_command(
         # Serialize the run summary without Rich wrapping.
         typer.echo(json.dumps(summary, indent=2))
 
+        # Exit with non-zero status when stages failed.
+        if failed_stages:
+            raise typer.Exit(code=1)
+
         # Return after printing JSON.
         return
 
-    # Print the run initialization header.
-    console.print("[bold]CellQuorum run initialized[/bold]")
+    # Print the run header.
+    if executed:
+        console.print("[bold]CellQuorum run complete[/bold]")
+    else:
+        console.print("[bold]CellQuorum run initialized[/bold]")
 
     # Print the run identifier.
     console.print(f"Run ID: [cyan]{summary['run_id']}[/cyan]")
@@ -404,6 +430,22 @@ def run_command(
     # Print the backend status path.
     console.print(f"Backend status: [cyan]{summary['backend_status']}[/cyan]")
 
+    # Print execution summary when stages were executed.
+    if executed:
+        console.print("\n[bold]Stage execution summary[/bold]")
+
+        # Print successful stages.
+        if successful_stages:
+            console.print(f"[green]Successful: {', '.join(successful_stages)}[/green]")
+
+        # Print skipped stages.
+        if skipped_stages:
+            console.print(f"[yellow]Skipped: {', '.join(skipped_stages)}[/yellow]")
+
+        # Print failed stages.
+        if failed_stages:
+            console.print(f"[red]Failed: {', '.join(failed_stages)}[/red]")
+
     # Print planner warnings when present.
     if summary["warnings"]:
         # Print a warning heading.
@@ -412,6 +454,10 @@ def run_command(
         # Print each warning as a bullet.
         for warning in summary["warnings"]:
             console.print(f"[yellow]- {warning}[/yellow]")
+
+    # Exit with non-zero status when stages failed.
+    if failed_stages:
+        raise typer.Exit(code=1)
 
 
 def main() -> None:

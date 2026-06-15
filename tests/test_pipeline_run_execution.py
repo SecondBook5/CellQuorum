@@ -231,12 +231,14 @@ def test_execute_pipeline_run_loads_input_and_runs_qc(tmp_path: Path) -> None:
     # Confirm execution result exists.
     assert isinstance(result.execution_result, PipelineExecutionResult)
 
-    # Confirm QC succeeded.
-    assert result.execution_result.succeeded_stage_names()[0] == "qc"
+    # Confirm QC and preprocessing succeeded.
+    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "preprocessing" in result.execution_result.succeeded_stage_names()
     assert "qc" in result.execution_result.stage_results
+    assert "preprocessing" in result.execution_result.stage_results
 
     # Confirm future stages were skipped explicitly.
-    assert "preprocessing" in result.execution_result.skipped_stage_names()
+    assert "integration" in result.execution_result.skipped_stage_names()
 
     # Confirm final context contains AnnData.
     assert isinstance(result.context.adata, ad.AnnData)
