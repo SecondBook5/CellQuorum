@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
@@ -39,6 +40,9 @@ class RscriptBackend(BaseBackend):
 
     # Store the timeout used for availability checks.
     timeout_seconds: int = 30
+
+    # Store the timeout used for script execution (separate from availability checks).
+    script_timeout_seconds: int = 600
 
     # Store Rscript backend requirements.
     requirement_list: list[BackendRequirement] = field(
@@ -191,6 +195,56 @@ class RscriptBackend(BaseBackend):
             capture_output=True,
             text=True,
             timeout=self.timeout_seconds,
+        )
+
+    def run_script(
+        self,
+        script_path: str | Path,
+        args: list[str] | None = None,
+        *,
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """
+        Execute an R script file through Rscript with arguments.
+
+        This is the generic primitive for R-backed methods (scDblFinder, SoupX)
+        that need to run a real script and exchange files with it. The caller is
+        responsible for writing any input files and reading output files; this
+        method only runs ``Rscript --vanilla <script> [args...]`` and captures
+        output. Non-zero exit codes are returned (not raised) so the caller can
+        inspect stderr and produce a domain-specific error.
+
+        Args:
+            script_path: Path to the R script to execute.
+            args: Positional arguments passed to the script (via commandArgs).
+            timeout: Optional timeout override; defaults to script_timeout_seconds.
+
+        Returns:
+            Completed subprocess result with captured stdout and stderr.
+
+        Raises:
+            FileNotFoundError: If Rscript or the script file is unavailable.
+        """
+
+        # Normalize the script path and confirm it exists.
+        script = Path(script_path)
+        if not script.is_file():
+            raise FileNotFoundError(f"R script not found: {script}")
+
+        # Raise a clear error if Rscript cannot be found.
+        if not self._rscript_available():
+            raise FileNotFoundError(
+                f"Rscript executable '{self.rscript_path}' was not found on PATH."
+            )
+
+        # Build the argument list and run with a long (script) timeout.
+        cmd = [self.rscript_path, "--vanilla", str(script), *(args or [])]
+        return subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout if timeout is not None else self.script_timeout_seconds,
         )
 
     def _rscript_available(self) -> bool:

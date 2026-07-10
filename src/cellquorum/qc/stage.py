@@ -140,6 +140,39 @@ class QCStage:
             config=qc_config,
         )
 
+        # Initialize addon metrics dictionary.
+        addon_metrics: dict[str, dict] = {}
+
+        # Cell-cycle scoring (opt-in): fill default Tirosh lists when empty.
+        if qc_config.cell_cycle.enabled:
+            from cellquorum.qc.cell_cycle import (
+                TIROSH_G2M_GENES,
+                TIROSH_S_GENES,
+                score_cell_cycle,
+            )
+
+            cc_config = qc_config.cell_cycle
+            if not cc_config.s_genes:
+                cc_config = cc_config.model_copy(update={"s_genes": TIROSH_S_GENES})
+            if not cc_config.g2m_genes:
+                cc_config = cc_config.model_copy(update={"g2m_genes": TIROSH_G2M_GENES})
+            cc_metrics = score_cell_cycle(output_adata, cc_config)
+            addon_metrics["cell_cycle"] = cc_metrics
+
+        # Doublet detection (flag-only unless config.remove): consensus over methods.
+        if qc_config.doublets.enabled:
+            from cellquorum.qc.doublets import detect_doublets
+
+            backend = None
+            registry = getattr(context, "backend_registry", None)
+            if registry is not None:
+                try:
+                    backend = registry.get("rscript")
+                except Exception:
+                    backend = None
+            doublet_metrics = detect_doublets(output_adata, qc_config.doublets, backend)
+            addon_metrics["doublets"] = doublet_metrics
+
         # Write all configured QC artifacts.
         artifact_manifest = write_qc_artifacts(
             output_dir=output_dir,
@@ -185,6 +218,10 @@ class QCStage:
             input_adata=adata,
             output_adata=output_adata,
         )
+
+        # Merge addon metrics (cell-cycle, doublets) into stage metrics.
+        if addon_metrics:
+            stage_metrics.update(addon_metrics)
 
         # Return the stage result.
         return StageResult(

@@ -602,6 +602,8 @@ class QCDoubletConfig(StrictBaseModel):
     Args:
         enabled: Whether doublet detection or auditing is enabled.
         method: Doublet detection method.
+        methods: Detectors to run (consensus over these); overrides single method when set.
+        consensus: How to combine per-method calls: any | all | majority.
         remove: Whether predicted doublets should be removed automatically.
         expected_doublet_rate: Expected doublet rate as a probability.
         score_threshold: Optional manual doublet score threshold.
@@ -613,6 +615,14 @@ class QCDoubletConfig(StrictBaseModel):
 
     # Store the selected doublet detection method.
     method: DoubletMethod = "scdblfinder"
+
+    # Store detectors to run (consensus over these); overrides single method when
+    # set. Default matches the single-method default (`method`) so an unconfigured
+    # run uses the same detector regardless of which field the caller reads.
+    methods: list[str] = Field(default_factory=lambda: ["scdblfinder"])
+
+    # Store how to combine per-method calls: any | all | majority.
+    consensus: str = "any"
 
     # Store whether predicted doublets should be removed automatically.
     remove: bool = False
@@ -688,6 +698,123 @@ class QCDoubletConfig(StrictBaseModel):
 
         # Return the validated model.
         return self
+
+
+class QCCellCycleConfig(StrictBaseModel):
+    """
+    Store cell-cycle scoring settings (opt-in).
+
+    Cell-cycle scoring is disabled by default and is intended to run on the
+    log-normalized layer. Gene lists default to empty; callers fill them from
+    the Tirosh constants when empty to avoid import cycles.
+
+    Args:
+        enabled: Whether cell-cycle scoring is enabled.
+        score_layer: Layer to score on (must be log-normalized).
+        s_genes: S-phase gene list (default empty; filled by caller).
+        g2m_genes: G2M-phase gene list (default empty; filled by caller).
+        random_state: Random seed for reproducibility.
+    """
+
+    # Store whether cell-cycle scoring is enabled.
+    enabled: bool = False
+
+    # Store the layer to score on (must be log-normalized).
+    score_layer: str = "cellquorum_normalized"
+
+    # Store S-phase genes (empty by default; caller fills from Tirosh constants).
+    s_genes: list[str] = Field(default_factory=list)
+
+    # Store G2M-phase genes (empty by default; caller fills from Tirosh constants).
+    g2m_genes: list[str] = Field(default_factory=list)
+
+    # Store the random seed for deterministic scoring.
+    random_state: int = 0
+
+    @field_validator("s_genes", "g2m_genes", mode="before")
+    @classmethod
+    def validate_gene_lists(cls, value: object) -> list[str]:
+        """
+        Validate gene lists.
+
+        Args:
+            value: Candidate gene list.
+
+        Returns:
+            Cleaned gene list.
+
+        Raises:
+            ValueError: If the value is not a list of non-empty strings.
+        """
+
+        # Return an empty list when genes are omitted.
+        if value is None:
+            return []
+
+        # Reject a single string because it is ambiguous.
+        if isinstance(value, str):
+            raise ValueError("Gene lists must be provided as lists, not strings.")
+
+        # Reject non-list and non-tuple values.
+        if not isinstance(value, list | tuple):
+            raise ValueError(
+                "Gene lists must be lists of strings. " f"Received: {type(value).__name__}."
+            )
+
+        # Initialize the cleaned gene list.
+        cleaned_genes: list[str] = []
+
+        # Iterate over gene values.
+        for gene in value:
+            # Reject non-string genes.
+            if not isinstance(gene, str):
+                raise ValueError("Gene names must be strings. " f"Received: {type(gene).__name__}.")
+
+            # Strip harmless whitespace.
+            cleaned_gene = gene.strip()
+
+            # Reject empty genes.
+            if not cleaned_gene:
+                raise ValueError("Gene names cannot be empty.")
+
+            # Store the cleaned gene.
+            cleaned_genes.append(cleaned_gene)
+
+        # Return the cleaned genes.
+        return cleaned_genes
+
+    @field_validator("random_state", mode="before")
+    @classmethod
+    def validate_random_state(cls, value: object) -> int:
+        """
+        Validate the random state seed.
+
+        Args:
+            value: Candidate random state.
+
+        Returns:
+            Validated random state.
+
+        Raises:
+            ValueError: If the value is not a non-negative integer.
+        """
+
+        # Reject booleans because bool is a subclass of int.
+        if isinstance(value, bool):
+            raise ValueError("random_state cannot be a boolean value.")
+
+        # Reject non-integer values.
+        if not isinstance(value, int):
+            raise ValueError(
+                "random_state must be an integer. " f"Received: {type(value).__name__}."
+            )
+
+        # Reject negative values.
+        if value < 0:
+            raise ValueError("random_state must be >= 0.")
+
+        # Return the validated random state.
+        return value
 
 
 class QCAmbientRNAConfig(StrictBaseModel):
@@ -923,6 +1050,7 @@ class QCConfig(StrictBaseModel):
         mad: Adaptive MAD QC settings.
         features: Feature family pattern settings.
         doublets: Doublet detection settings.
+        cell_cycle: Cell-cycle scoring settings.
         ambient: Ambient RNA assessment settings.
         duplicate_names: Duplicate name handling settings.
         outputs: QC output settings.
@@ -952,6 +1080,9 @@ class QCConfig(StrictBaseModel):
 
     # Store doublet detection settings.
     doublets: QCDoubletConfig = Field(default_factory=QCDoubletConfig)
+
+    # Store cell-cycle scoring settings.
+    cell_cycle: QCCellCycleConfig = Field(default_factory=QCCellCycleConfig)
 
     # Store ambient RNA assessment settings.
     ambient: QCAmbientRNAConfig = Field(default_factory=QCAmbientRNAConfig)
@@ -1066,6 +1197,7 @@ def validate_qc_config_dict(config: Mapping[str, object]) -> QCConfig:
             "mad",
             "features",
             "doublets",
+            "cell_cycle",
             "ambient",
             "duplicate_names",
             "outputs",
@@ -1090,6 +1222,7 @@ __all__ = [
     "DuplicateNamePolicy",
     "QCAmbientRNAConfig",
     "QCBasicThresholdConfig",
+    "QCCellCycleConfig",
     "QCConfig",
     "QCDoubletConfig",
     "QCDuplicateNameConfig",
