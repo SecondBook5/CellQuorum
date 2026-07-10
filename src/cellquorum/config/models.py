@@ -394,6 +394,8 @@ class ClusteringConfig(StrictBaseModel):
         resolution: Leiden resolution.
         random_state: Seed for deterministic neighbors/Leiden.
         key_added: obs column that receives cluster labels.
+        use_rep: Embedding to cluster on (set to the integration output, e.g.
+            "X_pca_harmony", when integration runs; defaults to raw PCA).
     """
 
     # Store whether the clustering stage may run.
@@ -413,6 +415,10 @@ class ClusteringConfig(StrictBaseModel):
 
     # Store the obs column that receives cluster labels.
     key_added: str = "leiden"
+
+    # Embedding to cluster on (set to the integration output, e.g.
+    # "X_pca_harmony", when integration runs; defaults to raw PCA).
+    use_rep: str = "X_pca"
 
 
 class StageSelectionConfig(StrictBaseModel):
