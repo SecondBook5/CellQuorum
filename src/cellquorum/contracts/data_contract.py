@@ -23,7 +23,6 @@ from cellquorum.contracts.statistical import (
     assert_integer_valued,
     assert_log_range,
     assert_non_integer_or_zero,
-    assert_non_negative,
 )
 
 
@@ -171,9 +170,13 @@ class DataContract(StrictBaseModel):
             assert_integer_valued(matrix, layer=self.expression_layer)
             return
 
-        # Log-normalized: non-negative, not all-integer, within log range.
+        # Log-normalized: not all-integer, within log range. Non-negativity is
+        # deliberately NOT asserted here: the project default recipe
+        # cellquorum_pf_log1p_pf_v1 is a shifted-CLR (centered) transform that
+        # legitimately yields small negative values, and the historical
+        # raw-counts-in-lognorm bug is caught by the all-integer guard below
+        # (raw counts are non-negative, so a non-negativity check would miss it).
         if self.expected_kind == "lognorm":
-            assert_non_negative(matrix, layer=self.expression_layer)
             assert_non_integer_or_zero(matrix, layer=self.expression_layer)
             assert_log_range(matrix, layer=self.expression_layer)
             return
