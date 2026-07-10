@@ -14,6 +14,9 @@ import numpy as np
 # Import scipy sparse for sparse matrix support.
 import scipy.sparse as sp
 
+# Import layer tagging for provenance contracts.
+from cellquorum.contracts import set_layer_tag
+
 # Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
 
@@ -138,6 +141,17 @@ def normalize_adata(
         working_adata,
         config=config,
         diagnostics=recipe_diagnostics,
+    )
+
+    # Tag the preserved counts and normalized layers so downstream DataContracts
+    # can verify layer identity by provenance, not by name alone (closes the
+    # expected_kind seam from the Phase-1 review).
+    set_layer_tag(working_adata, config.preserve_counts_layer, kind="counts")
+    set_layer_tag(
+        working_adata,
+        config.output_layer,
+        kind="lognorm",
+        recipe=config.recipe,
     )
 
     # Build final diagnostics.

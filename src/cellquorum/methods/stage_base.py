@@ -56,15 +56,24 @@ class MethodDispatchStage(ABC):
             result carrying the skip reason as a warning.
         """
 
-        # Pull the active AnnData and the run config off the context.
+        # Pull the active AnnData off the context.
         adata = context.require_adata()
-        run_config = getattr(context, "config", {}) or {}
 
-        # Resolve this stage's config sub-block and the selected method name.
-        stage_config = run_config.get(self.name, {}) if isinstance(run_config, dict) else {}
+        # Resolve this stage's config sub-block (handles both dict and pydantic).
+        from cellquorum.methods.context_access import resolve_stage_config
+
+        stage_config = resolve_stage_config(context, self.name)
+
+        # Honor the enabled flag: if disabled, return a recorded skip.
+        if not stage_config.get("enabled", True):
+            return StageResult(
+                adata=adata,
+                warnings=[f"{self.name} disabled by config"],
+                metrics={"skipped": True, "reason": "disabled by config"},
+            )
+
+        # Resolve the selected method name and look it up in the registry.
         method_name = self._select_method_name(stage_config)
-
-        # Look up and instantiate the method (fails loud on unknown name).
         method_cls = self._registry.get(self.stage_category, method_name)
         method = method_cls()
 
@@ -85,8 +94,19 @@ class MethodDispatchStage(ABC):
                 metrics={"skipped": True, **outcome.details},
             )
 
-        # Otherwise return the method's StageResult unchanged.
+        # Call the overridable validation hook before returning.
+        self._validate_output(outcome)
         return outcome
+
+    def _validate_output(self, result: StageResult) -> None:  # noqa: B027
+        """
+        Hook for subclass-specific output validation.
+
+        Override this to validate stage-specific postconditions. The default is a no-op.
+
+        Args:
+            result: The StageResult returned by the method.
+        """
 
 
 __all__ = ["MethodDispatchStage"]

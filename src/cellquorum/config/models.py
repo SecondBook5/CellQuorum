@@ -151,7 +151,7 @@ class InputConfig(StrictBaseModel):
 
         # Reject unsupported suffixes without checking file existence.
         if value.suffix.lower() != ".h5ad":
-            raise ValueError("input.h5ad must point to a '.h5ad' file. " f"Received: {value.name}")
+            raise ValueError(f"input.h5ad must point to a '.h5ad' file. Received: {value.name}")
 
         # Return the validated path.
         return value
@@ -337,6 +337,77 @@ class ReportConfig(StrictBaseModel):
     fail_on_report_error: bool = False
 
 
+class DimensionalityConfig(StrictBaseModel):
+    """
+    Store dimensionality-reduction (PCA) settings.
+
+    Args:
+        enabled: Whether the dimensionality stage may run.
+        method: Reduction method name (registry key). Currently "pca".
+        input_layer: Layer to run PCA on; must be a log-normalized layer.
+            Defaults to the preprocessing normalized output.
+        n_pcs: Number of principal components, or "auto" to select via the
+            variance-ratio knee.
+        max_pcs: Upper bound on components computed and considered for "auto".
+        use_highly_variable: Whether to restrict PCA to highly-variable genes.
+        random_state: Seed for deterministic PCA.
+    """
+
+    # Store whether the dimensionality stage may run.
+    enabled: bool = True
+
+    # Store the reduction method registry key.
+    method: str = "pca"
+
+    # Store the layer to run PCA on; must be a log-normalized layer.
+    # Defaults to the preprocessing normalized output.
+    input_layer: str = "cellquorum_normalized"
+
+    # Store the component count, or "auto" for knee-based selection.
+    n_pcs: int | str = "auto"
+
+    # Store the upper bound on components for auto selection.
+    max_pcs: int = 50
+
+    # Store whether PCA is restricted to highly-variable genes.
+    use_highly_variable: bool = False
+
+    # Store the PCA random seed.
+    random_state: int = 0
+
+
+class ClusteringConfig(StrictBaseModel):
+    """
+    Store clustering (neighbors + Leiden) settings.
+
+    Args:
+        enabled: Whether the clustering stage may run.
+        method: Clustering method name (registry key). Currently "leiden".
+        n_neighbors: Neighborhood size for the kNN graph.
+        resolution: Leiden resolution.
+        random_state: Seed for deterministic neighbors/Leiden.
+        key_added: obs column that receives cluster labels.
+    """
+
+    # Store whether the clustering stage may run.
+    enabled: bool = True
+
+    # Store the clustering method registry key.
+    method: str = "leiden"
+
+    # Store the kNN neighborhood size.
+    n_neighbors: int = 15
+
+    # Store the Leiden resolution.
+    resolution: float = 1.0
+
+    # Store the clustering random seed.
+    random_state: int = 0
+
+    # Store the obs column that receives cluster labels.
+    key_added: str = "leiden"
+
+
 class StageSelectionConfig(StrictBaseModel):
     """
     Store high-level stage enablement flags.
@@ -348,6 +419,8 @@ class StageSelectionConfig(StrictBaseModel):
     Args:
         qc: Whether quality control is enabled.
         preprocessing: Whether preprocessing is enabled.
+        dimensionality: Whether dimensionality reduction is enabled.
+        clustering: Whether clustering is enabled.
         integration: Whether integration is enabled.
         annotation: Whether annotation is enabled.
         state_scoring: Whether state scoring is enabled.
@@ -365,6 +438,12 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether preprocessing is enabled.
     preprocessing: bool = True
+
+    # Store whether dimensionality reduction is enabled.
+    dimensionality: bool = True
+
+    # Store whether clustering is enabled.
+    clustering: bool = True
 
     # Store whether integration is enabled.
     integration: bool = True
@@ -415,6 +494,9 @@ class CellQuorumConfig(StrictBaseModel):
         report: Final report settings.
         stages: Major stage enablement flags.
         qc: Quality-control settings.
+        preprocessing: Preprocessing settings.
+        dimensionality: Dimensionality-reduction settings.
+        clustering: Clustering settings.
     """
 
     # Store project-level metadata.
@@ -446,6 +528,12 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store preprocessing settings.
     preprocessing: PreprocessingConfig = Field(default_factory=PreprocessingConfig)
+
+    # Store dimensionality-reduction settings.
+    dimensionality: DimensionalityConfig = Field(default_factory=DimensionalityConfig)
+
+    # Store clustering settings.
+    clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
 
     @model_validator(mode="after")
     def validate_backend_fallbacks(self) -> CellQuorumConfig:

@@ -274,18 +274,26 @@ class FailingStage:
 
 def test_default_stage_registry_contains_qc() -> None:
     """
-    Verify the default registry exposes the implemented QC and preprocessing stages.
+    Verify the default registry exposes the implemented stages.
 
-    QC and preprocessing are currently the first real executable scientific stages.
+    QC and preprocessing are the first real executable scientific stages.
+    Phase-2A adds dimensionality and clustering.
     """
 
     # Build the default registry.
     registry = build_default_stage_registry()
 
-    # Confirm QC and preprocessing are registered.
+    # Confirm all implemented stages are registered.
     assert registry.get("qc") is not None
     assert registry.get("preprocessing") is not None
-    assert registry.registered_stage_names() == ["preprocessing", "qc"]
+    assert registry.get("dimensionality") is not None
+    assert registry.get("clustering") is not None
+    assert registry.registered_stage_names() == [
+        "clustering",
+        "dimensionality",
+        "preprocessing",
+        "qc",
+    ]
 
 
 def test_stage_registry_with_stage_adds_custom_stage() -> None:

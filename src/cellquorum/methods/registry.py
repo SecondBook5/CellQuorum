@@ -77,6 +77,21 @@ class MethodRegistry:
             )
         return method_cls
 
+    def has(self, stage_category: str, name: str) -> bool:
+        """
+        Return whether a method is registered for a stage category.
+
+        Args:
+            stage_category: Stage category the method belongs to.
+            name: Method name.
+
+        Returns:
+            True if the method is registered, False otherwise.
+        """
+
+        # Check the nested mapping without raising.
+        return name in self._methods.get(stage_category, {})
+
     def names(self, stage_category: str) -> list[str]:
         """Return registered method names for a stage category, in registration order."""
 

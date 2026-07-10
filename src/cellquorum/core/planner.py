@@ -189,8 +189,10 @@ class PipelinePlanner:
         stage_flags = [
             ("qc", self.config.stages.qc),
             ("preprocessing", self.config.stages.preprocessing),
+            ("dimensionality", self.config.stages.dimensionality),
             ("integration", self.config.stages.integration),
             ("annotation", self.config.stages.annotation),
+            ("clustering", self.config.stages.clustering),
             ("state_scoring", self.config.stages.state_scoring),
             ("discovery", self.config.stages.discovery),
             ("subclustering", self.config.stages.subclustering),
