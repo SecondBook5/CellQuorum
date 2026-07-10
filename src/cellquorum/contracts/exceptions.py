@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+# Import the data error base class for contract-specific inheritance.
 from cellquorum.core.exceptions import CellQuorumDataError
 
 
