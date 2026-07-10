@@ -35,6 +35,15 @@ class HarmonyMethod(AnalysisMethod):
         # Require both to exist before running.
         return DataContract(required_obsm=[input_rep], required_obs=[batch_key])
 
+    def requires_obs(self, config: dict) -> list[str]:
+        """Return the batch key that must exist for integration to run."""
+
+        # Read the batch column from config.
+        batch_key = config.get("batch_key", "patient_id")
+
+        # Require the batch column to exist.
+        return [batch_key]
+
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
         """
         Run Harmony on the input embedding and write the corrected embedding.

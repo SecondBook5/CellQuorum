@@ -46,7 +46,8 @@ def test_marker_vote_assigns_types_by_argmax():
     assert ct[a.obs["leiden"] == "1"].iloc[0] == "TypeB"
 
 
-def test_marker_vote_requires_cluster_key():
+def test_marker_vote_skips_when_cluster_key_absent():
+    """MarkerVote skips gracefully when the cluster obs column is missing."""
     m = MarkerVoteMethod()
     a = _clustered_adata()
     del a.obs["leiden"]
@@ -55,5 +56,22 @@ def test_marker_vote_requires_cluster_key():
         "score_layer": "cellquorum_normalized",
         "marker_panels": {"TypeA": ["A1"]},
     }
-    with pytest.raises(CellQuorumContractError, match="leiden"):
+    result = m.run(a, cfg, context=None)
+    from cellquorum.methods.base import MethodSkip
+
+    assert isinstance(result, MethodSkip)
+    assert "leiden" in result.reason
+
+
+def test_marker_vote_raises_when_layer_absent():
+    """MarkerVote raises via contract when the score layer is missing."""
+    m = MarkerVoteMethod()
+    a = _clustered_adata()
+    del a.layers["cellquorum_normalized"]
+    cfg = {
+        "cluster_key": "leiden",
+        "score_layer": "cellquorum_normalized",
+        "marker_panels": {"TypeA": ["A1"]},
+    }
+    with pytest.raises(CellQuorumContractError, match="cellquorum_normalized"):
         m.run(a, cfg, context=None)

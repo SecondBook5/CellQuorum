@@ -39,6 +39,15 @@ class MarkerVoteMethod(AnalysisMethod):
             expected_kind="lognorm",
         )
 
+    def requires_obs(self, config: dict) -> list[str]:
+        """Return the cluster key that must exist for annotation to run."""
+
+        # Read the cluster key from config.
+        cluster_key = config.get("cluster_key", "leiden")
+
+        # Require the cluster column to exist.
+        return [cluster_key]
+
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
         """
         Score each cell-type panel, average per cluster, assign the argmax.

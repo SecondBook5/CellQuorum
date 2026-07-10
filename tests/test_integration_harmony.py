@@ -55,9 +55,30 @@ def test_harmony_writes_corrected_embedding():
     assert result.adata.uns["cellquorum"]["integration"]["method"] == "harmony"
 
 
-def test_harmony_requires_pca_and_batch():
+def test_harmony_skips_when_batch_column_absent():
+    """Harmony skips gracefully when the batch obs column is missing."""
     m = HarmonyMethod()
-    a = ad.AnnData(X=np.zeros((10, 5), dtype=np.float32))  # no X_pca, no batch
+    a = ad.AnnData(X=np.zeros((10, 5), dtype=np.float32))
+    # Add PCA but no batch column.
+    a.obsm["X_pca"] = np.zeros((10, 3), dtype=np.float32)
+    result = m.run(
+        a,
+        {"batch_key": "patient_id", "input_rep": "X_pca"},
+        context=None,
+        donor_col="patient_id",
+    )
+    from cellquorum.methods.base import MethodSkip
+
+    assert isinstance(result, MethodSkip)
+    assert "patient_id" in result.reason
+
+
+def test_harmony_raises_when_embedding_absent():
+    """Harmony raises via contract when the input embedding is missing."""
+    m = HarmonyMethod()
+    a = ad.AnnData(X=np.zeros((10, 5), dtype=np.float32))
+    # Add batch column but no PCA.
+    a.obs["patient_id"] = ["A", "B"] * 5
     with pytest.raises(CellQuorumContractError):
         m.run(
             a,
