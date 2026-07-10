@@ -13,6 +13,8 @@ three escalating levels of checks and raises on the first failure:
 from __future__ import annotations
 
 import anndata as ad
+import numpy as np
+import scipy.sparse as sp
 
 from cellquorum.config.base import StrictBaseModel
 from cellquorum.contracts.exceptions import CellQuorumContractError
@@ -106,7 +108,7 @@ class DataContract(StrictBaseModel):
                     f"Required obsm '{key}' is missing. Present: {list(adata.obsm)}."
                 )
 
-    def _resolve_matrix(self, adata: ad.AnnData, layer: str) -> ad.X_ElemType:
+    def _resolve_matrix(self, adata: ad.AnnData, layer: str) -> np.ndarray | sp.spmatrix:
         """Return the matrix for a layer name, or ``adata.X`` for the 'X' sentinel."""
 
         # Allow addressing the primary matrix explicitly.
@@ -161,7 +163,7 @@ class DataContract(StrictBaseModel):
                     f"'{self.expected_recipe}'."
                 )
 
-    def _check_statistical(self, matrix: ad.X_ElemType) -> None:
+    def _check_statistical(self, matrix: np.ndarray | sp.spmatrix) -> None:
         """Run value-level checks appropriate to the expected kind."""
 
         # Counts: must be non-negative integers.

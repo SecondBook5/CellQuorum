@@ -72,7 +72,12 @@ class MethodDispatchStage(ABC):
         donor_col = getattr(context, "donor_col", None)
         outcome = method.run(adata, stage_config, context, donor_col=donor_col)
 
-        # Convert a MethodSkip into a recorded skipped StageResult.
+        # Convert a MethodSkip into a recorded skipped StageResult. NOTE: because
+        # the PipelineStage Protocol only permits returning a StageResult, a method
+        # skip surfaces to the executor as a SUCCESSFUL record carrying a warning and
+        # metrics["skipped"]=True — it does NOT populate core.stage's StageSkipReason
+        # machinery. This is non-silent by design; downstream reporting must key on
+        # metrics["skipped"], not on record.status, to distinguish skipped methods.
         if isinstance(outcome, MethodSkip):
             return StageResult(
                 adata=adata,

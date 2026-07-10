@@ -5,8 +5,9 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 
-from cellquorum.contracts import DataContract
+from cellquorum.contracts import CellQuorumContractError, DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.methods.registry import MethodRegistry
@@ -26,6 +27,20 @@ class _CountMethod(AnalysisMethod):
 
     def _run(self, adata, config, context):
         return StageResult(adata=adata, metrics={"n": adata.n_obs})
+
+
+class _StrictContractMethod(AnalysisMethod):
+    # Guards pass (no donor requirement) but the contract requires an obs column
+    # the test object lacks, so validation must raise through the dispatch stage.
+    name = "strict"
+    stage_category = "demo_stage"
+    backend = "python"
+
+    def input_contract(self, config):
+        return DataContract(required_obs=["absent_column"])
+
+    def _run(self, adata, config, context):
+        return StageResult(adata=adata)
 
 
 class _DemoStage(MethodDispatchStage):
@@ -71,3 +86,15 @@ def test_dispatch_converts_skip_to_skipped_result():
     # Skip is surfaced as a StageResult carrying a warning, not an exception.
     assert isinstance(result, StageResult)
     assert any("skipped" in w for w in result.warnings)
+
+
+def test_dispatch_propagates_contract_violation():
+    # A method whose guards pass but whose input contract is violated must raise
+    # through the dispatch stage (a contract violation is NOT converted to a skip).
+    reg = MethodRegistry()
+    reg.register(_StrictContractMethod)
+    stage = _DemoStage(registry=reg)
+    ctx = _Ctx(_adata(6))  # guards pass; adata lacks 'absent_column'
+    ctx.config = {"demo_stage": {"method": "strict"}}
+    with pytest.raises(CellQuorumContractError, match="absent_column"):
+        stage.run(ctx)
