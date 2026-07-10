@@ -149,8 +149,12 @@ class DataContract(StrictBaseModel):
                 )
 
         # Expected-recipe check: prefer the layer tag, fall back to preprocessing provenance.
+        # Use `is None` (not `or`) so an explicit empty-string recipe is not silently
+        # treated as "unset" and does not trigger the fallback.
         if self.expected_recipe is not None:
-            recipe = (tag or {}).get("recipe") or get_normalization_recipe(adata)
+            recipe = (tag or {}).get("recipe")
+            if recipe is None:
+                recipe = get_normalization_recipe(adata)
             if recipe != self.expected_recipe:
                 raise CellQuorumContractError(
                     f"Layer '{self.expression_layer}' recipe '{recipe}' != expected "
@@ -172,8 +176,8 @@ class DataContract(StrictBaseModel):
             assert_log_range(matrix, layer=self.expression_layer)
             return
 
-        # Scaled/imputed/unspecified: only require non-negativity is NOT assumed
-        # (scaled data may be negative), so no statistical check is applied.
+        # Scaled/imputed/unspecified: scaled data may legitimately be negative,
+        # so non-negativity is not required and no statistical check is applied.
 
 
 __all__ = ["DataContract"]
