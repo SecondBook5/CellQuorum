@@ -76,3 +76,23 @@ def test_clustering_stage_dispatches_and_validates():
     )
     result = stage.run(ctx)
     assert "leiden" in result.adata.obs
+
+
+def test_clustering_stage_honors_enabled_false():
+    reg = MethodRegistry()
+    reg.register(LeidenMethod)
+    stage = ClusteringStage(registry=reg)
+    a = _adata_with_pca()
+    ctx = _Ctx(
+        a,
+        {
+            "clustering": {
+                "enabled": False,
+                "method": "leiden",
+            }
+        },
+    )
+    result = stage.run(ctx)
+    assert result.metrics.get("skipped") is True
+    assert result.metrics.get("reason") == "disabled by config"
+    assert any("disabled" in w for w in result.warnings)

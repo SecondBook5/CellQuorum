@@ -17,7 +17,15 @@ def _adata(n_cells=200, n_genes=50, seed=0):
     # Structured data so PCA has a real signal: two blobs.
     x = rng.normal(size=(n_cells, n_genes)).astype(np.float32)
     x[: n_cells // 2, :5] += 5.0
-    return ad.AnnData(X=x)
+    a = ad.AnnData(X=x)
+    # Add a tagged normalized layer (non-integer log-like values).
+    lognorm = rng.normal(loc=2.0, scale=1.5, size=(n_cells, n_genes)).astype(np.float32)
+    lognorm[: n_cells // 2, :5] += 3.0
+    a.layers["cellquorum_normalized"] = lognorm
+    from cellquorum.contracts import set_layer_tag
+
+    set_layer_tag(a, "cellquorum_normalized", kind="lognorm", recipe="cellquorum_pf_log1p_pf_v1")
+    return a
 
 
 class _Paths:
@@ -97,3 +105,25 @@ def test_dimensionality_stage_dispatches_and_validates(tmp_path):
     )
     result = stage.run(ctx)
     assert result.adata.obsm["X_pca"].shape[1] == 8
+
+
+def test_dimensionality_stage_honors_enabled_false(tmp_path):
+    reg = MethodRegistry()
+    reg.register(PCAMethod)
+    stage = DimensionalityStage(registry=reg)
+    a = _adata()
+    ctx = _Ctx(
+        a,
+        tmp_path,
+        {
+            "dimensionality": {
+                "enabled": False,
+                "method": "pca",
+                "n_pcs": 8,
+            }
+        },
+    )
+    result = stage.run(ctx)
+    assert result.metrics.get("skipped") is True
+    assert result.metrics.get("reason") == "disabled by config"
+    assert any("disabled" in w for w in result.warnings)

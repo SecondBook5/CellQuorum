@@ -151,7 +151,7 @@ class InputConfig(StrictBaseModel):
 
         # Reject unsupported suffixes without checking file existence.
         if value.suffix.lower() != ".h5ad":
-            raise ValueError("input.h5ad must point to a '.h5ad' file. " f"Received: {value.name}")
+            raise ValueError(f"input.h5ad must point to a '.h5ad' file. Received: {value.name}")
 
         # Return the validated path.
         return value
@@ -344,6 +344,8 @@ class DimensionalityConfig(StrictBaseModel):
     Args:
         enabled: Whether the dimensionality stage may run.
         method: Reduction method name (registry key). Currently "pca".
+        input_layer: Layer to run PCA on; must be a log-normalized layer.
+            Defaults to the preprocessing normalized output.
         n_pcs: Number of principal components, or "auto" to select via the
             variance-ratio knee.
         max_pcs: Upper bound on components computed and considered for "auto".
@@ -356,6 +358,10 @@ class DimensionalityConfig(StrictBaseModel):
 
     # Store the reduction method registry key.
     method: str = "pca"
+
+    # Store the layer to run PCA on; must be a log-normalized layer.
+    # Defaults to the preprocessing normalized output.
+    input_layer: str = "cellquorum_normalized"
 
     # Store the component count, or "auto" for knee-based selection.
     n_pcs: int | str = "auto"

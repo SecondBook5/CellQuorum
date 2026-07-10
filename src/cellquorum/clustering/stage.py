@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.methods.base import MethodSkip
-from cellquorum.methods.context_access import resolve_stage_config
+from cellquorum.methods.registry import MethodRegistry
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
@@ -21,6 +20,11 @@ class ClusteringStage(MethodDispatchStage):
     name = "clustering"
     stage_category = "clustering"
 
+    def __init__(self, registry: MethodRegistry | None = None) -> None:
+        super().__init__(registry)
+        # Store the key_added from config so _validate_output can access it.
+        self._key_added = None
+
     def _select_method_name(self, config: dict) -> str:
         """Return the configured clustering method (default 'leiden')."""
 
@@ -28,38 +32,22 @@ class ClusteringStage(MethodDispatchStage):
         return config.get("method", "leiden")
 
     def run(self, context: object) -> StageResult:
-        """
-        Run the configured clustering method and validate the labels landed.
+        """Override run to store key_added for validation."""
+        # Resolve config to extract key_added before calling base run.
+        from cellquorum.methods.context_access import resolve_stage_config
 
-        Args:
-            context: Pipeline context.
-
-        Returns:
-            StageResult whose AnnData carries the cluster-label obs column.
-        """
-
-        # Resolve this stage's config from either a pydantic config or a dict.
         stage_config = resolve_stage_config(context, self.name)
+        self._key_added = stage_config.get("key_added", "leiden")
+        # Now call base run which will handle enabled check, dispatch, and validation.
+        return super().run(context)
 
-        # Dispatch to the configured method with the resolved sub-block.
-        method_name = self._select_method_name(stage_config)
-        method = self._registry.get(self.stage_category, method_name)()
-        adata = context.require_adata()
-        donor_col = getattr(context, "donor_col", None)
-        outcome = method.run(adata, stage_config, context, donor_col=donor_col)
+    def _validate_output(self, result: StageResult) -> None:
+        """Validate that cluster labels landed in the configured obs column."""
 
-        # Convert a skip into a recorded StageResult.
-        if isinstance(outcome, MethodSkip):
-            return StageResult(
-                adata=adata,
-                warnings=[outcome.reason],
-                metrics={"skipped": True, **outcome.details},
-            )
-
-        # Validate the cluster labels landed in obs.
-        key_added = stage_config.get("key_added", "leiden")
-        DataContract(required_obs=[key_added]).validate(outcome.adata)
-        return outcome
+        # Skipped results pass through without validation.
+        if not result.metrics.get("skipped"):
+            key_added = self._key_added or "leiden"
+            DataContract(required_obs=[key_added]).validate(result.adata)
 
 
 __all__ = ["ClusteringStage"]

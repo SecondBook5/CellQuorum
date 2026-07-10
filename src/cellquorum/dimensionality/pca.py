@@ -78,10 +78,17 @@ class PCAMethod(AnalysisMethod):
     backend = "python"
 
     def input_contract(self, config: dict) -> DataContract:
-        """PCA operates on the active matrix; no structural precondition."""
+        """PCA operates on the configured normalized layer."""
 
-        # No required layers/obs — an empty contract validates any object.
-        return DataContract()
+        # Read the input layer from config (default to cellquorum_normalized).
+        input_layer = config.get("input_layer", "cellquorum_normalized")
+
+        # Require the layer to exist and be tagged as lognorm.
+        return DataContract(
+            required_layers=[input_layer],
+            expression_layer=input_layer,
+            expected_kind="lognorm",
+        )
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
         """
@@ -97,6 +104,7 @@ class PCAMethod(AnalysisMethod):
         """
 
         # Resolve settings with defaults matching DimensionalityConfig.
+        input_layer = config.get("input_layer", "cellquorum_normalized")
         n_pcs = config.get("n_pcs", "auto")
         max_pcs = int(config.get("max_pcs", 50))
         random_state = int(config.get("random_state", 0))
@@ -112,6 +120,7 @@ class PCAMethod(AnalysisMethod):
             n_comps=n_comps,
             random_state=random_state,
             mask_var=mask_var,
+            layer=input_layer,
         )
         variance_ratio = np.asarray(adata.uns["pca"]["variance_ratio"], dtype=float)
 
