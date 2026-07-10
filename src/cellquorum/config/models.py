@@ -11,6 +11,9 @@ from typing import Literal
 # Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator, model_validator
 
+# Import the annotation configuration model.
+from cellquorum.annotation.config import AnnotationConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -550,6 +553,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store integration settings.
     integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
+
+    # Store annotation settings.
+    annotation: AnnotationConfig = Field(default_factory=AnnotationConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
