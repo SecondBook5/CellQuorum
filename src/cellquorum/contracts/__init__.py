@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# Import the contract violation exception for public export.
+from cellquorum.contracts.data_contract import DataContract
 from cellquorum.contracts.exceptions import CellQuorumContractError
 
-__all__ = ["CellQuorumContractError"]
+__all__ = ["CellQuorumContractError", "DataContract"]
