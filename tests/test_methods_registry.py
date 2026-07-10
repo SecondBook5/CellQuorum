@@ -45,3 +45,10 @@ def test_duplicate_registration_raises():
     reg.register(_MethodA)
     with pytest.raises(CellQuorumContractError, match="already registered"):
         reg.register(_MethodA)
+
+
+def test_has_reports_registration():
+    reg = MethodRegistry()
+    reg.register(_MethodA)
+    assert reg.has("ambient_correction", "soupx") is True
+    assert reg.has("ambient_correction", "decontx") is False
