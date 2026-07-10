@@ -75,6 +75,12 @@ class AnalysisMethod(ABC):
         # Default: no extra layer requirement beyond the contract.
         return []
 
+    def requires_obs(self, config: dict) -> list[str]:
+        """obs columns that must exist for the method to run; [] means none."""
+
+        # Default: no required obs columns beyond the contract.
+        return []
+
     def run(
         self,
         adata: ad.AnnData,
@@ -122,6 +128,14 @@ class AnalysisMethod(ABC):
             return MethodSkip(
                 reason=f"method '{self.name}' skipped: required layers absent {missing}",
                 details={"method": self.name, "missing_layers": missing},
+            )
+
+        # ---- Skip-guard: required obs columns ---- #
+        missing_obs = [col for col in self.requires_obs(config) if col not in adata.obs.columns]
+        if missing_obs:
+            return MethodSkip(
+                reason=f"method '{self.name}' skipped: required obs column(s) absent {missing_obs}",
+                details={"method": self.name, "missing_obs": missing_obs},
             )
 
         # ---- Contract validation (raises on violation) ---- #

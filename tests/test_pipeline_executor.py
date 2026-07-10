@@ -278,6 +278,7 @@ def test_default_stage_registry_contains_qc() -> None:
 
     QC and preprocessing are the first real executable scientific stages.
     Phase-2A adds dimensionality and clustering.
+    Phase-2B adds integration and annotation.
     """
 
     # Build the default registry.
@@ -288,9 +289,13 @@ def test_default_stage_registry_contains_qc() -> None:
     assert registry.get("preprocessing") is not None
     assert registry.get("dimensionality") is not None
     assert registry.get("clustering") is not None
+    assert registry.get("integration") is not None
+    assert registry.get("annotation") is not None
     assert registry.registered_stage_names() == [
+        "annotation",
         "clustering",
         "dimensionality",
+        "integration",
         "preprocessing",
         "qc",
     ]
@@ -429,15 +434,15 @@ def test_executor_records_unimplemented_enabled_stage_as_skipped(tmp_path: Path)
     # Build context containing AnnData.
     context = build_test_context(tmp_path)
 
-    # Build a plan with an enabled future stage (integration not yet implemented).
-    plan = make_plan(make_enabled_stage("integration"))
+    # Build a plan with an enabled future stage (state_scoring not yet implemented).
+    plan = make_plan(make_enabled_stage("state_scoring"))
 
     # Execute the plan.
     execution_result = PipelineExecutor().run(context=context, plan=plan)
 
-    # Confirm integration was skipped, not silently ignored.
+    # Confirm state_scoring was skipped, not silently ignored.
     assert execution_result.succeeded_stage_names() == []
-    assert execution_result.skipped_stage_names() == ["integration"]
+    assert execution_result.skipped_stage_names() == ["state_scoring"]
 
     # Confirm skip reason explains missing implementation.
     record = execution_result.stage_execution_records[0]

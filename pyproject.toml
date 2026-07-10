@@ -35,6 +35,7 @@ classifiers = [
 
 dependencies = [
   "anndata>=0.11",
+  "harmonypy>=0.2",
   "hydra-core>=1.3",
   "kneed>=0.8",
   "leidenalg>=0.10",

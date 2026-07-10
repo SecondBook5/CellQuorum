@@ -29,9 +29,9 @@ def test_planner_orders_new_stages_after_preprocessing():
     plan = planner.build_plan()
     names = [s.name for s in plan.stages]
     assert names.index("dimensionality") > names.index("preprocessing")
-    # Clustering runs after annotation (its canonical slot), which also implies
+    # Annotation runs after clustering (its canonical slot), which also implies
     # it runs after dimensionality given the fixed stage order.
-    assert names.index("clustering") > names.index("annotation")
+    assert names.index("annotation") > names.index("clustering")
     assert names.index("clustering") > names.index("dimensionality")
 
 

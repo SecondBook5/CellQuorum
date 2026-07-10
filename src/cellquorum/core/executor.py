@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 # Import UTC datetime for stage lifecycle timing.
 from datetime import UTC, datetime
 
+# Import annotation stage.
+from cellquorum.annotation.stage import AnnotationStage
+
 # Import Phase-2A stages: dimensionality reduction and clustering.
 from cellquorum.clustering.stage import ClusteringStage
 
@@ -27,6 +30,9 @@ from cellquorum.core.stage import (
     StageResult,
 )
 from cellquorum.dimensionality.stage import DimensionalityStage
+
+# Import integration stage.
+from cellquorum.integration.stage import IntegrationStage
 
 # Import the preprocessing stage.
 from cellquorum.preprocessing.stage import PreprocessingStage
@@ -196,6 +202,8 @@ def build_default_stage_registry() -> StageRegistry:
             "preprocessing": PreprocessingStage(),
             "dimensionality": DimensionalityStage(),
             "clustering": ClusteringStage(),
+            "integration": IntegrationStage(),
+            "annotation": AnnotationStage(),
         }
     )
 

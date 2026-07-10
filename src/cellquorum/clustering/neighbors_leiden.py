@@ -24,10 +24,11 @@ class LeidenMethod(AnalysisMethod):
     backend = "python"
 
     def input_contract(self, config: dict) -> DataContract:
-        """Leiden requires a PCA embedding to build the neighbor graph."""
+        """Leiden requires the configured embedding to build the neighbor graph."""
 
-        # Require the PCA embedding produced by the dimensionality stage.
-        return DataContract(required_obsm=["X_pca"])
+        # Cluster on the configured embedding (default X_pca; X_pca_harmony after integration).
+        use_rep = config.get("use_rep", "X_pca")
+        return DataContract(required_obsm=[use_rep])
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
         """
@@ -47,12 +48,13 @@ class LeidenMethod(AnalysisMethod):
         resolution = float(config.get("resolution", 1.0))
         random_state = int(config.get("random_state", 0))
         key_added = config.get("key_added", "leiden")
+        use_rep = config.get("use_rep", "X_pca")
 
-        # Build the kNN graph on the PCA embedding.
+        # Build the kNN graph on the configured embedding.
         sc.pp.neighbors(
             adata,
             n_neighbors=n_neighbors,
-            use_rep="X_pca",
+            use_rep=use_rep,
             random_state=random_state,
         )
 

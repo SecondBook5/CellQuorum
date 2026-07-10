@@ -11,8 +11,18 @@ from typing import Literal
 # Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator, model_validator
 
+# Import the annotation configuration model.
+from cellquorum.annotation.config import AnnotationConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
+
+# Import the markers, design, and contrasts configuration models.
+from cellquorum.config.design import ContrastsConfig, DesignConfig
+from cellquorum.config.markers import MarkersConfig
+
+# Import the integration configuration model.
+from cellquorum.integration.config import IntegrationConfig
 
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
@@ -387,6 +397,8 @@ class ClusteringConfig(StrictBaseModel):
         resolution: Leiden resolution.
         random_state: Seed for deterministic neighbors/Leiden.
         key_added: obs column that receives cluster labels.
+        use_rep: Embedding to cluster on (set to the integration output, e.g.
+            "X_pca_harmony", when integration runs; defaults to raw PCA).
     """
 
     # Store whether the clustering stage may run.
@@ -406,6 +418,10 @@ class ClusteringConfig(StrictBaseModel):
 
     # Store the obs column that receives cluster labels.
     key_added: str = "leiden"
+
+    # Embedding to cluster on (set to the integration output, e.g.
+    # "X_pca_harmony", when integration runs; defaults to raw PCA).
+    use_rep: str = "X_pca"
 
 
 class StageSelectionConfig(StrictBaseModel):
@@ -534,6 +550,21 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store clustering settings.
     clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
+
+    # Store integration settings.
+    integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
+
+    # Store annotation settings.
+    annotation: AnnotationConfig = Field(default_factory=AnnotationConfig)
+
+    # Store named marker gene panels.
+    markers: MarkersConfig = Field(default_factory=MarkersConfig)
+
+    # Store experimental-design settings.
+    design: DesignConfig = Field(default_factory=DesignConfig)
+
+    # Store named case/control contrasts.
+    contrasts: ContrastsConfig = Field(default_factory=ContrastsConfig)
 
     @model_validator(mode="after")
     def validate_backend_fallbacks(self) -> CellQuorumConfig:

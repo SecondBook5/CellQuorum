@@ -32,14 +32,66 @@ class ClusteringStage(MethodDispatchStage):
         return config.get("method", "leiden")
 
     def run(self, context: object) -> StageResult:
-        """Override run to store key_added for validation."""
+        """Override run to store key_added for validation and auto-couple use_rep."""
         # Resolve config to extract key_added before calling base run.
         from cellquorum.methods.context_access import resolve_stage_config
 
         stage_config = resolve_stage_config(context, self.name)
         self._key_added = stage_config.get("key_added", "leiden")
+
+        # Auto-couple use_rep when integration is enabled and user didn't explicitly set it.
+        # This ensures clustering operates on the integration output (X_pca_harmony) by default
+        # instead of ignoring it and reading raw X_pca.
+        use_rep_from_config = stage_config.get("use_rep", "X_pca")
+        if use_rep_from_config == "X_pca":
+            # Check if integration is enabled via context.config
+            integration_enabled = False
+            integration_output_rep = "X_pca_harmony"
+
+            if hasattr(context, "config"):
+                cfg = context.config
+                # Handle both dict and pydantic config objects
+                if isinstance(cfg, dict):
+                    stages = cfg.get("stages", {})
+                    integration_enabled = stages.get("integration", False)
+                    integration_cfg = cfg.get("integration", {})
+                    integration_output_rep = integration_cfg.get("output_rep", "X_pca_harmony")
+                else:
+                    integration_enabled = getattr(cfg.stages, "integration", False)
+                    if hasattr(cfg, "integration"):
+                        integration_output_rep = getattr(
+                            cfg.integration, "output_rep", "X_pca_harmony"
+                        )
+
+            # Check if the user explicitly set use_rep via the pydantic model's model_fields_set
+            user_set_use_rep = False
+            if hasattr(context, "config") and not isinstance(context.config, dict):
+                clustering_model = getattr(context.config, "clustering", None)
+                if clustering_model is not None and hasattr(clustering_model, "model_fields_set"):
+                    user_set_use_rep = "use_rep" in clustering_model.model_fields_set
+            elif isinstance(getattr(context, "config", None), dict):
+                # For dict configs (tests): treat use_rep as explicit if present and != "X_pca"
+                clustering_dict = context.config.get("clustering", {})
+                if "use_rep" in clustering_dict and clustering_dict["use_rep"] != "X_pca":
+                    user_set_use_rep = True
+
+            # Override use_rep if integration is enabled and user didn't explicitly set it
+            if integration_enabled and not user_set_use_rep:
+                stage_config["use_rep"] = integration_output_rep
+                # Store a note for the result to make this non-silent
+                self._auto_coupled_use_rep = integration_output_rep
+
         # Now call base run which will handle enabled check, dispatch, and validation.
-        return super().run(context)
+        result = super().run(context)
+
+        # Add note if we auto-coupled use_rep
+        if hasattr(self, "_auto_coupled_use_rep") and not result.metrics.get("skipped"):
+            result.notes.append(
+                f"clustering.use_rep auto-set to {self._auto_coupled_use_rep} "
+                "because integration is enabled."
+            )
+
+        return result
 
     def _validate_output(self, result: StageResult) -> None:
         """Validate that cluster labels landed in the configured obs column."""
