@@ -30,6 +30,7 @@ dependencies:
   - python-igraph>=0.11
   - leidenalg>=0.10
   - louvain>=0.8
+  - kneed>=0.8
 
   # HVG and preprocessing support.
   - scikit-misc>=0.3
