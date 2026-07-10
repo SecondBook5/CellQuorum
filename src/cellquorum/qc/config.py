@@ -602,6 +602,8 @@ class QCDoubletConfig(StrictBaseModel):
     Args:
         enabled: Whether doublet detection or auditing is enabled.
         method: Doublet detection method.
+        methods: Detectors to run (consensus over these); overrides single method when set.
+        consensus: How to combine per-method calls: any | all | majority.
         remove: Whether predicted doublets should be removed automatically.
         expected_doublet_rate: Expected doublet rate as a probability.
         score_threshold: Optional manual doublet score threshold.
@@ -613,6 +615,14 @@ class QCDoubletConfig(StrictBaseModel):
 
     # Store the selected doublet detection method.
     method: DoubletMethod = "scdblfinder"
+
+    # Store detectors to run (consensus over these); overrides single method when
+    # set. Default matches the single-method default (`method`) so an unconfigured
+    # run uses the same detector regardless of which field the caller reads.
+    methods: list[str] = Field(default_factory=lambda: ["scdblfinder"])
+
+    # Store how to combine per-method calls: any | all | majority.
+    consensus: str = "any"
 
     # Store whether predicted doublets should be removed automatically.
     remove: bool = False
