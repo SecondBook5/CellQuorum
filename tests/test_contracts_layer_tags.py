@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import anndata as ad
 import numpy as np
+import pytest
 
 from cellquorum.contracts.layer_tags import (
     get_layer_tag,
@@ -43,3 +44,16 @@ def test_get_normalization_recipe_reads_preprocessing_provenance():
 
 def test_get_normalization_recipe_absent_is_none():
     assert get_normalization_recipe(_adata()) is None
+
+
+def test_set_layer_tag_rejects_invalid_kind():
+    a = _adata()
+    with pytest.raises(ValueError, match="Unknown layer kind"):
+        set_layer_tag(a, "lognorm", kind="bogus")
+
+
+def test_get_normalization_recipe_partial_path_is_none():
+    # Defensive navigation: a partial uns path (no 'normalization' key) returns None, not KeyError.
+    a = _adata()
+    a.uns["cellquorum"] = {"preprocessing": {}}
+    assert get_normalization_recipe(a) is None
