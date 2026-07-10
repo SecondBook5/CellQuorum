@@ -4,5 +4,6 @@ from __future__ import annotations
 
 from cellquorum.contracts.data_contract import DataContract
 from cellquorum.contracts.exceptions import CellQuorumContractError
+from cellquorum.contracts.labels import LabelContract
 
-__all__ = ["CellQuorumContractError", "DataContract"]
+__all__ = ["CellQuorumContractError", "DataContract", "LabelContract"]
