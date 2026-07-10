@@ -28,6 +28,9 @@ from cellquorum.core.stage import (
 )
 from cellquorum.dimensionality.stage import DimensionalityStage
 
+# Import integration stage.
+from cellquorum.integration.stage import IntegrationStage
+
 # Import the preprocessing stage.
 from cellquorum.preprocessing.stage import PreprocessingStage
 
@@ -196,6 +199,7 @@ def build_default_stage_registry() -> StageRegistry:
             "preprocessing": PreprocessingStage(),
             "dimensionality": DimensionalityStage(),
             "clustering": ClusteringStage(),
+            "integration": IntegrationStage(),
         }
     )
 
