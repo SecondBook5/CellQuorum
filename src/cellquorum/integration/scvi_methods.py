@@ -30,6 +30,15 @@ class ScVIMethod(AnalysisMethod):
         # Require a counts layer.
         return ["counts"]
 
+    def requires_obs(self, config: dict) -> list[str]:
+        """Return the batch key that must exist for integration to run."""
+
+        # Read the batch column from config.
+        batch_key = config.get("batch_key", "patient_id")
+
+        # Require the batch column to exist.
+        return [batch_key]
+
     def input_contract(self, config: dict) -> DataContract:
         """Require the counts layer and the batch obs column."""
 
