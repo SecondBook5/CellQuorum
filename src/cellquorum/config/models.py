@@ -18,6 +18,9 @@ from cellquorum.config.base import StrictBaseModel
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
+# Import the integration configuration model.
+from cellquorum.integration.config import IntegrationConfig
+
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
 
@@ -538,6 +541,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store clustering settings.
     clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
+
+    # Store integration settings.
+    integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)

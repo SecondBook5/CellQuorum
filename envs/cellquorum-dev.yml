@@ -36,7 +36,7 @@ dependencies:
   - scikit-misc>=0.3
 
   # Batch correction and CPU integration.
-  - harmonypy>=0.0.10
+  - harmonypy>=0.2
   - bbknn>=1.6
 
   # Doublet/QC support.
