@@ -32,6 +32,27 @@ class LabelContract(StrictBaseModel):
     # Canonical condition tokens that must all be present.
     expected_conditions: list[str] = []
 
+    @staticmethod
+    def _present_tokens(adata: ad.AnnData, col: str) -> set[str]:
+        """
+        Return an obs column's distinct values as strings.
+
+        Centralizing the str-coercion here keeps ``validate`` and ``select``
+        in lockstep: a token that ``validate`` accepts is guaranteed selectable,
+        because both sides compute "present values" the same way (categorical and
+        object dtypes compare identically after coercion).
+
+        Args:
+            adata: Object whose obs column is inspected.
+            col: obs column name.
+
+        Returns:
+            Set of the column's distinct values coerced to str.
+        """
+
+        # Coerce distinct values to str so categorical/object dtypes compare alike.
+        return set(map(str, adata.obs[col].unique()))
+
     def validate(self, adata: ad.AnnData) -> None:
         """
         Verify the columns exist and all expected tokens are present.
@@ -51,7 +72,7 @@ class LabelContract(StrictBaseModel):
             )
 
         # Every expected label token must be present in the column.
-        present_labels = set(map(str, adata.obs[self.label_col].unique()))
+        present_labels = self._present_tokens(adata, self.label_col)
         for token in self.expected_labels:
             if token not in present_labels:
                 raise CellQuorumContractError(
@@ -66,7 +87,7 @@ class LabelContract(StrictBaseModel):
                     f"Condition column '{self.condition_col}' is missing. "
                     f"Present: {list(adata.obs.columns)}."
                 )
-            present_conditions = set(map(str, adata.obs[self.condition_col].unique()))
+            present_conditions = self._present_tokens(adata, self.condition_col)
             for token in self.expected_conditions:
                 if token not in present_conditions:
                     raise CellQuorumContractError(
@@ -94,8 +115,8 @@ class LabelContract(StrictBaseModel):
         if self.label_col not in adata.obs.columns:
             raise CellQuorumContractError(f"Label column '{self.label_col}' is missing.")
 
-        # Label must be a real value in the column.
-        present = set(map(str, adata.obs[self.label_col].unique()))
+        # Label must be a real value in the column (same coercion as validate).
+        present = self._present_tokens(adata, self.label_col)
         if label not in present:
             raise CellQuorumContractError(
                 f"Label '{label}' absent from column '{self.label_col}'; refusing to "
