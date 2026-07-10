@@ -53,3 +53,28 @@ def test_log_range_raises_on_unlogged():
 def test_log_range_passes_on_logged():
     X = np.array([[0.0, 4.2]], dtype=np.float32)
     assert_log_range(X, layer="lognorm", max_value=30.0)
+
+
+def test_integer_valued_raises_on_fractional_sparse():
+    X = sp.csr_matrix(np.array([[0.0, 1.5], [2.0, 0.0]], dtype=np.float32))
+    with pytest.raises(CellQuorumContractError, match="counts"):
+        assert_integer_valued(X, layer="counts")
+
+
+def test_non_negative_raises_on_negative_sparse():
+    X = sp.csr_matrix(np.array([[0.0, -1.0]], dtype=np.float32))
+    with pytest.raises(CellQuorumContractError):
+        assert_non_negative(X, layer="lognorm")
+
+
+def test_non_integer_or_zero_passes_on_all_zeros():
+    X = np.zeros((10, 10), dtype=np.float32)
+    assert_non_integer_or_zero(X, layer="lognorm")  # no raise
+
+
+def test_empty_matrix_passes_all_checks():
+    X = np.array([], dtype=np.float32).reshape(0, 0)
+    assert_non_negative(X, layer="test")
+    assert_integer_valued(X, layer="test")
+    assert_non_integer_or_zero(X, layer="test")
+    assert_log_range(X, layer="test")

@@ -19,9 +19,12 @@ def _to_sample(X: np.ndarray | sp.spmatrix, n: int = 10000) -> np.ndarray:
     """
     Return a flat float sample of the matrix's values for cheap checks.
 
-    For sparse matrices only stored (nonzero) values are sampled, which is both
-    faster and the right domain for integer-ness / log-range checks. The sample
-    is deterministic (a head slice, no RNG) so tests and reruns are stable.
+    For sparse matrices only stored (nonzero) values are sampled via ``.data``
+    (faster and the right domain for integer-ness / log-range checks); dense
+    matrices are raveled and include zeros. This is a deliberate cheap-check
+    trade-off: sparse sampling skips implicit zeros (which are always valid),
+    while the 10000-value window makes the difference negligible in practice.
+    The sample is deterministic (a head slice, no RNG) so tests and reruns are stable.
 
     Args:
             X: Expression matrix, dense or sparse.
@@ -89,7 +92,8 @@ def assert_integer_valued(X: np.ndarray | sp.spmatrix, *, layer: str) -> None:
             f"Layer '{layer}' declared as counts but contains negatives (min={sample.min():.4g})."
         )
 
-    # Reject fractional values.
+    # Reject fractional values. np.allclose's default tolerance (~1e-05) is tight
+    # enough because log-normalized expression rarely lands exactly on integers.
     if not np.allclose(sample, np.round(sample)):
         raise CellQuorumContractError(
             f"Layer '{layer}' declared as counts but contains non-integer values."
