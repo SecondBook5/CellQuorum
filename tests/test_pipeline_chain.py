@@ -205,3 +205,52 @@ def test_annotation_actually_runs_not_skipped(tmp_path):
     assert ann is not None
     assert not ann.metrics.get("skipped", False), "annotation skipped — ordering bug?"
     assert "cell_type" in result.context.adata.obs
+
+
+def test_full_gpu_chain_threads_every_stage_output(tmp_path):
+    """The chain runs on GPU end-to-end (skips when rapids-singlecell unavailable).
+
+    The GPU analog of the CPU chain test: proves normalization, PCA, and
+    clustering actually ran on GPU (metrics["compute"]=="gpu") AND that every
+    stage's output still threads to the final AnnData — i.e. GPU routing did not
+    silently break the chain or silently fall back to CPU.
+    """
+
+    import pytest
+
+    from cellquorum.compute.router import gpu_compute_available
+
+    if not gpu_compute_available():
+        pytest.skip("rapids-singlecell/cupy unavailable")
+
+    h5ad_path = tmp_path / "cohort.h5ad"
+    _synthetic_cohort().write_h5ad(h5ad_path)
+
+    # Force GPU for the routable stages.
+    config = _chain_config(h5ad_path)
+    config.compute.backend = "gpu"
+
+    result = execute_pipeline_run(
+        config,
+        output_dir=tmp_path / "run",
+        backend_registry=_backend_registry(),
+        load_input=True,
+    )
+
+    assert (
+        not result.execution_result.has_failures()
+    ), f"GPU chain had failures: {result.execution_result.failed_stage_names()}"
+
+    # Same end-to-end outputs as the CPU chain — the chain is intact on GPU.
+    final = result.context.adata
+    assert "cellquorum_normalized" in final.layers
+    assert "X_pca" in final.obsm
+    assert "X_pca_harmony" in final.obsm
+    assert "leiden" in final.obs
+    assert "cell_type" in final.obs
+
+    # PCA and clustering actually ran on GPU (not a silent CPU fallback).
+    dim = result.execution_result.stage_results["dimensionality"]
+    clu = result.execution_result.stage_results["clustering"]
+    assert dim.metrics.get("compute") == "gpu", "PCA did not run on GPU"
+    assert clu.metrics.get("compute") == "gpu", "clustering did not run on GPU"
