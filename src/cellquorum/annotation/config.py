@@ -29,5 +29,14 @@ class AnnotationConfig(StrictBaseModel):
     # Random seed for deterministic scoring.
     random_state: int = 0
 
+    # CellTypist model name or path (required when method == 'celltypist').
+    model: str | None = None
+
+    # Counts layer CellTypist normalizes to CP10k-log internally.
+    counts_layer: str = "counts"
+
+    # Whether CellTypist majority-voting over-clustering refinement is applied.
+    majority_voting: bool = True
+
 
 __all__ = ["AnnotationConfig"]
