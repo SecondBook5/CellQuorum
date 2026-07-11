@@ -53,7 +53,8 @@ def write_qc_figures(
     Creates publication-quality diagnostic plots for QC metrics:
     - Total counts histogram
     - Number of genes histogram
-    - Mitochondrial percentage histogram (if available)
+    - Gene-class percentage histograms (mitochondrial, ribosomal, hemoglobin —
+      one per ``pct_counts_*`` metric present)
     - Total counts vs number of genes scatter
     - Gene detection histogram
     - Keep/fail barplot (if QC decisions exist)
@@ -105,19 +106,29 @@ def write_qc_figures(
         else:
             figure_paths.append(fig_path)
 
-    # Figure 3: Mitochondrial percentage histogram (optional)
-    if "pct_counts_mito" in adata.obs.columns:
-        fig_path = output_dir / f"qc_pct_counts_mito_histogram.{figure_format}"
-        if overwrite or not fig_path.exists():
-            try:
-                _plot_mito_histogram(adata, fig_path, dpi)
+    # Figure 3: Gene-class percentage histograms (mitochondrial, ribosomal,
+    # hemoglobin). Each is plotted only when its pct_counts_* metric is present,
+    # so ambient/QC configs that skip a class simply skip its figure.
+    for family, family_label in (
+        ("mito", "Mitochondrial"),
+        ("ribo", "Ribosomal"),
+        ("hemoglobin", "Hemoglobin"),
+    ):
+        column = f"pct_counts_{family}"
+        if column in adata.obs.columns:
+            fig_path = output_dir / f"qc_{column}_histogram.{figure_format}"
+            if overwrite or not fig_path.exists():
+                try:
+                    _plot_pct_counts_histogram(adata, column, family_label, fig_path, dpi)
+                    figure_paths.append(fig_path)
+                except Exception as e:
+                    warnings.append(
+                        f"Failed to create {family_label.lower()} percentage histogram: {e}"
+                    )
+            else:
                 figure_paths.append(fig_path)
-            except Exception as e:
-                warnings.append(f"Failed to create mito percentage histogram: {e}")
         else:
-            figure_paths.append(fig_path)
-    else:
-        warnings.append("pct_counts_mito not found, skipping mitochondrial histogram")
+            warnings.append(f"{column} not found, skipping {family_label.lower()} histogram")
 
     # Figure 4: Total counts vs number of genes scatter
     if "total_counts" in adata.obs.columns and "n_genes_by_counts" in adata.obs.columns:
@@ -218,21 +229,28 @@ def _plot_n_genes_histogram(adata: AnnData, output_path: Path, dpi: int) -> None
     plt.close(fig)
 
 
-def _plot_mito_histogram(adata: AnnData, output_path: Path, dpi: int) -> None:
-    """Plot mitochondrial percentage histogram."""
+def _plot_pct_counts_histogram(
+    adata: AnnData, column: str, family_label: str, output_path: Path, dpi: int
+) -> None:
+    """Plot a gene-class percentage histogram (mito / ribo / hemoglobin).
+
+    Shared by all ``pct_counts_*`` gene-class metrics so a new class is plotted
+    automatically once its metric exists. ``family_label`` is the human-readable
+    class name (e.g. "Mitochondrial", "Ribosomal", "Hemoglobin").
+    """
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
 
-    pct_mito = adata.obs["pct_counts_mito"].values
+    pct_values = adata.obs[column].values
 
     # Use seaborn for histogram
-    sns.histplot(pct_mito, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
+    sns.histplot(pct_values, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
 
-    ax.set_xlabel("Mitochondrial Percentage (%)")
+    ax.set_xlabel(f"{family_label} Percentage (%)")
     ax.set_ylabel("Number of Cells")
-    ax.set_title("QC: Mitochondrial Content Distribution")
+    ax.set_title(f"QC: {family_label} Content Distribution")
 
     # Add median line
-    median_val = np.median(pct_mito)
+    median_val = np.median(pct_values)
     ax.axvline(
         median_val,
         color=CELLQUORUM_RED,

@@ -29,6 +29,8 @@ def make_test_adata_with_qc() -> ad.AnnData:
             "total_counts": [13, 11, 6, 12],
             "n_genes_by_counts": [4, 3, 4, 5],
             "pct_counts_mito": [10.0, 15.0, 5.0, 12.0],
+            "pct_counts_ribo": [20.0, 18.0, 25.0, 22.0],
+            "pct_counts_hemoglobin": [1.0, 0.5, 2.0, 0.0],
             "cellquorum_qc_keep": [True, True, False, True],
         },
         index=[f"cell_{i}" for i in range(4)],
@@ -57,6 +59,42 @@ def test_write_qc_figures_creates_expected_files() -> None:
         for fig_path in result.figure_paths:
             assert fig_path.exists()
             assert fig_path.stat().st_size > 0
+
+
+def test_write_qc_figures_plots_all_gene_classes() -> None:
+    """mito, ribo, and hemoglobin percentage histograms are all produced."""
+    adata = make_test_adata_with_qc()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir)
+
+        result = write_qc_figures(adata, output_dir, dpi=100)
+
+        names = {p.name for p in result.figure_paths}
+        assert "qc_pct_counts_mito_histogram.png" in names
+        assert "qc_pct_counts_ribo_histogram.png" in names
+        assert "qc_pct_counts_hemoglobin_histogram.png" in names
+        for p in result.figure_paths:
+            assert p.exists() and p.stat().st_size > 0
+
+
+def test_write_qc_figures_skips_absent_gene_class_with_warning() -> None:
+    """A gene class without its pct_counts_* metric is skipped (warned), not plotted."""
+    adata = make_test_adata_with_qc()
+
+    # Drop only hemoglobin: mito + ribo should still plot, hemoglobin should warn.
+    adata.obs = adata.obs.drop(columns=["pct_counts_hemoglobin"])
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_dir = Path(tmpdir)
+
+        result = write_qc_figures(adata, output_dir, dpi=100)
+
+        names = {p.name for p in result.figure_paths}
+        assert "qc_pct_counts_mito_histogram.png" in names
+        assert "qc_pct_counts_ribo_histogram.png" in names
+        assert "qc_pct_counts_hemoglobin_histogram.png" not in names
+        assert any("pct_counts_hemoglobin" in w for w in result.warnings)
 
 
 def test_write_qc_figures_without_optional_metrics() -> None:
