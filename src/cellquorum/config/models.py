@@ -24,6 +24,9 @@ from cellquorum.config.base import StrictBaseModel
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
+# Import the feature-selection configuration model.
+from cellquorum.feature_selection.config import FeatureSelectionConfig
+
 # Import the integration configuration model.
 from cellquorum.integration.config import IntegrationConfig
 
@@ -462,6 +465,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether preprocessing is enabled.
     preprocessing: bool = True
 
+    # Store whether the feature-selection (HVG) stage may run.
+    feature_selection: bool = True
+
     # Store whether dimensionality reduction is enabled.
     dimensionality: bool = True
 
@@ -555,6 +561,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store preprocessing settings.
     preprocessing: PreprocessingConfig = Field(default_factory=PreprocessingConfig)
+
+    # Store feature-selection settings.
+    feature_selection: FeatureSelectionConfig = Field(default_factory=FeatureSelectionConfig)
 
     # Store dimensionality-reduction settings.
     dimensionality: DimensionalityConfig = Field(default_factory=DimensionalityConfig)
