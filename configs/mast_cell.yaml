@@ -1,0 +1,84 @@
+project:
+  name: mast_cell_lymphedema
+  organism: human
+  species_id: 9606
+
+paths:
+  data_root: /mnt/e/lymphedema_cellranger
+  manifest: configs/manifests/mast_cell_5patient.csv
+  output_dir: null
+
+run:
+  profile: standard
+  random_seed: 1337
+
+compute:
+  backend: auto
+  prefer_gpu: true
+  fallback_to_cpu: true
+
+r:
+  enabled: true
+  fallback_to_rscript: true
+  rscript_path: Rscript
+  timeout_seconds: 1800
+
+stages:
+  ambient_correction: true
+  qc: true
+  preprocessing: true
+  dimensionality: true
+  integration: true
+  clustering: true
+  annotation: true
+
+ambient_correction:
+  enabled: true
+  method: soupx
+  cellranger_root: /mnt/e/lymphedema_cellranger
+  output_dir: soupx
+  round_to_int: true
+  cluster_resolution: 0.5
+  timeout_seconds: 1800
+
+qc:
+  enabled: true
+  mode: both
+
+preprocessing:
+  enabled: true
+
+dimensionality:
+  enabled: true
+  method: pca
+  n_pcs: auto
+  max_pcs: 50
+
+integration:
+  enabled: true
+  method: harmony
+  batch_key: batch
+  input_rep: X_pca
+  output_rep: X_pca_harmony
+
+clustering:
+  enabled: true
+  method: leiden
+  resolution: 1.0
+
+annotation:
+  enabled: true
+  method: marker_vote
+  cluster_key: leiden
+  key_added: cell_type
+  marker_panels:
+    Fibroblasts: [COL1A1, DCN, LUM]
+    Keratinocytes: [KRT14, KRT5]
+    Melanocytes: [PMEL, TYRP1]
+    Endothelial: [PECAM1, VWF]
+    Pericytes: [RGS5, ACTA2]
+    Mast cells: [TPSAB1, CPA3, KIT]
+    Macrophages: [CD68, CD14]
+    Dendritic cells: [CD1C, FCER1A]
+    CD4 T cells: [CD3D, CD4, IL7R]
+    CD8 T cells: [CD8A, GZMK]

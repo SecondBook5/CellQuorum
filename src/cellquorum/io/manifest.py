@@ -69,8 +69,12 @@ class ManifestRecord:
     # Store the unique sample identifier.
     sample_id: str
 
-    # Store the input data path.
-    path: Path
+    # Store the input data path (None for CellRanger-only rows).
+    path: Path | None = None
+
+    # Store the CellRanger outs-parent directory locator (relative or absolute,
+    # resolved later against ambient_correction.cellranger_root — NOT here).
+    cellranger_path: str | None = None
 
     # Store the optional donor or patient identifier.
     donor_id: str | None = None
@@ -111,7 +115,8 @@ class ManifestRecord:
         # Build the base dictionary from required and standard metadata fields.
         record = {
             "sample_id": self.sample_id,
-            "path": str(self.path),
+            "path": str(self.path) if self.path is not None else None,
+            "cellranger_path": self.cellranger_path,
             "donor_id": self.donor_id,
             "condition": self.condition,
             "batch": self.batch,
@@ -155,11 +160,13 @@ class Manifest:
     # Store the optional root used to resolve relative input paths.
     data_root: Path | None = None
 
-    # Store required manifest columns.
-    REQUIRED_COLUMNS: tuple[str, str] = ("sample_id", "path")
+    # Store required manifest columns (an input locator is validated per-row).
+    REQUIRED_COLUMNS: tuple[str, ...] = ("sample_id",)
 
     # Store standard optional manifest metadata columns.
     OPTIONAL_COLUMNS: tuple[str, ...] = (
+        "path",
+        "cellranger_path",
         "donor_id",
         "condition",
         "batch",
@@ -605,15 +612,21 @@ def validate_manifest_dataframe(
         # Store the sample ID as observed.
         seen_sample_ids.add(sample_id)
 
-        # Clean and validate the required path value.
-        path_value = _clean_required_string(
-            row.get("path"),
-            column="path",
-            row_number=row_offset,
-        )
+        # Clean the optional path and cellranger_path locators.
+        raw_path = _clean_optional_string(row.get("path"))
+        cellranger_path = _clean_optional_string(row.get("cellranger_path"))
 
-        # Resolve the manifest path.
-        resolved_path = _resolve_manifest_path(path_value, resolved_data_root)
+        # Require at least one input locator per row (fail loud, name the row).
+        if raw_path is None and cellranger_path is None:
+            raise ManifestError(
+                f"Manifest row {row_offset} has neither a 'path' nor a "
+                "'cellranger_path' — every sample needs an input locator."
+            )
+
+        # Resolve the file path only when present; cellranger_path stays verbatim.
+        resolved_path = (
+            _resolve_manifest_path(raw_path, resolved_data_root) if raw_path is not None else None
+        )
 
         # Build extra metadata by preserving non-standard columns.
         extra_metadata = {
@@ -626,6 +639,7 @@ def validate_manifest_dataframe(
         record = ManifestRecord(
             sample_id=sample_id,
             path=resolved_path,
+            cellranger_path=cellranger_path,
             donor_id=_clean_optional_string(row.get("donor_id")),
             condition=_clean_optional_string(row.get("condition")),
             batch=_clean_optional_string(row.get("batch")),

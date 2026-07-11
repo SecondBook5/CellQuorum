@@ -1,0 +1,11 @@
+sample_id,cellranger_path,donor_id,condition,batch
+Set4_norm4_v8,Set4_norm_LE/norm4_v8,P4,Normal,Set4
+Set4_LE4_v8,Set4_norm_LE/LE4_v8,P4,LE,Set4
+Set6_norm6_v8,Set6_norm_LE/norm6_v8,P6,Normal,Set6
+Set6_LE6-v8,Set6_norm_LE/LE6-v8,P6,LE,Set6
+Set7_norm7_v8,Set7_norm_LE/norm7_v8,P7,Normal,Set7
+Set7_LE7_v8,Set7_norm_LE/LE7_v8,P7,LE,Set7
+Set8_norm_LE_Abdo CA_norm8,Set8_norm_LE_Abdo CA/norm8_v8,P8,Normal,Set8
+Set8_norm_LE_Abdo CA_LE8,Set8_norm_LE_Abdo CA/LE8_v8,P8,LE,Set8
+Set10_norm10_v8,Set10_norm_LE/norm10_v8,P10,Normal,Set10
+Set10_LE10_v8,Set10_norm_LE/LE10_v8,P10,LE,Set10

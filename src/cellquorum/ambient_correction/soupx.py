@@ -111,6 +111,9 @@ def import_corrected_matrix(out_dir: str | Path, sample_id: str) -> ad.AnnData:
     adata.var_names = genes
     adata.obs_names = [f"{sample_id}_{bc}" for bc in barcodes]
     adata.var_names_make_unique()
+    # Record sample_id as an explicit obs column (robust — do NOT reconstruct it
+    # downstream by splitting namespaced barcodes, which can themselves contain '_').
+    adata.obs["sample_id"] = sample_id
     adata.layers["counts"] = adata.X.copy()
     return adata
 
