@@ -15,6 +15,30 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
 
 
+def _run_cpu_neighbors_leiden(
+    adata: ad.AnnData,
+    n_neighbors: int,
+    use_rep: str,
+    resolution: float,
+    random_state: int,
+    key_added: str,
+) -> None:
+    """Run neighbors + Leiden on CPU via scanpy (shared by CPU path and GPU fallback)."""
+
+    # Build the kNN graph on the chosen embedding.
+    sc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=use_rep, random_state=random_state)
+    # Run Leiden with the deterministic igraph flavor.
+    sc.tl.leiden(
+        adata,
+        resolution=resolution,
+        random_state=random_state,
+        key_added=key_added,
+        flavor="igraph",
+        n_iterations=2,
+        directed=False,
+    )
+
+
 class LeidenMethod(AnalysisMethod):
     """Leiden clustering strategy over a PCA embedding."""
 
@@ -37,7 +61,7 @@ class LeidenMethod(AnalysisMethod):
         Args:
             adata: Input AnnData carrying obsm["X_pca"].
             config: Resolved clustering config sub-block.
-            context: Pipeline context (unused here).
+            context: Pipeline context.
 
         Returns:
             StageResult with cluster labels in obs and cluster-count metrics.
@@ -50,31 +74,56 @@ class LeidenMethod(AnalysisMethod):
         key_added = config.get("key_added", "leiden")
         use_rep = config.get("use_rep", "X_pca")
 
-        # Build the kNN graph on the configured embedding.
-        sc.pp.neighbors(
-            adata,
-            n_neighbors=n_neighbors,
-            use_rep=use_rep,
-            random_state=random_state,
-        )
+        from cellquorum.compute.router import resolve_compute
 
-        # Run Leiden at the configured resolution (flavor pinned for determinism).
-        sc.tl.leiden(
-            adata,
-            resolution=resolution,
-            random_state=random_state,
-            key_added=key_added,
-            flavor="igraph",
-            n_iterations=2,
-            directed=False,
-        )
+        routing = resolve_compute(context)
+        compute_used = "cpu"
+        gpu_fallback_note = None
+
+        if routing["use_gpu"]:
+            try:
+                import rapids_singlecell as rsc
+
+                rsc.get.anndata_to_GPU(adata)
+                rsc.pp.neighbors(
+                    adata, n_neighbors=n_neighbors, use_rep=use_rep, random_state=random_state
+                )
+                rsc.tl.leiden(
+                    adata, resolution=resolution, random_state=random_state, key_added=key_added
+                )
+                rsc.get.anndata_to_CPU(adata)
+                compute_used = "gpu"
+            except Exception as exc:  # noqa: BLE001
+                if not routing["fallback_to_cpu"]:
+                    raise
+                try:
+                    import rapids_singlecell as rsc
+
+                    rsc.get.anndata_to_CPU(adata)
+                except Exception:
+                    pass
+                gpu_fallback_note = (
+                    f"GPU clustering failed ({type(exc).__name__}: {str(exc)[:80]}); "
+                    "fell back to CPU."
+                )
+                _run_cpu_neighbors_leiden(
+                    adata, n_neighbors, use_rep, resolution, random_state, key_added
+                )
+        else:
+            _run_cpu_neighbors_leiden(
+                adata, n_neighbors, use_rep, resolution, random_state, key_added
+            )
 
         # Count clusters for provenance.
         n_clusters = int(adata.obs[key_added].nunique())
+        notes = [f"Leiden found {n_clusters} clusters at resolution {resolution}."]
+        if gpu_fallback_note:
+            notes.append(gpu_fallback_note)
+
         return StageResult(
             adata=adata,
-            metrics={"n_clusters": n_clusters, "resolution": resolution},
-            notes=[f"Leiden found {n_clusters} clusters at resolution {resolution}."],
+            metrics={"n_clusters": n_clusters, "resolution": resolution, "compute": compute_used},
+            notes=notes,
         )
 
 
