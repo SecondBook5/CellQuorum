@@ -34,6 +34,9 @@ from cellquorum.core.stage import (
 )
 from cellquorum.dimensionality.stage import DimensionalityStage
 
+# Import feature selection stage.
+from cellquorum.feature_selection.stage import FeatureSelectionStage
+
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage
 
@@ -204,6 +207,7 @@ def build_default_stage_registry() -> StageRegistry:
             "ambient_correction": AmbientCorrectionStage(),
             "qc": QCStage(),
             "preprocessing": PreprocessingStage(),
+            "feature_selection": FeatureSelectionStage(),
             "dimensionality": DimensionalityStage(),
             "clustering": ClusteringStage(),
             "integration": IntegrationStage(),
