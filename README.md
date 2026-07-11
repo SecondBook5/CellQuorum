@@ -11,6 +11,8 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
+![Tests](https://img.shields.io/badge/tests-674%20passing-brightgreen)
+![Stages](https://img.shields.io/badge/stages-7%20implemented-blue)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
 
@@ -22,7 +24,9 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 
 CellQuorum is designed to make advanced single-cell RNA-seq analysis easier to run without losing reproducibility, auditability, or scientific discipline.
 
-The current implementation provides the execution spine of the project:
+The engine provides both the execution spine and a working config-driven analysis backbone:
+
+**Execution spine**
 
 - strict YAML/Pydantic configuration validation
 - backend registry for Python, R/Rscript, GPU, and RAPIDS availability checks
@@ -33,28 +37,68 @@ The current implementation provides the execution spine of the project:
 - public Python API
 - pytest and pre-commit support
 
-Full biological analysis stages are being added module by module, starting with manifest validation, stage lifecycle records, and QC-safe single-cell preprocessing.
+**Fail-loud data contracts** — every stage boundary validates the AnnData it
+receives (required layers/obs/embeddings, layer-provenance tags, and statistical
+sanity such as rejecting raw counts mislabeled as log-normalized). A method whose
+required inputs are absent *skips with a recorded reason* rather than crashing or
+silently producing wrong output.
+
+**Config-driven analysis backbone** — seven registered stages run in
+best-practices order, each dispatching to a config-selected method:
+
+```
+ambient_correction → qc → preprocessing → dimensionality
+    → integration → clustering → annotation
+```
+
+Every method is chosen by config (e.g. `integration.method: harmony | scvi`),
+so a dataset is expressed as a YAML config, not code. The remaining downstream
+stages (differential expression, composition, gene-regulatory networks,
+cell-cell communication, trajectory) are planned slots not yet implemented.
 
 ---
 
 ## Current capabilities
+
+### Engine
 
 | Capability | Status |
 |---|---:|
 | Installable Python package | Implemented |
 | CLI entry points: `cellquorum`, `cq` | Implemented |
 | Strict config validation | Implemented |
-| Backend registry | Implemented |
-| Execution planner | Implemented |
+| Backend registry (Python / R / Rscript / GPU / RAPIDS) | Implemented |
+| Execution planner + registry-driven executor | Implemented |
 | Run bootstrapper | Implemented |
 | Provenance artifacts | Implemented |
 | Public Python API | Implemented |
 | Pre-commit hooks | Implemented |
-| Full scRNA-seq QC stage | In progress |
-| Manifest validation | Planned next |
-| Report generation | Planned |
-| R/Bioconductor method execution | Planned |
-| GPU/RAPIDS execution | Planned |
+| Fail-loud data contracts (structural + semantic-tag + statistical) | Implemented |
+| Strategy-based method registry (`AnalysisMethod` / `MethodDispatchStage`) | Implemented |
+| R/Bioconductor method execution (`run_script` adapter) | Implemented |
+| GPU-gated method execution (self-gating stages) | Implemented |
+
+### Analysis stages
+
+| Stage | Methods | Status |
+|---|---|---:|
+| `ambient_correction` | SoupX (R) | Implemented |
+| `qc` | MAD/fixed thresholds; Scrublet + scDblFinder doublet consensus; Tirosh cell-cycle | Implemented |
+| `preprocessing` | PFlog1pPF / log1p-CP10k normalization (layer-tagged) | Implemented |
+| `dimensionality` | PCA + scree plot + `n_pcs: auto` (knee) | Implemented |
+| `integration` | Harmony (CPU); scVI (GPU-gated) | Implemented |
+| `clustering` | Leiden (auto-routes onto the integration embedding) | Implemented |
+| `annotation` | marker-vote | Implemented |
+| `feature_selection` | HVG / deviance | Planned next |
+| `reference_mapping` | scArches (optional, atlas-agnostic) | Planned |
+| `differential_expression`, `composition`, `network_analysis`, `cell_cell_communication`, `trajectory` | — | Planned |
+
+### Verification
+
+- Test suite: **674 passing** (`python -m pytest`); one pre-existing CLI
+  version-string test fails only under Rich ANSI output and is unrelated to the
+  engine. A skippable real-data SoupX integration test confirms ambient
+  correction runs end-to-end on Cell Ranger matrices when R + SoupX are present.
 
 ---
 
@@ -311,27 +355,42 @@ Run bootstrapper
    ├── backend status
    ├── run metadata
    └── artifact manifest
+   │
+   ▼
+Registry-driven executor
+   │  for each planned + enabled stage:
+   ├── resolve config sub-block
+   ├── validate input data contract (fail-loud)
+   ├── dispatch to config-selected method (skip-with-reason if inputs absent)
+   ├── thread updated AnnData to the next stage
+   └── record structured success / skip / failure
 ```
 
 ---
 
-## Planned workflow spine
+## Workflow spine
+
+Stages marked ✅ are implemented and run today; ⏳ are planned slots the planner
+already reserves.
 
 ```text
-ingest
-→ quality control
-→ preprocessing
-→ integration
-→ annotation
-→ state scoring
-→ discovery
-→ subclustering
-→ composition
-→ differential expression
-→ molecular inference
-→ communication analysis
-→ network analysis
-→ report generation
+✅ ambient correction (SoupX)
+✅ quality control (MAD/doublet-consensus/cell-cycle)
+✅ preprocessing (normalization, layer-tagged)
+✅ dimensionality reduction (PCA + scree + auto n_pcs)
+✅ integration (Harmony / scVI)
+✅ clustering (Leiden)
+✅ annotation (marker-vote)
+⏳ feature selection (HVG / deviance)   ← next
+⏳ reference mapping (scArches, optional/atlas-agnostic)
+⏳ state scoring
+⏳ differential expression
+⏳ compositional analysis
+⏳ molecular inference (TF / pathway activity)
+⏳ gene-regulatory networks
+⏳ cell-cell communication
+⏳ trajectory
+⏳ report generation (auto methods text)
 ```
 
 ---
