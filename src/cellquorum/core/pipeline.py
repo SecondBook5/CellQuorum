@@ -223,6 +223,16 @@ def build_pipeline_context(
     # Optionally load the configured AnnData input.
     loaded_adata = load_input_adata_from_config(config) if load_input else None
 
+    # Load the sample manifest whenever one is configured. This is independent of
+    # load_input: ambient_correction needs the manifest to locate CellRanger
+    # libraries even when there is no pre-built input AnnData.
+    loaded_manifest = None
+    if config.paths.manifest is not None:
+        from cellquorum.io.manifest import load_manifest
+
+        manifest_obj = load_manifest(config.paths.manifest, data_root=config.paths.data_root)
+        loaded_manifest = manifest_obj.to_dataframe()
+
     # Build runtime metadata for provenance and reporting.
     metadata: dict[str, Any] = {
         "project_name": config.project.name,
@@ -232,6 +242,8 @@ def build_pipeline_context(
         "input_h5ad": str(config.input.h5ad) if config.input.h5ad is not None else None,
         "input_counts_layer": config.input.counts_layer,
         "input_loaded": loaded_adata is not None,
+        "manifest_path": str(config.paths.manifest) if config.paths.manifest is not None else None,
+        "manifest_n_samples": int(len(loaded_manifest)) if loaded_manifest is not None else 0,
         "bootstrap_time_utc": datetime.now(UTC).isoformat(),
     }
 
@@ -240,6 +252,7 @@ def build_pipeline_context(
         config=config,
         paths=paths,
         adata=loaded_adata,
+        manifest=loaded_manifest,
         backend_registry=resolved_backend_registry,
         run_id=run_id,
         random_seed=config.run.random_seed,
