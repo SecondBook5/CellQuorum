@@ -237,12 +237,12 @@ def test_validate_manifest_dataframe_rejects_missing_required_columns() -> None:
     """
     Verify that required manifest columns are enforced.
 
-    CellQuorum cannot identify samples or load sample files without `sample_id`
-    and `path`.
+    CellQuorum cannot identify samples without `sample_id`. Each row must have
+    at least one input locator (path or cellranger_path).
     """
 
-    # Build a DataFrame missing the path column.
-    dataframe = pd.DataFrame({"sample_id": ["sample_1"]})
+    # Build a DataFrame missing the sample_id column.
+    dataframe = pd.DataFrame({"path": ["sample_1.h5ad"]})
 
     # Confirm validation fails with a required-column message.
     with pytest.raises(ManifestError, match="missing required column"):
@@ -251,9 +251,9 @@ def test_validate_manifest_dataframe_rejects_missing_required_columns() -> None:
 
 def test_validate_manifest_dataframe_rejects_empty_required_values() -> None:
     """
-    Verify that empty sample IDs and paths are rejected.
+    Verify that empty sample IDs are rejected.
 
-    Empty identifiers or paths would create ambiguous downstream artifacts and
+    Empty identifiers would create ambiguous downstream artifacts and
     impossible-to-debug data loading failures.
     """
 
@@ -267,18 +267,6 @@ def test_validate_manifest_dataframe_rejects_empty_required_values() -> None:
 
     # Confirm validation fails on the empty required sample_id value.
     with pytest.raises(ManifestError, match="empty required 'sample_id'"):
-        validate_manifest_dataframe(dataframe)
-
-    # Build a DataFrame with an empty path.
-    dataframe = pd.DataFrame(
-        {
-            "sample_id": ["sample_1", "sample_2"],
-            "path": ["sample_1.h5ad", ""],
-        }
-    )
-
-    # Confirm validation fails on the empty required path value.
-    with pytest.raises(ManifestError, match="empty required 'path'"):
         validate_manifest_dataframe(dataframe)
 
 
@@ -671,3 +659,54 @@ def test_manifest_record_to_dict_includes_extra_metadata() -> None:
 
     # Confirm extra metadata appears.
     assert payload["cohort"] == "training"
+
+
+def test_validate_manifest_accepts_cellranger_only_manifest() -> None:
+    """A CellRanger-only manifest (no `path`) validates and keeps cellranger_path."""
+
+    dataframe = pd.DataFrame(
+        {
+            "sample_id": ["s1", "s2"],
+            "cellranger_path": ["Set4_norm_LE/norm4_v8", "Set4_norm_LE/LE4_v8"],
+            "condition": ["Normal", "LE"],
+            "batch": ["Set4", "Set4"],
+        }
+    )
+
+    manifest = validate_manifest_dataframe(dataframe)
+
+    assert len(manifest) == 2
+    # cellranger_path is preserved verbatim (NOT path-resolved).
+    assert manifest.records[0].cellranger_path == "Set4_norm_LE/norm4_v8"
+    assert manifest.records[0].path is None
+    # to_dataframe carries the cellranger_path column for downstream discovery.
+    frame = manifest.to_dataframe()
+    assert "cellranger_path" in frame.columns
+    assert list(frame["cellranger_path"]) == [
+        "Set4_norm_LE/norm4_v8",
+        "Set4_norm_LE/LE4_v8",
+    ]
+
+
+def test_validate_manifest_rejects_row_with_no_input_locator() -> None:
+    """A row with neither `path` nor `cellranger_path` fails loud, naming the row."""
+
+    dataframe = pd.DataFrame(
+        {
+            "sample_id": ["ok", "bad"],
+            "path": ["ok.h5ad", ""],
+            "cellranger_path": ["", ""],
+        }
+    )
+
+    with pytest.raises(ManifestError, match="row 2"):
+        validate_manifest_dataframe(dataframe)
+
+
+def test_validate_manifest_still_accepts_path_only_manifest() -> None:
+    """Existing path-based manifests keep working (cellranger_path is None)."""
+
+    dataframe = pd.DataFrame({"sample_id": ["s1"], "path": ["s1.h5ad"]})
+    manifest = validate_manifest_dataframe(dataframe)
+    assert manifest.records[0].path == Path("s1.h5ad")
+    assert manifest.records[0].cellranger_path is None
