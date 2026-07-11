@@ -1,8 +1,10 @@
 """Ambient-correction stage: run SoupX per library before QC.
 
 Unlike downstream stages, this does NOT consume context.adata — it operates on
-per-library CellRanger matrices named by the manifest, writes corrected matrices,
-and records per-library contamination fractions. Skips (non-silently) when
+per-library CellRanger matrices named by the manifest. It runs SoupX per library,
+imports the corrected per-library counts back, concatenates them into a single
+AnnData, and returns THAT as result.adata so the corrected counts flow into the
+downstream QC/normalization chain (not just to disk). Skips (non-silently) when
 disabled, when no manifest is available, or when Rscript/SoupX is unavailable.
 """
 
@@ -11,7 +13,13 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from cellquorum.ambient_correction.soupx import run_soupx_library
+import anndata as ad
+
+from cellquorum.ambient_correction.soupx import (
+    import_corrected_matrix,
+    run_soupx_library,
+)
+from cellquorum.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageArtifact, StageResult
 
 
@@ -72,24 +80,28 @@ class AmbientCorrectionStage:
                 metrics={"skipped": True, "reason": "no rscript backend"},
             )
 
-        # Run SoupX per library, collecting rho.
+        # Run SoupX per library, collecting rho AND the corrected per-library
+        # AnnData objects (so the corrected counts re-enter the pipeline stream,
+        # not just land on disk).
         root = Path(ac.cellranger_root) if ac.cellranger_root else Path(".")
         out_base = _resolve_output_base(context, ac.output_dir)
         fractions: dict[str, float] = {}
+        corrected_libraries: list[ad.AnnData] = []
         notes: list[str] = []
         warnings: list[str] = []
         for record in manifest:
+            sample_id = record["sample_id"]
             sample_dir = root / record["cellranger_path"] / "outs"
             raw_h5 = sample_dir / "raw_feature_bc_matrix.h5"
             filt_h5 = sample_dir / "filtered_feature_bc_matrix.h5"
             if not raw_h5.is_file() or not filt_h5.is_file():
                 # Surface as a WARNING (not just a note) so a mistyped
                 # cellranger_path / missing library is visible, not silently dropped.
-                msg = f"{record['sample_id']}: CellRanger raw/filtered h5 not found — skipped"
+                msg = f"{sample_id}: CellRanger raw/filtered h5 not found — skipped"
                 notes.append(msg)
                 warnings.append(msg)
                 continue
-            out_dir = out_base / record["sample_id"]
+            out_dir = out_base / sample_id
             rho = run_soupx_library(
                 raw_h5,
                 filt_h5,
@@ -99,8 +111,24 @@ class AmbientCorrectionStage:
                 round_to_int=ac.round_to_int,
                 timeout=ac.timeout_seconds,
             )
-            fractions[record["sample_id"]] = rho
-            notes.append(f"{record['sample_id']}: rho={rho:.4f}")
+            fractions[sample_id] = rho
+            # Read the corrected counts back into an AnnData (barcodes namespaced
+            # by sample_id) so they can be concatenated into the pipeline object.
+            corrected_libraries.append(import_corrected_matrix(out_dir, sample_id))
+            notes.append(f"{sample_id}: rho={rho:.4f}")
+
+        # Concatenate the corrected per-library matrices into ONE AnnData and make
+        # it the object the executor threads downstream. This is the whole point:
+        # QC / normalization / ... must run on the corrected counts.
+        if corrected_libraries:
+            corrected_adata = ad.concat(corrected_libraries, join="outer")
+            # Carry the per-library contamination fractions in uns for provenance.
+            corrected_adata.uns.setdefault("cellquorum", {})["ambient_correction"] = {
+                "method": "soupx",
+                "contamination_fractions": dict(fractions),
+            }
+        else:
+            corrected_adata = adata
 
         # Write the contamination-fraction CSV artifact.
         artifacts = []
@@ -116,8 +144,20 @@ class AmbientCorrectionStage:
                 )
             )
 
+        # Output guard (fail-loud): if we corrected at least one library, the
+        # returned object MUST be the concatenated corrected AnnData carrying the
+        # counts — never the stale input. This is the guard whose absence let the
+        # disk-only sidecar bug ship silently.
+        if corrected_libraries:
+            if corrected_adata is adata or "counts" not in corrected_adata.layers:
+                raise CellQuorumContractError(
+                    "ambient_correction ran SoupX but did not return the corrected "
+                    "counts as result.adata — refusing to feed uncorrected data "
+                    "downstream."
+                )
+
         return StageResult(
-            adata=adata,
+            adata=corrected_adata,
             artifacts=artifacts,
             notes=notes,
             warnings=warnings,
