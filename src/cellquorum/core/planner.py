@@ -190,6 +190,7 @@ class PipelinePlanner:
             ("ambient_correction", self.config.stages.ambient_correction),
             ("qc", self.config.stages.qc),
             ("preprocessing", self.config.stages.preprocessing),
+            ("feature_selection", self.config.stages.feature_selection),
             ("dimensionality", self.config.stages.dimensionality),
             ("integration", self.config.stages.integration),
             ("clustering", self.config.stages.clustering),
