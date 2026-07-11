@@ -21,7 +21,11 @@ _COUNT_FLAVORS = {"seurat_v3", "pearson_residuals"}
 
 
 class HVGMethod(AnalysisMethod):
-    """Scanpy HVG selection; flavor + layer chosen by config."""
+    """Scanpy HVG selection; flavor + layer chosen by config.
+
+    Writes var['highly_variable'] but never subsets the object. To consume
+    the HVGs, also set dimensionality.use_highly_variable: true.
+    """
 
     name = "seurat"
     stage_category = "feature_selection"
