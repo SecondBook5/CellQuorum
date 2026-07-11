@@ -212,3 +212,47 @@ def test_colored_scatter_keep_fail_variant():
         result = write_qc_figures(adata, out, dpi=100)
         names = {p.name for p in result.figure_paths}
         assert any("counts_vs_genes" in n for n in names)
+
+
+def test_threshold_lines_on_histograms():
+    """Threshold cutoff lines are drawn on histograms when thresholds are provided."""
+    from cellquorum.qc.thresholds import QCThreshold, QCThresholdResult
+
+    adata = make_test_adata_with_qc()
+
+    # Build a threshold result with bounds on total_counts and pct_counts_mito.
+    thresholds = QCThresholdResult(
+        thresholds=[
+            QCThreshold(
+                axis="cell",
+                metric="total_counts",
+                rule_name="fixed_min_counts",
+                lower=5.0,
+                upper=20.0,
+                source="fixed",
+            ),
+            QCThreshold(
+                axis="cell",
+                metric="pct_counts_mito",
+                rule_name="fixed_max_mito",
+                lower=None,
+                upper=15.0,
+                source="fixed",
+            ),
+        ],
+        warnings=[],
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100, thresholds=thresholds)
+
+        # Verify that histograms are created without error.
+        names = {p.name for p in result.figure_paths}
+        assert "qc_total_counts_histogram.png" in names
+        assert "qc_pct_counts_mito_histogram.png" in names
+
+        # Verify files exist and have content.
+        for p in result.figure_paths:
+            assert p.exists()
+            assert p.stat().st_size > 0

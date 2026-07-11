@@ -102,7 +102,9 @@ def write_qc_figures(
         fig_path = output_dir / f"qc_total_counts_histogram.{figure_format}"
         if overwrite or not fig_path.exists():
             try:
-                _plot_total_counts_histogram(adata, fig_path, dpi)
+                _plot_total_counts_histogram(
+                    adata, fig_path, dpi, bounds=_threshold_bounds(thresholds, "total_counts")
+                )
                 figure_paths.append(fig_path)
             except Exception as e:
                 warnings.append(f"Failed to create total counts histogram: {e}")
@@ -114,7 +116,9 @@ def write_qc_figures(
         fig_path = output_dir / f"qc_n_genes_by_counts_histogram.{figure_format}"
         if overwrite or not fig_path.exists():
             try:
-                _plot_n_genes_histogram(adata, fig_path, dpi)
+                _plot_n_genes_histogram(
+                    adata, fig_path, dpi, bounds=_threshold_bounds(thresholds, "n_genes_by_counts")
+                )
                 figure_paths.append(fig_path)
             except Exception as e:
                 warnings.append(f"Failed to create n_genes histogram: {e}")
@@ -134,7 +138,14 @@ def write_qc_figures(
             fig_path = output_dir / f"qc_{column}_histogram.{figure_format}"
             if overwrite or not fig_path.exists():
                 try:
-                    _plot_pct_counts_histogram(adata, column, family_label, fig_path, dpi)
+                    _plot_pct_counts_histogram(
+                        adata,
+                        column,
+                        family_label,
+                        fig_path,
+                        dpi,
+                        bounds=_threshold_bounds(thresholds, column),
+                    )
                     figure_paths.append(fig_path)
                 except Exception as e:
                     warnings.append(
@@ -314,7 +325,13 @@ def _resolve_doublet_score_column(adata: AnnData) -> str | None:
     return None
 
 
-def _plot_total_counts_histogram(adata: AnnData, output_path: Path, dpi: int) -> None:
+def _plot_total_counts_histogram(
+    adata: AnnData,
+    output_path: Path,
+    dpi: int,
+    *,
+    bounds: tuple[float | None, float | None] = (None, None),
+) -> None:
     """Plot total counts per cell histogram."""
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
 
@@ -336,6 +353,28 @@ def _plot_total_counts_histogram(adata: AnnData, output_path: Path, dpi: int) ->
         linewidth=1.5,
         label=f"Median: {median_val:.0f}",
     )
+
+    # Add threshold lines when bounds are provided
+    lower, upper = bounds
+    if lower is not None:
+        ax.axvline(
+            lower,
+            color=CELLQUORUM_RED,
+            linestyle=":",
+            linewidth=1.5,
+            alpha=0.8,
+            label=f"cutoff: {lower:.3g}",
+        )
+    if upper is not None:
+        ax.axvline(
+            upper,
+            color=CELLQUORUM_RED,
+            linestyle=":",
+            linewidth=1.5,
+            alpha=0.8,
+            label=f"cutoff: {upper:.3g}",
+        )
+
     ax.legend()
 
     apply_cellquorum_axis_style(ax)
@@ -343,7 +382,13 @@ def _plot_total_counts_histogram(adata: AnnData, output_path: Path, dpi: int) ->
     plt.close(fig)
 
 
-def _plot_n_genes_histogram(adata: AnnData, output_path: Path, dpi: int) -> None:
+def _plot_n_genes_histogram(
+    adata: AnnData,
+    output_path: Path,
+    dpi: int,
+    *,
+    bounds: tuple[float | None, float | None] = (None, None),
+) -> None:
     """Plot number of genes per cell histogram."""
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
 
@@ -365,6 +410,28 @@ def _plot_n_genes_histogram(adata: AnnData, output_path: Path, dpi: int) -> None
         linewidth=1.5,
         label=f"Median: {median_val:.0f}",
     )
+
+    # Add threshold lines when bounds are provided
+    lower, upper = bounds
+    if lower is not None:
+        ax.axvline(
+            lower,
+            color=CELLQUORUM_RED,
+            linestyle=":",
+            linewidth=1.5,
+            alpha=0.8,
+            label=f"cutoff: {lower:.3g}",
+        )
+    if upper is not None:
+        ax.axvline(
+            upper,
+            color=CELLQUORUM_RED,
+            linestyle=":",
+            linewidth=1.5,
+            alpha=0.8,
+            label=f"cutoff: {upper:.3g}",
+        )
+
     ax.legend()
 
     apply_cellquorum_axis_style(ax)
@@ -373,7 +440,13 @@ def _plot_n_genes_histogram(adata: AnnData, output_path: Path, dpi: int) -> None
 
 
 def _plot_pct_counts_histogram(
-    adata: AnnData, column: str, family_label: str, output_path: Path, dpi: int
+    adata: AnnData,
+    column: str,
+    family_label: str,
+    output_path: Path,
+    dpi: int,
+    *,
+    bounds: tuple[float | None, float | None] = (None, None),
 ) -> None:
     """Plot a gene-class percentage histogram (mito / ribo / hemoglobin).
 
@@ -401,6 +474,28 @@ def _plot_pct_counts_histogram(
         linewidth=1.5,
         label=f"Median: {median_val:.1f}%",
     )
+
+    # Add threshold lines when bounds are provided
+    lower, upper = bounds
+    if lower is not None:
+        ax.axvline(
+            lower,
+            color=CELLQUORUM_RED,
+            linestyle=":",
+            linewidth=1.5,
+            alpha=0.8,
+            label=f"cutoff: {lower:.3g}",
+        )
+    if upper is not None:
+        ax.axvline(
+            upper,
+            color=CELLQUORUM_RED,
+            linestyle=":",
+            linewidth=1.5,
+            alpha=0.8,
+            label=f"cutoff: {upper:.3g}",
+        )
+
     ax.legend()
 
     apply_cellquorum_axis_style(ax)
