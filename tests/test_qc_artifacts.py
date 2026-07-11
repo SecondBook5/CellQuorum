@@ -178,9 +178,12 @@ def make_decision_result() -> QCDecisionResult:
     )
 
 
-def make_test_adata() -> ad.AnnData:
+def make_test_adata(obs_extra: dict[str, list] | None = None) -> ad.AnnData:
     """
     Build a tiny AnnData object for h5ad artifact tests.
+
+    Args:
+        obs_extra: Optional extra obs columns as {col_name: [val1, val2]}.
 
     Returns:
         Small AnnData object.
@@ -190,7 +193,8 @@ def make_test_adata() -> ad.AnnData:
     matrix = np.array([[1.0, 0.0], [0.0, 2.0]])
 
     # Build observation metadata.
-    obs = pd.DataFrame(index=["cell_1", "cell_2"])
+    obs_data = obs_extra.copy() if obs_extra else {}
+    obs = pd.DataFrame(obs_data, index=["cell_1", "cell_2"])
 
     # Build variable metadata.
     var = pd.DataFrame(index=["gene_1", "gene_2"])
@@ -599,12 +603,21 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
     Verify the full artifact writer writes default QC artifacts.
 
     With default output settings and an AnnData object provided, the writer should
-    write metric tables, threshold table, decision tables, summary JSON, and h5ad.
-    Figures are skipped because figure generation is not implemented here.
+    write metric tables, threshold table, decision tables, summary JSON, h5ad, and
+    figures (when QC metrics are present in adata.obs).
     """
 
     # Build an output directory.
     output_dir = tmp_path / "qc"
+
+    # Build an adata with QC metrics for figure generation.
+    adata_with_qc = make_test_adata(
+        obs_extra={
+            "total_counts": [10.0, 20.0],
+            "n_genes_by_counts": [2, 3],
+            "pct_counts_mito": [5.0, 10.0],
+        }
+    )
 
     # Write QC artifacts.
     manifest = write_qc_artifacts(
@@ -613,14 +626,14 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
         threshold_result=make_threshold_result(),
         decision_result=make_decision_result(),
         config=QCConfig(),
-        adata=make_test_adata(),
+        adata=adata_with_qc,
         summary_extra={"run_id": "test_run"},
     )
 
     # Confirm the manifest output directory.
     assert manifest.output_dir == output_dir
 
-    # Confirm expected artifact labels were written.
+    # Confirm expected artifact labels were written including figures.
     assert set(manifest.artifacts) == {
         "cell_metrics",
         "gene_metrics",
@@ -630,20 +643,22 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
         "gene_decisions",
         "qc_h5ad",
         "summary",
+        "figures",
     }
 
-    # Confirm figures were skipped.
-    assert manifest.skipped == ["figures"]
-
-    # Confirm figure warning was emitted.
-    assert manifest.warnings == [
-        "QCOutputConfig.write_figures is true, but QC figure generation is not "
-        "implemented in artifacts.py yet."
-    ]
+    # Confirm no artifacts were skipped.
+    assert manifest.skipped == []
 
     # Confirm all written artifact paths exist.
-    for artifact_path in manifest.artifacts.values():
-        assert artifact_path.exists()
+    for artifact_name, artifact_value in manifest.artifacts.items():
+        if artifact_name == "figures":
+            # Figures are stored as a list of string paths.
+            assert isinstance(artifact_value, list)
+            for figure_path in artifact_value:
+                assert Path(figure_path).exists()
+        else:
+            # Other artifacts are stored as Path objects.
+            assert artifact_value.exists()
 
     # Read back cell metrics.
     cell_metrics = pd.read_csv(manifest.get_path("cell_metrics"), index_col=0)
@@ -917,3 +932,81 @@ def test_to_jsonable_converts_common_scientific_python_values(tmp_path: Path) ->
 
     # Confirm json.dumps accepts the converted payload.
     json.dumps(converted)
+
+
+def test_write_qc_artifacts_emits_figures_when_enabled_and_adata_present(
+    tmp_path: Path,
+) -> None:
+    """
+    Verify QC figures are written when write_figures=True and adata is provided.
+
+    This is the load-bearing test: figures should no longer be skipped when the
+    writer has all necessary inputs.
+    """
+
+    # Build a config with write_figures enabled.
+    config = QCConfig(outputs={"write_figures": True})
+
+    # Build an adata with QC metrics and a condition column for grouping.
+    adata = make_test_adata(
+        obs_extra={
+            "condition": ["Normal", "LE"],
+            "total_counts": [10.0, 20.0],
+            "n_genes_by_counts": [2, 3],
+            "pct_counts_mito": [5.0, 10.0],
+            "cellquorum_qc_keep": [True, False],
+        }
+    )
+
+    # Write QC artifacts including figures.
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        threshold_result=make_threshold_result(),
+        decision_result=make_decision_result(),
+        config=config,
+        adata=adata,
+        group_key="condition",
+    )
+
+    # Confirm figures are recorded in the manifest and not skipped.
+    assert "figures" in manifest.artifacts
+    assert "figures" not in manifest.skipped
+
+    # Confirm at least one figure path was recorded.
+    figure_paths = manifest.artifacts["figures"]
+    assert isinstance(figure_paths, list)
+    assert len(figure_paths) > 0
+
+    # Confirm all recorded figure files exist on disk.
+    for figure_path in figure_paths:
+        assert Path(figure_path).exists()
+
+
+def test_write_qc_artifacts_skips_figures_without_adata(tmp_path: Path) -> None:
+    """
+    Verify QC figures are skipped with a clear warning when adata is absent.
+
+    The writer should not crash; figures are a visual enhancement, not a
+    required artifact.
+    """
+
+    # Build a config with write_figures enabled.
+    config = QCConfig(outputs={"write_figures": True})
+
+    # Write QC artifacts without providing an AnnData object.
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        threshold_result=make_threshold_result(),
+        decision_result=make_decision_result(),
+        config=config,
+        adata=None,
+    )
+
+    # Confirm figures were skipped.
+    assert "figures" in manifest.skipped
+    assert "figures" not in manifest.artifacts
+
+    # Confirm a clear warning was emitted.
+    assert any("no AnnData was provided" in warning for warning in manifest.warnings)

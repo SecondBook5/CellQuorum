@@ -173,6 +173,21 @@ class QCStage:
             doublet_metrics = detect_doublets(output_adata, qc_config.doublets, backend)
             addon_metrics["doublets"] = doublet_metrics
 
+        # Resolve group_key from design config for QC figure grouping.
+        group_key = None
+        context_config = getattr(context, "config", None)
+        if context_config is not None and hasattr(context_config, "design"):
+            design = context_config.design
+            # Try condition_col, then donor_col, then sample_id fallback.
+            for candidate in (
+                getattr(design, "condition_col", None),
+                getattr(design, "donor_col", None),
+                "sample_id",
+            ):
+                if candidate and candidate in output_adata.obs.columns:
+                    group_key = candidate
+                    break
+
         # Write all configured QC artifacts.
         artifact_manifest = write_qc_artifacts(
             output_dir=output_dir,
@@ -186,6 +201,7 @@ class QCStage:
                 qc_config=qc_config,
                 stage_name=self.name,
             ),
+            group_key=group_key,
         )
 
         # Convert artifact manifest paths into StageArtifact records.
@@ -725,15 +741,29 @@ def build_stage_artifacts_from_manifest(
     artifacts: list[StageArtifact] = []
 
     # Convert each written artifact into a stage artifact.
-    for artifact_name, artifact_path in manifest.artifacts.items():
-        artifacts.append(
-            StageArtifact(
-                name=f"qc_{artifact_name}",
-                path=artifact_path,
-                kind=infer_artifact_kind(artifact_path),
-                description=describe_qc_artifact(artifact_name),
+    for artifact_name, artifact_value in manifest.artifacts.items():
+        # Figures are stored as a list of paths; create multiple artifacts.
+        if artifact_name == "figures" and isinstance(artifact_value, list):
+            for idx, figure_path_str in enumerate(artifact_value):
+                figure_path = Path(figure_path_str)
+                artifacts.append(
+                    StageArtifact(
+                        name=f"qc_figure_{idx}",
+                        path=figure_path,
+                        kind=infer_artifact_kind(figure_path),
+                        description=f"QC diagnostic figure {figure_path.name}",
+                    )
+                )
+        else:
+            # Other artifacts are single Path objects.
+            artifacts.append(
+                StageArtifact(
+                    name=f"qc_{artifact_name}",
+                    path=artifact_value,
+                    kind=infer_artifact_kind(artifact_value),
+                    description=describe_qc_artifact(artifact_name),
+                )
             )
-        )
 
     # Return stage artifacts.
     return artifacts
