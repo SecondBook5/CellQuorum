@@ -247,11 +247,13 @@ def test_execute_pipeline_run_loads_input_and_runs_qc(tmp_path: Path) -> None:
     assert "cellquorum_qc_keep" in result.context.adata.obs
     assert "cellquorum_qc_keep" in result.context.adata.var
 
-    # Confirm provenance stage execution records were written.
+    # Confirm provenance stage execution records were written. The first record
+    # is always bootstrap; ambient_correction (disabled by default) is recorded
+    # as a skip before qc, so locate the qc record by name rather than position.
     records = load_stage_execution_records(tmp_path / "executed_run")
     assert records[0]["stage_name"] == "bootstrap"
-    assert records[1]["stage_name"] == "qc"
-    assert records[1]["status"] == "success"
+    qc_record = next(r for r in records if r["stage_name"] == "qc")
+    assert qc_record["status"] == "success"
 
 
 def test_execute_pipeline_run_records_failure_without_input(tmp_path: Path) -> None:
@@ -275,16 +277,19 @@ def test_execute_pipeline_run_records_failure_without_input(tmp_path: Path) -> N
     # Confirm execution result exists.
     assert result.execution_result is not None
 
-    # Confirm QC failed because context.adata was missing.
+    # Confirm QC failed because context.adata was missing. qc is the first
+    # ENABLED executable stage (ambient_correction is disabled by default), so it
+    # is the only failing stage.
     assert result.execution_result.failed_stage_names() == ["qc"]
     assert result.execution_result.has_failures() is True
 
-    # Confirm provenance still records the failure.
+    # Confirm provenance still records the failure. Locate qc by name (a disabled
+    # ambient_correction skip record precedes it).
     records = load_stage_execution_records(tmp_path / "missing_input_run")
     assert records[0]["stage_name"] == "bootstrap"
-    assert records[1]["stage_name"] == "qc"
-    assert records[1]["status"] == "failed"
-    assert records[1]["error"]["error_type"] in {"QCStageError", "CellQuorumDataError"}
+    qc_record = next(r for r in records if r["stage_name"] == "qc")
+    assert qc_record["status"] == "failed"
+    assert qc_record["error"]["error_type"] in {"QCStageError", "CellQuorumDataError"}
 
 
 def test_execute_pipeline_run_from_config_file_runs_qc(tmp_path: Path) -> None:
