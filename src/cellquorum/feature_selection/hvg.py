@@ -60,13 +60,24 @@ class HVGMethod(AnalysisMethod):
             layer = config.get("lognorm_layer", "cellquorum_normalized")
 
         # scanpy writes var['highly_variable'] (+ ranks/means) in place.
-        sc.pp.highly_variable_genes(
-            adata,
-            flavor=method,
-            n_top_genes=n_top,
-            layer=layer,
-            batch_key=batch_key,
-        )
+        # pearson_residuals HVG lives ONLY in sc.experimental; all other flavors
+        # (seurat, seurat_v3) are in sc.pp.
+        if method == "pearson_residuals":
+            sc.experimental.pp.highly_variable_genes(
+                adata,
+                flavor="pearson_residuals",
+                n_top_genes=n_top,
+                layer=layer,
+                batch_key=batch_key,
+            )
+        else:
+            sc.pp.highly_variable_genes(
+                adata,
+                flavor=method,
+                n_top_genes=n_top,
+                layer=layer,
+                batch_key=batch_key,
+            )
 
         # Exclude unwanted gene families from the HVG set (do not drop them).
         n_excluded = 0

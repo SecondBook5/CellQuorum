@@ -61,3 +61,31 @@ def test_seurat_v3_contract_rejects_centered_layer_as_counts():
     cfg = {"method": "seurat_v3", "n_top_genes": 20, "counts_layer": "cellquorum_normalized"}
     with pytest.raises(CellQuorumContractError):
         HVGMethod().run(a, cfg, context=None)
+
+
+def test_pearson_residuals_flags_hvg_from_counts():
+    a = _counts_adata()
+    cfg = {
+        "method": "pearson_residuals",
+        "n_top_genes": 20,
+        "counts_layer": "counts",
+        "lognorm_layer": "cellquorum_normalized",
+        "exclude_gene_patterns": [],
+    }
+    result = HVGMethod().run(a, cfg, context=None)
+    assert "highly_variable" in result.adata.var.columns
+    assert int(result.adata.var["highly_variable"].sum()) >= 1
+
+
+def test_seurat_flavor_flags_hvg_from_lognorm():
+    a = _counts_adata()
+    cfg = {
+        "method": "seurat",
+        "n_top_genes": 20,
+        "counts_layer": "counts",
+        "lognorm_layer": "cellquorum_normalized",
+        "exclude_gene_patterns": [],
+    }
+    result = HVGMethod().run(a, cfg, context=None)
+    assert "highly_variable" in result.adata.var.columns
+    assert int(result.adata.var["highly_variable"].sum()) >= 1
