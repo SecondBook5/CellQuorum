@@ -187,6 +187,7 @@ class PipelinePlanner:
 
         # Define stage names and their enabled flags in canonical run order.
         stage_flags = [
+            ("ambient_correction", self.config.stages.ambient_correction),
             ("qc", self.config.stages.qc),
             ("preprocessing", self.config.stages.preprocessing),
             ("dimensionality", self.config.stages.dimensionality),
