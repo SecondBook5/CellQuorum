@@ -193,6 +193,12 @@ def _resolve_manifest(context: object) -> list[dict]:
     # Keep only rows that carry a cellranger_path; return as row dicts.
     if "cellranger_path" not in df.columns or "sample_id" not in df.columns:
         return []
+    # Drop rows with a null cellranger_path: a path-only manifest legitimately
+    # carries the column (all-null) after the schema change, and must skip
+    # gracefully here rather than crash downstream on `root / None / "outs"`.
+    df = df[df["cellranger_path"].notna()]
+    if df.empty:
+        return []
     cols = [c for c in ("sample_id", "cellranger_path") if c in df.columns]
     return df[cols].to_dict("records")
 
