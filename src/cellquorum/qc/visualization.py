@@ -563,6 +563,34 @@ def _plot_qc_violin(
             legend=False,
         )
         ax.set_xlabel(group_key)
+
+        # Publication touch: annotate a two-group comparison with a Mann-Whitney
+        # p-value (matches the lekc qc_by_condition_publication style). Only drawn
+        # for exactly two groups; skipped silently if the test can't be computed.
+        if len(unique_groups) == 2:
+            try:
+                from scipy.stats import mannwhitneyu
+
+                g0, g1 = unique_groups
+                v0 = plot_df.loc[plot_df["group"].astype(str) == g0, metric].to_numpy()
+                v1 = plot_df.loc[plot_df["group"].astype(str) == g1, metric].to_numpy()
+                v0 = v0[np.isfinite(v0)]
+                v1 = v1[np.isfinite(v1)]
+                if v0.size and v1.size:
+                    _, p_val = mannwhitneyu(v0, v1, alternative="two-sided")
+                    y_top = float(np.nanmax(metric_values))
+                    ax.text(
+                        0.5,
+                        y_top * 1.02 if y_top > 0 else y_top,
+                        f"Mann–Whitney p = {p_val:.2e}",
+                        ha="center",
+                        va="bottom",
+                        fontsize=8,
+                        transform=ax.get_xaxis_transform(),
+                    )
+            except Exception:
+                # Stats are a nice-to-have annotation; never fail the figure over them.
+                pass
     else:
         # Single-group violin (no grouping).
         plot_df = pd.DataFrame({metric: metric_values, "group": ["All"]})
