@@ -116,6 +116,9 @@ def test_stage_returns_corrected_counts_on_result_adata(tmp_path):
     assert result.adata is not None
     assert "counts" in result.adata.layers
     assert result.adata.n_obs > 0
+    # Metadata wiring: sample_id must be present on the corrected object.
+    assert "sample_id" in result.adata.obs.columns
+    assert set(result.adata.obs["sample_id"]) == {"P1_LE"}
     # Provenance: the contamination fraction is recorded and plausible.
     fractions = result.metrics["contamination_fractions"]
     assert "P1_LE" in fractions

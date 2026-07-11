@@ -127,6 +127,9 @@ class AmbientCorrectionStage:
                 "method": "soupx",
                 "contamination_fractions": dict(fractions),
             }
+            # Join sample-level metadata (condition/batch/donor/...) from the
+            # manifest onto obs so downstream integration/DE can group cells.
+            _join_manifest_metadata(corrected_adata, getattr(context, "manifest", None))
         else:
             corrected_adata = adata
 
@@ -192,6 +195,27 @@ def _resolve_manifest(context: object) -> list[dict]:
         return []
     cols = [c for c in ("sample_id", "cellranger_path") if c in df.columns]
     return df[cols].to_dict("records")
+
+
+def _join_manifest_metadata(adata: ad.AnnData, manifest: object | None) -> None:
+    """Join sample-level manifest metadata onto obs by sample_id, in place.
+
+    Best-effort over whatever metadata the manifest carries. Columns absent or
+    all-null in the manifest are skipped — a missing batch_key surfaces later at
+    the integration contract (harmony requires_obs), not here.
+    """
+
+    # Nothing to join without a manifest or a sample_id column to key on.
+    if manifest is None or "sample_id" not in getattr(adata, "obs", {}).columns:
+        return
+
+    # Index the manifest by sample_id for per-cell mapping.
+    lookup = manifest.drop_duplicates(subset="sample_id").set_index("sample_id")
+
+    # Map each standard metadata column present + non-null onto obs.
+    for col in ("condition", "donor_id", "batch", "tissue", "timepoint", "assay", "species"):
+        if col in lookup.columns and lookup[col].notna().any():
+            adata.obs[col] = adata.obs["sample_id"].map(lookup[col])
 
 
 def _resolve_rscript_backend(context: object) -> object | None:
