@@ -76,6 +76,7 @@ def normalize_adata(
     config: NormalizationConfig,
     *,
     copy: bool = True,
+    use_gpu: bool = False,
 ) -> NormalizationResult:
     """
     Normalize an AnnData object using a configured recipe.
@@ -84,6 +85,7 @@ def normalize_adata(
         adata: Input AnnData object.
         config: Normalization configuration.
         copy: Whether to copy the AnnData object before mutation.
+        use_gpu: Whether to use GPU acceleration (requires cupy).
 
     Returns:
         NormalizationResult with normalized AnnData and diagnostics.
@@ -126,6 +128,7 @@ def normalize_adata(
         recipe=config.recipe,
         target_sum=config.target_sum,
         pseudocount=config.pseudocount,
+        use_gpu=use_gpu,
     )
 
     # Write normalized matrix to output layer.
@@ -272,6 +275,7 @@ def apply_normalization_recipe(
     recipe: str,
     target_sum: float,
     pseudocount: float,
+    use_gpu: bool = False,
 ) -> tuple[np.ndarray | sp.spmatrix, dict[str, object], list[str]]:
     """
     Apply a normalization recipe to a count matrix.
@@ -281,6 +285,7 @@ def apply_normalization_recipe(
         recipe: Recipe name.
         target_sum: Target sum for scaling recipes.
         pseudocount: Pseudocount for log recipes.
+        use_gpu: Whether to use GPU acceleration (only applies to pf_log1p_pf_v1).
 
     Returns:
         Tuple of (normalized matrix, diagnostics, warnings).
@@ -299,7 +304,7 @@ def apply_normalization_recipe(
     elif recipe == "cellquorum_log1p_pf_v1":
         return apply_recipe_log1p_pf_v1(matrix)
     elif recipe == "cellquorum_pf_log1p_pf_v1":
-        return apply_recipe_pf_log1p_pf_v1(matrix, pseudocount)
+        return apply_recipe_pf_log1p_pf_v1(matrix, pseudocount, use_gpu=use_gpu)
     else:
         raise PreprocessingNormalizationError(f"Unknown normalization recipe: {recipe}.")
 
@@ -500,6 +505,7 @@ def apply_recipe_log1p_pf_v1(
 def apply_recipe_pf_log1p_pf_v1(
     matrix: np.ndarray | sp.spmatrix,
     pseudocount: float,
+    use_gpu: bool = False,
 ) -> tuple[np.ndarray | sp.spmatrix, dict[str, object], list[str]]:
     """
     Apply the 'cellquorum_pf_log1p_pf_v1' recipe (shifted CLR-like).
@@ -514,6 +520,7 @@ def apply_recipe_pf_log1p_pf_v1(
     Args:
         matrix: Input count matrix (cells x genes).
         pseudocount: Pseudocount added before log.
+        use_gpu: Whether to use GPU acceleration via cupy.
 
     Returns:
         Tuple of (normalized matrix, diagnostics, warnings).
@@ -547,6 +554,50 @@ def apply_recipe_pf_log1p_pf_v1(
     # Avoid division by zero.
     safe_cell_totals = np.where(cell_totals > 0, cell_totals, 1.0)
 
+    # GPU path: run the same shifted-CLR math on cupy arrays.
+    if use_gpu:
+        try:
+            import cupy as cp
+
+            # Densify sparse matrix for CLR-like computation.
+            dense = matrix.toarray() if is_sparse else np.asarray(matrix)
+
+            # Transfer to GPU.
+            d = cp.asarray(dense, dtype=cp.float64)
+            totals = cp.asarray(safe_cell_totals, dtype=cp.float64)
+
+            # Compute proportional fractions u.
+            u = d / totals[:, None]
+
+            # Add pseudocount and apply log.
+            u_plus = cp.log(u + pseudocount)
+
+            # Compute per-cell mean of log(u + pseudocount).
+            per_cell_mean = u_plus.mean(axis=1)
+
+            # Center by subtracting per-cell mean.
+            centered = u_plus - per_cell_mean[:, None]
+
+            # Transfer back to CPU.
+            output = cp.asnumpy(centered)
+
+            # Build diagnostics.
+            diagnostics = {
+                "n_zero_depth_cells": n_zero_depth,
+                "pseudocount": pseudocount,
+                "densified_sparse_input": densified_sparse_input,
+                "output_is_dense": True,
+                "compute": "gpu",
+            }
+
+            # Return normalized matrix, diagnostics, and warnings.
+            return output, diagnostics, warnings
+
+        except Exception:
+            # Fall through to CPU implementation on any GPU error.
+            pass
+
+    # CPU path: original implementation unchanged.
     # Densify sparse matrix for CLR-like computation.
     working_matrix = matrix.toarray() if is_sparse else matrix
 
@@ -568,6 +619,7 @@ def apply_recipe_pf_log1p_pf_v1(
         "pseudocount": pseudocount,
         "densified_sparse_input": densified_sparse_input,
         "output_is_dense": True,
+        "compute": "cpu",
     }
 
     # Return normalized matrix, diagnostics, and warnings.

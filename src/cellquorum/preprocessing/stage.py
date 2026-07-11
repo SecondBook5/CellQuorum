@@ -17,6 +17,9 @@ from pathlib import Path
 # Import AnnData for stage input and output typing.
 import anndata as ad
 
+# Import GPU compute routing.
+from cellquorum.compute.router import should_use_gpu
+
 # Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
 
@@ -118,11 +121,15 @@ class PreprocessingStage:
         # Ensure the output directory exists.
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Determine whether to use GPU compute.
+        use_gpu = should_use_gpu(context)
+
         # Normalize the AnnData object.
         normalization_result = normalize_adata(
             adata,
             preprocessing_config.normalization,
             copy=True,
+            use_gpu=use_gpu,
         )
 
         # Write preprocessing summary artifact.
