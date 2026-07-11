@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from cellquorum.ambient_correction.stage import AmbientCorrectionStage
+
+__all__ = ["AmbientCorrectionStage"]

@@ -279,12 +279,14 @@ def test_default_stage_registry_contains_qc() -> None:
     QC and preprocessing are the first real executable scientific stages.
     Phase-2A adds dimensionality and clustering.
     Phase-2B adds integration and annotation.
+    Phase-2D adds ambient_correction.
     """
 
     # Build the default registry.
     registry = build_default_stage_registry()
 
     # Confirm all implemented stages are registered.
+    assert registry.get("ambient_correction") is not None
     assert registry.get("qc") is not None
     assert registry.get("preprocessing") is not None
     assert registry.get("dimensionality") is not None
@@ -292,6 +294,7 @@ def test_default_stage_registry_contains_qc() -> None:
     assert registry.get("integration") is not None
     assert registry.get("annotation") is not None
     assert registry.registered_stage_names() == [
+        "ambient_correction",
         "annotation",
         "clustering",
         "dimensionality",

@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 # Import UTC datetime for stage lifecycle timing.
 from datetime import UTC, datetime
 
+# Import ambient correction stage.
+from cellquorum.ambient_correction.stage import AmbientCorrectionStage
+
 # Import annotation stage.
 from cellquorum.annotation.stage import AnnotationStage
 
@@ -198,6 +201,7 @@ def build_default_stage_registry() -> StageRegistry:
     # Register fully implemented scientific stages.
     return StageRegistry(
         stages={
+            "ambient_correction": AmbientCorrectionStage(),
             "qc": QCStage(),
             "preprocessing": PreprocessingStage(),
             "dimensionality": DimensionalityStage(),
