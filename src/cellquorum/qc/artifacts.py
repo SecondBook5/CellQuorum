@@ -63,7 +63,7 @@ class QCArtifactManifest:
     output_dir: Path
 
     # Store written artifact paths by stable artifact label.
-    artifacts: dict[str, Path] = field(default_factory=dict)
+    artifacts: dict[str, Path | list[str]] = field(default_factory=dict)
 
     # Store skipped artifact labels.
     skipped: list[str] = field(default_factory=list)
@@ -83,7 +83,11 @@ class QCArtifactManifest:
         return {
             "output_dir": str(self.output_dir),
             "artifacts": {
-                artifact_name: str(artifact_path)
+                artifact_name: (
+                    [str(p) for p in artifact_path]
+                    if isinstance(artifact_path, list)
+                    else str(artifact_path)
+                )
                 for artifact_name, artifact_path in self.artifacts.items()
             },
             "skipped": list(self.skipped),
@@ -624,7 +628,11 @@ def build_qc_summary_payload(
         "thresholds": threshold_result.to_summary_dict(),
         "decisions": decision_result.to_summary_dict(),
         "artifacts": {
-            artifact_name: str(artifact_path)
+            artifact_name: (
+                [str(p) for p in artifact_path]
+                if isinstance(artifact_path, list)
+                else str(artifact_path)
+            )
             for artifact_name, artifact_path in artifact_names.items()
         },
         "skipped": list(skipped),

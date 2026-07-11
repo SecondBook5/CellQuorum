@@ -202,6 +202,9 @@ def test_group_key_none_still_works():
         out = Path(tmp)
         result = write_qc_figures(adata, out, dpi=100, group_key=None)
         assert len(result.figure_paths) > 0  # single-group violins, no crash
+        # Harden: ensure at least one violin figure is actually produced.
+        names = {p.name for p in result.figure_paths}
+        assert any("violin" in n for n in names), "No violin figure produced"
 
 
 def test_colored_scatter_keep_fail_variant():

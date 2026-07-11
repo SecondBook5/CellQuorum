@@ -334,52 +334,53 @@ def _plot_total_counts_histogram(
 ) -> None:
     """Plot total counts per cell histogram."""
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        total_counts = adata.obs["total_counts"].values
 
-    total_counts = adata.obs["total_counts"].values
+        # Use seaborn for histogram
+        sns.histplot(total_counts, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
 
-    # Use seaborn for histogram
-    sns.histplot(total_counts, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
+        ax.set_xlabel("Total Counts per Cell")
+        ax.set_ylabel("Number of Cells")
+        ax.set_title("QC: Total Counts Distribution")
 
-    ax.set_xlabel("Total Counts per Cell")
-    ax.set_ylabel("Number of Cells")
-    ax.set_title("QC: Total Counts Distribution")
-
-    # Add median line
-    median_val = np.median(total_counts)
-    ax.axvline(
-        median_val,
-        color=CELLQUORUM_RED,
-        linestyle="--",
-        linewidth=1.5,
-        label=f"Median: {median_val:.0f}",
-    )
-
-    # Add threshold lines when bounds are provided
-    lower, upper = bounds
-    if lower is not None:
+        # Add median line
+        median_val = np.median(total_counts)
         ax.axvline(
-            lower,
+            median_val,
             color=CELLQUORUM_RED,
-            linestyle=":",
+            linestyle="--",
             linewidth=1.5,
-            alpha=0.8,
-            label=f"cutoff: {lower:.3g}",
-        )
-    if upper is not None:
-        ax.axvline(
-            upper,
-            color=CELLQUORUM_RED,
-            linestyle=":",
-            linewidth=1.5,
-            alpha=0.8,
-            label=f"cutoff: {upper:.3g}",
+            label=f"Median: {median_val:.0f}",
         )
 
-    ax.legend()
+        # Add threshold lines when bounds are provided
+        lower, upper = bounds
+        if lower is not None:
+            ax.axvline(
+                lower,
+                color=CELLQUORUM_RED,
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.8,
+                label=f"cutoff: {lower:.3g}",
+            )
+        if upper is not None:
+            ax.axvline(
+                upper,
+                color=CELLQUORUM_RED,
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.8,
+                label=f"cutoff: {upper:.3g}",
+            )
 
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        ax.legend()
+
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_n_genes_histogram(
@@ -391,52 +392,53 @@ def _plot_n_genes_histogram(
 ) -> None:
     """Plot number of genes per cell histogram."""
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        n_genes = adata.obs["n_genes_by_counts"].values
 
-    n_genes = adata.obs["n_genes_by_counts"].values
+        # Use seaborn for histogram
+        sns.histplot(n_genes, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
 
-    # Use seaborn for histogram
-    sns.histplot(n_genes, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
+        ax.set_xlabel("Number of Genes per Cell")
+        ax.set_ylabel("Number of Cells")
+        ax.set_title("QC: Gene Detection Distribution")
 
-    ax.set_xlabel("Number of Genes per Cell")
-    ax.set_ylabel("Number of Cells")
-    ax.set_title("QC: Gene Detection Distribution")
-
-    # Add median line
-    median_val = np.median(n_genes)
-    ax.axvline(
-        median_val,
-        color=CELLQUORUM_RED,
-        linestyle="--",
-        linewidth=1.5,
-        label=f"Median: {median_val:.0f}",
-    )
-
-    # Add threshold lines when bounds are provided
-    lower, upper = bounds
-    if lower is not None:
+        # Add median line
+        median_val = np.median(n_genes)
         ax.axvline(
-            lower,
+            median_val,
             color=CELLQUORUM_RED,
-            linestyle=":",
+            linestyle="--",
             linewidth=1.5,
-            alpha=0.8,
-            label=f"cutoff: {lower:.3g}",
-        )
-    if upper is not None:
-        ax.axvline(
-            upper,
-            color=CELLQUORUM_RED,
-            linestyle=":",
-            linewidth=1.5,
-            alpha=0.8,
-            label=f"cutoff: {upper:.3g}",
+            label=f"Median: {median_val:.0f}",
         )
 
-    ax.legend()
+        # Add threshold lines when bounds are provided
+        lower, upper = bounds
+        if lower is not None:
+            ax.axvline(
+                lower,
+                color=CELLQUORUM_RED,
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.8,
+                label=f"cutoff: {lower:.3g}",
+            )
+        if upper is not None:
+            ax.axvline(
+                upper,
+                color=CELLQUORUM_RED,
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.8,
+                label=f"cutoff: {upper:.3g}",
+            )
 
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        ax.legend()
+
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_pct_counts_histogram(
@@ -455,163 +457,174 @@ def _plot_pct_counts_histogram(
     class name (e.g. "Mitochondrial", "Ribosomal", "Hemoglobin").
     """
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        pct_values = adata.obs[column].values
 
-    pct_values = adata.obs[column].values
+        # Use seaborn for histogram
+        sns.histplot(pct_values, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
 
-    # Use seaborn for histogram
-    sns.histplot(pct_values, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
+        ax.set_xlabel(f"{family_label} Percentage (%)")
+        ax.set_ylabel("Number of Cells")
+        ax.set_title(f"QC: {family_label} Content Distribution")
 
-    ax.set_xlabel(f"{family_label} Percentage (%)")
-    ax.set_ylabel("Number of Cells")
-    ax.set_title(f"QC: {family_label} Content Distribution")
-
-    # Add median line
-    median_val = np.median(pct_values)
-    ax.axvline(
-        median_val,
-        color=CELLQUORUM_RED,
-        linestyle="--",
-        linewidth=1.5,
-        label=f"Median: {median_val:.1f}%",
-    )
-
-    # Add threshold lines when bounds are provided
-    lower, upper = bounds
-    if lower is not None:
+        # Add median line
+        median_val = np.median(pct_values)
         ax.axvline(
-            lower,
+            median_val,
             color=CELLQUORUM_RED,
-            linestyle=":",
+            linestyle="--",
             linewidth=1.5,
-            alpha=0.8,
-            label=f"cutoff: {lower:.3g}",
-        )
-    if upper is not None:
-        ax.axvline(
-            upper,
-            color=CELLQUORUM_RED,
-            linestyle=":",
-            linewidth=1.5,
-            alpha=0.8,
-            label=f"cutoff: {upper:.3g}",
+            label=f"Median: {median_val:.1f}%",
         )
 
-    ax.legend()
+        # Add threshold lines when bounds are provided
+        lower, upper = bounds
+        if lower is not None:
+            ax.axvline(
+                lower,
+                color=CELLQUORUM_RED,
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.8,
+                label=f"cutoff: {lower:.3g}",
+            )
+        if upper is not None:
+            ax.axvline(
+                upper,
+                color=CELLQUORUM_RED,
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.8,
+                label=f"cutoff: {upper:.3g}",
+            )
 
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        ax.legend()
+
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_counts_vs_genes_scatter(adata: AnnData, output_path: Path, dpi: int) -> None:
     """Plot total counts vs number of genes scatter."""
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        total_counts = adata.obs["total_counts"].values
+        n_genes = adata.obs["n_genes_by_counts"].values
 
-    total_counts = adata.obs["total_counts"].values
-    n_genes = adata.obs["n_genes_by_counts"].values
+        # Sample if too many cells (for performance)
+        max_cells = 5000
+        if len(total_counts) > max_cells:
+            rng = np.random.default_rng(0)
+            indices = rng.choice(len(total_counts), max_cells, replace=False)
+            total_counts = total_counts[indices]
+            n_genes = n_genes[indices]
 
-    # Sample if too many cells (for performance)
-    max_cells = 5000
-    if len(total_counts) > max_cells:
-        indices = np.random.choice(len(total_counts), max_cells, replace=False)
-        total_counts = total_counts[indices]
-        n_genes = n_genes[indices]
+        # Use seaborn for scatter with transparency
+        sns.scatterplot(
+            x=total_counts,
+            y=n_genes,
+            color=CELLQUORUM_BLUE,
+            alpha=0.3,
+            s=10,
+            edgecolor="none",
+            ax=ax,
+        )
 
-    # Use seaborn for scatter with transparency
-    sns.scatterplot(
-        x=total_counts, y=n_genes, color=CELLQUORUM_BLUE, alpha=0.3, s=10, edgecolor="none", ax=ax
-    )
+        ax.set_xlabel("Total Counts per Cell")
+        ax.set_ylabel("Number of Genes per Cell")
+        ax.set_title("QC: Counts vs Genes Detection")
 
-    ax.set_xlabel("Total Counts per Cell")
-    ax.set_ylabel("Number of Genes per Cell")
-    ax.set_title("QC: Counts vs Genes Detection")
-
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_gene_detection_histogram(adata: AnnData, output_path: Path, dpi: int) -> None:
     """Plot gene detection (cells per gene) histogram."""
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        n_cells = adata.var["n_cells_by_counts"].values
 
-    n_cells = adata.var["n_cells_by_counts"].values
+        # Use seaborn for histogram
+        sns.histplot(n_cells, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
 
-    # Use seaborn for histogram
-    sns.histplot(n_cells, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, ax=ax)
+        ax.set_xlabel("Number of Cells Detecting Gene")
+        ax.set_ylabel("Number of Genes")
+        ax.set_title("QC: Gene Detection Across Cells")
 
-    ax.set_xlabel("Number of Cells Detecting Gene")
-    ax.set_ylabel("Number of Genes")
-    ax.set_title("QC: Gene Detection Across Cells")
+        # Add median line
+        median_val = np.median(n_cells)
+        ax.axvline(
+            median_val,
+            color=CELLQUORUM_RED,
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Median: {median_val:.0f}",
+        )
+        ax.legend()
 
-    # Add median line
-    median_val = np.median(n_cells)
-    ax.axvline(
-        median_val,
-        color=CELLQUORUM_RED,
-        linestyle="--",
-        linewidth=1.5,
-        label=f"Median: {median_val:.0f}",
-    )
-    ax.legend()
-
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_keep_fail_barplot(adata: AnnData, output_path: Path, dpi: int) -> None:
     """Plot keep vs fail cell counts."""
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        qc_keep = adata.obs["cellquorum_qc_keep"].values
+        keep_count = qc_keep.sum()
+        fail_count = len(qc_keep) - keep_count
 
-    qc_keep = adata.obs["cellquorum_qc_keep"].values
-    keep_count = qc_keep.sum()
-    fail_count = len(qc_keep) - keep_count
+        categories = ["Pass QC", "Fail QC"]
+        counts = [keep_count, fail_count]
+        colors = [CELLQUORUM_BLUE, CELLQUORUM_RED]
 
-    categories = ["Pass QC", "Fail QC"]
-    counts = [keep_count, fail_count]
-    colors = [CELLQUORUM_BLUE, CELLQUORUM_RED]
+        # Use matplotlib bar plot for simplicity
+        bars = ax.bar(categories, counts, color=colors, alpha=0.7)
 
-    # Use matplotlib bar plot for simplicity
-    bars = ax.bar(categories, counts, color=colors, alpha=0.7)
+        # Add count labels on bars
+        for bar, count in zip(bars, counts, strict=False):
+            height = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height,
+                f"{int(count)}",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+            )
 
-    # Add count labels on bars
-    for bar, count in zip(bars, counts, strict=False):
-        height = bar.get_height()
+        ax.set_ylabel("Number of Cells")
+        ax.set_title("QC: Cell Filtering Summary")
+
+        # Add percentage text
+        total = keep_count + fail_count
+        pass_pct = 100 * keep_count / total if total > 0 else 0
         ax.text(
-            bar.get_x() + bar.get_width() / 2.0,
-            height,
-            f"{int(count)}",
-            ha="center",
-            va="bottom",
-            fontsize=10,
+            0.95,
+            0.95,
+            f"Pass Rate: {pass_pct:.1f}%",
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+            bbox={
+                "boxstyle": "round,pad=0.4",
+                "facecolor": "white",
+                "edgecolor": CELLQUORUM_GRAY,
+                "linewidth": 0.5,
+            },
         )
 
-    ax.set_ylabel("Number of Cells")
-    ax.set_title("QC: Cell Filtering Summary")
-
-    # Add percentage text
-    total = keep_count + fail_count
-    pass_pct = 100 * keep_count / total if total > 0 else 0
-    ax.text(
-        0.95,
-        0.95,
-        f"Pass Rate: {pass_pct:.1f}%",
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=9,
-        bbox={
-            "boxstyle": "round,pad=0.4",
-            "facecolor": "white",
-            "edgecolor": CELLQUORUM_GRAY,
-            "linewidth": 0.5,
-        },
-    )
-
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_qc_violin(
@@ -637,74 +650,79 @@ def _plot_qc_violin(
         dpi: Figure resolution.
     """
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        # Build a DataFrame for seaborn.
+        metric_values = adata.obs[metric].values
+        if group_key is not None and group_key in adata.obs.columns:
+            group_values = adata.obs[group_key].values
+            plot_df = pd.DataFrame({metric: metric_values, "group": group_values})
+            # Get group palette.
+            unique_groups = [str(g) for g in plot_df["group"].unique()]
+            palette = get_group_palette(unique_groups)
+            # Draw grouped violin (use hue to assign palette correctly).
+            sns.violinplot(
+                data=plot_df,
+                x="group",
+                y=metric,
+                hue="group",
+                palette=palette,
+                ax=ax,
+                inner="box",
+                legend=False,
+            )
+            ax.set_xlabel(group_key)
 
-    # Build a DataFrame for seaborn.
-    metric_values = adata.obs[metric].values
-    if group_key is not None and group_key in adata.obs.columns:
-        group_values = adata.obs[group_key].values
-        plot_df = pd.DataFrame({metric: metric_values, "group": group_values})
-        # Get group palette.
-        unique_groups = [str(g) for g in plot_df["group"].unique()]
-        palette = get_group_palette(unique_groups)
-        # Draw grouped violin (use hue to assign palette correctly).
-        sns.violinplot(
-            data=plot_df,
-            x="group",
-            y=metric,
-            hue="group",
-            palette=palette,
-            ax=ax,
-            inner="box",
-            legend=False,
-        )
-        ax.set_xlabel(group_key)
+            # Publication touch: annotate a two-group comparison with a Mann-Whitney
+            # p-value (matches the lekc qc_by_condition_publication style). Only
+            # drawn for exactly two groups; skipped silently if the test can't be
+            # computed.
+            if len(unique_groups) == 2:
+                try:
+                    from scipy.stats import mannwhitneyu
 
-        # Publication touch: annotate a two-group comparison with a Mann-Whitney
-        # p-value (matches the lekc qc_by_condition_publication style). Only drawn
-        # for exactly two groups; skipped silently if the test can't be computed.
-        if len(unique_groups) == 2:
-            try:
-                from scipy.stats import mannwhitneyu
+                    g0, g1 = unique_groups
+                    v0 = plot_df.loc[plot_df["group"].astype(str) == g0, metric].to_numpy()
+                    v1 = plot_df.loc[plot_df["group"].astype(str) == g1, metric].to_numpy()
+                    v0 = v0[np.isfinite(v0)]
+                    v1 = v1[np.isfinite(v1)]
+                    if v0.size and v1.size:
+                        _, p_val = mannwhitneyu(v0, v1, alternative="two-sided")
+                        y_top = float(np.nanmax(metric_values))
+                        ax.text(
+                            0.5,
+                            y_top * 1.02 if y_top > 0 else y_top,
+                            f"Mann–Whitney p = {p_val:.2e}",
+                            ha="center",
+                            va="bottom",
+                            fontsize=8,
+                            transform=ax.get_xaxis_transform(),
+                        )
+                except Exception:
+                    # Stats are a nice-to-have annotation; never fail the figure
+                    # over them.
+                    pass
+        else:
+            # Single-group violin (no grouping).
+            plot_df = pd.DataFrame({metric: metric_values, "group": ["All"] * len(metric_values)})
+            sns.violinplot(
+                data=plot_df, x="group", y=metric, color=CELLQUORUM_BLUE, ax=ax, inner="box"
+            )
+            ax.set_xlabel("")
 
-                g0, g1 = unique_groups
-                v0 = plot_df.loc[plot_df["group"].astype(str) == g0, metric].to_numpy()
-                v1 = plot_df.loc[plot_df["group"].astype(str) == g1, metric].to_numpy()
-                v0 = v0[np.isfinite(v0)]
-                v1 = v1[np.isfinite(v1)]
-                if v0.size and v1.size:
-                    _, p_val = mannwhitneyu(v0, v1, alternative="two-sided")
-                    y_top = float(np.nanmax(metric_values))
-                    ax.text(
-                        0.5,
-                        y_top * 1.02 if y_top > 0 else y_top,
-                        f"Mann–Whitney p = {p_val:.2e}",
-                        ha="center",
-                        va="bottom",
-                        fontsize=8,
-                        transform=ax.get_xaxis_transform(),
-                    )
-            except Exception:
-                # Stats are a nice-to-have annotation; never fail the figure over them.
-                pass
-    else:
-        # Single-group violin (no grouping).
-        plot_df = pd.DataFrame({metric: metric_values, "group": ["All"]})
-        sns.violinplot(data=plot_df, x="group", y=metric, color=CELLQUORUM_BLUE, ax=ax, inner="box")
-        ax.set_xlabel("")
+        ax.set_ylabel(metric.replace("_", " ").title())
+        ax.set_title(f"QC: {metric.replace('_', ' ').title()} Distribution")
 
-    ax.set_ylabel(metric.replace("_", " ").title())
-    ax.set_title(f"QC: {metric.replace('_', ' ').title()} Distribution")
+        # Draw threshold lines when bounds are provided.
+        lower, upper = bounds
+        if lower is not None:
+            ax.axhline(lower, color=CELLQUORUM_RED, linestyle="--", linewidth=1.5, alpha=0.7)
+        if upper is not None:
+            ax.axhline(upper, color=CELLQUORUM_RED, linestyle="--", linewidth=1.5, alpha=0.7)
 
-    # Draw threshold lines when bounds are provided.
-    lower, upper = bounds
-    if lower is not None:
-        ax.axhline(lower, color=CELLQUORUM_RED, linestyle="--", linewidth=1.5, alpha=0.7)
-    if upper is not None:
-        ax.axhline(upper, color=CELLQUORUM_RED, linestyle="--", linewidth=1.5, alpha=0.7)
-
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_counts_vs_genes_colored(
@@ -729,61 +747,63 @@ def _plot_counts_vs_genes_colored(
         dpi: Figure resolution.
     """
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        total_counts = adata.obs["total_counts"].values
+        n_genes = adata.obs["n_genes_by_counts"].values
+        color_values = adata.obs[color_col].values
 
-    total_counts = adata.obs["total_counts"].values
-    n_genes = adata.obs["n_genes_by_counts"].values
-    color_values = adata.obs[color_col].values
+        # Sample if too many cells (for performance).
+        max_cells = 5000
+        if len(total_counts) > max_cells:
+            rng = np.random.default_rng(0)
+            indices = rng.choice(len(total_counts), max_cells, replace=False)
+            total_counts = total_counts[indices]
+            n_genes = n_genes[indices]
+            color_values = color_values[indices]
 
-    # Sample if too many cells (for performance).
-    max_cells = 5000
-    if len(total_counts) > max_cells:
-        indices = np.random.choice(len(total_counts), max_cells, replace=False)
-        total_counts = total_counts[indices]
-        n_genes = n_genes[indices]
-        color_values = color_values[indices]
-
-    # Build a DataFrame for seaborn.
-    plot_df = pd.DataFrame(
-        {"total_counts": total_counts, "n_genes": n_genes, "color": color_values}
-    )
-
-    if color_type == "continuous":
-        # Continuous color (e.g., mito percentage).
-        scatter = ax.scatter(
-            plot_df["total_counts"],
-            plot_df["n_genes"],
-            c=plot_df["color"],
-            cmap="viridis",
-            alpha=0.5,
-            s=10,
-            edgecolor="none",
+        # Build a DataFrame for seaborn.
+        plot_df = pd.DataFrame(
+            {"total_counts": total_counts, "n_genes": n_genes, "color": color_values}
         )
-        cbar = plt.colorbar(scatter, ax=ax)
-        cbar.set_label(color_col.replace("_", " ").title())
-    else:
-        # Categorical color (e.g., keep/fail).
-        unique_vals = sorted(plot_df["color"].unique())
-        palette = {True: CELLQUORUM_BLUE, False: CELLQUORUM_RED}
-        for val in unique_vals:
-            subset = plot_df[plot_df["color"] == val]
-            ax.scatter(
-                subset["total_counts"],
-                subset["n_genes"],
-                c=palette.get(val, CELLQUORUM_GRAY),
+
+        if color_type == "continuous":
+            # Continuous color (e.g., mito percentage).
+            scatter = ax.scatter(
+                plot_df["total_counts"],
+                plot_df["n_genes"],
+                c=plot_df["color"],
+                cmap="viridis",
                 alpha=0.5,
                 s=10,
                 edgecolor="none",
-                label=f"{'Pass' if val else 'Fail'}",
             )
-        ax.legend()
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label(color_col.replace("_", " ").title())
+        else:
+            # Categorical color (e.g., keep/fail).
+            unique_vals = sorted(plot_df["color"].unique())
+            palette = {True: CELLQUORUM_BLUE, False: CELLQUORUM_RED}
+            for val in unique_vals:
+                subset = plot_df[plot_df["color"] == val]
+                ax.scatter(
+                    subset["total_counts"],
+                    subset["n_genes"],
+                    c=palette.get(val, CELLQUORUM_GRAY),
+                    alpha=0.5,
+                    s=10,
+                    edgecolor="none",
+                    label=f"{'Pass' if val else 'Fail'}",
+                )
+            ax.legend()
 
-    ax.set_xlabel("Total Counts per Cell")
-    ax.set_ylabel("Number of Genes per Cell")
-    ax.set_title(f"QC: Counts vs Genes ({color_col.replace('_', ' ').title()})")
+        ax.set_xlabel("Total Counts per Cell")
+        ax.set_ylabel("Number of Genes per Cell")
+        ax.set_title(f"QC: Counts vs Genes ({color_col.replace('_', ' ').title()})")
 
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 def _plot_doublet_distribution(
@@ -805,48 +825,54 @@ def _plot_doublet_distribution(
         dpi: Figure resolution.
     """
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
+    try:
+        scores = adata.obs[score_col].values
 
-    scores = adata.obs[score_col].values
+        # Check if predicted_doublet is present for splitting the distribution.
+        if "predicted_doublet" in adata.obs.columns:
+            predicted = adata.obs["predicted_doublet"].to_numpy().astype(bool)
+            # Draw separate histograms for singlets and doublets.
+            singlets = scores[~predicted]
+            doublets = scores[predicted]
+            ax.hist(
+                singlets,
+                bins=50,
+                color=CELLQUORUM_BLUE,
+                alpha=0.7,
+                label="Singlet",
+                edgecolor="none",
+            )
+            ax.hist(
+                doublets,
+                bins=50,
+                color=CELLQUORUM_RED,
+                alpha=0.7,
+                label="Doublet",
+                edgecolor="none",
+            )
+            ax.legend()
+        else:
+            # Draw a single histogram.
+            ax.hist(scores, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, edgecolor="none")
 
-    # Check if predicted_doublet is present for splitting the distribution.
-    if "predicted_doublet" in adata.obs.columns:
-        predicted = adata.obs["predicted_doublet"].values
-        # Draw separate histograms for singlets and doublets.
-        singlets = scores[~predicted]
-        doublets = scores[predicted]
-        ax.hist(
-            singlets,
-            bins=50,
-            color=CELLQUORUM_BLUE,
-            alpha=0.7,
-            label="Singlet",
-            edgecolor="none",
+        ax.set_xlabel("Doublet Score")
+        ax.set_ylabel("Number of Cells")
+        ax.set_title("QC: Doublet Score Distribution")
+
+        # Add median line.
+        median_val = np.median(scores)
+        ax.axvline(
+            median_val,
+            color=CELLQUORUM_GRAY,
+            linestyle="--",
+            linewidth=1.5,
+            label=f"Median: {median_val:.3f}",
         )
-        ax.hist(
-            doublets, bins=50, color=CELLQUORUM_RED, alpha=0.7, label="Doublet", edgecolor="none"
-        )
-        ax.legend()
-    else:
-        # Draw a single histogram.
-        ax.hist(scores, bins=50, color=CELLQUORUM_BLUE, alpha=0.7, edgecolor="none")
 
-    ax.set_xlabel("Doublet Score")
-    ax.set_ylabel("Number of Cells")
-    ax.set_title("QC: Doublet Score Distribution")
-
-    # Add median line.
-    median_val = np.median(scores)
-    ax.axvline(
-        median_val,
-        color=CELLQUORUM_GRAY,
-        linestyle="--",
-        linewidth=1.5,
-        label=f"Median: {median_val:.3f}",
-    )
-
-    apply_cellquorum_axis_style(ax)
-    save_cellquorum_figure(fig, output_path, dpi=dpi)
-    plt.close(fig)
+        apply_cellquorum_axis_style(ax)
+        save_cellquorum_figure(fig, output_path, dpi=dpi)
+    finally:
+        plt.close(fig)
 
 
 __all__ = [
