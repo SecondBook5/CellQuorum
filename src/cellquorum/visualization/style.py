@@ -414,6 +414,31 @@ def add_statistical_annotation_box(
     )
 
 
+def add_panel_letter(ax: Axes, letter: str, *, size: int = 22) -> None:
+    """Draw a bold publication panel letter at the axes' upper-left corner."""
+
+    # Match the lekc house placement: axes-fraction (-0.08, 0.98), bold, top-left.
+    ax.text(
+        -0.08,
+        0.98,
+        letter,
+        transform=ax.transAxes,
+        fontsize=size,
+        fontweight="bold",
+        va="top",
+        ha="right",
+    )
+
+
+def get_group_palette(groups: list[str]) -> dict[str, str]:
+    """Map group values to house-palette colors, deterministically by sorted order."""
+
+    # Sort for determinism so the same groups always map to the same colors.
+    ordered = sorted({str(g) for g in groups})
+    colors = get_cellquorum_colors(len(ordered))
+    return {group: colors[i] for i, group in enumerate(ordered)}
+
+
 __all__ = [
     "CELLQUORUM_BLUE",
     "CELLQUORUM_RED",
@@ -434,4 +459,6 @@ __all__ = [
     "add_dashed_reference_lines",
     "add_directional_arrows",
     "add_statistical_annotation_box",
+    "add_panel_letter",
+    "get_group_palette",
 ]

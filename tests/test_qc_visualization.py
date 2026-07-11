@@ -162,3 +162,100 @@ def test_write_qc_figures_different_formats() -> None:
             adata, output_dir, figure_format="pdf", dpi=100, overwrite=True
         )
         assert all(p.suffix == ".pdf" for p in result_pdf.figure_paths)
+
+
+def _adata_with_group_and_doublet():
+    """Create test AnnData with grouping column and doublet scores."""
+    adata = make_test_adata_with_qc()  # has total_counts,n_genes,pct_counts_mito,ribo,hb,keep
+    adata.obs["condition"] = ["Tumor", "Adjacent", "Tumor", "Adjacent"]
+    adata.obs["doublet_score"] = [0.1, 0.85, 0.2, 0.05]
+    adata.obs["predicted_doublet"] = [False, True, False, False]
+    return adata
+
+
+def test_grouped_violins_emitted_per_metric():
+    """Grouped violins are created for each core metric."""
+    adata = _adata_with_group_and_doublet()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100, group_key="condition")
+        names = {p.name for p in result.figure_paths}
+        # A violin per core metric, grouped by condition.
+        assert any("violin" in n and "total_counts" in n for n in names)
+        assert any("violin" in n and "pct_counts_mito" in n for n in names)
+
+
+def test_doublet_distribution_emitted_when_present():
+    """Doublet distribution is created when doublet_score is present."""
+    adata = _adata_with_group_and_doublet()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100)
+        names = {p.name for p in result.figure_paths}
+        assert any("doublet" in n for n in names)
+
+
+def test_group_key_none_still_works():
+    """Violins work with group_key=None (single-group violins)."""
+    adata = _adata_with_group_and_doublet()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100, group_key=None)
+        assert len(result.figure_paths) > 0  # single-group violins, no crash
+        # Harden: ensure at least one violin figure is actually produced.
+        names = {p.name for p in result.figure_paths}
+        assert any("violin" in n for n in names), "No violin figure produced"
+
+
+def test_colored_scatter_keep_fail_variant():
+    """Counts-vs-genes scatter colored by keep/fail is created."""
+    adata = _adata_with_group_and_doublet()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100)
+        names = {p.name for p in result.figure_paths}
+        assert any("counts_vs_genes" in n for n in names)
+
+
+def test_threshold_lines_on_histograms():
+    """Threshold cutoff lines are drawn on histograms when thresholds are provided."""
+    from cellquorum.qc.thresholds import QCThreshold, QCThresholdResult
+
+    adata = make_test_adata_with_qc()
+
+    # Build a threshold result with bounds on total_counts and pct_counts_mito.
+    thresholds = QCThresholdResult(
+        thresholds=[
+            QCThreshold(
+                axis="cell",
+                metric="total_counts",
+                rule_name="fixed_min_counts",
+                lower=5.0,
+                upper=20.0,
+                source="fixed",
+            ),
+            QCThreshold(
+                axis="cell",
+                metric="pct_counts_mito",
+                rule_name="fixed_max_mito",
+                lower=None,
+                upper=15.0,
+                source="fixed",
+            ),
+        ],
+        warnings=[],
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100, thresholds=thresholds)
+
+        # Verify that histograms are created without error.
+        names = {p.name for p in result.figure_paths}
+        assert "qc_total_counts_histogram.png" in names
+        assert "qc_pct_counts_mito_histogram.png" in names
+
+        # Verify files exist and have content.
+        for p in result.figure_paths:
+            assert p.exists()
+            assert p.stat().st_size > 0

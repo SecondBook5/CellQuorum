@@ -63,7 +63,7 @@ class QCArtifactManifest:
     output_dir: Path
 
     # Store written artifact paths by stable artifact label.
-    artifacts: dict[str, Path] = field(default_factory=dict)
+    artifacts: dict[str, Path | list[str]] = field(default_factory=dict)
 
     # Store skipped artifact labels.
     skipped: list[str] = field(default_factory=list)
@@ -83,7 +83,11 @@ class QCArtifactManifest:
         return {
             "output_dir": str(self.output_dir),
             "artifacts": {
-                artifact_name: str(artifact_path)
+                artifact_name: (
+                    [str(p) for p in artifact_path]
+                    if isinstance(artifact_path, list)
+                    else str(artifact_path)
+                )
                 for artifact_name, artifact_path in self.artifacts.items()
             },
             "skipped": list(self.skipped),
@@ -124,6 +128,7 @@ def write_qc_artifacts(
     config: QCConfig | None = None,
     adata: ad.AnnData | None = None,
     summary_extra: dict[str, object] | None = None,
+    group_key: str | None = None,
 ) -> QCArtifactManifest:
     """
     Write QC module artifacts to disk.
@@ -142,6 +147,8 @@ def write_qc_artifacts(
         adata: Optional AnnData object to write as qc.h5ad when enabled.
         summary_extra: Optional extra JSON-friendly values to include in the
             summary artifact.
+        group_key: Optional obs column name for grouping QC figures by
+            condition, donor, or sample.
 
     Returns:
         QCArtifactManifest describing written, skipped, and warned artifacts.
@@ -255,14 +262,32 @@ def write_qc_artifacts(
         # Store h5ad skip.
         skipped.append("qc_h5ad")
 
-    # Record figure skip because figure generation is not implemented in this writer.
+    # Write QC figures when enabled and AnnData is available.
     if qc_config.outputs.write_figures:
-        # Store figure skip instead of pretending plots were generated.
-        skipped.append("figures")
-        warnings.append(
-            "QCOutputConfig.write_figures is true, but QC figure generation is not "
-            "implemented in artifacts.py yet."
-        )
+        if adata is not None:
+            # Import figure writer locally to avoid circular imports.
+            from cellquorum.qc.visualization import write_qc_figures
+
+            # Generate and write QC figures.
+            fig_result = write_qc_figures(
+                adata,
+                output_path,
+                dpi=qc_config.outputs.figure_dpi,
+                figure_format=qc_config.outputs.figure_format,
+                overwrite=True,
+                thresholds=threshold_result,
+                group_key=group_key,
+            )
+
+            # Record figure paths in the artifact manifest.
+            artifacts["figures"] = [str(p) for p in fig_result.figure_paths]
+
+            # Propagate figure-generation warnings.
+            warnings.extend(fig_result.warnings)
+        else:
+            # Store figure skip when AnnData is absent.
+            skipped.append("figures")
+            warnings.append("QCOutputConfig.write_figures is true, but no AnnData was " "provided.")
 
     # Record figure skip when disabled.
     else:
@@ -603,7 +628,11 @@ def build_qc_summary_payload(
         "thresholds": threshold_result.to_summary_dict(),
         "decisions": decision_result.to_summary_dict(),
         "artifacts": {
-            artifact_name: str(artifact_path)
+            artifact_name: (
+                [str(p) for p in artifact_path]
+                if isinstance(artifact_path, list)
+                else str(artifact_path)
+            )
             for artifact_name, artifact_path in artifact_names.items()
         },
         "skipped": list(skipped),

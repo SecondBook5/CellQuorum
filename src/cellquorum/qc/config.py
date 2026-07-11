@@ -1032,6 +1032,9 @@ class QCOutputConfig(StrictBaseModel):
     # Store the QC figure format.
     figure_format: QCFigureFormat = "png"
 
+    # Store the QC figure DPI resolution.
+    figure_dpi: int = 300
+
 
 class QCConfig(StrictBaseModel):
     """

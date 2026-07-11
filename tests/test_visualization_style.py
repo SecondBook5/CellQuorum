@@ -266,3 +266,30 @@ def test_complete_volcano_plot_styling() -> None:
         assert output_path.exists()
 
         plt.close(fig)
+
+
+def test_add_panel_letter_draws_text():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from cellquorum.visualization.style import add_panel_letter
+
+    fig, ax = plt.subplots()
+    add_panel_letter(ax, "A")
+    texts = [t.get_text() for t in ax.texts]
+    assert "A" in texts
+    plt.close(fig)
+
+
+def test_get_group_palette_stable_and_covers_groups():
+    from cellquorum.visualization.style import get_group_palette
+
+    groups = ["Tumor", "Adjacent", "Normal"]
+    pal = get_group_palette(groups)
+    assert set(pal.keys()) == set(groups)
+    # deterministic: same input -> same colors
+    assert get_group_palette(groups) == pal
+    # all values are hex-ish strings
+    assert all(isinstance(v, str) and v.startswith("#") for v in pal.values())
