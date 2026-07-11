@@ -11,6 +11,9 @@ from typing import Literal
 # Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator, model_validator
 
+# Import the ambient-correction configuration model.
+from cellquorum.ambient_correction.config import AmbientCorrectionConfig
+
 # Import the annotation configuration model.
 from cellquorum.annotation.config import AnnotationConfig
 
@@ -433,6 +436,7 @@ class StageSelectionConfig(StrictBaseModel):
     assumptions, sample support, and backend requirements are satisfied.
 
     Args:
+        ambient_correction: Whether ambient correction is enabled.
         qc: Whether quality control is enabled.
         preprocessing: Whether preprocessing is enabled.
         dimensionality: Whether dimensionality reduction is enabled.
@@ -448,6 +452,9 @@ class StageSelectionConfig(StrictBaseModel):
         cell_cell_communication: Whether communication analysis is enabled.
         network_analysis: Whether network analysis is enabled.
     """
+
+    # Store whether ambient correction is enabled.
+    ambient_correction: bool = False
 
     # Store whether quality control is enabled.
     qc: bool = True
@@ -509,6 +516,7 @@ class CellQuorumConfig(StrictBaseModel):
         r: R backend preferences.
         report: Final report settings.
         stages: Major stage enablement flags.
+        ambient_correction: Ambient-correction settings.
         qc: Quality-control settings.
         preprocessing: Preprocessing settings.
         dimensionality: Dimensionality-reduction settings.
@@ -538,6 +546,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store major stage enablement flags.
     stages: StageSelectionConfig = Field(default_factory=StageSelectionConfig)
+
+    # Store ambient-correction settings.
+    ambient_correction: AmbientCorrectionConfig = Field(default_factory=AmbientCorrectionConfig)
 
     # Store quality-control settings.
     qc: QCConfig = Field(default_factory=QCConfig)
