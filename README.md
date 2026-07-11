@@ -11,8 +11,9 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
-![Tests](https://img.shields.io/badge/tests-674%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-~690-brightgreen)
 ![Stages](https://img.shields.io/badge/stages-7%20implemented-blue)
+![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
 
@@ -56,6 +57,14 @@ so a dataset is expressed as a YAML config, not code. The remaining downstream
 stages (differential expression, composition, gene-regulatory networks,
 cell-cell communication, trajectory) are planned slots not yet implemented.
 
+**GPU acceleration, by default when available** — normalization (PFlog1pPF via
+cupy), PCA, and neighbors + Leiden (via rapids-singlecell) run on the GPU when
+`rapids-singlecell` + `cupy` are installed and a CUDA device is present, and fall
+back to scanpy (CPU) otherwise. A shared compute router gates on real capability
+(not merely a visible device); set `compute.backend: cpu` to force CPU. Routed
+methods produce identical output keys, so results and data contracts are
+path-independent.
+
 ---
 
 ## Current capabilities
@@ -77,6 +86,7 @@ cell-cell communication, trajectory) are planned slots not yet implemented.
 | Strategy-based method registry (`AnalysisMethod` / `MethodDispatchStage`) | Implemented |
 | R/Bioconductor method execution (`run_script` adapter) | Implemented |
 | GPU-gated method execution (self-gating stages) | Implemented |
+| GPU compute routing (rapids-singlecell / cupy, GPU-by-default) | Implemented |
 
 ### Analysis stages
 
@@ -84,10 +94,10 @@ cell-cell communication, trajectory) are planned slots not yet implemented.
 |---|---|---:|
 | `ambient_correction` | SoupX (R) | Implemented |
 | `qc` | MAD/fixed thresholds; Scrublet + scDblFinder doublet consensus; Tirosh cell-cycle | Implemented |
-| `preprocessing` | PFlog1pPF / log1p-CP10k normalization (layer-tagged) | Implemented |
-| `dimensionality` | PCA + scree plot + `n_pcs: auto` (knee) | Implemented |
+| `preprocessing` | PFlog1pPF / log1p-CP10k normalization (layer-tagged) — GPU via cupy | Implemented |
+| `dimensionality` | PCA + scree plot + `n_pcs: auto` (knee) — GPU via rapids-singlecell | Implemented |
 | `integration` | Harmony (CPU); scVI (GPU-gated) | Implemented |
-| `clustering` | Leiden (auto-routes onto the integration embedding) | Implemented |
+| `clustering` | Leiden + neighbors (auto-routes onto the integration embedding) — GPU via rapids-singlecell | Implemented |
 | `annotation` | marker-vote | Implemented |
 | `feature_selection` | HVG / deviance | Planned next |
 | `reference_mapping` | scArches (optional, atlas-agnostic) | Planned |
@@ -95,10 +105,16 @@ cell-cell communication, trajectory) are planned slots not yet implemented.
 
 ### Verification
 
-- Test suite: **674 passing** (`python -m pytest`); one pre-existing CLI
-  version-string test fails only under Rich ANSI output and is unrelated to the
-  engine. A skippable real-data SoupX integration test confirms ambient
-  correction runs end-to-end on Cell Ranger matrices when R + SoupX are present.
+- Test suite: **~690 tests** (`python -m pytest`); all pass except one
+  pre-existing CLI version-string test that fails only under Rich ANSI output
+  and is unrelated to the engine. GPU tests skip in a CPU-only environment and
+  run in the `cellquorum-gpu` env.
+- **End-to-end chain tests** run the full backbone
+  (`qc → preprocessing → dimensionality → integration → clustering → annotation`)
+  and assert every stage's output threads to the final object — on both the CPU
+  and GPU paths — so the pipeline is verified as a chain, not just stage-by-stage.
+- A skippable real-data SoupX integration test confirms ambient correction runs
+  end-to-end on Cell Ranger matrices when R + SoupX are present.
 
 ---
 
