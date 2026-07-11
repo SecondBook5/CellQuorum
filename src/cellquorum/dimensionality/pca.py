@@ -115,13 +115,59 @@ class PCAMethod(AnalysisMethod):
         # "highly_variable" restricts PCA to the HVG var column; None uses all genes.
         n_comps = int(min(max_pcs, adata.n_obs - 1, adata.n_vars - 1))
         mask_var = "highly_variable" if use_hvg else None
-        sc.pp.pca(
-            adata,
-            n_comps=n_comps,
-            random_state=random_state,
-            mask_var=mask_var,
-            layer=input_layer,
-        )
+
+        # Decide GPU vs CPU once via the shared router.
+        from cellquorum.compute.router import resolve_compute
+
+        routing = resolve_compute(context)
+        compute_used = "cpu"
+        gpu_fallback_note = None
+
+        if routing["use_gpu"]:
+            try:
+                import rapids_singlecell as rsc
+
+                # Move to GPU, run rapids PCA, move back — same output key X_pca.
+                rsc.get.anndata_to_GPU(adata)
+                rsc.pp.pca(
+                    adata,
+                    n_comps=n_comps,
+                    mask_var=mask_var,
+                    random_state=random_state,
+                    layer=input_layer,
+                )
+                rsc.get.anndata_to_CPU(adata)
+                compute_used = "gpu"
+            except Exception as exc:  # noqa: BLE001
+                # GPU path failed; fall back to CPU when permitted.
+                if not routing["fallback_to_cpu"]:
+                    raise
+                # Ensure any partial GPU state is returned to CPU before retrying.
+                try:
+                    import rapids_singlecell as rsc
+
+                    rsc.get.anndata_to_CPU(adata)
+                except Exception:
+                    pass
+                gpu_fallback_note = (
+                    f"GPU PCA failed ({type(exc).__name__}: {str(exc)[:80]}); fell back to CPU."
+                )
+                sc.pp.pca(
+                    adata,
+                    n_comps=n_comps,
+                    random_state=random_state,
+                    mask_var=mask_var,
+                    layer=input_layer,
+                )
+        else:
+            sc.pp.pca(
+                adata,
+                n_comps=n_comps,
+                random_state=random_state,
+                mask_var=mask_var,
+                layer=input_layer,
+            )
+
         variance_ratio = np.asarray(adata.uns["pca"]["variance_ratio"], dtype=float)
 
         # Resolve the component count: knee for "auto", else the fixed int.
@@ -141,6 +187,10 @@ class PCAMethod(AnalysisMethod):
         write_scree_plot(variance_ratio, chosen, scree_path)
 
         # Record the choice for provenance.
+        notes = [f"Selected {chosen} PCs ({mode})."]
+        if gpu_fallback_note is not None:
+            notes.append(gpu_fallback_note)
+
         return StageResult(
             adata=adata,
             artifacts=[
@@ -151,8 +201,13 @@ class PCAMethod(AnalysisMethod):
                     description="PCA scree/elbow plot with chosen-component marker.",
                 )
             ],
-            metrics={"n_pcs": int(chosen), "n_pcs_mode": mode, "n_comps_computed": int(n_comps)},
-            notes=[f"Selected {chosen} PCs ({mode})."],
+            metrics={
+                "n_pcs": int(chosen),
+                "n_pcs_mode": mode,
+                "n_comps_computed": int(n_comps),
+                "compute": compute_used,
+            },
+            notes=notes,
         )
 
 
