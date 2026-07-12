@@ -40,6 +40,9 @@ from cellquorum.feature_selection.stage import FeatureSelectionStage
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage
 
+# Import integration-benchmark evaluation stage.
+from cellquorum.integration_benchmark.stage import IntegrationBenchmarkStage
+
 # Import the preprocessing stage.
 from cellquorum.preprocessing.stage import PreprocessingStage
 
@@ -212,6 +215,7 @@ def build_default_stage_registry() -> StageRegistry:
             "clustering": ClusteringStage(),
             "integration": IntegrationStage(),
             "annotation": AnnotationStage(),
+            "integration_benchmark": IntegrationBenchmarkStage(),
         }
     )
 

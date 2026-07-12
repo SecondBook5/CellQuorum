@@ -30,6 +30,9 @@ from cellquorum.feature_selection.config import FeatureSelectionConfig
 # Import the integration configuration model.
 from cellquorum.integration.config import IntegrationConfig
 
+# Import the integration-benchmark configuration model.
+from cellquorum.integration_benchmark.config import IntegrationBenchmarkConfig
+
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
 
@@ -480,6 +483,12 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether annotation is enabled.
     annotation: bool = True
 
+    # Store whether integration-benchmark evaluation is enabled.
+    integration_benchmark: bool = True
+
+    # Store whether integration-gate filtering is enabled (reserved).
+    integration_gate: bool = False
+
     # Store whether state scoring is enabled.
     state_scoring: bool = True
 
@@ -576,6 +585,11 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store annotation settings.
     annotation: AnnotationConfig = Field(default_factory=AnnotationConfig)
+
+    # Store integration-benchmark evaluation settings.
+    integration_benchmark: IntegrationBenchmarkConfig = Field(
+        default_factory=IntegrationBenchmarkConfig
+    )
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
