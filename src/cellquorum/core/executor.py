@@ -419,6 +419,24 @@ class PipelineExecutor:
         # Mark successful execution end time.
         ended_at = datetime.now(UTC)
 
+        # Detect skipped stages: MethodDispatchStage.run returns a StageResult
+        # with metrics["skipped"]=True when a stage is disabled or a method
+        # returns MethodSkip. Build a skipped record instead of success.
+        if stage_result.metrics.get("skipped") is True:
+            skip_reason = stage_result.metrics.get("reason", "skipped by method/config")
+            stage_record = StageExecutionRecord.skipped(
+                stage_name=planned_stage.name,
+                reason=skip_reason,
+                started_at_utc=started_at,
+                ended_at_utc=ended_at,
+                backend_used=self.backend_used,
+                warnings=stage_result.warnings if stage_result.warnings else None,
+                notes=stage_result.notes if stage_result.notes else None,
+            )
+            # Return (None, record) for skipped stages so executor.run skips
+            # storing the result + propagating the unchanged adata.
+            return None, stage_record
+
         # Build a successful stage execution record.
         stage_record = StageExecutionRecord.success(
             stage_name=planned_stage.name,

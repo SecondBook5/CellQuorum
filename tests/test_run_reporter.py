@@ -84,3 +84,53 @@ def test_progress_context_advances_without_crash():
         bar.advance()
         bar.advance()
         bar.advance()  # No exception.
+
+
+def test_log_level_quiet_suppresses_non_essential_output():
+    """Verify that log_level='quiet' suppresses banner/config/stages but keeps summary."""
+    rep, buf = _reporter(verbose=True, level="quiet")
+
+    # Banner, config, and stage lines should NOT show.
+    rep.banner("0.1.0", "demo", "run1")
+    rep.config_echo(CellQuorumConfig.model_validate({"project": {"name": "demo"}}))
+    rep.stage_start("qc", 1, 3)
+    rec = StageExecutionRecord(
+        stage_name="qc",
+        status="success",
+        started_at_utc=datetime.now(UTC),
+        ended_at_utc=datetime.now(UTC),
+        duration_seconds=1.0,
+    )
+    rep.stage_end(rec)
+
+    # Verify no output so far (banner/config/stage-start/stage-end suppressed).
+    out_before_summary = buf.getvalue()
+    assert "CellQuorum" not in out_before_summary
+    assert "Configuration" not in out_before_summary
+    assert "▶ qc" not in out_before_summary
+    assert "✓ qc" not in out_before_summary
+
+    # Summary should still print (essential output).
+    rep.run_summary([rec], "/tmp/outputs", 10.0)
+    out_after_summary = buf.getvalue()
+    assert "Run Summary" in out_after_summary or "qc" in out_after_summary
+
+
+def test_config_echo_excludes_per_stage_disabled():
+    """Verify config_echo excludes stages with per-stage .enabled=False."""
+    rep, buf = _reporter()
+    cfg = CellQuorumConfig.model_validate(
+        {
+            "project": {"name": "test"},
+            "stages": {"dimensionality": True, "clustering": True},
+            "dimensionality": {"enabled": False, "method": "pca"},
+            "clustering": {"enabled": True, "method": "leiden"},
+        }
+    )
+    # Provide planned_stage_names with only clustering (dimensionality excluded).
+    rep.config_echo(cfg, planned_stage_names=["clustering"])
+    out = buf.getvalue()
+    # Clustering should be shown.
+    assert "clustering" in out
+    # Dimensionality should NOT be shown (excluded from planned_stage_names).
+    assert "dimensionality" not in out

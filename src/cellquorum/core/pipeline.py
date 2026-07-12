@@ -696,12 +696,23 @@ def execute_pipeline_run(
     run_id = context.paths.root.name
     reporter.banner(__version__, config.project.name, run_id)
 
-    # Compute which stages will actually run (planned + registered).
-    planned_stage_names = [
-        stage.name
-        for stage in plan.stages
-        if stage.enabled and resolved_executor.registry.get(stage.name) is not None
-    ]
+    # Compute which stages will actually run (planned + registered + per-stage
+    # enabled). A stage runs only if: in plan, registered, AND its sub-config
+    # .enabled is True (when present).
+    planned_stage_names = []
+    config_dict = config.model_dump()
+    for stage in plan.stages:
+        # Check plan gate and registration.
+        if not stage.enabled or resolved_executor.registry.get(stage.name) is None:
+            continue
+        # Check per-stage sub-config .enabled field.
+        stage_config = config_dict.get(stage.name, {})
+        if isinstance(stage_config, dict):
+            per_stage_enabled = stage_config.get("enabled", True)
+        else:
+            per_stage_enabled = True
+        if per_stage_enabled:
+            planned_stage_names.append(stage.name)
 
     # Echo the resolved configuration showing only runnable stages.
     reporter.config_echo(config, planned_stage_names=planned_stage_names)

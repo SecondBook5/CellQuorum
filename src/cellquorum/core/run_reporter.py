@@ -49,6 +49,9 @@ class RunReporter:
         # Store the Rich console (or create a default).
         self._console = console or Console()
 
+        # Track active progress bar for routing output through tqdm.write.
+        self._active_bar: tqdm | None = None
+
     def banner(self, version: str, project_name: str, run_id: str) -> None:
         """
         Print the CellQuorum startup banner.
@@ -58,8 +61,8 @@ class RunReporter:
             project_name: Project name from config.
             run_id: Run identifier.
         """
-        # Early return when not verbose.
-        if not self._verbose:
+        # Early return when not verbose or quiet.
+        if not self._verbose or self._level == "quiet":
             return
 
         # Build banner text.
@@ -85,8 +88,8 @@ class RunReporter:
                 stages in plan order. When None, shows all enabled stages from
                 config (fallback for tests/direct use).
         """
-        # Early return when not verbose.
-        if not self._verbose:
+        # Early return when not verbose or quiet.
+        if not self._verbose or self._level == "quiet":
             return
 
         # Create a table for configuration display.
@@ -165,12 +168,19 @@ class RunReporter:
             index: Stage index (1-based).
             total: Total number of stages.
         """
-        # Early return when not verbose.
-        if not self._verbose:
+        # Early return when not verbose or quiet.
+        if not self._verbose or self._level == "quiet":
             return
 
-        # Print stage start message.
-        self._console.print(f"▶ {name} [{index}/{total}]")
+        # Build stage start message.
+        msg = f"▶ {name} [{index}/{total}]"
+
+        # Route through tqdm.write when a progress bar is active (prevents
+        # terminal line corruption). tqdm.write uses the console's file handle.
+        if self._active_bar is not None:
+            tqdm.write(msg, file=self._console.file)
+        else:
+            self._console.print(msg)
 
     def stage_end(self, record: StageExecutionRecord) -> None:
         """
@@ -179,31 +189,50 @@ class RunReporter:
         Args:
             record: Stage execution record with status, timing, and metadata.
         """
-        # Early return when not verbose.
-        if not self._verbose:
+        # Early return when not verbose or quiet.
+        if not self._verbose or self._level == "quiet":
             return
 
-        # Report based on status.
+        # Build status message. When a progress bar is active, route through
+        # tqdm.write (prevents terminal corruption). tqdm.write respects the
+        # console's file handle so it works with captured buffers in tests.
         if record.status == "success":
             msg = f"✓ {record.stage_name} ({record.duration_seconds:.1f}s)"
-            self._console.print(msg, style="green")
+            if self._active_bar is not None:
+                tqdm.write(msg, file=self._console.file)
+            else:
+                self._console.print(msg, style="green")
         elif record.status == "skipped":
             reason = record.skip_reason.reason if record.skip_reason else "unknown"
             msg = f"⊘ {record.stage_name} skipped: {reason}"
-            self._console.print(msg, style="yellow")
+            if self._active_bar is not None:
+                tqdm.write(msg, file=self._console.file)
+            else:
+                self._console.print(msg, style="yellow")
         elif record.status == "failed":
             error_msg = record.error.message if record.error else "unknown error"
             msg = f"✗ {record.stage_name} failed: {error_msg}"
-            self._console.print(msg, style="red")
+            if self._active_bar is not None:
+                tqdm.write(msg, file=self._console.file)
+            else:
+                self._console.print(msg, style="red")
 
-        # Print warnings (always).
+        # Print warnings (always). Route through tqdm.write when active.
         for warning in record.warnings:
-            self._console.print(f"  ⚠ {warning}", style="yellow")
+            warning_msg = f"  ⚠ {warning}"
+            if self._active_bar is not None:
+                tqdm.write(warning_msg, file=self._console.file)
+            else:
+                self._console.print(warning_msg, style="yellow")
 
-        # Print notes (only when level is verbose).
+        # Print notes (only when level is verbose). Route through tqdm.write.
         if self._level == "verbose":
             for note in record.notes:
-                self._console.print(f"  ℹ {note}", style="dim")
+                note_msg = f"  ℹ {note}"
+                if self._active_bar is not None:
+                    tqdm.write(note_msg, file=self._console.file)
+                else:
+                    self._console.print(note_msg, style="dim")
 
     def run_summary(
         self,
@@ -278,8 +307,8 @@ class RunReporter:
         """
         Create a progress bar context manager.
 
-        Yields a handle with an advance() method. When verbose=False, the
-        handle's advance() is a no-op and no bar shows.
+        Yields a handle with an advance() method. When verbose=False or
+        level="quiet", the handle's advance() is a no-op and no bar shows.
 
         Args:
             total: Total number of items to track.
@@ -287,13 +316,15 @@ class RunReporter:
         Yields:
             Progress handle with advance() method.
         """
-        # Create progress bar when verbose.
-        if self._verbose:
+        # Create progress bar when verbose and not quiet.
+        if self._verbose and self._level != "quiet":
             bar = tqdm(total=total, leave=False)
+            self._active_bar = bar
             try:
                 yield self._ProgressHandle(bar)
             finally:
+                self._active_bar = None
                 bar.close()
         else:
-            # No-op handle when not verbose.
+            # No-op handle when not verbose or quiet.
             yield self._ProgressHandle(None)
