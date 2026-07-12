@@ -17,6 +17,9 @@ from cellquorum.ambient_correction.config import AmbientCorrectionConfig
 # Import the annotation configuration model.
 from cellquorum.annotation.config import AnnotationConfig
 
+# Import the annotation-diagnostics configuration model.
+from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -483,6 +486,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether annotation is enabled.
     annotation: bool = True
 
+    # Store whether annotation-diagnostics evaluation is enabled.
+    annotation_diagnostics: bool = True
+
     # Store whether integration-benchmark evaluation is enabled.
     integration_benchmark: bool = True
 
@@ -585,6 +591,11 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store annotation settings.
     annotation: AnnotationConfig = Field(default_factory=AnnotationConfig)
+
+    # Store annotation-diagnostics evaluation settings.
+    annotation_diagnostics: AnnotationDiagnosticsConfig = Field(
+        default_factory=AnnotationDiagnosticsConfig
+    )
 
     # Store integration-benchmark evaluation settings.
     integration_benchmark: IntegrationBenchmarkConfig = Field(

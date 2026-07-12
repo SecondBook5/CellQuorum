@@ -17,6 +17,9 @@ from cellquorum.ambient_correction.stage import AmbientCorrectionStage
 # Import annotation stage.
 from cellquorum.annotation.stage import AnnotationStage
 
+# Import annotation-diagnostics evaluation stage.
+from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
+
 # Import Phase-2A stages: dimensionality reduction and clustering.
 from cellquorum.clustering.stage import ClusteringStage
 
@@ -215,6 +218,7 @@ def build_default_stage_registry() -> StageRegistry:
             "clustering": ClusteringStage(),
             "integration": IntegrationStage(),
             "annotation": AnnotationStage(),
+            "annotation_diagnostics": AnnotationDiagnosticsStage(),
             "integration_benchmark": IntegrationBenchmarkStage(),
         }
     )
