@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# Import time for wall-clock measurement.
+import time
+
 # Import dataclass for structured run result objects.
 from dataclasses import dataclass
 
@@ -41,11 +44,17 @@ from cellquorum.core.executor import PipelineExecutionResult, PipelineExecutor
 # Import planner utilities.
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 
+# Import runtime progress reporter.
+from cellquorum.core.run_reporter import RunReporter
+
 # Import stage lifecycle records.
 from cellquorum.core.stage import StageExecutionRecord
 
 # Import AnnData input loading utility.
 from cellquorum.io import load_adata
+
+# Import package version.
+from cellquorum.version import __version__
 
 
 @dataclass(frozen=True)
@@ -680,10 +689,41 @@ def execute_pipeline_run(
     # Resolve the executor.
     resolved_executor = executor or PipelineExecutor()
 
-    # Execute registered stages from the plan.
+    # Build the run reporter from config verbosity settings.
+    reporter = RunReporter(verbose=config.run.verbose, level=config.run.log_level)
+
+    # Print startup banner with version and project metadata.
+    run_id = context.paths.root.name
+    reporter.banner(__version__, config.project.name, run_id)
+
+    # Compute which stages will actually run (planned + registered).
+    planned_stage_names = [
+        stage.name
+        for stage in plan.stages
+        if stage.enabled and resolved_executor.registry.get(stage.name) is not None
+    ]
+
+    # Echo the resolved configuration showing only runnable stages.
+    reporter.config_echo(config, planned_stage_names=planned_stage_names)
+
+    # Measure wall-clock time around stage execution.
+    execution_start = time.perf_counter()
+
+    # Execute registered stages from the plan with progress reporting.
     execution_result = resolved_executor.run(
         context=context,
         plan=plan,
+        reporter=reporter,
+    )
+
+    # Measure elapsed wall-clock time.
+    execution_elapsed = time.perf_counter() - execution_start
+
+    # Print the final run summary.
+    reporter.run_summary(
+        execution_result.stage_execution_records,
+        str(context.paths.root),
+        execution_elapsed,
     )
 
     # Build the bootstrap execution record.

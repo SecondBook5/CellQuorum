@@ -319,6 +319,14 @@ def run_command(
             help="Print the initialized run summary as JSON.",
         ),
     ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option(
+            "--quiet",
+            "-q",
+            help="Suppress progress output and run silently.",
+        ),
+    ] = False,
 ) -> None:
     """
     Execute a CellQuorum pipeline run.
@@ -333,6 +341,7 @@ def run_command(
         output_dir: Optional output directory override.
         bootstrap_only: Whether to skip stage execution and only bootstrap.
         json_output: Whether to print machine-readable JSON.
+        quiet: Whether to suppress progress output.
     """
 
     # Try to initialize and optionally execute the CellQuorum pipeline run.
@@ -342,6 +351,7 @@ def run_command(
             config,
             output_dir=output_dir,
             execute=not bootstrap_only,
+            quiet=quiet,
         )
 
     # Convert configuration failures into CLI-friendly errors.

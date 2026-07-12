@@ -51,6 +51,7 @@ def test_config_echo_shows_backend_and_enabled_stages_in_order():
             },
         }
     )
+    # Call config_echo without planned_stage_names (fallback to config.stages).
     rep.config_echo(cfg)
     out = buf.getvalue()
     # Enabled stage shown.

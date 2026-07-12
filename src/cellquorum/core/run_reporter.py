@@ -68,7 +68,9 @@ class RunReporter:
         # Render banner as a Rich panel.
         self._console.print(Panel(banner_text, expand=False))
 
-    def config_echo(self, config: CellQuorumConfig) -> None:
+    def config_echo(
+        self, config: CellQuorumConfig, planned_stage_names: list[str] | None = None
+    ) -> None:
         """
         Echo the resolved configuration to the console.
 
@@ -78,6 +80,10 @@ class RunReporter:
 
         Args:
             config: Validated CellQuorum configuration.
+            planned_stage_names: Optional list of stage names that will actually
+                run (planned and registered). When provided, shows only these
+                stages in plan order. When None, shows all enabled stages from
+                config (fallback for tests/direct use).
         """
         # Early return when not verbose.
         if not self._verbose:
@@ -92,19 +98,27 @@ class RunReporter:
         table.add_row("Backend", config.compute.backend)
         table.add_row("Random seed", str(config.run.random_seed))
 
-        # Get enabled stages in declaration order.
-        enabled_stages = []
-        stage_config = config.stages.model_dump()
-        # Iterate through StageSelectionConfig fields in order.
-        from cellquorum.config.models import StageSelectionConfig
+        # Determine which stages to show.
+        if planned_stage_names is not None:
+            # Use the provided planned stage names (already filtered to
+            # enabled+registered, in plan order).
+            enabled_stages = planned_stage_names
+        else:
+            # Fall back to all enabled stages from config.
+            enabled_stages = []
+            stage_config = config.stages.model_dump()
+            # Iterate through StageSelectionConfig fields in order.
+            from cellquorum.config.models import StageSelectionConfig
 
-        for field_name in StageSelectionConfig.model_fields.keys():
-            if stage_config.get(field_name, False):
-                enabled_stages.append(field_name)
+            for field_name in StageSelectionConfig.model_fields.keys():
+                if stage_config.get(field_name, False):
+                    enabled_stages.append(field_name)
 
         # Show enabled stages.
         if enabled_stages:
             table.add_row("Enabled stages", ", ".join(enabled_stages))
+        else:
+            table.add_row("Enabled stages", "none")
 
         # Show stage-specific parameters for enabled stages.
         config_dict = config.model_dump()
@@ -127,9 +141,12 @@ class RunReporter:
                             break
                         # Truncate list fields to counts.
                         if isinstance(value, list):
-                            params.append(f"{key}=[{len(value)} items]")
+                            if len(value) == 0:
+                                params.append(f"{key}=[]")
+                            else:
+                                params.append(f"{key}=[{len(value)} items]")
                             count += 1
-                        elif value and not isinstance(value, dict):
+                        elif value is not None and value != "" and not isinstance(value, dict):
                             # Show scalar/simple values.
                             params.append(f"{key}={value}")
                             count += 1
