@@ -58,6 +58,9 @@ from cellquorum.qc.stage import QCStage
 # Import reference-mapping stage.
 from cellquorum.reference_mapping.stage import ReferenceMappingStage
 
+# Import subclustering stage.
+from cellquorum.subclustering.stage import SubclusteringStage
+
 
 @dataclass(frozen=True)
 class StageRegistry:
@@ -227,6 +230,7 @@ def build_default_stage_registry() -> StageRegistry:
             "annotation_diagnostics": AnnotationDiagnosticsStage(),
             "integration_benchmark": IntegrationBenchmarkStage(),
             "reference_mapping": ReferenceMappingStage(),
+            "subclustering": SubclusteringStage(),
         }
     )
 

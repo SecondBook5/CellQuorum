@@ -45,6 +45,9 @@ from cellquorum.qc.config import QCConfig
 # Import the reference-mapping configuration model.
 from cellquorum.reference_mapping.config import ReferenceMappingConfig
 
+# Import the subclustering configuration model.
+from cellquorum.subclustering.config import SubclusteringConfig
+
 
 class ProjectConfig(StrictBaseModel):
     """
@@ -618,6 +621,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store reference-mapping settings.
     reference_mapping: ReferenceMappingConfig = Field(default_factory=ReferenceMappingConfig)
+
+    # Store subclustering settings.
+    subclustering: SubclusteringConfig = Field(default_factory=SubclusteringConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)

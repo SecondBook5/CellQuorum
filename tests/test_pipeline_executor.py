@@ -308,6 +308,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "preprocessing",
         "qc",
         "reference_mapping",
+        "subclustering",
     ]
 
 
