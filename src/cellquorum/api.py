@@ -31,6 +31,7 @@ def run_pipeline(
     backend_registry: BackendRegistry | None = None,
     execute: bool = True,
     load_input: bool = True,
+    quiet: bool = False,
 ) -> PipelineRunResult:
     """
     Run the CellQuorum pipeline through the public Python API.
@@ -56,6 +57,7 @@ def run_pipeline(
             the run frame and write initial provenance.
         load_input: Whether executed runs should load config.input.h5ad into
             context.adata before stage execution.
+        quiet: Whether to suppress progress output by overriding config.run.verbose.
 
     Returns:
         PipelineRunResult containing the validated config, pipeline plan,
@@ -68,6 +70,11 @@ def run_pipeline(
 
     # Run from an existing validated CellQuorumConfig object.
     if isinstance(config, CellQuorumConfig):
+        # Override verbosity when quiet is requested.
+        if quiet:
+            # Create a copy with verbose=False (config is immutable/frozen).
+            config = config.model_copy(update={"run": {"verbose": False}})
+
         # Execute registered stages when requested.
         if execute:
             return execute_pipeline_run(
@@ -89,6 +96,10 @@ def run_pipeline(
         # Validate the dictionary into the strict top-level config model.
         validated_config = validate_config_dict(config)
 
+        # Override verbosity when quiet is requested.
+        if quiet:
+            validated_config = validated_config.model_copy(update={"run": {"verbose": False}})
+
         # Execute registered stages when requested.
         if execute:
             return execute_pipeline_run(
@@ -107,6 +118,29 @@ def run_pipeline(
 
     # Run from a YAML config path.
     if isinstance(config, str | Path):
+        # Load and optionally override verbosity.
+        if quiet:
+            # Import config loader.
+            from cellquorum.config.loader import load_config
+
+            loaded_config = load_config(config)
+            loaded_config = loaded_config.model_copy(update={"run": {"verbose": False}})
+
+            # Execute registered stages when requested.
+            if execute:
+                return execute_pipeline_run(
+                    loaded_config,
+                    output_dir=output_dir,
+                    backend_registry=backend_registry,
+                    load_input=load_input,
+                )
+            # Bootstrap-only when execution disabled.
+            return bootstrap_pipeline_run(
+                loaded_config,
+                output_dir=output_dir,
+                backend_registry=backend_registry,
+            )
+
         # Execute registered stages from the config file when requested.
         if execute:
             return execute_pipeline_run_from_config_file(

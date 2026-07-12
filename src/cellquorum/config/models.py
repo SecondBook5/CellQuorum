@@ -225,6 +225,8 @@ class RunConfig(StrictBaseModel):
         run_id: Optional stable run identifier.
         random_seed: Random seed used by stochastic stages.
         overwrite: Whether an existing output directory may be reused.
+        verbose: Whether to produce runtime output.
+        log_level: Output detail level.
     """
 
     # Store the high-level analysis profile.
@@ -246,6 +248,12 @@ class RunConfig(StrictBaseModel):
 
     # Store whether existing output directories can be reused.
     overwrite: bool = False
+
+    # Store whether to produce runtime output.
+    verbose: bool = True
+
+    # Store the output detail level.
+    log_level: Literal["quiet", "normal", "verbose"] = "normal"
 
     @field_validator("random_seed")
     @classmethod

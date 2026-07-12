@@ -29,6 +29,9 @@ from cellquorum.core.context import PipelineContext
 # Import pipeline planning objects.
 from cellquorum.core.planner import PipelinePlan, PlannedStage
 
+# Import runtime progress reporter.
+from cellquorum.core.run_reporter import RunReporter
+
 # Import stage execution contracts and lifecycle records.
 from cellquorum.core.stage import (
     PipelineStage,
@@ -253,13 +256,21 @@ class PipelineExecutor:
     # Store the backend label for Python-native stage execution.
     backend_used: str = "python"
 
-    def run(self, *, context: PipelineContext, plan: PipelinePlan) -> PipelineExecutionResult:
+    def run(
+        self,
+        *,
+        context: PipelineContext,
+        plan: PipelinePlan,
+        reporter: RunReporter | None = None,
+    ) -> PipelineExecutionResult:
         """
         Execute a pipeline plan against a pipeline context.
 
         Args:
             context: Initialized pipeline context.
             plan: Pipeline plan describing stage order and enablement.
+            reporter: Optional RunReporter for progress output. When None,
+                defaults to a no-op reporter (verbose=False).
 
         Returns:
             PipelineExecutionResult with final context, stage results, and records.
@@ -271,46 +282,59 @@ class PipelineExecutor:
         # Validate executor inputs.
         validate_executor_inputs(context=context, plan=plan)
 
+        # Default to a no-op reporter when none provided (backward compat).
+        reporter = reporter or RunReporter(verbose=False)
+
         # Initialize mutable execution state.
         current_context = context
         stage_results: dict[str, StageResult] = {}
         stage_execution_records: list[StageExecutionRecord] = []
 
-        # Execute or skip every planned stage in order.
-        for planned_stage in plan.stages:
-            # Execute one planned stage decision.
-            stage_result, stage_record = self.execute_planned_stage(
-                context=current_context,
-                planned_stage=planned_stage,
-            )
+        # Execute or skip every planned stage in order, with progress tracking.
+        with reporter.progress(total=len(plan.stages)) as bar:
+            for i, planned_stage in enumerate(plan.stages):
+                # Announce stage start.
+                reporter.stage_start(planned_stage.name, i + 1, len(plan.stages))
 
-            # Store the lifecycle record for this planned stage.
-            stage_execution_records.append(stage_record)
-
-            # Stop after failures when configured.
-            if stage_record.status == "failed":
-                if self.stop_on_failure:
-                    break
-
-                # Continue to the next planned stage when failure stopping is disabled.
-                continue
-
-            # Keep context unchanged for skipped stages.
-            if stage_record.status == "skipped":
-                continue
-
-            # Successful records must have a StageResult.
-            if stage_result is None:
-                raise RuntimeError(
-                    "Executor recorded a successful stage without a StageResult. "
-                    f"Stage: {planned_stage.name}"
+                # Execute one planned stage decision.
+                stage_result, stage_record = self.execute_planned_stage(
+                    context=current_context,
+                    planned_stage=planned_stage,
                 )
 
-            # Store the successful stage result.
-            stage_results[planned_stage.name] = stage_result
+                # Store the lifecycle record for this planned stage.
+                stage_execution_records.append(stage_record)
 
-            # Propagate the updated AnnData object to downstream stages.
-            current_context = current_context.with_adata(stage_result.adata)
+                # Report stage completion.
+                reporter.stage_end(stage_record)
+
+                # Advance the progress bar.
+                bar.advance()
+
+                # Stop after failures when configured.
+                if stage_record.status == "failed":
+                    if self.stop_on_failure:
+                        break
+
+                    # Continue to the next planned stage when failure stopping is disabled.
+                    continue
+
+                # Keep context unchanged for skipped stages.
+                if stage_record.status == "skipped":
+                    continue
+
+                # Successful records must have a StageResult.
+                if stage_result is None:
+                    raise RuntimeError(
+                        "Executor recorded a successful stage without a StageResult. "
+                        f"Stage: {planned_stage.name}"
+                    )
+
+                # Store the successful stage result.
+                stage_results[planned_stage.name] = stage_result
+
+                # Propagate the updated AnnData object to downstream stages.
+                current_context = current_context.with_adata(stage_result.adata)
 
         # Return the complete execution result.
         return PipelineExecutionResult(
@@ -394,6 +418,24 @@ class PipelineExecutor:
 
         # Mark successful execution end time.
         ended_at = datetime.now(UTC)
+
+        # Detect skipped stages: MethodDispatchStage.run returns a StageResult
+        # with metrics["skipped"]=True when a stage is disabled or a method
+        # returns MethodSkip. Build a skipped record instead of success.
+        if stage_result.metrics.get("skipped") is True:
+            skip_reason = stage_result.metrics.get("reason", "skipped by method/config")
+            stage_record = StageExecutionRecord.skipped(
+                stage_name=planned_stage.name,
+                reason=skip_reason,
+                started_at_utc=started_at,
+                ended_at_utc=ended_at,
+                backend_used=self.backend_used,
+                warnings=stage_result.warnings if stage_result.warnings else None,
+                notes=stage_result.notes if stage_result.notes else None,
+            )
+            # Return (None, record) for skipped stages so executor.run skips
+            # storing the result + propagating the unchanged adata.
+            return None, stage_record
 
         # Build a successful stage execution record.
         stage_record = StageExecutionRecord.success(
