@@ -1,0 +1,19 @@
+sample_id,cellranger_path,donor_id,condition,batch
+P1_Normal,Set1_norm_LE/Norm1_v8,P1,Normal,Set1
+P1_LE,Set1_norm_LE/LE1_v8,P1,Lymphedema,Set1
+P2_Normal,Set2_norm_LE/norm2_v8,P2,Normal,Set2
+P2_LE,Set2_norm_LE/LE2_v8,P2,Lymphedema,Set2
+P4_Normal,Set4_norm_LE/norm4_v8,P4,Normal,Set4
+P4_LE,Set4_norm_LE/LE4_v8,P4,Lymphedema,Set4
+P5_Normal,Set5_norm_LE/norm5_v8,P5,Normal,Set5
+P5_LE,Set5_norm_LE/LE5,P5,Lymphedema,Set5
+P6_Normal,Set6_norm_LE/norm6_v8,P6,Normal,Set6
+P6_LE,Set6_norm_LE/LE6-v8,P6,Lymphedema,Set6
+P7_Normal,Set7_norm_LE/norm7_v8,P7,Normal,Set7
+P7_LE,Set7_norm_LE/LE7_v8,P7,Lymphedema,Set7
+P8_Normal,Set8_norm_LE_Abdo CA/norm8_v8,P8,Normal,Set8
+P8_LE,Set8_norm_LE_Abdo CA/LE8_v8,P8,Lymphedema,Set8
+P10_Normal,Set10_norm_LE/norm10_v8,P10,Normal,Set10
+P10_LE,Set10_norm_LE/LE10_v8,P10,Lymphedema,Set10
+P12_Normal,Set12_norm_LE/norm12,P12,Normal,Set12
+P12_LE,Set12_norm_LE/LE12_v8,P12,Lymphedema,Set12
