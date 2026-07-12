@@ -199,6 +199,7 @@ class PipelinePlanner:
             ("clustering", self.config.stages.clustering),
             ("annotation", self.config.stages.annotation),
             ("annotation_diagnostics", self.config.stages.annotation_diagnostics),
+            ("reference_mapping", self.config.stages.reference_mapping),
             ("integration_benchmark", self.config.stages.integration_benchmark),
             ("state_scoring", self.config.stages.state_scoring),
             ("discovery", self.config.stages.discovery),
