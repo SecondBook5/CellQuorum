@@ -295,6 +295,7 @@ def test_default_stage_registry_contains_qc() -> None:
     assert registry.get("integration_benchmark") is not None
     assert registry.get("annotation") is not None
     assert registry.get("feature_selection") is not None
+    assert registry.get("reference_mapping") is not None
     assert registry.registered_stage_names() == [
         "ambient_correction",
         "annotation",
@@ -306,6 +307,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "integration_benchmark",
         "preprocessing",
         "qc",
+        "reference_mapping",
     ]
 
 

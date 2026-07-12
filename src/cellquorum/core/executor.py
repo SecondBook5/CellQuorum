@@ -52,6 +52,9 @@ from cellquorum.preprocessing.stage import PreprocessingStage
 # Import the first fully implemented scientific stage.
 from cellquorum.qc.stage import QCStage
 
+# Import reference-mapping stage.
+from cellquorum.reference_mapping.stage import ReferenceMappingStage
+
 
 @dataclass(frozen=True)
 class StageRegistry:
@@ -220,6 +223,7 @@ def build_default_stage_registry() -> StageRegistry:
             "annotation": AnnotationStage(),
             "annotation_diagnostics": AnnotationDiagnosticsStage(),
             "integration_benchmark": IntegrationBenchmarkStage(),
+            "reference_mapping": ReferenceMappingStage(),
         }
     )
 

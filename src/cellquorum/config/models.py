@@ -42,6 +42,9 @@ from cellquorum.preprocessing.config import PreprocessingConfig
 # Import the QC configuration model.
 from cellquorum.qc.config import QCConfig
 
+# Import the reference-mapping configuration model.
+from cellquorum.reference_mapping.config import ReferenceMappingConfig
+
 
 class ProjectConfig(StrictBaseModel):
     """
@@ -489,6 +492,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether annotation-diagnostics evaluation is enabled.
     annotation_diagnostics: bool = True
 
+    # Store whether reference mapping is enabled.
+    reference_mapping: bool = True
+
     # Store whether integration-benchmark evaluation is enabled.
     integration_benchmark: bool = True
 
@@ -601,6 +607,9 @@ class CellQuorumConfig(StrictBaseModel):
     integration_benchmark: IntegrationBenchmarkConfig = Field(
         default_factory=IntegrationBenchmarkConfig
     )
+
+    # Store reference-mapping settings.
+    reference_mapping: ReferenceMappingConfig = Field(default_factory=ReferenceMappingConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
