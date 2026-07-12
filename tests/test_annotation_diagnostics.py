@@ -150,3 +150,57 @@ def test_scdiagnostics_method_real_r_run(
     # Check that at least the entropy diagnostic was added.
     assert "scdiag_entropy" in result.adata.obs.columns
     assert result.metrics["n_diagnostics"] >= 1
+
+
+def test_scdiagnostics_barcode_alignment_with_reordered_csv(tmp_path: Path) -> None:
+    """Prove barcode-keyed join: reordered CSV still assigns correct values."""
+    from cellquorum.annotation_diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    # Create a small test AnnData with known cell barcodes.
+    n_cells = 5
+    n_genes = 10
+    barcodes = [f"CELL_{i}" for i in range(n_cells)]
+    adata = ad.AnnData(X=np.random.randn(n_cells, n_genes))
+    adata.obs_names = barcodes
+    adata.layers["lognorm"] = adata.X.copy()
+    adata.obsm["X_pca"] = np.random.randn(n_cells, 5)
+    adata.obs["cell_type"] = ["TypeA"] * n_cells
+
+    # Create a diagnostic CSV with REORDERED rows (different order from
+    # adata.obs_names). Each cell gets a unique diagnostic value that
+    # matches its barcode (so we can verify alignment).
+    reordered_barcodes = ["CELL_2", "CELL_0", "CELL_4", "CELL_1", "CELL_3"]
+    csv_path = tmp_path / "reordered_diag.csv"
+    with open(csv_path, "w") as f:
+        f.write("barcode,scdiag_test\n")
+        for bc in reordered_barcodes:
+            # Diagnostic value = cell index (e.g., CELL_2 → 2.0).
+            cell_idx = int(bc.split("_")[1])
+            f.write(f"{bc},{cell_idx}.0\n")
+
+    # Read the CSV via the method's helper.
+    method = ScdiagnosticsMethod()
+    diag_df = method._read_diagnostic_csv(csv_path)
+
+    # Verify the DataFrame is indexed by barcode.
+    assert diag_df.index.name in ("barcode", "cell") or diag_df.index.tolist() == [
+        "CELL_2",
+        "CELL_0",
+        "CELL_4",
+        "CELL_1",
+        "CELL_3",
+    ]
+
+    # Reindex to match adata.obs_names order.
+    diag_df_aligned = diag_df.reindex(adata.obs_names)
+
+    # Each cell should get ITS OWN value (CELL_0 → 0.0, CELL_1 → 1.0, etc).
+    expected_values = [0.0, 1.0, 2.0, 3.0, 4.0]
+    actual_values = diag_df_aligned["scdiag_test"].to_numpy()
+    np.testing.assert_array_equal(
+        actual_values,
+        expected_values,
+        err_msg="Barcode alignment failed: cells did not get their own values",
+    )

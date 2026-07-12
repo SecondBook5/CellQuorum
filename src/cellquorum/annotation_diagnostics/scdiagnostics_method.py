@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
@@ -11,6 +11,9 @@ from cellquorum.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumBackendError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 # Path to the bundled scDiagnostics R script.
 _SCDIAGNOSTICS_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "scdiagnostics.R"
@@ -109,16 +112,33 @@ class ScdiagnosticsMethod(AnalysisMethod):
                 f"scDiagnostics R script failed: {result.stderr.strip()[:500]}"
             )
 
-        # Read back diagnostic columns from the CSV.
-        diag_obs = self._read_diagnostic_csv(out_csv)
+        # Read back diagnostic columns from the CSV (indexed by barcode).
+        diag_df = self._read_diagnostic_csv(out_csv)
 
-        # Join diagnostic columns onto obs (read-only; never modify cell_type).
+        # Join diagnostic columns onto obs by barcode (read-only; never
+        # modify cell_type). Reindex to match adata.obs_names order so
+        # values align to the correct cells.
         result_adata = adata.copy()
-        for col, values in diag_obs.items():
-            result_adata.obs[col] = values
+
+        if not diag_df.empty:
+            # Reindex diagnostic DataFrame to adata.obs_names order.
+            diag_df = diag_df.reindex(result_adata.obs_names)
+
+            # Validate barcode alignment: ensure all cells have values.
+            n_missing = diag_df.isnull().all(axis=1).sum()
+            if n_missing > 0:
+                raise CellQuorumBackendError(
+                    f"scDiagnostics barcode misalignment: {n_missing} "
+                    f"cells missing diagnostics after reindex. "
+                    f"R script barcodes do not match adata.obs_names."
+                )
+
+            # Assign diagnostic columns to obs.
+            for col in diag_df.columns:
+                result_adata.obs[col] = diag_df[col].to_numpy()
 
         # Count which diagnostics were computed.
-        diagnostics_run = [col for col in diag_obs if col.startswith("scdiag_")]
+        diagnostics_run = [col for col in diag_df.columns if col.startswith("scdiag_")]
         notes = [f"Computed {len(diagnostics_run)} diagnostic columns: {diagnostics_run}"]
 
         # Build artifacts list.
@@ -180,28 +200,35 @@ class ScdiagnosticsMethod(AnalysisMethod):
         df = pd.DataFrame(scores, index=adata.obs_names)
         df.to_csv(path)
 
-    def _read_diagnostic_csv(self, path: Path) -> dict[str, list]:
-        """Read per-cell diagnostic CSV back into a dict of obs columns."""
-        diag_cols = {}
-        with open(path, newline="") as fh:
-            reader = csv.DictReader(fh)
-            rows = list(reader)
-            if not rows:
-                return diag_cols
-            # Each column (except barcode) becomes an obs column.
-            for col in rows[0]:
-                if col.lower() in ("barcode", "cell"):
-                    continue
-                # Extract numeric values.
-                values = []
-                for row in rows:
-                    val = row[col]
-                    try:
-                        values.append(float(val))
-                    except ValueError:
-                        values.append(val)
-                diag_cols[col] = values
-        return diag_cols
+    def _read_diagnostic_csv(self, path: Path) -> pd.DataFrame:
+        """Read per-cell diagnostic CSV as a DataFrame indexed by barcode.
+
+        Returns:
+            pandas.DataFrame indexed by barcode with diagnostic columns.
+        """
+        import pandas as pd
+
+        # Find the barcode column first (case-insensitive check).
+        temp_df = pd.read_csv(path, nrows=0)
+        barcode_col = None
+        for col in temp_df.columns:
+            if col.lower() in ("barcode", "cell"):
+                barcode_col = col
+                break
+
+        if barcode_col is None:
+            raise ValueError(
+                "scDiagnostics CSV missing barcode column; " "cannot align diagnostics to cells"
+            )
+
+        # Read CSV with barcode column as string to match adata.obs_names.
+        df = pd.read_csv(path, dtype={barcode_col: str})
+        if df.empty:
+            return pd.DataFrame()
+
+        # Set barcode as index.
+        df = df.set_index(barcode_col)
+        return df
 
 
 __all__ = ["ScdiagnosticsMethod"]
