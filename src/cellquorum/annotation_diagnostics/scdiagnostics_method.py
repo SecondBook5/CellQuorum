@@ -23,10 +23,9 @@ class ScdiagnosticsMethod(AnalysisMethod):
     """scDiagnostics annotation-confidence diagnostics (query-only or query+ref).
 
     Runs scDiagnostics R functions to assess annotation confidence:
-    - detectAnomaly (isolation forest, when reference provided)
-    - calculateNearestNeighborProbabilities (kNN confidence, when ref provided)
-    - calculateCategorizationEntropy (soft-score entropy, when soft_scores_obsm set)
-    - plotQCvsAnnotation (always; QC metric correlation with annotation)
+    - detectAnomaly + calculateNearestNeighborProbabilities (when reference_h5ad
+      provided)
+    - Shannon categorization entropy (when soft_scores_obsm provided)
 
     READ-ONLY: adds scdiag_* obs columns; never modifies cell_type or embeddings.
     """
@@ -53,6 +52,14 @@ class ScdiagnosticsMethod(AnalysisMethod):
         context: object,
     ) -> StageResult | MethodSkip:
         """Execute scDiagnostics via R; return read-only diagnostics."""
+        import shutil
+
+        # Check Rscript availability BEFORE backend registry (mirrors SoupX).
+        if shutil.which("Rscript") is None:
+            return MethodSkip(
+                reason="annotation_diagnostics skipped: Rscript unavailable",
+                details={"method": self.name},
+            )
 
         # Resolve the Rscript backend from the context registry.
         backend = self._resolve_rscript_backend(context)
@@ -60,6 +67,14 @@ class ScdiagnosticsMethod(AnalysisMethod):
             return MethodSkip(
                 reason="scdiagnostics skipped: rscript backend unavailable",
                 details={"method": self.name},
+            )
+
+        # Check scDiagnostics R package availability (FIX 2 + FIX 6).
+        r_package = config.get("r_package", "scDiagnostics")
+        if not backend._r_package_available(r_package):
+            return MethodSkip(
+                reason=f"annotation_diagnostics skipped: {r_package} R package " "unavailable",
+                details={"method": self.name, "r_package": r_package},
             )
 
         # Resolve config fields.
@@ -105,11 +120,22 @@ class ScdiagnosticsMethod(AnalysisMethod):
             str(n_neighbor),
         ]
 
-        # Run the R script.
-        result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=timeout)
-        if result.returncode != 0:
-            raise CellQuorumBackendError(
-                f"scDiagnostics R script failed: {result.stderr.strip()[:500]}"
+        # Run the R script (wrap errors → MethodSkip: diagnostics must not kill
+        # the pipeline).
+        try:
+            result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=timeout)
+            if result.returncode != 0:
+                return MethodSkip(
+                    reason="annotation_diagnostics skipped: scDiagnostics R script " "failed",
+                    details={
+                        "method": self.name,
+                        "stderr": result.stderr.strip()[:500],
+                    },
+                )
+        except (FileNotFoundError, CellQuorumBackendError) as e:
+            return MethodSkip(
+                reason="annotation_diagnostics skipped: R execution failed",
+                details={"method": self.name, "error": str(e)[:500]},
             )
 
         # Read back diagnostic columns from the CSV (indexed by barcode).
@@ -139,7 +165,16 @@ class ScdiagnosticsMethod(AnalysisMethod):
 
         # Count which diagnostics were computed.
         diagnostics_run = [col for col in diag_df.columns if col.startswith("scdiag_")]
-        notes = [f"Computed {len(diagnostics_run)} diagnostic columns: {diagnostics_run}"]
+        notes = []
+        if diagnostics_run:
+            notes.append(
+                f"Computed {len(diagnostics_run)} diagnostic columns: " f"{diagnostics_run}"
+            )
+        else:
+            notes.append(
+                "No diagnostics computed: provide reference_h5ad and/or "
+                "soft_scores_obsm to enable diagnostics."
+            )
 
         # Build artifacts list.
         artifacts = [

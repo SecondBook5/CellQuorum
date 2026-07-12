@@ -45,6 +45,9 @@ def test_benchmark_records_batch_and_bio_metrics():
     emb = m["embeddings"]["X_pca_harmony"]
     assert "ilisi" in emb["batch"]
     assert "clisi" in emb["bio"]
+    # kbet should be finite (not NaN from tuple-return bug)
+    if "kbet" in emb["batch"]:
+        assert np.isfinite(emb["batch"]["kbet"]), "kbet should be finite, not nan"
     # READ-ONLY: no obsm/obs mutation
     assert set(a.obsm.keys()) == obsm_before
     assert set(a.obs.columns) == obs_before

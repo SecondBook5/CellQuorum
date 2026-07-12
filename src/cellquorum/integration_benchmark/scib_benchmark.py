@@ -218,6 +218,10 @@ class ScibBenchmarkMethod(AnalysisMethod):
             # Handle dict return (nmi_ari_leiden).
             if isinstance(result, dict):
                 return result
+            # Handle tuple/list return (kbet returns (acceptance_rate, stat,
+            # pval); we use acceptance_rate).
+            if isinstance(result, tuple | list):
+                return float(result[0])
             return float(result)
         except Exception as e:
             notes.append(f"{metric_name} failed: {e}")
@@ -266,8 +270,11 @@ class ScibBenchmarkMethod(AnalysisMethod):
         elif label_key_fallback and label_key_fallback in adata.obs.columns:
             label_col = label_key_fallback
 
-        # Compute iLISI/cLISI for each embedding (harmonypy fallback).
-        notes = ["Using harmonypy fallback for iLISI/cLISI only."]
+        # Compute iLISI (batch-mixing) only in harmonypy fallback.
+        notes = [
+            "Using harmonypy fallback: batch-mixing (iLISI) only; "
+            "bio-conservation metrics unavailable."
+        ]
         embedding_metrics = {}
         for emb_key in embeddings:
             if emb_key not in adata.obsm:
@@ -287,18 +294,14 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 notes.append(f"iLISI failed for {emb_key}: {e}")
                 ilisi = np.nan
 
-            clisi = np.nan
-            if label_col:
-                try:
-                    # cLISI: label diversity per cell (lower=better bio preservation).
-                    lisi_label = compute_lisi(X, metadata_df, [label_col], perplexity=30)
-                    clisi = float(np.mean(lisi_label))
-                except Exception as e:
-                    notes.append(f"cLISI failed for {emb_key}: {e}")
+            # cLISI: harmonypy fallback does not support bio-conservation metrics.
+            # harmonypy compute_lisi returns raw LISI (lower=better, unbounded) on
+            # the wrong scale vs scib_metrics clisi_knn (higher=better, 0-1 scaled).
+            # Exclude bio metrics in fallback to avoid inverted/meaningless scores.
 
-            # Aggregate: batch only or weighted if both present.
+            # Aggregate: batch only (no bio metrics in harmonypy fallback).
             batch_metrics = {"ilisi": ilisi}
-            bio_metrics = {"clisi": clisi} if label_col else {}
+            bio_metrics = {}
             aggregate = self._aggregate_score(
                 batch_metrics,
                 bio_metrics,

@@ -96,7 +96,15 @@ tryCatch(
         n_tree = n_tree,
         anomaly_treshold = 0.5
       )
-      results$scdiag_anomaly <- anomaly_result$anomaly_scores
+      # DEFENSIVE: detectAnomaly may return nested per-cell-type results.
+      # Extract in query-cell order; skip if structure unexpected.
+      if (!is.null(anomaly_result$anomaly_scores) &&
+          length(anomaly_result$anomaly_scores) == length(barcodes)) {
+        results$scdiag_anomaly <- anomaly_result$anomaly_scores
+      } else {
+        message("detectAnomaly scores not in expected per-query-cell format; ",
+                "skipped")
+      }
 
       # Run calculateNearestNeighborProbabilities (kNN confidence).
       knn_result <- scDiagnostics::calculateNearestNeighborProbabilities(
@@ -108,7 +116,15 @@ tryCatch(
         pc_subset = pc_subset,
         n_neighbor = n_neighbor
       )
-      results$scdiag_knn_prob <- knn_result$nn_probabilities
+      # DEFENSIVE: kNN probabilities may be nested per cell type.
+      # Extract in query-cell order; skip if structure unexpected.
+      if (!is.null(knn_result$nn_probabilities) &&
+          length(knn_result$nn_probabilities) == length(barcodes)) {
+        results$scdiag_knn_prob <- knn_result$nn_probabilities
+      } else {
+        message("kNN probabilities not in expected per-query-cell format; ",
+                "skipped")
+      }
     }
 
     # Query-only: calculateCategorizationEntropy if soft scores provided.

@@ -71,11 +71,15 @@ def test_scdiagnostics_method_contract_requires_pca(adata_missing_pca: ad.AnnDat
 def test_scdiagnostics_method_skip_when_rscript_unavailable(
     minimal_annotated_adata: ad.AnnData,
     stub_context_no_rscript: MagicMock,
+    monkeypatch,
 ) -> None:
-    """Verify the method returns MethodSkip when Rscript backend is unavailable."""
+    """Verify the method returns MethodSkip when Rscript is missing."""
     from cellquorum.annotation_diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
+
+    # Monkeypatch shutil.which to simulate missing Rscript.
+    monkeypatch.setattr("shutil.which", lambda x: None)
 
     method = ScdiagnosticsMethod()
     config_dict = {
@@ -86,9 +90,10 @@ def test_scdiagnostics_method_skip_when_rscript_unavailable(
         "n_tree": 500,
         "n_neighbor": 15,
         "timeout_seconds": 1800,
+        "r_package": "scDiagnostics",
     }
 
-    # Run the method with unavailable backend → MethodSkip.
+    # Run the method with missing Rscript → MethodSkip.
     result = method._run(minimal_annotated_adata, config_dict, stub_context_no_rscript)
     assert isinstance(result, MethodSkip)
     assert "rscript" in result.reason.lower()
