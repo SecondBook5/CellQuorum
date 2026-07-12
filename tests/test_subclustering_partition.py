@@ -42,7 +42,7 @@ def make_mock_config(
     counts_layer: str = "counts",
     key_added: str = "subcluster",
     partition_method: str = "choir",
-    donor_gate_group_key: str | None = "donor",
+    donor_gate_group_key: str | None = None,
 ) -> MagicMock:
     """Build a mock SubclusteringConfig for tests."""
     config = MagicMock()
@@ -292,26 +292,38 @@ def _scshc_available() -> bool:
 )
 def test_run_choir_real_r(tmp_path: Path) -> None:
     """
-    Real R test: run CHOIR on synthetic data.
+    Real R test: run CHOIR on synthetic data with planted structure.
 
     This test requires Rscript + CHOIR installed. Uses TINY n_iterations/n_trees.
-    NOTE: This test may fail if CHOIR has initialization issues; the mocked tests
-    are the primary verification of the partition.py wiring.
+    Verifies the logcounts assay fix allows CHOIR to run successfully.
     """
-    # Build synthetic counts adata with MORE genes (CHOIR needs sufficient features).
+    # Build synthetic counts adata with planted structure (800 cells, 400 genes).
+    # Plant two groups with differential expression to help CHOIR find signal.
     rng = np.random.default_rng(42)
-    counts = rng.poisson(lam=5.0, size=(100, 200))  # 200 genes
+    n_cells_per_group = 400
+    n_genes = 400
+
+    # Group A: higher expression in first 100 genes.
+    counts_a = rng.poisson(lam=8.0, size=(n_cells_per_group, n_genes))
+    counts_a[:, :100] = rng.poisson(lam=15.0, size=(n_cells_per_group, 100))
+
+    # Group B: higher expression in second 100 genes.
+    counts_b = rng.poisson(lam=8.0, size=(n_cells_per_group, n_genes))
+    counts_b[:, 100:200] = rng.poisson(lam=15.0, size=(n_cells_per_group, 100))
+
+    counts = np.vstack([counts_a, counts_b])
+
     obs = pd.DataFrame(
-        {"donor": (["d1"] * 40 + ["d2"] * 35 + ["d3"] * 25)},
-        index=[f"cell_{i}" for i in range(100)],
+        {"donor": (["d1"] * 267 + ["d2"] * 266 + ["d3"] * 267)},
+        index=[f"cell_{i}" for i in range(n_cells_per_group * 2)],
     )
-    var = pd.DataFrame(index=[f"gene_{i}" for i in range(200)])
+    var = pd.DataFrame(index=[f"gene_{i}" for i in range(n_genes)])
     adata = ad.AnnData(X=counts.astype(float), obs=obs, var=var)
     adata.layers["counts"] = counts
 
-    # Build mock config with TINY CHOIR parameters (fast).
+    # Build config with TINY CHOIR parameters (fast).
     config = make_mock_config()
-    config.partition.choir = {"alpha": 0.05, "n_iterations": 5, "n_trees": 5}
+    config.partition.choir = {"alpha": 0.05, "n_iterations": 10, "n_trees": 10}
 
     # Build real Rscript backend.
     from cellquorum.backends.rscript import build_rscript_backend
@@ -330,9 +342,12 @@ def test_run_choir_real_r(tmp_path: Path) -> None:
     assert isinstance(result, ad.AnnData)
     assert "subcluster" in result.obs.columns
 
-    # Verify per-cell labels assigned.
+    # Verify per-cell labels assigned (no missing).
+    assert result.obs["subcluster"].notna().all()
+
+    # Verify at least one cluster (could be 1 if CHOIR finds no significant splits).
     n_subclusters = result.obs["subcluster"].nunique()
-    assert n_subclusters >= 1  # At least one cluster.
+    assert n_subclusters >= 1
 
 
 @pytest.mark.skipif(

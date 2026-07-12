@@ -4,6 +4,7 @@ suppressPackageStartupMessages({
   library(zellkonverter)
   library(CHOIR)
   library(SingleCellExperiment)
+  library(scuttle)
 })
 
 # Parse command-line arguments.
@@ -32,6 +33,13 @@ tryCatch(
       } else {
         stop("Input h5ad has no assays to use as counts.")
       }
+    }
+
+    # CHOIR's dimensionality-reduction step reads a 'logcounts' assay; create
+    # it from counts if absent (scuttle log-normalization). Without this CHOIR
+    # errors with "'to' must be of length 1" at Step 2.
+    if (!"logcounts" %in% assayNames(sce)) {
+      sce <- scuttle::logNormCounts(sce)
     }
 
     # Resolve batch_labels (column name string or NULL).
