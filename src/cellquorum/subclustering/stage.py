@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.methods.base import MethodSkip
 from cellquorum.subclustering.diagnostics import plot_group_recovery
 from cellquorum.subclustering.extract import apply_group_filter, extract_focus
+from cellquorum.subclustering.partition import run_choir, run_scshc_test
 
 
 class SubclusteringStage:
@@ -136,9 +138,71 @@ class SubclusteringStage:
             filtered = focused
             notes.append("Group filter: skipped (not configured)")
 
-        # Task 2-3: partition + formal_test + donor_gate (hooks for later).
-        # For Task 1, return the filtered focus subset.
-        notes.append("Partition, formal_test, donor_gate: deferred to Tasks 2-3")
+        # Task 2: partition + formal_test.
+        # Resolve backend from context.
+        backend = self._resolve_rscript_backend(context)
+        scratch = Path(getattr(getattr(context, "paths", None), "scratch", "."))
+
+        # Run partition (CHOIR or fallback).
+        if sc_config.partition.method == "choir":
+            partition_result = run_choir(filtered, sc_config, backend, scratch)
+
+            if isinstance(partition_result, MethodSkip):
+                # CHOIR unavailable: record skip and continue without labels.
+                notes.append(f"CHOIR partition skipped: {partition_result.reason}")
+                metrics["partition_skipped"] = True
+                metrics["partition_skip_reason"] = partition_result.reason
+            else:
+                # CHOIR succeeded: update filtered with labeled adata.
+                filtered = partition_result
+                n_subclusters = filtered.obs[sc_config.key_added].nunique()
+                notes.append(
+                    f"CHOIR partition: {n_subclusters} subclusters identified "
+                    f"(alpha={sc_config.partition.choir.get('alpha', 0.05)})"
+                )
+                metrics["n_subclusters"] = int(n_subclusters)
+                metrics["partition_method"] = "choir"
+
+                # Run formal significance test (sc-SHC).
+                if sc_config.formal_test.method == "scshc":
+                    test_result = run_scshc_test(
+                        filtered,
+                        sc_config.key_added,
+                        sc_config,
+                        backend,
+                        scratch,
+                    )
+
+                    if isinstance(test_result, MethodSkip):
+                        # sc-SHC unavailable: record skip.
+                        notes.append(f"sc-SHC test skipped: {test_result.reason}")
+                        metrics["formal_test_skipped"] = True
+                    else:
+                        # sc-SHC succeeded: record significance in metrics + uns.
+                        n_sig = test_result["n_significant"]
+                        n_tested = test_result["n_splits_tested"]
+                        notes.append(
+                            f"sc-SHC test: {n_sig}/{n_tested} splits significant "
+                            f"(alpha={test_result['alpha']})"
+                        )
+                        metrics["formal_test_n_significant"] = n_sig
+                        metrics["formal_test_n_splits"] = n_tested
+
+                        # Store full test results in uns.
+                        if "subclustering" not in filtered.uns:
+                            filtered.uns["subclustering"] = {}
+                        filtered.uns["subclustering"]["formal_test"] = test_result
+        elif sc_config.partition.method == "leiden_grid":
+            # Minimal scanpy fallback (defer detailed implementation).
+            notes.append("leiden_grid partition: deferred (CHOIR is primary method)")
+            metrics["partition_skipped"] = True
+            metrics["partition_skip_reason"] = "leiden_grid not implemented"
+        else:
+            notes.append(f"Unknown partition method: {sc_config.partition.method}")
+            warnings.append(f"Unknown partition method: {sc_config.partition.method}")
+
+        # Task 3: donor_gate (deferred).
+        notes.append("Donor gate: deferred to Task 3")
 
         return StageResult(
             adata=filtered,
@@ -147,6 +211,16 @@ class SubclusteringStage:
             warnings=warnings,
             metrics=metrics,
         )
+
+    def _resolve_rscript_backend(self, context: object) -> object | None:
+        """Return the Rscript backend from context registry, or None."""
+        registry = getattr(context, "backend_registry", None)
+        if registry is None:
+            return None
+        try:
+            return registry.get("rscript")
+        except Exception:
+            return None
 
 
 __all__ = ["SubclusteringStage"]
