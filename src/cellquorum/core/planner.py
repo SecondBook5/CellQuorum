@@ -193,8 +193,13 @@ class PipelinePlanner:
             ("feature_selection", self.config.stages.feature_selection),
             ("dimensionality", self.config.stages.dimensionality),
             ("integration", self.config.stages.integration),
+            # integration_gate sits here (after integration, before clustering) to
+            # rank embeddings BEFORE committing expensive clustering+annotation.
+            ("integration_gate", self.config.stages.integration_gate),
             ("clustering", self.config.stages.clustering),
             ("annotation", self.config.stages.annotation),
+            ("annotation_diagnostics", self.config.stages.annotation_diagnostics),
+            ("integration_benchmark", self.config.stages.integration_benchmark),
             ("state_scoring", self.config.stages.state_scoring),
             ("discovery", self.config.stages.discovery),
             ("subclustering", self.config.stages.subclustering),

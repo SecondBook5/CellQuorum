@@ -17,6 +17,9 @@ from cellquorum.ambient_correction.config import AmbientCorrectionConfig
 # Import the annotation configuration model.
 from cellquorum.annotation.config import AnnotationConfig
 
+# Import the annotation-diagnostics configuration model.
+from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -29,6 +32,9 @@ from cellquorum.feature_selection.config import FeatureSelectionConfig
 
 # Import the integration configuration model.
 from cellquorum.integration.config import IntegrationConfig
+
+# Import the integration-benchmark configuration model.
+from cellquorum.integration_benchmark.config import IntegrationBenchmarkConfig
 
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
@@ -480,6 +486,15 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether annotation is enabled.
     annotation: bool = True
 
+    # Store whether annotation-diagnostics evaluation is enabled.
+    annotation_diagnostics: bool = True
+
+    # Store whether integration-benchmark evaluation is enabled.
+    integration_benchmark: bool = True
+
+    # Store whether integration-gate filtering is enabled (reserved).
+    integration_gate: bool = False
+
     # Store whether state scoring is enabled.
     state_scoring: bool = True
 
@@ -576,6 +591,16 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store annotation settings.
     annotation: AnnotationConfig = Field(default_factory=AnnotationConfig)
+
+    # Store annotation-diagnostics evaluation settings.
+    annotation_diagnostics: AnnotationDiagnosticsConfig = Field(
+        default_factory=AnnotationDiagnosticsConfig
+    )
+
+    # Store integration-benchmark evaluation settings.
+    integration_benchmark: IntegrationBenchmarkConfig = Field(
+        default_factory=IntegrationBenchmarkConfig
+    )
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
