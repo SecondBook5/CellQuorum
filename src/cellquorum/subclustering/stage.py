@@ -6,7 +6,11 @@ from pathlib import Path
 
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
-from cellquorum.subclustering.diagnostics import plot_group_recovery
+from cellquorum.subclustering.diagnostics import (
+    plot_group_recovery,
+    plot_subcluster_qc_panel,
+)
+from cellquorum.subclustering.donor_gate import apply_qc_flags, donor_reproducibility
 from cellquorum.subclustering.extract import apply_group_filter, extract_focus
 from cellquorum.subclustering.partition import run_choir, run_scshc_test
 
@@ -201,8 +205,92 @@ class SubclusteringStage:
             notes.append(f"Unknown partition method: {sc_config.partition.method}")
             warnings.append(f"Unknown partition method: {sc_config.partition.method}")
 
-        # Task 3: donor_gate (deferred).
-        notes.append("Donor gate: deferred to Task 3")
+        # Task 3: donor_gate + diagnostics.
+        # Run donor gate if group_key set AND cluster labels exist.
+        group_key = sc_config.donor_gate.group_key
+        cluster_key = sc_config.key_added
+        has_cluster_labels = (
+            cluster_key in filtered.obs.columns and filtered.obs[cluster_key].notna().any()
+        )
+
+        if group_key is not None and has_cluster_labels:
+            # Run donor reproducibility gatekeeper.
+            gate_result = donor_reproducibility(
+                filtered,
+                cluster_key=cluster_key,
+                group_key=group_key,
+                min_groups=sc_config.donor_gate.min_groups,
+                max_group_frac=0.8,
+                do_lodo=sc_config.donor_gate.leave_one_donor_out,
+                do_classifier=sc_config.donor_gate.classifier_separability,
+                embedding_key="X_pca",
+                random_state=0,
+            )
+
+            # Record summary metrics.
+            n_pass = gate_result["summary"]["n_pass"]
+            n_fail = gate_result["summary"]["n_fail"]
+            notes.append(
+                f"Donor gate: {n_pass} clusters PASS, "
+                f"{n_fail} clusters FAIL (min_groups={sc_config.donor_gate.min_groups})"
+            )
+            metrics["donor_gate_n_pass"] = n_pass
+            metrics["donor_gate_n_fail"] = n_fail
+
+            # Store gate results in uns.
+            if "subclustering" not in filtered.uns:
+                filtered.uns["subclustering"] = {}
+            filtered.uns["subclustering"]["donor_gate"] = gate_result
+
+            # Generate QC panel plot.
+            paths = getattr(context, "paths", None)
+            if paths is not None:
+                figures_dir = Path(getattr(paths, "figures", "."))
+                qc_panel_path = figures_dir / "subclustering_donor_qc_panel.png"
+                plot_subcluster_qc_panel(gate_result, qc_panel_path)
+                artifacts.append(
+                    StageArtifact(
+                        name="subclustering_donor_qc_panel",
+                        path=qc_panel_path,
+                        kind="png",
+                        description="Donor-reproducibility QC panel",
+                    )
+                )
+
+            # Apply QC flags to obs.
+            apply_qc_flags(
+                filtered,
+                cluster_key,
+                gate_result,
+                key_added="donor_qc",
+            )
+
+            # Apply action (flag or drop).
+            if sc_config.action == "drop":
+                # Drop cells in failed clusters.
+                n_cells_before = filtered.n_obs
+                filtered = filtered[filtered.obs["donor_qc_qc_pass"]].copy()
+                n_cells_after = filtered.n_obs
+                n_dropped = n_cells_before - n_cells_after
+                notes.append(f"Action=drop: removed {n_dropped} cells in failed clusters")
+                warnings.append(f"Dropped {n_dropped} cells (action='drop' configured)")
+                metrics["donor_gate_n_cells_dropped"] = n_dropped
+            else:
+                # Default: flag-not-drop.
+                notes.append("Action=flag: retained all cells with QC flags")
+        else:
+            # Skip donor gate (not configured or no cluster labels).
+            if group_key is None:
+                notes.append("Donor gate: skipped (group_key not configured)")
+            else:
+                notes.append("Donor gate: skipped (no cluster labels)")
+
+        # Generate clustree plot (if leiden_grid labels present).
+        # Note: clustree expects multiple cluster columns with a common prefix.
+        # This will be driven by leiden_grid labels when implemented.
+        # For now, defer clustree generation to full leiden_grid implementation.
+        if sc_config.diagnostics.clustree:
+            notes.append("Clustree: deferred (leiden_grid not implemented)")
 
         return StageResult(
             adata=filtered,
