@@ -105,34 +105,56 @@ class ScArchesMethod(AnalysisMethod):
             if label_prob_col in atlas.obs.columns:
                 atlas = atlas[atlas.obs[label_prob_col] >= min_label_prob].copy()
 
+        # Guard: atlas must have >= knn_k cells after filtering.
+        if len(atlas) < knn_k:
+            return MethodSkip(
+                reason=f"reference_mapping skipped: filtered atlas has {len(atlas)} "
+                f"cells < knn_k={knn_k}",
+                details={"method": self.name, "n_atlas_cells": len(atlas), "knn_k": knn_k},
+            )
+
         # Set atlas X to counts layer + copy labels.
         atlas.X = atlas.layers[counts_layer]
         atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
 
         # Gene intersection.
         shared = list(set(atlas.var_names) & set(adata.var_names))
-        atlas = atlas[:, shared].copy()
-        query = adata[:, shared].copy()
+
+        # Guard: must have shared genes.
+        if len(shared) == 0:
+            return MethodSkip(
+                reason="reference_mapping skipped: no shared genes between atlas and query "
+                "(check gene ID types: symbols vs Ensembl)",
+                details={
+                    "method": self.name,
+                    "n_atlas_genes": len(atlas.var_names),
+                    "n_query_genes": len(adata.var_names),
+                },
+            )
+
+        atlas_train = atlas[:, shared].copy()
+        query_full = adata.copy()  # Keep the full input for return.
+        query_train = adata[:, shared].copy()
 
         # HVG selection.
         sc.pp.highly_variable_genes(
-            atlas,
+            atlas_train,
             n_top_genes=n_top_genes,
             flavor=hvg_flavor,
             layer=counts_layer,
         )
-        hvg_mask = atlas.var["highly_variable"].values
-        hvg_set = set(atlas.var_names[hvg_mask])
+        hvg_mask = atlas_train.var["highly_variable"].values
+        hvg_set = set(atlas_train.var_names[hvg_mask])
 
         # Add force_genes to HVG set.
         for gene in force_genes:
-            if gene in atlas.var_names:
+            if gene in atlas_train.var_names:
                 hvg_set.add(gene)
 
         # Preserve order.
-        hvg_list = [g for g in atlas.var_names if g in hvg_set]
-        atlas = atlas[:, hvg_list].copy()
-        query = query[:, hvg_list].copy()
+        hvg_list = [g for g in atlas_train.var_names if g in hvg_set]
+        atlas_train = atlas_train[:, hvg_list].copy()
+        query_train = query_train[:, hvg_list].copy()
 
         # GPU gate.
         if compute_backend == "cpu":
@@ -158,14 +180,14 @@ class ScArchesMethod(AnalysisMethod):
 
                 # Setup scVI on atlas.
                 scvi.model.SCVI.setup_anndata(
-                    atlas,
+                    atlas_train,
                     batch_key=atlas_batch_key,
                     labels_key="_labels",
                 )
 
                 # Train scVI.
                 vae = scvi.model.SCVI(
-                    atlas,
+                    atlas_train,
                     n_latent=n_latent,
                     n_layers=n_layers,
                     dropout_rate=dropout_rate,
@@ -186,7 +208,7 @@ class ScArchesMethod(AnalysisMethod):
                 scanvi.train(max_epochs=max_epochs_scanvi, accelerator=accelerator)
 
                 # Prepare query.
-                q = query.copy()
+                q = query_train.copy()
                 q.X = q.layers[counts_layer]
                 q.obs["_labels"] = unlabeled_category
                 q.obs[atlas_batch_key] = query_batch_value
@@ -209,20 +231,20 @@ class ScArchesMethod(AnalysisMethod):
 
                 # Get latents.
                 q_latent = qmodel.get_latent_representation(q)
-                ref_latent = scanvi.get_latent_representation(atlas)
+                ref_latent = scanvi.get_latent_representation(atlas_train)
 
                 # kNN uncertainty (NOT softmax).
                 nn = NearestNeighbors(n_neighbors=knn_k)
                 nn.fit(ref_latent)
                 _, idx = nn.kneighbors(q_latent)
 
-                ref_labels = atlas.obs["_labels"].to_numpy()
+                ref_labels = atlas_train.obs["_labels"].to_numpy()
                 knn_entropy_vals = np.zeros(len(q))
                 knn_agreement_vals = np.zeros(len(q))
 
                 for i in range(len(q)):
                     neigh = ref_labels[idx[i]]
-                    uniq, counts = np.unique(neigh, return_counts=True)
+                    _, counts = np.unique(neigh, return_counts=True)
                     p = counts / knn_k
                     knn_entropy_vals[i] = entropy(p)
                     knn_agreement_vals[i] = (neigh == pred_hard[i]).mean()
@@ -244,7 +266,7 @@ class ScArchesMethod(AnalysisMethod):
                 }
 
         # Consensus across seeds.
-        n_cells = len(query)
+        n_cells = len(query_train)
         consensus_labels = []
         consensus_fracs = []
 
@@ -259,8 +281,10 @@ class ScArchesMethod(AnalysisMethod):
         seed_mean_agreement = {s: seed_predictions[s]["knn_agreement"].mean() for s in seeds}
         best_seed = max(seed_mean_agreement, key=seed_mean_agreement.get)
 
-        # Write results onto query.
-        result_query = query.copy()
+        # Write results onto the FULL input query (all genes, not HVG subset).
+        # Cells are NOT subset (only genes were), so obs_names order is preserved.
+        result_query = query_full.copy()
+        assert len(result_query) == n_cells, "Cell count mismatch after gene subset."
         result_query.obs[key_added] = pd.Categorical(consensus_labels)
         result_query.obs[f"{key_added}_consensus_frac"] = consensus_fracs
         result_query.obs[f"{key_added}_knn_entropy"] = seed_predictions[best_seed]["knn_entropy"]
@@ -281,7 +305,7 @@ class ScArchesMethod(AnalysisMethod):
         result_query.obsm["X_scANVI"] = seed_latents[best_seed]["query"]
 
         # uns metadata.
-        ref_states = list(atlas.obs["_labels"].unique())
+        ref_states = list(atlas_train.obs["_labels"].unique())
         result_query.uns["reference_mapping"] = {
             "atlas_h5ad": str(atlas_path),
             "label_key": label_key,
@@ -293,20 +317,27 @@ class ScArchesMethod(AnalysisMethod):
             "uncertainty_note": "kNN entropy from k-NN in reference latent space",
         }
 
-        # Diagnostics: kNN accuracy.
+        # Diagnostics: kNN accuracy (guard against rare class / small fold NaN).
         ref_latent_best = seed_latents[best_seed]["ref"]
-        knn_clf = KNeighborsClassifier(n_neighbors=knn_k)
-        cv_scores = cross_val_score(knn_clf, ref_latent_best, atlas.obs["_labels"], cv=3)
+        n_ref = len(atlas_train)
+        cv_folds = 3
+        safe_k = max(1, min(knn_k, n_ref // (cv_folds + 1)))
+        knn_clf = KNeighborsClassifier(n_neighbors=safe_k)
+        cv_scores = cross_val_score(
+            knn_clf, ref_latent_best, atlas_train.obs["_labels"], cv=cv_folds
+        )
         knn_accuracy = cv_scores.mean()
+        if np.isnan(knn_accuracy):
+            knn_accuracy = None
 
         # Metrics.
         metrics = {
-            "knn_accuracy": float(knn_accuracy),
+            "knn_accuracy": float(knn_accuracy) if knn_accuracy is not None else None,
             "median_knn_entropy": float(np.median(seed_predictions[best_seed]["knn_entropy"])),
             "median_knn_agreement": float(np.median(seed_predictions[best_seed]["knn_agreement"])),
             "median_consensus_frac": float(np.median(consensus_fracs)),
             "frac_unanimous": float((np.array(consensus_fracs) == 1.0).mean()),
-            "n_ref_cells": int(len(atlas)),
+            "n_ref_cells": int(len(atlas_train)),
             "n_hvg": len(hvg_list),
             "key_added": key_added,
         }
@@ -359,8 +390,11 @@ class ScArchesMethod(AnalysisMethod):
             f"Multi-seed consensus across {len(seeds)} seeds.",
             f"Median kNN entropy: {metrics['median_knn_entropy']:.3f}",
             f"Median consensus fraction: {metrics['median_consensus_frac']:.3f}",
-            f"kNN accuracy (CV): {knn_accuracy:.3f}",
         ]
+        if knn_accuracy is not None:
+            notes.append(f"kNN accuracy (CV): {knn_accuracy:.3f}")
+        else:
+            notes.append("kNN accuracy: N/A (too few cells per class for k-fold CV)")
 
         return StageResult(adata=result_query, metrics=metrics, artifacts=artifacts, notes=notes)
 

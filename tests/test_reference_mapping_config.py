@@ -49,3 +49,16 @@ def test_reference_mapping_ordered_after_annotation():
     c = CellQuorumConfig.model_validate({"project": {"name": "t"}})
     names = [s.name for s in PipelinePlanner(c).build_plan().stages]
     assert names.index("annotation") < names.index("reference_mapping")
+
+
+def test_scarches_method_is_registered():
+    """Test that ScArchesMethod is auto-registered in METHOD_REGISTRY."""
+    # Import triggers auto-registration.
+    import cellquorum.reference_mapping  # noqa: F401
+    from cellquorum.methods.registry import METHOD_REGISTRY
+
+    assert METHOD_REGISTRY.has("reference_mapping", "scarches")
+    # Verify dispatch resolves to the method.
+    method = METHOD_REGISTRY.get("reference_mapping", "scarches")
+    assert method.name == "scarches"
+    assert method.stage_category == "reference_mapping"

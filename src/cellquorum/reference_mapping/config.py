@@ -98,8 +98,5 @@ class ReferenceMappingConfig(StrictBaseModel):
     # Whether to write loss curves to artifacts.
     write_loss_curves: bool = True
 
-    # Optional boundary refinement settings.
-    refine_boundary: dict | None = None
-
 
 __all__ = ["ReferenceMappingConfig"]

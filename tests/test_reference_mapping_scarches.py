@@ -84,6 +84,8 @@ def test_scarches_transfers_labels_and_uncertainty(tmp_path: Path) -> None:
     assert "ref_state_knn_agreement" in obs
     assert "X_scANVI" in res.adata.obsm
     assert "knn_accuracy" in res.metrics
+    # CRITICAL: returned adata must preserve full gene space (not HVG subset).
+    assert res.adata.n_vars == query.n_vars
 
 
 def test_scarches_skips_when_atlas_missing(tmp_path: Path) -> None:
@@ -116,3 +118,29 @@ def test_scarches_multiseed_consensus(tmp_path: Path) -> None:
     assert "ref_state_consensus_frac" in res.adata.obs
     assert "ref_state_seed0" in res.adata.obs
     assert "ref_state_seed1" in res.adata.obs
+    assert res.adata.n_vars == query.n_vars
+
+
+def test_scarches_skips_on_no_shared_genes(tmp_path: Path) -> None:
+    """ScArchesMethod should MethodSkip if atlas and query have no shared genes."""
+    atlas = _synth(200, 0)
+    atlas.var_names = [f"atlas_g{i}" for i in range(50)]
+    atlas.write_h5ad(tmp_path / "atlas.h5ad")
+    query = _synth(60, 1, labels=False)
+    query.var_names = [f"query_g{i}" for i in range(50)]
+    res = ScArchesMethod().run(query, _cfg(tmp_path / "atlas.h5ad"), context=_Ctx(tmp_path))
+    assert isinstance(res, MethodSkip)
+    assert "no shared genes" in res.reason.lower()
+
+
+def test_scarches_skips_on_too_few_atlas_cells(tmp_path: Path) -> None:
+    """ScArchesMethod should MethodSkip if atlas has < knn_k cells."""
+    atlas = _synth(3, 0)
+    atlas.write_h5ad(tmp_path / "atlas.h5ad")
+    query = _synth(60, 1, labels=False)
+    res = ScArchesMethod().run(
+        query, _cfg(tmp_path / "atlas.h5ad", knn_k=5), context=_Ctx(tmp_path)
+    )
+    assert isinstance(res, MethodSkip)
+    assert "filtered atlas" in res.reason.lower()
+    assert "knn_k" in res.reason.lower()
