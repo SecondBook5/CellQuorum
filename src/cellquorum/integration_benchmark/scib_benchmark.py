@@ -315,7 +315,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
         # Rank embeddings.
         ranking = sorted(
             embedding_metrics.keys(),
-            key=lambda k: embedding_metrics[emb_key]["aggregate"],
+            key=lambda k: embedding_metrics[k]["aggregate"],
             reverse=True,
         )
 

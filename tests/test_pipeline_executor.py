@@ -292,6 +292,7 @@ def test_default_stage_registry_contains_qc() -> None:
     assert registry.get("dimensionality") is not None
     assert registry.get("clustering") is not None
     assert registry.get("integration") is not None
+    assert registry.get("integration_benchmark") is not None
     assert registry.get("annotation") is not None
     assert registry.get("feature_selection") is not None
     assert registry.registered_stage_names() == [
@@ -301,6 +302,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "dimensionality",
         "feature_selection",
         "integration",
+        "integration_benchmark",
         "preprocessing",
         "qc",
     ]
