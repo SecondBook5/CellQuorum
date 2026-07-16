@@ -173,10 +173,13 @@ def test_run_scshc_test_wiring_with_mocked_backend(tmp_path: Path) -> None:
         # Extract out_csv path from args.
         out_csv = Path(args[2])
 
-        # Write a canned per-split significance CSV.
+        # Write a canned per-split significance CSV in the real column format
+        # scshc_test.R emits (split_index, node, p_value, significant) — the
+        # node column carries the scSHC tree node name.
         canned_df = pd.DataFrame(
             {
                 "split_index": [1, 2],
+                "node": ["Node 0: 0.01", "Cluster 1: 0.10"],
                 "p_value": [0.01, 0.10],
                 "significant": [True, False],
             }
@@ -200,6 +203,41 @@ def test_run_scshc_test_wiring_with_mocked_backend(tmp_path: Path) -> None:
     assert result["n_splits_tested"] == 2
     assert result["n_significant"] == 1
     assert result["alpha"] == 0.05
+
+
+def test_scshc_node_name_pvalue_contract() -> None:
+    """Guard the scSHC node-name -> p-value parsing contract.
+
+    scSHC::testClusters returns list(cluster_labels, node_tree); the p-values live
+    in the tree's node names ("Node <n>: <p>" / "Cluster <n>: <p>"), NOT a
+    non-existent $p_norm field (the original bug that silently produced empty
+    output). scshc_test.R treats any node name with a trailing ": <number>" as a
+    tested split. This mirrors that logic in Python so the contract is pinned;
+    the node names below are the exact formats observed on real KC data.
+    """
+    import re
+
+    # Real formats: internal splits ("Node N: p"), tested-but-stopped splits
+    # ("Cluster N: p"), and terminal leaves ("Cluster N", no colon = not a split).
+    node_names = [
+        "Node 0: 0",
+        "Node 1: 0",
+        "Cluster 1",  # terminal leaf, not a split
+        "Cluster 5: 0.07",  # tested split, not significant
+        "Node 5: 0",
+        "Cluster 9",  # terminal leaf
+    ]
+    alpha = 0.05
+
+    split_names = [n for n in node_names if re.search(r":\s*[0-9.]+\s*$", n)]
+    pvals = [float(re.sub(r"^.*:\s*", "", n)) for n in split_names]
+    significant = [p <= alpha for p in pvals]
+
+    # 4 tested splits (2 terminal leaves excluded), 3 significant.
+    assert len(split_names) == 4
+    assert sum(significant) == 3
+    # The non-significant one is the tested-but-stopped Cluster split.
+    assert "Cluster 5: 0.07" in split_names
 
 
 def test_run_scshc_test_method_skip_when_backend_none(tmp_path: Path) -> None:
