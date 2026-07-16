@@ -21,8 +21,11 @@ seed <- as.integer(args[8])
 # Wrap everything in tryCatch for fail-loud behavior.
 tryCatch(
   {
-    # Read h5ad → SingleCellExperiment.
-    sce <- zellkonverter::readH5AD(in_h5ad)
+    # Read h5ad → SingleCellExperiment. Use reader="R": the default python
+    # (reticulate/anndata) reader crashes with an IORegistryError on
+    # null-encoded uns entries (e.g. uns/log1p/base written by anndata >= 0.11),
+    # which real user objects commonly carry. The native-R reader tolerates them.
+    sce <- zellkonverter::readH5AD(in_h5ad, reader = "R")
 
     # Ensure counts assay exists (zellkonverter maps X → first assay).
     # CHOIR needs raw counts; rename X → counts if needed.

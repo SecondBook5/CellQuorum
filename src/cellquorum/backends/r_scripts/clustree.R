@@ -17,7 +17,8 @@ prefix <- args[3]
 tryCatch(
   {
     # Read h5ad → SingleCellExperiment.
-    sce <- zellkonverter::readH5AD(in_h5ad)
+    # reader="R" tolerates null-encoded uns entries the python reader crashes on.
+    sce <- zellkonverter::readH5AD(in_h5ad, reader = "R")
 
     # Find cluster columns matching prefix (e.g., "leiden_0.1", "leiden_0.5").
     # clustree needs at least 2 cluster columns with prefix + numeric suffix.

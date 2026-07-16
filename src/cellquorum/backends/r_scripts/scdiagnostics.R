@@ -25,7 +25,8 @@ pc_subset <- as.integer(strsplit(pc_subset_str, ",")[[1]])
 tryCatch(
   {
     # Read query h5ad → SingleCellExperiment.
-    query_sce <- zellkonverter::readH5AD(query_h5ad)
+    # reader="R" tolerates null-encoded uns entries the python reader crashes on.
+    query_sce <- zellkonverter::readH5AD(query_h5ad, reader = "R")
 
     # Ensure logcounts assay exists (zellkonverter maps X → first assay).
     if (!"logcounts" %in% assayNames(query_sce)) {
@@ -60,7 +61,7 @@ tryCatch(
     has_reference <- (ref_arg != "NONE" && file.exists(ref_arg))
     if (has_reference) {
       # Read reference h5ad → SingleCellExperiment.
-      ref_sce <- zellkonverter::readH5AD(ref_arg)
+      ref_sce <- zellkonverter::readH5AD(ref_arg, reader = "R")
 
       # Ensure reference has logcounts and PCA.
       if (!"logcounts" %in% assayNames(ref_sce)) {
