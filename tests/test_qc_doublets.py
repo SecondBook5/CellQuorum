@@ -34,6 +34,41 @@ def test_scrublet_consensus_writes_calls():
     assert a.n_obs == 200
 
 
+def test_per_sample_detection_runs_per_library():
+    """With per_sample + a sample_key, detection runs per library, not pooled."""
+    import pandas as pd
+
+    a = _counts_adata(n=120, g=400)
+    # Two libraries; per-sample detection should score each independently.
+    a.obs["sample_id"] = pd.Categorical(["libA"] * 60 + ["libB"] * 60)
+    cfg = QCDoubletConfig(
+        enabled=True,
+        methods=["scrublet"],
+        consensus="any",
+        per_sample=True,
+        expected_doublet_rate=0.06,
+    )
+
+    metrics = detect_doublets(a, cfg, backend=None, sample_key="sample_id")
+
+    assert metrics["scored_scope"] == "per_sample"
+    assert metrics["sample_key"] == "sample_id"
+    assert "doublet_score" in a.obs
+    # Every cell was scored by some library-local run.
+    assert a.obs["doublet_score"].notna().all()
+
+
+def test_per_sample_falls_back_to_pooled_without_sample_key():
+    """per_sample=True but no sample_key resolves to pooled detection."""
+    a = _counts_adata(n=100, g=300)
+    cfg = QCDoubletConfig(enabled=True, methods=["scrublet"], consensus="any", per_sample=True)
+
+    metrics = detect_doublets(a, cfg, backend=None, sample_key=None)
+
+    assert metrics["scored_scope"] == "pooled"
+    assert metrics["sample_key"] is None
+
+
 def test_consensus_any_vs_all_semantics():
     # Two synthetic per-method call columns combined by rule.
     import pandas as pd

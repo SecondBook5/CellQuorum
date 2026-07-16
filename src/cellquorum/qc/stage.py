@@ -178,7 +178,27 @@ class QCStage:
                     backend = registry.get("rscript")
                 except Exception:
                     backend = None
-            doublet_metrics = detect_doublets(output_adata, qc_config.doublets, backend)
+
+            # Resolve the sample/library key for per-sample doublet detection:
+            # prefer the cohort sample_key, then a plain sample_id column. Doublet
+            # detectors should model each capture separately, not the pooled set.
+            qc_context_config = getattr(context, "config", None)
+            qc_cohort = getattr(qc_context_config, "cohort", None)
+            doublet_sample_key = None
+            for candidate in (
+                getattr(qc_cohort, "sample_key", None),
+                "sample_id",
+            ):
+                if candidate and candidate in output_adata.obs.columns:
+                    doublet_sample_key = candidate
+                    break
+
+            doublet_metrics = detect_doublets(
+                output_adata,
+                qc_config.doublets,
+                backend,
+                sample_key=doublet_sample_key,
+            )
             addon_metrics["doublets"] = doublet_metrics
 
         # Resolve group_key for QC figure grouping. Prefer the central cohort

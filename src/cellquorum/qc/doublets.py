@@ -118,16 +118,78 @@ def combine_consensus(calls: pd.DataFrame, rule: str) -> pd.Series:
     raise ValueError(f"Unknown consensus rule '{rule}'. Use any|all|majority.")
 
 
+def _score_method(
+    adata: AnnData,
+    method: str,
+    backend: RscriptBackend | None,
+    *,
+    expected_rate: float,
+) -> np.ndarray | None:
+    """Run one detector on ``adata`` and return per-cell scores (None if unknown)."""
+
+    if method == "scrublet":
+        return run_scrublet(adata, expected_rate=expected_rate, random_state=0)
+    if method == "scdblfinder":
+        return run_scdblfinder(adata, backend, random_state=0)
+    return None
+
+
+def _score_method_per_sample(
+    adata: AnnData,
+    method: str,
+    backend: RscriptBackend | None,
+    *,
+    expected_rate: float,
+    sample_key: str,
+) -> tuple[np.ndarray, list[str]]:
+    """Run a detector independently per sample and scatter scores back to cell order.
+
+    Doublet detectors model each capture's own doublet structure, so pooling
+    libraries biases the neighborhood/kNN estimates. This runs the detector once
+    per ``sample_key`` group and places each group's scores back into a
+    full-length, cell-order-aligned array (NaN for groups a detector could not
+    score).
+    """
+
+    scores = np.full(adata.n_obs, np.nan, dtype=float)
+    positions = np.arange(adata.n_obs)
+    sample_values = adata.obs[sample_key].to_numpy()
+    notes: list[str] = []
+
+    for sample in pd.unique(sample_values):
+        mask = sample_values == sample
+        # AnnData subset by boolean mask, preserving order.
+        sub = adata[mask]
+        sub_scores = _score_method(sub, method, backend, expected_rate=expected_rate)
+        if sub_scores is None or np.all(np.isnan(sub_scores)):
+            notes.append(f"doublet method '{method}' unavailable for sample '{sample}'")
+            continue
+        scores[positions[mask]] = np.asarray(sub_scores, dtype=float)
+
+    return scores, notes
+
+
 def detect_doublets(
-    adata: AnnData, config: QCDoubletConfig, backend: RscriptBackend | None
+    adata: AnnData,
+    config: QCDoubletConfig,
+    backend: RscriptBackend | None,
+    *,
+    sample_key: str | None = None,
 ) -> dict:
     """
     Run configured doublet detectors and write flags/scores to obs.
+
+    When ``config.per_sample`` is True and a ``sample_key`` is available, each
+    detector runs independently per sample/library (the correct scDblFinder /
+    Scrublet practice), then scores are combined across the full object. Falls
+    back to pooled detection when no sample key is available.
 
     Args:
         adata: AnnData with counts.
         config: Doublet configuration (methods + consensus).
         backend: RscriptBackend for scDblFinder (or None).
+        sample_key: obs column identifying the sample/library for per-sample
+            detection. None disables per-sample detection.
 
     Returns:
         Metrics dict (methods run, predicted-doublet count, consensus rule).
@@ -137,17 +199,33 @@ def detect_doublets(
     methods = list(config.methods) if config.methods else [config.method]
     threshold = config.score_threshold if config.score_threshold is not None else 0.5
 
+    # Decide whether to run per-sample: opt-in flag AND a usable sample column.
+    per_sample = bool(config.per_sample) and sample_key is not None and sample_key in adata.obs
+    scored_scope = "per_sample" if per_sample else "pooled"
+
     # Run each detector, storing per-method scores and a boolean call.
     call_cols: dict[str, pd.Series] = {}
     methods_run: list[str] = []
     notes: list[str] = []
     for method in methods:
-        if method == "scrublet":
-            scores = run_scrublet(adata, expected_rate=config.expected_doublet_rate, random_state=0)
-        elif method == "scdblfinder":
-            scores = run_scdblfinder(adata, backend, random_state=0)
+        if per_sample:
+            scores, sample_notes = _score_method_per_sample(
+                adata,
+                method,
+                backend,
+                expected_rate=config.expected_doublet_rate,
+                sample_key=sample_key,
+            )
+            notes.extend(sample_notes)
         else:
+            scores = _score_method(
+                adata, method, backend, expected_rate=config.expected_doublet_rate
+            )
+
+        # Unknown method name: skip.
+        if scores is None:
             continue
+
         adata.obs[f"doublet_score_{method}"] = scores
         # A method that returned all-NaN was unavailable; skip it from consensus.
         if np.all(np.isnan(scores)):
@@ -173,6 +251,8 @@ def detect_doublets(
     return {
         "methods_run": methods_run,
         "consensus": config.consensus,
+        "scored_scope": scored_scope,
+        "sample_key": sample_key if per_sample else None,
         "n_predicted_doublets": int(np.nansum(adata.obs["predicted_doublet"].to_numpy())),
         "notes": notes,
     }
