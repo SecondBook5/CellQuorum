@@ -83,8 +83,13 @@ class ReferenceMappingConfig(StrictBaseModel):
     # Label for unlabeled cells in scANVI.
     unlabeled_category: str = "Unknown"
 
-    # Random seeds for multi-seed ensemble.
+    # Random seeds for the multi-seed ensemble. More seeds = a more robust
+    # consensus/uncertainty estimate at proportional compute cost.
     seeds: list[int] = [0, 1, 2, 3, 4]
+
+    # Cross-validation folds for the reference kNN-accuracy diagnostic. More
+    # folds give a tighter accuracy estimate; capped internally by class sizes.
+    cv_folds: int = 3
 
     # k for kNN uncertainty estimation.
     knn_k: int = 30

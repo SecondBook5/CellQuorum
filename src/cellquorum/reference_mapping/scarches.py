@@ -76,6 +76,7 @@ class ScArchesMethod(AnalysisMethod):
         )
         unlabeled_category = config.get("unlabeled_category", "Unknown")
         seeds = config.get("seeds", [0, 1, 2, 3, 4])
+        cv_folds = int(config.get("cv_folds", 3))
         knn_k = int(config.get("knn_k", 30))
         key_added = config.get("key_added", "ref_state")
         compute_backend = config.get("compute_backend", "auto")
@@ -408,13 +409,18 @@ class ScArchesMethod(AnalysisMethod):
         }
 
         # Diagnostics: kNN accuracy (guard against rare class / small fold NaN).
+        # cv_folds is user-configurable but must not exceed the smallest class's
+        # member count (stratified CV requires >= cv_folds members per class),
+        # and must be at least 2. Cap defensively so a large configured value on
+        # a small/imbalanced atlas degrades gracefully rather than raising.
         ref_latent_best = seed_latents[best_seed]["ref"]
         n_ref = len(atlas_train)
-        cv_folds = 3
-        safe_k = max(1, min(knn_k, n_ref // (cv_folds + 1)))
+        min_class_count = int(atlas_train.obs["_labels"].value_counts().min())
+        effective_cv_folds = max(2, min(cv_folds, min_class_count))
+        safe_k = max(1, min(knn_k, n_ref // (effective_cv_folds + 1)))
         knn_clf = KNeighborsClassifier(n_neighbors=safe_k)
         cv_scores = cross_val_score(
-            knn_clf, ref_latent_best, atlas_train.obs["_labels"], cv=cv_folds
+            knn_clf, ref_latent_best, atlas_train.obs["_labels"], cv=effective_cv_folds
         )
         knn_accuracy = cv_scores.mean()
         if np.isnan(knn_accuracy):
@@ -431,6 +437,9 @@ class ScArchesMethod(AnalysisMethod):
             "n_ref_cells": int(len(atlas_train)),
             "n_hvg": len(hvg_list),
             "key_added": key_added,
+            "n_seeds": len(seeds),
+            "cv_folds_configured": cv_folds,
+            "cv_folds_effective": effective_cv_folds,
             "resumed_seeds": resumed_seeds,
             "trained_seeds": trained_seeds,
             "resume_enabled": resume,

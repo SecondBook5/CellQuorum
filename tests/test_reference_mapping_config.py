@@ -15,9 +15,25 @@ def test_reference_mapping_config_defaults():
     assert rm.method == "scarches"
     assert rm.label_key == "cell_type"
     assert rm.seeds == [0, 1, 2, 3, 4]
+    assert rm.cv_folds == 3
     assert rm.knn_k == 30
     assert rm.key_added == "ref_state"
     assert c.stages.reference_mapping is True
+
+
+def test_reference_mapping_robustness_knobs_are_configurable():
+    """Seeds, cv_folds, and knn_k are user-tunable robustness/cost knobs."""
+
+    c = CellQuorumConfig.model_validate(
+        {
+            "project": {"name": "t"},
+            "reference_mapping": {"seeds": [0, 1, 2], "cv_folds": 5, "knn_k": 15},
+        }
+    )
+    rm = c.reference_mapping
+    assert rm.seeds == [0, 1, 2]
+    assert rm.cv_folds == 5
+    assert rm.knn_k == 15
 
 
 def test_reference_mapping_is_atlas_agnostic_via_config():
