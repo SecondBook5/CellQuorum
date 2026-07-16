@@ -15,6 +15,7 @@ from cellquorum.methods.base import MethodSkip
 from cellquorum.reference_mapping.scarches import (
     ScArchesMethod,
     _load_seed_checkpoint,
+    _mean_soft_probabilities,
     _save_seed_checkpoint,
     _scvi_gpu_available,
 )
@@ -134,6 +135,41 @@ def test_scarches_multiseed_consensus(tmp_path: Path) -> None:
     assert "ref_state_seed0" in res.adata.obs
     assert "ref_state_seed1" in res.adata.obs
     assert res.adata.n_vars == query.n_vars
+    # Mean-posterior consensus: a confidence column consistent with the label,
+    # and probabilities documented as a cross-seed consensus.
+    assert "ref_state_confidence" in res.adata.obs
+    assert res.adata.uns["reference_mapping"]["probability_consensus"] == (
+        "mean_posterior_across_seeds"
+    )
+    # The consensus label must be the argmax of the consensus probability matrix.
+    probs = res.adata.obsm["ref_state_probabilities"]
+    cols = res.adata.uns["reference_mapping"]["probability_columns"]
+    argmax_labels = [cols[i] for i in probs.argmax(axis=1)]
+    assert list(res.adata.obs["ref_state"].astype(str)) == argmax_labels
+
+
+def test_mean_soft_probabilities_averages_and_normalizes():
+    """The consensus helper averages seed posteriors and renormalizes rows to 1."""
+    seed_predictions = {
+        0: {"soft": pd.DataFrame({"A": [0.8, 0.2], "B": [0.2, 0.8]}, index=["c0", "c1"])},
+        1: {"soft": pd.DataFrame({"A": [0.6, 0.1], "B": [0.4, 0.9]}, index=["c0", "c1"])},
+    }
+    mean = _mean_soft_probabilities(seed_predictions, [0, 1])
+    # Mean of A for c0 = (0.8 + 0.6) / 2 = 0.7.
+    assert mean.loc["c0", "A"] == pytest.approx(0.7)
+    # Every row is a valid distribution.
+    np.testing.assert_allclose(mean.sum(axis=1).to_numpy(), [1.0, 1.0])
+
+
+def test_mean_soft_probabilities_aligns_mismatched_label_columns():
+    """Seeds with different/partial label columns align to the union set."""
+    seed_predictions = {
+        0: {"soft": pd.DataFrame({"A": [1.0], "B": [0.0]}, index=["c0"])},
+        1: {"soft": pd.DataFrame({"B": [0.5], "C": [0.5]}, index=["c0"])},
+    }
+    mean = _mean_soft_probabilities(seed_predictions, [0, 1])
+    assert set(mean.columns) == {"A", "B", "C"}
+    assert mean.sum(axis=1).to_numpy()[0] == pytest.approx(1.0)
 
 
 def test_scarches_skips_on_no_shared_genes(tmp_path: Path) -> None:

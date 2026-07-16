@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import warnings
-from collections import Counter
 from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
@@ -251,6 +250,19 @@ class ScArchesMethod(AnalysisMethod):
                 )
                 scanvi.train(max_epochs=max_epochs_scanvi, accelerator=accelerator)
 
+                # Persist the trained reference models (scVI + scANVI) so a run is
+                # reproducible and the reference can be reused across queries or
+                # recovered after a crash without retraining. Best-effort: a save
+                # failure must not abort mapping.
+                if objects_path is not None:
+                    _save_reference_models(
+                        objects_path=objects_path,
+                        key_added=key_added,
+                        seed=int(seed),
+                        scvi_model=vae,
+                        scanvi_model=scanvi,
+                    )
+
                 # Prepare query.
                 q = query_train.copy()
                 q.X = q.layers[counts_layer]
@@ -323,17 +335,31 @@ class ScArchesMethod(AnalysisMethod):
 
         # Consensus across seeds.
         n_cells = len(query_train)
-        consensus_labels = []
-        consensus_fracs = []
 
+        # Mean-posterior consensus: average each seed's soft probabilities over a
+        # shared, union label-column ordering, then derive the label and
+        # confidence from the AVERAGED distribution. This is the scientifically
+        # correct multi-seed consensus — the reported probabilities, label, and
+        # confidence are mutually consistent, unlike picking one "best" seed's
+        # probs alongside a separate hard vote.
+        mean_soft_df = _mean_soft_probabilities(seed_predictions, seeds)
+        prob_columns = list(mean_soft_df.columns)
+        prob_matrix = mean_soft_df.to_numpy()
+        consensus_labels = [prob_columns[i] for i in prob_matrix.argmax(axis=1)]
+        # Confidence = the averaged posterior mass on the consensus label.
+        consensus_confidence = prob_matrix.max(axis=1)
+
+        # Hard-vote agreement is retained as a secondary robustness signal: the
+        # fraction of seeds whose hard call matched the mean-posterior label.
+        consensus_fracs = []
         for i in range(n_cells):
             votes = [seed_predictions[s]["hard"][i] for s in seeds]
-            counter = Counter(votes)
-            majority, count = counter.most_common(1)[0]
-            consensus_labels.append(majority)
-            consensus_fracs.append(count / len(seeds))
+            consensus_fracs.append(sum(v == consensus_labels[i] for v in votes) / len(seeds))
 
-        # Choose the best-agreeing seed for latent/kNN metrics.
+        # Choose the best-agreeing seed for the (single-seed) latent + kNN metrics.
+        # NOTE: X_scANVI stays single-seed because independent scANVI latent spaces
+        # are not rotation/sign-aligned and cannot be averaged; it is labeled as
+        # such in uns. Only the probabilities are a true cross-seed consensus.
         seed_mean_agreement = {s: seed_predictions[s]["knn_agreement"].mean() for s in seeds}
         best_seed = max(seed_mean_agreement, key=seed_mean_agreement.get)
 
@@ -343,6 +369,7 @@ class ScArchesMethod(AnalysisMethod):
         assert len(result_query) == n_cells, "Cell count mismatch after gene subset."
         result_query.obs[key_added] = pd.Categorical(consensus_labels)
         result_query.obs[f"{key_added}_consensus_frac"] = consensus_fracs
+        result_query.obs[f"{key_added}_confidence"] = consensus_confidence
         result_query.obs[f"{key_added}_knn_entropy"] = seed_predictions[best_seed]["knn_entropy"]
         result_query.obs[f"{key_added}_knn_agreement"] = seed_predictions[best_seed][
             "knn_agreement"
@@ -352,13 +379,12 @@ class ScArchesMethod(AnalysisMethod):
         for s in seeds:
             result_query.obs[f"{key_added}_seed{s}"] = pd.Categorical(seed_predictions[s]["hard"])
 
-        # Softmax probs from best seed.
-        soft_df = seed_predictions[best_seed]["soft"]
-        for col in soft_df.columns:
-            result_query.obs[f"refprob_{col}"] = soft_df[col].values
-        result_query.obsm[f"{key_added}_probabilities"] = soft_df.to_numpy()
+        # Mean-posterior consensus probabilities (consistent with the label above).
+        for col in prob_columns:
+            result_query.obs[f"refprob_{col}"] = mean_soft_df[col].to_numpy()
+        result_query.obsm[f"{key_added}_probabilities"] = prob_matrix
 
-        # Latent embedding from best seed.
+        # Latent embedding from the best-agreeing seed (single-seed; see note).
         result_query.obsm["X_scANVI"] = seed_latents[best_seed]["query"]
 
         # uns metadata.
@@ -372,7 +398,12 @@ class ScArchesMethod(AnalysisMethod):
             "ref_states": ref_states,
             "seeds": seeds,
             "probability_obsm": f"{key_added}_probabilities",
-            "probability_columns": [str(col) for col in soft_df.columns],
+            "probability_columns": [str(col) for col in prob_columns],
+            "probability_consensus": "mean_posterior_across_seeds",
+            "embedding_note": (
+                "X_scANVI is from a single (best-agreeing) seed; scANVI latent "
+                "spaces across seeds are not aligned and are not averaged."
+            ),
             "uncertainty_note": "kNN entropy from k-NN in reference latent space",
         }
 
@@ -395,6 +426,7 @@ class ScArchesMethod(AnalysisMethod):
             "median_knn_entropy": float(np.median(seed_predictions[best_seed]["knn_entropy"])),
             "median_knn_agreement": float(np.median(seed_predictions[best_seed]["knn_agreement"])),
             "median_consensus_frac": float(np.median(consensus_fracs)),
+            "median_consensus_confidence": float(np.median(consensus_confidence)),
             "frac_unanimous": float((np.array(consensus_fracs) == 1.0).mean()),
             "n_ref_cells": int(len(atlas_train)),
             "n_hvg": len(hvg_list),
@@ -493,6 +525,85 @@ def _serialize_history(model: object) -> dict[str, list[float]]:
             if metric_name in df.columns:
                 hist[metric_name] = df[metric_name].tolist()
     return hist
+
+
+def _mean_soft_probabilities(seed_predictions: dict, seeds: list) -> pd.DataFrame:
+    """
+    Average per-seed soft label probabilities into a single consensus matrix.
+
+    Each seed's ``prediction["soft"]`` is a (cells x labels) DataFrame. Seeds may
+    in principle order or include label columns differently, so this aligns them
+    to the union of label columns (missing columns treated as zero probability),
+    sums, divides by the seed count, and renormalizes each row to sum to 1. The
+    result is a mean-posterior distribution per cell — the basis for a consistent
+    consensus label + confidence.
+
+    Args:
+        seed_predictions: {seed: {"soft": DataFrame, ...}}.
+        seeds: Ordered list of seeds to average over.
+
+    Returns:
+        (cells x labels) DataFrame of mean-posterior probabilities.
+    """
+
+    # Union of label columns across seeds, in first-seen order for determinism.
+    columns: list[str] = []
+    for seed in seeds:
+        for col in seed_predictions[seed]["soft"].columns:
+            if col not in columns:
+                columns.append(col)
+
+    # Row index (cells) comes from the first seed's soft frame.
+    index = seed_predictions[seeds[0]]["soft"].index
+
+    # Sum each seed's soft frame reindexed to the shared column set.
+    accumulator = np.zeros((len(index), len(columns)), dtype=float)
+    for seed in seeds:
+        soft = seed_predictions[seed]["soft"]
+        aligned = soft.reindex(columns=columns, fill_value=0.0).to_numpy(dtype=float)
+        accumulator += aligned
+
+    mean = accumulator / len(seeds)
+
+    # Renormalize rows so each cell's posterior sums to 1 (guards tiny drift and
+    # the fill-zero case). Zero-sum rows (should not occur) stay zero.
+    row_sums = mean.sum(axis=1, keepdims=True)
+    mean = np.divide(mean, row_sums, out=np.zeros_like(mean), where=row_sums > 0)
+
+    return pd.DataFrame(mean, index=index, columns=columns)
+
+
+def _save_reference_models(
+    *,
+    objects_path: Path,
+    key_added: str,
+    seed: int,
+    scvi_model: object,
+    scanvi_model: object,
+) -> None:
+    """
+    Persist the trained reference scVI + scANVI models under ``objects/``.
+
+    Saving the reference models makes a run reproducible and lets the trained
+    reference be reused across query datasets or recovered after a crash without
+    retraining. This is best-effort: scvi's ``save`` writes a directory, and any
+    failure here is swallowed so it never aborts label transfer.
+
+    Args:
+        objects_path: The run's objects directory.
+        key_added: Output key prefix (namespaces the saved model dirs).
+        seed: Seed whose reference models are being saved.
+        scvi_model: Trained scVI model.
+        scanvi_model: Trained scANVI model.
+    """
+
+    try:
+        scvi_dir = objects_path / f"{key_added}_seed{seed}_scvi_reference"
+        scanvi_dir = objects_path / f"{key_added}_seed{seed}_scanvi_reference"
+        scvi_model.save(str(scvi_dir), overwrite=True)
+        scanvi_model.save(str(scanvi_dir), overwrite=True)
+    except Exception:  # pragma: no cover - persistence is best-effort
+        pass
 
 
 def _build_seed_checkpoint_meta(
