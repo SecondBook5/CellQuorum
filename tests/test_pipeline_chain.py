@@ -98,6 +98,9 @@ def _chain_config(h5ad_path) -> CellQuorumConfig:
             "cell_cell_communication": False,
             "network_analysis": False,
         },
+        # cp10k recipe keeps this threading test env-independent: the scclr-backed
+        # PFlog1pPF default needs the isolated scclr env (covered separately).
+        preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
         qc={
             "mode": "report_only",  # keep all cells so downstream has signal
             "threshold_strategy": "fixed",

@@ -27,6 +27,10 @@ class NormalizationConfig(StrictBaseModel):
         preserve_counts_layer: Layer where raw counts are preserved.
         target_sum: Target total count per cell for scaling recipes.
         pseudocount: Pseudocount for log-family recipes.
+        scclr_target: PFlog1pPF depth target passed to scclr for the
+            ``cellquorum_pf_log1p_pf_v1`` recipe: ``auto`` (estimate the NB
+            overdispersion alpha), ``mean``/``median`` depth, or a fixed numeric
+            ``K`` (as a string).
         overwrite: Whether existing output layers may be overwritten.
     """
 
@@ -56,6 +60,9 @@ class NormalizationConfig(StrictBaseModel):
 
     # Store the pseudocount for log-family recipes.
     pseudocount: float = 1.0
+
+    # Store the PFlog1pPF depth target used by the scclr backend.
+    scclr_target: str = "auto"
 
     # Store whether existing output layers may be overwritten.
     overwrite: bool = False

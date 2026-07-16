@@ -124,12 +124,24 @@ class PreprocessingStage:
         # Determine whether to use GPU compute.
         use_gpu = should_use_gpu(context)
 
+        # Resolve the scclr backend (for the PFlog1pPF recipe) and a scratch dir.
+        scclr_backend = None
+        registry = getattr(context, "backend_registry", None)
+        if registry is not None:
+            try:
+                scclr_backend = registry.get("scclr")
+            except Exception:
+                scclr_backend = None
+        scratch_dir = getattr(getattr(context, "paths", None), "scratch", None)
+
         # Normalize the AnnData object.
         normalization_result = normalize_adata(
             adata,
             preprocessing_config.normalization,
             copy=True,
             use_gpu=use_gpu,
+            backend=scclr_backend,
+            scratch_dir=scratch_dir,
         )
 
         # Write preprocessing summary artifact.

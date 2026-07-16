@@ -138,6 +138,12 @@ def build_execution_config(h5ad_path: Path | None) -> CellQuorumConfig:
         r={
             "enabled": False,
         },
+        # Use the env-independent cp10k recipe: these tests exercise pipeline
+        # threading, not the transform, and the scclr-backed PFlog1pPF default
+        # requires the isolated scclr environment.
+        preprocessing={
+            "normalization": {"recipe": "cellquorum_log1p_cp10k_v1"},
+        },
         qc={
             "mode": "report_only",
             "threshold_strategy": "fixed",

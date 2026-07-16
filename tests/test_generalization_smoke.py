@@ -88,7 +88,15 @@ def _generic_config(h5ad_path: Path, output_dir: Path) -> dict:
             "mad": {"enabled": False},
             "outputs": {"write_h5ad": False, "write_figures": False},
         },
-        "preprocessing": {"normalization": {"output_layer": "cellquorum_normalized"}},
+        # cp10k recipe keeps this generalization smoke test env-independent; the
+        # scclr-backed PFlog1pPF default needs the isolated scclr env (covered by
+        # the dedicated scclr backend/normalization tests).
+        "preprocessing": {
+            "normalization": {
+                "output_layer": "cellquorum_normalized",
+                "recipe": "cellquorum_log1p_cp10k_v1",
+            }
+        },
         "dimensionality": {"input_layer": "cellquorum_normalized", "n_pcs": 5, "max_pcs": 5},
         "clustering": {"method": "leiden", "use_rep": "X_pca"},
         "population_identity": {"cluster_key": "leiden", "write_figures": False},

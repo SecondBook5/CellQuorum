@@ -10,6 +10,7 @@ from cellquorum.backends.python import build_default_python_backends
 from cellquorum.backends.r import build_r_backend
 from cellquorum.backends.rapids import build_rapids_backend
 from cellquorum.backends.rscript import build_rscript_backend
+from cellquorum.backends.scclr_backend import build_scclr_backend
 
 
 @dataclass
@@ -304,6 +305,9 @@ def build_default_backend_registry() -> BackendRegistry:
 
     # Register the RAPIDS-singlecell backend.
     registry.register(build_rapids_backend())
+
+    # Register the isolated-env scclr backend (PFlog1pPF + sparse PCA).
+    registry.register(build_scclr_backend())
 
     # Return the populated backend registry.
     return registry

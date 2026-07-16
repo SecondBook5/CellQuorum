@@ -212,27 +212,50 @@ def test_recipe_log1p_pf_v1():
     assert np.allclose(normalized[0, :], expected_cell_0)
 
 
-def test_recipe_pf_log1p_pf_v1():
-    """Test recipe 'cellquorum_pf_log1p_pf_v1' (shifted CLR-like)."""
-    adata = make_test_adata()
+def _scclr_backend_or_skip():
+    """Return an available scclr backend, or skip the test when its env is absent."""
+
+    from cellquorum.backends.scclr_backend import build_scclr_backend
+
+    backend = build_scclr_backend()
+    if not backend.status().available:
+        pytest.skip("scclr environment unavailable (isolated micromamba env not built)")
+    return backend
+
+
+def test_recipe_pf_log1p_pf_v1_runs_real_scclr(tmp_path):
+    """The PFlog1pPF recipe runs the real scclr backend and stays sparse."""
+    backend = _scclr_backend_or_skip()
+
+    # scclr's target="auto" estimates NB overdispersion, so the counts must be
+    # genuinely overdispersed (Poisson data has alpha ~ 0 and is rejected).
+    rng = np.random.default_rng(0)
+    counts = rng.negative_binomial(2, 0.15, size=(60, 30)).astype(np.float32)
+    adata = ad.AnnData(X=counts)
     config = NormalizationConfig(
         recipe="cellquorum_pf_log1p_pf_v1",
-        pseudocount=1.0,
         output_layer="normalized",
+        scclr_target="auto",
     )
 
-    result = normalize_adata(adata, config)
+    result = normalize_adata(adata, config, backend=backend, scratch_dir=tmp_path)
 
     normalized = result.adata.layers["normalized"]
+    # The real PFlog1pPF stays sparse (no densification).
+    assert sp.issparse(normalized)
+    assert normalized.shape == (60, 30)
+    # The per-cell row_center is persisted to obs for the downstream sparse PCA.
+    assert "normalized_row_center" in result.adata.obs.columns
+    assert len(result.adata.obs["normalized_row_center"]) == 60
 
-    # Cell 0: depth 10 -> pf = [0.5, 0.5, 0.0, 0.0]
-    # u_plus = log(pf + 1.0) = [log(1.5), log(1.5), log(1.0), log(1.0)]
-    # mean = mean([log(1.5), log(1.5), log(1.0), log(1.0)])
-    u_plus = np.log([0.5 + 1.0, 0.5 + 1.0, 0.0 + 1.0, 0.0 + 1.0])
-    mean_val = u_plus.mean()
-    expected_cell_0 = u_plus - mean_val
 
-    assert np.allclose(normalized[0, :], expected_cell_0)
+def test_recipe_pf_log1p_pf_v1_fails_loud_without_backend():
+    """Without the scclr backend, the PFlog1pPF recipe fails loud (no fallback)."""
+    adata = make_test_adata()
+    config = NormalizationConfig(recipe="cellquorum_pf_log1p_pf_v1", output_layer="normalized")
+
+    with pytest.raises(PreprocessingNormalizationError, match="scclr"):
+        normalize_adata(adata, config, backend=None)
 
 
 def test_zero_depth_cell_handling():
@@ -256,35 +279,24 @@ def test_zero_depth_cell_handling():
     assert "zero-depth" in result.warnings[0].lower()
 
 
-def test_zero_depth_cell_pf_log1p_pf_v1():
-    """Test that zero-depth cells produce all-zero rows in CLR-like recipe."""
-    # Create matrix with one zero-depth cell.
-    matrix = np.array(
-        [
-            [5, 5, 0, 0],
-            [0, 0, 0, 0],  # zero-depth cell
-        ],
-        dtype=np.float32,
-    )
+def test_pf_log1p_pf_v1_records_scclr_provenance(tmp_path):
+    """The scclr recipe records alpha/k provenance in the normalization result."""
+    backend = _scclr_backend_or_skip()
 
-    adata = ad.AnnData(X=matrix)
+    rng = np.random.default_rng(1)
+    counts = rng.negative_binomial(2, 0.15, size=(60, 30)).astype(np.float32)
+    adata = ad.AnnData(X=counts)
     config = NormalizationConfig(
         recipe="cellquorum_pf_log1p_pf_v1",
-        pseudocount=1.0,
         output_layer="normalized",
+        scclr_target="auto",
     )
 
-    result = normalize_adata(adata, config)
+    result = normalize_adata(adata, config, backend=backend, scratch_dir=tmp_path)
 
-    # Should have warning about zero-depth cells with updated text.
-    assert len(result.warnings) > 0
-    zero_depth_warning = [w for w in result.warnings if "zero-depth" in w.lower()]
-    assert len(zero_depth_warning) > 0
-    assert "all-zero centered rows" in zero_depth_warning[0]
-
-    # Zero-depth cell should produce all-zero row.
-    normalized = result.adata.layers["normalized"]
-    assert np.allclose(normalized[1, :], 0.0)
+    # scclr diagnostics carry the estimated overdispersion alpha and derived k.
+    assert result.diagnostics.get("recipe_impl") == "scclr"
+    assert result.diagnostics.get("scclr_alpha") is not None
 
 
 def test_negative_matrix_rejected():

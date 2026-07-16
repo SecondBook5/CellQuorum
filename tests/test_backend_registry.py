@@ -485,6 +485,7 @@ def test_build_default_backend_registry_registers_expected_backends() -> None:
         "r",
         "rapids",
         "rscript",
+        "scclr",
     ]
 
 
@@ -514,6 +515,7 @@ def test_build_default_backend_registry_status_table_contains_expected_backends(
         "r",
         "rapids",
         "rscript",
+        "scclr",
     }
 
     # Confirm every row includes the standard status fields.

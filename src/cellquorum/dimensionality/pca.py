@@ -116,6 +116,88 @@ class PCAMethod(AnalysisMethod):
         n_comps = int(min(max_pcs, adata.n_obs - 1, adata.n_vars - 1))
         mask_var = "highly_variable" if use_hvg else None
 
+        # Route by normalization method: a scclr-normalized layer carries a
+        # per-cell row_center, so PCA runs through scclr's implicit-centered
+        # sparse path (no densify). Any other layer uses the standard scanpy PCA.
+        row_center_col = f"{input_layer}_row_center"
+        if row_center_col in adata.obs.columns:
+            self._run_scclr_pca(
+                adata,
+                input_layer=input_layer,
+                row_center_col=row_center_col,
+                n_comps=n_comps,
+                random_state=random_state,
+                context=context,
+            )
+            compute_used = "scclr"
+            gpu_fallback_note = None
+        else:
+            compute_used, gpu_fallback_note = self._run_scanpy_pca(
+                adata,
+                input_layer=input_layer,
+                n_comps=n_comps,
+                mask_var=mask_var,
+                random_state=random_state,
+                context=context,
+            )
+
+        variance_ratio = np.asarray(adata.uns["pca"]["variance_ratio"], dtype=float)
+
+        # Resolve the component count: knee for "auto", else the fixed int.
+        if isinstance(n_pcs, str) and n_pcs == "auto":
+            chosen = select_n_pcs(variance_ratio, max_pcs=max_pcs)
+            mode = "auto"
+        else:
+            chosen = int(min(int(n_pcs), n_comps))
+            mode = "fixed"
+
+        # Truncate the embedding to the chosen number of components.
+        adata.obsm["X_pca"] = adata.obsm["X_pca"][:, :chosen]
+
+        # Emit the scree artifact into the figures directory.
+        figures_dir = Path(getattr(getattr(context, "paths", None), "figures", "."))
+        scree_path = figures_dir / "dimensionality_scree.png"
+        write_scree_plot(variance_ratio, chosen, scree_path)
+
+        # Record the choice for provenance.
+        notes = [f"Selected {chosen} PCs ({mode})."]
+        if gpu_fallback_note is not None:
+            notes.append(gpu_fallback_note)
+
+        return StageResult(
+            adata=adata,
+            artifacts=[
+                StageArtifact(
+                    name="dimensionality_scree",
+                    path=scree_path,
+                    kind="figure",
+                    description="PCA scree/elbow plot with chosen-component marker.",
+                )
+            ],
+            metrics={
+                "n_pcs": int(chosen),
+                "n_pcs_mode": mode,
+                "n_comps_computed": int(n_comps),
+                "compute": compute_used,
+            },
+            notes=notes,
+        )
+
+    def _run_scanpy_pca(
+        self,
+        adata: ad.AnnData,
+        *,
+        input_layer: str,
+        n_comps: int,
+        mask_var: str | None,
+        random_state: int,
+        context: object,
+    ) -> tuple[str, str | None]:
+        """Run standard scanpy/rapids PCA on a dense/standard lognorm layer.
+
+        Returns (compute_used, gpu_fallback_note).
+        """
+
         # Decide GPU vs CPU once via the shared router.
         from cellquorum.compute.router import resolve_compute
 
@@ -168,47 +250,101 @@ class PCAMethod(AnalysisMethod):
                 layer=input_layer,
             )
 
-        variance_ratio = np.asarray(adata.uns["pca"]["variance_ratio"], dtype=float)
+        return compute_used, gpu_fallback_note
 
-        # Resolve the component count: knee for "auto", else the fixed int.
-        if isinstance(n_pcs, str) and n_pcs == "auto":
-            chosen = select_n_pcs(variance_ratio, max_pcs=max_pcs)
-            mode = "auto"
-        else:
-            chosen = int(min(int(n_pcs), n_comps))
-            mode = "fixed"
+    def _run_scclr_pca(
+        self,
+        adata: ad.AnnData,
+        *,
+        input_layer: str,
+        row_center_col: str,
+        n_comps: int,
+        random_state: int,
+        context: object,
+    ) -> None:
+        """Run scclr's implicit-centered sparse PCA on a scclr-normalized layer.
 
-        # Truncate the embedding to the chosen number of components.
-        adata.obsm["X_pca"] = adata.obsm["X_pca"][:, :chosen]
+        The scclr-normalized layer is sparse PFlog values; combined with the
+        per-cell ``row_center`` it represents ``layer - row_center[:, None]``
+        without densifying. This routes that sparse+center pair through the scclr
+        backend's PCA helper and writes ``obsm["X_pca"]`` +
+        ``uns["pca"]["variance_ratio"]`` so the shared knee/scree/truncate logic
+        runs unchanged.
 
-        # Emit the scree artifact into the figures directory.
-        figures_dir = Path(getattr(getattr(context, "paths", None), "figures", "."))
-        scree_path = figures_dir / "dimensionality_scree.png"
-        write_scree_plot(variance_ratio, chosen, scree_path)
+        Raises:
+            CellQuorumStageError: If the scclr backend is unavailable.
+        """
 
-        # Record the choice for provenance.
-        notes = [f"Selected {chosen} PCs ({mode})."]
-        if gpu_fallback_note is not None:
-            notes.append(gpu_fallback_note)
+        import json
+        import tempfile
 
-        return StageResult(
-            adata=adata,
-            artifacts=[
-                StageArtifact(
-                    name="dimensionality_scree",
-                    path=scree_path,
-                    kind="figure",
-                    description="PCA scree/elbow plot with chosen-component marker.",
+        import scipy.sparse as sp
+
+        from cellquorum.backends.scclr_backend import PFLOG_HELPER, ScclrBackend
+        from cellquorum.core.exceptions import CellQuorumStageError
+
+        registry = getattr(context, "backend_registry", None)
+        backend = None
+        if registry is not None:
+            try:
+                backend = registry.get("scclr")
+            except Exception:
+                backend = None
+        if not isinstance(backend, ScclrBackend) or not backend.status().available:
+            raise CellQuorumStageError(
+                "dimensionality",
+                "scclr-normalized layer requires the scclr backend for sparse PCA, "
+                "which is unavailable. Build the isolated scclr environment.",
+            )
+
+        layer = adata.layers[input_layer]
+        sparse = layer.tocsr() if sp.issparse(layer) else sp.csr_matrix(np.asarray(layer))
+        row_center = np.asarray(adata.obs[row_center_col].to_numpy(), dtype=float)
+
+        scratch = Path(getattr(getattr(context, "paths", None), "scratch", tempfile.gettempdir()))
+        scratch.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(dir=scratch) as tmp:
+            tmp_path = Path(tmp)
+            matrix_in = tmp_path / "pflog.npz"
+            center_in = tmp_path / "center.npy"
+            pca_out = tmp_path / "pca.npz"
+            pca_meta = tmp_path / "pca_meta.json"
+            sp.save_npz(matrix_in, sparse)
+            np.save(center_in, row_center)
+
+            result = backend.run_helper(
+                PFLOG_HELPER,
+                [
+                    "pca",
+                    str(matrix_in),
+                    str(center_in),
+                    str(pca_out),
+                    str(pca_meta),
+                    "--n-components",
+                    str(n_comps),
+                    "--seed",
+                    str(random_state),
+                ],
+            )
+            if result.returncode != 0 or not pca_out.is_file():
+                raise CellQuorumStageError(
+                    "dimensionality",
+                    "scclr sparse PCA failed: " f"{result.stderr.strip()[:500] or 'no stderr'}",
                 )
-            ],
-            metrics={
-                "n_pcs": int(chosen),
-                "n_pcs_mode": mode,
-                "n_comps_computed": int(n_comps),
-                "compute": compute_used,
-            },
-            notes=notes,
-        )
+
+            with np.load(pca_out) as data:
+                scores = np.asarray(data["scores"], dtype=float)
+                variance_ratio = np.asarray(data["explained_variance_ratio"], dtype=float)
+                explained_variance = np.asarray(data["explained_variance"], dtype=float)
+            json.loads(pca_meta.read_text())
+
+        # Write results in the scanpy-shaped keys the shared logic expects.
+        adata.obsm["X_pca"] = scores
+        adata.uns["pca"] = {
+            "variance_ratio": variance_ratio,
+            "variance": explained_variance,
+        }
 
 
 __all__ = ["PCAMethod", "write_scree_plot"]

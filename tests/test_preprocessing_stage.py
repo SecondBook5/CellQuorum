@@ -9,10 +9,28 @@ import pandas as pd
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.stage import StageResult
-from cellquorum.preprocessing.config import PreprocessingConfig
+from cellquorum.preprocessing.config import NormalizationConfig, PreprocessingConfig
 from cellquorum.preprocessing.stage import (
     PreprocessingStage,
 )
+
+
+def _cp10k_config() -> CellQuorumConfig:
+    """Config using a pure-Python recipe (no scclr env) for stage-plumbing tests.
+
+    These tests exercise stage plumbing (StageResult shape, artifacts, metrics),
+    not the transform, so they use the env-independent cp10k recipe rather than
+    the scclr-backed PFlog1pPF default.
+    """
+
+    cfg = CellQuorumConfig()
+    return cfg.model_copy(
+        update={
+            "preprocessing": PreprocessingConfig(
+                normalization=NormalizationConfig(recipe="cellquorum_log1p_cp10k_v1")
+            )
+        }
+    )
 
 
 def make_test_adata() -> ad.AnnData:
@@ -58,7 +76,7 @@ def make_context(
 
     # Return a PipelineContext.
     return PipelineContext(
-        config=CellQuorumConfig() if config is None else config,
+        config=_cp10k_config() if config is None else config,
         paths=paths,
         adata=make_test_adata() if adata is None else adata,
         run_id="preprocessing-test-run",

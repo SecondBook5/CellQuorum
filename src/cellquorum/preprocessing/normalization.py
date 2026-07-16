@@ -5,6 +5,9 @@ from __future__ import annotations
 # Import dataclass and field for structured result objects.
 from dataclasses import dataclass, field
 
+# Import Path for backend scratch-file exchange.
+from pathlib import Path
+
 # Import AnnData for single-cell data handling.
 import anndata as ad
 
@@ -77,6 +80,8 @@ def normalize_adata(
     *,
     copy: bool = True,
     use_gpu: bool = False,
+    backend: object | None = None,
+    scratch_dir: str | Path | None = None,
 ) -> NormalizationResult:
     """
     Normalize an AnnData object using a configured recipe.
@@ -86,6 +91,10 @@ def normalize_adata(
         config: Normalization configuration.
         copy: Whether to copy the AnnData object before mutation.
         use_gpu: Whether to use GPU acceleration (requires cupy).
+        backend: Optional scclr subprocess backend, required by the PFlog1pPF
+            recipe (``cellquorum_pf_log1p_pf_v1``), which runs the real
+            Booeshaghi/Pachter transform in the isolated scclr environment.
+        scratch_dir: Scratch directory for backend file exchange.
 
     Returns:
         NormalizationResult with normalized AnnData and diagnostics.
@@ -122,14 +131,27 @@ def normalize_adata(
     # Validate input matrix.
     validate_count_matrix(input_matrix)
 
-    # Apply the configured normalization recipe.
-    normalized_matrix, recipe_diagnostics, recipe_warnings = apply_normalization_recipe(
-        matrix=input_matrix,
-        recipe=config.recipe,
-        target_sum=config.target_sum,
-        pseudocount=config.pseudocount,
-        use_gpu=use_gpu,
-    )
+    # PFlog1pPF is the real Booeshaghi/Pachter transform, run through the
+    # isolated scclr environment (sparse, no densify). It returns a sparse layer
+    # plus a per-cell row_center, so it takes a dedicated path rather than the
+    # pure-matrix recipe router.
+    if config.recipe == "cellquorum_pf_log1p_pf_v1":
+        normalized_matrix, recipe_diagnostics, recipe_warnings = run_scclr_pflog(
+            matrix=input_matrix,
+            adata=working_adata,
+            config=config,
+            backend=backend,
+            scratch_dir=scratch_dir,
+        )
+    else:
+        # Apply the configured (pure-matrix) normalization recipe.
+        normalized_matrix, recipe_diagnostics, recipe_warnings = apply_normalization_recipe(
+            matrix=input_matrix,
+            recipe=config.recipe,
+            target_sum=config.target_sum,
+            pseudocount=config.pseudocount,
+            use_gpu=use_gpu,
+        )
 
     # Write normalized matrix to output layer.
     write_normalized_layer(
@@ -138,6 +160,14 @@ def normalize_adata(
         output_layer=config.output_layer,
         overwrite=config.overwrite,
     )
+
+    # scclr PFlog1pPF returns a per-cell row_center: persist it to obs so the
+    # downstream sparse PCA can reconstruct the implicit-centered matrix without
+    # densifying. Pop it out of the diagnostics (numpy array, not JSON-friendly)
+    # before provenance is written.
+    row_center = recipe_diagnostics.pop("scclr_row_center", None)
+    if row_center is not None and len(row_center) == working_adata.n_obs:
+        working_adata.obs[f"{config.output_layer}_row_center"] = np.asarray(row_center)
 
     # Write provenance to uns.
     write_normalization_provenance(
@@ -304,7 +334,12 @@ def apply_normalization_recipe(
     elif recipe == "cellquorum_log1p_pf_v1":
         return apply_recipe_log1p_pf_v1(matrix)
     elif recipe == "cellquorum_pf_log1p_pf_v1":
-        return apply_recipe_pf_log1p_pf_v1(matrix, pseudocount, use_gpu=use_gpu)
+        # PFlog1pPF runs through the scclr backend (see run_scclr_pflog), which
+        # needs AnnData + backend context this pure-matrix router does not have.
+        raise PreprocessingNormalizationError(
+            "The 'cellquorum_pf_log1p_pf_v1' (PFlog1pPF) recipe runs through the scclr "
+            "backend and is dispatched by normalize_adata, not apply_normalization_recipe."
+        )
     else:
         raise PreprocessingNormalizationError(f"Unknown normalization recipe: {recipe}.")
 
@@ -502,128 +537,111 @@ def apply_recipe_log1p_pf_v1(
     return output, diagnostics, warnings
 
 
-def apply_recipe_pf_log1p_pf_v1(
+def run_scclr_pflog(
+    *,
     matrix: np.ndarray | sp.spmatrix,
-    pseudocount: float,
-    use_gpu: bool = False,
-) -> tuple[np.ndarray | sp.spmatrix, dict[str, object], list[str]]:
+    adata: ad.AnnData,
+    config: NormalizationConfig,
+    backend: object | None,
+    scratch_dir: str | Path | None,
+) -> tuple[sp.spmatrix, dict[str, object], list[str]]:
     """
-    Apply the 'cellquorum_pf_log1p_pf_v1' recipe (shifted CLR-like).
+    Run the real PFlog1pPF (scclr) normalization via the isolated-env backend.
 
-    This is a shifted centered-log-ratio-like transformation:
-    u_ij = x_ij / sum_j(x_ij)
-    z_ij = log(u_ij + pseudocount) - mean_j(log(u_j + pseudocount))
+    This is the true Booeshaghi/Pachter transform: ``center(log1p(4·alpha·x))``
+    stored sparsity-preserving as the sparse log values plus a per-cell
+    ``row_center`` vector (dense value is ``sparse[i,j] - row_center[i]``, never
+    materialized). The compute runs in the isolated ``scclr`` environment via the
+    subprocess backend; nothing is densified here.
 
-    Note: This transformation is mathematically dense (all values become non-zero
-    after centering). Sparse input matrices are densified before computation.
+    The per-cell ``row_center`` and the ``k``/``alpha`` scalars are returned in
+    the diagnostics dict under ``scclr_row_center``/``scclr_k``/``scclr_alpha`` so
+    ``normalize_adata`` can persist them to ``obs``/``uns``.
 
     Args:
-        matrix: Input count matrix (cells x genes).
-        pseudocount: Pseudocount added before log.
-        use_gpu: Whether to use GPU acceleration via cupy.
+        matrix: Input raw-count matrix (cells x genes).
+        adata: Working AnnData (used for obs_names length / provenance).
+        config: Normalization configuration (reads ``scclr_target``).
+        backend: scclr subprocess backend (must be available).
+        scratch_dir: Directory for temp file exchange with the backend.
 
     Returns:
-        Tuple of (normalized matrix, diagnostics, warnings).
+        Tuple of (sparse PFlog matrix, diagnostics, warnings).
+
+    Raises:
+        PreprocessingNormalizationError: If the scclr backend is unavailable or
+            the helper fails — there is no fallback (the real transform is the
+            only PFlog1pPF path).
     """
 
-    # Compute per-cell total counts.
-    is_sparse = sp.issparse(matrix)
-    cell_totals = np.asarray(matrix.sum(axis=1)).flatten()
+    import json
+    import tempfile
 
-    # Detect zero-depth cells.
-    zero_depth_mask = cell_totals == 0
-    n_zero_depth = int(zero_depth_mask.sum())
+    from cellquorum.backends.scclr_backend import PFLOG_HELPER, ScclrBackend
 
-    # Build warnings.
-    warnings = []
-    if n_zero_depth > 0:
-        warnings.append(
-            f"Found {n_zero_depth} zero-depth cells. "
-            "These will produce all-zero centered rows under the pseudocount transform."
+    # Require an available scclr backend — fail loud, no silent fallback.
+    if backend is None or not isinstance(backend, ScclrBackend):
+        raise PreprocessingNormalizationError(
+            "The 'cellquorum_pf_log1p_pf_v1' (PFlog1pPF) recipe requires the scclr backend. "
+            "Create the isolated env, e.g. "
+            "`micromamba create -n scclr python=3.13 rust maturin pip` then "
+            "`micromamba run -n scclr pip install -e /path/to/scclr`."
+        )
+    status = backend.status()
+    if not status.available:
+        raise PreprocessingNormalizationError(
+            "The scclr backend is unavailable "
+            f"(missing: {', '.join(status.missing) or 'unknown'}). "
+            "PFlog1pPF normalization cannot run without the isolated scclr environment."
         )
 
-    # Warn about densification for sparse input.
-    densified_sparse_input = False
-    if is_sparse:
-        warnings.append(
-            "CLR-like transformation densifies sparse matrices because centering produces "
-            "mathematically dense output."
+    # Resolve the scratch directory for backend file exchange.
+    scratch = Path(scratch_dir) if scratch_dir is not None else Path(tempfile.gettempdir())
+    scratch.mkdir(parents=True, exist_ok=True)
+
+    # scclr expects a CSR counts matrix.
+    counts = matrix.tocsr() if sp.issparse(matrix) else sp.csr_matrix(np.asarray(matrix))
+
+    target = str(getattr(config, "scclr_target", "auto"))
+
+    with tempfile.TemporaryDirectory(dir=scratch) as tmp:
+        tmp_path = Path(tmp)
+        counts_path = tmp_path / "counts.npz"
+        matrix_out = tmp_path / "pflog.npz"
+        meta_out = tmp_path / "meta.json"
+        sp.save_npz(counts_path, counts)
+
+        result = backend.run_helper(
+            PFLOG_HELPER,
+            [
+                "normalize",
+                str(counts_path),
+                str(matrix_out),
+                str(meta_out),
+                "--target",
+                target,
+            ],
         )
-        densified_sparse_input = True
+        if result.returncode != 0 or not matrix_out.is_file():
+            raise PreprocessingNormalizationError(
+                "scclr PFlog1pPF normalization failed: "
+                f"{result.stderr.strip()[:500] or 'no stderr'}"
+            )
 
-    # Avoid division by zero.
-    safe_cell_totals = np.where(cell_totals > 0, cell_totals, 1.0)
+        normalized = sp.load_npz(matrix_out)
+        meta = json.loads(meta_out.read_text())
 
-    # GPU path: run the same shifted-CLR math on cupy arrays.
-    if use_gpu:
-        try:
-            import cupy as cp
+    row_center = np.asarray(meta.get("row_center", []), dtype=float)
 
-            # Densify sparse matrix for CLR-like computation.
-            dense = matrix.toarray() if is_sparse else np.asarray(matrix)
-
-            # Transfer to GPU.
-            d = cp.asarray(dense, dtype=cp.float64)
-            totals = cp.asarray(safe_cell_totals, dtype=cp.float64)
-
-            # Compute proportional fractions u.
-            u = d / totals[:, None]
-
-            # Add pseudocount and apply log.
-            u_plus = cp.log(u + pseudocount)
-
-            # Compute per-cell mean of log(u + pseudocount).
-            per_cell_mean = u_plus.mean(axis=1)
-
-            # Center by subtracting per-cell mean.
-            centered = u_plus - per_cell_mean[:, None]
-
-            # Transfer back to CPU.
-            output = cp.asnumpy(centered)
-
-            # Build diagnostics.
-            diagnostics = {
-                "n_zero_depth_cells": n_zero_depth,
-                "pseudocount": pseudocount,
-                "densified_sparse_input": densified_sparse_input,
-                "output_is_dense": True,
-                "compute": "gpu",
-            }
-
-            # Return normalized matrix, diagnostics, and warnings.
-            return output, diagnostics, warnings
-
-        except Exception:
-            # Fall through to CPU implementation on any GPU error.
-            pass
-
-    # CPU path: original implementation unchanged.
-    # Densify sparse matrix for CLR-like computation.
-    working_matrix = matrix.toarray() if is_sparse else matrix
-
-    # Compute proportional fractions u.
-    u = working_matrix / safe_cell_totals[:, np.newaxis]
-
-    # Add pseudocount and apply log.
-    u_plus = np.log(u + pseudocount)
-
-    # Compute per-cell mean of log(u + pseudocount).
-    per_cell_mean = u_plus.mean(axis=1)
-
-    # Center by subtracting per-cell mean.
-    output = u_plus - per_cell_mean[:, np.newaxis]
-
-    # Build diagnostics.
-    diagnostics = {
-        "n_zero_depth_cells": n_zero_depth,
-        "pseudocount": pseudocount,
-        "densified_sparse_input": densified_sparse_input,
-        "output_is_dense": True,
-        "compute": "cpu",
+    diagnostics: dict[str, object] = {
+        "recipe_impl": "scclr",
+        "scclr_target": target,
+        "scclr_k": meta.get("k"),
+        "scclr_alpha": meta.get("alpha"),
+        "scclr_row_center": row_center,
+        "output_is_sparse": True,
     }
-
-    # Return normalized matrix, diagnostics, and warnings.
-    return output, diagnostics, warnings
+    return normalized, diagnostics, []
 
 
 def write_normalized_layer(
@@ -737,7 +755,7 @@ __all__ = [
     "apply_recipe_log1p_cp10k_v1",
     "apply_recipe_log1p_pf_v1",
     "apply_recipe_none",
-    "apply_recipe_pf_log1p_pf_v1",
+    "run_scclr_pflog",
     "apply_recipe_pf_v1",
     "build_normalization_diagnostics",
     "get_input_matrix",
