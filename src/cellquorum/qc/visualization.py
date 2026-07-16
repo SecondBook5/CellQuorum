@@ -658,24 +658,41 @@ def _plot_qc_violin(
             plot_df = pd.DataFrame({metric: metric_values, "group": group_values})
             # Get group palette.
             unique_groups = [str(g) for g in plot_df["group"].unique()]
-            palette = get_group_palette(unique_groups)
-            # Draw grouped violin (use hue to assign palette correctly).
-            sns.violinplot(
-                data=plot_df,
-                x="group",
-                y=metric,
-                hue="group",
-                palette=palette,
-                ax=ax,
-                inner="box",
-                legend=False,
-            )
-            ax.set_xlabel(group_key)
+            if len(unique_groups) > 30:
+                # A high-cardinality grouping column can create absurdly large
+                # rendered figures. Fall back to a single distribution rather
+                # than failing the QC plot set.
+                plot_df = pd.DataFrame(
+                    {metric: metric_values, "group": ["All"] * len(metric_values)}
+                )
+                sns.violinplot(
+                    data=plot_df,
+                    x="group",
+                    y=metric,
+                    color=CELLQUORUM_BLUE,
+                    ax=ax,
+                    inner="box",
+                )
+                ax.set_xlabel("")
+            else:
+                palette = get_group_palette(unique_groups)
+                # Draw grouped violin (use hue to assign palette correctly).
+                sns.violinplot(
+                    data=plot_df,
+                    x="group",
+                    y=metric,
+                    hue="group",
+                    palette=palette,
+                    ax=ax,
+                    inner="box",
+                    legend=False,
+                )
+                ax.set_xlabel(group_key)
 
             # Publication touch: annotate a two-group comparison with a Mann-Whitney
             # p-value (matches the lekc qc_by_condition_publication style). Only
-            # drawn for exactly two groups; skipped silently if the test can't be
-            # computed.
+            # drawn for exactly two plotted groups; skipped silently if the test
+            # can't be computed.
             if len(unique_groups) == 2:
                 try:
                     from scipy.stats import mannwhitneyu

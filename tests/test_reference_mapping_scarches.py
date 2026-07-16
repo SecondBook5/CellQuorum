@@ -7,11 +7,17 @@ from pathlib import Path
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import pytest
 
 from cellquorum.contracts import CellQuorumContractError, set_layer_tag
 from cellquorum.methods.base import MethodSkip
-from cellquorum.reference_mapping.scarches import ScArchesMethod
+from cellquorum.reference_mapping.scarches import (
+    ScArchesMethod,
+    _load_seed_checkpoint,
+    _save_seed_checkpoint,
+    _scvi_gpu_available,
+)
 
 
 def _synth(n: int, seed: int, labels: bool = True) -> ad.AnnData:
@@ -83,6 +89,9 @@ def test_scarches_transfers_labels_and_uncertainty(tmp_path: Path) -> None:
     assert "ref_state_knn_entropy" in obs
     assert "ref_state_knn_agreement" in obs
     assert "X_scANVI" in res.adata.obsm
+    assert "ref_state_probabilities" in res.adata.obsm
+    assert res.adata.obsm["ref_state_probabilities"].shape[0] == res.adata.n_obs
+    assert res.adata.uns["reference_mapping"]["probability_obsm"] == "ref_state_probabilities"
     assert "knn_accuracy" in res.metrics
     # CRITICAL: returned adata must preserve full gene space (not HVG subset).
     assert res.adata.n_vars == query.n_vars
@@ -94,6 +103,12 @@ def test_scarches_skips_when_atlas_missing(tmp_path: Path) -> None:
     res = ScArchesMethod().run(query, _cfg(tmp_path / "nope.h5ad"), context=_Ctx(tmp_path))
     assert isinstance(res, MethodSkip)
     assert "atlas" in res.reason.lower() or "missing" in res.reason.lower()
+
+
+def test_scvi_gpu_probe_returns_bool() -> None:
+    """The scVI accelerator probe should always return a boolean."""
+
+    assert isinstance(_scvi_gpu_available(), bool)
 
 
 def test_scarches_requires_counts_layer(tmp_path: Path) -> None:
@@ -144,3 +159,71 @@ def test_scarches_skips_on_too_few_atlas_cells(tmp_path: Path) -> None:
     assert isinstance(res, MethodSkip)
     assert "filtered atlas" in res.reason.lower()
     assert "knn_k" in res.reason.lower()
+
+
+def test_seed_checkpoint_roundtrip_and_stale_rejection(tmp_path: Path) -> None:
+    """Per-seed checkpoints should roundtrip and reject incompatible metadata."""
+
+    meta = {
+        "version": 1,
+        "atlas_h5ad": "/atlas.h5ad",
+        "label_key": "cell_type",
+        "counts_layer": "counts",
+        "key_added": "ref_state",
+        "n_query_cells": 3,
+        "n_ref_cells": 4,
+        "n_hvg": 5,
+        "n_shared": 6,
+        "knn_k": 2,
+        "n_latent": 2,
+        "query_obs_digest": "query",
+        "atlas_obs_digest": "atlas",
+        "hvg_digest": "hvg",
+    }
+    prediction = {
+        "hard": np.array(["A", "B", "A"]),
+        "soft": pd.DataFrame({"A": [0.8, 0.2, 0.7], "B": [0.2, 0.8, 0.3]}),
+        "knn_entropy": np.array([0.1, 0.2, 0.3]),
+        "knn_agreement": np.array([1.0, 0.5, 1.0]),
+    }
+    latent = {
+        "query": np.ones((3, 2)),
+        "ref": np.ones((4, 2)),
+    }
+    loss_history = {"scvi": {"train_loss": [1.0]}, "scanvi": {}, "query_surgery": {}}
+
+    _save_seed_checkpoint(
+        objects_path=tmp_path,
+        key_added="ref_state",
+        seed=7,
+        meta=meta,
+        prediction=prediction,
+        latent=latent,
+        loss_history=loss_history,
+    )
+
+    loaded = _load_seed_checkpoint(
+        objects_path=tmp_path,
+        key_added="ref_state",
+        seed=7,
+        expected_meta=meta,
+    )
+    assert loaded is not None
+    np.testing.assert_array_equal(loaded["prediction"]["hard"], prediction["hard"])
+    np.testing.assert_allclose(
+        loaded["prediction"]["soft"].to_numpy(),
+        prediction["soft"].to_numpy(),
+    )
+    np.testing.assert_allclose(loaded["latent"]["query"], latent["query"])
+    assert loaded["loss_history"] == loss_history
+
+    stale_meta = {**meta, "n_query_cells": 4}
+    assert (
+        _load_seed_checkpoint(
+            objects_path=tmp_path,
+            key_added="ref_state",
+            seed=7,
+            expected_meta=stale_meta,
+        )
+        is None
+    )

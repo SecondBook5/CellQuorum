@@ -1009,6 +1009,10 @@ class QCOutputConfig(StrictBaseModel):
         write_h5ad: Whether to write a QC AnnData object.
         write_figures: Whether to write QC figures.
         figure_format: File format used for QC figures.
+        publication_figures: Whether to also write publication-style QC panels
+            (mito/ribo/hb boxes, doublet ECDF, scree, MAD panel, etc.). Enabled
+            by default per the QC output contract; set False for fast/no-frills
+            runs that only need the standard audit plots.
     """
 
     # Store whether QC metric tables should be written.
@@ -1031,6 +1035,9 @@ class QCOutputConfig(StrictBaseModel):
 
     # Store the QC figure format.
     figure_format: QCFigureFormat = "png"
+
+    # Store whether publication-style QC panels are also written.
+    publication_figures: bool = True
 
     # Store the QC figure DPI resolution.
     figure_dpi: int = 300

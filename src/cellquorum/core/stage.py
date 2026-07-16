@@ -94,6 +94,104 @@ class StageResult:
     # Store JSON-serializable structured metrics for summaries and reports.
     metrics: dict[str, object] = field(default_factory=dict)
 
+    # Store the stage-level lifecycle status returned by the stage itself.
+    status: StageStatus = "success"
+
+    # Store the explicit skip reason when status is skipped.
+    skip_reason: str | None = None
+
+    # Store the method implementation version, when known.
+    method_version: str | None = None
+
+    # Store the backend used by the stage, when known.
+    backend: str | None = None
+
+    # Store the execution device used by the stage, when known.
+    device: str | None = None
+
+    # Store a fingerprint of the inputs consumed by the stage, when known.
+    input_fingerprint: str | None = None
+
+    # Store a fingerprint of the outputs produced by the stage, when known.
+    output_fingerprint: str | None = None
+
+    # Store an optional checkpoint path for resumable execution.
+    checkpoint_path: Path | None = None
+
+    def __post_init__(self) -> None:
+        """
+        Backfill explicit lifecycle fields from legacy skip metrics.
+
+        Older stages in this repository report skips as
+        ``metrics["skipped"] = True``. Keep those stages working while making the
+        canonical status available on ``StageResult`` itself.
+        """
+
+        # Keep old MethodDispatchStage-style skips compatible with the new contract.
+        if self.status == "success" and self.metrics.get("skipped") is True:
+            self.status = "skipped"
+            reason = self.metrics.get("reason")
+            self.skip_reason = str(reason) if reason is not None else "skipped"
+
+    @classmethod
+    def skipped(
+        cls,
+        *,
+        adata: ad.AnnData,
+        reason: str,
+        artifacts: list[StageArtifact] | None = None,
+        notes: list[str] | None = None,
+        warnings: list[str] | None = None,
+        metrics: dict[str, object] | None = None,
+        method_version: str | None = None,
+        backend: str | None = None,
+        device: str | None = None,
+        input_fingerprint: str | None = None,
+        output_fingerprint: str | None = None,
+        checkpoint_path: Path | None = None,
+    ) -> StageResult:
+        """
+        Build an explicit skipped stage result.
+
+        Args:
+            adata: Unchanged AnnData object to carry forward if needed.
+            reason: Human-readable skip reason.
+            artifacts: Optional artifacts emitted before the skip.
+            notes: Optional notes emitted during the skip decision.
+            warnings: Optional warnings emitted during the skip decision.
+            metrics: Optional structured skip metrics.
+            method_version: Optional method implementation version.
+            backend: Optional backend label.
+            device: Optional device label.
+            input_fingerprint: Optional consumed-input fingerprint.
+            output_fingerprint: Optional produced-output fingerprint.
+            checkpoint_path: Optional checkpoint path.
+
+        Returns:
+            StageResult with status ``skipped``.
+        """
+
+        # Preserve the legacy metrics signal for old tests and reports.
+        resolved_metrics = {} if metrics is None else dict(metrics)
+        resolved_metrics.setdefault("skipped", True)
+        resolved_metrics.setdefault("reason", reason)
+
+        return cls(
+            adata=adata,
+            artifacts=[] if artifacts is None else list(artifacts),
+            notes=[] if notes is None else list(notes),
+            warnings=[] if warnings is None else list(warnings),
+            metrics=resolved_metrics,
+            status="skipped",
+            skip_reason=reason,
+            method_version=method_version,
+            backend=backend,
+            device=device,
+            input_fingerprint=input_fingerprint,
+            output_fingerprint=output_fingerprint,
+            checkpoint_path=checkpoint_path,
+        )
+
     def to_summary_dict(self) -> dict[str, object]:
         """
         Convert the stage result into a lightweight summary dictionary.
@@ -108,6 +206,14 @@ class StageResult:
 
         # Return a JSON-friendly result summary.
         return {
+            "status": self.status,
+            "skip_reason": self.skip_reason,
+            "method_version": self.method_version,
+            "backend": self.backend,
+            "device": self.device,
+            "input_fingerprint": self.input_fingerprint,
+            "output_fingerprint": self.output_fingerprint,
+            "checkpoint_path": None if self.checkpoint_path is None else str(self.checkpoint_path),
             "artifacts": [artifact.to_dict() for artifact in self.artifacts],
             "notes": list(self.notes),
             "warnings": list(self.warnings),
@@ -273,6 +379,21 @@ class StageExecutionRecord:
     # Store the backend used by the stage, when applicable.
     backend_used: str | None = None
 
+    # Store the method implementation version, when reported by the stage.
+    method_version: str | None = None
+
+    # Store the execution device used by the stage, when reported by the stage.
+    device: str | None = None
+
+    # Store a fingerprint of the stage inputs, when reported by the stage.
+    input_fingerprint: str | None = None
+
+    # Store a fingerprint of the stage outputs, when reported by the stage.
+    output_fingerprint: str | None = None
+
+    # Store an optional checkpoint path for resumable execution.
+    checkpoint_path: Path | None = None
+
     # Store artifacts consumed by the stage.
     input_artifacts: list[StageArtifact] = field(default_factory=list)
 
@@ -327,7 +448,12 @@ class StageExecutionRecord:
             started_at_utc=_ensure_utc_datetime(started_at_utc),
             ended_at_utc=_ensure_utc_datetime(ended_at_utc),
             duration_seconds=_duration_seconds(started_at_utc, ended_at_utc),
-            backend_used=backend_used,
+            backend_used=result.backend or backend_used,
+            method_version=result.method_version,
+            device=result.device,
+            input_fingerprint=result.input_fingerprint,
+            output_fingerprint=result.output_fingerprint,
+            checkpoint_path=result.checkpoint_path,
             input_artifacts=[] if input_artifacts is None else list(input_artifacts),
             output_artifacts=list(result.artifacts),
             notes=list(result.notes),
@@ -350,6 +476,11 @@ class StageExecutionRecord:
         details: dict[str, object] | None = None,
         notes: list[str] | None = None,
         warnings: list[str] | None = None,
+        method_version: str | None = None,
+        device: str | None = None,
+        input_fingerprint: str | None = None,
+        output_fingerprint: str | None = None,
+        checkpoint_path: Path | None = None,
     ) -> StageExecutionRecord:
         """
         Build a skipped stage execution record.
@@ -390,6 +521,11 @@ class StageExecutionRecord:
             ended_at_utc=resolved_end,
             duration_seconds=_duration_seconds(resolved_start, resolved_end),
             backend_used=backend_used,
+            method_version=method_version,
+            device=device,
+            input_fingerprint=input_fingerprint,
+            output_fingerprint=output_fingerprint,
+            checkpoint_path=checkpoint_path,
             input_artifacts=[] if input_artifacts is None else list(input_artifacts),
             output_artifacts=[],
             notes=[] if notes is None else list(notes),
@@ -473,6 +609,11 @@ class StageExecutionRecord:
             "ended_at_utc": self.ended_at_utc.isoformat(),
             "duration_seconds": self.duration_seconds,
             "backend_used": self.backend_used,
+            "method_version": self.method_version,
+            "device": self.device,
+            "input_fingerprint": self.input_fingerprint,
+            "output_fingerprint": self.output_fingerprint,
+            "checkpoint_path": None if self.checkpoint_path is None else str(self.checkpoint_path),
             "input_artifacts": [artifact.to_dict() for artifact in self.input_artifacts],
             "output_artifacts": [artifact.to_dict() for artifact in self.output_artifacts],
             "notes": list(self.notes),

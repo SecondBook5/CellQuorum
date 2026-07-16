@@ -42,7 +42,9 @@ from cellquorum.qc.decisions import QCDecisionResult
 from cellquorum.qc.stage import (
     QCStage,
     QCStageError,
+    add_metric_columns_to_axis,
     annotate_adata_with_qc_decisions,
+    annotate_adata_with_qc_metrics,
     build_disabled_qc_stage_result,
     build_qc_output_adata,
     build_qc_stage_summary_extra,
@@ -856,3 +858,65 @@ def test_qc_stage_run_rejects_missing_paths() -> None:
     # Confirm missing paths fail clearly.
     with pytest.raises(QCStageError, match="context.paths"):
         stage.run(context)
+
+
+def test_add_metric_columns_to_axis_preserves_existing_columns() -> None:
+    """
+    Verify metric annotation never overwrites a pre-existing obs/var column.
+
+    An upstream tool may have populated ``total_counts`` with authoritative
+    values; QC metric annotation must preserve them and report the conflict.
+    """
+
+    # Build an axis frame that already carries a QC-metric-named column.
+    axis_frame = pd.DataFrame(
+        {"total_counts": [111.0, 222.0], "existing_only": [1, 2]},
+        index=["cell_1", "cell_2"],
+    )
+
+    # Build an aligned metric table that collides on total_counts and adds a new one.
+    metrics = pd.DataFrame(
+        {"total_counts": [5.0, 6.0], "pct_counts_mito": [10.0, 20.0]},
+        index=["cell_1", "cell_2"],
+    )
+
+    conflicts = add_metric_columns_to_axis(axis_frame=axis_frame, metrics=metrics)
+
+    # The pre-existing column is preserved, not overwritten.
+    assert list(axis_frame["total_counts"]) == [111.0, 222.0]
+    # The non-conflicting metric column is added.
+    assert list(axis_frame["pct_counts_mito"]) == [10.0, 20.0]
+    # The conflict is reported for the caller to surface as a warning.
+    assert conflicts == ["total_counts"]
+
+
+def test_annotate_adata_with_qc_metrics_warns_on_preserved_columns() -> None:
+    """
+    Verify annotate_adata_with_qc_metrics returns warnings for preserved columns.
+    """
+
+    from cellquorum.qc.metrics import QCMetricsResult
+
+    # Build an adata whose obs already carries a metric-named column.
+    adata = ad.AnnData(
+        X=np.ones((2, 2)),
+        obs=pd.DataFrame({"total_counts": [111.0, 222.0]}, index=["cell_1", "cell_2"]),
+        var=pd.DataFrame(index=["gene_1", "gene_2"]),
+    )
+
+    metrics_result = QCMetricsResult(
+        cell_metrics=pd.DataFrame(
+            {"total_counts": [5.0, 6.0], "pct_counts_mito": [10.0, 20.0]},
+            index=["cell_1", "cell_2"],
+        ),
+        gene_metrics=pd.DataFrame(index=["gene_1", "gene_2"]),
+        feature_masks=pd.DataFrame(index=["gene_1", "gene_2"]),
+        summary={},
+    )
+
+    warnings = annotate_adata_with_qc_metrics(adata=adata, metrics_result=metrics_result)
+
+    # Pre-existing obs values preserved; new metric added; conflict warned.
+    assert list(adata.obs["total_counts"]) == [111.0, 222.0]
+    assert list(adata.obs["pct_counts_mito"]) == [10.0, 20.0]
+    assert any("total_counts" in w for w in warnings)

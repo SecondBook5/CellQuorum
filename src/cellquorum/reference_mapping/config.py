@@ -98,5 +98,8 @@ class ReferenceMappingConfig(StrictBaseModel):
     # Whether to write loss curves to artifacts.
     write_loss_curves: bool = True
 
+    # Whether completed per-seed ScArches checkpoints should be reused on rerun.
+    resume: bool = True
+
 
 __all__ = ["ReferenceMappingConfig"]

@@ -413,6 +413,13 @@ already reserves.
 
 ## Planned analysis modules
 
+The full scientific and engineering plan is preserved in
+[`docs/SCIENTIFIC_ENGINEERING_PLAN.md`](docs/SCIENTIFIC_ENGINEERING_PLAN.md).
+The active implementation roadmap is tracked in
+[`docs/ROADMAP.md`](docs/ROADMAP.md), which records current working
+capabilities, the production QC output contract, highest-priority engineering
+work, and the scientific module backlog.
+
 CellQuorum is being built toward advanced scRNA-seq analysis layers, including:
 
 | Layer | Examples |

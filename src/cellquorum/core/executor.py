@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 # Import UTC datetime for stage lifecycle timing.
 from datetime import UTC, datetime
 
+# Import adjudication stage.
+from cellquorum.adjudication.stage import AdjudicationStage
+
 # Import ambient correction stage.
 from cellquorum.ambient_correction.stage import AmbientCorrectionStage
 
@@ -25,6 +28,9 @@ from cellquorum.clustering.stage import ClusteringStage
 
 # Import pipeline context.
 from cellquorum.core.context import PipelineContext
+
+# Import deterministic stage input fingerprinting.
+from cellquorum.core.fingerprint import compute_input_fingerprint
 
 # Import pipeline planning objects.
 from cellquorum.core.planner import PipelinePlan, PlannedStage
@@ -48,6 +54,9 @@ from cellquorum.integration.stage import IntegrationStage
 
 # Import integration-benchmark evaluation stage.
 from cellquorum.integration_benchmark.stage import IntegrationBenchmarkStage
+
+# Import population/state identity evidence stage.
+from cellquorum.population_identity.stage import PopulationIdentityStage
 
 # Import the preprocessing stage.
 from cellquorum.preprocessing.stage import PreprocessingStage
@@ -228,7 +237,9 @@ def build_default_stage_registry() -> StageRegistry:
             "integration": IntegrationStage(),
             "annotation": AnnotationStage(),
             "annotation_diagnostics": AnnotationDiagnosticsStage(),
+            "adjudication": AdjudicationStage(),
             "integration_benchmark": IntegrationBenchmarkStage(),
+            "population_identity": PopulationIdentityStage(),
             "reference_mapping": ReferenceMappingStage(),
             "subclustering": SubclusteringStage(),
         }
@@ -405,6 +416,52 @@ class PipelineExecutor:
                 ],
             )
 
+        # Compute a deterministic input fingerprint from the stage config and
+        # the input AnnData signature, so completed stages can be compared on
+        # rerun. Fingerprinting must never break execution, so any failure here
+        # degrades to "no fingerprint" rather than aborting the stage.
+        input_fingerprint: str | None = None
+        try:
+            from cellquorum.methods.context_access import resolve_stage_config
+
+            input_fingerprint = compute_input_fingerprint(
+                stage_name=planned_stage.name,
+                stage_config=resolve_stage_config(context, planned_stage.name),
+                adata=getattr(context, "adata", None),
+                random_seed=getattr(context, "random_seed", None),
+            )
+        except Exception:  # pragma: no cover - fingerprinting is best-effort
+            input_fingerprint = None
+
+        # Opt-in resume: skip a side-effect-only stage whose prior completion
+        # marker matches the current input fingerprint and whose recorded
+        # artifacts still exist. Resume must never break a run, so any failure
+        # here degrades to normal execution.
+        if _is_resume_enabled(context):
+            try:
+                from cellquorum.core.resume import decide_stage_resume
+
+                decision = decide_stage_resume(
+                    stage_name=planned_stage.name,
+                    provenance_dir=context.paths.provenance,
+                    input_fingerprint=input_fingerprint,
+                )
+            except Exception:  # pragma: no cover - resume is best-effort
+                decision = None
+
+            if decision is not None and decision.resume:
+                ended_at = datetime.now(UTC)
+                return None, StageExecutionRecord.skipped(
+                    stage_name=planned_stage.name,
+                    reason=decision.reason,
+                    started_at_utc=started_at,
+                    ended_at_utc=ended_at,
+                    backend_used=None,
+                    details={"resumed": True},
+                    notes=[f"Resumed: {decision.reason}"],
+                    input_fingerprint=input_fingerprint,
+                )
+
         # Execute the registered stage.
         try:
             stage_result = stage.run(context)
@@ -423,19 +480,30 @@ class PipelineExecutor:
         # Mark successful execution end time.
         ended_at = datetime.now(UTC)
 
-        # Detect skipped stages: MethodDispatchStage.run returns a StageResult
-        # with metrics["skipped"]=True when a stage is disabled or a method
-        # returns MethodSkip. Build a skipped record instead of success.
-        if stage_result.metrics.get("skipped") is True:
-            skip_reason = stage_result.metrics.get("reason", "skipped by method/config")
+        # Stamp the computed input fingerprint onto the result when the stage
+        # did not set one itself. Stages may override with a richer fingerprint.
+        if stage_result.input_fingerprint is None and input_fingerprint is not None:
+            stage_result.input_fingerprint = input_fingerprint
+
+        # Detect skipped stages from the explicit StageResult status. Older
+        # stages that still emit metrics["skipped"] are normalized by
+        # StageResult.__post_init__.
+        if stage_result.status == "skipped":
+            skip_reason = stage_result.skip_reason or "skipped by method/config"
             stage_record = StageExecutionRecord.skipped(
                 stage_name=planned_stage.name,
                 reason=skip_reason,
                 started_at_utc=started_at,
                 ended_at_utc=ended_at,
-                backend_used=self.backend_used,
+                backend_used=stage_result.backend or self.backend_used,
                 warnings=stage_result.warnings if stage_result.warnings else None,
                 notes=stage_result.notes if stage_result.notes else None,
+                details=dict(stage_result.metrics),
+                method_version=stage_result.method_version,
+                device=stage_result.device,
+                input_fingerprint=stage_result.input_fingerprint,
+                output_fingerprint=stage_result.output_fingerprint,
+                checkpoint_path=stage_result.checkpoint_path,
             )
             # Return (None, record) for skipped stages so executor.run skips
             # storing the result + propagating the unchanged adata.
@@ -452,6 +520,14 @@ class PipelineExecutor:
 
         # Return the successful result and record.
         return stage_result, stage_record
+
+
+def _is_resume_enabled(context: PipelineContext) -> bool:
+    """Return whether opt-in stage resume is enabled for this run."""
+
+    config = getattr(context, "config", None)
+    run = getattr(config, "run", None)
+    return bool(getattr(run, "resume", False))
 
 
 def validate_executor_inputs(*, context: PipelineContext, plan: PipelinePlan) -> None:

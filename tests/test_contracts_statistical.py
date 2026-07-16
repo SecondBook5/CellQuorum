@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import anndata as ad
 import numpy as np
 import pytest
 import scipy.sparse as sp
 
 from cellquorum.contracts.exceptions import CellQuorumContractError
+from cellquorum.contracts.layer_tags import set_layer_tag
 from cellquorum.contracts.statistical import (
     assert_integer_valued,
     assert_log_range,
     assert_non_integer_or_zero,
     assert_non_negative,
+    assert_statistical_input,
 )
 
 
@@ -78,3 +81,36 @@ def test_empty_matrix_passes_all_checks():
     assert_integer_valued(X, layer="test")
     assert_non_integer_or_zero(X, layer="test")
     assert_log_range(X, layer="test")
+
+
+def test_statistical_input_requires_layer_tag():
+    adata = ad.AnnData(X=np.ones((2, 2)))
+    adata.layers["lognorm"] = np.array([[0.0, 0.7], [1.4, 0.0]], dtype=np.float32)
+
+    with pytest.raises(CellQuorumContractError, match="untagged"):
+        assert_statistical_input(adata, layer="lognorm")
+
+
+def test_statistical_input_rejects_imputed_layer():
+    adata = ad.AnnData(X=np.ones((2, 2)))
+    adata.layers["magic"] = np.array([[0.1, 0.7], [1.4, 0.2]], dtype=np.float32)
+    set_layer_tag(adata, "magic", kind="imputed", recipe="magic")
+
+    with pytest.raises(CellQuorumContractError, match="imputed"):
+        assert_statistical_input(adata, layer="magic")
+
+
+def test_statistical_input_accepts_tagged_lognorm_layer():
+    adata = ad.AnnData(X=np.ones((2, 2)))
+    adata.layers["lognorm"] = np.array([[0.0, 0.7], [1.4, 0.0]], dtype=np.float32)
+    set_layer_tag(adata, "lognorm", kind="lognorm", recipe="log1p_cp10k")
+
+    assert_statistical_input(adata, layer="lognorm")
+
+
+def test_statistical_input_accepts_tagged_counts_layer():
+    adata = ad.AnnData(X=np.ones((2, 2)))
+    adata.layers["counts"] = np.array([[0, 3], [5, 0]], dtype=np.float32)
+    set_layer_tag(adata, "counts", kind="counts")
+
+    assert_statistical_input(adata, layer="counts")

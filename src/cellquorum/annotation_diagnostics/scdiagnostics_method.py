@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import anndata as ad
+import numpy as np
+import pandas as pd
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumBackendError
@@ -35,13 +37,33 @@ class ScdiagnosticsMethod(AnalysisMethod):
     backend = "rscript"
 
     def input_contract(self, config: dict) -> DataContract:
-        """Return the required input contract (lognorm layer + X_pca + cell_type)."""
+        """
+        Return the required input contract.
+
+        Two modes:
+        - Reference mode (an R reference object is used): require the
+          log-normalized expression layer, the label column, and ``X_pca``.
+        - Query-only entropy mode (no reference, soft probabilities present):
+          the entropy is computed directly from ``obsm[soft_scores_obsm]``, so
+          only that matrix is required — no expression layer or ``X_pca``. This
+          keeps the R-free fast path reachable through the standard
+          ``AnalysisMethod.run`` contract validation.
+        """
         cell_type_col = config.get("cell_type_col", "cell_type")
+        expression_layer = config.get("expression_layer", "lognorm")
+        reference_h5ad = config.get("reference_h5ad")
+        soft_scores_obsm = config.get("soft_scores_obsm")
+
+        # Query-only entropy mode: only the soft-probability matrix is needed.
+        if not reference_h5ad and soft_scores_obsm:
+            return DataContract(required_obsm=[soft_scores_obsm])
+
+        # Reference mode: full lognorm + label + embedding contract.
         return DataContract(
-            required_layers=["lognorm"],
+            required_layers=[expression_layer],
             required_obs=[cell_type_col],
             required_obsm=["X_pca"],
-            expression_layer="lognorm",
+            expression_layer=expression_layer,
             expected_kind="lognorm",
         )
 
@@ -53,6 +75,30 @@ class ScdiagnosticsMethod(AnalysisMethod):
     ) -> StageResult | MethodSkip:
         """Execute scDiagnostics via R; return read-only diagnostics."""
         import shutil
+
+        # Resolve config fields.
+        cell_type_col = config.get("cell_type_col", "cell_type")
+        expression_layer = config.get("expression_layer", "lognorm")
+        reference_h5ad = config.get("reference_h5ad")
+        soft_scores_obsm = config.get("soft_scores_obsm")
+        pc_subset = config.get("pc_subset", [1, 2, 3, 4, 5])
+        n_tree = config.get("n_tree", 500)
+        n_neighbor = config.get("n_neighbor", 15)
+        timeout = config.get("timeout_seconds", 1800)
+
+        # Resolve scratch directory for temp files.
+        scratch = Path(getattr(context.paths, "scratch", "."))
+        scratch.mkdir(parents=True, exist_ok=True)
+
+        # Query-only entropy can be computed directly from soft probabilities.
+        # This avoids requiring an R reference object when ScArches already
+        # produced calibrated per-label probabilities.
+        if not reference_h5ad and soft_scores_obsm and soft_scores_obsm in adata.obsm:
+            return self._run_probability_entropy_only(
+                adata=adata,
+                soft_scores_obsm=soft_scores_obsm,
+                scratch=scratch,
+            )
 
         # Check Rscript availability BEFORE backend registry (mirrors SoupX).
         if shutil.which("Rscript") is None:
@@ -77,22 +123,9 @@ class ScdiagnosticsMethod(AnalysisMethod):
                 details={"method": self.name, "r_package": r_package},
             )
 
-        # Resolve config fields.
-        cell_type_col = config.get("cell_type_col", "cell_type")
-        reference_h5ad = config.get("reference_h5ad")
-        soft_scores_obsm = config.get("soft_scores_obsm")
-        pc_subset = config.get("pc_subset", [1, 2, 3, 4, 5])
-        n_tree = config.get("n_tree", 500)
-        n_neighbor = config.get("n_neighbor", 15)
-        timeout = config.get("timeout_seconds", 1800)
-
-        # Resolve scratch directory for temp files.
-        scratch = Path(getattr(context.paths, "scratch", "."))
-        scratch.mkdir(parents=True, exist_ok=True)
-
         # Write query h5ad (lognorm layer + X_pca + cell_type).
         query_h5ad = scratch / "scdiag_query.h5ad"
-        self._write_query_h5ad(adata, query_h5ad, cell_type_col)
+        self._write_query_h5ad(adata, query_h5ad, cell_type_col, expression_layer)
 
         # Optional: write soft scores if provided.
         soft_scores_path = None
@@ -207,15 +240,69 @@ class ScdiagnosticsMethod(AnalysisMethod):
         except Exception:
             return None
 
+    def _run_probability_entropy_only(
+        self,
+        *,
+        adata: ad.AnnData,
+        soft_scores_obsm: str,
+        scratch: Path,
+    ) -> StageResult:
+        """Compute per-cell annotation entropy from an obsm probability matrix."""
+
+        scores = np.asarray(adata.obsm[soft_scores_obsm], dtype=float)
+        if scores.ndim != 2 or scores.shape[0] != adata.n_obs:
+            raise CellQuorumBackendError(
+                f"soft_scores_obsm '{soft_scores_obsm}' must be a 2D matrix with "
+                f"{adata.n_obs} rows."
+            )
+
+        row_sums = scores.sum(axis=1, keepdims=True)
+        probs = np.divide(scores, row_sums, out=np.zeros_like(scores), where=row_sums > 0)
+        safe_probs = np.where(probs > 0, probs, 1.0)
+        entropy_values = -(probs * np.log2(safe_probs)).sum(axis=1)
+
+        result_adata = adata.copy()
+        result_adata.obs["scdiag_entropy"] = entropy_values
+
+        out_csv = scratch / "scdiag_results.csv"
+        pd.DataFrame(
+            {
+                "barcode": result_adata.obs_names,
+                "scdiag_entropy": entropy_values,
+            }
+        ).to_csv(out_csv, index=False)
+
+        return StageResult(
+            adata=result_adata,
+            artifacts=[
+                StageArtifact(
+                    name="scdiagnostics_results",
+                    path=out_csv,
+                    kind="csv",
+                    description="Per-cell annotation entropy from soft label probabilities.",
+                )
+            ],
+            notes=[
+                "Computed scdiag_entropy from soft label probabilities " f"('{soft_scores_obsm}')."
+            ],
+            metrics={
+                "n_diagnostics": 1,
+                "diagnostics_computed": ["scdiag_entropy"],
+                "reference_used": False,
+                "soft_scores_obsm": soft_scores_obsm,
+            },
+        )
+
     def _write_query_h5ad(
         self,
         adata: ad.AnnData,
         path: Path,
         cell_type_col: str,
+        expression_layer: str = "lognorm",
     ) -> None:
-        """Write query AnnData to h5ad (lognorm layer + X_pca + cell_type)."""
+        """Write query AnnData to h5ad (lognorm layer + X_pca + cell label)."""
         # Prepare a minimal h5ad for R consumption.
-        query = ad.AnnData(X=adata.layers["lognorm"].copy())
+        query = ad.AnnData(X=adata.layers[expression_layer].copy())
         query.obs_names = adata.obs_names
         query.var_names = adata.var_names
         query.obs[cell_type_col] = adata.obs[cell_type_col].values

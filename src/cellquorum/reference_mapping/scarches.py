@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import warnings
 from collections import Counter
+from collections.abc import Sequence
+from hashlib import sha256
 from pathlib import Path
 
 import anndata as ad
@@ -16,7 +18,6 @@ from scipy.stats import entropy
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 
-from cellquorum.compute.router import gpu_compute_available
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -80,6 +81,7 @@ class ScArchesMethod(AnalysisMethod):
         key_added = config.get("key_added", "ref_state")
         compute_backend = config.get("compute_backend", "auto")
         write_loss_curves = bool(config.get("write_loss_curves", True))
+        resume = bool(config.get("resume", True))
         compartment_filter = config.get("compartment_filter")
         reference_filters = config.get("reference_filters", [])
         min_label_prob = config.get("min_label_prob")
@@ -118,7 +120,7 @@ class ScArchesMethod(AnalysisMethod):
         atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
 
         # Gene intersection.
-        shared = list(set(atlas.var_names) & set(adata.var_names))
+        shared = sorted(set(atlas.var_names) & set(adata.var_names))
 
         # Guard: must have shared genes.
         if len(shared) == 0:
@@ -156,26 +158,68 @@ class ScArchesMethod(AnalysisMethod):
         atlas_train = atlas_train[:, hvg_list].copy()
         query_train = query_train[:, hvg_list].copy()
 
-        # GPU gate.
+        # GPU gate. scVI uses PyTorch/Lightning, not RAPIDS/CuPy.
         if compute_backend == "cpu":
             use_gpu = False
         elif compute_backend == "gpu":
+            if not _scvi_gpu_available():
+                raise RuntimeError(
+                    "reference_mapping.compute_backend='gpu' was requested, but "
+                    "PyTorch/Lightning does not report a supported CUDA accelerator."
+                )
             use_gpu = True
         else:
-            use_gpu = gpu_compute_available()
+            use_gpu = _scvi_gpu_available()
 
         accelerator = "gpu" if use_gpu else "cpu"
+
+        # Resolve the per-seed checkpoint directory. These checkpoints are
+        # intentionally stored under objects because they are machine-readable
+        # intermediate state, not final results.
+        objects_path = None
+        if hasattr(context.paths, "objects"):
+            objects_path = Path(context.paths.objects)
+            objects_path.mkdir(parents=True, exist_ok=True)
+
+        checkpoint_meta = _build_seed_checkpoint_meta(
+            atlas_path=atlas_path,
+            label_key=label_key,
+            counts_layer=counts_layer,
+            key_added=key_added,
+            query_obs_names=query_train.obs_names,
+            atlas_obs_names=atlas_train.obs_names,
+            hvg_list=hvg_list,
+            n_shared=len(shared),
+            knn_k=knn_k,
+            n_latent=n_latent,
+        )
 
         # Per-seed training.
         seed_predictions = {}
         seed_latents = {}
         seed_loss_history = {}
+        resumed_seeds: list[int] = []
+        trained_seeds: list[int] = []
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
             warnings.filterwarnings("ignore", category=UserWarning)
 
             for seed in seeds:
+                if resume and objects_path is not None:
+                    checkpoint = _load_seed_checkpoint(
+                        objects_path=objects_path,
+                        key_added=key_added,
+                        seed=int(seed),
+                        expected_meta=checkpoint_meta,
+                    )
+                    if checkpoint is not None:
+                        seed_predictions[seed] = checkpoint["prediction"]
+                        seed_latents[seed] = checkpoint["latent"]
+                        seed_loss_history[seed] = checkpoint["loss_history"]
+                        resumed_seeds.append(int(seed))
+                        continue
+
                 scvi.settings.seed = seed
 
                 # Setup scVI on atlas.
@@ -264,6 +308,18 @@ class ScArchesMethod(AnalysisMethod):
                     "scanvi": _serialize_history(scanvi),
                     "query_surgery": _serialize_history(qmodel),
                 }
+                trained_seeds.append(int(seed))
+
+                if objects_path is not None:
+                    _save_seed_checkpoint(
+                        objects_path=objects_path,
+                        key_added=key_added,
+                        seed=int(seed),
+                        meta=checkpoint_meta,
+                        prediction=seed_predictions[seed],
+                        latent=seed_latents[seed],
+                        loss_history=seed_loss_history[seed],
+                    )
 
         # Consensus across seeds.
         n_cells = len(query_train)
@@ -300,6 +356,7 @@ class ScArchesMethod(AnalysisMethod):
         soft_df = seed_predictions[best_seed]["soft"]
         for col in soft_df.columns:
             result_query.obs[f"refprob_{col}"] = soft_df[col].values
+        result_query.obsm[f"{key_added}_probabilities"] = soft_df.to_numpy()
 
         # Latent embedding from best seed.
         result_query.obsm["X_scANVI"] = seed_latents[best_seed]["query"]
@@ -314,6 +371,8 @@ class ScArchesMethod(AnalysisMethod):
             "n_shared": len(shared),
             "ref_states": ref_states,
             "seeds": seeds,
+            "probability_obsm": f"{key_added}_probabilities",
+            "probability_columns": [str(col) for col in soft_df.columns],
             "uncertainty_note": "kNN entropy from k-NN in reference latent space",
         }
 
@@ -340,10 +399,36 @@ class ScArchesMethod(AnalysisMethod):
             "n_ref_cells": int(len(atlas_train)),
             "n_hvg": len(hvg_list),
             "key_added": key_added,
+            "resumed_seeds": resumed_seeds,
+            "trained_seeds": trained_seeds,
+            "resume_enabled": resume,
         }
 
-        # Write artifacts if figures path exists.
+        # Write final reference-mapping artifacts.
         artifacts = []
+        if hasattr(context.paths, "results"):
+            results_path = Path(context.paths.results)
+            if results_path.exists():
+                assignment_cols = [
+                    col
+                    for col in result_query.obs.columns
+                    if col == key_added
+                    or col.startswith(f"{key_added}_")
+                    or col.startswith("refprob_")
+                ]
+                assignments = result_query.obs[assignment_cols].copy()
+                assignments.insert(0, "cell_id", result_query.obs_names)
+                assignments_path = results_path / f"{key_added}_assignments.csv"
+                assignments.to_csv(assignments_path, index=False)
+                artifacts.append(
+                    StageArtifact(
+                        name="reference_mapping_assignments",
+                        path=assignments_path,
+                        kind="csv",
+                        description="Per-cell transferred labels and uncertainty scores.",
+                    )
+                )
+
         if write_loss_curves and hasattr(context.paths, "figures"):
             figures_path = Path(context.paths.figures)
             if figures_path.exists():
@@ -376,18 +461,10 @@ class ScArchesMethod(AnalysisMethod):
                     )
                 )
 
-        # Write loss history JSON to objects dir.
-        if hasattr(context.paths, "objects"):
-            objects_path = Path(context.paths.objects)
-            if objects_path.exists():
-                for s in seeds:
-                    loss_json_path = objects_path / f"{key_added}_seed{s}_loss_history.json"
-                    with open(loss_json_path, "w") as f:
-                        json.dump(seed_loss_history[s], f, indent=2)
-
         notes = [
             f"Mapped {len(result_query)} cells to {len(ref_states)} reference states.",
             f"Multi-seed consensus across {len(seeds)} seeds.",
+            f"Reference mapping seeds trained={trained_seeds}, resumed={resumed_seeds}.",
             f"Median kNN entropy: {metrics['median_knn_entropy']:.3f}",
             f"Median consensus fraction: {metrics['median_consensus_frac']:.3f}",
         ]
@@ -416,6 +493,214 @@ def _serialize_history(model: object) -> dict[str, list[float]]:
             if metric_name in df.columns:
                 hist[metric_name] = df[metric_name].tolist()
     return hist
+
+
+def _build_seed_checkpoint_meta(
+    *,
+    atlas_path: Path,
+    label_key: str,
+    counts_layer: str,
+    key_added: str,
+    query_obs_names: Sequence[str],
+    atlas_obs_names: Sequence[str],
+    hvg_list: Sequence[str],
+    n_shared: int,
+    knn_k: int,
+    n_latent: int,
+) -> dict[str, object]:
+    """Build metadata used to validate per-seed resume checkpoints."""
+
+    return {
+        "version": 1,
+        "atlas_h5ad": str(atlas_path),
+        "label_key": label_key,
+        "counts_layer": counts_layer,
+        "key_added": key_added,
+        "n_query_cells": len(query_obs_names),
+        "n_ref_cells": len(atlas_obs_names),
+        "n_hvg": len(hvg_list),
+        "n_shared": int(n_shared),
+        "knn_k": int(knn_k),
+        "n_latent": int(n_latent),
+        "query_obs_digest": _digest_strings(query_obs_names),
+        "atlas_obs_digest": _digest_strings(atlas_obs_names),
+        "hvg_digest": _digest_strings(hvg_list),
+    }
+
+
+def _digest_strings(values: Sequence[str]) -> str:
+    """Return a stable digest for an ordered string sequence."""
+
+    digest = sha256()
+    for value in values:
+        digest.update(str(value).encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _seed_checkpoint_paths(
+    *,
+    objects_path: Path,
+    key_added: str,
+    seed: int,
+) -> tuple[Path, Path]:
+    """Return the NPZ and JSON paths for one seed checkpoint."""
+
+    stem = f"{key_added}_seed{seed}_checkpoint"
+    return objects_path / f"{stem}.npz", objects_path / f"{stem}.json"
+
+
+def _save_seed_checkpoint(
+    *,
+    objects_path: Path,
+    key_added: str,
+    seed: int,
+    meta: dict[str, object],
+    prediction: dict[str, object],
+    latent: dict[str, np.ndarray],
+    loss_history: dict[str, dict[str, list[float]]],
+) -> None:
+    """Persist one completed seed so reruns can skip retraining it."""
+
+    checkpoint_path, metadata_path = _seed_checkpoint_paths(
+        objects_path=objects_path,
+        key_added=key_added,
+        seed=seed,
+    )
+    soft = prediction["soft"]
+    if not isinstance(soft, pd.DataFrame):
+        raise TypeError("Seed checkpoint prediction['soft'] must be a pandas DataFrame.")
+
+    metadata = {
+        **meta,
+        "seed": int(seed),
+        "soft_columns": [str(col) for col in soft.columns],
+    }
+
+    tmp_checkpoint = checkpoint_path.with_suffix(".npz.tmp")
+    tmp_metadata = metadata_path.with_suffix(".json.tmp")
+
+    with open(tmp_metadata, "w") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+    with open(tmp_checkpoint, "wb") as f:
+        np.savez_compressed(
+            f,
+            hard=np.asarray(prediction["hard"]).astype(str),
+            soft=soft.to_numpy(),
+            knn_entropy=np.asarray(prediction["knn_entropy"], dtype=float),
+            knn_agreement=np.asarray(prediction["knn_agreement"], dtype=float),
+            query_latent=np.asarray(latent["query"], dtype=float),
+            ref_latent=np.asarray(latent["ref"], dtype=float),
+        )
+    tmp_metadata.replace(metadata_path)
+    tmp_checkpoint.replace(checkpoint_path)
+
+    loss_path = objects_path / f"{key_added}_seed{seed}_loss_history.json"
+    tmp_loss_path = loss_path.with_suffix(".json.tmp")
+    with open(tmp_loss_path, "w") as f:
+        json.dump(loss_history, f, indent=2)
+    tmp_loss_path.replace(loss_path)
+
+
+def _load_seed_checkpoint(
+    *,
+    objects_path: Path,
+    key_added: str,
+    seed: int,
+    expected_meta: dict[str, object],
+) -> dict[str, object] | None:
+    """Load a seed checkpoint when it matches the current run inputs."""
+
+    checkpoint_path, metadata_path = _seed_checkpoint_paths(
+        objects_path=objects_path,
+        key_added=key_added,
+        seed=seed,
+    )
+    if not checkpoint_path.exists() or not metadata_path.exists():
+        return None
+
+    try:
+        metadata = json.loads(metadata_path.read_text())
+    except Exception:
+        return None
+
+    expected = {**expected_meta, "seed": int(seed)}
+    for key, value in expected.items():
+        if metadata.get(key) != value:
+            return None
+
+    soft_columns = metadata.get("soft_columns")
+    if not isinstance(soft_columns, list) or not all(isinstance(c, str) for c in soft_columns):
+        return None
+
+    try:
+        with np.load(checkpoint_path, allow_pickle=False) as data:
+            hard = data["hard"].astype(str)
+            soft = pd.DataFrame(data["soft"], columns=soft_columns)
+            knn_entropy = data["knn_entropy"].astype(float)
+            knn_agreement = data["knn_agreement"].astype(float)
+            query_latent = data["query_latent"].astype(float)
+            ref_latent = data["ref_latent"].astype(float)
+    except Exception:
+        return None
+
+    n_query = int(expected_meta["n_query_cells"])
+    n_ref = int(expected_meta["n_ref_cells"])
+    n_latent = int(expected_meta["n_latent"])
+    if hard.shape[0] != n_query:
+        return None
+    if soft.shape[0] != n_query:
+        return None
+    if knn_entropy.shape[0] != n_query or knn_agreement.shape[0] != n_query:
+        return None
+    if query_latent.shape != (n_query, n_latent):
+        return None
+    if ref_latent.shape != (n_ref, n_latent):
+        return None
+
+    loss_path = objects_path / f"{key_added}_seed{seed}_loss_history.json"
+    loss_history: dict[str, dict[str, list[float]]] = {}
+    if loss_path.exists():
+        try:
+            loss_history = json.loads(loss_path.read_text())
+        except Exception:
+            loss_history = {}
+
+    return {
+        "prediction": {
+            "hard": hard,
+            "soft": soft,
+            "knn_entropy": knn_entropy,
+            "knn_agreement": knn_agreement,
+        },
+        "latent": {"query": query_latent, "ref": ref_latent},
+        "loss_history": loss_history,
+    }
+
+
+def _scvi_gpu_available() -> bool:
+    """
+    Return whether scVI can use a CUDA accelerator in this process.
+
+    scVI trains through PyTorch Lightning. This check intentionally does not use
+    the RAPIDS/CuPy router because RAPIDS availability is unrelated to whether
+    scVI can train on CUDA.
+    """
+
+    try:
+        import torch
+
+        if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
+            return False
+    except Exception:
+        return False
+
+    try:
+        from lightning.pytorch.accelerators import CUDAAccelerator
+
+        return bool(CUDAAccelerator.is_available())
+    except Exception:
+        return True
 
 
 __all__ = ["ScArchesMethod"]

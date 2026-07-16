@@ -1,0 +1,122 @@
+project:
+  name: le_kc
+  organism: human
+  species_id: 9606
+
+paths:
+  output_dir: /home/ajbook/projects/cellquorum/runs/kc_production
+
+input:
+  # The SoupX-corrected keratinocyte object (10,012 cells, has a counts layer)
+  h5ad: /mnt/c/Users/ajboo/BookAbraham/le_kc_signaling_hubs/data/processed/internal/cohort_objects/le_kc_keratinocytes_SOUPX.h5ad
+  counts_layer: counts
+
+run:
+  random_seed: 1337
+  verbose: true          # the run experience — banner, config echo, progress
+
+compute:
+  backend: gpu           # production reference mapping should fail fast if CUDA is unavailable
+
+# --- Which stages run ---
+# The KC object is already SoupX-corrected and pre-QC'd, but production runs
+# still emit QC audit artifacts. Generic annotation is skipped because
+# reference_mapping writes the KC-state labels used downstream.
+stages:
+  ambient_correction: false   # already SoupX-corrected
+  qc: true                    # audit QC metrics/figures; do not filter cells
+  preprocessing: true         # create a CellQuorum-tagged normalized layer from counts
+  feature_selection: false
+  dimensionality: true        # PCA on the normalized layer
+  integration: true           # Harmony over batch
+  clustering: true
+  annotation: false           # generic annotation skipped; scArches writes ref_state
+  subclustering: false
+  adjudication: true
+  reference_mapping: true     # ← the scArches KC-state transfer (the point)
+  annotation_diagnostics: true # audit transferred ref_state labels after mapping
+  population_identity: true   # generic identity evidence; uses ref_state when present
+  integration_benchmark: true # ← iLISI/cLISI/etc. on the result
+  state_scoring: false
+  discovery: false
+  composition: false
+  differential_expression: false
+  molecular_inference: false
+  cell_cell_communication: false
+  network_analysis: false
+
+qc:
+  enabled: true
+  mode: report_only           # production audit: write QC tables/plots, no filtering
+  metrics:
+    layer: counts
+  doublets:
+    enabled: false            # input already has predicted_doublet; don't rerun detector here
+  ambient:
+    enabled: false            # input is already SoupX-corrected
+
+# --- Stage params ---
+preprocessing:
+  normalization:
+    output_layer: cellquorum_normalized
+
+dimensionality:
+  enabled: true
+  input_layer: cellquorum_normalized
+  n_pcs: auto
+
+integration:
+  enabled: true
+  method: harmony
+  batch_key: batch             # Set1…Set10
+
+clustering:
+  enabled: true
+  method: leiden
+  use_rep: X_pca_harmony
+
+reference_mapping:
+  enabled: true
+  method: scarches
+  compute_backend: gpu        # do not silently run multi-hour/day CPU ScArches
+  resume: true                # reuse completed per-seed checkpoints on rerun
+  atlas_h5ad: /mnt/e/atopic_dermatitis_singlecell_atlas/data/fiskin_KC_reference.h5ad
+  label_key: celltype_granular          # KC 1..5, cycling, Cornified 1/2
+  atlas_batch_key: study_ID
+  counts_layer: counts
+  reference_filters:
+    - column: disease_status
+      keep: [Healthy, Non-lesional]     # the NORMAL cells, per your note
+  n_top_genes: 3000
+  max_epochs_scvi: 400
+  max_epochs_scanvi: 20
+  max_epochs_query: 100
+  seeds: [0, 1, 2, 3, 4]
+  key_added: ref_state
+
+annotation_diagnostics:
+  enabled: true
+  method: scdiagnostics
+  cell_type_col: ref_state
+  expression_layer: cellquorum_normalized
+  reference_h5ad: null       # raw atlas lacks PCA for scDiagnostics reference mode
+  soft_scores_obsm: ref_state_probabilities
+
+population_identity:
+  enabled: true
+  reference_keys: [ref_state]
+  annotation_keys: [cell_type]
+  cluster_key: leiden
+  sample_key: sample_id
+  donor_key: patient_id
+  condition_key: condition
+  confidence_keys: [ref_state_consensus_frac, ref_state_knn_agreement]
+  entropy_keys: [scdiag_entropy, ref_state_knn_entropy]
+  embedding_keys: [X_umap, X_pca_harmony, X_pca]
+  output_dir: population_identity
+  write_figures: true
+
+integration_benchmark:
+  enabled: true
+  batch_key: batch
+  label_key: ref_state                  # bio-conservation keyed on the transferred state

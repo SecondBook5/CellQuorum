@@ -69,7 +69,7 @@ class HarmonyMethod(AnalysisMethod):
         random_state = int(config.get("random_state", 0))
 
         # The input embedding and its expected corrected shape.
-        embedding = np.asarray(adata.obsm[input_rep])
+        embedding = np.ascontiguousarray(adata.obsm[input_rep])
         expected_shape = embedding.shape
 
         # Run Harmony directly (NOT via scanpy's wrapper). Silence harmonypy's

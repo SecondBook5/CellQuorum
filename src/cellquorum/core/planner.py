@@ -199,8 +199,14 @@ class PipelinePlanner:
             ("clustering", self.config.stages.clustering),
             ("annotation", self.config.stages.annotation),
             ("subclustering", self.config.stages.subclustering),
-            ("annotation_diagnostics", self.config.stages.annotation_diagnostics),
+            ("adjudication", self.config.stages.adjudication),
             ("reference_mapping", self.config.stages.reference_mapping),
+            # Annotation diagnostics must run after reference mapping so
+            # transferred labels such as ref_state can be audited.
+            ("annotation_diagnostics", self.config.stages.annotation_diagnostics),
+            # Population identity is evidence-driven: it uses reference labels
+            # when present, otherwise annotation labels or native clusters.
+            ("population_identity", self.config.stages.population_identity),
             ("integration_benchmark", self.config.stages.integration_benchmark),
             ("state_scoring", self.config.stages.state_scoring),
             ("discovery", self.config.stages.discovery),

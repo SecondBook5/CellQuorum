@@ -1,9 +1,10 @@
 name: cellquorum-gpu
 
 channels:
+  - pytorch
+  - nvidia
   - rapidsai
   - conda-forge
-  - nvidia
   - bioconda
 
 dependencies:
@@ -20,9 +21,9 @@ dependencies:
   - scanpy
 
   # GPU/deep-learning stack.
-  - pytorch
-  - torchvision
-  - torchaudio
+  - pytorch::pytorch
+  - pytorch::torchvision
+  - pytorch::torchaudio
   - pytorch-cuda=12.1
 
   # RAPIDS stack.

@@ -1,0 +1,107 @@
+# Generic, non-KC example config.
+#
+# This demonstrates that the SAME CellQuorum engine runs a different dataset
+# (a generic PBMC-style stimulated-vs-control cohort) purely through config,
+# with no LE/KC-specific literals in code. The structural obs keys are declared
+# once in the central `cohort:` block and every stage resolves from it.
+#
+# Compute is CPU-only and R/GPU-dependent stages are disabled or skip cleanly,
+# so this config is safe to plan/run in any environment.
+
+project:
+  name: generic_pbmc_example
+  organism: human
+  species_id: 9606
+
+input:
+  # No h5ad path here: this file documents the generic shape. Provide an h5ad
+  # with obs columns [sample_id, donor_id, stim, batch] and a `counts` layer.
+  counts_layer: counts
+
+run:
+  random_seed: 7
+  verbose: true
+
+compute:
+  backend: cpu            # portable: never requires CUDA/RAPIDS
+
+# --- Central cohort schema: declare structural keys ONCE ---
+cohort:
+  sample_key: sample_id
+  donor_key: donor_id
+  condition_key: stim         # e.g. "control" vs "stimulated"
+  batch_key: batch
+  condition_levels: [control, stimulated]
+
+# The design block declares the primary comparison for future DE/DA stages.
+design:
+  donor_col: donor_id
+  condition_col: stim
+  case: stimulated
+  control: control
+  paired: false
+
+# --- Which stages run ---
+stages:
+  ambient_correction: false
+  qc: true
+  preprocessing: true
+  feature_selection: true
+  dimensionality: true
+  integration: true          # Harmony over cohort.batch_key
+  clustering: true
+  annotation: false
+  subclustering: false
+  adjudication: true
+  reference_mapping: false   # no atlas in this generic example
+  annotation_diagnostics: false
+  population_identity: true  # falls back to clusters when no reference labels
+  integration_benchmark: false
+  state_scoring: false
+  discovery: false
+  composition: false
+  differential_expression: false
+  molecular_inference: false
+  cell_cell_communication: false
+  network_analysis: false
+
+qc:
+  enabled: true
+  mode: report_only
+  metrics:
+    layer: counts
+  doublets:
+    enabled: false
+  ambient:
+    enabled: false
+
+preprocessing:
+  normalization:
+    output_layer: cellquorum_normalized
+
+dimensionality:
+  enabled: true
+  input_layer: cellquorum_normalized
+  n_pcs: auto
+
+integration:
+  enabled: true
+  method: harmony
+  # batch_key intentionally omitted here: resolved from cohort.batch_key.
+
+clustering:
+  enabled: true
+  method: leiden
+  use_rep: X_pca_harmony
+
+population_identity:
+  enabled: true
+  cluster_key: leiden
+  # sample/donor/condition keys resolved from the cohort block.
+  output_dir: population_identity
+  write_figures: false
+
+report:
+  enabled: true
+  html: true
+  markdown: true

@@ -64,12 +64,16 @@ class MethodDispatchStage(ABC):
 
         stage_config = resolve_stage_config(context, self.name)
 
+        # Overlay the central cohort schema so structural obs keys are declared
+        # once and every dispatched method sees the resolved values.
+        stage_config = _apply_cohort_overlay(context, stage_config)
+
         # Honor the enabled flag: if disabled, return a recorded skip.
         if not stage_config.get("enabled", True):
-            return StageResult(
+            return StageResult.skipped(
                 adata=adata,
+                reason="disabled by config",
                 warnings=[f"{self.name} disabled by config"],
-                metrics={"skipped": True, "reason": "disabled by config"},
             )
 
         # Resolve the selected method name and look it up in the registry.
@@ -81,17 +85,13 @@ class MethodDispatchStage(ABC):
         donor_col = getattr(context, "donor_col", None)
         outcome = method.run(adata, stage_config, context, donor_col=donor_col)
 
-        # Convert a MethodSkip into a recorded skipped StageResult. NOTE: because
-        # the PipelineStage Protocol only permits returning a StageResult, a method
-        # skip surfaces to the executor as a SUCCESSFUL record carrying a warning and
-        # metrics["skipped"]=True — it does NOT populate core.stage's StageSkipReason
-        # machinery. This is non-silent by design; downstream reporting must key on
-        # metrics["skipped"], not on record.status, to distinguish skipped methods.
+        # Convert a MethodSkip into an explicit skipped StageResult.
         if isinstance(outcome, MethodSkip):
-            return StageResult(
+            return StageResult.skipped(
                 adata=adata,
+                reason=outcome.reason,
                 warnings=[outcome.reason],
-                metrics={"skipped": True, **outcome.details},
+                metrics=outcome.details,
             )
 
         # Call the overridable validation hook before returning.
@@ -107,6 +107,49 @@ class MethodDispatchStage(ABC):
         Args:
             result: The StageResult returned by the method.
         """
+
+
+# Cohort attributes that overlay onto same-named stage config keys. These are
+# the structural obs columns a dataset declares once (config.cohort). When a
+# cohort field is set it takes precedence, so the biological structure is
+# declared in one place; when unset, the stage's own key is left untouched.
+_COHORT_OVERLAY_KEYS: tuple[str, ...] = (
+    "batch_key",
+    "sample_key",
+    "donor_key",
+    "condition_key",
+)
+
+
+def _apply_cohort_overlay(context: object, stage_config: dict) -> dict:
+    """
+    Return a copy of ``stage_config`` with cohort-declared keys overlaid.
+
+    Only keys the cohort block actually sets are overlaid, and only onto config
+    keys of the same name. When there is no cohort block (or it is empty), the
+    stage config is returned unchanged, so existing configs behave identically.
+
+    Args:
+        context: Pipeline context exposing ``config`` (may lack a cohort block).
+        stage_config: The resolved per-stage config dict.
+
+    Returns:
+        A (possibly updated) config dict.
+    """
+
+    config = getattr(context, "config", None)
+    cohort = getattr(config, "cohort", None)
+    if cohort is None:
+        return stage_config
+
+    overlaid = dict(stage_config)
+    for key in _COHORT_OVERLAY_KEYS:
+        cohort_value = getattr(cohort, key, None)
+        # Overlay only same-named keys the stage already understands, so we
+        # never inject a key a method does not expect.
+        if cohort_value and key in overlaid:
+            overlaid[key] = cohort_value
+    return overlaid
 
 
 __all__ = ["MethodDispatchStage"]

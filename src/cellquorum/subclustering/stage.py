@@ -13,6 +13,7 @@ from cellquorum.subclustering.diagnostics import (
 from cellquorum.subclustering.donor_gate import apply_qc_flags, donor_reproducibility
 from cellquorum.subclustering.extract import apply_group_filter, extract_focus
 from cellquorum.subclustering.partition import run_choir, run_scshc_test
+from cellquorum.subclustering.reembed import ensure_focus_embedding
 
 
 class SubclusteringStage:
@@ -65,10 +66,24 @@ class SubclusteringStage:
                 metrics={"skipped": True, "reason": "no adata"},
             )
 
+        # Resolve the focus lineage from the central cohort schema when the
+        # subclustering block did not declare its own (declare-once). The
+        # cohort focus is the generic replacement for a hard-coded lineage.
+        focus_config = sc_config.focus
+        cohort = getattr(config, "cohort", None)
+        cohort_focus = getattr(cohort, "focus", None)
+        if not focus_config.labels and cohort_focus is not None and cohort_focus.labels:
+            focus_config = focus_config.model_copy(
+                update={
+                    "label_key": cohort_focus.label_key or focus_config.label_key,
+                    "labels": list(cohort_focus.labels),
+                }
+            )
+
         # Extract focus lineage.
         focused = extract_focus(
             adata,
-            sc_config.focus,
+            focus_config,
             sc_config.counts_layer,
         )
 
@@ -206,21 +221,49 @@ class SubclusteringStage:
             warnings.append(f"Unknown partition method: {sc_config.partition.method}")
 
         # Task 3: donor_gate + diagnostics.
-        # Run donor gate if group_key set AND cluster labels exist.
-        group_key = sc_config.donor_gate.group_key
+        # Run donor gate if group_key set AND cluster labels exist. The donor
+        # group_key falls back to the cohort donor_key so a dataset declares its
+        # donor column once.
+        from cellquorum.config.cohort import resolve_cohort_key
+
+        group_key = resolve_cohort_key(
+            config, attr="donor_key", stage_value=sc_config.donor_gate.group_key
+        )
         cluster_key = sc_config.key_added
         has_cluster_labels = (
             cluster_key in filtered.obs.columns and filtered.obs[cluster_key].notna().any()
         )
 
+        # The donor gate needs an embedding, but extract_focus deleted the
+        # parent object's X_* embeddings and no full re-embedding runs yet.
+        # Derive a minimal PCA on the focus subset so the gate is meaningful;
+        # if the subset is too small/degenerate to embed, skip the gate with a
+        # recorded note instead of crashing.
+        embedding_ready = False
         if group_key is not None and has_cluster_labels:
+            embedding_ready = ensure_focus_embedding(
+                filtered,
+                counts_layer=sc_config.counts_layer,
+                embedding_key="X_pca",
+                reembed=sc_config.reembed,
+                random_state=0,
+            )
+            if not embedding_ready:
+                notes.append(
+                    "Donor gate: skipped (could not derive an embedding for the "
+                    "focus subset; too few cells or genes)."
+                )
+                warnings.append("Donor gate skipped: focus subset could not be re-embedded.")
+
+        if group_key is not None and has_cluster_labels and embedding_ready:
             # Run donor reproducibility gatekeeper.
             gate_result = donor_reproducibility(
                 filtered,
                 cluster_key=cluster_key,
                 group_key=group_key,
                 min_groups=sc_config.donor_gate.min_groups,
-                max_group_frac=0.8,
+                min_cells_per_group=sc_config.donor_gate.min_cells_per_group,
+                max_group_frac=sc_config.donor_gate.max_group_frac,
                 do_lodo=sc_config.donor_gate.leave_one_donor_out,
                 do_classifier=sc_config.donor_gate.classifier_separability,
                 embedding_key="X_pca",
@@ -278,12 +321,14 @@ class SubclusteringStage:
             else:
                 # Default: flag-not-drop.
                 notes.append("Action=flag: retained all cells with QC flags")
-        else:
-            # Skip donor gate (not configured or no cluster labels).
-            if group_key is None:
-                notes.append("Donor gate: skipped (group_key not configured)")
-            else:
-                notes.append("Donor gate: skipped (no cluster labels)")
+        elif group_key is None:
+            # Skip donor gate: not configured.
+            notes.append("Donor gate: skipped (group_key not configured)")
+        elif not has_cluster_labels:
+            # Skip donor gate: no cluster labels to gate.
+            notes.append("Donor gate: skipped (no cluster labels)")
+        # The embedding-failed case (group_key set + labels present but
+        # embedding_ready is False) already recorded its own skip note above.
 
         # Generate clustree plot (if leiden_grid labels present).
         # Note: clustree expects multiple cluster columns with a common prefix.

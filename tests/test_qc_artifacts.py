@@ -950,10 +950,17 @@ def test_write_qc_artifacts_emits_figures_when_enabled_and_adata_present(
     # Build an adata with QC metrics and a condition column for grouping.
     adata = make_test_adata(
         obs_extra={
-            "condition": ["Normal", "LE"],
+            "patient_id": ["P1", "P1"],
+            "sample_id": ["P1_Normal", "P1_LE"],
+            "condition": ["Normal", "Lymphedema"],
             "total_counts": [10.0, 20.0],
+            "log1p_total_counts": [2.4, 3.0],
             "n_genes_by_counts": [2, 3],
+            "log1p_n_genes_by_counts": [1.1, 1.4],
             "pct_counts_mito": [5.0, 10.0],
+            "pct_counts_ribo": [20.0, 22.0],
+            "pct_counts_hemoglobin": [0.0, 0.1],
+            "pct_counts_in_top_20_genes": [25.0, 30.0],
             "cellquorum_qc_keep": [True, False],
         }
     )
@@ -977,6 +984,11 @@ def test_write_qc_artifacts_emits_figures_when_enabled_and_adata_present(
     figure_paths = manifest.artifacts["figures"]
     assert isinstance(figure_paths, list)
     assert len(figure_paths) > 0
+    assert any("publication/qc_panel_A_mitochondrial_content" in path for path in figure_paths)
+    assert any("publication/qc_panel_J_umi_detected_genes_normal" in path for path in figure_paths)
+    assert any("publication/qc_panel_K_umi_detected_genes_le" in path for path in figure_paths)
+    assert any("publication/qc_panel_L_by_condition_publication" in path for path in figure_paths)
+    assert any("publication/qc_panel_M_cells_per_sample" in path for path in figure_paths)
 
     # Confirm all recorded figure files exist on disk.
     for figure_path in figure_paths:

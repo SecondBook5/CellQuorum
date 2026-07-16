@@ -154,6 +154,40 @@ def test_stage_result_to_summary_dict_excludes_adata_and_serializes_outputs() ->
     assert payload["metrics"] == {"n_cells": 1}
 
 
+def test_stage_result_backfills_skipped_status_from_legacy_metrics() -> None:
+    """Verify legacy skipped metrics become explicit StageResult status."""
+
+    result = StageResult(
+        adata=ad.AnnData(X=np.ones((1, 1))),
+        metrics={"skipped": True, "reason": "disabled by config"},
+    )
+
+    assert result.status == "skipped"
+    assert result.skip_reason == "disabled by config"
+
+
+def test_stage_result_skipped_constructor_preserves_legacy_metrics() -> None:
+    """Verify new skipped results expose both explicit and legacy fields."""
+
+    result = StageResult.skipped(
+        adata=ad.AnnData(X=np.ones((1, 1))),
+        reason="rscript unavailable",
+        backend="rscript",
+        device="cpu",
+        input_fingerprint="input-1",
+        output_fingerprint="output-1",
+    )
+
+    assert result.status == "skipped"
+    assert result.skip_reason == "rscript unavailable"
+    assert result.metrics["skipped"] is True
+    assert result.metrics["reason"] == "rscript unavailable"
+    assert result.backend == "rscript"
+    assert result.device == "cpu"
+    assert result.input_fingerprint == "input-1"
+    assert result.output_fingerprint == "output-1"
+
+
 def test_stage_skip_reason_to_dict() -> None:
     """
     Verify that StageSkipReason serializes skip details.

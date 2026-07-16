@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
-from cellquorum.config.design import Contrast, ContrastsConfig, DesignConfig
+from cellquorum.config.design import (
+    Contrast,
+    ContrastsConfig,
+    DesignConfig,
+    validate_design_against_obs,
+)
 from cellquorum.config.markers import MarkersConfig
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.exceptions import CellQuorumConfigError
@@ -53,3 +59,53 @@ def test_top_level_config_has_new_blocks():
     assert isinstance(cfg.markers, MarkersConfig)
     assert isinstance(cfg.design, DesignConfig)
     assert isinstance(cfg.contrasts, ContrastsConfig)
+
+
+def test_validate_design_against_obs_accepts_replicated_unpaired_contrast():
+    obs = pd.DataFrame(
+        {
+            "patient_id": ["d1", "d2", "d3", "d4"],
+            "condition": ["case", "case", "control", "control"],
+        }
+    )
+    design = DesignConfig(case="case", control="control")
+
+    result = validate_design_against_obs(obs, design=design)
+
+    assert result.case_donors == {"d1", "d2"}
+    assert result.control_donors == {"d3", "d4"}
+    assert result.paired is False
+
+
+def test_validate_design_against_obs_rejects_missing_metadata_column():
+    obs = pd.DataFrame({"condition": ["case", "control"]})
+    design = DesignConfig(case="case", control="control")
+
+    with pytest.raises(CellQuorumConfigError, match="patient_id"):
+        validate_design_against_obs(obs, design=design)
+
+
+def test_validate_design_against_obs_rejects_under_replicated_arm():
+    obs = pd.DataFrame(
+        {
+            "patient_id": ["d1", "d2", "d3"],
+            "condition": ["case", "control", "control"],
+        }
+    )
+    design = DesignConfig(case="case", control="control")
+
+    with pytest.raises(CellQuorumConfigError, match="donor replication"):
+        validate_design_against_obs(obs, design=design)
+
+
+def test_validate_design_against_obs_rejects_incomplete_paired_contrast():
+    obs = pd.DataFrame(
+        {
+            "patient_id": ["d1", "d1", "d2", "d3"],
+            "condition": ["case", "control", "case", "control"],
+        }
+    )
+    design = DesignConfig(case="case", control="control", paired=True)
+
+    with pytest.raises(CellQuorumConfigError, match="incomplete donor pairs"):
+        validate_design_against_obs(obs, design=design, min_donors_per_arm=1)

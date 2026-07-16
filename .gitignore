@@ -46,3 +46,6 @@ provenance/
 # Local environment files
 .env
 .envrc
+
+docs/superpowers/
+.superpowers/

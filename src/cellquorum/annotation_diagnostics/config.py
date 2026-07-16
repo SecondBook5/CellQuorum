@@ -18,6 +18,7 @@ class AnnotationDiagnosticsConfig(StrictBaseModel):
         backend: Backend to use (rscript).
         r_package: R package name for status checks (scDiagnostics).
         cell_type_col: obs column containing cell type annotations.
+        expression_layer: Log-normalized layer to pass to scDiagnostics.
         reference_h5ad: Optional reference h5ad for query-vs-reference metrics.
         soft_scores_obsm: Optional obsm key for soft probabilities (entropy).
         pc_subset: PC indices to use (1-indexed per R convention).
@@ -40,6 +41,9 @@ class AnnotationDiagnosticsConfig(StrictBaseModel):
 
     # obs column containing cell type annotations.
     cell_type_col: str = "cell_type"
+
+    # Log-normalized expression layer used to build the scDiagnostics query.
+    expression_layer: str = "lognorm"
 
     # Optional reference h5ad for query-vs-reference diagnostics.
     reference_h5ad: str | None = None

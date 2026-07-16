@@ -11,6 +11,9 @@ from typing import Literal
 # Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator, model_validator
 
+# Import the adjudication configuration model.
+from cellquorum.adjudication.config import AdjudicationConfig
+
 # Import the ambient-correction configuration model.
 from cellquorum.ambient_correction.config import AmbientCorrectionConfig
 
@@ -22,6 +25,9 @@ from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
 
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
+
+# Import the central cohort schema (structural keys declared once).
+from cellquorum.config.cohort import CohortConfig
 
 # Import the markers, design, and contrasts configuration models.
 from cellquorum.config.design import ContrastsConfig, DesignConfig
@@ -35,6 +41,9 @@ from cellquorum.integration.config import IntegrationConfig
 
 # Import the integration-benchmark configuration model.
 from cellquorum.integration_benchmark.config import IntegrationBenchmarkConfig
+
+# Import the population-identity configuration model.
+from cellquorum.population_identity.config import PopulationIdentityConfig
 
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
@@ -228,6 +237,8 @@ class RunConfig(StrictBaseModel):
         run_id: Optional stable run identifier.
         random_seed: Random seed used by stochastic stages.
         overwrite: Whether an existing output directory may be reused.
+        resume: Whether completed stages may be skipped on rerun when their
+            input fingerprint matches and their recorded artifacts still exist.
         verbose: Whether to produce runtime output.
         log_level: Output detail level.
     """
@@ -251,6 +262,9 @@ class RunConfig(StrictBaseModel):
 
     # Store whether existing output directories can be reused.
     overwrite: bool = False
+
+    # Store whether completed stages may be skipped on rerun (opt-in resume).
+    resume: bool = False
 
     # Store whether to produce runtime output.
     verbose: bool = True
@@ -466,9 +480,11 @@ class StageSelectionConfig(StrictBaseModel):
         clustering: Whether clustering is enabled.
         integration: Whether integration is enabled.
         annotation: Whether annotation is enabled.
+        population_identity: Whether population/state identity evidence is enabled.
         state_scoring: Whether state scoring is enabled.
         discovery: Whether automatic discovery is enabled.
         subclustering: Whether subclustering is enabled.
+        adjudication: Whether cluster/state adjudication is enabled.
         composition: Whether composition analysis is enabled.
         differential_expression: Whether differential expression is enabled.
         molecular_inference: Whether molecular inference is enabled.
@@ -512,6 +528,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether integration-gate filtering is enabled (reserved).
     integration_gate: bool = False
 
+    # Store whether population/state identity evidence output is enabled.
+    population_identity: bool = True
+
     # Store whether state scoring is enabled.
     state_scoring: bool = True
 
@@ -520,6 +539,9 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether subclustering is enabled.
     subclustering: bool = True
+
+    # Store whether cluster/state adjudication is enabled.
+    adjudication: bool = True
 
     # Store whether composition analysis is enabled.
     composition: bool = True
@@ -622,11 +644,20 @@ class CellQuorumConfig(StrictBaseModel):
     # Store reference-mapping settings.
     reference_mapping: ReferenceMappingConfig = Field(default_factory=ReferenceMappingConfig)
 
+    # Store population/state identity evidence settings.
+    population_identity: PopulationIdentityConfig = Field(default_factory=PopulationIdentityConfig)
+
     # Store subclustering settings.
     subclustering: SubclusteringConfig = Field(default_factory=SubclusteringConfig)
 
+    # Store adjudication settings.
+    adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
+
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
+
+    # Store the central cohort schema (structural obs keys declared once).
+    cohort: CohortConfig = Field(default_factory=CohortConfig)
 
     # Store experimental-design settings.
     design: DesignConfig = Field(default_factory=DesignConfig)

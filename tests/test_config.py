@@ -55,6 +55,12 @@ def test_default_cellquorum_config_builds_successfully() -> None:
     # Confirm molecular inference is enabled as a gated capability by default.
     assert config.stages.molecular_inference is True
 
+    # Confirm adjudication is enabled as a gated capability.
+    assert config.stages.adjudication is True
+
+    # Confirm population identity evidence is enabled as a gated capability.
+    assert config.stages.population_identity is True
+
     # Confirm cell-cell communication is enabled as a gated capability by default.
     assert config.stages.cell_cell_communication is True
 
@@ -333,6 +339,9 @@ def test_stage_selection_config_defaults_to_major_capabilities_enabled() -> None
 
     # Confirm composition analysis is enabled by default.
     assert config.composition is True
+
+    # Confirm population identity evidence is enabled by default.
+    assert config.population_identity is True
 
     # Confirm differential expression is enabled by default.
     assert config.differential_expression is True

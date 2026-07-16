@@ -2,6 +2,24 @@
 
 from __future__ import annotations
 
+from cellquorum.visualization.publication import (
+    DISEASE_COLOR,
+    DOUBLET_COLOR,
+    NORMAL_COLOR,
+    QC_FAIL_COLOR,
+    TEXT_COLOR,
+    add_panel_label,
+    add_stat_bracket,
+    categorical_embedding,
+    categorical_palette,
+    cell_type_palette,
+    clean_axis,
+    condition_palette,
+    pvalue_to_stars,
+    save_publication_figure,
+    set_publication_style,
+    violin_with_stats,
+)
 from cellquorum.visualization.style import (
     BACKGROUND_BLUE,
     BACKGROUND_GRAY,
@@ -42,4 +60,20 @@ __all__ = [
     "add_dashed_reference_lines",
     "add_directional_arrows",
     "add_statistical_annotation_box",
+    "NORMAL_COLOR",
+    "DISEASE_COLOR",
+    "QC_FAIL_COLOR",
+    "DOUBLET_COLOR",
+    "TEXT_COLOR",
+    "set_publication_style",
+    "save_publication_figure",
+    "condition_palette",
+    "categorical_palette",
+    "cell_type_palette",
+    "add_panel_label",
+    "add_stat_bracket",
+    "pvalue_to_stars",
+    "violin_with_stats",
+    "clean_axis",
+    "categorical_embedding",
 ]

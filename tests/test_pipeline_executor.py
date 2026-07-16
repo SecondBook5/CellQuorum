@@ -286,6 +286,7 @@ def test_default_stage_registry_contains_qc() -> None:
     registry = build_default_stage_registry()
 
     # Confirm all implemented stages are registered.
+    assert registry.get("adjudication") is not None
     assert registry.get("ambient_correction") is not None
     assert registry.get("qc") is not None
     assert registry.get("preprocessing") is not None
@@ -295,8 +296,10 @@ def test_default_stage_registry_contains_qc() -> None:
     assert registry.get("integration_benchmark") is not None
     assert registry.get("annotation") is not None
     assert registry.get("feature_selection") is not None
+    assert registry.get("population_identity") is not None
     assert registry.get("reference_mapping") is not None
     assert registry.registered_stage_names() == [
+        "adjudication",
         "ambient_correction",
         "annotation",
         "annotation_diagnostics",
@@ -305,6 +308,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "feature_selection",
         "integration",
         "integration_benchmark",
+        "population_identity",
         "preprocessing",
         "qc",
         "reference_mapping",

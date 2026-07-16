@@ -89,7 +89,10 @@ class DonorGateConfig(StrictBaseModel):
         group_key: obs column for donor/group (e.g., donor_id).
             None = skip donor gate.
         min_groups: minimum number of groups required.
-        min_cells_per_group: minimum cells per group required.
+        min_cells_per_group: minimum cells a group must contribute to count as a
+            supporting group toward min_groups. 0 disables the per-group floor.
+        max_group_frac: max fraction of cluster cells allowed from a single group
+            (one-donor-dominated detector). None = skip the check.
         leave_one_donor_out: whether to run LODO cross-validation.
         classifier_separability: whether to run RF classifier test.
     """
@@ -97,6 +100,7 @@ class DonorGateConfig(StrictBaseModel):
     group_key: str | None = None
     min_groups: int = 3
     min_cells_per_group: int = 10
+    max_group_frac: float | None = 0.8
     leave_one_donor_out: bool = True
     classifier_separability: bool = True
 

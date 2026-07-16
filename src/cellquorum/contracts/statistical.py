@@ -9,10 +9,17 @@ raised on immediately.
 
 from __future__ import annotations
 
+import anndata as ad
 import numpy as np
 import scipy.sparse as sp
 
 from cellquorum.contracts.exceptions import CellQuorumContractError
+from cellquorum.contracts.layer_tags import get_layer_tag
+
+_STATISTICAL_KIND_ALIASES = {
+    "normalized": "lognorm",
+    "log_normalized": "lognorm",
+}
 
 
 def _to_sample(X: np.ndarray | sp.spmatrix, n: int = 10000) -> np.ndarray:
@@ -161,9 +168,85 @@ def assert_log_range(
         )
 
 
+def assert_statistical_input(
+    adata: ad.AnnData,
+    *,
+    layer: str,
+    allowed_kinds: set[str] | frozenset[str] | tuple[str, ...] = ("counts", "lognorm"),
+    require_tag: bool = True,
+    max_log_value: float = 30.0,
+) -> None:
+    """
+    Fail closed on statistical expression inputs.
+
+    Statistical tests should not run on imputed, denoised, scaled,
+    batch-corrected, residualized, or unknown matrices. This guard requires an
+    explicit CellQuorum layer tag by default, validates the declared kind, and
+    runs cheap value-level checks appropriate to that kind.
+
+    Args:
+        adata: AnnData object containing the candidate layer.
+        layer: Layer name to validate.
+        allowed_kinds: Allowed semantic kinds. ``normalized`` is accepted as an
+            alias for the repository's current ``lognorm`` tag.
+        require_tag: Whether an explicit layer tag is mandatory.
+        max_log_value: Maximum tolerated value for log-normalized layers.
+
+    Raises:
+        CellQuorumContractError: If the layer is missing, untagged when tags are
+            required, semantically disallowed, or value-level checks fail.
+    """
+
+    # Refuse to infer statistical matrix meaning from names alone.
+    if layer not in adata.layers:
+        raise CellQuorumContractError(
+            f"Statistical layer '{layer}' is not present in adata.layers."
+        )
+
+    # Normalize allowed kind aliases used by specs and user-facing docs.
+    normalized_allowed = {_STATISTICAL_KIND_ALIASES.get(kind, kind) for kind in allowed_kinds}
+
+    # Read the provenance tag and fail closed when the tag is missing.
+    tag = get_layer_tag(adata, layer)
+    if tag is None:
+        if require_tag:
+            raise CellQuorumContractError(
+                f"Layer '{layer}' is untagged; statistical inputs must be explicitly "
+                f"tagged as one of {sorted(normalized_allowed)}."
+            )
+        return
+
+    # Validate the tagged kind before any statistic consumes the matrix.
+    raw_kind = tag.get("kind")
+    kind = _STATISTICAL_KIND_ALIASES.get(str(raw_kind), str(raw_kind))
+    if kind not in normalized_allowed:
+        raise CellQuorumContractError(
+            f"Layer '{layer}' is tagged as '{raw_kind}', not a permitted statistical "
+            f"input kind. Allowed: {sorted(normalized_allowed)}."
+        )
+
+    # Run value-level checks matching the declared semantics.
+    X = adata.layers[layer]
+    if kind == "counts":
+        assert_integer_valued(X, layer=layer)
+        return
+
+    if kind == "lognorm":
+        assert_non_negative(X, layer=layer)
+        assert_non_integer_or_zero(X, layer=layer)
+        assert_log_range(X, layer=layer, max_value=max_log_value)
+        return
+
+    # Keep future kinds explicit; a new kind must declare its own value checks.
+    raise CellQuorumContractError(
+        f"Layer '{layer}' has unsupported statistical input kind '{kind}'."
+    )
+
+
 __all__ = [
     "assert_integer_valued",
     "assert_log_range",
     "assert_non_integer_or_zero",
     "assert_non_negative",
+    "assert_statistical_input",
 ]

@@ -140,6 +140,14 @@ class QCStage:
             config=qc_config,
         )
 
+        # Carry calculated QC metrics onto the QC AnnData before figure/h5ad
+        # artifact writing. The durable metric tables remain canonical, but
+        # visualization reads from obs/var columns by convention.
+        metric_annotation_warnings = annotate_adata_with_qc_metrics(
+            adata=output_adata,
+            metrics_result=metrics_result,
+        )
+
         # Initialize addon metrics dictionary.
         addon_metrics: dict[str, dict] = {}
 
@@ -173,20 +181,25 @@ class QCStage:
             doublet_metrics = detect_doublets(output_adata, qc_config.doublets, backend)
             addon_metrics["doublets"] = doublet_metrics
 
-        # Resolve group_key from design config for QC figure grouping.
+        # Resolve group_key for QC figure grouping. Prefer the central cohort
+        # schema (condition, then donor, then sample), then fall back to the
+        # design block, then a plain sample_id column.
         group_key = None
         context_config = getattr(context, "config", None)
-        if context_config is not None and hasattr(context_config, "design"):
-            design = context_config.design
-            # Try condition_col, then donor_col, then sample_id fallback.
-            for candidate in (
-                getattr(design, "condition_col", None),
-                getattr(design, "donor_col", None),
-                "sample_id",
-            ):
-                if candidate and candidate in output_adata.obs.columns:
-                    group_key = candidate
-                    break
+        cohort = getattr(context_config, "cohort", None)
+        design = getattr(context_config, "design", None)
+        candidates = [
+            getattr(cohort, "condition_key", None),
+            getattr(cohort, "donor_key", None),
+            getattr(cohort, "sample_key", None),
+            getattr(design, "condition_col", None),
+            getattr(design, "donor_col", None),
+            "sample_id",
+        ]
+        for candidate in candidates:
+            if candidate and candidate in output_adata.obs.columns:
+                group_key = candidate
+                break
 
         # Write all configured QC artifacts.
         artifact_manifest = write_qc_artifacts(
@@ -214,6 +227,9 @@ class QCStage:
             decision_result=decision_result,
             artifact_manifest=artifact_manifest,
         )
+
+        # Surface any preserved-not-overwritten metric-column conflicts.
+        warnings.extend(metric_annotation_warnings)
 
         # Build human-readable stage notes.
         notes = build_qc_stage_notes(
@@ -559,6 +575,149 @@ def annotate_adata_with_qc_decisions(
 
     # Return annotated AnnData.
     return annotated
+
+
+def annotate_adata_with_qc_metrics(
+    *,
+    adata: ad.AnnData,
+    metrics_result: QCMetricsResult,
+) -> list[str]:
+    """
+    Add calculated QC metric columns to an AnnData object in place.
+
+    QC metrics are calculated as explicit tables first. Plotting and downstream
+    inspection, however, expect common cell-level metrics such as
+    ``pct_counts_mito`` to be available on ``adata.obs``. This helper aligns the
+    metric tables to the possibly filtered QC AnnData and stores non-conflicting
+    metric columns on ``obs`` and ``var``. Pre-existing columns are preserved,
+    never overwritten.
+
+    Args:
+        adata: QC AnnData to annotate.
+        metrics_result: Calculated QC metrics.
+
+    Returns:
+        Human-readable warnings for any metric columns skipped because they
+        already existed on ``obs``/``var``.
+
+    Raises:
+        QCStageError: If the QC AnnData axes cannot be aligned to the metric
+            tables.
+    """
+
+    # Validate input types.
+    if not isinstance(adata, ad.AnnData):
+        raise QCStageError(
+            "annotate_adata_with_qc_metrics expected an AnnData object. "
+            f"Received: {type(adata).__name__}."
+        )
+    if not isinstance(metrics_result, QCMetricsResult):
+        raise QCStageError(
+            "metrics_result must be a QCMetricsResult. "
+            f"Received: {type(metrics_result).__name__}."
+        )
+
+    # Align and add cell-level metrics.
+    cell_metrics = align_metric_table_to_axis(
+        axis_names=adata.obs_names,
+        metric_table=metrics_result.cell_metrics,
+        axis_label="obs",
+    )
+    obs_conflicts = add_metric_columns_to_axis(axis_frame=adata.obs, metrics=cell_metrics)
+
+    # Align and add gene-level metrics.
+    gene_metrics = align_metric_table_to_axis(
+        axis_names=adata.var_names,
+        metric_table=metrics_result.gene_metrics,
+        axis_label="var",
+    )
+    var_conflicts = add_metric_columns_to_axis(axis_frame=adata.var, metrics=gene_metrics)
+
+    # Report preserved-not-overwritten columns so the QC stage can warn.
+    warnings: list[str] = []
+    if obs_conflicts:
+        warnings.append(
+            "QC metric columns already present in obs were preserved, not "
+            f"overwritten: {', '.join(obs_conflicts)}."
+        )
+    if var_conflicts:
+        warnings.append(
+            "QC metric columns already present in var were preserved, not "
+            f"overwritten: {', '.join(var_conflicts)}."
+        )
+    return warnings
+
+
+def align_metric_table_to_axis(
+    *,
+    axis_names: pd.Index,
+    metric_table: pd.DataFrame,
+    axis_label: str,
+) -> pd.DataFrame:
+    """
+    Align a QC metric table to AnnData obs/var names.
+
+    Args:
+        axis_names: AnnData axis names.
+        metric_table: QC metric table indexed by the original axis names.
+        axis_label: Human-readable axis label for errors.
+
+    Returns:
+        Metric table aligned to ``axis_names``.
+
+    Raises:
+        QCStageError: If axis names are not present in the metric table.
+    """
+
+    # Fast path: no filtering/reordering occurred.
+    if list(axis_names) == list(metric_table.index):
+        return metric_table
+
+    # Reindex supports filtered outputs while preserving the QC AnnData order.
+    missing = pd.Index(axis_names).difference(metric_table.index)
+    if len(missing) > 0:
+        preview = ", ".join(map(str, missing[:5]))
+        raise QCStageError(
+            f"Cannot annotate QC {axis_label} metrics: {len(missing)} axis name(s) "
+            f"are missing from the metric table. First missing: {preview}."
+        )
+
+    return metric_table.reindex(axis_names)
+
+
+def add_metric_columns_to_axis(
+    *,
+    axis_frame: pd.DataFrame,
+    metrics: pd.DataFrame,
+) -> list[str]:
+    """
+    Add metric-table columns to an AnnData axis frame by row order.
+
+    Pre-existing columns on ``axis_frame`` are never overwritten: an upstream
+    tool may have populated ``total_counts`` or ``pct_counts_mito`` with values
+    we must not silently clobber. Conflicting metric columns are skipped and
+    returned so the caller can surface them as warnings.
+
+    Args:
+        axis_frame: AnnData obs or var DataFrame.
+        metrics: Aligned metric table.
+
+    Returns:
+        Names of metric columns skipped because they already existed on
+        ``axis_frame``.
+    """
+
+    # Store unprefixed metric names so plotting code and users see standard
+    # Scanpy-style QC columns: total_counts, pct_counts_mito, etc. Skip any
+    # column already present rather than overwriting it (flag-not-clobber).
+    conflicts: list[str] = []
+    for column in metrics.columns:
+        if column in axis_frame.columns:
+            conflicts.append(str(column))
+            continue
+        axis_frame[column] = metrics[column].to_numpy()
+
+    return conflicts
 
 
 def add_decision_columns_to_axis(
@@ -954,7 +1113,10 @@ __all__ = [
     "QCStage",
     "QCStageError",
     "add_decision_columns_to_axis",
+    "add_metric_columns_to_axis",
     "annotate_adata_with_qc_decisions",
+    "annotate_adata_with_qc_metrics",
+    "align_metric_table_to_axis",
     "build_disabled_qc_stage_result",
     "build_qc_output_adata",
     "build_qc_stage_metrics",

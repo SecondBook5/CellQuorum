@@ -280,14 +280,39 @@ def write_qc_artifacts(
             )
 
             # Record figure paths in the artifact manifest.
-            artifacts["figures"] = [str(p) for p in fig_result.figure_paths]
+            figure_paths = [str(p) for p in fig_result.figure_paths]
 
             # Propagate figure-generation warnings.
             warnings.extend(fig_result.warnings)
+
+            # Write mast-cell/LE-KC style publication QC panels for every QC run.
+            # These are not a separate user-facing method; they are part of the
+            # default QC figure contract alongside the standard audit plots. The
+            # pipeline path writes a single configured format (not png+pdf+svg)
+            # so a large cohort does not pay 3x figure I/O per panel by default.
+            if qc_config.outputs.publication_figures:
+                try:
+                    from cellquorum.qc.publication import write_publication_qc_figures
+
+                    publication_paths = write_publication_qc_figures(
+                        adata,
+                        output_path / "publication",
+                        thresholds=threshold_result.to_dataframe(),
+                        dpi=qc_config.outputs.figure_dpi,
+                        formats=(qc_config.outputs.figure_format,),
+                    )
+                    figure_paths.extend(str(p) for p in publication_paths)
+                except Exception as exc:  # pragma: no cover - defensive figure fallback
+                    warnings.append(
+                        "Publication-style QC figures could not be written: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
+            artifacts["figures"] = figure_paths
         else:
             # Store figure skip when AnnData is absent.
             skipped.append("figures")
-            warnings.append("QCOutputConfig.write_figures is true, but no AnnData was " "provided.")
+            warnings.append("QCOutputConfig.write_figures is true, but no AnnData was provided.")
 
     # Record figure skip when disabled.
     else:
@@ -352,8 +377,7 @@ def validate_qc_artifact_inputs(
     # Validate metrics result type.
     if not isinstance(metrics_result, QCMetricsResult):
         raise QCArtifactError(
-            "metrics_result must be a QCMetricsResult. "
-            f"Received: {type(metrics_result).__name__}."
+            f"metrics_result must be a QCMetricsResult. Received: {type(metrics_result).__name__}."
         )
 
     # Validate threshold result type.
@@ -372,12 +396,12 @@ def validate_qc_artifact_inputs(
 
     # Validate config type.
     if not isinstance(config, QCConfig):
-        raise QCArtifactError("config must be a QCConfig. " f"Received: {type(config).__name__}.")
+        raise QCArtifactError(f"config must be a QCConfig. Received: {type(config).__name__}.")
 
     # Validate optional AnnData type.
     if adata is not None and not isinstance(adata, ad.AnnData):
         raise QCArtifactError(
-            "adata must be an AnnData object when provided. " f"Received: {type(adata).__name__}."
+            f"adata must be an AnnData object when provided. Received: {type(adata).__name__}."
         )
 
     # Validate metric result tables.
@@ -445,7 +469,7 @@ def validate_artifact_dataframe(table: pd.DataFrame, *, table_name: str) -> None
     # Validate DataFrame type.
     if not isinstance(table, pd.DataFrame):
         raise QCArtifactError(
-            f"{table_name} must be a pandas DataFrame. " f"Received: {type(table).__name__}."
+            f"{table_name} must be a pandas DataFrame. Received: {type(table).__name__}."
         )
 
 
@@ -517,7 +541,7 @@ def write_json_artifact(payload: dict[str, object], path: Path) -> Path:
     # Validate the payload type.
     if not isinstance(payload, dict):
         raise QCArtifactError(
-            "JSON artifact payload must be a dictionary. " f"Received: {type(payload).__name__}."
+            f"JSON artifact payload must be a dictionary. Received: {type(payload).__name__}."
         )
 
     # Ensure the destination parent directory exists.
@@ -567,7 +591,7 @@ def write_h5ad_artifact(adata: ad.AnnData, path: Path) -> Path:
     # Validate AnnData input.
     if not isinstance(adata, ad.AnnData):
         raise QCArtifactError(
-            "write_h5ad_artifact expected an AnnData object. " f"Received: {type(adata).__name__}."
+            f"write_h5ad_artifact expected an AnnData object. Received: {type(adata).__name__}."
         )
 
     # Ensure the destination parent directory exists.

@@ -68,3 +68,45 @@ def test_qc_stage_flags_doublets_when_enabled(tmp_path):
     result = QCStage().run(ctx)
     assert "predicted_doublet" in result.adata.obs
     assert result.adata.n_obs == 120  # flag-only, no removal
+
+
+def test_qc_stage_exposes_feature_family_metrics_to_plots(tmp_path):
+    """QC plots should see computed mito/ribo/hemoglobin percentage columns."""
+
+    genes = ["MT-CO1", "RPS3", "RPL13", "HBA1", "KRT14", "KRT10"]
+    x = np.array(
+        [
+            [5, 1, 0, 0, 3, 1],
+            [0, 3, 2, 1, 4, 0],
+            [1, 0, 1, 4, 2, 2],
+            [0, 0, 0, 0, 6, 3],
+        ],
+        dtype=np.float32,
+    )
+    a = ad.AnnData(X=x, var=pd.DataFrame(index=genes))
+    a.layers["counts"] = x.copy()
+    qc = QCConfig(
+        mode="report_only",
+        metrics={"layer": "counts", "percent_top": [20]},
+        doublets={"enabled": False},
+        ambient={"enabled": False},
+        outputs={"figure_dpi": 40},
+    )
+    ctx = _Ctx(a, tmp_path, qc)
+
+    result = QCStage().run(ctx)
+
+    for column in ("pct_counts_mito", "pct_counts_ribo", "pct_counts_hemoglobin"):
+        assert column in result.adata.obs
+    assert not any("pct_counts_mito not found" in warning for warning in result.warnings)
+    assert not any("pct_counts_ribo not found" in warning for warning in result.warnings)
+    assert not any("pct_counts_hemoglobin not found" in warning for warning in result.warnings)
+
+    figure_names = {
+        artifact.path.name
+        for artifact in result.artifacts
+        if artifact.kind == "file" and artifact.path.suffix == ".png"
+    }
+    assert "qc_pct_counts_mito_histogram.png" in figure_names
+    assert "qc_pct_counts_ribo_histogram.png" in figure_names
+    assert "qc_pct_counts_hemoglobin_histogram.png" in figure_names

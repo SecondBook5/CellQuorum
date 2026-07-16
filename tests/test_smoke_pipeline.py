@@ -5,8 +5,17 @@ from __future__ import annotations
 # Import JSON to inspect written provenance files.
 import json
 
+# Import datetime helpers for deterministic stage lifecycle records.
+from datetime import UTC, datetime, timedelta
+
 # Import Path for temporary output directory checks.
 from pathlib import Path
+
+# Import AnnData for synthetic stage results.
+import anndata as ad
+
+# Import numpy for synthetic AnnData matrices.
+import numpy as np
 
 # Import pandas to inspect provenance CSV artifacts.
 import pandas as pd
@@ -35,6 +44,9 @@ from cellquorum.core.pipeline import (
     resolve_output_dir,
     write_pipeline_provenance,
 )
+
+# Import stage lifecycle records used by provenance sidecar tests.
+from cellquorum.core.stage import StageArtifact, StageExecutionRecord, StageResult
 
 
 def build_test_backend_registry() -> BackendRegistry:
@@ -289,6 +301,111 @@ def test_write_pipeline_provenance_creates_expected_files(tmp_path: Path) -> Non
 
     # Confirm the artifact manager tracked the manifest artifact.
     assert artifact_manager.artifacts[-1].name == "artifact_manifest"
+
+
+def test_write_pipeline_provenance_writes_successful_stage_completion_sidecars(
+    tmp_path: Path,
+) -> None:
+    """
+    Verify that completed stages get durable per-stage completion markers.
+
+    Resume logic needs one small, stage-scoped file it can inspect without
+    parsing the whole execution log. Only successful stages are reusable; skipped
+    and failed stages should not leave completion markers.
+    """
+
+    # Build a deterministic test config.
+    config = build_test_config()
+
+    # Build a deterministic test backend registry.
+    registry = build_test_backend_registry()
+
+    # Build the pipeline context.
+    context = build_pipeline_context(
+        config,
+        output_dir=tmp_path / "completion_sidecar_run",
+        backend_registry=registry,
+    )
+
+    # Build the plan using the deterministic backend registry.
+    from cellquorum.core.planner import build_pipeline_plan
+
+    plan = build_pipeline_plan(config, backend_registry=registry)
+
+    # Create a concrete stage artifact so the sidecar can record existence.
+    output_artifact_path = context.paths.results / "qc" / "summary.csv"
+    output_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    output_artifact_path.write_text("metric,value\nn_cells,1\n", encoding="utf-8")
+
+    # Build a successful stage result with lifecycle metadata.
+    result = StageResult(
+        adata=ad.AnnData(X=np.ones((1, 1))),
+        artifacts=[
+            StageArtifact(
+                name="qc_summary",
+                path=output_artifact_path,
+                kind="csv",
+                description="Synthetic QC summary.",
+            )
+        ],
+        notes=["completed synthetic qc"],
+        warnings=["synthetic warning"],
+        metrics={"n_cells": 1},
+        method_version="test-qc-v1",
+        backend="python",
+        device="cpu",
+        input_fingerprint="input-fingerprint",
+        output_fingerprint="output-fingerprint",
+    )
+
+    # Build deterministic stage execution records.
+    started = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    ended = started + timedelta(seconds=3)
+    success_record = StageExecutionRecord.success(
+        stage_name="qc",
+        result=result,
+        started_at_utc=started,
+        ended_at_utc=ended,
+    )
+    skipped_record = StageExecutionRecord.skipped(
+        stage_name="preprocessing",
+        reason="disabled by test",
+        started_at_utc=ended,
+        ended_at_utc=ended,
+    )
+
+    # Write provenance with one successful and one skipped stage record.
+    artifact_manager = write_pipeline_provenance(
+        config=config,
+        plan=plan,
+        context=context,
+        stage_execution_records=[success_record, skipped_record],
+    )
+
+    # Confirm the successful stage completion sidecar exists.
+    qc_sidecar = context.paths.provenance / "stages" / "qc" / "completion.json"
+    assert qc_sidecar.exists()
+
+    # Confirm skipped stages do not get reusable completion markers.
+    skipped_sidecar = context.paths.provenance / "stages" / "preprocessing" / "completion.json"
+    assert not skipped_sidecar.exists()
+
+    # Confirm the sidecar carries the metadata required for future resume checks.
+    sidecar_payload = json.loads(qc_sidecar.read_text(encoding="utf-8"))
+    assert sidecar_payload["schema_version"] == 1
+    assert sidecar_payload["stage_name"] == "qc"
+    assert sidecar_payload["status"] == "success"
+    assert sidecar_payload["backend_used"] == "python"
+    assert sidecar_payload["method_version"] == "test-qc-v1"
+    assert sidecar_payload["device"] == "cpu"
+    assert sidecar_payload["input_fingerprint"] == "input-fingerprint"
+    assert sidecar_payload["output_fingerprint"] == "output-fingerprint"
+    assert sidecar_payload["metrics"]["n_cells"] == 1
+    assert sidecar_payload["output_artifacts"][0]["exists"] is True
+
+    # Confirm the sidecar itself is registered in the artifact manifest.
+    artifact_names = {artifact.name for artifact in artifact_manager.artifacts}
+    assert "stage_completion_qc" in artifact_names
 
 
 def test_bootstrap_pipeline_run_returns_structured_result_and_writes_provenance(

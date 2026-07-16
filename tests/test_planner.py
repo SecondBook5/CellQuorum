@@ -35,6 +35,12 @@ def test_pipeline_planner_builds_plan_from_default_config() -> None:
     # Confirm molecular inference is enabled as a gated capability.
     assert "molecular_inference" in plan.enabled_stage_names()
 
+    # Confirm adjudication is enabled as a gated capability.
+    assert "adjudication" in plan.enabled_stage_names()
+
+    # Confirm population identity evidence is enabled as a gated capability.
+    assert "population_identity" in plan.enabled_stage_names()
+
     # Confirm cell-cell communication is enabled as a gated capability.
     assert "cell_cell_communication" in plan.enabled_stage_names()
 

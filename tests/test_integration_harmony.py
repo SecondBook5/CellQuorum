@@ -60,6 +60,31 @@ def test_harmony_writes_corrected_embedding():
     assert result.adata.uns["cellquorum"]["integration"]["method"] == "harmony"
 
 
+def test_harmony_accepts_non_contiguous_embedding_view():
+    """Harmony copies sliced PCA views before handing them to PyTorch-backed builds."""
+
+    m = HarmonyMethod()
+    a = _adata_with_pca(n=80, n_pcs=12)
+    a.obsm["X_pca"] = a.obsm["X_pca"][:, :6]
+
+    result = m.run(
+        a,
+        {
+            "batch_key": "patient_id",
+            "input_rep": "X_pca",
+            "output_rep": "X_pca_harmony",
+            "random_state": 0,
+        },
+        context=None,
+        donor_col="patient_id",
+    )
+
+    from cellquorum.methods.base import MethodSkip
+
+    assert not isinstance(result, MethodSkip)
+    assert result.adata.obsm["X_pca_harmony"].shape == a.obsm["X_pca"].shape
+
+
 def test_harmony_skips_when_batch_column_absent():
     """Harmony skips gracefully when the batch obs column is missing."""
     m = HarmonyMethod()

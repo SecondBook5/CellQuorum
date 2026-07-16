@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from cellquorum.contracts import CellQuorumContractError
+from cellquorum.contracts.layer_tags import set_layer_tag
 from cellquorum.methods.base import MethodSkip
 
 
@@ -68,6 +69,29 @@ def test_scdiagnostics_method_contract_requires_pca(adata_missing_pca: ad.AnnDat
         contract.validate(adata_missing_pca)
 
 
+def test_scdiagnostics_contract_uses_configured_expression_layer() -> None:
+    """Verify scDiagnostics can audit CellQuorum-tagged normalized layers."""
+    from cellquorum.annotation_diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    adata = ad.AnnData(X=np.random.randn(8, 6))
+    adata.layers["cellquorum_normalized"] = adata.X.copy()
+    set_layer_tag(adata, "cellquorum_normalized", kind="lognorm")
+    adata.obsm["X_pca"] = np.random.randn(8, 3)
+    adata.obs["ref_state"] = ["KC 1", "KC 2"] * 4
+
+    method = ScdiagnosticsMethod()
+    contract = method.input_contract(
+        {
+            "cell_type_col": "ref_state",
+            "expression_layer": "cellquorum_normalized",
+        }
+    )
+
+    contract.validate(adata)
+
+
 def test_scdiagnostics_method_skip_when_rscript_unavailable(
     minimal_annotated_adata: ad.AnnData,
     stub_context_no_rscript: MagicMock,
@@ -97,6 +121,40 @@ def test_scdiagnostics_method_skip_when_rscript_unavailable(
     result = method._run(minimal_annotated_adata, config_dict, stub_context_no_rscript)
     assert isinstance(result, MethodSkip)
     assert "rscript" in result.reason.lower()
+
+
+def test_scdiagnostics_entropy_from_soft_scores_without_r(
+    minimal_annotated_adata: ad.AnnData,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Soft-score entropy should work without R when no reference is configured."""
+    from cellquorum.annotation_diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    monkeypatch.setattr("shutil.which", lambda x: None)
+    adata = minimal_annotated_adata.copy()
+    adata.obsm["soft_scores"] = np.array(
+        [[1.0, 0.0], [0.5, 0.5], [0.25, 0.75], *([[0.9, 0.1]] * 97)]
+    )
+    ctx = MagicMock()
+    ctx.paths.scratch = tmp_path
+
+    result = ScdiagnosticsMethod()._run(
+        adata,
+        {
+            "cell_type_col": "cell_type",
+            "reference_h5ad": None,
+            "soft_scores_obsm": "soft_scores",
+        },
+        ctx,
+    )
+
+    assert "scdiag_entropy" in result.adata.obs
+    np.testing.assert_allclose(result.adata.obs["scdiag_entropy"].iloc[:2], [0.0, 1.0])
+    assert result.metrics["diagnostics_computed"] == ["scdiag_entropy"]
+    assert (tmp_path / "scdiag_results.csv").exists()
 
 
 @pytest.mark.skipif(

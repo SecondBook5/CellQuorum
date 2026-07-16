@@ -20,6 +20,7 @@ def donor_reproducibility(
     group_key: str,
     *,
     min_groups: int = 3,
+    min_cells_per_group: int = 0,
     max_group_frac: float | None = 0.8,
     do_lodo: bool = True,
     do_classifier: bool = True,
@@ -52,6 +53,9 @@ def donor_reproducibility(
         cluster_key: obs column with cluster labels.
         group_key: obs column for donor/group identity.
         min_groups: minimum number of groups required for PASS.
+        min_cells_per_group: minimum cells a group must contribute to count as a
+            supporting group. Groups below this are excluded from the effective
+            group count used for the min_groups PASS check. 0 disables the floor.
         max_group_frac: max fraction of cells from one donor (default 0.8).
             None = skip one-donor-dominated check.
         do_lodo: whether to compute LODO stability.
@@ -97,6 +101,14 @@ def donor_reproducibility(
         group_counts = pd.Series(cluster_groups).value_counts()
         max_group_frac_val = float(group_counts.max() / n_cells)
 
+        # Effective group count: only groups meeting the per-group cell floor
+        # count as supporting evidence. A cluster propped up by many groups that
+        # each contribute a handful of cells is not donor-reproducible.
+        if min_cells_per_group > 0:
+            n_supporting_groups = int((group_counts >= min_cells_per_group).sum())
+        else:
+            n_supporting_groups = n_groups
+
         # LODO stability.
         lodo_stability = None
         if do_lodo and n_groups >= 2:
@@ -128,10 +140,13 @@ def donor_reproducibility(
             lodo_stability,
             min_groups,
             max_group_frac,
+            n_supporting_groups=n_supporting_groups,
+            min_cells_per_group=min_cells_per_group,
         )
 
         results[cluster_id] = {
             "n_groups": n_groups,
+            "n_supporting_groups": n_supporting_groups,
             "max_group_frac": max_group_frac_val,
             "n_cells": n_cells,
             "lodo_stability": lodo_stability,
@@ -155,7 +170,7 @@ def _compute_lodo_stability(
     full_clusters: np.ndarray,
     cluster_id: str,
     random_state: int,
-) -> float:
+) -> float | None:
     """
     Compute leave-one-donor-out (LODO) stability for a cluster.
 
@@ -306,6 +321,9 @@ def _evaluate_qc(
     lodo_stability: float | None,
     min_groups: int,
     max_group_frac_threshold: float | None,
+    *,
+    n_supporting_groups: int | None = None,
+    min_cells_per_group: int = 0,
 ) -> tuple[bool, str]:
     """
     Evaluate QC pass/fail for a cluster.
@@ -316,15 +334,28 @@ def _evaluate_qc(
         lodo_stability: LODO stability (or None if not computed).
         min_groups: minimum groups required.
         max_group_frac_threshold: max allowed group fraction (or None to skip).
+        n_supporting_groups: number of groups meeting the per-group cell floor.
+            Defaults to ``n_groups`` when not provided.
+        min_cells_per_group: per-group cell floor (for the FAIL message).
 
     Returns:
         (qc_pass, qc_reason) tuple.
     """
     reasons = []
 
-    # Check n_groups.
-    if n_groups < min_groups:
-        reasons.append(f"n_groups < min_groups ({n_groups} < {min_groups})")
+    # Effective group count defaults to raw n_groups when no floor was applied.
+    effective_groups = n_groups if n_supporting_groups is None else n_supporting_groups
+
+    # Check n_groups against the min, using the per-group-cell-floored count.
+    if effective_groups < min_groups:
+        if min_cells_per_group > 0 and effective_groups != n_groups:
+            reasons.append(
+                f"n_groups < min_groups ({effective_groups} < {min_groups}; "
+                f"{n_groups} total but only {effective_groups} with "
+                f">={min_cells_per_group} cells)"
+            )
+        else:
+            reasons.append(f"n_groups < min_groups ({effective_groups} < {min_groups})")
 
     # Check one-donor-dominated.
     if max_group_frac_threshold is not None and max_group_frac > max_group_frac_threshold:

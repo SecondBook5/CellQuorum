@@ -385,6 +385,131 @@ def _stage_execution_records_dataframe(
     )
 
 
+def _stage_completion_sidecar_payload(record: StageExecutionRecord) -> dict[str, object]:
+    """
+    Build the durable per-stage completion sidecar payload.
+
+    The sidecar is intentionally redundant with ``stage_execution_records.json``.
+    Resume logic should be able to inspect one stage's completion state without
+    parsing the whole run log.
+
+    Args:
+        record: Successful stage execution record.
+
+    Returns:
+        JSON-safe completion sidecar payload.
+    """
+
+    # Build artifact existence summaries at sidecar-write time.
+    artifact_status = [
+        {
+            **artifact.to_dict(),
+            "exists": artifact.path.exists(),
+        }
+        for artifact in record.output_artifacts
+    ]
+
+    # Return a compact but complete completion marker.
+    return {
+        "schema_version": 1,
+        "stage_name": record.stage_name,
+        "status": record.status,
+        "completed_at_utc": record.ended_at_utc.isoformat(),
+        "duration_seconds": record.duration_seconds,
+        "backend_used": record.backend_used,
+        "method_version": record.method_version,
+        "device": record.device,
+        "input_fingerprint": record.input_fingerprint,
+        "output_fingerprint": record.output_fingerprint,
+        "checkpoint_path": None if record.checkpoint_path is None else str(record.checkpoint_path),
+        "n_output_artifacts": len(record.output_artifacts),
+        "output_artifacts": artifact_status,
+        "metrics": dict(record.metrics),
+        "warnings": list(record.warnings),
+        "notes": list(record.notes),
+    }
+
+
+def _stage_completion_sidecar_path(stage_name: str) -> Path:
+    """
+    Return a stable relative sidecar path for a stage.
+
+    Args:
+        stage_name: Stage name from the execution record.
+
+    Returns:
+        Relative path under the run root.
+    """
+
+    # Stage names are registry-controlled, but keep this safe for custom stages.
+    safe_stage_name = "".join(
+        char if char.isalnum() or char in {"_", "-"} else "_" for char in stage_name
+    ).strip("_")
+    if not safe_stage_name:
+        safe_stage_name = "stage"
+    return Path("provenance") / "stages" / safe_stage_name / "completion.json"
+
+
+def _write_stage_completion_sidecars(
+    artifact_manager: ArtifactManager,
+    records: list[StageExecutionRecord],
+) -> None:
+    """
+    Write one completion marker per successful stage execution.
+
+    Args:
+        artifact_manager: Run-root artifact manager.
+        records: Stage lifecycle records to inspect.
+    """
+
+    # Write only successful stage markers; skipped/failed stages are not reusable.
+    for record in records:
+        if record.status != "success":
+            continue
+        artifact_manager.write_json(
+            _stage_completion_sidecar_payload(record),
+            name=f"stage_completion_{record.stage_name}",
+            relative_path=_stage_completion_sidecar_path(record.stage_name),
+            description=f"Durable completion marker for stage '{record.stage_name}'.",
+        )
+
+
+def _write_run_report_after_provenance(
+    *,
+    config: CellQuorumConfig,
+    context: PipelineContext,
+    records: list[StageExecutionRecord],
+    artifact_manager: ArtifactManager,
+) -> None:
+    """
+    Render the run report as a post-provenance hook.
+
+    Running here (rather than as a mid-plan stage) lets the report see the full
+    record set and avoids editing the hard-coded planner order. Report failures
+    are swallowed unless ``config.report.fail_on_report_error`` is set.
+
+    Args:
+        config: Resolved run configuration.
+        context: Final pipeline context (unused today; reserved for embedding
+            figures/tables in a richer report).
+        records: All stage execution records, in order.
+        artifact_manager: The run-root artifact manager to write through.
+    """
+
+    report_config = getattr(config, "report", None)
+    if report_config is None or not getattr(report_config, "enabled", False):
+        return
+
+    try:
+        from cellquorum.reports.run_report import write_run_report
+
+        write_run_report(config=config, records=records, artifact_manager=artifact_manager)
+    except Exception:
+        # Honor the opt-in: only fail the run when explicitly requested.
+        if getattr(report_config, "fail_on_report_error", False):
+            raise
+
+
 def write_pipeline_provenance(
     *,
     config: CellQuorumConfig,
@@ -543,6 +668,10 @@ def write_pipeline_provenance(
         description="Tabular lifecycle records for stage execution decisions.",
         index=False,
     )
+
+    # Write one completion sidecar per successful stage. These files are the
+    # durable primitive that future resume logic can read stage-by-stage.
+    _write_stage_completion_sidecars(artifact_manager, records)
 
     # Write the artifact manifest.
     artifact_manager.write_manifest()
@@ -759,14 +888,25 @@ def execute_pipeline_run(
     )
 
     # Write provenance with bootstrap and real stage execution records.
+    all_records = [
+        bootstrap_record,
+        *execution_result.stage_execution_records,
+    ]
     artifacts = write_pipeline_provenance(
         config=config,
         plan=plan,
         context=execution_result.context,
-        stage_execution_records=[
-            bootstrap_record,
-            *execution_result.stage_execution_records,
-        ],
+        stage_execution_records=all_records,
+    )
+
+    # Render the human-readable run report AFTER provenance is written, so it
+    # sees the complete record set. Report failures never fail the run unless
+    # the user opts in via report.fail_on_report_error.
+    _write_run_report_after_provenance(
+        config=config,
+        context=execution_result.context,
+        records=all_records,
+        artifact_manager=artifacts,
     )
 
     # Return the executed pipeline run result.

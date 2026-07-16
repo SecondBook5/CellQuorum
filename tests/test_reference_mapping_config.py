@@ -51,6 +51,14 @@ def test_reference_mapping_ordered_after_annotation():
     assert names.index("annotation") < names.index("reference_mapping")
 
 
+def test_annotation_diagnostics_ordered_after_reference_mapping():
+    """Transferred reference labels must exist before annotation diagnostics runs."""
+
+    c = CellQuorumConfig.model_validate({"project": {"name": "t"}})
+    names = [s.name for s in PipelinePlanner(c).build_plan().stages]
+    assert names.index("reference_mapping") < names.index("annotation_diagnostics")
+
+
 def test_scarches_method_is_registered():
     """Test that ScArchesMethod is auto-registered in METHOD_REGISTRY."""
     # Import triggers auto-registration.
