@@ -20,6 +20,9 @@ from cellquorum.ambient_correction.stage import AmbientCorrectionStage
 # Import annotation stage.
 from cellquorum.annotation.stage import AnnotationStage
 
+# Import annotation-consensus stage.
+from cellquorum.annotation_consensus.stage import AnnotationConsensusStage
+
 # Import annotation-diagnostics evaluation stage.
 from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
 
@@ -237,6 +240,7 @@ def build_default_stage_registry() -> StageRegistry:
             "integration": IntegrationStage(),
             "annotation": AnnotationStage(),
             "annotation_diagnostics": AnnotationDiagnosticsStage(),
+            "annotation_consensus": AnnotationConsensusStage(),
             "adjudication": AdjudicationStage(),
             "integration_benchmark": IntegrationBenchmarkStage(),
             "population_identity": PopulationIdentityStage(),

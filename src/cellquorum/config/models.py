@@ -20,6 +20,9 @@ from cellquorum.ambient_correction.config import AmbientCorrectionConfig
 # Import the annotation configuration model.
 from cellquorum.annotation.config import AnnotationConfig
 
+# Import the annotation-consensus configuration model.
+from cellquorum.annotation_consensus.config import AnnotationConsensusConfig
+
 # Import the annotation-diagnostics configuration model.
 from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
 
@@ -519,6 +522,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether annotation-diagnostics evaluation is enabled.
     annotation_diagnostics: bool = True
 
+    # Store whether annotation-consensus reconciliation is enabled.
+    annotation_consensus: bool = True
+
     # Store whether reference mapping is enabled.
     reference_mapping: bool = True
 
@@ -634,6 +640,11 @@ class CellQuorumConfig(StrictBaseModel):
     # Store annotation-diagnostics evaluation settings.
     annotation_diagnostics: AnnotationDiagnosticsConfig = Field(
         default_factory=AnnotationDiagnosticsConfig
+    )
+
+    # Store annotation-consensus reconciliation settings.
+    annotation_consensus: AnnotationConsensusConfig = Field(
+        default_factory=AnnotationConsensusConfig
     )
 
     # Store integration-benchmark evaluation settings.
