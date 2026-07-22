@@ -26,15 +26,26 @@ dependencies:
   - pytorch::torchaudio
   - pytorch-cuda=12.1
 
-  # RAPIDS stack.
+  # RAPIDS stack. cuvs is required by rapids-singlecell's neighbors backend;
+  # without it rapids_singlecell fails to import (CellQuorum then falls back to
+  # scanpy CPU for the routed steps — see compute/router.py).
   - cuda-version=12.1
   - cupy
   - cudf
   - cuml
   - cugraph
+  - cuvs
 
   # scRNA-seq deep generative models.
+  # NOTE paths in this pip block resolve relative to THIS file's directory
+  # (envs/), so the editable install of the repo root is `..`, not `.`.
+  # rapids-singlecell-cu12 is the prebuilt CUDA-12 wheel; the bare
+  # `rapids-singlecell` name builds from source and needs a matching nvcc/gcc.
+  # rapids-singlecell is OPTIONAL (GPU acceleration for normalization/PCA/
+  # neighbors/Leiden); scVI + scArches only need torch/scvi-tools. If the
+  # rapids-singlecell import ever fails, the pipeline still runs on CPU for
+  # those steps — remove this line to skip it entirely.
   - pip:
       - scvi-tools>=1.2
-      - rapids-singlecell
-      - -e .
+      - rapids-singlecell-cu12
+      - -e ..
