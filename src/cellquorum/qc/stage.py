@@ -201,6 +201,18 @@ class QCStage:
             )
             addon_metrics["doublets"] = doublet_metrics
 
+            # Honor doublets.remove (config-gated): drop consensus-flagged
+            # doublets from the output object. This is the ONLY QC path that
+            # removes cells beyond threshold filtering, and it defaults off.
+            if qc_config.doublets.remove and "predicted_doublet" in output_adata.obs.columns:
+                doublet_mask = output_adata.obs["predicted_doublet"].to_numpy(dtype=bool)
+                n_removed = int(doublet_mask.sum())
+                if n_removed > 0:
+                    output_adata = output_adata[~doublet_mask].copy()
+                # Record the removal in the doublet metrics for provenance.
+                doublet_metrics = {**doublet_metrics, "n_removed": n_removed}
+                addon_metrics["doublets"] = doublet_metrics
+
         # Resolve group_key for QC figure grouping. Prefer the central cohort
         # schema (condition, then donor, then sample), then fall back to the
         # design block, then a plain sample_id column.
