@@ -275,6 +275,14 @@ class RunConfig(StrictBaseModel):
     # Store the output detail level.
     log_level: Literal["quiet", "normal", "verbose"] = "normal"
 
+    # Store whether the final in-memory AnnData is written to disk at the end of
+    # a run. Without this, a from-scratch run threads the object through stages
+    # in memory and discards it — leaving no annotated deliverable on disk.
+    write_final_object: bool = True
+
+    # Store the filename (under the run's objects dir) for the final AnnData.
+    final_object_name: str = "final_annotated.h5ad"
+
     @field_validator("random_seed")
     @classmethod
     def validate_random_seed(cls, value: int) -> int:

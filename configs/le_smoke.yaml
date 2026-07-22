@@ -1,24 +1,26 @@
+# Fast end-to-end smoke test of the LE global pipeline on tiny subsamples.
+# Same stages/methods/wiring as configs/le_global.yaml, but: pre-built small
+# cohort as input (ambient_correction off), tiny epochs, 1 scArches seed, small
+# HVG. Goal: exercise every stage boundary (multi-method integration + multi-
+# method annotation + scArches + consensus) in minutes to catch wiring bugs.
 project:
-  name: le_global
+  name: le_smoke
   organism: human
   species_id: 9606
 
 paths:
-  output_dir: /home/ajbook/projects/cellquorum/runs/le_global
-  manifest: configs/manifests/le_global_cohort.csv
-  data_root: /mnt/e/lymphedema_cellranger
+  output_dir: /home/ajbook/projects/cellquorum/runs/le_smoke
 
 input:
-  # No pre-built h5ad: the cohort is built by the ambient_correction (SoupX)
-  # stage directly from the Cell Ranger libraries named in the manifest.
-  h5ad: null
+  h5ad: /tmp/le_smoke/cohort_small.h5ad
+  counts_layer: counts
 
 run:
   random_seed: 1337
   verbose: true
 
 compute:
-  backend: gpu           # scVI + scArches must fail fast if CUDA is unavailable
+  backend: gpu
 
 cohort:
   sample_key: sample_id
@@ -27,7 +29,7 @@ cohort:
   batch_key: batch
 
 stages:
-  ambient_correction: true
+  ambient_correction: false     # input is the already-corrected small cohort
   qc: true
   preprocessing: true
   feature_selection: false
@@ -38,7 +40,7 @@ stages:
   reference_mapping: true
   annotation_consensus: true
   annotation_diagnostics: true
-  adjudication: true          # advisory technical_population flags; no auto-delete
+  adjudication: true
   population_identity: true
   integration_benchmark: true
   subclustering: false
@@ -50,15 +52,9 @@ stages:
   cell_cell_communication: false
   network_analysis: false
 
-ambient_correction:
-  enabled: true
-  cellranger_root: /mnt/e/lymphedema_cellranger
-  round_to_int: true
-  resume: true          # reuse already-corrected libraries; skip SoupX on re-run
-
 qc:
   enabled: true
-  mode: report_only           # threshold QC never deletes; only flags (cellquorum_qc_keep)
+  mode: report_only
   threshold_strategy: fixed_and_mad
   metrics:
     layer: counts
@@ -66,26 +62,21 @@ qc:
     enabled: true
     n_mads: 5.0
     mito_n_mads: 3.0
-    groupby: [sample_id]       # per-sample MAD so high-UMI samples aren't clipped
+    groupby: [sample_id]
   basic:
-    min_genes_per_cell: 200
-    min_cells_per_gene: 3
-    max_mito_percent: 20.0     # lenient: skin keratinocytes are legitimately mito-high
+    min_genes_per_cell: 100
+    min_cells_per_gene: 1
+    max_mito_percent: 30.0
   doublets:
     enabled: true
     methods: [scrublet, scdblfinder]
-    consensus: all             # require BOTH detectors -> consensus doublets only
-    remove: true               # the ONLY cell removal
+    consensus: all
+    remove: true
     per_sample: true
   cell_cycle:
-    # OFF here on purpose: QC runs BEFORE normalization, so the only layer
-    # cell-cycle scoring could use inside QC is a crude on-the-fly CP10k-log of
-    # raw counts — less accurate than scoring on the real normalized layer.
-    # Cell-cycle phase is diagnostic (not used for annotation); score it post-hoc
-    # on cellquorum_normalized if a phase column is wanted in the deliverable.
-    enabled: false
+    enabled: false               # scored post-normalization (export), not in QC
   ambient:
-    enabled: false             # SoupX correction is done in the ambient_correction stage
+    enabled: false
 
 preprocessing:
   normalization:
@@ -95,36 +86,35 @@ dimensionality:
   enabled: true
   input_layer: cellquorum_normalized
   n_pcs: auto
+  max_pcs: 20
 
 integration:
   enabled: true
   batch_key: batch
-  # Multi-method: produce BOTH embeddings in one run. The LAST entry (scvi) is
-  # the primary/downstream embedding that clustering couples to.
   methods:
     - method: harmony
       output_rep: X_pca_harmony
     - method: scvi
       output_rep: X_scvi
-      n_latent: 30
+      n_latent: 10
+      max_epochs: 20             # tiny — smoke only
 
 clustering:
   enabled: true
   method: leiden
-  use_rep: X_scvi              # cluster on scVI; benchmark confirms the choice
+  use_rep: X_scvi
 
 annotation:
   enabled: true
   cluster_key: leiden
   score_layer: cellquorum_normalized
   counts_layer: counts
-  # Multi-method: marker_vote + CellTypist into DISTINCT columns.
   methods:
     - method: marker_vote
       key_added: cell_type_markers
     - method: celltypist
       key_added: cell_type_celltypist
-      model: Adult_Human_Skin.pkl   # skin-specific CellTypist model (cached)
+      model: Adult_Human_Skin.pkl
       majority_voting: true
   marker_panels:
     Keratinocytes: [KRT5, KRT14, KRT1, KRT10, KRT15, KRT6A]
@@ -148,16 +138,16 @@ reference_mapping:
   enabled: true
   method: scarches
   compute_backend: gpu
-  resume: true
-  atlas_h5ad: /mnt/e/atopic_dermatitis_singlecell_atlas/data/Broad/SCP2613/anndata/scp.h5ad
+  resume: false
+  atlas_h5ad: /tmp/le_smoke/atlas_small.h5ad
   label_key: Cell_type
-  atlas_batch_key: biosample_id       # capture-level batch (39 libraries), verified
+  atlas_batch_key: biosample_id
   counts_layer: counts
-  reference_filters:
-    - column: disease_lesional
-      keep: [Healthy, Non-lesional]    # the NORMAL cells
-  n_top_genes: 3000
-  seeds: [0, 1, 2]                     # 3 seeds for the first pass; scale up later
+  n_top_genes: 500
+  max_epochs_scvi: 20
+  max_epochs_scanvi: 10
+  max_epochs_query: 20
+  seeds: [0]
   key_added: ref_state
 
 annotation_consensus:
@@ -168,10 +158,6 @@ annotation_consensus:
   needs_review_key: needs_review
   granular_source_key: ref_state
   min_agree_fraction: 0.5
-  # CellTypist (Adult_Human_Skin) emits fine labels -> map onto the 16-lineage
-  # backbone so votes are comparable. Labels with no backbone equivalent
-  # (cornified KC, neutrophils, B cells, sweat gland) pass through unmapped and
-  # simply won't agree -> correctly land in needs_review.
   backbone_aliases:
     Differentiated_KC: Keratinocytes
     Undifferentiated_KC: Keratinocytes
@@ -217,7 +203,7 @@ annotation_diagnostics:
 adjudication:
   enabled: true
   cluster_key: leiden
-  donor_key: donor_id          # adjudication doesn't read cohort.donor_key; set it here
+  donor_key: donor_id
   condition_key: condition
 
 population_identity:

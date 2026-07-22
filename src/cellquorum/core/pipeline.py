@@ -474,6 +474,174 @@ def _write_stage_completion_sidecars(
         )
 
 
+def _write_final_object(*, config: CellQuorumConfig, context: PipelineContext) -> Path | None:
+    """
+    Write the final in-memory AnnData to the run's objects directory.
+
+    A from-scratch run (e.g. built by ambient_correction) threads one AnnData
+    through every stage in memory. Without this write, that fully-annotated
+    object is discarded when the run ends and only per-stage snapshots and
+    provenance remain on disk. Controlled by ``run.write_final_object`` /
+    ``run.final_object_name``.
+
+    Args:
+        config: Resolved run configuration.
+        context: Final pipeline context (its ``adata`` is the object to write).
+
+    Returns:
+        The path written, or None when writing is disabled or there is no adata.
+    """
+
+    run_config = getattr(config, "run", None)
+    if run_config is None or not getattr(run_config, "write_final_object", True):
+        return None
+
+    adata = getattr(context, "adata", None)
+    if adata is None:
+        return None
+
+    objects_dir = context.paths.objects
+    objects_dir.mkdir(parents=True, exist_ok=True)
+    out_path = objects_dir / getattr(run_config, "final_object_name", "final_annotated.h5ad")
+
+    # h5py forbids '/' in group/dataset keys. Labels containing '/' (e.g. cell
+    # types like "T/NK" or "Pericyte/SMC") leak into KEYS in three places that
+    # break write_h5ad: uns dict keys, obs/var column names (e.g. scArches
+    # writes per-class "refprob_<label>" columns), and obsm/varm keys. Sanitize
+    # all of them before writing so the deliverable serializes regardless of the
+    # atlas/label vocabulary. Only KEYS/column-names are rewritten — the label
+    # VALUES stored in obs columns (e.g. obs["cell_type"] == "T/NK") are kept.
+    _sanitize_uns_keys_for_h5ad(adata.uns)
+    _sanitize_frame_columns_for_h5ad(adata.obs)
+    _sanitize_frame_columns_for_h5ad(adata.var)
+    _sanitize_mapping_keys_for_h5ad(adata.obsm)
+    _sanitize_mapping_keys_for_h5ad(adata.varm)
+    # Stage payloads stash rich Python structures (lists of dicts, ragged/mixed
+    # types) in uns that anndata cannot serialize to h5ad. Coerce any such
+    # non-serializable uns value to a JSON string so the deliverable always
+    # writes; the information is preserved and recoverable via json.loads.
+    _jsonify_unserializable_uns(adata.uns)
+    adata.write_h5ad(out_path)
+    return out_path
+
+
+def _jsonify_unserializable_uns(uns: object) -> None:
+    """
+    Replace uns values anndata can't write to h5ad with a JSON-string form.
+
+    Walks the top level of ``uns`` (and one level into nested dicts, matching how
+    stages namespace payloads under ``uns['cellquorum'][<stage>]``). A value is
+    left untouched when it is an h5ad-friendly scalar/array/str or a dict of
+    such; otherwise it is replaced by ``json.dumps(value, default=str)``.
+
+    Args:
+        uns: The AnnData.uns mapping (mutated in place).
+    """
+
+    import json
+
+    def _friendly(value: object) -> bool:
+        # Scalars and strings write fine.
+        if value is None or isinstance(value, str | int | float | bool):
+            return True
+        # Numpy arrays / pandas frames write fine.
+        module = type(value).__module__
+        if module.startswith(("numpy", "pandas")):
+            return True
+        # A dict is friendly only if all its values are friendly.
+        if isinstance(value, dict):
+            return all(isinstance(k, str) and _friendly(v) for k, v in value.items())
+        return False
+
+    def _coerce(mapping: object) -> None:
+        for key in list(mapping.keys()):
+            value = mapping[key]
+            if isinstance(value, dict) and not _friendly(value):
+                # Recurse one level so a mostly-friendly namespace keeps its
+                # simple entries and only jsonifies the offending sub-values.
+                _coerce(value)
+                # Re-check: if still unfriendly (e.g. a list-of-dicts entry
+                # remains), jsonify the whole entry.
+                for sub in list(value.keys()):
+                    if not _friendly(value[sub]):
+                        value[sub] = json.dumps(value[sub], default=str)
+            elif not _friendly(value):
+                mapping[key] = json.dumps(value, default=str)
+
+    # AnnData.uns is a mutable mapping (dict-like); coerce it in place.
+    _coerce(uns)
+
+
+def _safe_h5_key(key: str, existing: object) -> str:
+    """Return ``key`` with '/' replaced by '_', kept unique against ``existing``."""
+
+    safe = key.replace("/", "_")
+    while safe != key and safe in existing:
+        safe += "_"
+    return safe
+
+
+def _sanitize_frame_columns_for_h5ad(frame: object) -> None:
+    """
+    Rename any DataFrame columns whose names contain '/' (in place).
+
+    Column names become h5 keys under obs/var, so a '/' (e.g. in a scArches
+    "refprob_Pericyte/SMC" column) breaks write_h5ad. Column VALUES are
+    untouched.
+
+    Args:
+        frame: A pandas DataFrame (adata.obs or adata.var).
+    """
+
+    renames: dict[str, str] = {}
+    for col in list(frame.columns):
+        if isinstance(col, str) and "/" in col:
+            renames[col] = _safe_h5_key(col, set(frame.columns) | set(renames.values()))
+    if renames:
+        frame.rename(columns=renames, inplace=True)
+
+
+def _sanitize_mapping_keys_for_h5ad(mapping: object) -> None:
+    """
+    Rename any obsm/varm keys containing '/' (in place).
+
+    Args:
+        mapping: An AnnData axis mapping (adata.obsm or adata.varm).
+    """
+
+    bad = [k for k in list(mapping.keys()) if isinstance(k, str) and "/" in k]
+    for key in bad:
+        mapping[_safe_h5_key(key, set(mapping.keys()))] = mapping.pop(key)
+
+
+def _sanitize_uns_keys_for_h5ad(node: object) -> None:
+    """
+    Recursively replace '/' with '_' in dict keys within an uns-like structure.
+
+    Operates in place. Only dict KEYS are rewritten (values, including category
+    labels stored as arrays, are untouched — those serialize fine). This makes
+    label-keyed count maps (e.g. annotation-consensus ``label_counts``) writable
+    to h5ad even when labels contain '/'.
+
+    Args:
+        node: A uns value; recursion descends into dict values and list items.
+    """
+
+    if isinstance(node, dict):
+        # Rewrite offending keys, then recurse into the (possibly moved) values.
+        for key in [k for k in node if isinstance(k, str) and "/" in k]:
+            safe_key = key.replace("/", "_")
+            # Avoid clobbering an existing safe key; suffix until unique.
+            while safe_key in node and safe_key != key:
+                safe_key += "_"
+            node[safe_key] = node.pop(key)
+        for value in node.values():
+            _sanitize_uns_keys_for_h5ad(value)
+    elif isinstance(node, list | tuple):
+        for item in node:
+            _sanitize_uns_keys_for_h5ad(item)
+
+
 def _write_run_report_after_provenance(
     *,
     config: CellQuorumConfig,
@@ -898,6 +1066,10 @@ def execute_pipeline_run(
         context=execution_result.context,
         stage_execution_records=all_records,
     )
+
+    # Persist the final in-memory AnnData so a from-scratch run leaves a real
+    # annotated deliverable on disk (not just per-stage snapshots/provenance).
+    _write_final_object(config=config, context=execution_result.context)
 
     # Render the human-readable run report AFTER provenance is written, so it
     # sees the complete record set. Report failures never fail the run unless
