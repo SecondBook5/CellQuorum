@@ -127,12 +127,14 @@ def test_multi_method_tolerates_a_skip():
     assert "skipper" in " ".join(result.warnings)
 
 
-def test_empty_methods_list_is_skipped():
+def test_empty_methods_list_uses_scalar_path():
+    """An empty methods list (the pydantic default) must use the scalar method path."""
     stage = _ToyStage(registry=_registry())
     a = _adata()
-    ctx = _Ctx(a, {"toy": {"methods": []}})
+    ctx = _Ctx(a, {"toy": {"method": "writer_a", "methods": [], "key_added": "scalar"}})
     result = stage.run(ctx)
-    # An empty methods list must return a skipped result.
-    assert result.status == "skipped"
-    assert "empty" in result.skip_reason.lower()
-    assert any("empty" in w.lower() for w in result.warnings)
+    # Empty methods list must NOT skip; it must run the scalar method.
+    assert "scalar" in result.adata.obs.columns
+    assert result.adata.obs["scalar"].iloc[0] == "writer_a"
+    # Must NOT have multi-method metrics.
+    assert "n_methods" not in result.metrics

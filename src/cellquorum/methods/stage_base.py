@@ -81,15 +81,12 @@ class MethodDispatchStage(ABC):
             )
 
         # Multi-method path: run a list of method sub-configs in order.
+        # Only a NON-EMPTY methods list triggers this path. An empty list (the pydantic
+        # default from model_dump) falls through to the scalar method path, so configs
+        # specifying only `method:` behave identically whether the empty `methods: []`
+        # is present or not.
         methods = stage_config.get("methods")
-        if methods is not None:
-            # Guard the empty list case: return a skipped result.
-            if not methods:
-                return StageResult.skipped(
-                    adata=adata,
-                    reason="methods list is empty",
-                    warnings=[f"{self.name}: methods list is empty; no methods to run"],
-                )
+        if methods:
             return self._run_methods_list(adata, stage_config, methods, context)
 
         # Single-method path (unchanged behavior).
@@ -194,15 +191,26 @@ class MethodDispatchStage(ABC):
             artifacts.extend(outcome.artifacts)
             per_method_metrics.append(dict(outcome.metrics))
 
+        # Build aggregate metrics: include per-method results, and expose the last
+        # successful method's output_rep (if any) as the effective downstream key.
+        # This allows clustering to auto-couple to the final integration method's
+        # output when a methods list is used.
+        aggregate_metrics = {
+            "n_methods": len(methods),
+            "per_method": per_method_metrics,
+        }
+        # If any method succeeded, carry forward the last successful method's output_rep.
+        if per_method_metrics:
+            last_metrics = per_method_metrics[-1]
+            if not last_metrics.get("skipped") and "output_rep" in last_metrics:
+                aggregate_metrics["output_rep"] = last_metrics["output_rep"]
+
         return StageResult(
             adata=current,
             artifacts=artifacts,
             notes=notes,
             warnings=warnings,
-            metrics={
-                "n_methods": len(methods),
-                "per_method": per_method_metrics,
-            },
+            metrics=aggregate_metrics,
         )
 
     def _validate_output(self, result: StageResult) -> None:  # noqa: B027

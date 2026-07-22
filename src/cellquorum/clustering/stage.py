@@ -55,13 +55,27 @@ class ClusteringStage(MethodDispatchStage):
                     stages = cfg.get("stages", {})
                     integration_enabled = stages.get("integration", False)
                     integration_cfg = cfg.get("integration", {})
-                    integration_output_rep = integration_cfg.get("output_rep", "X_pca_harmony")
+                    # When integration ran a methods list, couple to the last method's output_rep.
+                    integration_methods = integration_cfg.get("methods", [])
+                    if integration_methods:
+                        integration_output_rep = integration_methods[-1].get(
+                            "output_rep", "X_pca_harmony"
+                        )
+                    else:
+                        integration_output_rep = integration_cfg.get("output_rep", "X_pca_harmony")
                 else:
                     integration_enabled = getattr(cfg.stages, "integration", False)
                     if hasattr(cfg, "integration"):
-                        integration_output_rep = getattr(
-                            cfg.integration, "output_rep", "X_pca_harmony"
-                        )
+                        # When integration ran a methods list, couple to the last output_rep.
+                        integration_methods = getattr(cfg.integration, "methods", [])
+                        if integration_methods:
+                            integration_output_rep = integration_methods[-1].get(
+                                "output_rep", "X_pca_harmony"
+                            )
+                        else:
+                            integration_output_rep = getattr(
+                                cfg.integration, "output_rep", "X_pca_harmony"
+                            )
 
             # Check if the user explicitly set use_rep via the pydantic model's model_fields_set
             user_set_use_rep = False
