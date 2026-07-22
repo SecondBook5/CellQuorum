@@ -16,7 +16,9 @@ from pathlib import Path
 import anndata as ad
 
 from cellquorum.ambient_correction.soupx import (
+    corrected_output_exists,
     import_corrected_matrix,
+    read_rho_sidecar,
     run_soupx_library,
 )
 from cellquorum.contracts import CellQuorumContractError
@@ -102,20 +104,29 @@ class AmbientCorrectionStage:
                 warnings.append(msg)
                 continue
             out_dir = out_base / sample_id
-            rho = run_soupx_library(
-                raw_h5,
-                filt_h5,
-                out_dir,
-                backend,
-                resolution=ac.cluster_resolution,
-                round_to_int=ac.round_to_int,
-                timeout=ac.timeout_seconds,
-            )
+            # Resume: reuse an already-corrected library (+ its rho sidecar)
+            # instead of re-running SoupX. This makes a re-run after a later-stage
+            # failure skip the multi-minute-per-library correction step.
+            resume = getattr(ac, "resume", True)
+            cached_rho = read_rho_sidecar(out_dir) if resume else None
+            if resume and cached_rho is not None and corrected_output_exists(out_dir):
+                rho = cached_rho
+                notes.append(f"{sample_id}: rho={rho:.4f} (reused; SoupX skipped)")
+            else:
+                rho = run_soupx_library(
+                    raw_h5,
+                    filt_h5,
+                    out_dir,
+                    backend,
+                    resolution=ac.cluster_resolution,
+                    round_to_int=ac.round_to_int,
+                    timeout=ac.timeout_seconds,
+                )
+                notes.append(f"{sample_id}: rho={rho:.4f}")
             fractions[sample_id] = rho
             # Read the corrected counts back into an AnnData (barcodes namespaced
             # by sample_id) so they can be concatenated into the pipeline object.
             corrected_libraries.append(import_corrected_matrix(out_dir, sample_id))
-            notes.append(f"{sample_id}: rho={rho:.4f}")
 
         # Concatenate the corrected per-library matrices into ONE AnnData and make
         # it the object the executor threads downstream. This is the whole point:

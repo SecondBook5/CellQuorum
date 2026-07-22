@@ -83,7 +83,71 @@ def run_soupx_library(
     )
     if result.returncode != 0:
         raise CellQuorumBackendError(f"SoupX failed for {raw_h5}: {result.stderr.strip()[:500]}")
-    return parse_rho(result.stdout)
+    rho = parse_rho(result.stdout)
+    # Persist rho next to the corrected matrix so a resumed run can reuse this
+    # library's contamination fraction without re-running SoupX.
+    write_rho_sidecar(out_dir, rho)
+    return rho
+
+
+# Files a completed SoupX library output must contain to be reusable on resume.
+_CORRECTED_OUTPUTS: tuple[str, ...] = (
+    "matrix.mtx.gz",
+    "features.tsv.gz",
+    "barcodes.tsv.gz",
+)
+
+# Sidecar filename holding the per-library contamination fraction (rho).
+_RHO_SIDECAR = "rho.txt"
+
+
+def corrected_output_exists(out_dir: str | Path) -> bool:
+    """
+    Return whether a directory holds a complete corrected SoupX matrix.
+
+    Args:
+        out_dir: Per-library output directory.
+
+    Returns:
+        True when every required corrected-matrix file is present.
+    """
+
+    d = Path(out_dir)
+    return all((d / name).is_file() for name in _CORRECTED_OUTPUTS)
+
+
+def write_rho_sidecar(out_dir: str | Path, rho: float) -> None:
+    """
+    Write the per-library contamination fraction to a small sidecar file.
+
+    Args:
+        out_dir: Per-library output directory (created if absent).
+        rho: Estimated contamination fraction.
+    """
+
+    d = Path(out_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / _RHO_SIDECAR).write_text(f"{rho:.6f}\n")
+
+
+def read_rho_sidecar(out_dir: str | Path) -> float | None:
+    """
+    Read the per-library rho sidecar, or None when it is absent/unreadable.
+
+    Args:
+        out_dir: Per-library output directory.
+
+    Returns:
+        The stored contamination fraction, or None when unavailable.
+    """
+
+    path = Path(out_dir) / _RHO_SIDECAR
+    if not path.is_file():
+        return None
+    try:
+        return float(path.read_text().strip())
+    except (ValueError, OSError):
+        return None
 
 
 def import_corrected_matrix(out_dir: str | Path, sample_id: str) -> ad.AnnData:
@@ -118,4 +182,12 @@ def import_corrected_matrix(out_dir: str | Path, sample_id: str) -> ad.AnnData:
     return adata
 
 
-__all__ = ["SoupXError", "import_corrected_matrix", "parse_rho", "run_soupx_library"]
+__all__ = [
+    "SoupXError",
+    "corrected_output_exists",
+    "import_corrected_matrix",
+    "parse_rho",
+    "read_rho_sidecar",
+    "run_soupx_library",
+    "write_rho_sidecar",
+]

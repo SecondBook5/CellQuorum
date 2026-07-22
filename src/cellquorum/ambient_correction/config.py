@@ -31,5 +31,10 @@ class AmbientCorrectionConfig(StrictBaseModel):
     # Per-library R timeout (SoupX can take minutes on large libraries).
     timeout_seconds: int = 1800
 
+    # Reuse a library's already-corrected matrix (+ its rho sidecar) instead of
+    # re-running SoupX when a complete output exists. Makes a re-run after a
+    # later-stage failure skip the multi-minute-per-library SoupX step.
+    resume: bool = True
+
 
 __all__ = ["AmbientCorrectionConfig"]

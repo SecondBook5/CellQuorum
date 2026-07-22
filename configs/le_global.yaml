@@ -54,6 +54,7 @@ ambient_correction:
   enabled: true
   cellranger_root: /mnt/e/lymphedema_cellranger
   round_to_int: true
+  resume: true          # reuse already-corrected libraries; skip SoupX on re-run
 
 qc:
   enabled: true
