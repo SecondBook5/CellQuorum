@@ -12,6 +12,41 @@ from pathlib import Path
 import anndata as ad
 
 
+def _score_cell_cycle(a: ad.AnnData) -> None:
+    """
+    Add S_score / G2M_score / phase to obs, scored on the normalized layer.
+
+    Uses CellQuorum's own scorer and Tirosh gene lists so the result matches the
+    engine. No-op (with a printed note) when the normalized layer is absent.
+
+    Args:
+        a: The final annotated AnnData (expects a cellquorum_normalized layer).
+    """
+
+    layer = "cellquorum_normalized"
+    if layer not in a.layers:
+        print(f"cell-cycle: skipped ('{layer}' layer absent)")
+        return
+    try:
+        from cellquorum.qc.cell_cycle import (
+            TIROSH_G2M_GENES,
+            TIROSH_S_GENES,
+            score_cell_cycle,
+        )
+        from cellquorum.qc.config import QCCellCycleConfig
+
+        cc = QCCellCycleConfig(
+            enabled=True,
+            score_layer=layer,
+            s_genes=TIROSH_S_GENES,
+            g2m_genes=TIROSH_G2M_GENES,
+        )
+        score_cell_cycle(a, cc)
+        print("cell-cycle: scored S_score / G2M_score / phase on", layer)
+    except Exception as e:  # diagnostic only — never fail export on it
+        print(f"cell-cycle: skipped (scoring error: {e!r})")
+
+
 def main(final_h5ad: str, run_dir: str) -> int:
     run = Path(run_dir)
     objects = run / "objects"
@@ -20,6 +55,14 @@ def main(final_h5ad: str, run_dir: str) -> int:
     results.mkdir(parents=True, exist_ok=True)
 
     a = ad.read_h5ad(final_h5ad)
+
+    # Cell-cycle scoring, done HERE (post-normalization) rather than in QC:
+    # QC runs before normalization exists, so the accurate place to score the
+    # cell cycle is on the real log-normalized layer. Reuse the engine's own
+    # scorer + Tirosh gene lists so the phase call matches what CellQuorum would
+    # produce. Diagnostic only (not used for annotation); skipped if the layer
+    # is absent so export never fails on it.
+    _score_cell_cycle(a)
 
     # Patient x condition cell counts.
     summary = (
@@ -53,6 +96,8 @@ def main(final_h5ad: str, run_dir: str) -> int:
         "  three methods). `adata.obs['needs_review']`: True where methods disagreed.",
         "- `adata.obs['cell_type_granular']`: finer state for high-confidence cells.",
         "- `adata.obs['donor_id']` / `condition` / `sample_id`: per-cell patient identity.",
+        "- `adata.obs['phase']` (+ S_score/G2M_score): cell-cycle phase, scored on the",
+        "  normalized layer. Diagnostic only — not used for the cell-type calls.",
         "- Embeddings in `adata.obsm`: `X_scvi`, `X_pca_harmony`, `X_umap`.",
         "- Layers: `counts` (raw), `cellquorum_normalized` (log-normalized).",
         "",

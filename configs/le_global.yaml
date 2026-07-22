@@ -78,7 +78,12 @@ qc:
     remove: true               # the ONLY cell removal
     per_sample: true
   cell_cycle:
-    enabled: true
+    # OFF here on purpose: QC runs BEFORE normalization, so the only layer
+    # cell-cycle scoring could use inside QC is a crude on-the-fly CP10k-log of
+    # raw counts — less accurate than scoring on the real normalized layer.
+    # Cell-cycle phase is diagnostic (not used for annotation); score it post-hoc
+    # on cellquorum_normalized if a phase column is wanted in the deliverable.
+    enabled: false
   ambient:
     enabled: false             # SoupX correction is done in the ambient_correction stage
 
