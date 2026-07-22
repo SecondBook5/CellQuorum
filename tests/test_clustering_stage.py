@@ -96,3 +96,63 @@ def test_clustering_stage_honors_enabled_false():
     assert result.metrics.get("skipped") is True
     assert result.metrics.get("reason") == "disabled by config"
     assert any("disabled" in w for w in result.warnings)
+
+
+def test_clustering_auto_couples_to_last_integration_method_output_rep():
+    """When integration runs a methods list, clustering couples to the last method's output_rep."""
+    from pydantic import BaseModel
+
+    class MockIntegrationConfig(BaseModel):
+        enabled: bool = True
+        methods: list[dict] = []
+        output_rep: str = "X_pca_harmony"
+
+    class MockClusteringConfig(BaseModel):
+        enabled: bool = True
+        method: str = "leiden"
+        n_neighbors: int = 15
+        resolution: float = 1.0
+        random_state: int = 0
+        key_added: str = "leiden"
+        use_rep: str = "X_pca"
+
+        model_fields_set: set = set()
+
+    class MockStages(BaseModel):
+        integration: bool = True
+        clustering: bool = True
+
+    class MockConfig(BaseModel):
+        stages: MockStages
+        integration: MockIntegrationConfig
+        clustering: MockClusteringConfig
+
+    reg = MethodRegistry()
+    reg.register(LeidenMethod)
+    stage = ClusteringStage(registry=reg)
+    a = _adata_with_pca()
+    # Add both harmony and scvi embeddings.
+    a.obsm["X_pca_harmony"] = a.obsm["X_pca"] + 0.1
+    a.obsm["X_scvi"] = a.obsm["X_pca"] + 0.2
+
+    # Configure integration with a methods list where scvi is LAST.
+    integration_cfg = MockIntegrationConfig(
+        methods=[
+            {"method": "harmony", "output_rep": "X_pca_harmony"},
+            {"method": "scvi", "output_rep": "X_scvi"},
+        ]
+    )
+    clustering_cfg = MockClusteringConfig()
+    config = MockConfig(
+        stages=MockStages(),
+        integration=integration_cfg,
+        clustering=clustering_cfg,
+    )
+
+    ctx = _Ctx(a, config)
+    result = stage.run(ctx)
+    # Clustering should have auto-coupled to X_scvi (the last method's output_rep).
+    assert any(
+        "X_scvi" in note for note in result.notes
+    ), f"Expected X_scvi in notes: {result.notes}"
+    assert "leiden" in result.adata.obs

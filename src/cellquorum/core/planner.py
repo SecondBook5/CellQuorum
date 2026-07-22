@@ -201,6 +201,7 @@ class PipelinePlanner:
             ("subclustering", self.config.stages.subclustering),
             ("adjudication", self.config.stages.adjudication),
             ("reference_mapping", self.config.stages.reference_mapping),
+            ("annotation_consensus", self.config.stages.annotation_consensus),
             # Annotation diagnostics must run after reference mapping so
             # transferred labels such as ref_state can be audited.
             ("annotation_diagnostics", self.config.stages.annotation_diagnostics),

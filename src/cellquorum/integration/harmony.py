@@ -108,7 +108,15 @@ class HarmonyMethod(AnalysisMethod):
         # Write the corrected embedding and record provenance.
         adata.obsm[output_rep] = np.ascontiguousarray(corrected)
         cq = adata.uns.setdefault("cellquorum", {})
+        # Single-method provenance (backward-compatible path, last-wins).
         cq["integration"] = {
+            "method": "harmony",
+            "batch_key": batch_key,
+            "input_rep": input_rep,
+            "output_rep": output_rep,
+        }
+        # Per-method provenance (multi-method path, namespaced by output_rep).
+        cq.setdefault("integration_methods", {})[output_rep] = {
             "method": "harmony",
             "batch_key": batch_key,
             "input_rep": input_rep,

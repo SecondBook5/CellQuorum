@@ -302,6 +302,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "adjudication",
         "ambient_correction",
         "annotation",
+        "annotation_consensus",
         "annotation_diagnostics",
         "clustering",
         "dimensionality",

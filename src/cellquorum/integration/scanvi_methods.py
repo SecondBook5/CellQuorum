@@ -120,7 +120,16 @@ class ScANVIMethod(AnalysisMethod):
         adata.obsm[output_rep] = scanvi.get_latent_representation()
 
         cq = adata.uns.setdefault("cellquorum", {})
+        # Single-method provenance (backward-compatible path, last-wins).
         cq["integration"] = {
+            "method": "scanvi",
+            "batch_key": batch_key,
+            "label_key": label_key,
+            "output_rep": output_rep,
+            "n_latent": n_latent,
+        }
+        # Per-method provenance (multi-method path, namespaced by output_rep).
+        cq.setdefault("integration_methods", {})[output_rep] = {
             "method": "scanvi",
             "batch_key": batch_key,
             "label_key": label_key,

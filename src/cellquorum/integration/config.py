@@ -39,5 +39,11 @@ class IntegrationConfig(StrictBaseModel):
     # Random seed for deterministic integration.
     random_state: int = 0
 
+    # Multi-method dispatch: list of per-method sub-configs (each entry is a full
+    # method config with its own `method`, `output_rep`, etc.). An empty list (the
+    # default) means use the scalar `method:` path; only a non-empty list triggers
+    # multi-method dispatch, running each entry in order against the same AnnData.
+    methods: list[dict] = []
+
 
 __all__ = ["IntegrationConfig"]
