@@ -156,6 +156,16 @@ def calculate_qc_metrics(
         log1p=qc_config.metrics.log1p,
     )
 
+    # Attach any MAD groupby columns from obs onto the cell-metric table.
+    # Group-wise MAD thresholding reads its grouping column(s) from cell_metrics
+    # (not obs), so a configured groupby like [sample_id] must be carried over.
+    # cell_metrics is indexed by obs_names, so alignment is by the shared index.
+    attach_groupby_columns_from_obs(
+        cell_metrics=cell_metrics,
+        adata=adata,
+        groupby_columns=qc_config.mad.groupby,
+    )
+
     # Calculate gene-level QC metrics.
     gene_metrics = calculate_gene_qc_metrics(
         matrix,
@@ -179,6 +189,50 @@ def calculate_qc_metrics(
         summary=summary,
         warnings=list(validation_summary.warnings),
     )
+
+
+def attach_groupby_columns_from_obs(
+    *,
+    cell_metrics: pd.DataFrame,
+    adata: ad.AnnData,
+    groupby_columns: list[str],
+) -> None:
+    """
+    Copy MAD groupby columns from ``adata.obs`` onto the cell-metric table.
+
+    Group-wise MAD thresholding groups cells by metadata columns (e.g.
+    ``sample_id``) that live on ``adata.obs``, but it reads them from the
+    cell-metric table. This helper carries the configured groupby columns over,
+    aligning by the shared observation index, so per-group thresholds work.
+
+    Args:
+        cell_metrics: Cell-level QC metric table, indexed by observation name.
+        adata: Source AnnData whose ``obs`` holds the grouping columns.
+        groupby_columns: obs column names the MAD config groups by.
+
+    Raises:
+        QCMetricsError: If a requested groupby column is absent from ``obs``.
+    """
+
+    # Nothing to attach when no grouping is configured.
+    if not groupby_columns:
+        return
+
+    # Fail loud on a misconfigured grouping column rather than silently dropping
+    # it (which would collapse group-wise thresholds into a single global one).
+    missing = [column for column in groupby_columns if column not in adata.obs.columns]
+    if missing:
+        raise QCMetricsError(
+            "QC MAD groupby column(s) not found in AnnData.obs: "
+            f"{', '.join(missing)}. Available obs columns include: "
+            f"{', '.join(map(str, adata.obs.columns[:20]))}."
+        )
+
+    # Copy each grouping column, aligning obs -> cell_metrics by the shared index.
+    for column in groupby_columns:
+        if column in cell_metrics.columns:
+            continue
+        cell_metrics[column] = adata.obs[column].reindex(cell_metrics.index).to_numpy()
 
 
 def resolve_qc_feature_names(adata: ad.AnnData, config: QCConfig) -> pd.Index:
@@ -726,6 +780,7 @@ __all__ = [
     "QCMetricsError",
     "QCMetricsResult",
     "add_feature_family_cell_metrics",
+    "attach_groupby_columns_from_obs",
     "build_feature_masks_for_names",
     "build_qc_metric_summary",
     "calculate_cell_qc_metrics",
