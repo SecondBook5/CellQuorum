@@ -64,3 +64,15 @@ def test_no_votes_returns_none():
     assert label is None
     assert tier == "low"
     assert needs is True
+
+
+def test_two_vs_two_tie_is_low():
+    # A tie for first place meets the 0.5 fraction but has no unique leader ->
+    # contested, so it must be low confidence / needs review (not medium).
+    label, tier, needs = reconcile_votes(
+        ["T/NK", "T/NK", "Fibroblasts", "Fibroblasts"],
+        min_agree_fraction=0.5,
+        high_confidence_all=True,
+    )
+    assert tier == "low"
+    assert needs is True

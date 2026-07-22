@@ -10,7 +10,7 @@ def normalize_label(label: object, aliases: dict[str, str]) -> str | None:
     Map a raw per-method label onto its canonical backbone label.
 
     Args:
-        label: Raw label value (string, None, or NA-like).
+        label: Raw label value (any type; typically string, None, or NA-like).
         aliases: Mapping from raw label to canonical label.
 
     Returns:
