@@ -82,6 +82,12 @@ def test_multi_method_runs_each_in_order():
     assert result.adata.obs["col_a"].iloc[0] == "writer_a"
     assert result.adata.obs["col_b"].iloc[0] == "writer_b"
     assert result.metrics.get("n_methods") == 2
+    # Verify per-method metrics include the key_added values.
+    per_method = result.metrics.get("per_method")
+    assert isinstance(per_method, list)
+    assert len(per_method) == 2
+    assert per_method[0]["key_added"] == "col_a"
+    assert per_method[1]["key_added"] == "col_b"
 
 
 def test_single_method_path_unchanged():
@@ -119,3 +125,14 @@ def test_multi_method_tolerates_a_skip():
     # A per-method skip must not abort the remaining methods.
     assert "col_b" in result.adata.obs.columns
     assert "skipper" in " ".join(result.warnings)
+
+
+def test_empty_methods_list_is_skipped():
+    stage = _ToyStage(registry=_registry())
+    a = _adata()
+    ctx = _Ctx(a, {"toy": {"methods": []}})
+    result = stage.run(ctx)
+    # An empty methods list must return a skipped result.
+    assert result.status == "skipped"
+    assert "empty" in result.skip_reason.lower()
+    assert any("empty" in w.lower() for w in result.warnings)

@@ -82,7 +82,14 @@ class MethodDispatchStage(ABC):
 
         # Multi-method path: run a list of method sub-configs in order.
         methods = stage_config.get("methods")
-        if methods:
+        if methods is not None:
+            # Guard the empty list case: return a skipped result.
+            if not methods:
+                return StageResult.skipped(
+                    adata=adata,
+                    reason="methods list is empty",
+                    warnings=[f"{self.name}: methods list is empty; no methods to run"],
+                )
             return self._run_methods_list(adata, stage_config, methods, context)
 
         # Single-method path (unchanged behavior).
@@ -156,6 +163,7 @@ class MethodDispatchStage(ABC):
 
         notes: list[str] = []
         warnings: list[str] = []
+        artifacts: list = []
         per_method_metrics: list[dict] = []
         current = adata
 
@@ -167,12 +175,15 @@ class MethodDispatchStage(ABC):
             if isinstance(outcome, MethodSkip):
                 # Record the skip; keep going so one missing method (e.g. no
                 # CellTypist model) does not lose the others' output.
-                warnings.append(
-                    f"{self.name}: method "
-                    f"'{self._select_method_name(method_config)}' skipped: "
-                    f"{outcome.reason}"
+                method_name = self._select_method_name(method_config)
+                warnings.append(f"{self.name}: method '{method_name}' skipped: {outcome.reason}")
+                per_method_metrics.append(
+                    {
+                        "method": method_name,
+                        "skipped": True,
+                        "reason": outcome.reason,
+                    }
                 )
-                per_method_metrics.append({"skipped": True, "reason": outcome.reason})
                 continue
 
             # Validate and thread this method's AnnData into the next method.
@@ -180,10 +191,12 @@ class MethodDispatchStage(ABC):
             current = outcome.adata
             notes.extend(outcome.notes)
             warnings.extend(outcome.warnings)
+            artifacts.extend(outcome.artifacts)
             per_method_metrics.append(dict(outcome.metrics))
 
         return StageResult(
             adata=current,
+            artifacts=artifacts,
             notes=notes,
             warnings=warnings,
             metrics={
