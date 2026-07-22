@@ -1,0 +1,229 @@
+project:
+  name: le_global
+  organism: human
+  species_id: 9606
+
+paths:
+  output_dir: /home/ajbook/projects/cellquorum/runs/le_global
+  manifest: configs/manifests/le_global_cohort.csv
+  data_root: /mnt/e/lymphedema_cellranger
+
+input:
+  # No pre-built h5ad: the cohort is built by the ambient_correction (SoupX)
+  # stage directly from the Cell Ranger libraries named in the manifest.
+  h5ad: null
+
+run:
+  random_seed: 1337
+  verbose: true
+
+compute:
+  backend: gpu           # scVI + scArches must fail fast if CUDA is unavailable
+
+cohort:
+  sample_key: sample_id
+  donor_key: donor_id
+  condition_key: condition
+  batch_key: batch
+
+stages:
+  ambient_correction: true
+  qc: true
+  preprocessing: true
+  feature_selection: false
+  dimensionality: true
+  integration: true
+  clustering: true
+  annotation: true
+  reference_mapping: true
+  annotation_consensus: true
+  annotation_diagnostics: true
+  adjudication: true          # advisory technical_population flags; no auto-delete
+  population_identity: true
+  integration_benchmark: true
+  subclustering: false
+  state_scoring: false
+  discovery: false
+  composition: false
+  differential_expression: false
+  molecular_inference: false
+  cell_cell_communication: false
+  network_analysis: false
+
+ambient_correction:
+  enabled: true
+  cellranger_root: /mnt/e/lymphedema_cellranger
+  round_to_int: true
+
+qc:
+  enabled: true
+  mode: report_only           # threshold QC never deletes; only flags (cellquorum_qc_keep)
+  threshold_strategy: fixed_and_mad
+  metrics:
+    layer: counts
+  mad:
+    enabled: true
+    n_mads: 5.0
+    mito_n_mads: 3.0
+    groupby: [sample_id]       # per-sample MAD so high-UMI samples aren't clipped
+  basic:
+    min_genes_per_cell: 200
+    min_cells_per_gene: 3
+    max_mito_percent: 20.0     # lenient: skin keratinocytes are legitimately mito-high
+  doublets:
+    enabled: true
+    methods: [scrublet, scdblfinder]
+    consensus: all             # require BOTH detectors -> consensus doublets only
+    remove: true               # the ONLY cell removal
+    per_sample: true
+  cell_cycle:
+    enabled: true
+  ambient:
+    enabled: false             # SoupX correction is done in the ambient_correction stage
+
+preprocessing:
+  normalization:
+    output_layer: cellquorum_normalized
+
+dimensionality:
+  enabled: true
+  input_layer: cellquorum_normalized
+  n_pcs: auto
+
+integration:
+  enabled: true
+  batch_key: batch
+  # Multi-method: produce BOTH embeddings in one run. The LAST entry (scvi) is
+  # the primary/downstream embedding that clustering couples to.
+  methods:
+    - method: harmony
+      output_rep: X_pca_harmony
+    - method: scvi
+      output_rep: X_scvi
+      n_latent: 30
+
+clustering:
+  enabled: true
+  method: leiden
+  use_rep: X_scvi              # cluster on scVI; benchmark confirms the choice
+
+annotation:
+  enabled: true
+  cluster_key: leiden
+  score_layer: cellquorum_normalized
+  counts_layer: counts
+  # Multi-method: marker_vote + CellTypist into DISTINCT columns.
+  methods:
+    - method: marker_vote
+      key_added: cell_type_markers
+    - method: celltypist
+      key_added: cell_type_celltypist
+      model: Adult_Human_Skin.pkl   # skin-specific CellTypist model (cached)
+      majority_voting: true
+  marker_panels:
+    Keratinocytes: [KRT5, KRT14, KRT1, KRT10, KRT15, KRT6A]
+    Cornified keratinocytes: [FLG, LOR, SPRR2B, CDSN, IVL]
+    Fibroblasts: [COL1A1, COL1A2, COL3A1, DCN, LUM, PDGFRA]
+    Pericyte/SMC: [ACTA2, RGS5, PDGFRB, MYH11, TAGLN]
+    VEC: [PECAM1, VWF, CLDN5, CDH5, SELE]
+    LEC: [LYVE1, PROX1, PDPN, CCL21, FLT4]
+    Melanocytes: [MLANA, PMEL, TYR, DCT, MITF]
+    Schwann: [SOX10, PLP1, S100B, MPZ, NRXN1]
+    DC: [CD1C, CLEC9A, LAMP3, ITGAX, HLA-DRA]
+    Macrophages: [CD68, CD163, LYZ, C1QA, C1QB, MRC1]
+    Neutrophils: [FCGR3B, CSF3R, S100A8, S100A9, CXCR2]
+    Mast: [TPSAB1, TPSB2, CPA3, MS4A2, KIT]
+    B cells: [MS4A1, CD79A, CD79B, CD19, BANK1]
+    Plasma: [MZB1, IGHG1, JCHAIN, XBP1, DERL3]
+    T/NK: [CD3D, CD3E, CD8A, IL7R, NKG7, GNLY]
+    Sweat gland: [DCD, MUCL1, SCGB2A2, KRT7, AQP5]
+
+reference_mapping:
+  enabled: true
+  method: scarches
+  compute_backend: gpu
+  resume: true
+  atlas_h5ad: /mnt/e/atopic_dermatitis_singlecell_atlas/data/Broad/SCP2613/anndata/scp.h5ad
+  label_key: Cell_type
+  atlas_batch_key: biosample_id       # capture-level batch (39 libraries), verified
+  counts_layer: counts
+  reference_filters:
+    - column: disease_lesional
+      keep: [Healthy, Non-lesional]    # the NORMAL cells
+  n_top_genes: 3000
+  seeds: [0, 1, 2]                     # 3 seeds for the first pass; scale up later
+  key_added: ref_state
+
+annotation_consensus:
+  enabled: true
+  method_label_keys: [cell_type_markers, cell_type_celltypist, ref_state]
+  key_added: cell_type
+  confidence_key: annotation_confidence
+  needs_review_key: needs_review
+  granular_source_key: ref_state
+  min_agree_fraction: 0.5
+  # CellTypist (Adult_Human_Skin) emits fine labels -> map onto the 16-lineage
+  # backbone so votes are comparable. Labels with no backbone equivalent
+  # (cornified KC, neutrophils, B cells, sweat gland) pass through unmapped and
+  # simply won't agree -> correctly land in needs_review.
+  backbone_aliases:
+    Differentiated_KC: Keratinocytes
+    Undifferentiated_KC: Keratinocytes
+    F1: Fibroblasts
+    F2: Fibroblasts
+    F3: Fibroblasts
+    VE1: VEC
+    VE2: VEC
+    VE3: VEC
+    LE1: LEC
+    LE2: LEC
+    Pericyte_1: Pericyte/SMC
+    Pericyte_2: Pericyte/SMC
+    Schwann_1: Schwann
+    Schwann_2: Schwann
+    Melanocyte: Melanocytes
+    Mast_cell: Mast
+    Plasma: Plasma
+    DC1: DC
+    DC2: DC
+    MigDC: DC
+    migLC: DC
+    moDC: DC
+    LC: DC
+    Inf_mac: Macrophages
+    Macro_1: Macrophages
+    Macro_2: Macrophages
+    Mono_mac: Macrophages
+    Tc: T/NK
+    Th: T/NK
+    Treg: T/NK
+    NK: T/NK
+    ILC1_3: T/NK
+    ILC1_NK: T/NK
+    ILC2: T/NK
+
+annotation_diagnostics:
+  enabled: true
+  method: scdiagnostics
+  cell_type_col: cell_type
+  expression_layer: cellquorum_normalized
+
+adjudication:
+  enabled: true
+  cluster_key: leiden
+
+population_identity:
+  enabled: true
+  reference_keys: [ref_state]
+  annotation_keys: [cell_type]
+  cluster_key: leiden
+  sample_key: sample_id
+  donor_key: donor_id
+  condition_key: condition
+
+integration_benchmark:
+  enabled: true
+  batch_key: batch
+  label_key: cell_type
+  pre_embedding: X_pca
+  embeddings: [X_pca_harmony, X_scvi]

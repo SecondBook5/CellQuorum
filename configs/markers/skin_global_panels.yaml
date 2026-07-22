@@ -1,0 +1,18 @@
+# Canonical human skin lineage markers for marker_vote. Labels MUST match the
+# SCP2613 Cell_type backbone so consensus aligns without extra aliasing.
+Keratinocytes: [KRT5, KRT14, KRT1, KRT10, KRT15, KRT6A]
+Cornified keratinocytes: [FLG, LOR, SPRR2B, CDSN, IVL]
+Fibroblasts: [COL1A1, COL1A2, COL3A1, DCN, LUM, PDGFRA]
+Pericyte/SMC: [ACTA2, RGS5, PDGFRB, MYH11, TAGLN]
+VEC: [PECAM1, VWF, CLDN5, CDH5, SELE]
+LEC: [LYVE1, PROX1, PDPN, CCL21, FLT4]
+Melanocytes: [MLANA, PMEL, TYR, DCT, MITF]
+Schwann: [SOX10, PLP1, S100B, MPZ, NRXN1]
+DC: [CD1C, CLEC9A, LAMP3, ITGAX, HLA-DRA]
+Macrophages: [CD68, CD163, LYZ, C1QA, C1QB, MRC1]
+Neutrophils: [FCGR3B, CSF3R, S100A8, S100A9, CXCR2]
+Mast: [TPSAB1, TPSB2, CPA3, MS4A2, KIT]
+B cells: [MS4A1, CD79A, CD79B, CD19, BANK1]
+Plasma: [MZB1, IGHG1, JCHAIN, XBP1, DERL3]
+T/NK: [CD3D, CD3E, CD8A, IL7R, NKG7, GNLY]
+Sweat gland: [DCD, MUCL1, SCGB2A2, KRT7, AQP5]
