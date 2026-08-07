@@ -36,6 +36,9 @@ from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
+# Import the differential-expression configuration model.
+from cellquorum.differential_expression.config import DifferentialExpressionConfig
+
 # Import the feature-selection configuration model.
 from cellquorum.feature_selection.config import FeatureSelectionConfig
 
@@ -671,6 +674,11 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store adjudication settings.
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
+
+    # Store differential-expression settings.
+    differential_expression: DifferentialExpressionConfig = Field(
+        default_factory=DifferentialExpressionConfig
+    )
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
