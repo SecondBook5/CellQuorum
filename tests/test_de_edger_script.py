@@ -74,3 +74,6 @@ def test_edger_script_runs_and_writes_de_table(tmp_path):
     gene_b = de.loc[de["gene"] == "G1"].iloc[0]
     assert gene_b["logFC"] > 1
     assert gene_b["FDR"] < 0.05
+    # Pin contrast direction: a null gene should be non-significant.
+    gene_null = de.loc[de["gene"] == "G0"].iloc[0]
+    assert gene_null["FDR"] > 0.05

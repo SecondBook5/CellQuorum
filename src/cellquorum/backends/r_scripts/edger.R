@@ -45,7 +45,11 @@ fit <- glmQLFit(dge, design)
 # The condition coefficient is the last column (case vs control).
 coef_name <- paste0(condition_col, case)
 coef_idx <- match(coef_name, colnames(design))
-if (is.na(coef_idx)) coef_idx <- ncol(design)
+if (is.na(coef_idx)) {
+  stop("edgeR DE: condition coefficient '", coef_name,
+       "' not found in design columns: ",
+       paste(colnames(design), collapse = ", "))
+}
 qlf <- glmQLFTest(fit, coef = coef_idx)
 
 # Write the full DE table sorted by significance.
