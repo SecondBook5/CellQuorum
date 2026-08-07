@@ -49,3 +49,6 @@ provenance/
 
 docs/superpowers/
 .superpowers/
+
+# Claude Code worktrees
+.claude/worktrees/
