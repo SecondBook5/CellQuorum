@@ -52,3 +52,4 @@ docs/superpowers/
 
 # Claude Code worktrees
 .claude/worktrees/
+.worktrees/
