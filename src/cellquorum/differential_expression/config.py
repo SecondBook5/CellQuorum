@@ -6,7 +6,23 @@ from cellquorum.config.base import StrictBaseModel
 
 
 class DifferentialExpressionConfig(StrictBaseModel):
-    """Config for the pseudobulk differential-expression stage."""
+    """Pseudobulk differential-expression analysis via edgeR.
+
+    Aggregates single-cell counts to pseudobulk samples per group,
+    then performs robust statistical testing via edgeR (R). Produces
+    gene-level statistics and diagnostic plots.
+
+    Attributes:
+        enabled: Whether the stage runs (enabled by default).
+        method: DE method registry key (pseudobulk_edger).
+        layer: Layer holding raw counts for pseudobulk aggregation.
+        covariates: Optional covariates added to the design matrix.
+        min_count: edgeR filterByExpr minimum count threshold.
+        min_total_count: edgeR filterByExpr minimum total count threshold.
+        fdr: FDR threshold recorded in outputs.
+        timeout_seconds: R execution timeout in seconds.
+        r_package: R package name for backend status checks (edgeR).
+    """
 
     # Whether this stage runs.
     enabled: bool = True
@@ -33,3 +49,6 @@ class DifferentialExpressionConfig(StrictBaseModel):
 
     # R package required for the fit.
     r_package: str = "edgeR"
+
+
+__all__ = ["DifferentialExpressionConfig"]

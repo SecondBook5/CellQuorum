@@ -7,7 +7,11 @@ def test_de_config_defaults():
     assert cfg.method == "pseudobulk_edger"
     assert cfg.layer == "counts"
     assert cfg.covariates == []
+    assert cfg.min_count == 10
+    assert cfg.min_total_count == 15
     assert cfg.fdr == 0.05
+    assert cfg.timeout_seconds == 1800
+    assert cfg.r_package == "edgeR"
 
 
 def test_de_config_mounted_on_cellquorum_config():
