@@ -47,6 +47,9 @@ from cellquorum.core.stage import (
     StageExecutionRecord,
     StageResult,
 )
+
+# Import differential expression stage.
+from cellquorum.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.dimensionality.stage import DimensionalityStage
 
 # Import feature selection stage.
@@ -246,6 +249,7 @@ def build_default_stage_registry() -> StageRegistry:
             "population_identity": PopulationIdentityStage(),
             "reference_mapping": ReferenceMappingStage(),
             "subclustering": SubclusteringStage(),
+            "differential_expression": DifferentialExpressionStage(),
         }
     )
 
