@@ -19,10 +19,40 @@ emb <- read.csv(rep_csv, row.names = 1, check.names = FALSE)          # cells x 
 meta <- read.csv(meta_csv, row.names = 1, check.names = FALSE, stringsAsFactors = FALSE)
 meta <- meta[rownames(emb), , drop = FALSE]
 
+# Validate input columns exist.
+if (!condition_col %in% colnames(meta)) {
+  stop("condition_col '", condition_col, "' not found in meta.csv columns: ",
+       paste(colnames(meta), collapse = ", "))
+}
+if (!donor_col %in% colnames(meta)) {
+  stop("donor_col '", donor_col, "' not found in meta.csv columns: ",
+       paste(colnames(meta), collapse = ", "))
+}
+if (!is.na(celltype_col) && !celltype_col %in% colnames(meta)) {
+  stop("celltype_col '", celltype_col, "' not found in meta.csv columns: ",
+       paste(colnames(meta), collapse = ", "))
+}
+
 # Restrict to case/control levels.
 keep <- meta[[condition_col]] %in% c(case, control)
 emb <- emb[keep, , drop = FALSE]
 meta <- meta[keep, , drop = FALSE]
+
+# Validate both case and control are present after filtering.
+present_levels <- unique(meta[[condition_col]])
+if (!case %in% present_levels) {
+  stop("case level '", case, "' not found in meta[[", condition_col, "]] after filtering. ",
+       "Present levels: ", paste(present_levels, collapse = ", "))
+}
+if (!control %in% present_levels) {
+  stop("control level '", control, "' not found in meta[[", condition_col, "]] after filtering. ",
+       "Present levels: ", paste(present_levels, collapse = ", "))
+}
+
+# Validate non-empty data after filtering.
+if (nrow(meta) == 0) {
+  stop("No cells remaining after filtering for case='", case, "' and control='", control, "'")
+}
 
 # Build SingleCellExperiment with placeholder assay and reduced-dim embedding.
 # Attach cell_type to colData if provided so annotateNhoods can read it.
@@ -58,6 +88,10 @@ if (paired) {
 # Count cells per neighborhood, aggregated by sample.
 milo <- countCells(milo, samples = sample_col, meta.data = meta)
 
+# Calculate neighborhood distances for spatial FDR weighting (matches validated pipeline).
+# testNhoods default fdr.weighting="k-distance" requires these distances for correct SpatialFDR.
+milo <- calcNhoodDistance(milo, d = d, reduced.dim = "PCA")
+
 # Build per-sample design.df: one row per sample.
 # Must reorder to match colnames(nhoodCounts(milo)).
 if (paired) {
@@ -80,11 +114,20 @@ if (paired) {
 }
 
 # Run testNhoods with the design formula and per-sample data.
-res <- testNhoods(
-  milo,
-  design = design_formula,
-  design.df = design_df,
-  reduced.dim = "PCA"
+# Wrap in tryCatch to ensure rank-deficient or other testNhoods failures exit non-zero.
+res <- tryCatch(
+  {
+    testNhoods(
+      milo,
+      design = design_formula,
+      design.df = design_df,
+      reduced.dim = "PCA"
+    )
+  },
+  error = function(e) {
+    message("testNhoods failed: ", conditionMessage(e))
+    quit(status = 1)
+  }
 )
 
 # Compute nhood_size from the nhoods matrix (testNhoods output does NOT include it).

@@ -298,6 +298,11 @@ def test_milo_script_paired_donor_blocked_design(tmp_path):
     emb_df.insert(0, "cell", [m["cell"] for m in cells_meta])
     meta_df = pd.DataFrame(cells_meta).set_index("cell")
 
+    # Fixture sanity check: every donor must appear in BOTH conditions for paired design
+    assert (
+        meta_df.reset_index().groupby("donor")["condition"].nunique() == 2
+    ).all(), "Paired fixture broken: not all donors span both conditions"
+
     rep_csv = tmp_path / "rep.csv"
     meta_csv = tmp_path / "meta.csv"
     out_csv = tmp_path / "da.csv"
@@ -340,9 +345,10 @@ def test_milo_script_paired_donor_blocked_design(tmp_path):
     ]
     assert set(expected_cols).issubset(da.columns)
 
-    # Assert at least one neighborhood with SpatialFDR < 0.3 (loose for small paired data)
+    # Assert at least one neighborhood with SpatialFDR < 0.01
+    # (observed min ~0.0028 with calcNhoodDistance)
     assert (
-        da["SpatialFDR"] < 0.3
+        da["SpatialFDR"] < 0.01
     ).any(), f"No significant nhoods; min SpatialFDR = {da['SpatialFDR'].min()}"
 
     # Assert annotation columns are populated
