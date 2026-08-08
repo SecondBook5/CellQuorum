@@ -11,20 +11,12 @@ import pandas as pd
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.enrichment_viz import plots
+from cellquorum.enrichment_viz.discovery import collections_from_glob
 from cellquorum.enrichment_viz.save import apply_theme, figure_artifacts, save_figure
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 # Cap on how many running-ES per-source curves to render per collection.
 _MAX_RUNNING_ES_FIGS = 6
-
-
-def _collections_from_glob(results_dir: Path, prefix: str, suffix: str = ".csv") -> list[str]:
-    """Discover collection names from files matching prefix*suffix, sorted."""
-    out = []
-    for path in sorted(results_dir.glob(f"{prefix}*{suffix}")):
-        name = path.name[len(prefix) : -len(suffix)]
-        out.append(name)
-    return out
 
 
 class GseaVizMethod(AnalysisMethod):
@@ -46,7 +38,7 @@ class GseaVizMethod(AnalysisMethod):
         wanted = config.get("collections")
 
         # Discover summary CSVs, excluding the runningES companion files.
-        all_cols = _collections_from_glob(results_dir, "enrichment_gsea_")
+        all_cols = collections_from_glob(results_dir, "enrichment_gsea_")
         collections = [c for c in all_cols if not c.startswith("runningES_")]
         if wanted:
             collections = [c for c in collections if c in set(wanted)]
