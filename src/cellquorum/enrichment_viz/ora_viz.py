@@ -45,7 +45,11 @@ class OraVizMethod(AnalysisMethod):
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
         for collection in collections:
-            df = pd.read_csv(results_dir / f"enrichment_ora_{collection}.csv")
+            try:
+                df = pd.read_csv(results_dir / f"enrichment_ora_{collection}.csv")
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"ora_viz: failed to read {collection} CSV: {str(exc)[:200]}")
+                continue
             if df.empty:
                 warnings.append(f"ora_viz: {collection} CSV is empty")
                 continue

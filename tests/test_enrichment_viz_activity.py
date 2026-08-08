@@ -53,3 +53,12 @@ def test_activity_viz_resource_filter(tmp_path):
 def test_activity_viz_skips_when_no_csv(tmp_path):
     ctx = _context(tmp_path)
     assert isinstance(ActivityVizMethod()._run(ctx.adata, {}, ctx), MethodSkip)
+
+
+def test_activity_viz_malformed_csv_skips_instead_of_crash(tmp_path):
+    ctx = _context(tmp_path)
+    # Write a 0-byte CSV that will trigger EmptyDataError on read.
+    (ctx.paths.results / "enrichment_activity_collectri.csv").write_text("")
+    out = ActivityVizMethod()._run(ctx.adata, {}, ctx)
+    assert isinstance(out, MethodSkip)
+    assert any("failed to read" in str(w) for w in out.details.get("warnings", []))

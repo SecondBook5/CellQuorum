@@ -51,7 +51,11 @@ class GseaVizMethod(AnalysisMethod):
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
         for collection in collections:
-            df = pd.read_csv(results_dir / f"enrichment_gsea_{collection}.csv")
+            try:
+                df = pd.read_csv(results_dir / f"enrichment_gsea_{collection}.csv")
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"gsea_viz: failed to read {collection} CSV: {str(exc)[:200]}")
+                continue
             if df.empty:
                 warnings.append(f"gsea_viz: {collection} summary CSV is empty")
                 continue

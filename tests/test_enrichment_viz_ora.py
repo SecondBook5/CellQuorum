@@ -50,3 +50,12 @@ def test_ora_viz_produces_barplot_and_dotplot(tmp_path):
 def test_ora_viz_skips_when_no_csv(tmp_path):
     ctx = _context(tmp_path)
     assert isinstance(OraVizMethod()._run(ctx.adata, {}, ctx), MethodSkip)
+
+
+def test_ora_viz_malformed_csv_skips_instead_of_crash(tmp_path):
+    ctx = _context(tmp_path)
+    # Write a 0-byte CSV that will trigger EmptyDataError on read.
+    (ctx.paths.results / "enrichment_ora_reactome.csv").write_text("")
+    out = OraVizMethod()._run(ctx.adata, {}, ctx)
+    assert isinstance(out, MethodSkip)
+    assert any("failed to read" in str(w) for w in out.details.get("warnings", []))

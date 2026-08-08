@@ -45,7 +45,11 @@ class ActivityVizMethod(AnalysisMethod):
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
         for resource in resources:
-            df = pd.read_csv(results_dir / f"enrichment_activity_{resource}.csv")
+            try:
+                df = pd.read_csv(results_dir / f"enrichment_activity_{resource}.csv")
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"activity_viz: failed to read {resource} CSV: {str(exc)[:200]}")
+                continue
             if df.empty:
                 warnings.append(f"activity_viz: {resource} CSV is empty")
                 continue

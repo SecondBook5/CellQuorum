@@ -69,3 +69,12 @@ def test_gsea_viz_skips_when_no_csv(tmp_path):
     ctx = _context(tmp_path)  # no gsea csv written
     out = GseaVizMethod()._run(ctx.adata, {}, ctx)
     assert isinstance(out, MethodSkip)
+
+
+def test_gsea_viz_malformed_csv_skips_instead_of_crash(tmp_path):
+    ctx = _context(tmp_path)
+    # Write a 0-byte CSV that will trigger EmptyDataError on read.
+    (ctx.paths.results / "enrichment_gsea_hallmark.csv").write_text("")
+    out = GseaVizMethod()._run(ctx.adata, {}, ctx)
+    assert isinstance(out, MethodSkip)
+    assert any("failed to read" in str(w) for w in out.details.get("warnings", []))
