@@ -69,6 +69,15 @@ def _fit_sccoda(args: argparse.Namespace) -> int:
     import tensorflow as tf
     from sccoda.util import cell_composition_data as ccd
 
+    # Determinism across separate processes. scCODA's ``sample_hmc`` calls
+    # ``tfp.mcmc.sample_chain`` without a ``seed=`` argument and exposes no seed
+    # parameter, so ``tf.random.set_seed`` alone does NOT pin the stateful HMC
+    # RNG — identical-seed runs otherwise diverge (differing acceptance rates and
+    # inclusion probabilities), flipping borderline cell types across the FDR
+    # threshold. Op-level determinism pins the stateful ops so the chain is
+    # byte-identical across runs. Must be enabled before any TF op is built.
+    tf.config.experimental.enable_op_determinism()
+
     # Set seeds for reproducibility
     tf.random.set_seed(args.seed)
     np.random.seed(args.seed)
