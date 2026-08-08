@@ -26,6 +26,47 @@ def _bh(pvalues: np.ndarray, method: str) -> np.ndarray:
     return out
 
 
+# Cap on how many sources get a persisted running-ES walk per collection, to
+# bound file size. Significant sources are taken first; the remainder is filled
+# by |score| descending (deterministic).
+_RUNNING_ES_MAX_SOURCES = 20
+
+
+def running_es_walk(metric: pd.Series, members: set[str]) -> pd.DataFrame | None:
+    """Weighted (p=1) Subramanian running-enrichment walk down a ranked metric.
+
+    Args:
+        metric: Gene → signed ranking metric (indexed by gene).
+        members: Gene-set membership (gene names).
+
+    Returns:
+        DataFrame with columns ``rank, running_es, hit, metric`` in ranked order,
+        or ``None`` for a degenerate set (no hits, or every gene is a hit).
+    """
+    ranked = metric.sort_values(ascending=False, kind="mergesort")
+    genes = ranked.index.to_numpy()
+    vals = ranked.to_numpy(dtype=float)
+    hit = np.fromiter((g in members for g in genes), dtype=bool, count=len(genes))
+    n = len(genes)
+    n_h = int(hit.sum())
+    if n_h == 0 or n_h == n:
+        return None
+    n_r = float(np.abs(vals[hit]).sum())
+    if n_r == 0.0:
+        return None
+    p_hit = np.where(hit, np.abs(vals) / n_r, 0.0).cumsum()
+    p_miss = np.where(~hit, 1.0 / (n - n_h), 0.0).cumsum()
+    running = p_hit - p_miss
+    return pd.DataFrame(
+        {
+            "rank": np.arange(1, n + 1),
+            "running_es": running,
+            "hit": hit.astype(int),
+            "metric": vals,
+        }
+    )
+
+
 class GseaMethod(AnalysisMethod):
     """Preranked GSEA over the upstream DE table (the enrichment anchor)."""
 
@@ -138,6 +179,52 @@ class GseaMethod(AnalysisMethod):
                     description=f"GSEA ({collection}), signed -log10p ranking.",
                 )
             )
+
+            # --- 5a: persist the running-ES walk for the top / significant sources.
+            # Guarded so a failure to build the walk for one collection degrades to
+            # a skipped-collection note, never a crash (skip-not-crash).
+            try:
+                metric = ranking.iloc[0]  # single-contrast ranking → one Series
+                sig_sources = list(out.loc[out["significant"], "source"])
+                by_mag = list(
+                    out.reindex(
+                        out["score"].abs().sort_values(ascending=False, kind="mergesort").index
+                    )["source"]
+                )
+                ordered_sources: list[str] = []
+                for src in sig_sources + by_mag:
+                    if src not in ordered_sources:
+                        ordered_sources.append(src)
+                    if len(ordered_sources) >= _RUNNING_ES_MAX_SOURCES:
+                        break
+                source_targets = net.groupby("source")["target"].agg(lambda t: set(map(str, t)))
+                walk_rows = []
+                for src in ordered_sources:
+                    members = source_targets.get(src, set()) & set(ranking.columns)
+                    walk = running_es_walk(metric, members)
+                    if walk is None:
+                        continue
+                    walk = walk.copy()
+                    walk.insert(0, "source", src)
+                    walk_rows.append(walk)
+                if walk_rows:
+                    running_df = pd.concat(walk_rows, ignore_index=True)
+                    running_df = running_df[["source", "rank", "running_es", "hit", "metric"]]
+                    running_csv = results_dir / f"enrichment_gsea_runningES_{collection}.csv"
+                    running_df.to_csv(running_csv, index=False)
+                    artifacts.append(
+                        StageArtifact(
+                            name="enrichment_results",
+                            path=running_csv,
+                            kind="csv",
+                            description=f"GSEA running-ES walk ({collection}).",
+                        )
+                    )
+            except Exception as exc:  # noqa: BLE001 - degrade to a note, never crash
+                skipped.append(
+                    {"collection": collection, "reason": f"runningES skipped: {str(exc)[:200]}"}
+                )
+
             done.append(collection)
 
         if not done:
