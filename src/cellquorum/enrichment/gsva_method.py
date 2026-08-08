@@ -63,7 +63,9 @@ class GsvaMethod(AnalysisMethod):
         organism = config.get("organism", "human")
         license = config.get("license", "academic")
         min_size = int(config.get("min_size", 10))
+        max_size = int(config.get("max_size", 500))
         fdr_method = config.get("fdr_method", "fdr_bh")
+        fdr = float(config.get("fdr", 0.05))
 
         if not case or not control:
             return MethodSkip(
@@ -78,6 +80,16 @@ class GsvaMethod(AnalysisMethod):
         meta = pb.sample_meta
         keep = meta[condition_col].isin([case, control])
         counts, meta = counts[keep.values], meta[keep]
+
+        # Drop zero-library pseudobulk samples up front. Left in, they would be
+        # CPM-normalized into all-zero rows that decoupler.gsva silently drops
+        # (empty=True), shrinking the returned frame and desynchronizing any
+        # positional condition mask. Removing them here keeps counts/meta aligned
+        # with what decoupler will actually score.
+        lib = counts.sum(axis=1)
+        nonzero = lib > 0
+        counts, meta = counts[nonzero.values], meta[nonzero.values]
+
         n_case = int((meta[condition_col] == case).sum())
         n_control = int((meta[condition_col] == control).sum())
         if n_case < 2 or n_control < 2:
@@ -86,9 +98,8 @@ class GsvaMethod(AnalysisMethod):
                 details={"method": self.name, "n_case": n_case, "n_control": n_control},
             )
 
-        # CPM + log1p normalize pseudobulk counts.
-        lib = counts.sum(axis=1).replace(0, np.nan)
-        data = np.log1p(counts.div(lib, axis=0) * 1e6).fillna(0.0)
+        # CPM + log1p normalize the surviving (nonzero-library) pseudobulk counts.
+        data = np.log1p(counts.div(counts.sum(axis=1), axis=0) * 1e6)
 
         try:
             import decoupler as dc
@@ -104,7 +115,6 @@ class GsvaMethod(AnalysisMethod):
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
-        cond = meta[condition_col].values
         artifacts, done, skipped = [], [], []
         for collection in collections:
             try:
@@ -112,8 +122,52 @@ class GsvaMethod(AnalysisMethod):
             except PriorFetchError as exc:
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
+
+            # Enforce the max_size gene-set filter (min_size is decoupler's tmin):
+            # keep only sources whose target count present in the data does not
+            # exceed max_size, so oversized sets are excluded here as designed.
+            present = net[net["target"].isin(data.columns)]
+            sizes = present.groupby("source")["target"].nunique()
+            keep_sources = set(sizes[sizes <= max_size].index)
+            net = net[net["source"].isin(keep_sources)]
+
+            # The gsva call through the aligned t-test is guarded together: gsva
+            # may drop samples (empty=True), so deriving the condition vector from
+            # the RETURNED es.index — never the pre-drop meta order — and running
+            # the contrast happen inside one try/except that degrades to a skip.
             try:
                 es, _ = dc.mt.gsva(data, net, tmin=min_size)
+                # Align conditions to decoupler's returned sample order.
+                cond = meta[condition_col].reindex(es.index)
+                case_mask = (cond == case).values
+                control_mask = (cond == control).values
+                if int(case_mask.sum()) < 2 or int(control_mask.sum()) < 2:
+                    skipped.append(
+                        {
+                            "collection": collection,
+                            "reason": "an arm lost samples to decoupler filtering (<2 remain)",
+                        }
+                    )
+                    continue
+
+                rows = []
+                for source in es.columns:
+                    case_vals = es.loc[case_mask, source].values
+                    control_vals = es.loc[control_mask, source].values
+                    if paired and len(case_vals) == len(control_vals) and len(case_vals) >= 2:
+                        res = stats.ttest_rel(case_vals, control_vals)
+                    else:
+                        res = stats.ttest_ind(case_vals, control_vals, equal_var=False)
+                    rows.append(
+                        {
+                            "source": source,
+                            "case_mean": float(np.mean(case_vals)),
+                            "control_mean": float(np.mean(control_vals)),
+                            "statistic": res.statistic,
+                            "pvalue": res.pvalue,
+                            "collection": collection,
+                        }
+                    )
             except Exception as exc:
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
@@ -129,32 +183,21 @@ class GsvaMethod(AnalysisMethod):
                 )
             )
 
-            rows = []
-            for source in es.columns:
-                case_vals = es.loc[cond == case, source].values
-                control_vals = es.loc[cond == control, source].values
-                try:
-                    if paired and len(case_vals) == len(control_vals) and len(case_vals) >= 2:
-                        res = stats.ttest_rel(case_vals, control_vals)
-                    else:
-                        res = stats.ttest_ind(case_vals, control_vals, equal_var=False)
-                    statistic, pvalue = res.statistic, res.pvalue
-                except Exception:
-                    statistic, pvalue = np.nan, np.nan
-                rows.append(
-                    {
-                        "source": source,
-                        "case_mean": float(np.mean(case_vals)),
-                        "control_mean": float(np.mean(control_vals)),
-                        "statistic": statistic,
-                        "pvalue": pvalue,
-                        "collection": collection,
-                    }
-                )
             contrast = pd.DataFrame(rows)
+            # Single BH/FDR over the t-test's own raw p-values.
             contrast["padj"] = _bh(contrast["pvalue"].values.astype(float), fdr_method)
+            contrast["significant"] = contrast["padj"] < fdr
             contrast = contrast[
-                ["source", "case_mean", "control_mean", "statistic", "pvalue", "padj", "collection"]
+                [
+                    "source",
+                    "case_mean",
+                    "control_mean",
+                    "statistic",
+                    "pvalue",
+                    "padj",
+                    "significant",
+                    "collection",
+                ]
             ]
             contrast_csv = results_dir / f"enrichment_gsva_contrast_{collection}.csv"
             contrast.to_csv(contrast_csv, index=False)
