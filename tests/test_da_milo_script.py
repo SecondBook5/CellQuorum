@@ -236,3 +236,115 @@ def test_milo_script_handles_missing_celltype(tmp_path):
 
     # Assert at least one significant nhood
     assert (da["SpatialFDR"] < 0.2).any()
+
+
+@pytest.mark.skipif(not _milor_available(), reason="Rscript+miloR not available")
+def test_milo_script_paired_donor_blocked_design(tmp_path):
+    # Paired design: 4 donors, each contributing cells in BOTH ctrl and case conditions.
+    # Blob-B enriched in case WITHIN each donor (a within-donor shift).
+    # Tests the ~ donor + condition formula.
+    rng = np.random.default_rng(123)
+
+    blob_a_center = np.array([-5.0, -5.0])
+    blob_b_center = np.array([5.0, 5.0])
+    std = 0.5
+
+    cells_meta = []
+    cells_emb = []
+    cell_id_counter = 0
+
+    # Each of 4 donors contributes cells in BOTH conditions
+    for donor_id in ["donor1", "donor2", "donor3", "donor4"]:
+        # Control condition for this donor: 30 from blob A, 15 from blob B
+        for blob_label, n_cells, center in [
+            ("TypeA", 30, blob_a_center),
+            ("TypeB", 15, blob_b_center),
+        ]:
+            for _ in range(n_cells):
+                xy = rng.normal(center, std)
+                emb = np.concatenate([xy, rng.normal(0, 0.01, 3)])
+                cells_emb.append(emb)
+                cells_meta.append(
+                    {
+                        "cell": f"cell_{cell_id_counter}",
+                        "donor": donor_id,
+                        "condition": "Control",
+                        "cell_type": blob_label,
+                    }
+                )
+                cell_id_counter += 1
+
+        # Case condition for this donor: 15 from blob A, 30 from blob B
+        for blob_label, n_cells, center in [
+            ("TypeA", 15, blob_a_center),
+            ("TypeB", 30, blob_b_center),
+        ]:
+            for _ in range(n_cells):
+                xy = rng.normal(center, std)
+                emb = np.concatenate([xy, rng.normal(0, 0.01, 3)])
+                cells_emb.append(emb)
+                cells_meta.append(
+                    {
+                        "cell": f"cell_{cell_id_counter}",
+                        "donor": donor_id,
+                        "condition": "Case",
+                        "cell_type": blob_label,
+                    }
+                )
+                cell_id_counter += 1
+
+    # Build DataFrames with cell as the first column
+    emb_df = pd.DataFrame(cells_emb, columns=[f"PC{i+1}" for i in range(5)])
+    emb_df.insert(0, "cell", [m["cell"] for m in cells_meta])
+    meta_df = pd.DataFrame(cells_meta).set_index("cell")
+
+    rep_csv = tmp_path / "rep.csv"
+    meta_csv = tmp_path / "meta.csv"
+    out_csv = tmp_path / "da.csv"
+    emb_df.to_csv(rep_csv, index=False)
+    meta_df.to_csv(meta_csv)
+
+    # Invoke with paired=true
+    result = subprocess.run(
+        [
+            "Rscript",
+            "--vanilla",
+            str(_MILO_R),
+            str(rep_csv),
+            str(meta_csv),
+            str(out_csv),
+            "condition",
+            "Case",
+            "Control",
+            "donor",
+            "15",  # k
+            "0.2",  # prop
+            "cell_type",  # celltype column
+            "true",  # paired
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    da = pd.read_csv(out_csv)
+
+    # Assert contract columns
+    expected_cols = [
+        "nhood",
+        "logFC",
+        "PValue",
+        "SpatialFDR",
+        "nhood_size",
+        "majority_celltype",
+        "celltype_fraction",
+    ]
+    assert set(expected_cols).issubset(da.columns)
+
+    # Assert at least one neighborhood with SpatialFDR < 0.3 (loose for small paired data)
+    assert (
+        da["SpatialFDR"] < 0.3
+    ).any(), f"No significant nhoods; min SpatialFDR = {da['SpatialFDR'].min()}"
+
+    # Assert annotation columns are populated
+    assert da["majority_celltype"].notna().any()
+    assert da["celltype_fraction"].notna().any()

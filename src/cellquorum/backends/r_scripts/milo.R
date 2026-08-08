@@ -1,9 +1,10 @@
 # Milo neighborhood-level differential-abundance test.
 # Usage: Rscript milo.R <rep.csv> <meta.csv> <out.csv> \
-#        <condition_col> <case> <control> <donor_col> <k> <prop> [celltype_col]
+#        <condition_col> <case> <control> <donor_col> <k> <prop> [celltype_col] [paired]
 # rep.csv:  first column 'cell' id, remaining columns reduced-dim embedding (cells x dims).
 # meta.csv: first column cell id, columns include condition_col, donor_col, optional cell_type.
 # out.csv:  nhood, logFC, PValue, SpatialFDR, nhood_size, majority_celltype, celltype_fraction.
+# paired:   "true" or "false" (default "false") — use ~ donor + condition (paired/blocked design).
 suppressPackageStartupMessages({ library(miloR); library(SingleCellExperiment); library(edgeR) })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -11,6 +12,7 @@ rep_csv <- args[1]; meta_csv <- args[2]; out_csv <- args[3]
 condition_col <- args[4]; case <- args[5]; control <- args[6]; donor_col <- args[7]
 k <- as.integer(args[8]); prop <- as.numeric(args[9])
 celltype_col <- if (length(args) >= 10 && nzchar(args[10])) args[10] else NA
+paired <- length(args) >= 11 && tolower(args[11]) == "true"
 
 # Read embedding (cells x dims) and metadata (cells x columns).
 emb <- read.csv(rep_csv, row.names = 1, check.names = FALSE)          # cells x dims
@@ -43,20 +45,44 @@ d <- ncol(emb)
 milo <- buildGraph(milo, k = k, d = d, reduced.dim = "PCA")
 milo <- makeNhoods(milo, prop = prop, k = k, d = d, refined = TRUE, reduced_dims = "PCA")
 
-# Count cells per neighborhood, aggregated by donor (sample).
-milo <- countCells(milo, samples = donor_col, meta.data = meta)
+# Determine sample column for countCells (donor vs donor-condition pair).
+# For paired designs, samples = unique donor-condition combinations.
+# For unpaired designs, samples = unique donors.
+if (paired) {
+  meta$sample_id <- paste(meta[[donor_col]], meta[[condition_col]], sep = "__")
+  sample_col <- "sample_id"
+} else {
+  sample_col <- donor_col
+}
 
-# Build per-sample design.df: one row per donor with its condition.
+# Count cells per neighborhood, aggregated by sample.
+milo <- countCells(milo, samples = sample_col, meta.data = meta)
+
+# Build per-sample design.df: one row per sample.
 # Must reorder to match colnames(nhoodCounts(milo)).
-sm <- unique(meta[, c(donor_col, condition_col), drop = FALSE])
-rownames(sm) <- sm[[donor_col]]
-sm[[condition_col]] <- factor(sm[[condition_col]], levels = c(control, case))
-design_df <- sm[colnames(nhoodCounts(milo)), , drop = FALSE]
+if (paired) {
+  # Paired design: ~ donor + condition (donor-blocked).
+  # Extract unique sample_id, donor, condition combinations from meta.
+  sm <- unique(meta[, c("sample_id", donor_col, condition_col), drop = FALSE])
+  rownames(sm) <- sm$sample_id
+  sm[[donor_col]] <- factor(sm[[donor_col]])
+  sm[[condition_col]] <- factor(sm[[condition_col]], levels = c(control, case))
+  design_df <- sm[colnames(nhoodCounts(milo)), c(donor_col, condition_col), drop = FALSE]
+  design_formula <- as.formula(paste("~", donor_col, "+", condition_col))
+} else {
+  # Unpaired design: ~ condition (no donor blocking).
+  # Rownames = donor IDs (assuming each donor appears in only one condition).
+  sm <- unique(meta[, c(donor_col, condition_col), drop = FALSE])
+  rownames(sm) <- sm[[donor_col]]
+  sm[[condition_col]] <- factor(sm[[condition_col]], levels = c(control, case))
+  design_df <- sm[colnames(nhoodCounts(milo)), , drop = FALSE]
+  design_formula <- as.formula(paste("~", condition_col))
+}
 
 # Run testNhoods with the design formula and per-sample data.
 res <- testNhoods(
   milo,
-  design = as.formula(paste("~", condition_col)),
+  design = design_formula,
   design.df = design_df,
   reduced.dim = "PCA"
 )
