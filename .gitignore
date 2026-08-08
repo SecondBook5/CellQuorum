@@ -34,6 +34,11 @@ logs/
 objects/
 provenance/
 
+# Un-ignore the report-rendering source package (the output-dir patterns above,
+# e.g. reports/, must not swallow src/cellquorum/reports/).
+!src/cellquorum/reports/
+!src/cellquorum/reports/**
+
 # Large single-cell data objects
 *.h5ad
 *.h5
