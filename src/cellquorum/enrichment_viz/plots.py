@@ -62,16 +62,26 @@ def pvalue_to_stars(p: float) -> str:
 def select_top_bottom(df: pd.DataFrame, value_col: str, k: int) -> pd.DataFrame:
     """Top-k + bottom-k rows by ``value_col``, deterministic, deduplicated.
 
-    Sorted deterministically (value then index) so ties break identically every
-    run. Returns the union sorted ascending by ``value_col``.
+    Ties are broken by the DataFrame index (ascending), ensuring deterministic
+    selection regardless of incoming row order. Returns the union sorted ascending
+    by ``value_col`` (then index for tied values).
     """
-    ordered = df.sort_values([value_col], kind="mergesort")
-    ordered = ordered.reindex(ordered[value_col].sort_values(kind="mergesort").index)
-    bottom = ordered.head(k)
-    top = ordered.tail(k)
+    # Sort by value, then by index as tie-breaker
+    # We do this by temporarily making the index a column for multi-key sort
+    work = df.copy()
+    work["__index_tiebreak"] = work.index
+    work = work.sort_values([value_col, "__index_tiebreak"], kind="mergesort")
+    bottom = work.head(k)
+    top = work.tail(k)
     combined = pd.concat([bottom, top])
+    # Deduplicate by index
     combined = combined[~combined.index.duplicated(keep="first")]
-    return combined.sort_values([value_col], kind="mergesort")
+    # Drop the temporary column and return sorted by value then index
+    combined = combined.drop(columns=["__index_tiebreak"])
+    combined["__index_tiebreak"] = combined.index
+    combined = combined.sort_values([value_col, "__index_tiebreak"], kind="mergesort")
+    combined = combined.drop(columns=["__index_tiebreak"])
+    return combined
 
 
 def _size_from_padj(padj: np.ndarray) -> np.ndarray:

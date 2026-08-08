@@ -47,6 +47,26 @@ def test_select_top_bottom_no_duplicate_when_k_exceeds_rows():
     assert len(out) == 2  # no row counted twice
 
 
+def test_select_top_bottom_breaks_ties_by_index():
+    # Test with tied values - should break ties by index
+    df = pd.DataFrame({"src": list("abcdef"), "score": [1.0, 1.0, -2.0, -2.0, 3.0, 0.0]})
+    out = plots.select_top_bottom(df, "score", k=2)
+    # bottom-2: indices 2,3 both have -2.0, should pick indices 2,3
+    # top-2: indices 0,1 have 1.0, index 4 has 3.0; should pick indices 0,4 or 1,4 then 4
+    # Actually: top-2 by value are [3.0 at idx 4, then tied 1.0 at idx 0,1]
+    # So we get idx 4 (3.0) and idx 0 (1.0, lower index wins tie)
+    # bottom-2 by value are [-2.0 at idx 2,3]
+    # So we get idx 2,3 (both -2.0, lower indices)
+    assert len(out) == 4
+    # Verify determinism: shuffle input and check same output
+    df_shuffled = df.iloc[[5, 2, 4, 0, 3, 1]].copy()
+    out_shuffled = plots.select_top_bottom(df_shuffled, "score", k=2)
+    # Both should select the same indices
+    assert set(out.index) == set(out_shuffled.index)
+    # And produce identical ordering
+    pd.testing.assert_frame_equal(out, out_shuffled)
+
+
 def test_diverging_bar_returns_axes():
     df = pd.DataFrame(
         {
