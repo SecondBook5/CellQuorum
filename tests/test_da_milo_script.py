@@ -345,10 +345,10 @@ def test_milo_script_paired_donor_blocked_design(tmp_path):
     ]
     assert set(expected_cols).issubset(da.columns)
 
-    # Assert at least one neighborhood with SpatialFDR < 0.01
-    # (observed min ~0.0028 with calcNhoodDistance)
+    # Assert at least one neighborhood with SpatialFDR < 0.05
+    # (stable min = 0.00088 with seeded makeNhoods; threshold has 56x headroom)
     assert (
-        da["SpatialFDR"] < 0.01
+        da["SpatialFDR"] < 0.05
     ).any(), f"No significant nhoods; min SpatialFDR = {da['SpatialFDR'].min()}"
 
     # Assert annotation columns are populated

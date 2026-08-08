@@ -72,6 +72,10 @@ reducedDim(sce, "PCA") <- as.matrix(emb)
 # Build Milo object and construct neighborhood graph.
 milo <- Milo(sce)
 d <- ncol(emb)
+
+# Set seed for deterministic neighborhood sampling (makeNhoods is stochastic).
+set.seed(0)
+
 milo <- buildGraph(milo, k = k, d = d, reduced.dim = "PCA")
 milo <- makeNhoods(milo, prop = prop, k = k, d = d, refined = TRUE, reduced_dims = "PCA")
 
