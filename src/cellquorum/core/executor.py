@@ -53,6 +53,9 @@ from cellquorum.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.dimensionality.stage import DimensionalityStage
 
+# Import enrichment stage.
+from cellquorum.enrichment.stage import EnrichmentStage
+
 # Import feature selection stage.
 from cellquorum.feature_selection.stage import FeatureSelectionStage
 
@@ -252,6 +255,7 @@ def build_default_stage_registry() -> StageRegistry:
             "subclustering": SubclusteringStage(),
             "differential_expression": DifferentialExpressionStage(),
             "differential_abundance": DifferentialAbundanceStage(),
+            "enrichment": EnrichmentStage(),
         }
     )
 

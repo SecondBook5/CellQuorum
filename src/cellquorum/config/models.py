@@ -42,6 +42,9 @@ from cellquorum.differential_abundance.config import DifferentialAbundanceConfig
 # Import the differential-expression configuration model.
 from cellquorum.differential_expression.config import DifferentialExpressionConfig
 
+# Import the enrichment configuration model.
+from cellquorum.enrichment.config import EnrichmentConfig
+
 # Import the feature-selection configuration model.
 from cellquorum.feature_selection.config import FeatureSelectionConfig
 
@@ -687,6 +690,9 @@ class CellQuorumConfig(StrictBaseModel):
     differential_expression: DifferentialExpressionConfig = Field(
         default_factory=DifferentialExpressionConfig
     )
+
+    # Store enrichment / pathway-activity settings.
+    enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
