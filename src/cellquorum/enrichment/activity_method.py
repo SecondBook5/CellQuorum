@@ -53,7 +53,11 @@ class ActivityMethod(AnalysisMethod):
         matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
         dense = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
         data = pd.DataFrame(dense, index=adata.obs_names, columns=adata.var_names)
-        labels = adata.obs[cell_type_col].astype(str).values
+        # Keep labels as a Series indexed by obs name so we can realign to
+        # decoupler's returned (possibly shortened) index — decoupler drops any
+        # cell that is all-zero over the net's targets, so a positional label
+        # array would mismatch the returned frame's length.
+        labels = adata.obs[cell_type_col].astype(str)
 
         try:
             import decoupler as dc
@@ -76,15 +80,28 @@ class ActivityMethod(AnalysisMethod):
             except PriorFetchError as exc:
                 skipped.append({"resource": resource, "reason": str(exc)[:300]})
                 continue
+            # Everything from the ulm call through label-assembly + aggregation is
+            # guarded: decoupler may drop all-zero cells (returning a shorter
+            # frame), so any residual length/index mismatch degrades to a recorded
+            # skip rather than aborting the stage and every sibling method.
             try:
                 es, _ = dc.mt.ulm(data, net, tmin=min_size)
+                es = es.copy()
+                # decoupler preserves obs names on the returned index, so realign
+                # the cell-type labels to that (possibly shortened) index instead
+                # of assigning the full-length original label array.
+                aligned = labels.reindex(es.index)
+                if es.shape[0] == 0 or aligned.isna().any():
+                    skipped.append(
+                        {"resource": resource, "reason": "no cells survived decoupler filtering"}
+                    )
+                    continue
+                es[cell_type_col] = aligned.values
+                per_ct = es.groupby(cell_type_col).mean()
             except Exception as exc:
                 skipped.append({"resource": resource, "reason": str(exc)[:300]})
                 continue
 
-            es = es.copy()
-            es[cell_type_col] = labels
-            per_ct = es.groupby(cell_type_col).mean()
             long = per_ct.reset_index().melt(
                 id_vars=cell_type_col, var_name="source", value_name="mean_score"
             )

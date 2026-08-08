@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 import sys
-import types
 
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 
 from cellquorum.enrichment.activity_method import ActivityMethod
 from cellquorum.methods.base import MethodSkip
+
+# Exercises the REAL dc.mt.ulm, which drops all-zero observations (empty=True).
+# Only the network fetch is stubbed via get_net so the drop path (C2) runs for
+# real — a constant stub that never shortens the frame would not guard it.
+dc = pytest.importorskip("decoupler")
 
 
 class _Paths:
@@ -23,10 +28,13 @@ class _Ctx:
         self.paths = _Paths(tmp)
 
 
-def _adata():
+def _adata_with_zero_cell():
+    """20 cells x 8 genes, two cell types; one cell is all-zero over the net's
+    targets so real decoupler will drop it from the returned frame."""
     rng = np.random.default_rng(0)
     n = 20
-    X = rng.normal(size=(n, 8))
+    X = rng.random(size=(n, 8)) + 0.1  # strictly positive so only forced zeros drop
+    X[5, :] = 0.0  # this cell (a T0) is all-zero → decoupler drops it
     obs = pd.DataFrame({"cell_type": (["T0"] * 10) + (["T1"] * 10)})
     a = ad.AnnData(X=X, obs=obs)
     a.var_names = [f"G{i}" for i in range(8)]
@@ -34,40 +42,45 @@ def _adata():
     return a
 
 
-def _install_fake_decoupler(monkeypatch):
-    dc = types.ModuleType("decoupler")
-
-    def ulm(data, net, tmin=5, **kw):
-        srcs = list(pd.unique(net["source"]))
-        idx = list(data.index)
-        rng = np.random.default_rng(2)
-        es = pd.DataFrame(rng.normal(size=(len(idx), len(srcs))), index=idx, columns=srcs)
-        pv = pd.DataFrame(np.full((len(idx), len(srcs)), 0.1), index=idx, columns=srcs)
-        return es, pv
-
-    dc.mt = types.SimpleNamespace(ulm=ulm)
-    dc.op = types.SimpleNamespace(
-        collectri=lambda **kw: pd.DataFrame(
-            {"source": ["TF0"] * 4, "target": [f"G{i}" for i in range(4)], "weight": [1.0] * 4}
-        )
+def _weighted_net():
+    return pd.DataFrame(
+        {
+            "source": ["TF0"] * 4 + ["TF1"] * 4,
+            "target": [f"G{i}" for i in range(4)] + [f"G{i}" for i in range(4, 8)],
+            "weight": [1.0] * 8,
+        }
     )
-    dc.pp = types.SimpleNamespace(read_gmt=lambda p: pd.DataFrame({"source": [], "target": []}))
-    monkeypatch.setitem(sys.modules, "decoupler", dc)
 
 
-def test_activity_runs_and_aggregates_per_celltype(tmp_path, monkeypatch):
-    _install_fake_decoupler(monkeypatch)
+def _patch_get_net(monkeypatch, net):
+    monkeypatch.setattr(
+        "cellquorum.enrichment.activity_method.get_net",
+        lambda collection, **kw: net.copy(),
+    )
+
+
+def test_activity_survives_dropped_empty_cell(tmp_path, monkeypatch):
+    """C2 guard: decoupler drops the all-zero cell → the returned es frame is
+    shorter than the original obs. The old code did `es[col] = full_labels`,
+    raising ValueError (length mismatch) OUTSIDE the guard, aborting the stage.
+    With the fix, labels are realigned to es.index and the method returns a valid
+    per-cell-type result without raising.
+    """
+    a = _adata_with_zero_cell()
+    _patch_get_net(monkeypatch, _weighted_net())
     cfg = {
         "activity_resources": ["collectri"],
         "cell_type_col": "cell_type",
         "layer": "cellquorum_normalized",
-        "min_size": 1,
+        "min_size": 3,
     }
-    out = ActivityMethod()._run(_adata(), cfg, _Ctx(tmp_path))
+    out = ActivityMethod()._run(a, cfg, _Ctx(tmp_path))
     assert not isinstance(out, MethodSkip)
     df = pd.read_csv(tmp_path / "results" / "enrichment_activity_collectri.csv")
     assert list(df.columns) == ["cell_type", "source", "mean_score"]
+    # Both cell types still represented despite the dropped cell.
     assert set(df["cell_type"]) == {"T0", "T1"}
+    assert df["mean_score"].notna().all()
 
 
 def test_activity_skips_when_decoupler_absent(tmp_path, monkeypatch):
@@ -77,5 +90,5 @@ def test_activity_skips_when_decoupler_absent(tmp_path, monkeypatch):
         "cell_type_col": "cell_type",
         "layer": "cellquorum_normalized",
     }
-    out = ActivityMethod()._run(_adata(), cfg, _Ctx(tmp_path))
+    out = ActivityMethod()._run(_adata_with_zero_cell(), cfg, _Ctx(tmp_path))
     assert isinstance(out, MethodSkip)
