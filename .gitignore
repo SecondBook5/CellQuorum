@@ -38,6 +38,8 @@ provenance/
 # e.g. reports/, must not swallow src/cellquorum/reports/).
 !src/cellquorum/reports/
 !src/cellquorum/reports/**
+# ...but the un-ignore above must not resurrect bytecode under that package.
+src/cellquorum/reports/**/__pycache__/
 
 # Large single-cell data objects
 *.h5ad

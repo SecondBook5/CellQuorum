@@ -11,6 +11,7 @@ from cellquorum.backends.r import build_r_backend
 from cellquorum.backends.rapids import build_rapids_backend
 from cellquorum.backends.rscript import build_rscript_backend
 from cellquorum.backends.scclr_backend import build_scclr_backend
+from cellquorum.backends.sccoda_backend import build_sccoda_backend
 
 
 @dataclass
@@ -308,6 +309,9 @@ def build_default_backend_registry() -> BackendRegistry:
 
     # Register the isolated-env scclr backend (PFlog1pPF + sparse PCA).
     registry.register(build_scclr_backend())
+
+    # Register the isolated-env scCODA backend (compositional DA).
+    registry.register(build_sccoda_backend())
 
     # Return the populated backend registry.
     return registry
