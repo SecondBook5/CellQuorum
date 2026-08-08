@@ -36,6 +36,9 @@ from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
+# Import the differential-abundance configuration model.
+from cellquorum.differential_abundance.config import DifferentialAbundanceConfig
+
 # Import the differential-expression configuration model.
 from cellquorum.differential_expression.config import DifferentialExpressionConfig
 
@@ -674,6 +677,11 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store adjudication settings.
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
+
+    # Store differential-abundance settings.
+    differential_abundance: DifferentialAbundanceConfig = Field(
+        default_factory=DifferentialAbundanceConfig
+    )
 
     # Store differential-expression settings.
     differential_expression: DifferentialExpressionConfig = Field(
