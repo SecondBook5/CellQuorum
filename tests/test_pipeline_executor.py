@@ -305,6 +305,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "annotation_consensus",
         "annotation_diagnostics",
         "clustering",
+        "differential_abundance",
         "differential_expression",
         "dimensionality",
         "feature_selection",

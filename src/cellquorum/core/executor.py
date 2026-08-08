@@ -49,6 +49,7 @@ from cellquorum.core.stage import (
 )
 
 # Import differential expression stage.
+from cellquorum.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.dimensionality.stage import DimensionalityStage
 
@@ -250,6 +251,7 @@ def build_default_stage_registry() -> StageRegistry:
             "reference_mapping": ReferenceMappingStage(),
             "subclustering": SubclusteringStage(),
             "differential_expression": DifferentialExpressionStage(),
+            "differential_abundance": DifferentialAbundanceStage(),
         }
     )
 
