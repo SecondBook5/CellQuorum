@@ -1,0 +1,125 @@
+"""decoupler TF/pathway activity method (ulm over per-cell lognorm data)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import anndata as ad
+import numpy as np
+import pandas as pd
+import scipy.sparse as sp
+
+from cellquorum.contracts import DataContract
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.enrichment.priors import PriorFetchError, get_net
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+
+class ActivityMethod(AnalysisMethod):
+    """Per-cell decoupler activity (ulm), aggregated to per-cell-type means."""
+
+    name = "activity"
+    stage_category = "enrichment"
+    backend = "python"
+
+    def input_contract(self, config: dict) -> DataContract:
+        cell_type_col = config.get("cell_type_col", "cell_type")
+        layer = config.get("layer", "cellquorum_normalized")
+        return DataContract(
+            required_obs=[cell_type_col],
+            required_layers=[layer] if layer != "X" else [],
+            expression_layer=layer,
+            expected_kind="lognorm",
+        )
+
+    def requires_obs(self, config: dict) -> list[str]:
+        return [config.get("cell_type_col", "cell_type")]
+
+    def requires_layers(self) -> list[str]:
+        # Base hook is config-less (the scvi pattern); guard on the default
+        # lognorm layer name. The contract re-checks the configured layer
+        # (and its lognorm tag) before _run.
+        return ["cellquorum_normalized"]
+
+    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        resources = config.get("activity_resources", ["collectri", "progeny"])
+        cell_type_col = config.get("cell_type_col", "cell_type")
+        layer = config.get("layer", "cellquorum_normalized")
+        gmt_path = config.get("gmt_path")
+        organism = config.get("organism", "human")
+        license = config.get("license", "academic")
+        min_size = int(config.get("min_size", 5))
+
+        matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
+        dense = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
+        data = pd.DataFrame(dense, index=adata.obs_names, columns=adata.var_names)
+        labels = adata.obs[cell_type_col].astype(str).values
+
+        try:
+            import decoupler as dc
+        except Exception as exc:
+            return MethodSkip(
+                reason="activity skipped: decoupler unavailable",
+                details={"method": self.name, "error": str(exc)[:300]},
+            )
+        if dc is None:
+            return MethodSkip(
+                reason="activity skipped: decoupler unavailable", details={"method": self.name}
+            )
+
+        results_dir = Path(context.paths.results)
+        results_dir.mkdir(parents=True, exist_ok=True)
+        artifacts, done, skipped = [], [], []
+        for resource in resources:
+            try:
+                net = get_net(resource, organism=organism, gmt_path=gmt_path, license=license)
+            except PriorFetchError as exc:
+                skipped.append({"resource": resource, "reason": str(exc)[:300]})
+                continue
+            try:
+                es, _ = dc.mt.ulm(data, net, tmin=min_size)
+            except Exception as exc:
+                skipped.append({"resource": resource, "reason": str(exc)[:300]})
+                continue
+
+            es = es.copy()
+            es[cell_type_col] = labels
+            per_ct = es.groupby(cell_type_col).mean()
+            long = per_ct.reset_index().melt(
+                id_vars=cell_type_col, var_name="source", value_name="mean_score"
+            )
+            long = long.rename(columns={cell_type_col: "cell_type"})
+            long = long[["cell_type", "source", "mean_score"]]
+            out_csv = results_dir / f"enrichment_activity_{resource}.csv"
+            long.to_csv(out_csv, index=False)
+            artifacts.append(
+                StageArtifact(
+                    name="enrichment_results",
+                    path=out_csv,
+                    kind="csv",
+                    description=f"decoupler ulm activity ({resource}), per cell type.",
+                )
+            )
+            done.append(resource)
+
+        if not done:
+            return MethodSkip(
+                reason="activity skipped: no resource produced results",
+                details={"method": self.name, "skipped": skipped},
+            )
+
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=[f"Activity (ulm) over {done}."],
+            metrics={
+                "method": self.name,
+                "n_resources": len(done),
+                "resources": done,
+                "skipped": skipped,
+            },
+            backend="python",
+        )
+
+
+__all__ = ["ActivityMethod"]
