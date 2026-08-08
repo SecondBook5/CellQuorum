@@ -29,7 +29,9 @@ meta[[condition_col]] <- factor(meta[[condition_col]], levels = c(control, case)
 
 # Build the design matrix from the requested right-hand side.
 for (col in setdiff(all.vars(as.formula(paste("~", design_rhs))), condition_col)) {
-  meta[[col]] <- factor(meta[[col]])
+  if (!is.numeric(meta[[col]])) {
+    meta[[col]] <- factor(meta[[col]])
+  }
 }
 design <- model.matrix(as.formula(paste("~", design_rhs)), data = meta)
 
@@ -42,7 +44,7 @@ dge <- calcNormFactors(dge)
 dge <- estimateDisp(dge, design)
 fit <- glmQLFit(dge, design)
 
-# The condition coefficient is the last column (case vs control).
+# Select the case-vs-control coefficient by name (control is the reference level).
 coef_name <- paste0(condition_col, case)
 coef_idx <- match(coef_name, colnames(design))
 if (is.na(coef_idx)) {
