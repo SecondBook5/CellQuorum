@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import anndata as ad
@@ -137,6 +138,13 @@ class SccodaMethod(AnalysisMethod):
         except FileNotFoundError as exc:
             return MethodSkip(
                 reason="sccoda skipped: helper execution failed",
+                details={"method": self.name, "error": str(exc)[:500]},
+            )
+        except subprocess.TimeoutExpired as exc:
+            # A configured timeout must skip this method, not crash the stage
+            # and abort the sibling methods still queued after it.
+            return MethodSkip(
+                reason=f"sccoda skipped: helper execution timed out after {timeout}s",
                 details={"method": self.name, "error": str(exc)[:500]},
             )
         if proc.returncode != 0:
