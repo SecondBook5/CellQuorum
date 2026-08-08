@@ -112,6 +112,42 @@ def test_skips_when_rscript_absent(monkeypatch, tmp_path):
     assert "rscript" in out.reason.lower() or "edger" in out.reason.lower()
 
 
+def test_skips_when_design_obs_absent(tmp_path):
+    """Verify the method skips (not crashes) when design obs columns are missing.
+
+    An ineligible stage must record a skip, not raise. This test pins the
+    requires_obs() guard behavior so generic cohorts (no patient_id/condition)
+    skip cleanly at the executor level.
+    """
+    # Build an AnnData with a counts layer but WITHOUT the design obs columns.
+    rng = np.random.default_rng(42)
+    X = sp.csr_matrix(rng.poisson(5, size=(50, 20)).astype(float))
+    a = ad.AnnData(X=X, obs=pd.DataFrame(index=[f"cell_{i}" for i in range(50)]))
+    a.layers["counts"] = a.X.copy()
+    a.var_names = [f"G{i}" for i in range(20)]
+    set_layer_tag(a, "counts", kind="counts")
+
+    # Call the real .run() entrypoint (NOT ._run) so requires_obs is exercised.
+    method = PseudobulkEdgeRMethod()
+    result = method.run(
+        a,
+        {
+            "layer": "counts",
+            "condition_col": "condition",
+            "donor_col": "patient_id",
+            "case": "LE",
+            "control": "Normal",
+            "covariates": [],
+            "paired": True,
+        },
+        _Ctx(tmp_path),
+    )
+
+    # Must return a MethodSkip whose reason mentions the missing obs column(s).
+    assert isinstance(result, MethodSkip)
+    assert "condition" in result.reason or "patient_id" in result.reason or "obs" in result.reason
+
+
 @pytest.mark.skipif(not _edger_available(), reason="Rscript+edgeR not available")
 def test_paired_de_detects_upregulated_gene(tmp_path):
     method = PseudobulkEdgeRMethod()

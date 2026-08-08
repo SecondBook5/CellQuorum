@@ -41,6 +41,17 @@ class PseudobulkEdgeRMethod(AnalysisMethod):
             expected_kind="counts",
         )
 
+    def requires_obs(self, config: dict) -> list[str]:
+        """Return the design obs columns that must exist for DE to run."""
+
+        # Read the design columns from config.
+        condition_col = config.get("condition_col", "condition")
+        donor_col = config.get("donor_col", "patient_id")
+        covariates = list(config.get("covariates", []))
+
+        # Require all design columns to exist.
+        return [condition_col, donor_col, *covariates]
+
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         """Aggregate pseudobulk, fit edgeR, and return the DE table."""
 
