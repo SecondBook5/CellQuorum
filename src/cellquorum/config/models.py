@@ -575,6 +575,15 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether differential expression is enabled.
     differential_expression: bool = True
 
+    # Store whether differential abundance is enabled.
+    differential_abundance: bool = True
+
+    # Store whether enrichment / pathway-activity is enabled.
+    enrichment: bool = True
+
+    # Store whether enrichment visualization is enabled.
+    enrichment_viz: bool = True
+
     # Store whether molecular inference is enabled as a gated capability.
     molecular_inference: bool = True
 

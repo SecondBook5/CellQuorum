@@ -210,6 +210,137 @@ def test_annotation_actually_runs_not_skipped(tmp_path):
     assert "cell_type" in result.context.adata.obs
 
 
+def test_full_analysis_chain_runs_de_da_enrichment_viz(tmp_path):
+    """The full analysis pipeline schedules and runs DE, DA, enrichment, enrichment_viz."""
+
+    # Write the synthetic cohort (with two conditions for DE/DA).
+    h5ad_path = tmp_path / "cohort.h5ad"
+    _synthetic_cohort().write_h5ad(h5ad_path)
+
+    # Build a config enabling the full analysis spine: annotation + DE + DA + enrichment + viz.
+    config = CellQuorumConfig(
+        project={"name": "full_analysis_test"},
+        input={"h5ad": str(h5ad_path)},
+        compute={"backend": "cpu", "prefer_gpu": False, "fallback_to_cpu": True},
+        r={"enabled": False},
+        stages={
+            "ambient_correction": False,
+            "qc": True,
+            "preprocessing": True,
+            "dimensionality": True,
+            "integration": True,
+            "clustering": True,
+            "annotation": True,
+            # Enable the analysis trio.
+            "differential_expression": True,
+            "differential_abundance": True,
+            "enrichment": True,
+            "enrichment_viz": True,
+            # Downstream slots not needed.
+            "state_scoring": False,
+            "discovery": False,
+            "subclustering": False,
+            "composition": False,
+            "molecular_inference": False,
+            "cell_cell_communication": False,
+            "network_analysis": False,
+        },
+        preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
+        qc={
+            "mode": "report_only",
+            "threshold_strategy": "fixed",
+            "metrics": {"percent_top": [2]},
+            "basic": {
+                "min_genes_per_cell": 1,
+                "min_cells_per_gene": 1,
+                "max_mito_percent": 100.0,
+            },
+            "mad": {"enabled": False},
+            "doublets": {"enabled": False},
+        },
+        integration={
+            "method": "harmony",
+            "batch_key": "patient_id",
+            "input_rep": "X_pca",
+            "output_rep": "X_pca_harmony",
+        },
+        clustering={
+            "use_rep": "X_pca_harmony",
+            "n_neighbors": 15,
+            "resolution": 1.0,
+        },
+        annotation={
+            "method": "marker_vote",
+            "cluster_key": "leiden",
+            "score_layer": "cellquorum_normalized",
+            "key_added": "cell_type",
+            "marker_panels": {"TypeA": _TYPE_A, "TypeB": _TYPE_B},
+        },
+        # Design block so DE/DA/enrichment can run (not skip for "no case/control").
+        design={
+            "donor_col": "patient_id",
+            "condition_col": "condition",
+            "case": "Lymphedema",
+            "control": "Normal",
+            "paired": False,
+        },
+    )
+
+    result = execute_pipeline_run(
+        config,
+        output_dir=tmp_path / "run",
+        backend_registry=_backend_registry(),
+        load_input=True,
+    )
+
+    # No stage failed.
+    assert (
+        not result.execution_result.has_failures()
+    ), f"analysis chain had failures: {result.execution_result.failed_stage_names()}"
+
+    # The core backbone stages ran.
+    succeeded = result.execution_result.succeeded_stage_names()
+    for stage in [
+        "qc",
+        "preprocessing",
+        "dimensionality",
+        "integration",
+        "clustering",
+        "annotation",
+    ]:
+        assert stage in succeeded, f"{stage} did not succeed: {succeeded}"
+
+    # THE PLANNER ASSERTION: DE, DA, enrichment, enrichment_viz are SCHEDULED
+    # (present in stage_records, not missing from the plan).
+    stage_records = {r.stage_name: r for r in result.execution_result.stage_execution_records}
+    for stage_name in [
+        "differential_expression",
+        "differential_abundance",
+        "enrichment",
+        "enrichment_viz",
+    ]:
+        assert (
+            stage_name in stage_records
+        ), f"{stage_name} was not scheduled — planner did not add it to the plan"
+        record = stage_records[stage_name]
+        # Invariant: either succeeded or cleanly skipped (not failed, not missing).
+        assert record.status in (
+            "success",
+            "skipped",
+        ), f"{stage_name} failed or was not scheduled: status={record.status}"
+        # On the tiny synthetic cohort, some methods may legitimately skip
+        # (e.g., enrichment if DE found no genes, or if enrichment methods need
+        # more signal). That's acceptable — the test proves they are scheduled
+        # and do not crash the run.
+
+    # On the tiny synthetic cohort, most analysis methods legitimately skip
+    # (no R backend, no significant genes, insufficient samples). The test proves
+    # the PIPELINE WIRING: stages are scheduled, not that every method produces
+    # output on synthetic data. If a stage succeeded and wrote artifacts, that's
+    # a bonus (e.g., enrichment stage succeeded even though all methods skipped —
+    # the stage framework itself ran and aggregated the skip reasons).
+
+
 def test_full_gpu_chain_threads_every_stage_output(tmp_path):
     """The chain runs on GPU end-to-end (skips when rapids-singlecell unavailable).
 

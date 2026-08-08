@@ -298,6 +298,7 @@ def test_default_stage_registry_contains_qc() -> None:
     assert registry.get("feature_selection") is not None
     assert registry.get("population_identity") is not None
     assert registry.get("reference_mapping") is not None
+    # All implemented stages are registered (sorted alphabetically).
     assert registry.registered_stage_names() == [
         "adjudication",
         "ambient_correction",
