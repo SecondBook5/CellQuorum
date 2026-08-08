@@ -5,6 +5,7 @@ from __future__ import annotations
 from cellquorum.differential_abundance.config import DifferentialAbundanceConfig
 from cellquorum.differential_abundance.milo_method import MiloMethod
 from cellquorum.differential_abundance.propeller_method import PropellerMethod
+from cellquorum.differential_abundance.proportion_ttest_method import ProportionTTestMethod
 from cellquorum.differential_abundance.sccoda_method import SccodaMethod
 from cellquorum.methods.registry import METHOD_REGISTRY
 
@@ -20,4 +21,14 @@ if not METHOD_REGISTRY.has("differential_abundance", "milo"):
 if not METHOD_REGISTRY.has("differential_abundance", "sccoda"):
     METHOD_REGISTRY.register(SccodaMethod)
 
-__all__ = ["DifferentialAbundanceConfig", "MiloMethod", "PropellerMethod", "SccodaMethod"]
+# Register the proportion_ttest method.
+if not METHOD_REGISTRY.has("differential_abundance", "proportion_ttest"):
+    METHOD_REGISTRY.register(ProportionTTestMethod)
+
+__all__ = [
+    "DifferentialAbundanceConfig",
+    "MiloMethod",
+    "PropellerMethod",
+    "ProportionTTestMethod",
+    "SccodaMethod",
+]
