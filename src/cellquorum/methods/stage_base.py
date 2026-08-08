@@ -72,6 +72,11 @@ class MethodDispatchStage(ABC):
         # once and every dispatched method sees the resolved values.
         stage_config = _apply_cohort_overlay(context, stage_config)
 
+        # Let a stage inject additional resolved keys (e.g. the DE stage bridges
+        # the experimental-design block into case/control). Default is a no-op,
+        # so every other stage behaves exactly as before.
+        stage_config = self._augment_config(context, stage_config)
+
         # Honor the enabled flag: if disabled, return a recorded skip.
         if not stage_config.get("enabled", True):
             return StageResult.skipped(
@@ -212,6 +217,26 @@ class MethodDispatchStage(ABC):
             warnings=warnings,
             metrics=aggregate_metrics,
         )
+
+    def _augment_config(self, context: object, stage_config: dict) -> dict:  # noqa: B027
+        """
+        Hook for a stage to inject additional resolved config keys.
+
+        Called after the cohort overlay and before the enabled/skip checks.
+        Override this to bridge project-level config (e.g. the experimental
+        ``design`` block) into the keys the dispatched method reads. The default
+        returns the config unchanged, so stages that do not override it are
+        unaffected.
+
+        Args:
+            context: Pipeline context exposing ``config``.
+            stage_config: The resolved (cohort-overlaid) per-stage config dict.
+
+        Returns:
+            The (possibly augmented) config dict.
+        """
+
+        return stage_config
 
     def _validate_output(self, result: StageResult) -> None:  # noqa: B027
         """
