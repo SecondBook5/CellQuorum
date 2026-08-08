@@ -56,6 +56,9 @@ from cellquorum.dimensionality.stage import DimensionalityStage
 # Import enrichment stage.
 from cellquorum.enrichment.stage import EnrichmentStage
 
+# Import enrichment-visualization stage.
+from cellquorum.enrichment_viz.stage import EnrichmentVizStage
+
 # Import feature selection stage.
 from cellquorum.feature_selection.stage import FeatureSelectionStage
 
@@ -256,6 +259,7 @@ def build_default_stage_registry() -> StageRegistry:
             "differential_expression": DifferentialExpressionStage(),
             "differential_abundance": DifferentialAbundanceStage(),
             "enrichment": EnrichmentStage(),
+            "enrichment_viz": EnrichmentVizStage(),
         }
     )
 

@@ -45,6 +45,9 @@ from cellquorum.differential_expression.config import DifferentialExpressionConf
 # Import the enrichment configuration model.
 from cellquorum.enrichment.config import EnrichmentConfig
 
+# Import the enrichment-visualization configuration model.
+from cellquorum.enrichment_viz.config import EnrichmentVizConfig
+
 # Import the feature-selection configuration model.
 from cellquorum.feature_selection.config import FeatureSelectionConfig
 
@@ -693,6 +696,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store enrichment / pathway-activity settings.
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
+
+    # Store enrichment-visualization settings.
+    enrichment_viz: EnrichmentVizConfig = Field(default_factory=EnrichmentVizConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)

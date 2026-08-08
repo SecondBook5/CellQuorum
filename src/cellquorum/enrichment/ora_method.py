@@ -112,7 +112,7 @@ class OraMethod(AnalysisMethod):
                 # Contingency counts per gene-set: overlap k, set size K, drawn N,
                 # population M. Fisher/hypergeometric survival gives the raw right-
                 # tail p (P[overlap >= k]); log2 odds ratio is the reported score.
-                scores, pvalues = [], []
+                scores, pvalues, counts, ratios = [], [], [], []
                 for source in sources:
                     members = genesets[source]
                     k = len(fg & members)  # a: foreground ∩ set
@@ -124,6 +124,8 @@ class OraMethod(AnalysisMethod):
                     odds = ((a + 0.5) * (d + 0.5)) / ((b + 0.5) * (c + 0.5))
                     scores.append(float(np.log2(odds)))
                     pvalues.append(p)
+                    counts.append(int(k))
+                    ratios.append(float(k / n_fg) if n_fg else 0.0)
                 rows.append(
                     pd.DataFrame(
                         {
@@ -132,6 +134,8 @@ class OraMethod(AnalysisMethod):
                             "score": scores,
                             "pvalue": pvalues,
                             "collection": collection,
+                            "count": counts,
+                            "gene_ratio": ratios,
                         }
                     )
                 )
@@ -143,7 +147,17 @@ class OraMethod(AnalysisMethod):
             out["padj"] = _bh(out["pvalue"].values.astype(float), fdr_method)
             out["significant"] = out["padj"] < fdr
             out = out[
-                ["source", "direction", "score", "pvalue", "padj", "significant", "collection"]
+                [
+                    "source",
+                    "direction",
+                    "score",
+                    "pvalue",
+                    "padj",
+                    "significant",
+                    "collection",
+                    "count",
+                    "gene_ratio",
+                ]
             ]
             out_csv = results_dir / f"enrichment_ora_{collection}.csv"
             out.to_csv(out_csv, index=False)

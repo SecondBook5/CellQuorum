@@ -90,6 +90,8 @@ def test_ora_enriches_overlapping_set_only(tmp_path, monkeypatch):
         "padj",
         "significant",
         "collection",
+        "count",
+        "gene_ratio",
     ]
 
     up = df[df["direction"] == "up"].set_index("source")
