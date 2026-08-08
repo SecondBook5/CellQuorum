@@ -172,9 +172,10 @@ def test_enrichment_stage_runs_through_context(tmp_path):
             reason = entry.get("reason", "").lower()
             # The case/control-unset message is in the method skip guards.
             # If case/control appear in the skip reason, they should NOT be about "not set"
-            assert (
-                "case" not in reason or "control" not in reason
-            ), f"Method {entry.get('method')} skipped for case/control-unset: {entry.get('reason')}"
+            assert "case" not in reason or "control" not in reason, (
+                f"Method {entry.get('method')} skipped for case/control-unset: "
+                f"{entry.get('reason')}"
+            )
 
     # Invariant 4: when decoupler is available, verify GSEA artifact exists with expected columns.
     if _decoupler_net_available():
@@ -184,7 +185,7 @@ def test_enrichment_stage_runs_through_context(tmp_path):
 
         # Verify expected columns from Task 4 output format.
         df = pd.read_csv(gsea_csv)
-        expected_cols = ["source", "score", "pvalue", "padj", "collection"]
+        expected_cols = ["source", "score", "pvalue", "padj", "significant", "collection"]
         assert (
             list(df.columns) == expected_cols
         ), f"GSEA columns mismatch: {list(df.columns)} vs {expected_cols}"

@@ -44,9 +44,11 @@ class GseaMethod(AnalysisMethod):
         organism = config.get("organism", "human")
         license = config.get("license", "academic")
         min_size = int(config.get("min_size", 10))
+        max_size = int(config.get("max_size", 500))
         permutations = int(config.get("gsea_permutations", 1000))
         seed = int(config.get("seed", 42))
         fdr_method = config.get("fdr_method", "fdr_bh")
+        fdr = float(config.get("fdr", 0.05))
 
         results_dir = Path(context.paths.results)
         de_path = results_dir / de_name
@@ -84,20 +86,45 @@ class GseaMethod(AnalysisMethod):
             except PriorFetchError as exc:
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
+
+            # Enforce the max_size gene-set filter against the ranked universe
+            # (min_size maps to decoupler's tmin below); drop oversized sources.
+            present = net[net["target"].isin(ranking.columns)]
+            sizes = present.groupby("source")["target"].nunique()
+            keep_sources = set(sizes[sizes <= max_size].index)
+            net = net[net["source"].isin(keep_sources)]
+
             try:
-                es, pv = dc.mt.gsea(ranking, net, tmin=min_size, times=permutations, seed=seed)
+                # We call gsea through decoupler's low-level building blocks rather
+                # than dc.mt.gsea(...) because the high-level Method has test=True
+                # and applies its OWN across-source BH before returning — so its
+                # "p-value" is already an across-source q-value. BH-ing that again
+                # here would double-correct (decoupler's BH is not idempotent).
+                # Reconstructing gsea.func gives the GENUINE raw permutation p, so
+                # we label it `pvalue` and apply BH exactly once for `padj`.
+                mat, obs, var = dc.pp.extract(ranking, empty=True, shuffle=True, verbose=False)
+                pruned = dc.pp.prune(features=var, net=net, tmin=min_size, verbose=False)
+                sources, cnct, starts, offsets = dc.pp.idxmat(
+                    features=var, net=pruned, verbose=False
+                )
+                es_arr, pv_arr = dc.mt.gsea.func(
+                    mat, cnct, starts, offsets, times=permutations, seed=seed, verbose=False
+                )
+                # Single-contrast ranking → single row of scores and raw p-values.
+                score = pd.Series(es_arr[0], index=sources)
+                pvalue = pd.Series(pv_arr[0], index=sources)
             except Exception as exc:
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
 
-            score = es.loc["contrast"]
-            pvalue = pv.loc["contrast"]
+            padj = _bh(pvalue.values.astype(float), fdr_method)
             out = pd.DataFrame(
                 {
                     "source": score.index,
                     "score": score.values,
                     "pvalue": pvalue.values,
-                    "padj": _bh(pvalue.values.astype(float), fdr_method),
+                    "padj": padj,
+                    "significant": padj < fdr,
                     "collection": collection,
                 }
             )
