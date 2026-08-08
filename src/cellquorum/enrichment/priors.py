@@ -11,10 +11,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-# Collections with a dedicated dc.op accessor. Everything else is fetched via
+# Collections without a dedicated dc.op accessor are fetched via
 # dc.op.resource(<omnipath name>). The mapping is config-facing only — no study
 # assumptions, just decoupler's own resource names.
-_DEDICATED = {"hallmark", "collectri", "progeny", "dorothea"}
 _RESOURCE_NAMES = {
     "reactome": "Reactome",
     "kegg": "KEGG",

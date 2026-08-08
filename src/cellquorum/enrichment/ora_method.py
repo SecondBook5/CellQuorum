@@ -1,4 +1,15 @@
-"""Over-representation analysis method (decoupler dc.mt.ora over DE up/down sets)."""
+"""Over-representation analysis method (direct hypergeometric over DE up/down sets).
+
+ORA is a set-membership test: the DE-derived foreground gene set (up or down) is
+tested for over-representation in each gene-set of a collection, against the
+background of all tested genes (the DE table's gene universe). We compute the
+contingency-table Fisher/hypergeometric test directly (scipy) rather than routing
+a 0/1 expression row through ``dc.mt.ora`` — that decoupler path ranks the row and
+selects a top-n% of features against a fixed ``n_bg=20000``, which silently
+violates the design (wrong foreground selection, wrong background) and, because
+``empty=True`` drops the all-zero columns, degenerates the table entirely. The
+direct test yields a genuine raw p-value, so BH/FDR is applied exactly once here.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +18,7 @@ from pathlib import Path
 import anndata as ad
 import numpy as np
 import pandas as pd
+from scipy.stats import hypergeom
 from statsmodels.stats.multitest import multipletests
 
 from cellquorum.contracts import DataContract
@@ -40,10 +52,12 @@ class OraMethod(AnalysisMethod):
         organism = config.get("organism", "human")
         license = config.get("license", "academic")
         min_size = int(config.get("min_size", 10))
+        max_size = int(config.get("max_size", 500))
         lfc_threshold = float(config.get("lfc_threshold", 0.0))
         fg_padj = float(config.get("fg_padj", 0.05))
         min_fg = int(config.get("min_foreground_genes", 5))
         fdr_method = config.get("fdr_method", "fdr_bh")
+        fdr = float(config.get("fdr", 0.05))
 
         results_dir = Path(context.paths.results)
         de_path = results_dir / de_name
@@ -54,22 +68,15 @@ class OraMethod(AnalysisMethod):
             )
 
         de = pd.read_csv(de_path)
-        background = list(pd.unique(de["gene"].dropna()))
+        # Background universe = every gene tested by DE (the design's tested-gene
+        # background). This is the hypergeometric population, NOT a fixed 20000.
+        background = set(pd.unique(de["gene"].dropna()))
+        n_background = len(background)
+        # Foreground = DE-significant genes split by direction; tested separately
+        # so the directional (up/down) stacking of the output schema is preserved.
         up = set(de.loc[(de["FDR"] < fg_padj) & (de["logFC"] > lfc_threshold), "gene"])
         down = set(de.loc[(de["FDR"] < fg_padj) & (de["logFC"] < -lfc_threshold), "gene"])
         directions = {"up": up, "down": down}
-
-        try:
-            import decoupler as dc
-        except Exception as exc:
-            return MethodSkip(
-                reason="ora skipped: decoupler unavailable",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
-        if dc is None:
-            return MethodSkip(
-                reason="ora skipped: decoupler unavailable", details={"method": self.name}
-            )
 
         results_dir.mkdir(parents=True, exist_ok=True)
         artifacts, done, skipped = [], [], []
@@ -80,32 +87,50 @@ class OraMethod(AnalysisMethod):
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
 
+            # Restrict each gene-set to the tested universe, then apply the same
+            # min_size/max_size filters decoupler's tmin would (post-restriction).
+            genesets: dict[str, set[str]] = {}
+            for source, targets in net.groupby("source")["target"]:
+                members = set(map(str, targets)) & background
+                if min_size <= len(members) <= max_size:
+                    genesets[str(source)] = members
+            if not genesets:
+                skipped.append(
+                    {"collection": collection, "reason": "no gene-set passed size filters"}
+                )
+                continue
+
             rows = []
             for direction, fg in directions.items():
-                fg = fg & set(background)
-                if len(fg) < min_fg:
+                # Foreground must live inside the tested universe (a gene absent
+                # from the DE table cannot be drawn from the population).
+                fg = fg & background
+                n_fg = len(fg)
+                if n_fg < min_fg:
                     continue
-                members = pd.DataFrame(
-                    [[1.0 if g in fg else 0.0 for g in background]],
-                    index=["contrast"],
-                    columns=background,
-                )
-                try:
-                    es, pv = dc.mt.ora(members, net, tmin=min_size)
-                except Exception as exc:
-                    skipped.append(
-                        {"collection": collection, "direction": direction, "reason": str(exc)[:200]}
-                    )
-                    continue
-                score = es.loc["contrast"]
-                pvalue = pv.loc["contrast"]
+                sources = list(genesets)
+                # Contingency counts per gene-set: overlap k, set size K, drawn N,
+                # population M. Fisher/hypergeometric survival gives the raw right-
+                # tail p (P[overlap >= k]); log2 odds ratio is the reported score.
+                scores, pvalues = [], []
+                for source in sources:
+                    members = genesets[source]
+                    k = len(fg & members)  # a: foreground ∩ set
+                    K = len(members)  # a + c: set size in universe
+                    p = float(hypergeom.sf(k - 1, n_background, K, n_fg))
+                    # 2x2 odds ratio with a Haldane-Anscombe +0.5 continuity term.
+                    a, b = k, n_fg - k
+                    c, d = K - k, n_background - K - (n_fg - k)
+                    odds = ((a + 0.5) * (d + 0.5)) / ((b + 0.5) * (c + 0.5))
+                    scores.append(float(np.log2(odds)))
+                    pvalues.append(p)
                 rows.append(
                     pd.DataFrame(
                         {
-                            "source": score.index,
+                            "source": sources,
                             "direction": direction,
-                            "score": score.values,
-                            "pvalue": pvalue.values,
+                            "score": scores,
+                            "pvalue": pvalues,
                             "collection": collection,
                         }
                     )
@@ -114,8 +139,12 @@ class OraMethod(AnalysisMethod):
             if not rows:
                 continue
             out = pd.concat(rows, ignore_index=True)
+            # Single BH/FDR over the genuine raw hypergeometric p-values.
             out["padj"] = _bh(out["pvalue"].values.astype(float), fdr_method)
-            out = out[["source", "direction", "score", "pvalue", "padj", "collection"]]
+            out["significant"] = out["padj"] < fdr
+            out = out[
+                ["source", "direction", "score", "pvalue", "padj", "significant", "collection"]
+            ]
             out_csv = results_dir / f"enrichment_ora_{collection}.csv"
             out.to_csv(out_csv, index=False)
             artifacts.append(
