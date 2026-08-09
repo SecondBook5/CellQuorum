@@ -1,7 +1,12 @@
+from pathlib import Path
+
 import anndata as ad
 import numpy as np
 import scanpy as sc
 
+from cellquorum.embeddings.categorical_method import CategoricalEmbeddingMethod
+from cellquorum.embeddings.config import MagicConfig, OverlayConfig
+from cellquorum.embeddings.overlay_method import ContinuousOverlayMethod
 from cellquorum.embeddings.paga_method import PagaMethod
 from cellquorum.embeddings.phate_method import PhateMethod
 from cellquorum.embeddings.umap_method import UmapMethod
@@ -69,4 +74,59 @@ def test_paga_method_skips_when_no_group():
     a = _adata()
     del a.obs["cell_type"]
     res = PagaMethod().run(a, _cfg(cluster_key="leiden"), _Ctx())
+    assert isinstance(res, MethodSkip)
+
+
+# --- Task 6: Render methods ---
+
+
+class _CtxPaths:
+    random_seed = 1337
+
+    def __init__(self, tmp):
+        self.paths = type("P", (), {"figures": str(tmp), "results": str(tmp)})()
+
+
+def _adata_rendered():
+    a = _adata()
+    sc.tl.umap(a, random_state=0)
+    sc.tl.paga(a, groups="cell_type")
+    a.var_names = [f"GENE_{i}" for i in range(a.n_vars)]
+    return a
+
+
+def test_categorical_method_renders_figures(tmp_path):
+    a = _adata_rendered()
+    cfg = _cfg(embeddings=["umap"], figure_formats=["png"], dpi=80)
+    res = CategoricalEmbeddingMethod().run(a, cfg, _CtxPaths(tmp_path))
+    assert not isinstance(res, MethodSkip)
+    assert res.metrics["n_figures"] >= 1
+    assert any(p.suffix == ".png" for art in res.artifacts for p in [Path(art.path)])
+
+
+def test_overlay_method_renders_gene(tmp_path):
+    a = _adata_rendered()
+    cfg = _cfg(
+        embeddings=["umap"],
+        figure_formats=["png"],
+        dpi=80,
+        overlay=OverlayConfig(genes=["GENE_0"]),
+        magic=MagicConfig(enabled=False),
+    )
+    res = ContinuousOverlayMethod().run(a, cfg, _CtxPaths(tmp_path))
+    assert not isinstance(res, MethodSkip)
+    assert res.metrics["n_figures"] >= 1
+
+
+def test_overlay_method_skips_when_nothing_requested(tmp_path):
+    a = _adata_rendered()
+    cfg = _cfg(embeddings=["umap"], overlay=OverlayConfig(), magic=MagicConfig(enabled=False))
+    res = ContinuousOverlayMethod().run(a, cfg, _CtxPaths(tmp_path))
+    assert isinstance(res, MethodSkip)
+
+
+def test_categorical_method_skips_without_embedding(tmp_path):
+    a = _adata()  # no X_umap computed
+    cfg = _cfg(embeddings=["umap"])
+    res = CategoricalEmbeddingMethod().run(a, cfg, _CtxPaths(tmp_path))
     assert isinstance(res, MethodSkip)
