@@ -29,6 +29,9 @@ from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
 # Import ccc-network (topology + curvature) stage.
 from cellquorum.ccc_network.stage import CCCNetworkStage
 
+# Import CCC-visualization stage.
+from cellquorum.ccc_viz.stage import CccVizStage
+
 # Import cell-cell-communication stage.
 from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage
 
@@ -269,6 +272,7 @@ def build_default_stage_registry() -> StageRegistry:
             "differential_abundance": DifferentialAbundanceStage(),
             "enrichment": EnrichmentStage(),
             "enrichment_viz": EnrichmentVizStage(),
+            "ccc_viz": CccVizStage(),
             "embeddings": EmbeddingsStage(),
             "cell_cell_communication": CellCellCommunicationStage(),
             "ccc_network": CCCNetworkStage(),

@@ -306,6 +306,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "annotation_consensus",
         "annotation_diagnostics",
         "ccc_network",
+        "ccc_viz",
         "cell_cell_communication",
         "clustering",
         "differential_abundance",
