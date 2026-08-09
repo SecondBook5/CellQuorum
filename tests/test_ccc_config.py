@@ -31,3 +31,27 @@ def test_strict_rejects_unknown_field():
 
     with pytest.raises(ValidationError):
         CellCellCommunicationConfig(not_a_field=1)
+
+
+def test_nichenet_config_defaults():
+    from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+
+    cfg = CellCellCommunicationConfig()
+    # prior models unset by default -> methods skip cleanly
+    assert cfg.nichenet_ligand_target_matrix is None
+    assert cfg.nichenet_lr_network is None
+    assert cfg.nichenet_weighted_networks is None
+    # validated MultiNicheNet defaults
+    assert cfg.mnn_top_n_target == 250
+    assert cfg.mnn_fraction_cutoff == 0.05
+    assert cfg.mnn_min_sample_prop == 0.5
+    assert cfg.mnn_logfc_threshold == 0.5
+    assert cfg.mnn_p_val_adj is False
+    # NicheNet defaults
+    assert cfg.nichenet_top_ligands == 10
+    assert cfg.nichenet_top_targets == 50
+    assert cfg.nichenet_de_top_n == 200
+    assert cfg.nichenet_sender is None
+    assert cfg.nichenet_receiver is None
+    assert cfg.nichenet_n_cores == 4
+    assert cfg.nichenet_timeout_seconds == 7200

@@ -49,6 +49,32 @@ class CellCellCommunicationConfig(StrictBaseModel):
     tensor_how: str = "outer"
     outer_fraction: float = 1.0 / 3.0
     timeout_seconds: int = 1800
+    # --- NicheNet / MultiNicheNet (spec #2) — optional; MethodSkip when unset ---
+    # Prior-model RDS paths (organism-specific biology → config, never bundled).
+    nichenet_ligand_target_matrix: str | None = None
+    nichenet_lr_network: str | None = None
+    nichenet_weighted_networks: str | None = None
+    # Shared knobs
+    nichenet_min_cells: int = 10
+    nichenet_expr_prop: float = 0.10
+    nichenet_n_cores: int = 4
+    nichenet_timeout_seconds: int = 7200
+    # MultiNicheNet-specific (AJ's validated defaults)
+    mnn_fraction_cutoff: float = 0.05
+    mnn_min_sample_prop: float = 0.5
+    mnn_logfc_threshold: float = 0.5
+    mnn_p_val_threshold: float = 0.05
+    mnn_p_val_adj: bool = False
+    mnn_top_n_target: int = 250
+    mnn_scenario: str = "regular"
+    # NicheNet-specific
+    nichenet_sender: str | None = None
+    nichenet_receiver: str | None = None
+    nichenet_de_csv: str | None = None
+    nichenet_top_ligands: int = 10
+    nichenet_top_targets: int = 50
+    nichenet_de_fdr: float = 0.05
+    nichenet_de_top_n: int = 200
 
 
 __all__ = ["CellCellCommunicationConfig"]
