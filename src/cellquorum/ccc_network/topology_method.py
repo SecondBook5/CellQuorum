@@ -9,9 +9,11 @@ import pandas as pd
 
 from cellquorum.ccc_network._networks import (
     build_cci_network,
+    build_differential_network,
     build_gci_network,
     compute_topology_ranking,
     liana_to_canonical,
+    resolve_condition_arms,
 )
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -35,6 +37,7 @@ class TopologyMethod(AnalysisMethod):
         build_gci = bool(config.get("build_gci", True))
         gci_max_edges = int(config.get("gci_max_edges", 200_000))
         pagerank_alpha = float(config.get("pagerank_alpha", 0.01))
+        min_edges = int(config.get("min_edges", 1))
 
         liana_res = adata.uns.get(source_key)
         if liana_res is None or len(liana_res) == 0:
@@ -54,7 +57,7 @@ class TopologyMethod(AnalysisMethod):
         condition_col = config.get("condition_col")
         case = config.get("case")
         control = config.get("control")
-        arms = self._resolve_arms(adata, canon, sample_col, condition_col, case, control, notes)
+        arms = resolve_condition_arms(adata, canon, sample_col, condition_col, case, control, notes)
 
         # Build per-(level, arm) networks in a fixed, deterministic order.
         levels = ["cci"] + (["gci"] if build_gci else [])
@@ -64,7 +67,7 @@ class TopologyMethod(AnalysisMethod):
         results_dir = Path(context.paths.results) / "ccc_network"
 
         for level in levels:
-            whole = self._build(canon, level, gci_max_edges, notes)
+            whole = self._build(canon, level, gci_max_edges, min_edges, notes)
             if whole is None:
                 continue
             topology[level] = compute_topology_ranking(whole, pagerank_alpha=pagerank_alpha)
@@ -85,11 +88,21 @@ class TopologyMethod(AnalysisMethod):
                 and not case_lr.empty
                 and not ctrl_lr.empty
             ):
-                G_case = self._build(case_lr, level, gci_max_edges, notes)
-                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, notes)
+                G_case = self._build(case_lr, level, gci_max_edges, min_edges, notes)
+                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, notes)
                 if G_case is not None and G_ctrl is not None:
+                    # Build the signed differential network.
+                    # Control first so weight = case - control.
+                    _diff_table, diff_cci, diff_gci = build_differential_network(
+                        ctrl_lr, case_lr, "control", "case"
+                    )
+                    G_diff = diff_cci if level == "cci" else diff_gci
                     comparative[level] = compute_topology_ranking(
-                        G_case, comparative=True, G_other=G_ctrl, pagerank_alpha=pagerank_alpha
+                        G_case,
+                        comparative=True,
+                        G_other=G_ctrl,
+                        pagerank_alpha=pagerank_alpha,
+                        G_diff=G_diff,
                     )
                     artifacts += self._write(
                         results_dir,
@@ -116,51 +129,29 @@ class TopologyMethod(AnalysisMethod):
         )
 
     def _build(
-        self, lr: pd.DataFrame, level: str, gci_max_edges: int, notes: list[str]
+        self, lr: pd.DataFrame, level: str, gci_max_edges: int, min_edges: int, notes: list[str]
     ) -> object | None:
-        """Build one network level; GCI over the edge cap is skipped with a note."""
+        """Build one network level; skip if over GCI cap or below min_edges."""
         if level == "cci":
-            return build_cci_network(lr)
-        # gci: guard size (edge count ~ number of rows).
-        if len(lr) > gci_max_edges:
+            G = build_cci_network(lr)
+        else:
+            # gci: guard size (edge count ~ number of rows).
+            if len(lr) > gci_max_edges:
+                notes.append(
+                    f"topology: GCI skipped ({len(lr)} rows > gci_max_edges={gci_max_edges}); "
+                    "CCI computed."
+                )
+                return None
+            G = build_gci_network(lr)
+
+        # min_edges gate: skip if below threshold.
+        if G.number_of_edges() < min_edges:
             notes.append(
-                f"topology: GCI skipped ({len(lr)} rows > gci_max_edges={gci_max_edges}); "
-                "CCI computed."
+                f"topology: {level.upper()} skipped ({G.number_of_edges()} edges < "
+                f"min_edges={min_edges})."
             )
             return None
-        return build_gci_network(lr)
-
-    def _resolve_arms(
-        self,
-        adata: ad.AnnData,
-        canon: pd.DataFrame,
-        sample_col: str,
-        condition_col: str | None,
-        case: object,
-        control: object,
-        notes: list[str],
-    ) -> dict[str, pd.DataFrame]:
-        """Split the canonical table into case/control arms via obs sample->condition map."""
-        arms: dict[str, pd.DataFrame] = {}
-        if not (condition_col and case and control):
-            return arms
-        if condition_col not in adata.obs.columns or sample_col not in adata.obs.columns:
-            notes.append(
-                f"topology: design present but obs lacks '{sample_col}'/'{condition_col}'; "
-                "comparative skipped."
-            )
-            return arms
-        mapping = (
-            adata.obs[[sample_col, condition_col]]
-            .astype(str)
-            .drop_duplicates()
-            .set_index(sample_col)[condition_col]
-            .to_dict()
-        )
-        cond = canon["sample"].map(mapping)
-        arms["case"] = canon.loc[cond == str(case)].copy()
-        arms["control"] = canon.loc[cond == str(control)].copy()
-        return arms
+        return G
 
     def _write(
         self,

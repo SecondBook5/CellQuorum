@@ -78,3 +78,14 @@ def test_topology_comparative_when_design_present(tmp_path):
     res = TopologyMethod().run(a, cfg, _Ctx(tmp_path))
     assert not isinstance(res, MethodSkip)
     assert (tmp_path / "results" / "ccc_network" / "comparative_cci.csv").exists()
+
+
+def test_topology_min_edges_skips_level(tmp_path):
+    """FIX 4: min_edges gate skips a level cleanly when edge count is below threshold."""
+    a = _adata_with_obs()
+    # The toy graph has very few edges; set min_edges above the count.
+    cfg = _config() | {"min_edges": 1000}
+    res = TopologyMethod().run(a, cfg, _Ctx(tmp_path))
+    assert not isinstance(res, MethodSkip)
+    # CCI should be skipped due to min_edges gate.
+    assert "cci" not in res.adata.uns.get("ccc_network", {}).get("topology", {})

@@ -76,3 +76,26 @@ def test_ricci_computes_curvature_when_available(tmp_path):
     assert not isinstance(res, MethodSkip)
     assert (tmp_path / "results" / "ccc_network" / "curvature_cci_edges.csv").exists()
     assert "curvature" in res.adata.uns["ccc_network"]
+
+
+def test_ricci_runtime_error_returns_empty_frames(monkeypatch):
+    """FIX 3: guard the OT solver runtime, not just the import."""
+    pytest.importorskip("GraphRicciCurvature")
+    import networkx as nx
+
+    from cellquorum.ccc_network.ricci_method import compute_ricci_curvature
+
+    # Monkeypatch OllivierRicci.compute_ricci_curvature to raise a runtime error.
+    def _failing_compute(*args, **kwargs):
+        raise RuntimeError("OT solver failed (simulated)")
+
+    from GraphRicciCurvature.OllivierRicci import OllivierRicci
+
+    monkeypatch.setattr(OllivierRicci, "compute_ricci_curvature", _failing_compute)
+
+    G = nx.DiGraph()
+    G.add_edge("A", "B", weight=1.0)
+    edge_df, node_df = compute_ricci_curvature(G, alpha=0.5)
+    # Should return empty frames instead of propagating the error.
+    assert edge_df.empty
+    assert node_df.empty

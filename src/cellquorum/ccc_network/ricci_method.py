@@ -12,6 +12,7 @@ from cellquorum.ccc_network._networks import (
     build_cci_network,
     build_gci_network,
     liana_to_canonical,
+    resolve_condition_arms,
 )
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -22,7 +23,10 @@ _NODE_COLS = ["node", "ricci_curvature"]
 
 
 def compute_ricci_curvature(G: nx.DiGraph, alpha: float = 0.5) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Edge + node Ollivier-Ricci curvature. Empty frames if graph empty or dep absent."""
+    """Edge + node Ollivier-Ricci curvature.
+
+    Empty frames if graph empty, dep absent, or runtime error.
+    """
     if G.number_of_edges() == 0:
         return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
     try:
@@ -30,33 +34,37 @@ def compute_ricci_curvature(G: nx.DiGraph, alpha: float = 0.5) -> tuple[pd.DataF
     except ImportError:
         return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
 
-    # proc=1: tiny graphs; avoids fork nondeterminism under a threaded interpreter.
-    orc = OllivierRicci(G.to_undirected(), alpha=alpha, proc=1, verbose="ERROR")
-    orc.compute_ricci_curvature()
+    try:
+        # proc=1: tiny graphs; avoids fork nondeterminism under a threaded interpreter.
+        orc = OllivierRicci(G.to_undirected(), alpha=alpha, proc=1, verbose="ERROR")
+        orc.compute_ricci_curvature()
 
-    edge_rows = []
-    for u, v, data in orc.G.edges(data=True):
-        w = G[u][v].get("weight", 1.0) if G.has_edge(u, v) else G[v][u].get("weight", 1.0)
-        edge_rows.append(
-            {
-                "source": u,
-                "target": v,
-                "ricci_curvature": data.get("ricciCurvature", 0.0),
-                "weight": w,
-            }
+        edge_rows = []
+        for u, v, data in orc.G.edges(data=True):
+            w = G[u][v].get("weight", 1.0) if G.has_edge(u, v) else G[v][u].get("weight", 1.0)
+            edge_rows.append(
+                {
+                    "source": u,
+                    "target": v,
+                    "ricci_curvature": data.get("ricciCurvature", 0.0),
+                    "weight": w,
+                }
+            )
+        edge_df = pd.DataFrame(edge_rows, columns=_EDGE_COLS).sort_values(
+            ["source", "target"], kind="mergesort"
         )
-    edge_df = pd.DataFrame(edge_rows, columns=_EDGE_COLS).sort_values(
-        ["source", "target"], kind="mergesort"
-    )
 
-    node_curv = {}
-    for n in sorted(G.nodes()):
-        inc = edge_df[(edge_df["source"] == n) | (edge_df["target"] == n)]
-        node_curv[n] = float(inc["ricci_curvature"].mean()) if len(inc) else 0.0
-    node_df = pd.DataFrame(
-        {"node": list(node_curv.keys()), "ricci_curvature": list(node_curv.values())}
-    )
-    return edge_df, node_df
+        node_curv = {}
+        for n in sorted(G.nodes()):
+            inc = edge_df[(edge_df["source"] == n) | (edge_df["target"] == n)]
+            node_curv[n] = float(inc["ricci_curvature"].mean()) if len(inc) else 0.0
+        node_df = pd.DataFrame(
+            {"node": list(node_curv.keys()), "ricci_curvature": list(node_curv.values())}
+        )
+        return edge_df, node_df
+    except Exception:
+        # OT solver / numerical failure -> skip-not-crash.
+        return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
 
 
 def compute_differential_curvature(
@@ -116,6 +124,7 @@ class RicciMethod(AnalysisMethod):
         build_gci = bool(config.get("build_gci", True))
         gci_max_edges = int(config.get("gci_max_edges", 200_000))
         alpha = float(config.get("ricci_alpha", 0.5))
+        min_edges = int(config.get("min_edges", 1))
 
         liana_res = adata.uns.get(source_key)
         if liana_res is None or len(liana_res) == 0:
@@ -130,10 +139,8 @@ class RicciMethod(AnalysisMethod):
                 details={"method": self.name, "notes": notes},
             )
 
-        # Reuse TopologyMethod's arm split for identical, tested semantics.
-        from cellquorum.ccc_network.topology_method import TopologyMethod
-
-        arms = TopologyMethod()._resolve_arms(
+        # Split into case/control arms using the shared helper.
+        arms = resolve_condition_arms(
             adata,
             canon,
             sample_col,
@@ -149,7 +156,7 @@ class RicciMethod(AnalysisMethod):
         store_curv: dict[str, dict[str, pd.DataFrame]] = {}
 
         for level in levels:
-            G = self._build(canon, level, gci_max_edges, notes)
+            G = self._build(canon, level, gci_max_edges, min_edges, notes)
             if G is None:
                 continue
             edge_df, node_df = compute_ricci_curvature(G, alpha)
@@ -178,8 +185,8 @@ class RicciMethod(AnalysisMethod):
                 and not case_lr.empty
                 and not ctrl_lr.empty
             ):
-                G_case = self._build(case_lr, level, gci_max_edges, notes)
-                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, notes)
+                G_case = self._build(case_lr, level, gci_max_edges, min_edges, notes)
+                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, notes)
                 if G_case is not None and G_ctrl is not None:
                     diff = compute_differential_curvature(G_ctrl, G_case, alpha)
                     store_curv[level]["differential"] = diff
@@ -204,17 +211,27 @@ class RicciMethod(AnalysisMethod):
         )
 
     def _build(
-        self, lr: pd.DataFrame, level: str, gci_max_edges: int, notes: list[str]
+        self, lr: pd.DataFrame, level: str, gci_max_edges: int, min_edges: int, notes: list[str]
     ) -> nx.DiGraph | None:
         if level == "cci":
-            return build_cci_network(lr)
-        if len(lr) > gci_max_edges:
+            G = build_cci_network(lr)
+        else:
+            if len(lr) > gci_max_edges:
+                notes.append(
+                    f"ricci: GCI skipped ({len(lr)} rows > gci_max_edges={gci_max_edges});"
+                    " CCI computed."
+                )
+                return None
+            G = build_gci_network(lr)
+
+        # min_edges gate: skip if below threshold.
+        if G.number_of_edges() < min_edges:
             notes.append(
-                f"ricci: GCI skipped ({len(lr)} rows > gci_max_edges={gci_max_edges});"
-                " CCI computed."
+                f"ricci: {level.upper()} skipped ({G.number_of_edges()} edges < "
+                f"min_edges={min_edges})."
             )
             return None
-        return build_gci_network(lr)
+        return G
 
     def _write(
         self,

@@ -127,3 +127,52 @@ def test_ccc_network_e2e_populates_uns_and_csvs(tmp_path):
         "Mediator",
         "Pagerank",
     ]
+
+
+def test_comparative_cci_subtracts_control(tmp_path):
+    """FIX 1 stage-level test: comparative degrees are case-control, proving NEGATIVE values."""
+    obs = pd.DataFrame(
+        {
+            "sample": ["s1", "s2"],
+            "condition": ["case", "control"],
+        }
+    )
+    a = ad.AnnData(X=np.ones((2, 2)), obs=obs)
+    # Design the LR table so control has stronger A->B than case.
+    a.uns["liana_res"] = pd.DataFrame(
+        [
+            # Case: A->B (L1/R1) with magnitude_rank=0.8 -> weight=0.2 (WEAK in case)
+            {
+                "sample": "s1",
+                "source": "A",
+                "target": "B",
+                "ligand_complex": "L1",
+                "receptor_complex": "R1",
+                "magnitude_rank": 0.8,
+            },
+            # Control: A->B (L1/R1) with magnitude_rank=0.1 -> weight=0.9 (STRONG in control)
+            {
+                "sample": "s2",
+                "source": "A",
+                "target": "B",
+                "ligand_complex": "L1",
+                "receptor_complex": "R1",
+                "magnitude_rank": 0.1,
+            },
+        ]
+    )
+    ctx = _Ctx(tmp_path, a)
+    result = CCCNetworkStage().run(ctx)
+
+    comp = result.adata.uns["ccc_network"]["comparative"]["cci"]
+    # A->B is LOST in case (weight_case - weight_ctrl = 0.2 - 0.9 = -0.7 < 0).
+    # So B's Listener (incoming degree) should be NEGATIVE (control subtracted).
+    b_row = comp[comp["node"] == "B"].iloc[0]
+    assert (
+        b_row["Listener"] < 0
+    ), "B's Listener should be negative (lost incoming edge from control)"
+    # A's Influencer (outgoing degree) should also be negative.
+    a_row = comp[comp["node"] == "A"].iloc[0]
+    assert (
+        a_row["Influencer"] < 0
+    ), "A's Influencer should be negative (lost outgoing edge from control)"

@@ -36,7 +36,7 @@ def test_config_defaults():
     assert cfg.gci_max_edges == 200_000
     assert cfg.ricci_alpha == 0.5
     assert cfg.pagerank_alpha == 0.01
-    assert cfg.seed == 42
+    assert cfg.min_edges == 1
 
 
 def test_liana_to_canonical_maps_and_inverts_weight():
@@ -204,5 +204,46 @@ def test_topology_comparative_runs():
     G_case.add_edge("A", "B", weight=1.0)
     G_ctrl = nx.DiGraph()
     G_ctrl.add_edge("B", "A", weight=1.0)
-    df = compute_topology_ranking(G_case, comparative=True, G_other=G_ctrl)
+    # Build a minimal differential graph for the test.
+    G_diff = nx.DiGraph()
+    G_diff.add_edge("A", "B", weight=0.5)
+    G_diff.add_edge("B", "A", weight=-0.5)
+    df = compute_topology_ranking(G_case, comparative=True, G_other=G_ctrl, G_diff=G_diff)
     assert list(df["node"]) == ["A", "B"]  # sorted union, deterministic
+
+
+def test_comparative_degrees_are_signed_difference():
+    """FIX 1 regression guard: prove Listener/Influencer are genuine case-control deltas."""
+    # Case: A->B with weight=2.0
+    # Control: A->B with weight=5.0 (STRONGER in control)
+    # Differential: A->B weight = 2.0 - 5.0 = -3.0 (LOST in case)
+    G_case = nx.DiGraph()
+    G_case.add_edge("A", "B", weight=2.0)
+    G_case.add_edge("C", "D", weight=4.0)
+
+    G_ctrl = nx.DiGraph()
+    G_ctrl.add_edge("A", "B", weight=5.0)
+    G_ctrl.add_edge("C", "D", weight=1.0)
+
+    # Build the signed differential network.
+    G_diff = nx.DiGraph()
+    G_diff.add_edge("A", "B", weight=-3.0)  # LOST in case
+    G_diff.add_edge("C", "D", weight=3.0)  # GAINED in case
+
+    df = compute_topology_ranking(G_case, comparative=True, G_other=G_ctrl, G_diff=G_diff)
+
+    # B is a receiver of A->B; lost in case -> negative Listener.
+    b = df[df["node"] == "B"].iloc[0]
+    assert b["Listener"] < 0, "Listener for B (receives LOST edge) should be negative"
+
+    # D is a receiver of C->D; gained in case -> positive Listener.
+    d = df[df["node"] == "D"].iloc[0]
+    assert d["Listener"] > 0, "Listener for D (receives GAINED edge) should be positive"
+
+    # A is a sender of A->B; lost in case -> negative Influencer.
+    a = df[df["node"] == "A"].iloc[0]
+    assert a["Influencer"] < 0, "Influencer for A (sends LOST edge) should be negative"
+
+    # C is a sender of C->D; gained in case -> positive Influencer.
+    c = df[df["node"] == "C"].iloc[0]
+    assert c["Influencer"] > 0, "Influencer for C (sends GAINED edge) should be positive"

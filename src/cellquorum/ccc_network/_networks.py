@@ -176,14 +176,56 @@ def _comparative_pagerank(
     return result
 
 
+def resolve_condition_arms(
+    adata: object,
+    canon: pd.DataFrame,
+    sample_col: str,
+    condition_col: str | None,
+    case: object,
+    control: object,
+    notes: list[str],
+) -> dict[str, pd.DataFrame]:
+    """Split the canonical table into case/control arms via an obs sample->condition map.
+
+    Returns an empty dict if design is absent or obs lacks required columns;
+    otherwise returns {"case": case_df, "control": control_df}.
+    """
+    arms: dict[str, pd.DataFrame] = {}
+    if not (condition_col and case and control):
+        return arms
+    if condition_col not in adata.obs.columns or sample_col not in adata.obs.columns:
+        notes.append(
+            f"resolve_condition_arms: design present but obs lacks '{sample_col}'/'"
+            f"'{condition_col}'; comparative skipped."
+        )
+        return arms
+    mapping = (
+        adata.obs[[sample_col, condition_col]]
+        .astype(str)
+        .drop_duplicates()
+        .set_index(sample_col)[condition_col]
+        .to_dict()
+    )
+    cond = canon["sample"].map(mapping)
+    arms["case"] = canon.loc[cond == str(case)].copy()
+    arms["control"] = canon.loc[cond == str(control)].copy()
+    return arms
+
+
 def compute_topology_ranking(
     G: nx.DiGraph,
     comparative: bool = False,
     G_other: nx.DiGraph | None = None,
     pagerank_alpha: float = 0.01,
+    G_diff: nx.DiGraph | None = None,
 ) -> pd.DataFrame:
     """Topology ranking. Single: Listener/Influencer/Mediator/Pagerank.
-    Comparative (G=case, G_other=control): signed degree diffs + PageRank log-ratio."""
+
+    Comparative (G=case, G_other=control, G_diff=signed differential network):
+    - Listener/Influencer from G_diff (signed weighted degree, case-control)
+    - Mediator from betweenness(case) - betweenness(control)
+    - Pagerank from log-ratio of the two arms
+    """
     cols = ["node", "Listener", "Influencer", "Mediator", "Pagerank"]
     if G.number_of_nodes() == 0 and (G_other is None or G_other.number_of_nodes() == 0):
         return pd.DataFrame(columns=cols)
@@ -205,24 +247,20 @@ def compute_topology_ranking(
         )
 
     if G_other is None:
-        raise ValueError("G_other required for comparative ranking")
+        raise ValueError("G_other (control) required for comparative ranking")
+    if G_diff is None:
+        raise ValueError("G_diff (signed differential network) required for comparative ranking")
 
-    # Sorted union -> deterministic (fixes the source's set()-order bug).
-    all_nodes = sorted(set(G.nodes()) | set(G_other.nodes()))
+    # Sorted union -> deterministic.
+    all_nodes = sorted(set(G.nodes()) | set(G_other.nodes()) | set(G_diff.nodes()))
 
-    pos_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("weight", 0) > 0]
-    neg_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("weight", 0) < 0]
-    G_pos = G.edge_subgraph(pos_edges).copy() if pos_edges else nx.DiGraph()
-    G_neg = G.edge_subgraph(neg_edges).copy() if neg_edges else nx.DiGraph()
+    # Listener/Influencer from signed weighted degree of the differential network.
+    in_diff = dict(G_diff.in_degree(weight="weight")) if G_diff.number_of_edges() else {}
+    out_diff = dict(G_diff.out_degree(weight="weight")) if G_diff.number_of_edges() else {}
+    listener = {n: in_diff.get(n, 0.0) for n in all_nodes}
+    influencer = {n: out_diff.get(n, 0.0) for n in all_nodes}
 
-    in_pos = dict(G_pos.in_degree(weight="weight")) if G_pos.number_of_edges() else {}
-    in_neg = dict(G_neg.in_degree(weight="weight")) if G_neg.number_of_edges() else {}
-    out_pos = dict(G_pos.out_degree(weight="weight")) if G_pos.number_of_edges() else {}
-    out_neg = dict(G_neg.out_degree(weight="weight")) if G_neg.number_of_edges() else {}
-
-    listener = {n: in_pos.get(n, 0.0) - abs(in_neg.get(n, 0.0)) for n in all_nodes}
-    influencer = {n: out_pos.get(n, 0.0) - abs(out_neg.get(n, 0.0)) for n in all_nodes}
-
+    # Mediator from betweenness difference (case - control).
     med_case = (
         nx.betweenness_centrality(G, weight="weight", normalized=False)
         if G.number_of_edges()
@@ -235,6 +273,7 @@ def compute_topology_ranking(
     )
     mediator = {n: med_case.get(n, 0.0) - med_ctrl.get(n, 0.0) for n in all_nodes}
 
+    # Pagerank from log-ratio.
     pr = _comparative_pagerank(
         _safe_pagerank(G), _safe_pagerank(G_other), all_nodes, alpha=pagerank_alpha
     )
@@ -258,4 +297,5 @@ __all__ = [
     "_safe_pagerank",
     "build_differential_network",
     "compute_topology_ranking",
+    "resolve_condition_arms",
 ]
