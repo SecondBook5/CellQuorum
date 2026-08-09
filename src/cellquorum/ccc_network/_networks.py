@@ -7,6 +7,7 @@ between the adapter, the network builders, and the two methods.
 
 from __future__ import annotations
 
+import networkx as nx
 import pandas as pd
 
 # Canonical LR edge columns in stable order.
@@ -60,4 +61,62 @@ def liana_to_canonical(liana_res: pd.DataFrame) -> tuple[pd.DataFrame, list[str]
     return canon.loc[:, CANONICAL_COLUMNS], notes
 
 
-__all__ = ["CANONICAL_COLUMNS", "liana_to_canonical"]
+def build_cci_network(lr: pd.DataFrame, name: str = "cci") -> nx.DiGraph:
+    """Cell-cell interaction network: nodes = cell types, edge weight = sum(weight)."""
+    G = nx.DiGraph()
+    G.graph["name"] = name
+    if lr.empty:
+        return G
+    # Deterministic: aggregate then iterate in a stable, sorted order.
+    agg = lr.groupby(["source", "target"], sort=True)["weight"].sum().reset_index()
+    agg = agg.sort_values(["source", "target"], kind="mergesort")
+    for _, row in agg.iterrows():
+        G.add_edge(
+            row["source"], row["target"], weight=float(row["weight"]), LRScore=float(row["weight"])
+        )
+    return G
+
+
+def build_gci_network(lr: pd.DataFrame, name: str = "gci") -> nx.DiGraph:
+    """Gene-channel network: nodes = '{celltype}/{gene}|L' / '|R', one edge per LR row."""
+    G = nx.DiGraph()
+    G.graph["name"] = name
+    if lr.empty:
+        return G
+    ordered = lr.sort_values(["source", "target", "ligand", "receptor"], kind="mergesort")
+    for _, row in ordered.iterrows():
+        src = f"{row['source']}/{row['ligand']}|L"
+        tgt = f"{row['target']}/{row['receptor']}|R"
+        w = float(row["weight"])
+        # Multiple samples can repeat a channel; accumulate onto the edge.
+        if G.has_edge(src, tgt):
+            G[src][tgt]["weight"] += w
+            G[src][tgt]["LRScore"] += w
+        else:
+            G.add_edge(
+                src, tgt, weight=w, LRScore=w, ligand=row["ligand"], receptor=row["receptor"]
+            )
+    return G
+
+
+def _safe_pagerank(G: nx.DiGraph) -> dict[str, float]:
+    """PageRank that never aborts: retry looser tolerances, then weighted-in-degree fallback."""
+    if G.number_of_edges() == 0:
+        return {}
+    for max_iter, tol in ((500, 1e-6), (1000, 1e-4)):
+        try:
+            return nx.pagerank(G, weight="weight", max_iter=max_iter, tol=tol)
+        except nx.PowerIterationFailedConvergence:
+            continue
+    indeg = dict(G.in_degree(weight="weight"))
+    total = sum(abs(v) for v in indeg.values()) or 1.0
+    return {n: abs(v) / total for n, v in indeg.items()}
+
+
+__all__ = [
+    "CANONICAL_COLUMNS",
+    "liana_to_canonical",
+    "build_cci_network",
+    "build_gci_network",
+    "_safe_pagerank",
+]
