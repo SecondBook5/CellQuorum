@@ -7,6 +7,7 @@ import pandas as pd
 from cellquorum.ccc_network._networks import (
     _safe_pagerank,
     build_cci_network,
+    build_differential_network,
     build_gci_network,
     liana_to_canonical,
 )
@@ -100,3 +101,64 @@ def test_safe_pagerank_returns_distribution():
 
 def test_safe_pagerank_empty_graph():
     assert _safe_pagerank(nx.DiGraph()) == {}
+
+
+# Task 3: Differential network builder
+
+
+def test_differential_network_signed_and_nonzero():
+    control = pd.DataFrame(
+        {
+            "source": ["A", "A"],
+            "target": ["B", "B"],
+            "ligand": ["L1", "L2"],
+            "receptor": ["R1", "R2"],
+            "weight": [0.5, 0.3],
+            "sample": ["c1", "c1"],
+        }
+    )
+    case = pd.DataFrame(
+        {
+            "source": ["A", "A"],
+            "target": ["B", "B"],
+            "ligand": ["L1", "L2"],
+            "receptor": ["R1", "R2"],
+            "weight": [0.9, 0.3],
+            "sample": ["d1", "d1"],
+        }
+    )
+    diff_table, diff_cci, diff_gci = build_differential_network(control, case, "ctrl", "case")
+    # L1@R1 gained (0.9-0.5=+0.4); L2@R2 unchanged (0.0) -> dropped.
+    assert len(diff_table) == 1
+    row = diff_table.iloc[0]
+    assert row["ligand"] == "L1"
+    assert np.isclose(row["weight"], 0.4)
+    assert np.isclose(diff_cci["A"]["B"]["weight"], 0.4)
+
+
+def test_differential_network_handles_arm_only_channels():
+    control = pd.DataFrame(
+        {
+            "source": ["A"],
+            "target": ["B"],
+            "ligand": ["L1"],
+            "receptor": ["R1"],
+            "weight": [0.5],
+            "sample": ["c1"],
+        }
+    )
+    case = pd.DataFrame(
+        {
+            "source": ["A"],
+            "target": ["B"],
+            "ligand": ["L9"],
+            "receptor": ["R9"],
+            "weight": [0.7],
+            "sample": ["d1"],
+        }
+    )
+    diff_table, _, _ = build_differential_network(control, case, "ctrl", "case")
+    # L1 lost (-0.5), L9 gained (+0.7)
+    weights = dict(zip(diff_table["ligand"], diff_table["weight"], strict=False))
+    assert np.isclose(weights["L1"], -0.5)
+    assert np.isclose(weights["L9"], 0.7)

@@ -113,10 +113,56 @@ def _safe_pagerank(G: nx.DiGraph) -> dict[str, float]:
     return {n: abs(v) / total for n, v in indeg.items()}
 
 
+def _with_allpair(df: pd.DataFrame) -> pd.DataFrame:
+    """Add the 'allpair' merge key and aggregate weight per channel (deterministic)."""
+    out = df.copy()
+    out["allpair"] = (
+        out["source"] + "/" + out["ligand"] + "@" + out["target"] + "/" + out["receptor"]
+    )
+    # Collapse multi-sample rows to one weight per channel.
+    agg = (
+        out.groupby(["allpair", "source", "target", "ligand", "receptor"], sort=True)["weight"]
+        .sum()
+        .reset_index()
+    )
+    return agg
+
+
+def build_differential_network(
+    lr_control: pd.DataFrame,
+    lr_case: pd.DataFrame,
+    control_name: str,
+    case_name: str,
+) -> tuple[pd.DataFrame, nx.DiGraph, nx.DiGraph]:
+    """Signed differential network: weight = case - control (positive = gained in case)."""
+    ctrl = _with_allpair(lr_control)
+    case = _with_allpair(lr_case)
+
+    merged = pd.merge(case, ctrl, on="allpair", how="outer", suffixes=("_case", "_ctrl"))
+    merged["weight_case"] = merged["weight_case"].fillna(0.0)
+    merged["weight_ctrl"] = merged["weight_ctrl"].fillna(0.0)
+    merged["weight"] = merged["weight_case"] - merged["weight_ctrl"]
+
+    # Coalesce identity columns ONCE (case value, else control value).
+    for col in ("source", "target", "ligand", "receptor"):
+        merged[col] = merged[f"{col}_case"].combine_first(merged[f"{col}_ctrl"])
+
+    diff_table = merged.loc[
+        merged["weight"] != 0, ["source", "target", "ligand", "receptor", "weight", "allpair"]
+    ].copy()
+    diff_table = diff_table.sort_values("allpair", kind="mergesort").reset_index(drop=True)
+
+    name = f"{case_name}_vs_{control_name}"
+    diff_cci = build_cci_network(diff_table, name=f"{name}_cci")
+    diff_gci = build_gci_network(diff_table, name=f"{name}_gci")
+    return diff_table, diff_cci, diff_gci
+
+
 __all__ = [
     "CANONICAL_COLUMNS",
     "liana_to_canonical",
     "build_cci_network",
     "build_gci_network",
     "_safe_pagerank",
+    "build_differential_network",
 ]
