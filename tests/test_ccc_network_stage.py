@@ -81,3 +81,49 @@ def test_stage_determinism(tmp_path):
     t1 = r1.adata.uns["ccc_network"]["topology"]["cci"]
     t2 = r2.adata.uns["ccc_network"]["topology"]["cci"]
     pd.testing.assert_frame_equal(t1, t2)
+
+
+def test_ccc_network_e2e_populates_uns_and_csvs(tmp_path):
+    obs = pd.DataFrame(
+        {
+            "sample": ["s1", "s2", "s3", "s4"],
+            "condition": ["case", "case", "control", "control"],
+        }
+    )
+    a = ad.AnnData(X=np.ones((4, 3)), obs=obs)
+    rng = np.random.default_rng(0)
+    rows = []
+    cts = ["A", "B", "C"]
+    for s in ["s1", "s2", "s3", "s4"]:
+        for src in cts:
+            for tgt in cts:
+                if src == tgt:
+                    continue
+                rows.append(
+                    {
+                        "sample": s,
+                        "source": src,
+                        "target": tgt,
+                        "ligand_complex": f"L_{src}",
+                        "receptor_complex": f"R_{tgt}",
+                        "magnitude_rank": float(rng.random()),
+                    }
+                )
+    a.uns["liana_res"] = pd.DataFrame(rows)
+
+    ctx = _Ctx(tmp_path, a)
+    result = CCCNetworkStage().run(ctx)
+
+    store = result.adata.uns["ccc_network"]
+    assert "topology" in store and "cci" in store["topology"]
+    assert (tmp_path / "results" / "ccc_network" / "topology_cci.csv").exists()
+    # Comparative present because a design contrast (case vs control) is declared.
+    assert (tmp_path / "results" / "ccc_network" / "comparative_cci.csv").exists()
+    # No crash, well-formed topology frame.
+    assert list(store["topology"]["cci"].columns) == [
+        "node",
+        "Listener",
+        "Influencer",
+        "Mediator",
+        "Pagerank",
+    ]
