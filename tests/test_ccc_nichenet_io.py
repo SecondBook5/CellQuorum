@@ -6,7 +6,13 @@ import pandas as pd
 import scipy.io
 import scipy.sparse as sp
 
-from cellquorum.cell_cell_communication._nichenet_io import de_to_geneset, export_sce_inputs
+from cellquorum.cell_cell_communication._nichenet_io import (
+    CANONICAL_COLUMNS,
+    de_to_geneset,
+    export_sce_inputs,
+    ligand_activity_to_canonical,
+    mnn_prioritization_to_canonical,
+)
 
 
 def _toy_adata():
@@ -70,3 +76,54 @@ def test_de_to_geneset_empty_when_none_significant():
     geneset, background = de_to_geneset(de, fdr=0.05, top_n=10)
     assert geneset == []
     assert background == ["G1", "G2"]
+
+
+def test_mnn_prioritization_to_canonical_maps_and_drops():
+    native = pd.DataFrame(
+        {
+            "sender": ["A", "B"],
+            "receiver": ["B", "A"],
+            "ligand": ["L1", "L2"],
+            "receptor": ["R1", "R2"],
+            "prioritization_score": [0.9, 0.4],
+            "group": ["case", "case"],
+        }
+    )
+    out = mnn_prioritization_to_canonical(native)
+    assert list(out.columns) == CANONICAL_COLUMNS
+    assert list(out["source"]) == ["A", "B"]
+    assert list(out["target"]) == ["B", "A"]
+    assert list(out["weight"]) == [0.9, 0.4]
+    assert list(out["condition"]) == ["case", "case"]
+    assert (out["weight"] >= 0).all()
+
+
+def test_mnn_drops_rows_missing_required():
+    native = pd.DataFrame(
+        {
+            "sender": ["A"],
+            "receiver": ["B"],
+            "ligand": [None],
+            "receptor": ["R1"],
+            "prioritization_score": [0.9],
+            "group": ["case"],
+        }
+    )
+    out = mnn_prioritization_to_canonical(native)
+    assert len(out) == 0
+
+
+def test_ligand_activity_to_canonical_clamps_negative():
+    native = pd.DataFrame(
+        {
+            "ligand": ["L1", "L2"],
+            "receptor": ["R1", "R2"],
+            "aupr_corrected": [0.3, -0.05],
+        }
+    )
+    out = ligand_activity_to_canonical(native, sender="LEC", receiver="Fib", condition="LE")
+    assert list(out.columns) == CANONICAL_COLUMNS
+    assert list(out["source"]) == ["LEC", "LEC"]
+    assert list(out["target"]) == ["Fib", "Fib"]
+    assert list(out["weight"]) == [0.3, 0.0]  # negative clamped to 0
+    assert list(out["condition"]) == ["LE", "LE"]
