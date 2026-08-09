@@ -126,6 +126,16 @@ def test_curvature_network_empty_guarded():
     assert isinstance(curvature_network(e, n), Figure)
 
 
+def test_curvature_network_without_weight_col():
+    from cellquorum.ccc_viz._plots import curvature_network
+
+    edges = pd.DataFrame({"source": ["A"], "target": ["B"], "delta_curvature": [-0.1]})
+    fig = curvature_network(
+        edges, None, curvature_col="delta_curvature", node_curv_col="delta_curvature"
+    )
+    assert fig is not None
+
+
 def test_topology_facets_returns_figure():
     from cellquorum.ccc_viz._plots import topology_facets
 
