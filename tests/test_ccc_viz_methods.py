@@ -57,6 +57,7 @@ def test_chord_method_renders(tmp_path):
     _write_canonical(ctx.paths.results)
     out = ChordVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
     assert isinstance(out, StageResult)
+    assert any(a.kind == "figure" for a in out.artifacts)
 
 
 def test_dotplot_contract_empty_and_python(tmp_path):
