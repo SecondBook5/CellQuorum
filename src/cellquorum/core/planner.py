@@ -212,6 +212,7 @@ class PipelinePlanner:
             ("state_scoring", self.config.stages.state_scoring),
             ("discovery", self.config.stages.discovery),
             ("composition", self.config.stages.composition),
+            ("embeddings", self.config.stages.embeddings),
             ("differential_expression", self.config.stages.differential_expression),
             ("differential_abundance", self.config.stages.differential_abundance),
             ("enrichment", self.config.stages.enrichment),
