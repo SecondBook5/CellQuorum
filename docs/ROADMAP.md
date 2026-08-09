@@ -219,14 +219,21 @@ a wrapper.
 
 These remain in scope but should not block the core framework:
 
-- PHATE and other visualization manifolds;
-- MAGIC/imputation, only with strict layer tags and statistics guards;
-- trajectory;
-- RNA velocity;
-- optimal transport;
-- GRN rewiring;
+- PHATE and other visualization manifolds — **done** (embeddings stage);
+- MAGIC/imputation, only with strict layer tags and statistics guards —
+  **done** (opt-in, scoped to the embeddings feature-overlay; the
+  `contracts/magic_guard.py` tag blocks imputed layers from statistics);
+- trajectory (DPT → Palantir → CellRank; PAGA-as-graph);
+- RNA velocity (scVelo dynamical);
+- optimal transport (moscot);
+- de-novo GRN construction (pySCENIC / SCENIC+, hdWGCNA) — distinct from the
+  TF-activity inference already shipped in the enrichment stage;
 - network topology/curvature;
-- perturbation and generative models.
+- **SEACells metacells** — coarse-grained metacell construction for scalable
+  downstream analysis; defer until a specific figure needs it (current repos
+  only use hdWGCNA-internal metacells), but tracked here so it is not lost;
+- **in-silico knockout / perturbation** — genuinely net-new (no existing code
+  to generalize from); perturbation-response prediction and generative models.
 
 These should be gated by explicit eligibility checks and should skip cleanly when
 the dataset does not support them.
