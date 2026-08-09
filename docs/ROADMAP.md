@@ -215,6 +215,12 @@ a wrapper.
    planned, but they should follow the evidence/adjudication spine rather than
    become unvalidated package wrappers.
 
+   **Implemented:** LR co-expression via LIANA per-sample consensus +
+   Tensor-cell2cell decomposition (`cell_cell_communication` stage). Remaining
+   CCC specs: `ccc_network` (topology + Ollivier-Ricci curvature), NicheNet /
+   MultiNicheNet (ligand→target, R), and `ccc_viz` figures. DIALOGUE is a
+   separate multicellular-programs track.
+
 ## Optional / later modules
 
 These remain in scope but should not block the core framework:

@@ -111,7 +111,8 @@ path-independent.
 | `enrichment` | GSEA; ORA; GSVA; decoupler activity (CollecTRI / PROGENy) | Implemented |
 | `enrichment_viz` | 8 figure types over GSEA / ORA / GSVA / activity | Implemented |
 | `adjudication` | cross-method result adjudication | Implemented |
-| `network_analysis`, `cell_cell_communication`, `trajectory` | — | Planned |
+| `cell_cell_communication` | LIANA consensus (per-sample rank_aggregate); Tensor-cell2cell decomposition | Implemented |
+| `network_analysis`, `trajectory` | — | Planned |
 
 ### Verification
 
@@ -415,7 +416,7 @@ already reserves.
 ✅ enrichment (GSEA / ORA / GSVA / decoupler activity)
 ✅ enrichment visualization (8 figure types)
 ⏳ gene-regulatory networks
-⏳ cell-cell communication
+✅ cell-cell communication (LIANA consensus + Tensor-cell2cell)
 ⏳ trajectory / potency
 ⏳ report generation (auto methods text)
 ```
