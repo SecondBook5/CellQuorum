@@ -33,9 +33,35 @@ class GroupMissing(EmbeddingsComputeError):
     """The requested grouping obs column is absent."""
 
 
+class ComputeFailed(EmbeddingsComputeError):
+    """The backend embedding routine failed (e.g. graph too small).
+
+    Wraps a lower-level scanpy/scipy/umap error so the calling method skips
+    cleanly instead of letting the raw exception abort the pipeline. Typical
+    trigger: too few cells for UMAP's spectral init (scipy eigsh needs k < N).
+    """
+
+
 def _has_neighbors(adata: ad.AnnData) -> bool:
     """True when a neighbors graph exists (connectivities present)."""
     return "neighbors" in adata.uns or "connectivities" in adata.obsp
+
+
+def _is_usable_grouping(adata: ad.AnnData, column: str) -> bool:
+    """True when `column` is a grouping PAGA can run on.
+
+    A column is usable only when it is present AND resolves to at least two
+    distinct non-null groups. A degenerate column — absent, all-null, an empty
+    categorical (0 categories / all codes -1), or a single group — is rejected
+    so callers skip cleanly instead of crashing inside scanpy/igraph, which
+    indexes a per-group counts list and raises IndexError on empty membership.
+    """
+    if column not in adata.obs.columns:
+        return False
+    values = adata.obs[column]
+    # nunique(dropna=True) counts only observed, non-null groups regardless of
+    # dtype (categorical unused categories and NaN codes are both excluded).
+    return int(values.nunique(dropna=True)) >= 2
 
 
 def compute_umap(adata: ad.AnnData, *, min_dist: float, random_state: int) -> None:
@@ -45,12 +71,22 @@ def compute_umap(adata: ad.AnnData, *, min_dist: float, random_state: int) -> No
     """
     if not _has_neighbors(adata):
         raise NeighborsMissing("neighbors graph absent; run clustering first")
+    # GPU (rapids_singlecell) first when available; any GPU-path failure — the
+    # common case here is that cuml is absent — falls back to the seeded scanpy
+    # CPU path. A CPU-path failure (e.g. a neighbors graph too small for UMAP's
+    # spectral init) is retyped as ComputeFailed so the method skips, never
+    # crashing the pipeline.
     try:
         import rapids_singlecell as rsc
 
         rsc.tl.umap(adata, min_dist=min_dist, random_state=random_state)
+        return
     except Exception:  # noqa: BLE001 — GPU absent or failed; fall back to CPU
+        pass
+    try:
         sc.tl.umap(adata, min_dist=min_dist, random_state=random_state)
+    except Exception as exc:  # noqa: BLE001 — retype any backend failure as a typed skip
+        raise ComputeFailed(f"umap computation failed: {exc}") from exc
 
 
 def compute_phate(
@@ -66,7 +102,10 @@ def compute_phate(
     operator = phate.PHATE(
         knn=knn, decay=decay, t="auto", n_jobs=-1, random_state=random_state, verbose=False
     )
-    adata.obsm["X_phate"] = operator.fit_transform(np.asarray(adata.obsm[use_rep]))
+    try:
+        adata.obsm["X_phate"] = operator.fit_transform(np.asarray(adata.obsm[use_rep]))
+    except Exception as exc:  # noqa: BLE001 — retype any backend failure as a typed skip
+        raise ComputeFailed(f"phate computation failed: {exc}") from exc
 
 
 def compute_paga(adata: ad.AnnData, *, groupby: str) -> None:
@@ -75,7 +114,12 @@ def compute_paga(adata: ad.AnnData, *, groupby: str) -> None:
         raise NeighborsMissing("neighbors graph absent; run clustering first")
     if groupby not in adata.obs.columns:
         raise GroupMissing(f"grouping column '{groupby}' absent from obs")
-    sc.tl.paga(adata, groups=groupby)
+    if not _is_usable_grouping(adata, groupby):
+        raise GroupMissing(f"grouping column '{groupby}' has fewer than two non-null groups")
+    try:
+        sc.tl.paga(adata, groups=groupby)
+    except Exception as exc:  # noqa: BLE001 — retype any backend failure as a typed skip
+        raise ComputeFailed(f"paga computation failed: {exc}") from exc
 
 
 def resolve_paga_groupby(
@@ -87,14 +131,17 @@ def resolve_paga_groupby(
 ) -> str | None:
     """Resolve the PAGA grouping column.
 
-    Precedence: explicit configured column (if present) -> cell-type column
-    (if present) -> cluster column (if present) -> None.
+    Precedence: explicit configured column -> cell-type column -> cluster
+    column -> None. A candidate is skipped when it is absent or degenerate
+    (all-null / empty categorical / a single group), so an unannotated
+    cell-type column falls through to the populated cluster labels instead of
+    forcing PAGA to crash. Returns None when no candidate is usable.
     """
-    if configured is not None and configured in adata.obs.columns:
+    if configured is not None and _is_usable_grouping(adata, configured):
         return configured
-    if cell_type_key in adata.obs.columns:
+    if _is_usable_grouping(adata, cell_type_key):
         return cell_type_key
-    if cluster_key in adata.obs.columns:
+    if _is_usable_grouping(adata, cluster_key):
         return cluster_key
     return None
 
@@ -105,6 +152,7 @@ __all__ = [
     "RepMissing",
     "PhateUnavailable",
     "GroupMissing",
+    "ComputeFailed",
     "compute_umap",
     "compute_phate",
     "compute_paga",

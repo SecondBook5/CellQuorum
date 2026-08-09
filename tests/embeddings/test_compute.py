@@ -34,6 +34,18 @@ def test_compute_umap_missing_neighbors_raises():
         compute.compute_umap(a, min_dist=0.3, random_state=0)
 
 
+def test_compute_umap_tiny_graph_raises_typed_skip():
+    # A neighbors graph too small for UMAP's spectral init (scipy eigsh needs
+    # k < N) must surface as a typed EmbeddingsComputeError, never a raw
+    # scipy/scanpy TypeError that escapes as a pipeline crash.
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(X=rng.normal(size=(2, 5)).astype("float32"))
+    a.obsm["X_pca_harmony"] = rng.normal(size=(2, 3)).astype("float32")
+    sc.pp.neighbors(a, use_rep="X_pca_harmony", n_neighbors=2, random_state=0)
+    with pytest.raises(compute.EmbeddingsComputeError):
+        compute.compute_umap(a, min_dist=0.3, random_state=0)
+
+
 def test_compute_phate_writes_obsm():
     a = _adata_with_neighbors()
     compute.compute_phate(a, use_rep="X_pca_harmony", knn=15, decay=40, random_state=0)
@@ -73,6 +85,43 @@ def test_compute_paga_missing_group_raises():
     a = _adata_with_neighbors()
     with pytest.raises(compute.GroupMissing):
         compute.compute_paga(a, groupby="not_a_col")
+
+
+def test_compute_paga_degenerate_group_raises_typed_skip():
+    # An empty categorical (0 categories, all codes -1) must raise the typed
+    # GroupMissing — never an igraph IndexError that escapes as a crash.
+    a = _adata_with_neighbors()
+    import pandas as pd
+
+    a.obs["cell_type"] = pd.Categorical([None] * a.n_obs, categories=[])
+    with pytest.raises(compute.GroupMissing):
+        compute.compute_paga(a, groupby="cell_type")
+
+
+def test_resolve_paga_groupby_skips_degenerate_cell_type_falls_through():
+    # cell_type present but degenerate (empty categorical): resolver must treat
+    # it as unusable and fall through to the populated cluster key.
+    import pandas as pd
+
+    a = _adata_with_neighbors()
+    a.obs["cell_type"] = pd.Categorical([None] * a.n_obs, categories=[])
+    assert (
+        compute.resolve_paga_groupby(a, None, cell_type_key="cell_type", cluster_key="leiden")
+        == "leiden"
+    )
+
+
+def test_resolve_paga_groupby_all_degenerate_returns_none():
+    # When every candidate column is degenerate, resolve to None (clean skip).
+    import pandas as pd
+
+    a = _adata_with_neighbors()
+    a.obs["cell_type"] = pd.Categorical([None] * a.n_obs, categories=[])
+    a.obs["leiden"] = pd.Categorical([None] * a.n_obs, categories=[])
+    assert (
+        compute.resolve_paga_groupby(a, None, cell_type_key="cell_type", cluster_key="leiden")
+        is None
+    )
 
 
 def test_resolve_paga_groupby_precedence():
