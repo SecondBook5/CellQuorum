@@ -444,8 +444,9 @@ def test_bootstrap_pipeline_run_returns_structured_result_and_writes_provenance(
     # Confirm QC is enabled in the stage plan.
     assert "qc" in result.plan.enabled_stage_names()
 
-    # Confirm network analysis is enabled as a gated capability.
-    assert "network_analysis" in result.plan.enabled_stage_names()
+    # Confirm the topology/curvature network stage is enabled as a gated
+    # capability (planned under its registered name "ccc_network").
+    assert "ccc_network" in result.plan.enabled_stage_names()
 
     # Confirm the context root points to the requested output directory.
     assert result.context.paths.root == (tmp_path / "bootstrap_run").resolve()

@@ -44,8 +44,43 @@ def test_pipeline_planner_builds_plan_from_default_config() -> None:
     # Confirm cell-cell communication is enabled as a gated capability.
     assert "cell_cell_communication" in plan.enabled_stage_names()
 
-    # Confirm network analysis is enabled as a gated capability.
-    assert "network_analysis" in plan.enabled_stage_names()
+    # Confirm the topology/curvature network stage is enabled as a gated
+    # capability. It is planned under its registered name "ccc_network"
+    # (enabled by the stages.network_analysis toggle).
+    assert "ccc_network" in plan.enabled_stage_names()
+
+
+def test_ccc_stages_run_in_producer_before_consumer_order() -> None:
+    """
+    Verify the CCC chain is ordered so producers precede consumers.
+
+    A viz stage reads a prior analysis stage's outputs, so it must be planned
+    after the stages that produce those outputs. On a fresh one-command run the
+    order must be: cell_cell_communication (LR tables) -> ccc_network (topology
+    and curvature) -> ccc_viz (figures). The topology stage is registered under
+    the name "ccc_network", so the plan must emit that name rather than the bare
+    "network_analysis" toggle name, or the executor skips it as unimplemented.
+    """
+
+    # Build the default CellQuorum configuration.
+    config = CellQuorumConfig()
+
+    # Build the ordered plan.
+    plan = build_pipeline_plan(config)
+
+    # Read the enabled stage names in canonical run order.
+    order = plan.enabled_stage_names()
+
+    # Confirm the topology stage is planned under its registered name.
+    assert "ccc_network" in order
+
+    # Confirm the orphaned toggle name is not emitted as a stage name.
+    assert "network_analysis" not in order
+
+    # Confirm producer-before-consumer ordering across the CCC chain.
+    assert (
+        order.index("cell_cell_communication") < order.index("ccc_network") < order.index("ccc_viz")
+    )
 
 
 def test_pipeline_planner_respects_disabled_stage_flags() -> None:

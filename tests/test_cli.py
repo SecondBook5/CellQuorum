@@ -175,8 +175,9 @@ r:
     # Confirm a core stage is present.
     assert "qc" in stage_names
 
-    # Confirm an advanced gated capability is present.
-    assert "network_analysis" in stage_names
+    # Confirm an advanced gated capability is present (the topology/curvature
+    # stage is planned under its registered name "ccc_network").
+    assert "ccc_network" in stage_names
 
     # Extract backend names from the serialized plan.
     backend_names = {backend["name"] for backend in payload["backend_status_table"]}
@@ -385,8 +386,9 @@ r:
     # Confirm enabled stages were serialized.
     assert "qc" in payload["enabled_stages"]
 
-    # Confirm advanced gated stages were serialized.
-    assert "network_analysis" in payload["enabled_stages"]
+    # Confirm advanced gated stages were serialized (topology/curvature stage
+    # is planned under its registered name "ccc_network").
+    assert "ccc_network" in payload["enabled_stages"]
 
     # Confirm warnings were serialized as a list.
     assert isinstance(payload["warnings"], list)

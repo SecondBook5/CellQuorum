@@ -217,10 +217,16 @@ class PipelinePlanner:
             ("differential_abundance", self.config.stages.differential_abundance),
             ("enrichment", self.config.stages.enrichment),
             ("enrichment_viz", self.config.stages.enrichment_viz),
-            ("ccc_viz", self.config.stages.ccc_viz),
             ("molecular_inference", self.config.stages.molecular_inference),
+            # CCC chain runs producer-before-consumer: the communication stage
+            # writes the LR tables, ccc_network derives topology+curvature from
+            # them, and ccc_viz renders figures from both. ccc_viz MUST come
+            # last or it finds no inputs and every method MethodSkips. The
+            # topology stage is registered as "ccc_network"; the enabling toggle
+            # is still stages.network_analysis.
             ("cell_cell_communication", self.config.stages.cell_cell_communication),
-            ("network_analysis", self.config.stages.network_analysis),
+            ("ccc_network", self.config.stages.network_analysis),
+            ("ccc_viz", self.config.stages.ccc_viz),
         ]
 
         # Initialize the planned stage list.
