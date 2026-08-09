@@ -130,3 +130,27 @@ def test_categorical_method_skips_without_embedding(tmp_path):
     cfg = _cfg(embeddings=["umap"])
     res = CategoricalEmbeddingMethod().run(a, cfg, _CtxPaths(tmp_path))
     assert isinstance(res, MethodSkip)
+
+
+def test_overlay_filename_collision_deduplicates(tmp_path):
+    """Two features sanitizing to the same stem produce distinct files + warning."""
+    a = _adata_rendered()
+    # Two genes whose labels sanitize to the same stem: "CD8+" and "CD8/" both → "CD8_"
+    a.var_names = [f"GENE_{i}" for i in range(a.n_vars - 2)] + ["CD8+", "CD8/"]
+    cfg = _cfg(
+        embeddings=["umap"],
+        figure_formats=["png"],
+        dpi=80,
+        overlay=OverlayConfig(genes=["CD8+", "CD8/"]),
+        magic=MagicConfig(enabled=False),
+    )
+    res = ContinuousOverlayMethod().run(a, cfg, _CtxPaths(tmp_path))
+    assert not isinstance(res, MethodSkip)
+    # Both figures must be saved (2 artifacts for 2 genes).
+    assert res.metrics["n_figures"] == 2
+    # A warning about the collision must be recorded.
+    assert any("CD8" in w for w in res.warnings), "Expected collision warning not found"
+    # Both files must exist and be distinct.
+    figs_dir = tmp_path / "embeddings"
+    saved_files = list(figs_dir.glob("overlay_umap_CD8*.png"))
+    assert len(saved_files) == 2, f"Expected 2 distinct files, got {len(saved_files)}"

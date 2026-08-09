@@ -73,11 +73,19 @@ def categorical_embedding(
 
     PAGA nodes are drawn at per-group centroids in the embedding; edges are the
     upper-triangle connectivities above `paga_threshold`, width ~ normalized weight.
-    Categories iterate in sorted order for deterministic colors/node alignment.
+    Categories iterate in the categorical's category order (or sorted for non-categorical).
     """
     xy = np.asarray(adata.obsm[basis])[:, :2]
     groups = adata.obs[group_key].astype(str)
-    cats = sorted(groups.unique())
+    # Determine category order: use categorical order if available, else sorted.
+    orig_col = adata.obs[group_key]
+    if hasattr(orig_col, "cat") and hasattr(orig_col.cat, "categories"):
+        # Categorical: use category order, filtered to actually-present categories.
+        present = set(orig_col.dropna().unique())
+        cats = [c for c in orig_col.cat.categories if c in present]
+    else:
+        # Non-categorical: scanpy coerces to sorted categorical, so sorted is correct.
+        cats = sorted(groups.unique())
     palette = {c: _PALETTE[i % len(_PALETTE)] for i, c in enumerate(cats)}
 
     fig = Figure(figsize=(5.2, 5.0))

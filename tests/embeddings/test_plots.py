@@ -71,3 +71,45 @@ def test_save_figure_writes_both_formats(tmp_path):
     assert all(p.exists() for p in paths)
     arts = figure_artifacts(paths, name="embedding_figure", description="demo")
     assert all(a.kind == "figure" for a in arts)
+
+
+def test_paga_overlay_edges_use_categorical_order():
+    """PAGA edges must connect the correct centroids per categorical order, not sorted."""
+    rng = np.random.default_rng(42)
+    # 3 groups with non-alphabetical categorical order: ['c','a','b'] (sorted is ['a','b','c'])
+    a = ad.AnnData(X=rng.random((90, 8)).astype("float32"))
+    # Place each group at a distinct, well-separated location.
+    umap_coords = np.vstack(
+        [
+            np.c_[rng.normal(0, 0.1, 30), rng.normal(0, 0.1, 30)],  # group 'c' at (0,0)
+            np.c_[rng.normal(5, 0.1, 30), rng.normal(0, 0.1, 30)],  # group 'a' at (5,0)
+            np.c_[rng.normal(0, 0.1, 30), rng.normal(5, 0.1, 30)],  # group 'b' at (0,5)
+        ]
+    )
+    a.obsm["X_umap"] = umap_coords.astype("float32")
+    # Categorical with order ['c','a','b'] (NOT sorted ['a','b','c'])
+    a.obs["leiden"] = ["c"] * 30 + ["a"] * 30 + ["b"] * 30
+    a.obs["leiden"] = a.obs["leiden"].astype("category").cat.reorder_categories(["c", "a", "b"])
+    # Build connectivity matrix in categorical order: rows/cols are ['c','a','b']
+    # Strong edge only between 'a' (idx=1) and 'b' (idx=2) in categorical order.
+    # Sorted order would be ['a','b','c'], so idx[1]='b', idx[2]='c' — wrong!
+    conn = np.zeros((3, 3), dtype="float32")
+    conn[1, 2] = 0.9  # 'a' <-> 'b' in categorical order
+    conn[2, 1] = 0.9
+    a.uns["paga"] = {"connectivities": conn}
+
+    fig = plots.categorical_embedding(
+        a, "leiden", basis="X_umap", axis_labels=("U1", "U2"), paga_threshold=0.5
+    )
+    ax = fig.axes[0]
+    lines = ax.get_lines()
+    assert len(lines) == 1, "Expected exactly one PAGA edge above threshold"
+    line = lines[0]
+    x_data, y_data = line.get_data()
+    # Centroids: 'c' at ~(0,0), 'a' at ~(5,0), 'b' at ~(0,5)
+    # The edge MUST connect 'a' (5,0) and 'b' (0,5), NOT 'b' and 'c'.
+    # Check both endpoints: one near (5,0), one near (0,5).
+    endpoints = [(x_data[0], y_data[0]), (x_data[1], y_data[1])]
+    near_a = any(abs(x - 5) < 1 and abs(y - 0) < 1 for x, y in endpoints)
+    near_b = any(abs(x - 0) < 1 and abs(y - 5) < 1 for x, y in endpoints)
+    assert near_a and near_b, f"Edge endpoints {endpoints} don't connect 'a' (5,0) and 'b' (0,5)"

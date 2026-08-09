@@ -89,12 +89,25 @@ class ContinuousOverlayMethod(AnalysisMethod):
                 warnings.append(f"continuous_overlay: embedding '{tag}' unavailable")
                 continue
             coords = adata.obsm[spec["obsm"]]
+            # Track used stems per embedding to detect and de-duplicate collisions.
+            used_stems: dict[str, int] = {}
             for feat in features:
                 try:
                     fig = plots.continuous_overlay(
                         coords, feat.values, title=feat.label, axis_labels=spec["axis"]
                     )
                     safe = re.sub(r"[^0-9A-Za-z_.-]", "_", feat.label)
+                    # De-duplicate stem collisions: append counter if already used.
+                    if safe in used_stems:
+                        used_stems[safe] += 1
+                        disambiguated = f"{safe}_{feat.kind}_{used_stems[safe]}"
+                        warnings.append(
+                            f"continuous_overlay: filename collision for '{feat.label}' "
+                            f"(sanitized='{safe}'), disambiguated to '{disambiguated}'"
+                        )
+                        safe = disambiguated
+                    else:
+                        used_stems[safe] = 0
                     paths = save_figure(
                         fig, figures_dir, f"overlay_{tag}_{safe}", formats=formats, dpi=dpi
                     )
