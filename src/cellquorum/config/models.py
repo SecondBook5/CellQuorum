@@ -26,6 +26,9 @@ from cellquorum.annotation_consensus.config import AnnotationConsensusConfig
 # Import the annotation-diagnostics configuration model.
 from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
 
+# Import the ccc-network (topology + curvature) configuration model.
+from cellquorum.ccc_network.config import CCCNetworkConfig
+
 # Import the cell-cell-communication configuration model.
 from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
 
@@ -725,6 +728,9 @@ class CellQuorumConfig(StrictBaseModel):
     cell_cell_communication: CellCellCommunicationConfig = Field(
         default_factory=CellCellCommunicationConfig
     )
+
+    # Store ccc_network (topology + curvature) settings.
+    ccc_network: CCCNetworkConfig = Field(default_factory=CCCNetworkConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)

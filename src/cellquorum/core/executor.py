@@ -26,6 +26,9 @@ from cellquorum.annotation_consensus.stage import AnnotationConsensusStage
 # Import annotation-diagnostics evaluation stage.
 from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
 
+# Import ccc-network (topology + curvature) stage.
+from cellquorum.ccc_network.stage import CCCNetworkStage
+
 # Import cell-cell-communication stage.
 from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage
 
@@ -268,6 +271,7 @@ def build_default_stage_registry() -> StageRegistry:
             "enrichment_viz": EnrichmentVizStage(),
             "embeddings": EmbeddingsStage(),
             "cell_cell_communication": CellCellCommunicationStage(),
+            "ccc_network": CCCNetworkStage(),
         }
     )
 
