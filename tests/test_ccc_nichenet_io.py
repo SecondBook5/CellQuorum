@@ -6,7 +6,7 @@ import pandas as pd
 import scipy.io
 import scipy.sparse as sp
 
-from cellquorum.cell_cell_communication._nichenet_io import export_sce_inputs
+from cellquorum.cell_cell_communication._nichenet_io import de_to_geneset, export_sce_inputs
 
 
 def _toy_adata():
@@ -37,3 +37,36 @@ def test_export_sce_inputs_writes_all_files(tmp_path):
     obs = pd.read_csv(paths["obs"])
     assert list(obs.columns) == ["barcode", "cell_type", "sample_id", "condition"]
     assert list(obs["barcode"]) == ["c1", "c2", "c3"]
+
+
+def test_de_to_geneset_filters_and_caps():
+    de = pd.DataFrame(
+        {
+            "gene": ["G1", "G2", "G3", "G4", "G5"],
+            "logFC": [3.0, -2.0, 0.5, 5.0, 1.0],
+            "logCPM": [1, 1, 1, 1, 1],
+            "F": [1, 1, 1, 1, 1],
+            "PValue": [0.001, 0.001, 0.2, 0.001, 0.001],
+            "FDR": [0.01, 0.02, 0.30, 0.005, 0.04],
+        }
+    )
+    geneset, background = de_to_geneset(de, fdr=0.05, top_n=2)
+    # G3 fails FDR; among {G1,G2,G4,G5} top-2 by |logFC| = G4(5), G1(3)
+    assert geneset == ["G1", "G4"]  # sorted alphabetically for determinism
+    assert background == ["G1", "G2", "G3", "G4", "G5"]
+
+
+def test_de_to_geneset_empty_when_none_significant():
+    de = pd.DataFrame(
+        {
+            "gene": ["G1", "G2"],
+            "logFC": [1.0, 2.0],
+            "logCPM": [1, 1],
+            "F": [1, 1],
+            "PValue": [0.5, 0.5],
+            "FDR": [0.5, 0.6],
+        }
+    )
+    geneset, background = de_to_geneset(de, fdr=0.05, top_n=10)
+    assert geneset == []
+    assert background == ["G1", "G2"]

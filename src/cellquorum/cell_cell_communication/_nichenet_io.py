@@ -37,3 +37,22 @@ def export_sce_inputs(adata: ad.AnnData, obs_cols: list[str], scratch: Path) -> 
     meta.to_csv(obs, index=False)
 
     return {"counts": counts, "genes": genes, "barcodes": barcodes, "obs": obs}
+
+
+def de_to_geneset(de_df: pd.DataFrame, fdr: float, top_n: int) -> tuple[list[str], list[str]]:
+    """Build (receiver geneset, background) from a pseudobulk DE table.
+
+    Background = all tested genes (sorted, deduped). Geneset = genes passing
+    FDR < ``fdr``, capped to top-``top_n`` by absolute logFC. Returned sorted
+    for deterministic downstream ordering.
+    """
+    background = sorted(pd.unique(de_df["gene"].astype(str)).tolist())
+
+    sig = de_df[de_df["FDR"] < fdr].copy()
+    if sig.empty:
+        return [], background
+
+    sig["_abs"] = sig["logFC"].abs()
+    sig = sig.sort_values("_abs", ascending=False, kind="mergesort")
+    top = sig.head(int(top_n))
+    return sorted(top["gene"].astype(str).tolist()), background
