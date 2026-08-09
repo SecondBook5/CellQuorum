@@ -147,3 +147,33 @@ def test_liana_skips_single_cell_type(tmp_path):
     result = LianaMethod().run(a, _config(), _Ctx(tmp_path))
     assert isinstance(result, MethodSkip)
     assert "cell type" in result.reason.lower()
+
+
+def test_liana_skips_when_layer_untagged(tmp_path):
+    """Contract requires an explicit lognorm tag; an untagged layer must raise a
+    contract error, which the stage layer converts to a skip. Here we call run()
+    directly and assert it raises the contract error (stage-level skip is Task 6)."""
+    from cellquorum.contracts import CellQuorumContractError
+
+    a = _adata()
+    del a.uns["cellquorum"]["layer_tags"]["cellquorum_normalized"]
+    with pytest.raises(CellQuorumContractError):
+        LianaMethod().run(a, _config(), _Ctx(tmp_path))
+
+
+def test_liana_skips_when_dependency_absent(tmp_path, monkeypatch):
+    """Simulate liana being unimportable → MethodSkip, not crash."""
+    import builtins
+
+    a = _adata()
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "liana" or name.startswith("liana."):
+            raise ImportError("simulated: no liana")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    result = LianaMethod().run(a, _config(), _Ctx(tmp_path))
+    assert isinstance(result, MethodSkip)
+    assert "unavailable" in result.reason.lower()
