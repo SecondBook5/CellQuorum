@@ -127,3 +127,24 @@ def test_ligand_activity_to_canonical_clamps_negative():
     assert list(out["target"]) == ["Fib", "Fib"]
     assert list(out["weight"]) == [0.3, 0.0]  # negative clamped to 0
     assert list(out["condition"]) == ["LE", "LE"]
+
+
+def test_canonical_output_feeds_ccc_network():
+    """Cross-spec contract: a canonical frame from spec #2 builds a spec #3 network."""
+    from cellquorum.ccc_network._networks import build_cci_network
+    from cellquorum.cell_cell_communication._nichenet_io import mnn_prioritization_to_canonical
+
+    native = pd.DataFrame(
+        {
+            "sender": ["A", "A", "B"],
+            "receiver": ["B", "C", "C"],
+            "ligand": ["L1", "L2", "L3"],
+            "receptor": ["R1", "R2", "R3"],
+            "prioritization_score": [0.9, 0.5, 0.7],
+            "group": ["case"] * 3,
+        }
+    )
+    canonical = mnn_prioritization_to_canonical(native)
+    G = build_cci_network(canonical)
+    assert G.number_of_nodes() >= 3
+    assert G.number_of_edges() >= 1
