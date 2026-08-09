@@ -117,14 +117,15 @@ class LianaMethod(AnalysisMethod):
                 backend="python",
             )
 
+        n_samples = int(res["sample"].nunique()) if "sample" in res.columns else 0
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=[f"LIANA per-sample consensus over {int(res['sample'].nunique())} samples."],
+            notes=[f"LIANA per-sample consensus over {n_samples} samples."],
             metrics={
                 "method": self.name,
                 "n_interactions": int(len(res)),
-                "n_samples": int(res["sample"].nunique()) if "sample" in res.columns else 0,
+                "n_samples": n_samples,
             },
             backend="python",
         )

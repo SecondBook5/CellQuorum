@@ -74,3 +74,21 @@ def test_same_seed_same_loadings(tmp_path):
         v1 = r1.adata.uns["tensor_c2c"][key].to_numpy()
         v2 = r2.adata.uns["tensor_c2c"][key].to_numpy()
         assert np.allclose(v1, v2), f"non-deterministic loadings for {key}"
+
+
+def test_elbow_rank_selection_deterministic(tmp_path):
+    cfg = dict(_cfg())
+    cfg["rank"] = None  # force the seeded elbow_rank_selection path
+    r1 = TensorCell2CellMethod().run(_adata_with_liana_res(), cfg, _Ctx(tmp_path / "a"))
+    r2 = TensorCell2CellMethod().run(_adata_with_liana_res(), cfg, _Ctx(tmp_path / "b"))
+    # If elbow skipped for a benign reason, both must skip identically — never a crash.
+    from cellquorum.methods.base import MethodSkip
+
+    if isinstance(r1, MethodSkip) or isinstance(r2, MethodSkip):
+        assert isinstance(r1, MethodSkip) and isinstance(r2, MethodSkip)
+        return
+    assert r1.metrics["rank"] == r2.metrics["rank"], "elbow selected different ranks"
+    for key in ("contexts", "lr_pairs", "senders", "receivers"):
+        v1 = r1.adata.uns["tensor_c2c"][key].to_numpy()
+        v2 = r2.adata.uns["tensor_c2c"][key].to_numpy()
+        assert np.allclose(v1, v2), f"non-deterministic elbow loadings for {key}"
