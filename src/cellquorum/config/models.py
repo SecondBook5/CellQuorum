@@ -42,6 +42,9 @@ from cellquorum.differential_abundance.config import DifferentialAbundanceConfig
 # Import the differential-expression configuration model.
 from cellquorum.differential_expression.config import DifferentialExpressionConfig
 
+# Import the embeddings configuration model.
+from cellquorum.embeddings.config import EmbeddingsConfig
+
 # Import the enrichment configuration model.
 from cellquorum.enrichment.config import EnrichmentConfig
 
@@ -584,6 +587,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether enrichment visualization is enabled.
     enrichment_viz: bool = True
 
+    # Store whether the embeddings stage (UMAP/PHATE/PAGA + overlays) is enabled.
+    embeddings: bool = True
+
     # Store whether molecular inference is enabled as a gated capability.
     molecular_inference: bool = True
 
@@ -708,6 +714,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store enrichment-visualization settings.
     enrichment_viz: EnrichmentVizConfig = Field(default_factory=EnrichmentVizConfig)
+
+    # Store embeddings settings.
+    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
