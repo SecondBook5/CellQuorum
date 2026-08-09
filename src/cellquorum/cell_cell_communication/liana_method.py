@@ -35,9 +35,6 @@ class LianaMethod(AnalysisMethod):
             config.get("sample_col", "sample_id"),
         ]
 
-    def requires_layers(self) -> list[str]:
-        return ["cellquorum_normalized"]
-
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         cell_type_col = config.get("cell_type_col", "cell_type")
         sample_col = config.get("sample_col", "sample_id")
