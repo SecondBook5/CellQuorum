@@ -26,6 +26,9 @@ from cellquorum.annotation_consensus.config import AnnotationConsensusConfig
 # Import the annotation-diagnostics configuration model.
 from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
 
+# Import the cell-cell-communication configuration model.
+from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -717,6 +720,11 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store embeddings settings.
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
+
+    # Store cell-cell-communication settings.
+    cell_cell_communication: CellCellCommunicationConfig = Field(
+        default_factory=CellCellCommunicationConfig
+    )
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)

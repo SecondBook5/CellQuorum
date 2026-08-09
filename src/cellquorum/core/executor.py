@@ -26,6 +26,9 @@ from cellquorum.annotation_consensus.stage import AnnotationConsensusStage
 # Import annotation-diagnostics evaluation stage.
 from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
 
+# Import cell-cell-communication stage.
+from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage
+
 # Import Phase-2A stages: dimensionality reduction and clustering.
 from cellquorum.clustering.stage import ClusteringStage
 
@@ -264,6 +267,7 @@ def build_default_stage_registry() -> StageRegistry:
             "enrichment": EnrichmentStage(),
             "enrichment_viz": EnrichmentVizStage(),
             "embeddings": EmbeddingsStage(),
+            "cell_cell_communication": CellCellCommunicationStage(),
         }
     )
 
