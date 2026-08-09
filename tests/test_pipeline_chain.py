@@ -388,3 +388,83 @@ def test_full_gpu_chain_threads_every_stage_output(tmp_path):
     clu = result.execution_result.stage_results["clustering"]
     assert dim.metrics.get("compute") == "gpu", "PCA did not run on GPU"
     assert clu.metrics.get("compute") == "gpu", "clustering did not run on GPU"
+
+
+def test_embeddings_stage_runs_in_full_chain(tmp_path):
+    """The embeddings stage is scheduled and runs (success or clean skip)."""
+    h5ad_path = tmp_path / "cohort.h5ad"
+    _synthetic_cohort().write_h5ad(h5ad_path)
+
+    config = CellQuorumConfig(
+        project={"name": "embeddings_chain_test"},
+        input={"h5ad": str(h5ad_path)},
+        compute={"backend": "cpu", "prefer_gpu": False, "fallback_to_cpu": True},
+        r={"enabled": False},
+        stages={
+            "ambient_correction": False,
+            "qc": True,
+            "preprocessing": True,
+            "dimensionality": True,
+            "integration": True,
+            "clustering": True,
+            "annotation": True,
+            "embeddings": True,
+            "differential_expression": False,
+            "differential_abundance": False,
+            "enrichment": False,
+            "enrichment_viz": False,
+            "state_scoring": False,
+            "discovery": False,
+            "subclustering": False,
+            "composition": False,
+            "molecular_inference": False,
+            "cell_cell_communication": False,
+            "network_analysis": False,
+        },
+        preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
+        qc={
+            "mode": "report_only",
+            "threshold_strategy": "fixed",
+            "metrics": {"percent_top": [2]},
+            "basic": {
+                "min_genes_per_cell": 1,
+                "min_cells_per_gene": 1,
+                "max_mito_percent": 100.0,
+            },
+            "mad": {"enabled": False},
+            "doublets": {"enabled": False},
+        },
+        integration={
+            "method": "harmony",
+            "batch_key": "patient_id",
+            "input_rep": "X_pca",
+            "output_rep": "X_pca_harmony",
+        },
+        clustering={
+            "use_rep": "X_pca_harmony",
+            "n_neighbors": 15,
+            "resolution": 1.0,
+        },
+        annotation={
+            "method": "marker_vote",
+            "cluster_key": "leiden",
+            "score_layer": "cellquorum_normalized",
+            "key_added": "cell_type",
+            "marker_panels": {"TypeA": _TYPE_A, "TypeB": _TYPE_B},
+        },
+        embeddings={"embeddings": ["umap"], "figure_formats": ["png"], "dpi": 80},
+    )
+
+    result = execute_pipeline_run(
+        config,
+        output_dir=tmp_path / "run",
+        backend_registry=_backend_registry(),
+        load_input=True,
+    )
+
+    stage_records = {r.stage_name: r for r in result.execution_result.stage_execution_records}
+    assert "embeddings" in stage_records, "embeddings not scheduled by the planner"
+    assert stage_records["embeddings"].status in ("success", "skipped")
+    # When it succeeded, the UMAP coordinates threaded onto the final object.
+    if stage_records["embeddings"].status == "success":
+        assert "X_umap" in result.context.adata.obsm
