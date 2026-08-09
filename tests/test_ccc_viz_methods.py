@@ -107,6 +107,7 @@ def test_sankey_method_renders(tmp_path):
     _write_canonical(ctx.paths.results)
     out = SankeyVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
     assert isinstance(out, StageResult)
+    assert any(a.kind == "figure" for a in out.artifacts)
 
 
 def test_network_method_skips_without_curvature(tmp_path):
@@ -125,6 +126,7 @@ def test_network_method_renders(tmp_path):
     _write_curvature(ctx.paths.results)
     out = NetworkVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
     assert isinstance(out, StageResult)
+    assert any(a.kind == "figure" for a in out.artifacts)
 
 
 def test_summary_method_renders_with_topology(tmp_path):
@@ -136,6 +138,7 @@ def test_summary_method_renders_with_topology(tmp_path):
     _write_topology(ctx.paths.results)
     out = SummaryVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
     assert isinstance(out, StageResult)
+    assert any(a.kind == "figure" for a in out.artifacts)
 
 
 def test_summary_method_skips_when_nothing(tmp_path):
