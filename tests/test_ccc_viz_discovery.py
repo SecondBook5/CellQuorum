@@ -62,10 +62,10 @@ def test_load_canonical_empty_when_none(tmp_path):
 def test_load_canonical_skips_unreadable(tmp_path):
     from cellquorum.ccc_viz.discovery import load_canonical_lr_sources
 
-    (tmp_path / "mnn_canonical_lr.csv").write_text("not,a,valid\ncsv\x00row")
+    (tmp_path / "mnn_canonical_lr.csv").write_bytes(b"\xff\xfe\x00\x01 not a csv \x00\x00")
     # unreadable/misparsed -> omitted, never raises
     out = load_canonical_lr_sources(tmp_path, None)
-    assert all(lab != "multinichenet" or not df.empty for lab, df in out)
+    assert "multinichenet" not in [lab for lab, _ in out]
 
 
 def test_load_topology_and_curvature(tmp_path):
