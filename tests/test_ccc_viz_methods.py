@@ -67,3 +67,80 @@ def test_dotplot_contract_empty_and_python(tmp_path):
     assert m.backend == "python"
     dc = m.input_contract({})
     assert not getattr(dc, "required_obs", []) and not getattr(dc, "required_layers", [])
+
+
+def _write_curvature(results_dir):
+    net = Path(results_dir) / "ccc_network"
+    net.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "source": ["A", "B"],
+            "target": ["B", "C"],
+            "ricci_curvature": [-0.3, 0.2],
+            "weight": [1.0, 2.0],
+        }
+    ).to_csv(net / "curvature_cci_edges.csv", index=False)
+    pd.DataFrame({"node": ["A", "B", "C"], "ricci_curvature": [-0.3, -0.05, 0.2]}).to_csv(
+        net / "curvature_cci_nodes.csv", index=False
+    )
+
+
+def _write_topology(results_dir):
+    net = Path(results_dir) / "ccc_network"
+    net.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "node": ["A", "B", "C"],
+            "Listener": [1.0, 2.0, -1.0],
+            "Influencer": [0.1, 0.2, 0.3],
+            "Mediator": [0.0, 1.0, 2.0],
+            "Pagerank": [0.2, 0.3, 0.5],
+        }
+    ).to_csv(net / "topology_cci.csv", index=False)
+
+
+def test_sankey_method_renders(tmp_path):
+    from cellquorum.ccc_viz.sankey_viz import SankeyVizMethod
+    from cellquorum.core.stage import StageResult
+
+    adata, ctx = _ctx(tmp_path)
+    _write_canonical(ctx.paths.results)
+    out = SankeyVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    assert isinstance(out, StageResult)
+
+
+def test_network_method_skips_without_curvature(tmp_path):
+    from cellquorum.ccc_viz.network_viz import NetworkVizMethod
+    from cellquorum.methods.base import MethodSkip
+
+    adata, ctx = _ctx(tmp_path)
+    assert isinstance(NetworkVizMethod().run(adata, {}, ctx), MethodSkip)
+
+
+def test_network_method_renders(tmp_path):
+    from cellquorum.ccc_viz.network_viz import NetworkVizMethod
+    from cellquorum.core.stage import StageResult
+
+    adata, ctx = _ctx(tmp_path)
+    _write_curvature(ctx.paths.results)
+    out = NetworkVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    assert isinstance(out, StageResult)
+
+
+def test_summary_method_renders_with_topology(tmp_path):
+    from cellquorum.ccc_viz.summary_viz import SummaryVizMethod
+    from cellquorum.core.stage import StageResult
+
+    adata, ctx = _ctx(tmp_path)
+    _write_canonical(ctx.paths.results)
+    _write_topology(ctx.paths.results)
+    out = SummaryVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    assert isinstance(out, StageResult)
+
+
+def test_summary_method_skips_when_nothing(tmp_path):
+    from cellquorum.ccc_viz.summary_viz import SummaryVizMethod
+    from cellquorum.methods.base import MethodSkip
+
+    adata, ctx = _ctx(tmp_path)
+    assert isinstance(SummaryVizMethod().run(adata, {}, ctx), MethodSkip)
