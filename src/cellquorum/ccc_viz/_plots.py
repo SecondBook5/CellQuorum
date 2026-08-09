@@ -99,7 +99,14 @@ def interaction_dotplot(
     )
     fig, ax = plt.subplots(figsize=(max(4, 0.6 * len(xs)), max(4, 0.4 * len(ys))))
     w = agg["mean_w"].to_numpy(dtype=float)
-    norm = Normalize(vmin=float(np.nanmin(w)), vmax=float(np.nanmax(w)) or 1.0)
+    finite_w = w[np.isfinite(w)]
+    if finite_w.size:
+        vmin, vmax = float(finite_w.min()), float(finite_w.max())
+        if vmax == vmin:
+            vmax = vmin + 1.0
+    else:
+        vmin, vmax = 0.0, 1.0
+    norm = Normalize(vmin=vmin, vmax=vmax)
     sizes = 20.0 + 40.0 * agg["n_samp"].to_numpy(dtype=float)
     sc = ax.scatter(
         [x_pos[s] for s in agg["__st"]],
@@ -141,6 +148,7 @@ def cci_heatmap(
         norm = signed_norm(vals.ravel())
         cmap = "RdBu_r"
     else:
+        # weight >= 0 by canonical LR contract; sequential ramp anchored at 0
         norm = Normalize(vmin=0.0, vmax=float(np.nanmax(vals)) or 1.0)
         cmap = _SEQ_CMAP
     im = ax.imshow(vals, cmap=cmap, norm=norm, aspect="auto")

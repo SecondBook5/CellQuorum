@@ -147,3 +147,27 @@ def test_summary_method_skips_when_nothing(tmp_path):
 
     adata, ctx = _ctx(tmp_path)
     assert isinstance(SummaryVizMethod().run(adata, {}, ctx), MethodSkip)
+
+
+def test_summary_method_honors_sources_filter(tmp_path):
+    from cellquorum.ccc_viz.summary_viz import SummaryVizMethod
+    from cellquorum.methods.base import MethodSkip
+
+    adata, ctx = _ctx(tmp_path)
+    _write_canonical(ctx.paths.results, name="mnn_canonical_lr.csv")
+    # Filter excludes the only present source; no topology → MethodSkip
+    out = SummaryVizMethod().run(
+        adata, {"figure_formats": ["png"], "sources": ["nonexistent"]}, ctx
+    )
+    assert isinstance(out, MethodSkip)
+
+
+def test_network_method_honors_levels_filter(tmp_path):
+    from cellquorum.ccc_viz.network_viz import NetworkVizMethod
+    from cellquorum.methods.base import MethodSkip
+
+    adata, ctx = _ctx(tmp_path)
+    _write_curvature(ctx.paths.results)  # writes only cci curvature
+    # Filter requests only gci, but only cci exists → MethodSkip
+    out = NetworkVizMethod().run(adata, {"figure_formats": ["png"], "levels": ["gci"]}, ctx)
+    assert isinstance(out, MethodSkip)

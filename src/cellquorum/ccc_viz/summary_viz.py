@@ -32,6 +32,9 @@ class SummaryVizMethod(AnalysisMethod):
         top_k = int(config.get("top_k", 15))
 
         sources = load_canonical_lr_sources(results_dir, getattr(adata, "uns", None))
+        wanted = config.get("sources")
+        if wanted:
+            sources = [(lab, df) for lab, df in sources if lab in set(wanted)]
         topo = load_topology(results_dir)
         if not sources and not topo:
             return MethodSkip(

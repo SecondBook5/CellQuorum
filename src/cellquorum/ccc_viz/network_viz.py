@@ -30,6 +30,10 @@ class NetworkVizMethod(AnalysisMethod):
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
         top_k = int(config.get("top_k", 15))
+        wanted_levels = config.get("levels")
+        levels = ("cci", "gci")
+        if wanted_levels:
+            levels = tuple(lv for lv in levels if lv in set(wanted_levels))
 
         curv = load_curvature(results_dir)
         if not curv:
@@ -41,7 +45,7 @@ class NetworkVizMethod(AnalysisMethod):
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
         # Whole-cohort levels: cci/gci (edges + nodes).
-        for level in ("cci", "gci"):
+        for level in levels:
             edges = curv.get(f"{level}_edges")
             nodes = curv.get(f"{level}_nodes")
             if edges is None:
@@ -56,7 +60,7 @@ class NetworkVizMethod(AnalysisMethod):
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"network_viz: {level} failed: {str(exc)[:200]}")
         # Differential levels: color by delta_curvature.
-        for level in ("cci", "gci"):
+        for level in levels:
             diff = curv.get(f"differential_{level}")
             if diff is None or diff.empty:
                 continue

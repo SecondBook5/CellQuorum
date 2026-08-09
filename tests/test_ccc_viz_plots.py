@@ -149,3 +149,21 @@ def test_topology_facets_returns_figure():
         }
     )
     assert isinstance(topology_facets(topo, top_k=2), Figure)
+
+
+def test_interaction_dotplot_all_nan_weight():
+    from cellquorum.ccc_viz._plots import interaction_dotplot
+
+    df = pd.DataFrame(
+        {
+            "source": ["A", "B"],
+            "target": ["B", "C"],
+            "ligand": ["L1", "L2"],
+            "receptor": ["R1", "R2"],
+            "weight": [float("nan"), float("nan")],
+            "sample": ["s1", "s2"],
+        }
+    )
+    # Should return a Figure without raising
+    fig = interaction_dotplot(df, top_k=5)
+    assert isinstance(fig, Figure)
