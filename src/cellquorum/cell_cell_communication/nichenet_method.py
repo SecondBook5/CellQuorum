@@ -1,0 +1,215 @@
+"""NicheNet method: single sender->receiver ligand activity via nichenetr (R)."""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+from pathlib import Path
+
+import anndata as ad
+import pandas as pd
+
+from cellquorum.cell_cell_communication._nichenet_io import (
+    de_to_geneset,
+    export_sce_inputs,
+    ligand_activity_to_canonical,
+)
+from cellquorum.contracts import DataContract
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+_NICHENET_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "nichenet.R"
+
+
+class NicheNetMethod(AnalysisMethod):
+    """Single sender->receiver ligand-activity prediction (nichenetr)."""
+
+    name = "nichenet"
+    stage_category = "cell_cell_communication"
+    backend = "rscript"
+
+    def input_contract(self, config: dict) -> DataContract:
+        return DataContract(required_obs=[config.get("cell_type_col", "cell_type")])
+
+    def requires_obs(self, config: dict) -> list[str]:
+        return [config.get("cell_type_col", "cell_type")]
+
+    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        cell_type_col = config.get("cell_type_col", "cell_type")
+        sender = config.get("nichenet_sender")
+        receiver = config.get("nichenet_receiver")
+        seed = int(config.get("seed", 42))
+
+        if not sender or not receiver:
+            return MethodSkip(
+                reason="nichenet skipped: nichenet_sender/nichenet_receiver not set",
+                details={"method": self.name},
+            )
+
+        observed = set(adata.obs[cell_type_col].astype(str).unique())
+        if sender not in observed or receiver not in observed:
+            return MethodSkip(
+                reason="nichenet skipped: sender/receiver absent from cell_type_col",
+                details={"method": self.name, "observed": sorted(observed)},
+            )
+
+        # Receiver geneset from a pseudobulk DE CSV.
+        de_csv = config.get("nichenet_de_csv")
+        if not de_csv:
+            default_de = Path(context.paths.results) / "de_pseudobulk_edger.csv"
+            de_csv = str(default_de) if default_de.is_file() else None
+        if not de_csv or not Path(de_csv).is_file():
+            return MethodSkip(
+                reason="nichenet skipped: no DE geneset CSV available",
+                details={"method": self.name},
+            )
+
+        lt = config.get("nichenet_ligand_target_matrix")
+        lr = config.get("nichenet_lr_network")
+        wn = config.get("nichenet_weighted_networks")
+        if not all(p and Path(p).is_file() for p in (lt, lr, wn)):
+            return MethodSkip(
+                reason="nichenet skipped: prior-model paths missing",
+                details={"method": self.name},
+            )
+
+        if shutil.which("Rscript") is None:
+            return MethodSkip(
+                reason="nichenet skipped: Rscript unavailable", details={"method": self.name}
+            )
+        registry = getattr(context, "backend_registry", None)
+        backend = None
+        if registry is not None:
+            try:
+                backend = registry.get("rscript")
+            except Exception:
+                backend = None
+        if backend is None:
+            return MethodSkip(
+                reason="nichenet skipped: rscript backend unavailable",
+                details={"method": self.name},
+            )
+        if not backend._r_package_available("nichenetr"):
+            return MethodSkip(
+                reason="nichenet skipped: nichenetr R package unavailable",
+                details={"method": self.name},
+            )
+
+        # Build geneset + background and write them for R. A user-supplied DE CSV
+        # is an external surface — a malformed/mis-columned file must skip, not crash.
+        try:
+            de_df = pd.read_csv(de_csv)
+            geneset, background = de_to_geneset(
+                de_df,
+                fdr=float(config.get("nichenet_de_fdr", 0.05)),
+                top_n=int(config.get("nichenet_de_top_n", 200)),
+            )
+        except Exception as exc:
+            return MethodSkip(
+                reason="nichenet skipped: DE geneset CSV unreadable or misformatted",
+                details={"method": self.name, "error": str(exc)[:500]},
+            )
+        if not geneset:
+            return MethodSkip(
+                reason="nichenet skipped: DE geneset empty at configured FDR",
+                details={"method": self.name},
+            )
+
+        scratch = Path(context.paths.scratch)
+        paths = export_sce_inputs(adata, [cell_type_col], scratch)
+        geneset_csv = scratch / "nichenet_geneset.csv"
+        background_csv = scratch / "nichenet_background.csv"
+        pd.DataFrame({"gene": geneset}).to_csv(geneset_csv, index=False)
+        pd.DataFrame({"gene": background}).to_csv(background_csv, index=False)
+
+        results_dir = Path(context.paths.results)
+        results_dir.mkdir(parents=True, exist_ok=True)
+        activities_csv = results_dir / "nichenet_activities.csv"
+        links_csv = results_dir / "nichenet_target_links.csv"
+
+        timeout = int(config.get("nichenet_timeout_seconds", 7200))
+        args = [
+            str(paths["counts"]),
+            str(paths["genes"]),
+            str(paths["barcodes"]),
+            str(paths["obs"]),
+            str(geneset_csv),
+            str(background_csv),
+            str(activities_csv),
+            str(links_csv),
+            cell_type_col,
+            sender,
+            receiver,
+            str(lt),
+            str(lr),
+            str(wn),
+            str(config.get("nichenet_expr_prop", 0.10)),
+            str(config.get("nichenet_top_ligands", 10)),
+            str(config.get("nichenet_top_targets", 50)),
+            str(seed),
+        ]
+
+        try:
+            proc = backend.run_script(_NICHENET_R, args, timeout=timeout)
+        except FileNotFoundError as exc:
+            return MethodSkip(
+                reason="nichenet skipped: R execution failed",
+                details={"method": self.name, "error": str(exc)[:500]},
+            )
+        except subprocess.TimeoutExpired as exc:
+            return MethodSkip(
+                reason=f"nichenet skipped: R timed out after {timeout}s",
+                details={"method": self.name, "error": str(exc)[:500]},
+            )
+        if proc.returncode != 0:
+            return MethodSkip(
+                reason="nichenet skipped: nichenet.R failed",
+                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
+            )
+
+        artifacts = [
+            StageArtifact(
+                name="nichenet_activities",
+                path=activities_csv,
+                kind="csv",
+                description=f"NicheNet ligand activities ({sender}->{receiver}).",
+            )
+        ]
+        n_ligands = None
+        canonical_csv = results_dir / "nichenet_canonical_lr.csv"
+        try:
+            links = pd.read_csv(links_csv)
+            n_ligands = len(links)
+            canonical = ligand_activity_to_canonical(
+                links,
+                sender=sender,
+                receiver=receiver,
+                condition=config.get("case"),
+            )
+            canonical.to_csv(canonical_csv, index=False)
+            artifacts.append(
+                StageArtifact(
+                    name="nichenet_canonical_lr",
+                    path=canonical_csv,
+                    kind="csv",
+                    description="NicheNet LR edges in canonical schema (for ccc_network).",
+                )
+            )
+        except Exception:
+            pass
+
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=[f"NicheNet: {sender}->{receiver}, |geneset|={len(geneset)}."],
+            metrics={
+                "sender": sender,
+                "receiver": receiver,
+                "n_geneset": len(geneset),
+                "n_ligands": n_ligands,
+            },
+            backend="rscript",
+        )
+
+
+__all__ = ["NicheNetMethod"]

@@ -7,3 +7,11 @@ def test_methods_registered():
 
     assert METHOD_REGISTRY.has("cell_cell_communication", "liana")
     assert METHOD_REGISTRY.has("cell_cell_communication", "tensor_c2c")
+
+
+def test_nichenet_methods_registered():
+    import cellquorum.cell_cell_communication  # noqa: F401
+    from cellquorum.methods.registry import METHOD_REGISTRY
+
+    assert METHOD_REGISTRY.has("cell_cell_communication", "multinichenet")
+    assert METHOD_REGISTRY.has("cell_cell_communication", "nichenet")
