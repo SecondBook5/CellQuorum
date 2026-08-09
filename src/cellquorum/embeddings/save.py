@@ -13,7 +13,7 @@ from cellquorum.visualization.style import apply_cellquorum_theme
 
 
 def apply_theme() -> None:
-    """Apply the house theme plus vector-font overrides."""
+    """Apply the house theme plus embeddings vector-font overrides."""
     apply_cellquorum_theme()
     mpl.rcParams.update({"svg.fonttype": "none", "pdf.fonttype": 42})
 
@@ -26,7 +26,10 @@ def save_figure(
     formats: tuple[str, ...] = ("pdf", "png"),
     dpi: int = 300,
 ) -> list[Path]:
-    """Write ``fig`` to ``out_dir/stem.<fmt>`` for each format, then close it."""
+    """Write ``fig`` to ``out_dir/stem.<fmt>`` for each format, then close it.
+
+    Creates ``out_dir`` (and parents) if absent. Returns paths in ``formats`` order.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []

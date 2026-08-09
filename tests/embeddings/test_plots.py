@@ -36,6 +36,25 @@ def test_categorical_embedding_with_paga_returns_figure():
     assert len(ax.get_lines()) >= 1
 
 
+def test_categorical_embedding_without_paga_renders_scatter_only():
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(X=rng.random((60, 8)).astype("float32"))
+    a.obsm["X_pca_harmony"] = rng.normal(size=(60, 6)).astype("float32")
+    a.obsm["X_umap"] = rng.normal(size=(60, 2)).astype("float32")
+    a.obs["cell_type"] = ["A"] * 30 + ["B"] * 30
+    a.obs["cell_type"] = a.obs["cell_type"].astype("category")
+    # Note: NO paga computed in a.uns["paga"]
+    fig = plots.categorical_embedding(
+        a, "cell_type", basis="X_umap", axis_labels=("UMAP1", "UMAP2")
+    )
+    assert isinstance(fig, Figure)
+    # Scatter still rendered (collections are the scatter point collections)
+    ax = fig.axes[0]
+    assert len(ax.collections) >= 1
+    # But NO PAGA edge lines were drawn
+    assert len(ax.get_lines()) == 0
+
+
 def test_continuous_overlay_returns_figure():
     coords = np.random.default_rng(0).random((50, 2))
     values = np.random.default_rng(1).random(50)
