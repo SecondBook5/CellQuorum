@@ -38,7 +38,7 @@ class CellCellCommunicationStage(MethodDispatchStage):
 
         # Bridge the dataset-wide sample key into sample_col when set.
         config = getattr(context, "config", None)
-        if config is not None and not augmented.get("sample_col_explicit"):
+        if config is not None:
             resolved = resolve_cohort_key(
                 config, attr="sample_key", stage_value=augmented.get("sample_col", "sample_id")
             )
