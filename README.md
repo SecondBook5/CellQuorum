@@ -11,8 +11,8 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
-![Tests](https://img.shields.io/badge/tests-~1100-brightgreen)
-![Stages](https://img.shields.io/badge/stages-20%20implemented-blue)
+![Tests](https://img.shields.io/badge/tests-~1200-brightgreen)
+![Stages](https://img.shields.io/badge/stages-23%20implemented-blue)
 ![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
@@ -44,18 +44,23 @@ sanity such as rejecting raw counts mislabeled as log-normalized). A method whos
 required inputs are absent *skips with a recorded reason* rather than crashing or
 silently producing wrong output.
 
-**Config-driven analysis backbone** — twenty registered stages run in
+**Config-driven analysis backbone** — twenty-three registered stages run in
 best-practices order, each dispatching to a config-selected method:
 
 ```
 ambient_correction → qc → preprocessing → dimensionality → integration
     → clustering → annotation → embeddings → differential_expression
     → differential_abundance → enrichment → enrichment_viz
+    → cell_cell_communication → ccc_network → ccc_viz
 ```
 
 Every method is chosen by config (e.g. `integration.method: harmony | scvi`),
-so a dataset is expressed as a YAML config, not code. Downstream discovery
-stages (gene-regulatory network construction, cell-cell communication,
+so a dataset is expressed as a YAML config, not code. The cell-cell
+communication track runs producer-before-consumer: `cell_cell_communication`
+produces the ligand-receptor tables, `ccc_network` derives topology and
+Ollivier-Ricci curvature from them, and `ccc_viz` renders the publication
+figures — so the full communication analysis runs end-to-end from one command.
+Remaining discovery stages (gene-regulatory network construction,
 trajectory/potency) are planned slots not yet implemented.
 
 **GPU acceleration, by default when available** — normalization (PFlog1pPF via
@@ -111,12 +116,14 @@ path-independent.
 | `enrichment` | GSEA; ORA; GSVA; decoupler activity (CollecTRI / PROGENy) | Implemented |
 | `enrichment_viz` | 8 figure types over GSEA / ORA / GSVA / activity | Implemented |
 | `adjudication` | cross-method result adjudication | Implemented |
-| `cell_cell_communication` | LIANA consensus (per-sample rank_aggregate); Tensor-cell2cell decomposition | Implemented |
-| `network_analysis`, `trajectory` | — | Planned |
+| `cell_cell_communication` | LIANA consensus (per-sample rank_aggregate); Tensor-cell2cell decomposition; NicheNet + MultiNicheNet (ligand→target/receptor, R) | Implemented |
+| `ccc_network` | network topology (Listener/Influencer/Mediator/PageRank + comparative); Ollivier-Ricci curvature + differential curvature | Implemented |
+| `ccc_viz` | 5 figure families: dotplot, chord/circos, Sankey, curvature-colored network, summary heatmap + role facets | Implemented |
+| `trajectory` | — | Planned |
 
 ### Verification
 
-- Test suite: **~1100 tests** (`python -m pytest`). GPU tests skip in a CPU-only
+- Test suite: **~1200 tests** (`python -m pytest`). GPU tests skip in a CPU-only
   environment and run in the `cellquorum-gpu` env.
 - **End-to-end chain tests** run the full backbone
   (`qc → preprocessing → dimensionality → integration → clustering → annotation
@@ -124,6 +131,10 @@ path-independent.
   → enrichment_viz`) and assert every stage's output threads to the final
   object — on both the CPU and GPU paths — so the pipeline is verified as a
   chain, not just stage-by-stage.
+- **Communication chain** (`cell_cell_communication → ccc_network → ccc_viz`) is
+  planned and executed in producer-before-consumer order, verified by a planner
+  ordering test plus per-stage end-to-end tests, so the ligand-receptor tables,
+  network topology/curvature, and figures are produced from a single command.
 - A skippable real-data SoupX integration test confirms ambient correction runs
   end-to-end on Cell Ranger matrices when R + SoupX are present.
 
@@ -415,8 +426,10 @@ already reserves.
 ✅ differential abundance (paired t-test / Milo / scCODA / sccomp)
 ✅ enrichment (GSEA / ORA / GSVA / decoupler activity)
 ✅ enrichment visualization (8 figure types)
+✅ cell-cell communication (LIANA consensus + Tensor-cell2cell + NicheNet / MultiNicheNet)
+✅ communication network topology + Ollivier-Ricci curvature (ccc_network)
+✅ communication visualization (dotplot / chord / Sankey / curvature-network / summary)
 ⏳ gene-regulatory networks
-✅ cell-cell communication (LIANA consensus + Tensor-cell2cell)
 ⏳ trajectory / potency
 ⏳ report generation (auto methods text)
 ```
