@@ -5,10 +5,12 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.ccc_network._networks import (
+    _comparative_pagerank,
     _safe_pagerank,
     build_cci_network,
     build_differential_network,
     build_gci_network,
+    compute_topology_ranking,
     liana_to_canonical,
 )
 from cellquorum.ccc_network.config import CCCNetworkConfig
@@ -162,3 +164,45 @@ def test_differential_network_handles_arm_only_channels():
     weights = dict(zip(diff_table["ligand"], diff_table["weight"], strict=False))
     assert np.isclose(weights["L1"], -0.5)
     assert np.isclose(weights["L9"], 0.7)
+
+
+# Task 4: Topology ranking + comparative pagerank
+
+
+def test_topology_single_condition_degrees():
+    G = nx.DiGraph()
+    G.add_edge("A", "B", weight=2.0)
+    G.add_edge("A", "C", weight=1.0)
+    df = compute_topology_ranking(G)
+    assert list(df.columns) == ["node", "Listener", "Influencer", "Mediator", "Pagerank"]
+    a = df[df["node"] == "A"].iloc[0]
+    assert np.isclose(a["Influencer"], 3.0)  # out-degree 2+1
+    assert np.isclose(a["Listener"], 0.0)
+    b = df[df["node"] == "B"].iloc[0]
+    assert np.isclose(b["Listener"], 2.0)
+    # Deterministic node order (sorted).
+    assert list(df["node"]) == ["A", "B", "C"]
+
+
+def test_topology_empty_graph_returns_empty_frame():
+    df = compute_topology_ranking(nx.DiGraph())
+    assert list(df.columns) == ["node", "Listener", "Influencer", "Mediator", "Pagerank"]
+    assert df.empty
+
+
+def test_comparative_pagerank_sign():
+    # Node enriched in case -> positive log-ratio.
+    pr_case = {"A": 0.8, "B": 0.2}
+    pr_ctrl = {"A": 0.2, "B": 0.8}
+    out = _comparative_pagerank(pr_case, pr_ctrl, ["A", "B"], alpha=0.01)
+    assert out["A"] > 0
+    assert out["B"] < 0
+
+
+def test_topology_comparative_runs():
+    G_case = nx.DiGraph()
+    G_case.add_edge("A", "B", weight=1.0)
+    G_ctrl = nx.DiGraph()
+    G_ctrl.add_edge("B", "A", weight=1.0)
+    df = compute_topology_ranking(G_case, comparative=True, G_other=G_ctrl)
+    assert list(df["node"]) == ["A", "B"]  # sorted union, deterministic

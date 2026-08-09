@@ -8,6 +8,7 @@ between the adapter, the network builders, and the two methods.
 from __future__ import annotations
 
 import networkx as nx
+import numpy as np
 import pandas as pd
 
 # Canonical LR edge columns in stable order.
@@ -158,6 +159,97 @@ def build_differential_network(
     return diff_table, diff_cci, diff_gci
 
 
+def _comparative_pagerank(
+    pr_case: dict[str, float],
+    pr_ctrl: dict[str, float],
+    nodes: list[str],
+    alpha: float = 0.01,
+) -> dict[str, float]:
+    """Bayesian comparative PageRank: log(P_case / P_control) per node."""
+    result: dict[str, float] = {}
+    for n in nodes:
+        p = pr_ctrl.get(n, 0.0) + alpha
+        q = pr_case.get(n, 0.0) + alpha
+        p_norm = p / (p + q)
+        q_norm = q / (p + q)
+        result[n] = float(np.log(q_norm / p_norm)) if p_norm > 0 and q_norm > 0 else 0.0
+    return result
+
+
+def compute_topology_ranking(
+    G: nx.DiGraph,
+    comparative: bool = False,
+    G_other: nx.DiGraph | None = None,
+    pagerank_alpha: float = 0.01,
+) -> pd.DataFrame:
+    """Topology ranking. Single: Listener/Influencer/Mediator/Pagerank.
+    Comparative (G=case, G_other=control): signed degree diffs + PageRank log-ratio."""
+    cols = ["node", "Listener", "Influencer", "Mediator", "Pagerank"]
+    if G.number_of_nodes() == 0 and (G_other is None or G_other.number_of_nodes() == 0):
+        return pd.DataFrame(columns=cols)
+
+    if not comparative:
+        nodes = sorted(G.nodes())
+        in_deg = dict(G.in_degree(weight="weight"))
+        out_deg = dict(G.out_degree(weight="weight"))
+        betw = nx.betweenness_centrality(G, weight="weight", normalized=False)
+        pr = _safe_pagerank(G)
+        return pd.DataFrame(
+            {
+                "node": nodes,
+                "Listener": [in_deg.get(n, 0.0) for n in nodes],
+                "Influencer": [out_deg.get(n, 0.0) for n in nodes],
+                "Mediator": [betw.get(n, 0.0) for n in nodes],
+                "Pagerank": [pr.get(n, 0.0) for n in nodes],
+            }
+        )
+
+    if G_other is None:
+        raise ValueError("G_other required for comparative ranking")
+
+    # Sorted union -> deterministic (fixes the source's set()-order bug).
+    all_nodes = sorted(set(G.nodes()) | set(G_other.nodes()))
+
+    pos_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("weight", 0) > 0]
+    neg_edges = [(u, v) for u, v, d in G.edges(data=True) if d.get("weight", 0) < 0]
+    G_pos = G.edge_subgraph(pos_edges).copy() if pos_edges else nx.DiGraph()
+    G_neg = G.edge_subgraph(neg_edges).copy() if neg_edges else nx.DiGraph()
+
+    in_pos = dict(G_pos.in_degree(weight="weight")) if G_pos.number_of_edges() else {}
+    in_neg = dict(G_neg.in_degree(weight="weight")) if G_neg.number_of_edges() else {}
+    out_pos = dict(G_pos.out_degree(weight="weight")) if G_pos.number_of_edges() else {}
+    out_neg = dict(G_neg.out_degree(weight="weight")) if G_neg.number_of_edges() else {}
+
+    listener = {n: in_pos.get(n, 0.0) - abs(in_neg.get(n, 0.0)) for n in all_nodes}
+    influencer = {n: out_pos.get(n, 0.0) - abs(out_neg.get(n, 0.0)) for n in all_nodes}
+
+    med_case = (
+        nx.betweenness_centrality(G, weight="weight", normalized=False)
+        if G.number_of_edges()
+        else {}
+    )
+    med_ctrl = (
+        nx.betweenness_centrality(G_other, weight="weight", normalized=False)
+        if G_other.number_of_edges()
+        else {}
+    )
+    mediator = {n: med_case.get(n, 0.0) - med_ctrl.get(n, 0.0) for n in all_nodes}
+
+    pr = _comparative_pagerank(
+        _safe_pagerank(G), _safe_pagerank(G_other), all_nodes, alpha=pagerank_alpha
+    )
+
+    return pd.DataFrame(
+        {
+            "node": all_nodes,
+            "Listener": [listener[n] for n in all_nodes],
+            "Influencer": [influencer[n] for n in all_nodes],
+            "Mediator": [mediator[n] for n in all_nodes],
+            "Pagerank": [pr[n] for n in all_nodes],
+        }
+    )
+
+
 __all__ = [
     "CANONICAL_COLUMNS",
     "liana_to_canonical",
@@ -165,4 +257,5 @@ __all__ = [
     "build_gci_network",
     "_safe_pagerank",
     "build_differential_network",
+    "compute_topology_ranking",
 ]
