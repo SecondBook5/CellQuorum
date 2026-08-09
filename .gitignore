@@ -60,3 +60,8 @@ docs/superpowers/
 # Claude Code worktrees
 .claude/worktrees/
 .worktrees/
+.claude/
+
+# Study-specific run scripts and configs (le_global lymphedema project)
+scripts/le_*.py
+configs/le_global_granular.yaml

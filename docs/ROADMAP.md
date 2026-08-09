@@ -34,7 +34,20 @@ through:
   labels when available and otherwise falls back to annotation labels or native
   clusters;
 - integration benchmarking with scIB-style metrics, including iLISI/cLISI-style
-  outputs where configured.
+  outputs where configured;
+- feature selection (HVG / deviance) and recursive subclustering with sc-SHC
+  significance testing;
+- embeddings/visualization: UMAP, PHATE, and PAGA (including the PAGA-on-UMAP
+  overlay), a generic feature-overlay (color any embedding by genes, module
+  scores, cell cycle, or any obs column), with opt-in MAGIC scoped to the
+  overlay gene set;
+- donor-aware pseudobulk differential expression;
+- differential abundance (paired arcsin-sqrt t-test, Milo, scCODA, sccomp);
+- enrichment (GSEA, ORA, GSVA, decoupler activity over CollecTRI / PROGENy) and
+  an always-on enrichment-visualization stage (eight figure types).
+
+The full spine now runs end-to-end in a single `cellquorum run`, threading the
+AnnData object through every enabled stage.
 
 The KC production configuration is:
 

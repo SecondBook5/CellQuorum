@@ -11,8 +11,8 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
-![Tests](https://img.shields.io/badge/tests-~690-brightgreen)
-![Stages](https://img.shields.io/badge/stages-7%20implemented-blue)
+![Tests](https://img.shields.io/badge/tests-~1100-brightgreen)
+![Stages](https://img.shields.io/badge/stages-20%20implemented-blue)
 ![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
@@ -44,18 +44,19 @@ sanity such as rejecting raw counts mislabeled as log-normalized). A method whos
 required inputs are absent *skips with a recorded reason* rather than crashing or
 silently producing wrong output.
 
-**Config-driven analysis backbone** — seven registered stages run in
+**Config-driven analysis backbone** — twenty registered stages run in
 best-practices order, each dispatching to a config-selected method:
 
 ```
-ambient_correction → qc → preprocessing → dimensionality
-    → integration → clustering → annotation
+ambient_correction → qc → preprocessing → dimensionality → integration
+    → clustering → annotation → embeddings → differential_expression
+    → differential_abundance → enrichment → enrichment_viz
 ```
 
 Every method is chosen by config (e.g. `integration.method: harmony | scvi`),
-so a dataset is expressed as a YAML config, not code. The remaining downstream
-stages (differential expression, composition, gene-regulatory networks,
-cell-cell communication, trajectory) are planned slots not yet implemented.
+so a dataset is expressed as a YAML config, not code. Downstream discovery
+stages (gene-regulatory network construction, cell-cell communication,
+trajectory/potency) are planned slots not yet implemented.
 
 **GPU acceleration, by default when available** — normalization (PFlog1pPF via
 cupy), PCA, and neighbors + Leiden (via rapids-singlecell) run on the GPU when
@@ -98,21 +99,30 @@ path-independent.
 | `dimensionality` | PCA + scree plot + `n_pcs: auto` (knee) — GPU via rapids-singlecell | Implemented |
 | `integration` | Harmony (CPU); scVI (GPU-gated) | Implemented |
 | `clustering` | Leiden + neighbors (auto-routes onto the integration embedding) — GPU via rapids-singlecell | Implemented |
-| `annotation` | marker-vote | Implemented |
-| `feature_selection` | HVG / deviance | Planned next |
-| `reference_mapping` | scArches (optional, atlas-agnostic) | Planned |
-| `differential_expression`, `composition`, `network_analysis`, `cell_cell_communication`, `trajectory` | — | Planned |
+| `annotation` | marker-vote; consensus labeling; annotation diagnostics | Implemented |
+| `feature_selection` | HVG / deviance | Implemented |
+| `subclustering` | recursive Leiden with sc-SHC significance | Implemented |
+| `population_identity` | population-level identity scoring | Implemented |
+| `reference_mapping` | scArches (optional, atlas-agnostic) | Implemented |
+| `integration_benchmark` | scIB-style integration metrics | Implemented |
+| `embeddings` | UMAP + PHATE + PAGA (incl. PAGA-on-UMAP); generic feature-overlay (genes / module scores / cell-cycle / any obs column) with opt-in MAGIC | Implemented |
+| `differential_expression` | donor-aware pseudobulk DE | Implemented |
+| `differential_abundance` | paired arcsin-sqrt t-test; Milo; scCODA; sccomp | Implemented |
+| `enrichment` | GSEA; ORA; GSVA; decoupler activity (CollecTRI / PROGENy) | Implemented |
+| `enrichment_viz` | 8 figure types over GSEA / ORA / GSVA / activity | Implemented |
+| `adjudication` | cross-method result adjudication | Implemented |
+| `network_analysis`, `cell_cell_communication`, `trajectory` | — | Planned |
 
 ### Verification
 
-- Test suite: **~690 tests** (`python -m pytest`); all pass except one
-  pre-existing CLI version-string test that fails only under Rich ANSI output
-  and is unrelated to the engine. GPU tests skip in a CPU-only environment and
-  run in the `cellquorum-gpu` env.
+- Test suite: **~1100 tests** (`python -m pytest`). GPU tests skip in a CPU-only
+  environment and run in the `cellquorum-gpu` env.
 - **End-to-end chain tests** run the full backbone
-  (`qc → preprocessing → dimensionality → integration → clustering → annotation`)
-  and assert every stage's output threads to the final object — on both the CPU
-  and GPU paths — so the pipeline is verified as a chain, not just stage-by-stage.
+  (`qc → preprocessing → dimensionality → integration → clustering → annotation
+  → embeddings → differential_expression → differential_abundance → enrichment
+  → enrichment_viz`) and assert every stage's output threads to the final
+  object — on both the CPU and GPU paths — so the pipeline is verified as a
+  chain, not just stage-by-stage.
 - A skippable real-data SoupX integration test confirms ambient correction runs
   end-to-end on Cell Ranger matrices when R + SoupX are present.
 
@@ -203,7 +213,7 @@ cellquorum run \
   --json
 ```
 
-At the current stage, `cellquorum run` initializes the execution frame and writes provenance artifacts. It does not yet execute full scRNA-seq analysis stages.
+`cellquorum run` initializes the execution frame, writes provenance artifacts, and executes every enabled stage in the registry-driven executor, threading the AnnData object from stage to stage.
 
 ---
 
@@ -393,19 +403,20 @@ already reserves.
 ✅ ambient correction (SoupX)
 ✅ quality control (MAD/doublet-consensus/cell-cycle)
 ✅ preprocessing (normalization, layer-tagged)
+✅ feature selection (HVG / deviance)
 ✅ dimensionality reduction (PCA + scree + auto n_pcs)
-✅ integration (Harmony / scVI)
-✅ clustering (Leiden)
-✅ annotation (marker-vote)
-⏳ feature selection (HVG / deviance)   ← next
-⏳ reference mapping (scArches, optional/atlas-agnostic)
-⏳ state scoring
-⏳ differential expression
-⏳ compositional analysis
-⏳ molecular inference (TF / pathway activity)
+✅ integration (Harmony / scVI) + integration benchmark (scIB-style)
+✅ clustering (Leiden) + recursive subclustering (sc-SHC)
+✅ annotation (marker-vote / consensus / diagnostics)
+✅ reference mapping (scArches, optional/atlas-agnostic)
+✅ embeddings (UMAP + PHATE + PAGA, feature-overlay + opt-in MAGIC)
+✅ differential expression (donor-aware pseudobulk)
+✅ differential abundance (paired t-test / Milo / scCODA / sccomp)
+✅ enrichment (GSEA / ORA / GSVA / decoupler activity)
+✅ enrichment visualization (8 figure types)
 ⏳ gene-regulatory networks
 ⏳ cell-cell communication
-⏳ trajectory
+⏳ trajectory / potency
 ⏳ report generation (auto methods text)
 ```
 
