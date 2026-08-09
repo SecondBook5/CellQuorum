@@ -45,9 +45,6 @@ class TensorCell2CellMethod(AnalysisMethod):
             config.get("sample_col", "sample_id"),
         ]
 
-    def requires_layers(self) -> list[str]:
-        return ["cellquorum_normalized"]
-
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         seed = int(config.get("seed", 42))
 
