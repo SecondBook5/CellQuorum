@@ -113,3 +113,45 @@ def test_paga_overlay_edges_use_categorical_order():
     near_a = any(abs(x - 5) < 1 and abs(y - 0) < 1 for x, y in endpoints)
     near_b = any(abs(x - 0) < 1 and abs(y - 5) < 1 for x, y in endpoints)
     assert near_a and near_b, f"Edge endpoints {endpoints} don't connect 'a' (5,0) and 'b' (0,5)"
+
+
+def test_categorical_embedding_declared_but_empty_category():
+    """A declared-but-empty category must not crash or misalign PAGA edges.
+
+    scanpy indexes uns['paga']['connectivities'] by cat.codes, so the matrix
+    aligns to the FULL category order — filtering to present categories would
+    re-introduce an index mismatch (IndexError or misplaced edges). This uses
+    the REAL sc.tl.paga so the connectivity indexing is ground truth.
+    """
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(X=rng.random((60, 6)).astype("float32"))
+    a.obsm["X_pca_harmony"] = rng.normal(size=(60, 5)).astype("float32")
+    # Categories B and D are declared but have zero cells.
+    a.obs["leiden"] = ["A"] * 30 + ["C"] * 30
+    a.obs["leiden"] = a.obs["leiden"].astype("category").cat.set_categories(["A", "B", "C", "D"])
+    sc.pp.neighbors(a, use_rep="X_pca_harmony", n_neighbors=10, random_state=0)
+    sc.tl.umap(a, random_state=0)
+    sc.tl.paga(a, groups="leiden")
+    # Must render without an IndexError and draw the two present groups.
+    fig = plots.categorical_embedding(a, "leiden", basis="X_umap", axis_labels=("U1", "U2"))
+    ax = fig.axes[0]
+    total_points = sum(int(c.get_offsets().shape[0]) for c in ax.collections)
+    assert total_points >= 60, "present-group points must be drawn (empty cats add none)"
+
+
+def test_categorical_embedding_integer_categorical_renders_points():
+    """An integer-typed categorical group column must still plot its cells.
+
+    Masking casts the column to str, so category values must be compared as
+    strings; otherwise every mask is all-False and the figure is silently blank.
+    """
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(X=rng.random((60, 6)).astype("float32"))
+    a.obsm["X_umap"] = rng.normal(size=(60, 2)).astype("float32")
+    import pandas as pd
+
+    a.obs["leiden"] = pd.Categorical([0] * 20 + [1] * 20 + [2] * 20, categories=[0, 1, 2])
+    fig = plots.categorical_embedding(a, "leiden", basis="X_umap", axis_labels=("U1", "U2"))
+    ax = fig.axes[0]
+    total_points = sum(int(c.get_offsets().shape[0]) for c in ax.collections)
+    assert total_points == 60, f"expected 60 plotted cells, got {total_points} (blank-figure bug)"

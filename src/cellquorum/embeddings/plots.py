@@ -76,22 +76,27 @@ def categorical_embedding(
     Categories iterate in the categorical's category order (or sorted for non-categorical).
     """
     xy = np.asarray(adata.obsm[basis])[:, :2]
-    groups = adata.obs[group_key].astype(str)
-    # Determine category order: use categorical order if available, else sorted.
     orig_col = adata.obs[group_key]
+    # Category order must match how scanpy indexes uns['paga']['connectivities'].
+    # sc.tl.paga builds it from `cat.codes` (see scanpy _paga._compute_connectivities),
+    # so connectivity index i corresponds to `cat.categories[i]` — the FULL declared
+    # order, unfiltered. Filtering to present categories would shift indices and
+    # misalign (or over-run) the matrix. For a non-categorical column scanpy coerces
+    # to a sorted categorical, so sorted() reproduces its category order.
     if hasattr(orig_col, "cat") and hasattr(orig_col.cat, "categories"):
-        # Categorical: use category order, filtered to actually-present categories.
-        present = set(orig_col.dropna().unique())
-        cats = [c for c in orig_col.cat.categories if c in present]
+        cats = [str(c) for c in orig_col.cat.categories]
     else:
-        # Non-categorical: scanpy coerces to sorted categorical, so sorted is correct.
-        cats = sorted(groups.unique())
+        cats = sorted(orig_col.astype(str).unique())
+    # Compare against the stringified column so int/categorical dtypes still match.
+    groups = orig_col.astype(str)
     palette = {c: _PALETTE[i % len(_PALETTE)] for i, c in enumerate(cats)}
 
     fig = Figure(figsize=(5.2, 5.0))
     ax = fig.add_subplot(111)
     for cat in cats:
         mask = (groups == cat).to_numpy()
+        if not mask.any():
+            continue  # declared-but-empty category: nothing to draw
         ax.scatter(
             xy[mask, 0],
             xy[mask, 1],
@@ -105,6 +110,8 @@ def categorical_embedding(
     # Per-group median labels.
     for cat in cats:
         mask = (groups == cat).to_numpy()
+        if not mask.any():
+            continue
         cx, cy = np.median(xy[mask, 0]), np.median(xy[mask, 1])
         ax.annotate(
             cat,
@@ -120,13 +127,20 @@ def categorical_embedding(
     if paga is not None and "connectivities" in paga:
         conn = paga["connectivities"]
         conn = conn.toarray() if hasattr(conn, "toarray") else np.asarray(conn)
-        pos = np.vstack([xy[(groups == c).to_numpy()].mean(axis=0) for c in cats])
-        mx = conn.max() or 1.0
         n = conn.shape[0]
+        # `cats[i]` aligns with connectivity row/col i (both from cat.codes order).
+        # A category with no cells yields a NaN centroid; guard so its edges/node
+        # are skipped rather than drawn at a bogus position.
+        pos = np.full((n, 2), np.nan)
+        for i in range(min(n, len(cats))):
+            mask = (groups == cats[i]).to_numpy()
+            if mask.any():
+                pos[i] = xy[mask].mean(axis=0)
+        mx = conn.max() or 1.0
         for i in range(n):
             for j in range(i + 1, n):
                 w = conn[i, j]
-                if w > paga_threshold:
+                if w > paga_threshold and not np.isnan(pos[i]).any() and not np.isnan(pos[j]).any():
                     ax.plot(
                         [pos[i, 0], pos[j, 0]],
                         [pos[i, 1], pos[j, 1]],
@@ -136,12 +150,14 @@ def categorical_embedding(
                         solid_capstyle="round",
                         zorder=5,
                     )
-        for i, cat in enumerate(cats):
+        for i in range(min(n, len(cats))):
+            if np.isnan(pos[i]).any():
+                continue
             ax.scatter(
                 [pos[i, 0]],
                 [pos[i, 1]],
                 s=90,
-                c=palette[cat],
+                c=palette[cats[i]],
                 edgecolors="white",
                 linewidths=1.2,
                 zorder=6,
