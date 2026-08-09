@@ -16,7 +16,7 @@ set.seed(seed)
 stopifnot(file.exists(ligand_target_rds), file.exists(lr_network_rds),
           file.exists(weighted_networks_rds))
 
-suppressPackageStartupMessages({ library(nichenetr) })
+suppressPackageStartupMessages({ library(nichenetr); library(dplyr) })
 
 counts <- as(Matrix::readMM(counts_mtx), "CsparseMatrix")  # genes x cells
 genes <- read.csv(genes_csv, stringsAsFactors = FALSE)$gene

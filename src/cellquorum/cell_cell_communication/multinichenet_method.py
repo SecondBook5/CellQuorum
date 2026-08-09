@@ -57,6 +57,14 @@ class MultiNicheNetMethod(AnalysisMethod):
                 details={"method": self.name},
             )
 
+        # Verify the tokens are actually present in the data.
+        observed = set(adata.obs[condition_col].astype(str).unique())
+        if case not in observed or control not in observed:
+            return MethodSkip(
+                reason="multinichenet skipped: case/control tokens absent from condition_col",
+                details={"method": self.name, "observed": sorted(observed)},
+            )
+
         lt = config.get("nichenet_ligand_target_matrix")
         lr = config.get("nichenet_lr_network")
         if not lt or not lr or not Path(lt).is_file() or not Path(lr).is_file():
@@ -86,14 +94,6 @@ class MultiNicheNetMethod(AnalysisMethod):
             return MethodSkip(
                 reason="multinichenet skipped: multinichenetr R package unavailable",
                 details={"method": self.name},
-            )
-
-        # Verify the tokens are actually present in the data.
-        observed = set(adata.obs[condition_col].astype(str).unique())
-        if case not in observed or control not in observed:
-            return MethodSkip(
-                reason="multinichenet skipped: case/control tokens absent from condition_col",
-                details={"method": self.name, "observed": sorted(observed)},
             )
 
         scratch = Path(context.paths.scratch)

@@ -86,7 +86,11 @@ def test_multinichenet_skips_without_prior_models(tmp_path, mock_context):
     assert "prior" in res.reason.lower() or "model" in res.reason.lower()
 
 
-def test_multinichenet_skips_without_r_package(tmp_path, mock_context):
+def test_multinichenet_skips_without_r_package(tmp_path, mock_context, monkeypatch):
+    monkeypatch.setattr(
+        "cellquorum.cell_cell_communication.multinichenet_method.shutil.which",
+        lambda name: "/usr/bin/Rscript",
+    )
     adata = _toy_adata()
     lt = tmp_path / "lt.rds"
     lt.write_text("x")
@@ -103,3 +107,4 @@ def test_multinichenet_skips_without_r_package(tmp_path, mock_context):
     }
     res = MultiNicheNetMethod()._run(adata, config, mock_context(tmp_path, has_pkg=False))
     assert isinstance(res, MethodSkip)
+    assert "package" in res.reason.lower() or "multinichenetr" in res.reason.lower()

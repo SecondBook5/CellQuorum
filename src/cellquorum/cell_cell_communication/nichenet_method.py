@@ -95,13 +95,20 @@ class NicheNetMethod(AnalysisMethod):
                 details={"method": self.name},
             )
 
-        # Build geneset + background and write them for R.
-        de_df = pd.read_csv(de_csv)
-        geneset, background = de_to_geneset(
-            de_df,
-            fdr=float(config.get("nichenet_de_fdr", 0.05)),
-            top_n=int(config.get("nichenet_de_top_n", 200)),
-        )
+        # Build geneset + background and write them for R. A user-supplied DE CSV
+        # is an external surface — a malformed/mis-columned file must skip, not crash.
+        try:
+            de_df = pd.read_csv(de_csv)
+            geneset, background = de_to_geneset(
+                de_df,
+                fdr=float(config.get("nichenet_de_fdr", 0.05)),
+                top_n=int(config.get("nichenet_de_top_n", 200)),
+            )
+        except Exception as exc:
+            return MethodSkip(
+                reason="nichenet skipped: DE geneset CSV unreadable or misformatted",
+                details={"method": self.name, "error": str(exc)[:500]},
+            )
         if not geneset:
             return MethodSkip(
                 reason="nichenet skipped: DE geneset empty at configured FDR",
