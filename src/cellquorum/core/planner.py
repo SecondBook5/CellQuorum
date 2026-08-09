@@ -217,6 +217,7 @@ class PipelinePlanner:
             ("differential_abundance", self.config.stages.differential_abundance),
             ("enrichment", self.config.stages.enrichment),
             ("enrichment_viz", self.config.stages.enrichment_viz),
+            ("ccc_viz", self.config.stages.ccc_viz),
             ("molecular_inference", self.config.stages.molecular_inference),
             ("cell_cell_communication", self.config.stages.cell_cell_communication),
             ("network_analysis", self.config.stages.network_analysis),

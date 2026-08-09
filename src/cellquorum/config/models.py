@@ -29,6 +29,9 @@ from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
 # Import the ccc-network (topology + curvature) configuration model.
 from cellquorum.ccc_network.config import CCCNetworkConfig
 
+# Import the CCC-visualization configuration model.
+from cellquorum.ccc_viz.config import CccVizConfig
+
 # Import the cell-cell-communication configuration model.
 from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
 
@@ -593,6 +596,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether enrichment visualization is enabled.
     enrichment_viz: bool = True
 
+    # Store whether CCC visualization is enabled.
+    ccc_viz: bool = True
+
     # Store whether the embeddings stage (UMAP/PHATE/PAGA + overlays) is enabled.
     embeddings: bool = True
 
@@ -720,6 +726,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store enrichment-visualization settings.
     enrichment_viz: EnrichmentVizConfig = Field(default_factory=EnrichmentVizConfig)
+
+    # Store CCC-visualization settings.
+    ccc_viz: CccVizConfig = Field(default_factory=CccVizConfig)
 
     # Store embeddings settings.
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
