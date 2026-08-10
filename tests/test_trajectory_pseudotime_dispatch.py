@@ -72,3 +72,7 @@ def test_dpt_then_cellrank_chain(tmp_path):
     # …and the consumer used it (PseudotimeKernel over dpt_pseudotime).
     assert "cellrank_macrostates" in result.adata.obs
     assert "cellrank_fate_probabilities" in result.adata.obsm
+    # Prove genuine consumption: CellRank recorded a pseudotime kernel, not a
+    # connectivity-only fallback (which would produce the same obs keys).
+    kernels = result.adata.uns["trajectory"]["cellrank"]["kernel"]["kernels"]
+    assert "pseudotime" in kernels

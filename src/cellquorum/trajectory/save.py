@@ -69,9 +69,16 @@ def write_cellrank_h5ad(
 
 
 def write_pseudotime_h5ad(
-    adata: ad.AnnData, results_dir: Path | str, tool: str
+    adata: ad.AnnData, results_dir: Path | str, tool: str, subset: bool = False
 ) -> tuple[StageArtifact | None, str]:
-    """Write the whole-object pseudotime ``.h5ad`` for ``tool`` (dpt|palantir).
+    """Write the pseudotime ``.h5ad`` for ``tool`` (dpt|palantir).
+
+    Args:
+        adata: The pseudotime AnnData to write.
+        results_dir: Directory to write the h5ad file into.
+        tool: Producer name (drives filename + description).
+        subset: Whether ``adata`` is a subset (subsampled / outliers excluded);
+            drives the honest scope label.
 
     Returns (artifact | None, note). Never raises (skip-not-crash).
     """
@@ -81,11 +88,12 @@ def write_pseudotime_h5ad(
         adata.write_h5ad(path)
     except Exception as exc:  # noqa: BLE001 — skip-not-crash
         return None, f"{tool} pseudotime h5ad write failed: {exc}"
+    scope = "subset" if subset else "whole object"
     artifact = StageArtifact(
         name=f"{stem}_pseudotime",
         path=path,
         kind="h5ad",
-        description=f"{tool} pseudotime object (whole object)",
+        description=f"{tool} pseudotime object ({scope})",
     )
     return artifact, f"wrote {tool} pseudotime h5ad"
 

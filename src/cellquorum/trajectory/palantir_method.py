@@ -104,7 +104,9 @@ class PalantirMethod(AnalysisMethod):
             results_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
             notes.append(f"could not create results dir: {exc}")
-        artifact, write_note = write_pseudotime_h5ad(work, results_dir, "palantir")
+        artifact, write_note = write_pseudotime_h5ad(
+            work, results_dir, "palantir", subset=subsampled
+        )
         notes.append(write_note)
         if artifact is not None:
             artifacts.append(artifact)

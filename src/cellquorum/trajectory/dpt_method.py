@@ -47,6 +47,19 @@ class DptMethod(AnalysisMethod):
             )
             if outlier_mask.any():
                 work = adata[~outlier_mask].copy()
+                # The slice carries the parent's neighbor graph, which no longer
+                # matches the reduced cell set. Drop it so compute_dpt rebuilds a
+                # clean graph on the outlier-free subset (skip-not-crash on IO).
+                for key in ("neighbors",):
+                    try:
+                        work.uns.pop(key, None)
+                    except Exception as exc:  # noqa: BLE001
+                        notes.append(f"could not drop stale uns['{key}']: {exc}")
+                for key in ("connectivities", "distances"):
+                    try:
+                        work.obsp.pop(key, None)
+                    except Exception as exc:  # noqa: BLE001
+                        notes.append(f"could not drop stale obsp['{key}']: {exc}")
                 notes.append(f"excluded {int(outlier_mask.sum())} outliers before dpt")
 
         # Resolve root on the working object.
@@ -104,7 +117,8 @@ class DptMethod(AnalysisMethod):
             results_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
             notes.append(f"could not create results dir: {exc}")
-        artifact, write_note = write_pseudotime_h5ad(work, results_dir, "dpt")
+        subset = bool(exclude and outlier_mask is not None and outlier_mask.any())
+        artifact, write_note = write_pseudotime_h5ad(work, results_dir, "dpt", subset=subset)
         notes.append(write_note)
         if artifact is not None:
             artifacts.append(artifact)
@@ -131,7 +145,11 @@ class DptMethod(AnalysisMethod):
         import scanpy as sc
 
         pt_vals = np.asarray(res["pseudotime"], dtype="float64")
-        score = np.asarray(work.obs[orient_key], dtype="float64")
+        try:
+            score = _pseudotime.numeric_obs(work, orient_key)
+        except _pseudotime.PseudotimeComputeError as exc:
+            notes.append(f"orient skipped: {exc}")
+            return False
         finite = np.isfinite(pt_vals) & np.isfinite(score)
         if finite.sum() < 3:
             return False

@@ -45,6 +45,19 @@ def resolve_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) 
     return None
 
 
+def numeric_obs(adata: ad.AnnData, key: str) -> np.ndarray:
+    """Return an obs column as a float64 array, or raise ``RootUnresolved``.
+
+    Categorical / string obs columns cannot become a score; coercing them raises
+    a plain ``ValueError`` deep in pandas that would escape the method layer's
+    ``PseudotimeComputeError`` catch. Retype it here so callers skip-not-crash.
+    """
+    try:
+        return np.asarray(adata.obs[key], dtype="float64")
+    except (ValueError, TypeError) as exc:
+        raise RootUnresolved(f"obs column '{key}' is not numeric: {exc}") from exc
+
+
 def resolve_root(
     adata: ad.AnnData,
     *,
@@ -60,7 +73,7 @@ def resolve_root(
     index. Raises ``RootUnresolved`` when neither strategy applies.
     """
     if marker_score_key and marker_score_key in adata.obs:
-        score = np.asarray(adata.obs[marker_score_key], dtype="float64")
+        score = numeric_obs(adata, marker_score_key)
         return int(np.argmax(score))  # argmax returns first max → lowest index
 
     if root_key and root_group is not None and root_key in adata.obs:
@@ -201,6 +214,7 @@ __all__ = [
     "DiffmapFailed",
     "PseudotimeFailed",
     "resolve_rep",
+    "numeric_obs",
     "resolve_root",
     "flag_outliers",
     "compute_dpt",
