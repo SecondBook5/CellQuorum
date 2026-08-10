@@ -34,8 +34,28 @@ class DriverVizMethod(AnalysisMethod):
         traj = adata.uns.get("trajectory", {})
         cr = traj.get("cellrank", {}) if isinstance(traj, dict) else {}
         fate_names = cr.get("fate_names") if isinstance(cr, dict) else None
+        driver_columns = cr.get("driver_columns") if isinstance(cr, dict) else None
 
-        if fate_names and len(fate_names) == mat.shape[1]:
+        # The cellrank producer stores the FULL compute_lineage_drivers frame in
+        # varm: per lineage, five columns <lineage>_corr/_pval/_qval/_ci_low/_ci_high
+        # (column names recorded in uns[...]['cellrank']['driver_columns']). Plot
+        # ONLY the signed-correlation (_corr) columns; the lineage label is the
+        # column name minus that suffix (lineage names may contain underscores, so
+        # strip the fixed suffix rather than splitting). When driver_columns is
+        # present and identifies _corr columns, select those; otherwise fall back
+        # to treating each column as its own lineage (older runs / plain matrices).
+        suffix = "_corr"
+        corr_cols: list[tuple[int, str]] = []
+        if driver_columns and len(driver_columns) == mat.shape[1]:
+            corr_cols = [
+                (i, str(c)[: -len(suffix)])
+                for i, c in enumerate(driver_columns)
+                if str(c).endswith(suffix)
+            ]
+        if corr_cols:
+            mat = mat[:, [i for i, _ in corr_cols]]
+            names = [nm for _, nm in corr_cols]
+        elif fate_names and len(fate_names) == mat.shape[1]:
             names = [str(x) for x in fate_names]
         else:
             names = [f"lineage_{i}" for i in range(mat.shape[1])]
