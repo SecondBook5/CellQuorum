@@ -84,6 +84,9 @@ from cellquorum.reference_mapping.config import ReferenceMappingConfig
 # Import the subclustering configuration model.
 from cellquorum.subclustering.config import SubclusteringConfig
 
+# Import the trajectory configuration model.
+from cellquorum.trajectory.config import TrajectoryConfig
+
 
 class ProjectConfig(StrictBaseModel):
     """
@@ -602,6 +605,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether the embeddings stage (UMAP/PHATE/PAGA + overlays) is enabled.
     embeddings: bool = True
 
+    # Store whether the trajectory stage (velocity/RNA-velocity/potency) is enabled.
+    trajectory: bool = True
+
     # Store whether molecular inference is enabled as a gated capability.
     molecular_inference: bool = True
 
@@ -732,6 +738,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store embeddings settings.
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
+
+    # Store trajectory settings.
+    trajectory: TrajectoryConfig = Field(default_factory=TrajectoryConfig)
 
     # Store cell-cell-communication settings.
     cell_cell_communication: CellCellCommunicationConfig = Field(
