@@ -41,6 +41,35 @@ def write_velocity_h5ad(
     return artifact, f"wrote velocity h5ad for '{group}'"
 
 
+def write_whole_object_velocity_h5ad(
+    adata: ad.AnnData, results_dir: Path | str
+) -> tuple[StageArtifact | None, str]:
+    """Write the WHOLE-object velocity ``.h5ad`` (Ms + velocity layers).
+
+    This is the object CellRank's VelocityKernel consumes: velocity computed once
+    on the full atlas rather than per group. Written to a fixed
+    ``whole_object.h5ad`` stem so consumers can resolve it by convention.
+
+    Args:
+        adata: The whole-object velocity AnnData (carries Ms + velocity layers).
+        results_dir: Directory to write the h5ad file into.
+
+    Returns (artifact | None, note). Never raises (skip-not-crash).
+    """
+    path = Path(results_dir) / "whole_object.h5ad"
+    try:
+        adata.write_h5ad(path)
+    except Exception as exc:  # noqa: BLE001 — skip-not-crash
+        return None, f"whole-object velocity h5ad write failed: {exc}"
+    artifact = StageArtifact(
+        name="velocity_whole_object",
+        path=path,
+        kind="h5ad",
+        description="Whole-object RNA velocity for CellRank's VelocityKernel",
+    )
+    return artifact, "wrote whole-object velocity h5ad"
+
+
 def write_cellrank_h5ad(
     adata: ad.AnnData, results_dir: Path | str, subsampled: bool = False
 ) -> tuple[StageArtifact | None, str]:
@@ -98,4 +127,10 @@ def write_pseudotime_h5ad(
     return artifact, f"wrote {tool} pseudotime h5ad"
 
 
-__all__ = ["safe_name", "write_velocity_h5ad", "write_cellrank_h5ad", "write_pseudotime_h5ad"]
+__all__ = [
+    "safe_name",
+    "write_velocity_h5ad",
+    "write_whole_object_velocity_h5ad",
+    "write_cellrank_h5ad",
+    "write_pseudotime_h5ad",
+]

@@ -109,6 +109,14 @@ class VelocityMethod(AnalysisMethod):
                 except Exception as exc:  # noqa: BLE001 — skip-not-crash
                     notes.append(f"{group}: obs writeback failed: {exc}")
 
+        # Optional whole-object velocity for CellRank's VelocityKernel. Runs on a
+        # COPY so compute.compute_velocity's in-place HVG var-subset never touches
+        # the working atlas. Skip-not-crash: any failure is a note, never a raise.
+        if config.get("whole_object"):
+            whole_artifact = self._run_whole_object(velo_adata, config, results_dir, notes)
+            if whole_artifact is not None:
+                artifacts.append(whole_artifact)
+
         return StageResult(
             adata=adata,
             artifacts=artifacts,
@@ -120,6 +128,50 @@ class VelocityMethod(AnalysisMethod):
             },
             backend="python",
         )
+
+    def _run_whole_object(
+        self,
+        velo_adata: ad.AnnData,
+        config: dict,
+        results_dir: Path,
+        notes: list[str],
+    ) -> StageArtifact | None:
+        """Compute velocity once on the WHOLE object; write whole_object.h5ad.
+
+        Runs on a copy (compute.compute_velocity subsets vars in place, so the
+        caller's atlas must not be the target). Never raises (skip-not-crash);
+        every failure path appends a note and returns None.
+        """
+        from cellquorum.trajectory.save import write_whole_object_velocity_h5ad
+
+        whole = velo_adata.copy()
+        rep = compute.resolve_use_rep(
+            whole, config.get("use_rep"), config.get("use_rep_fallback", ["X_pca"])
+        )
+        if rep is None:
+            notes.append("whole-object velocity skipped: no usable representation")
+            return None
+
+        try:
+            compute.compute_velocity(
+                whole,
+                mode=config.get("mode", "dynamical"),
+                use_rep=rep,
+                min_shared_counts=int(config.get("min_shared_counts", 20)),
+                n_top_genes=int(config.get("n_top_genes", 2000)),
+                n_pcs=int(config.get("n_pcs", 30)),
+                n_neighbors=int(config.get("n_neighbors", 30)),
+                n_jobs=int(config.get("n_jobs", 1)),
+                seed=int(config.get("seed", 1337)),
+            )
+        except compute.TrajectoryComputeError as exc:
+            notes.append(f"whole-object velocity skipped: {exc}")
+            return None
+
+        compute.reproject_velocity(whole, bases=compute.embedding_bases(whole))
+        artifact, write_note = write_whole_object_velocity_h5ad(whole, results_dir)
+        notes.append(write_note)
+        return artifact
 
     def _maybe_generate(
         self,
