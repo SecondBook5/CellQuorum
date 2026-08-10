@@ -217,6 +217,7 @@ class PipelinePlanner:
             ("differential_abundance", self.config.stages.differential_abundance),
             ("enrichment", self.config.stages.enrichment),
             ("enrichment_viz", self.config.stages.enrichment_viz),
+            ("de_viz", self.config.stages.de_viz),
             ("molecular_inference", self.config.stages.molecular_inference),
             # Trajectory/potency runs with the tail-end discovery tracks: it only
             # needs embeddings (integration rep + 2D coords) to have already run,

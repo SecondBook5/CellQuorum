@@ -45,6 +45,9 @@ from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
+# Import the differential-expression-visualization configuration model.
+from cellquorum.de_viz.config import DeVizConfig
+
 # Import the differential-abundance configuration model.
 from cellquorum.differential_abundance.config import DifferentialAbundanceConfig
 
@@ -602,6 +605,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether enrichment visualization is enabled.
     enrichment_viz: bool = True
 
+    # Store whether differential-expression visualization is enabled.
+    de_viz: bool = True
+
     # Store whether CCC visualization is enabled.
     ccc_viz: bool = True
 
@@ -738,6 +744,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store enrichment-visualization settings.
     enrichment_viz: EnrichmentVizConfig = Field(default_factory=EnrichmentVizConfig)
+
+    # Store differential-expression-visualization settings.
+    de_viz: DeVizConfig = Field(default_factory=DeVizConfig)
 
     # Store CCC-visualization settings.
     ccc_viz: CccVizConfig = Field(default_factory=CccVizConfig)

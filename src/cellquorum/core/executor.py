@@ -57,6 +57,9 @@ from cellquorum.core.stage import (
     StageResult,
 )
 
+# Import differential-expression-visualization stage.
+from cellquorum.de_viz.stage import DeVizStage
+
 # Import differential expression stage.
 from cellquorum.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.differential_expression.stage import DifferentialExpressionStage
@@ -278,6 +281,7 @@ def build_default_stage_registry() -> StageRegistry:
             "differential_abundance": DifferentialAbundanceStage(),
             "enrichment": EnrichmentStage(),
             "enrichment_viz": EnrichmentVizStage(),
+            "de_viz": DeVizStage(),
             "ccc_viz": CccVizStage(),
             "embeddings": EmbeddingsStage(),
             "trajectory": TrajectoryStage(),

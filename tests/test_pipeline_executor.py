@@ -309,6 +309,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "ccc_viz",
         "cell_cell_communication",
         "clustering",
+        "de_viz",
         "differential_abundance",
         "differential_expression",
         "dimensionality",
