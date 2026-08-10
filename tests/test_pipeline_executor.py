@@ -324,6 +324,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "reference_mapping",
         "subclustering",
         "trajectory",
+        "trajectory_viz",
     ]
 
 

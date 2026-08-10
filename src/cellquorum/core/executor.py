@@ -98,6 +98,9 @@ from cellquorum.subclustering.stage import SubclusteringStage
 # Import trajectory stage.
 from cellquorum.trajectory.stage import TrajectoryStage
 
+# Import trajectory-visualization stage.
+from cellquorum.trajectory_viz.stage import TrajectoryVizStage
+
 
 @dataclass(frozen=True)
 class StageRegistry:
@@ -278,6 +281,7 @@ def build_default_stage_registry() -> StageRegistry:
             "ccc_viz": CccVizStage(),
             "embeddings": EmbeddingsStage(),
             "trajectory": TrajectoryStage(),
+            "trajectory_viz": TrajectoryVizStage(),
             "cell_cell_communication": CellCellCommunicationStage(),
             "ccc_network": CCCNetworkStage(),
         }

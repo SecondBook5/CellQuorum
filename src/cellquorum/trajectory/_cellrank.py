@@ -232,6 +232,7 @@ def run_gpcca(
     except Exception as exc:  # noqa: BLE001
         notes.append(f"compute_lineage_drivers failed: {exc}")
 
+    result["estimator"] = g
     return result
 
 
