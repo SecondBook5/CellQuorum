@@ -71,3 +71,25 @@ def test_single_panel_when_no_condition(tmp_path):
     cfg = {"heatmap_genes": [f"G{i}" for i in range(6)]}
     out = PseudotimeHeatmapVizMethod()._run(_adata(with_condition=False), cfg, ctx)
     assert not isinstance(out, MethodSkip)
+
+
+def test_skips_on_non_numeric_pseudotime(tmp_path):
+    """Regression: non-numeric pseudotime must skip, not crash."""
+    ctx, _ = _context(tmp_path)
+    rng = np.random.default_rng(0)
+    n, g = 60, 8
+    X = rng.random((n, g)).astype("float32")
+    obs = pd.DataFrame(
+        {
+            "dpt_pseudotime": pd.Categorical(["early"] * (n // 2) + ["late"] * (n - n // 2)),
+            "G2M_score": rng.random(n),
+            "cell_type": pd.Categorical(["A"] * (n // 2) + ["B"] * (n - n // 2)),
+            "condition": pd.Categorical(["Normal"] * (n // 2) + ["LE"] * (n - n // 2)),
+        }
+    )
+    adata = ad.AnnData(X, obs=obs)
+    adata.var_names = [f"G{i}" for i in range(g)]
+    cfg = {"heatmap_genes": [f"G{i}" for i in range(6)], "condition_col": "condition"}
+    out = PseudotimeHeatmapVizMethod()._run(adata, cfg, ctx)
+    assert isinstance(out, MethodSkip)
+    assert "input/render failed" in out.reason

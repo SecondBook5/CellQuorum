@@ -67,76 +67,79 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 details={"method": self.name},
             )
         pt_key = pts[0]
-        pt = inputs.numeric_obs(adata, pt_key)
 
-        genes = self._select_genes(adata, pt, config)
-        if not genes:
-            return MethodSkip(
-                reason="pseudotime_heatmap skipped: no genes resolved",
-                details={"method": self.name},
-            )
-        gi = [adata.var_names.get_loc(g) for g in genes]
-        M = _dense(adata.layers["magic"] if "magic" in adata.layers else adata.X)[:, gi]
-
-        score_key = self._resolve_key(adata, config.get("heatmap_score_key"), _SCORE_FALLBACKS)
-        state_key = self._resolve_key(adata, config.get("heatmap_state_key"), _STATE_FALLBACKS)
-        cond_key = config.get("condition_col")
-        cond_present = bool(cond_key) and cond_key in adata.obs
-
-        n_bins = int(config.get("heatmap_n_bins", 100))
-        finite = np.isfinite(pt)
-
-        score = adata.obs[score_key].to_numpy() if score_key else np.full(adata.n_obs, np.nan)
-        if state_key:
-            state_series = adata.obs[state_key].astype(str)
-            state_cats = sorted(state_series.unique())
-            code_map = {c: i for i, c in enumerate(state_cats)}
-            state_codes = state_series.map(code_map).to_numpy()
-            state_colors = [
-                figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
-                for i in range(len(state_cats))
-            ]
-        else:
-            state_cats, state_colors, state_codes = [], [], np.full(adata.n_obs, -1)
-
-        if cond_present:
-            cond = adata.obs[cond_key].astype(str).to_numpy()
-            case = config.get("case")
-            control = config.get("control")
-            ordered = [c for c in (control, case) if c and c in set(cond)]
-            if not ordered:
-                ordered = sorted(set(cond))
-            condition_order = ordered
-        else:
-            cond = np.array(["all"] * adata.n_obs)
-            condition_order = ["all"]
-
-        profiles, tracks = {}, {}
-        for c in condition_order:
-            m = (cond == c) & finite
-            if m.sum() < 2:
-                continue
-            p = heatmap.binned_profile(pt[m], M[m], n_bins)
-            p = (p - p.min(0)) / (np.ptp(p, axis=0) + 1e-9)
-            profiles[c] = p
-            tracks[c] = heatmap.binned_tracks(pt[m], score[m], state_codes[m], n_bins)
-        if not profiles:
-            return MethodSkip(
-                reason="pseudotime_heatmap skipped: no condition had enough cells",
-                details={"method": self.name},
-            )
-        condition_order = [c for c in condition_order if c in profiles]
-
-        combined = np.mean([profiles[c] for c in condition_order], axis=0)
-        gene_order = heatmap.peak_bin_order(combined)
-
-        present_codes = sorted(set(int(v) for c in condition_order for v in tracks[c][1] if v >= 0))
-
-        figstyle.set_style()
-        figures_dir = Path(context.paths.figures) / "trajectory"
-        formats = tuple(config.get("figure_formats", ["pdf", "png"]))
-        dpi = int(config.get("dpi", 300))
         try:
+            pt = inputs.numeric_obs(adata, pt_key)
+
+            genes = self._select_genes(adata, pt, config)
+            if not genes:
+                return MethodSkip(
+                    reason="pseudotime_heatmap skipped: no genes resolved",
+                    details={"method": self.name},
+                )
+            gi = [adata.var_names.get_loc(g) for g in genes]
+            M = _dense(adata.layers["magic"] if "magic" in adata.layers else adata.X)[:, gi]
+
+            score_key = self._resolve_key(adata, config.get("heatmap_score_key"), _SCORE_FALLBACKS)
+            state_key = self._resolve_key(adata, config.get("heatmap_state_key"), _STATE_FALLBACKS)
+            cond_key = config.get("condition_col")
+            cond_present = bool(cond_key) and cond_key in adata.obs
+
+            n_bins = int(config.get("heatmap_n_bins", 100))
+            finite = np.isfinite(pt)
+
+            score = adata.obs[score_key].to_numpy() if score_key else np.full(adata.n_obs, np.nan)
+            if state_key:
+                state_series = adata.obs[state_key].astype(str)
+                state_cats = sorted(state_series.unique())
+                code_map = {c: i for i, c in enumerate(state_cats)}
+                state_codes = state_series.map(code_map).to_numpy()
+                state_colors = [
+                    figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
+                    for i in range(len(state_cats))
+                ]
+            else:
+                state_cats, state_colors, state_codes = [], [], np.full(adata.n_obs, -1)
+
+            if cond_present:
+                cond = adata.obs[cond_key].astype(str).to_numpy()
+                case = config.get("case")
+                control = config.get("control")
+                ordered = [c for c in (control, case) if c and c in set(cond)]
+                if not ordered:
+                    ordered = sorted(set(cond))
+                condition_order = ordered
+            else:
+                cond = np.array(["all"] * adata.n_obs)
+                condition_order = ["all"]
+
+            profiles, tracks = {}, {}
+            for c in condition_order:
+                m = (cond == c) & finite
+                if m.sum() < 2:
+                    continue
+                p = heatmap.binned_profile(pt[m], M[m], n_bins)
+                p = (p - p.min(0)) / (np.ptp(p, axis=0) + 1e-9)
+                profiles[c] = p
+                tracks[c] = heatmap.binned_tracks(pt[m], score[m], state_codes[m], n_bins)
+            if not profiles:
+                return MethodSkip(
+                    reason="pseudotime_heatmap skipped: no condition had enough cells",
+                    details={"method": self.name},
+                )
+            condition_order = [c for c in condition_order if c in profiles]
+
+            combined = np.mean([profiles[c] for c in condition_order], axis=0)
+            gene_order = heatmap.peak_bin_order(combined)
+
+            present_codes = sorted(
+                set(int(v) for c in condition_order for v in tracks[c][1] if v >= 0)
+            )
+
+            figstyle.set_style()
+            figures_dir = Path(context.paths.figures) / "trajectory"
+            formats = tuple(config.get("figure_formats", ["pdf", "png"]))
+            dpi = int(config.get("dpi", 300))
             fig = heatmap.condition_split_heatmap(
                 profiles,
                 tracks,
@@ -151,7 +154,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             )
         except Exception as exc:  # noqa: BLE001
             return MethodSkip(
-                reason=f"pseudotime_heatmap skipped: render failed ({str(exc)[:200]})",
+                reason=f"pseudotime_heatmap skipped: input/render failed ({str(exc)[:200]})",
                 details={"method": self.name},
             )
         paths = figstyle.save_figure(

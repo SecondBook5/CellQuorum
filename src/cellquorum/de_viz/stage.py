@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import cellquorum.de_viz  # noqa: F401  (side-effect: method registration)
-from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage
 
@@ -46,12 +45,6 @@ class DeVizStage(MethodDispatchStage):
                 augmented["case"] = getattr(design, "case", None)
             if not augmented.get("control"):
                 augmented["control"] = getattr(design, "control", None)
-            if not augmented.get("condition_col"):
-                augmented["condition_col"] = resolve_cohort_key(
-                    config,
-                    attr="condition_key",
-                    stage_value=getattr(design, "condition_col", "condition"),
-                )
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [{"method": "volcano_viz"}]
         return augmented

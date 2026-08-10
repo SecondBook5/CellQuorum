@@ -51,6 +51,7 @@ def volcano(
     ax = fig.add_subplot(111)
 
     x_lim = float(min(d["logFC"].abs().max() * 1.15, 3.2)) if len(d) else 1.0
+    x_lim = max(x_lim, fc_cut * 1.05)
     y_lim = float(d["neg_log10fdr"].max() * 1.08) if len(d) else 1.0
     y_sig = -np.log10(fdr_cut)
 
