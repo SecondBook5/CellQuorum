@@ -10,15 +10,19 @@ from cellquorum.trajectory.config import (
     VelocityConfig,
     VelocityGenerationConfig,
 )
+from cellquorum.trajectory.dpt_method import DptMethod
+from cellquorum.trajectory.palantir_method import PalantirMethod
 from cellquorum.trajectory.velocity_method import VelocityMethod
 
-for _method in (VelocityMethod, CellRankMethod):
+for _method in (VelocityMethod, CellRankMethod, DptMethod, PalantirMethod):
     if not METHOD_REGISTRY.has("trajectory", _method.name):
         METHOD_REGISTRY.register(_method)
 
 __all__ = [
     "CellRankConfig",
     "CellRankMethod",
+    "DptMethod",
+    "PalantirMethod",
     "TrajectoryConfig",
     "VelocityConfig",
     "VelocityGenerationConfig",

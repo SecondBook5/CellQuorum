@@ -47,6 +47,40 @@ _CELLRANK_KEYS = (
     "seed",
 )
 
+# Keys flattened from config.dpt.* into each method's config dict.
+_DPT_KEYS = (
+    "enabled",
+    "use_rep",
+    "use_rep_fallback",
+    "n_neighbors",
+    "n_comps",
+    "n_dcs",
+    "n_branchings",
+    "root_key",
+    "root_group",
+    "root_marker_score_key",
+    "exclude_outliers",
+    "outlier_mad",
+    "orient_by_score_key",
+    "seed",
+)
+
+# Keys flattened from config.palantir.* into each method's config dict.
+_PALANTIR_KEYS = (
+    "enabled",
+    "use_rep",
+    "use_rep_fallback",
+    "n_components",
+    "knn",
+    "n_eigs",
+    "num_waypoints",
+    "root_key",
+    "root_group",
+    "root_marker_score_key",
+    "max_cells",
+    "seed",
+)
+
 
 class TrajectoryStage(MethodDispatchStage):
     """Run the configured trajectory method(s). Spec #1 registers 'velocity'."""
@@ -92,6 +126,24 @@ class TrajectoryStage(MethodDispatchStage):
             for key in _CELLRANK_KEYS:
                 if key in cellrank_dict and key not in augmented:
                     augmented[key] = cellrank_dict[key]
+
+        # Flatten config.trajectory.dpt.* into the stage config.
+        dpt = getattr(traj, "dpt", None) if traj is not None else None
+        if dpt is not None and "dpt" in selected:
+            dpt_dict = dpt.model_dump() if hasattr(dpt, "model_dump") else dict(dpt)
+            for key in _DPT_KEYS:
+                if key in dpt_dict and key not in augmented:
+                    augmented[key] = dpt_dict[key]
+
+        # Flatten config.trajectory.palantir.* into the stage config.
+        palantir = getattr(traj, "palantir", None) if traj is not None else None
+        if palantir is not None and "palantir" in selected:
+            palantir_dict = (
+                palantir.model_dump() if hasattr(palantir, "model_dump") else dict(palantir)
+            )
+            for key in _PALANTIR_KEYS:
+                if key in palantir_dict and key not in augmented:
+                    augmented[key] = palantir_dict[key]
 
         # Default to the single velocity method when nothing was specified.
         if not augmented.get("methods") and "method" not in augmented:
