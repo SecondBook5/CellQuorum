@@ -41,5 +41,6 @@ def test_stage_default_method_list_and_noop_validate():
         "gene_trend_viz",
         "macrostate_viz",
         "velocity_viz",
+        "pseudotime_heatmap",
     ]
     stage._validate_output(None)  # no raise

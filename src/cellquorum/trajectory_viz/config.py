@@ -23,5 +23,14 @@ class TrajectoryVizConfig(StrictBaseModel):
     genes: list[str] | None = None
     cluster_key: str | None = None
 
+    # Condition-split pseudotime heatmap controls (all optional; biology via config).
+    heatmap_genes: list[str] | None = None
+    heatmap_score_key: str | None = None
+    heatmap_state_key: str | None = None
+    heatmap_n_bins: int = 100
+    heatmap_max_genes: int = 60
+    heatmap_corr_cut: float = 0.1
+    heatmap_expr_cmap: str = "viridis"
+
 
 __all__ = ["TrajectoryVizConfig"]

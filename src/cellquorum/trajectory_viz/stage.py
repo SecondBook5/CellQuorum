@@ -16,6 +16,13 @@ _VIZ_CONFIG_KEYS = (
     "lineages",
     "genes",
     "cluster_key",
+    "heatmap_genes",
+    "heatmap_score_key",
+    "heatmap_state_key",
+    "heatmap_n_bins",
+    "heatmap_max_genes",
+    "heatmap_corr_cut",
+    "heatmap_expr_cmap",
 )
 
 _DEFAULT_METHODS = [
@@ -25,6 +32,7 @@ _DEFAULT_METHODS = [
     {"method": "gene_trend_viz"},
     {"method": "macrostate_viz"},
     {"method": "velocity_viz"},
+    {"method": "pseudotime_heatmap"},
 ]
 
 
@@ -47,6 +55,14 @@ class TrajectoryVizStage(MethodDispatchStage):
                     value = getattr(viz_cfg, key, None)
                     if value is not None:
                         augmented[key] = value
+        design = getattr(config, "design", None)
+        if design is not None:
+            if not augmented.get("case"):
+                augmented["case"] = getattr(design, "case", None)
+            if not augmented.get("control"):
+                augmented["control"] = getattr(design, "control", None)
+            if not augmented.get("condition_col"):
+                augmented["condition_col"] = getattr(design, "condition_col", "condition")
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [dict(m) for m in _DEFAULT_METHODS]
         return augmented

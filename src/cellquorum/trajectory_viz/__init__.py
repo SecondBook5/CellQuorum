@@ -8,6 +8,7 @@ from cellquorum.trajectory_viz.driver_viz import DriverVizMethod
 from cellquorum.trajectory_viz.fate_viz import FateVizMethod
 from cellquorum.trajectory_viz.gene_trend_viz import GeneTrendVizMethod
 from cellquorum.trajectory_viz.macrostate_viz import MacrostateVizMethod
+from cellquorum.trajectory_viz.pseudotime_heatmap_viz import PseudotimeHeatmapVizMethod
 from cellquorum.trajectory_viz.pseudotime_viz import PseudotimeVizMethod
 from cellquorum.trajectory_viz.velocity_viz import VelocityVizMethod
 
@@ -19,6 +20,7 @@ _METHODS: tuple = (
     GeneTrendVizMethod,
     MacrostateVizMethod,
     VelocityVizMethod,
+    PseudotimeHeatmapVizMethod,
 )
 
 for _method in _METHODS:
@@ -33,4 +35,5 @@ __all__ = [
     "GeneTrendVizMethod",
     "MacrostateVizMethod",
     "VelocityVizMethod",
+    "PseudotimeHeatmapVizMethod",
 ]
