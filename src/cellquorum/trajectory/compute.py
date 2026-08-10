@@ -64,6 +64,12 @@ def compute_velocity(
     except ImportError as exc:
         raise ScveloUnavailable("scvelo/scanpy not installed") from exc
 
+    # scvelo 0.3.4's EM (recover_dynamics) exposes no ``random_state`` argument —
+    # passing one raises TypeError deep in a worker and, worse, leaves scvelo's
+    # progress-bar monitor thread orphaned so the interpreter deadlocks at exit.
+    # The reproducibility knob that DOES exist is the process-global numpy seed;
+    # set it here and disable the progress bar (which spawns that monitor thread).
+    np.random.seed(seed)
     try:
         scv.pp.filter_genes(adata, min_shared_counts=min_shared_counts)
         scv.pp.normalize_per_cell(adata)
@@ -73,9 +79,9 @@ def compute_velocity(
             adata._inplace_subset_var(adata.var["highly_variable"].to_numpy())
         scv.pp.moments(adata, n_pcs=n_pcs, n_neighbors=n_neighbors, use_rep=use_rep)
         if mode == "dynamical":
-            scv.tl.recover_dynamics(adata, n_jobs=n_jobs, random_state=seed)
+            scv.tl.recover_dynamics(adata, n_jobs=n_jobs, show_progress_bar=False)
         scv.tl.velocity(adata, mode=mode)
-        scv.tl.velocity_graph(adata, n_jobs=n_jobs)
+        scv.tl.velocity_graph(adata, n_jobs=n_jobs, show_progress_bar=False)
         scv.tl.velocity_confidence(adata)
         scv.tl.velocity_pseudotime(adata)
     except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
