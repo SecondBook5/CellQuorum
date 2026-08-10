@@ -197,3 +197,99 @@ def test_connectivity_only_weights_are_full():
         seed=0,
     )
     assert info["weights"] == {"connectivity": pytest.approx(1.0)}
+
+
+# --- Task 4: VelocityKernel branch ------------------------------------------
+
+
+def _adata_with_graph(n=50):
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(rng.normal(0, 1, (n, 8)).astype("float32"))
+    a.obs_names = [f"c{i}" for i in range(n)]
+    a.var_names = [f"g{j}" for j in range(8)]
+    a.obsm["X_pca"] = rng.normal(0, 1, (n, 8)).astype("float32")
+    sc.pp.neighbors(a, use_rep="X_pca", n_neighbors=10)
+    return a
+
+
+def test_velocity_kernel_added_when_aligned(monkeypatch):
+    a = _adata_with_graph()
+    velo = a.copy()
+    velo.layers["Ms"] = velo.X.copy()
+    velo.layers["velocity"] = velo.X.copy()
+
+    import cellrank.kernels as K
+
+    # Stub VelocityKernel so no real scVelo graph is needed, but delegate to a
+    # real ConnectivityKernel (velo carries the copied neighbor graph) so the
+    # returned kernel actually combines with the connectivity kernel downstream.
+    class _StubKernel:
+        def __init__(self, adata, **kw):
+            self._real = K.ConnectivityKernel(adata)
+
+        def compute_transition_matrix(self, **kw):
+            return self._real.compute_transition_matrix()
+
+    monkeypatch.setattr(K, "VelocityKernel", _StubKernel)
+
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep="X_pca",
+        use_rep_fallback=["X_pca"],
+        n_neighbors=10,
+        weight_connectivities=0.2,
+        seed=1337,
+        velocity_adata=velo,
+        velocity_model="deterministic",
+        time_key=None,
+        realtime_epsilon=0.1,
+    )
+    assert "velocity" in info["kernels"]
+    assert info["weights"]["velocity"] == pytest.approx(0.8)
+
+
+def test_velocity_kernel_skipped_on_obs_mismatch():
+    a = _adata_with_graph(50)
+    velo = _adata_with_graph(40)  # different obs_names
+    velo.layers["Ms"] = velo.X.copy()
+    velo.layers["velocity"] = velo.X.copy()
+
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep="X_pca",
+        use_rep_fallback=["X_pca"],
+        n_neighbors=10,
+        weight_connectivities=0.2,
+        seed=1337,
+        velocity_adata=velo,
+        velocity_model="deterministic",
+        time_key=None,
+        realtime_epsilon=0.1,
+    )
+    assert "velocity" not in info["kernels"]
+    assert any("velocity" in n.lower() for n in info["notes"])
+
+
+def test_velocity_kernel_skipped_without_layers():
+    a = _adata_with_graph(50)
+    velo = a.copy()  # no Ms / velocity layers
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep="X_pca",
+        use_rep_fallback=["X_pca"],
+        n_neighbors=10,
+        weight_connectivities=0.2,
+        seed=1337,
+        velocity_adata=velo,
+        velocity_model="deterministic",
+        time_key=None,
+        realtime_epsilon=0.1,
+    )
+    assert "velocity" not in info["kernels"]
+    assert any("velocity" in n.lower() for n in info["notes"])

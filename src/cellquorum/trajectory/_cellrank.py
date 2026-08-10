@@ -58,8 +58,17 @@ def build_kernel(
     n_neighbors: int,
     weight_connectivities: float,
     seed: int,
+    velocity_adata: ad.AnnData | None = None,
+    velocity_model: str = "deterministic",
+    time_key: str | None = None,
+    realtime_epsilon: float = 0.1,
 ) -> tuple[object, dict]:
     """Build a combined CellRank kernel with graceful degradation.
+
+    Combines a ConnectivityKernel with every resolvable directional kernel:
+    PseudotimeKernel, CytoTRACEKernel, VelocityKernel (from ``velocity_adata``),
+    and a moscot RealTimeKernel (gated on ``time_key``). Any directional kernel
+    that cannot be built is dropped with a note — never a crash.
 
     Returns ``(kernel, kernel_info)``. Raises ``CellRankUnavailable`` if cellrank
     is not importable, or ``NoKernelInput`` if neither connectivities nor a
@@ -126,6 +135,24 @@ def build_kernel(
                 notes.append(f"cytotrace '{cytotrace_key}' absent; connectivity-only")
         except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
             notes.append(f"cytotrace kernel failed: {exc}")
+
+    # 3b. VelocityKernel from a whole-object velocity h5ad (opt-in upstream).
+    # Requires Ms + velocity layers and 1:1 obs alignment with the working atlas.
+    if velocity_adata is not None:
+        if "Ms" not in velocity_adata.layers or "velocity" not in velocity_adata.layers:
+            notes.append("velocity kernel skipped: velocity_adata lacks Ms/velocity layers")
+        elif list(velocity_adata.obs_names) != list(adata.obs_names):
+            notes.append("velocity kernel skipped: obs_names mismatch with working atlas")
+        else:
+            try:
+                from cellrank.kernels import VelocityKernel
+
+                vk = VelocityKernel(velocity_adata).compute_transition_matrix(
+                    model=velocity_model, seed=seed
+                )
+                directionals.append(("velocity", vk))
+            except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
+                notes.append(f"velocity kernel failed: {exc}")
 
     # 4. Combine: connectivity carries weight_connectivities; the remainder is
     # split equally across the resolved directional kernels. With exactly one
