@@ -12,33 +12,14 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
+from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE as _PALETTE
+from cellquorum.visualization.figstyle import TEXT as _TEXT
+
 # Single source of truth: tag -> obsm key + axis labels.
 EMBEDDING_REGISTRY: dict[str, dict] = {
     "umap": {"obsm": "X_umap", "axis": ("UMAP1", "UMAP2")},
     "phate": {"obsm": "X_phate", "axis": ("PHATE1", "PHATE2")},
 }
-
-_TEXT = "#202428"
-_PALETTE = [
-    "#4C72B0",
-    "#DD8452",
-    "#55A868",
-    "#C44E52",
-    "#8172B3",
-    "#937860",
-    "#DA8BC3",
-    "#8C8C8C",
-    "#CCB974",
-    "#64B5CD",
-    "#1f77b4",
-    "#ff7f0e",
-    "#2ca02c",
-    "#d62728",
-    "#9467bd",
-    "#8c564b",
-    "#e377c2",
-    "#7f7f7f",
-]
 
 
 def _style_axes(ax: Axes, axis_labels: tuple[str, str]) -> None:
@@ -173,13 +154,26 @@ def continuous_overlay(
     *,
     title: str,
     axis_labels: tuple[str, str],
-    cmap: str = "magma",
+    cmap: str = "viridis",
     sort_high_on_top: bool = True,
+    clip_pct: float = 0.0,
+    vmin: float | None = None,
+    vmax: float | None = None,
 ) -> Figure:
-    """Color a 2-D embedding scatter by a per-cell value vector."""
+    """Color a 2-D embedding scatter by a per-cell value vector.
+
+    ``clip_pct`` view-clips the color scale to the [clip_pct, 100-clip_pct]
+    percentiles when explicit ``vmin``/``vmax`` are not supplied (keeps outliers
+    from flattening the ramp). For signed layers (e.g. MAGIC z-scores) pass
+    ``cmap="RdBu_r", vmin=-2, vmax=2``.
+    """
     coords = np.asarray(coords)[:, :2]
     values = np.asarray(values, dtype=float)
     order = np.argsort(values, kind="mergesort") if sort_high_on_top else np.arange(len(values))
+
+    if vmin is None and vmax is None and clip_pct > 0 and np.isfinite(values).any():
+        finite = values[np.isfinite(values)]
+        vmin, vmax = np.percentile(finite, [clip_pct, 100 - clip_pct])
 
     fig = Figure(figsize=(5.0, 5.0))
     ax = fig.add_subplot(111)
@@ -191,6 +185,8 @@ def continuous_overlay(
         s=6.0,
         linewidths=0,
         rasterized=True,
+        vmin=vmin,
+        vmax=vmax,
     )
     fig.colorbar(sctr, ax=ax, shrink=0.55, aspect=18)
     ax.set_title(title)
@@ -198,4 +194,27 @@ def continuous_overlay(
     return fig
 
 
-__all__ = ["EMBEDDING_REGISTRY", "categorical_embedding", "continuous_overlay"]
+def magic_zscore_layer(
+    adata: ad.AnnData, *, source_layer: str = "magic", out_layer: str = "magic_z"
+) -> bool:
+    """Write a per-gene z-scored layer from an existing MAGIC layer.
+
+    Returns True if written, False if ``source_layer`` is absent (skip-not-crash).
+    Does NOT compute MAGIC itself.
+    """
+    if source_layer not in adata.layers:
+        return False
+    m = adata.layers[source_layer]
+    m = m.toarray() if hasattr(m, "toarray") else np.asarray(m, dtype=float)
+    mu = m.mean(0, keepdims=True)
+    sd = m.std(0, keepdims=True) + 1e-9
+    adata.layers[out_layer] = (m - mu) / sd
+    return True
+
+
+__all__ = [
+    "EMBEDDING_REGISTRY",
+    "categorical_embedding",
+    "continuous_overlay",
+    "magic_zscore_layer",
+]
