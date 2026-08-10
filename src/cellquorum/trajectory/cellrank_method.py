@@ -50,6 +50,9 @@ class CellRankMethod(AnalysisMethod):
         else:
             work = adata.copy()
 
+        # Optionally load the whole-object velocity h5ad for a VelocityKernel.
+        velocity_adata = self._load_velocity_adata(config, context, work, notes)
+
         # Build the kernel.
         try:
             kernel, kernel_info = _cellrank.build_kernel(
@@ -61,6 +64,10 @@ class CellRankMethod(AnalysisMethod):
                 n_neighbors=int(config.get("n_neighbors", 30)),
                 weight_connectivities=float(config.get("weight_connectivities", 0.2)),
                 seed=seed,
+                velocity_adata=velocity_adata,
+                velocity_model=config.get("velocity_model", "deterministic"),
+                time_key=config.get("time_key"),
+                realtime_epsilon=float(config.get("realtime_epsilon", 0.1)),
             )
         except _cellrank.CellRankComputeError as exc:
             return MethodSkip(reason=str(exc), details={"method": self.name, "notes": notes})
@@ -150,6 +157,46 @@ class CellRankMethod(AnalysisMethod):
             },
             backend="python",
         )
+
+    def _load_velocity_adata(
+        self, config: dict, context: object, work: ad.AnnData, notes: list[str]
+    ) -> ad.AnnData | None:
+        """Load the whole-object velocity h5ad and align it to ``work`` by obs.
+
+        Returns None (with a note) when ``use_velocity`` is off, the h5ad is
+        absent, it fails to load, or it cannot be aligned 1:1 to ``work``. Never
+        raises (skip-not-crash). Alignment to ``work.obs_names`` is required
+        because ``work`` may be a seeded subsample; build_kernel demands an exact
+        obs match before it will construct the VelocityKernel.
+        """
+        if not config.get("use_velocity"):
+            return None
+
+        velo_path = Path(context.paths.results) / "trajectory" / "velocity" / "whole_object.h5ad"
+        if not velo_path.exists():
+            notes.append(
+                f"use_velocity set but {velo_path.name} not found; velocity kernel skipped"
+            )
+            return None
+
+        try:
+            velo = ad.read_h5ad(velo_path)
+        except Exception as exc:  # noqa: BLE001 — skip-not-crash
+            notes.append(f"could not read whole-object velocity h5ad: {exc}")
+            return None
+
+        # Align to work's cells. If velocity covers a superset, subset+reorder;
+        # otherwise report the gap and let build_kernel's check gate it.
+        if list(velo.obs_names) == list(work.obs_names):
+            return velo
+        if set(work.obs_names).issubset(set(velo.obs_names)):
+            try:
+                return velo[work.obs_names].copy()
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"velocity h5ad subset/reorder failed: {exc}")
+                return None
+        notes.append("velocity h5ad does not cover all working cells; velocity kernel skipped")
+        return None
 
     def _writeback(self, adata: ad.AnnData, work: ad.AnnData, res: dict, notes: list[str]) -> None:
         """Align estimator outputs back onto the full working object by obs_name."""

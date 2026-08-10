@@ -119,6 +119,69 @@ def test_method_skips_on_schur_failure(tmp_path, monkeypatch):
     assert isinstance(result, MethodSkip)
 
 
+def test_cellrank_passes_velocity_adata(tmp_path, monkeypatch):
+    """With use_velocity + a present whole_object.h5ad, the loaded velocity
+    object reaches build_kernel (and the new params are forwarded)."""
+    a = _make_adata()
+    ctx = _context(a, tmp_path)
+
+    # Write a whole-object velocity h5ad where CellRankMethod looks for it.
+    velo_dir = tmp_path / "trajectory" / "velocity"
+    velo_dir.mkdir(parents=True, exist_ok=True)
+    velo = a.copy()
+    velo.layers["Ms"] = np.asarray(velo.X, dtype="float32").copy()
+    velo.layers["velocity"] = np.asarray(velo.X, dtype="float32").copy()
+    velo.write_h5ad(velo_dir / "whole_object.h5ad")
+
+    captured: dict = {}
+    _real_build_kernel = _cellrank.build_kernel
+
+    def _spy_build_kernel(work, **kwargs):
+        captured.update(kwargs)
+        # Verify forwarding without depending on the dummy velocity layers
+        # forming a valid transition matrix: build a clean connectivity kernel
+        # (drop velocity_adata) so the downstream GPCCA chain still proceeds.
+        clean = dict(kwargs)
+        clean["velocity_adata"] = None
+        return _real_build_kernel(work, **clean)
+
+    monkeypatch.setattr(_cellrank, "build_kernel", _spy_build_kernel)
+
+    cfg = _config(
+        use_velocity=True,
+        velocity_model="stochastic",
+        time_key="some_stage",
+        realtime_epsilon=0.25,
+    )
+    result = CellRankMethod().run(a, cfg, ctx, donor_col=None)
+
+    assert not isinstance(result, MethodSkip)
+    assert captured["velocity_adata"] is not None
+    assert list(captured["velocity_adata"].obs_names) == list(a.obs_names)
+    assert captured["velocity_model"] == "stochastic"
+    assert captured["time_key"] == "some_stage"
+    assert captured["realtime_epsilon"] == pytest.approx(0.25)
+
+
+def test_cellrank_velocity_missing_h5ad_is_noted(tmp_path, monkeypatch):
+    """use_velocity=True but no h5ad present → velocity_adata=None, no crash."""
+    a = _make_adata()
+    ctx = _context(a, tmp_path)
+
+    captured: dict = {}
+    _real_build_kernel = _cellrank.build_kernel
+
+    def _spy_build_kernel(work, **kwargs):
+        captured.update(kwargs)
+        return _real_build_kernel(work, **kwargs)
+
+    monkeypatch.setattr(_cellrank, "build_kernel", _spy_build_kernel)
+
+    result = CellRankMethod().run(a, _config(use_velocity=True), ctx, donor_col=None)
+    assert not isinstance(result, MethodSkip)
+    assert captured["velocity_adata"] is None
+
+
 def test_method_subsample_deterministic(tmp_path):
     a = _make_adata()
     ctx = _context(a, tmp_path)
