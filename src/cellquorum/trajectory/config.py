@@ -76,6 +76,51 @@ class VelocityConfig(StrictBaseModel):
     generation: VelocityGenerationConfig = VelocityGenerationConfig()
 
 
+class CellRankConfig(StrictBaseModel):
+    """CellRank 2.x GPCCA fate-mapping method configuration.
+
+    All keys are structural, not biology. ``cluster_key`` names the obs column
+    whose levels seed macrostate→terminal assignment; ``pseudotime_key`` /
+    ``cytotrace_key`` name optional directionality inputs. CellRank runs on the
+    WHOLE object (never per-group) so cross-lineage fate probabilities are valid.
+
+    Attributes:
+        enabled: Whether the method runs.
+        cluster_key: obs column seeding macrostate→terminal assignment.
+        pseudotime_key: Whole-object pseudotime obs col; None → connectivity-only.
+        cytotrace_key: Optional CytoTRACE obs col for a CytoTRACEKernel.
+        use_rep: Rep to build neighbors when connectivities absent; None → fallback.
+        use_rep_fallback: Ordered obsm keys tried when ``use_rep`` unset/absent.
+        n_neighbors: Neighbor count when a graph must be built.
+        weight_connectivities: w in (1-w)*directionality + w*connectivity.
+        n_components: Schur vectors; clamped to [n_states+1, n_obs-1].
+        n_states: Macrostate REQUEST (CellRank may return more).
+        n_terminal_states: Terminal-state count; None → method-driven auto.
+        terminal_method: predict_terminal_states method.
+        predict_initial_states: Best-effort initial-state prediction.
+        n_initial_states: Initial states to predict when enabled.
+        max_cells: None = no cap; else seeded subsample for GPCCA.
+        seed: Random seed for subsample + lineage drivers.
+    """
+
+    enabled: bool = True
+    cluster_key: str = "cell_type"
+    pseudotime_key: str | None = None
+    cytotrace_key: str | None = None
+    use_rep: str | None = None
+    use_rep_fallback: list[str] = ["X_scANVI", "X_scVI", "X_pca"]
+    n_neighbors: int = 30
+    weight_connectivities: float = 0.2
+    n_components: int = 20
+    n_states: int = 8
+    n_terminal_states: int | None = None
+    terminal_method: str = "stability"
+    predict_initial_states: bool = False
+    n_initial_states: int = 1
+    max_cells: int | None = None
+    seed: int = 1337
+
+
 class TrajectoryConfig(StrictBaseModel):
     """Trajectory stage config. Spec #1 exposes one method: velocity.
 
@@ -83,11 +128,13 @@ class TrajectoryConfig(StrictBaseModel):
         enabled: Whether the stage runs.
         methods: Method sub-configs (empty → default [velocity] injected).
         velocity: The RNA-velocity method config.
+        cellrank: The CellRank fate-mapping method config.
     """
 
     enabled: bool = True
     methods: list[dict] = []
     velocity: VelocityConfig = VelocityConfig()
+    cellrank: CellRankConfig = CellRankConfig()
 
 
-__all__ = ["TrajectoryConfig", "VelocityConfig", "VelocityGenerationConfig"]
+__all__ = ["TrajectoryConfig", "VelocityConfig", "VelocityGenerationConfig", "CellRankConfig"]
