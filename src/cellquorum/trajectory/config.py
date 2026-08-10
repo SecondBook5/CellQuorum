@@ -202,6 +202,34 @@ class PalantirConfig(StrictBaseModel):
     seed: int = 1337
 
 
+class CytoTraceConfig(StrictBaseModel):
+    """CytoTRACE 2 developmental-potency producer configuration.
+
+    All keys are structural, not biology. Runs the pretrained CytoTRACE 2 model
+    on the whole object and writes a ``cytotrace2_score`` obs column (plus a
+    categorical ``cytotrace2_potency``) that CellRank's CytoTRACEKernel can
+    consume via ``CellRankConfig.cytotrace_key``. The ``cytotrace2-py`` package
+    is optional; the method skips when it is not importable.
+
+    Attributes:
+        enabled: Whether the method runs.
+        species: ``human`` | ``mouse`` (selects the pretrained model).
+        counts_layer: Layer holding raw counts; None → use ``.X``.
+        batch_size: Model prediction batch size.
+        smooth_batch_size: Diffusion-smoothing batch size.
+        disable_parallelization: Force single-process execution (reproducible).
+        seed: Random seed threaded into the CytoTRACE 2 run.
+    """
+
+    enabled: bool = True
+    species: str = "human"
+    counts_layer: str | None = None
+    batch_size: int = 20000
+    smooth_batch_size: int = 1000
+    disable_parallelization: bool = False
+    seed: int = 14
+
+
 class TrajectoryConfig(StrictBaseModel):
     """Trajectory stage config. Spec #1 exposes one method: velocity.
 
@@ -212,6 +240,7 @@ class TrajectoryConfig(StrictBaseModel):
         cellrank: The CellRank fate-mapping method config.
         dpt: The DPT pseudotime method config.
         palantir: The Palantir pseudotime method config.
+        cytotrace: The CytoTRACE 2 potency method config.
     """
 
     enabled: bool = True
@@ -220,6 +249,7 @@ class TrajectoryConfig(StrictBaseModel):
     cellrank: CellRankConfig = CellRankConfig()
     dpt: DptConfig = DptConfig()
     palantir: PalantirConfig = PalantirConfig()
+    cytotrace: CytoTraceConfig = CytoTraceConfig()
 
 
 __all__ = [
@@ -229,4 +259,5 @@ __all__ = [
     "CellRankConfig",
     "DptConfig",
     "PalantirConfig",
+    "CytoTraceConfig",
 ]

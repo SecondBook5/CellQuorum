@@ -81,6 +81,17 @@ _PALANTIR_KEYS = (
     "seed",
 )
 
+# Keys flattened from config.cytotrace.* into each method's config dict.
+_CYTOTRACE_KEYS = (
+    "enabled",
+    "species",
+    "counts_layer",
+    "batch_size",
+    "smooth_batch_size",
+    "disable_parallelization",
+    "seed",
+)
+
 
 class TrajectoryStage(MethodDispatchStage):
     """Run the configured trajectory method(s). Spec #1 registers 'velocity'."""
@@ -97,6 +108,7 @@ class TrajectoryStage(MethodDispatchStage):
         "cellrank": ("cellrank", _CELLRANK_KEYS),
         "dpt": ("dpt", _DPT_KEYS),
         "palantir": ("palantir", _PALANTIR_KEYS),
+        "cytotrace": ("cytotrace", _CYTOTRACE_KEYS),
     }
 
     def _flatten_block(self, traj: object, name: str, target: dict) -> None:
