@@ -149,11 +149,14 @@ class TrajectoryStage(MethodDispatchStage):
             augmented["methods"] = new_methods
             return augmented
 
-        # Single-method path: flatten the one selected block to the top level
-        # (unchanged behavior — _run_methods_list applies shared keys to it).
+        # Single-method path: exactly one method name is selected here, so flatten
+        # that one block to the top level (unchanged behavior — _run_methods_list
+        # applies shared keys to it). Stop after the first match to make the
+        # single-block invariant explicit and immune to a future gate change.
         for name in self._METHOD_BLOCKS:
             if name in selected:
                 self._flatten_block(traj, name, augmented)
+                break
 
         # Default to the single velocity method when nothing was specified.
         if not augmented.get("methods") and "method" not in augmented:

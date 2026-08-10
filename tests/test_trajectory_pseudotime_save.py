@@ -27,3 +27,13 @@ def test_write_pseudotime_h5ad_failure_returns_note(tmp_path):
     artifact, note = write_pseudotime_h5ad(_adata(), missing, "palantir")
     assert artifact is None
     assert "failed" in note.lower()
+
+
+def test_write_pseudotime_h5ad_labels_scope_honestly(tmp_path):
+    """The description reflects whether the written object is a subset."""
+    whole, _ = write_pseudotime_h5ad(_adata(), tmp_path, "dpt", subset=False)
+    assert "whole object" in whole.description
+    assert "subset" not in whole.description
+    sub, _ = write_pseudotime_h5ad(_adata(), tmp_path, "palantir", subset=True)
+    assert "subset" in sub.description
+    assert "whole object" not in sub.description
