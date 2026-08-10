@@ -2,4 +2,12 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from cellquorum.de_viz.config import DeVizConfig
+from cellquorum.de_viz.volcano_viz import VolcanoVizMethod
+from cellquorum.methods.registry import METHOD_REGISTRY
+
+for _method in (VolcanoVizMethod,):
+    if not METHOD_REGISTRY.has("de_viz", _method.name):
+        METHOD_REGISTRY.register(_method)
+
+__all__ = ["DeVizConfig", "VolcanoVizMethod"]
