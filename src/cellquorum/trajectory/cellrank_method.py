@@ -115,6 +115,23 @@ class CellRankMethod(AnalysisMethod):
         if artifact is not None:
             artifacts.append(artifact)
 
+        estimator = res.get("estimator")
+        if estimator is not None:
+            pkl_path = results_dir / "gpcca_estimator.pickle"
+            try:
+                estimator.write(str(pkl_path))
+                artifacts.append(
+                    StageArtifact(
+                        name="cellrank_estimator",
+                        path=pkl_path,
+                        kind="pickle",
+                        description="Serialized GPCCA estimator for trajectory-viz native plots.",
+                    )
+                )
+                uns["estimator_pickle"] = pkl_path.name
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"could not write GPCCA estimator pickle: {exc}")
+
         return StageResult(
             adata=adata,
             artifacts=artifacts,
