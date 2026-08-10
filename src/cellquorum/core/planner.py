@@ -218,6 +218,11 @@ class PipelinePlanner:
             ("enrichment", self.config.stages.enrichment),
             ("enrichment_viz", self.config.stages.enrichment_viz),
             ("molecular_inference", self.config.stages.molecular_inference),
+            # Trajectory/potency runs with the tail-end discovery tracks: it only
+            # needs embeddings (integration rep + 2D coords) to have already run,
+            # which happens mid-backbone, so it slots in after molecular_inference
+            # and before the CCC chain.
+            ("trajectory", self.config.stages.trajectory),
             # CCC chain runs producer-before-consumer: the communication stage
             # writes the LR tables, ccc_network derives topology+curvature from
             # them, and ccc_viz renders figures from both. ccc_viz MUST come

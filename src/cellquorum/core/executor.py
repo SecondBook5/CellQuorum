@@ -95,6 +95,9 @@ from cellquorum.reference_mapping.stage import ReferenceMappingStage
 # Import subclustering stage.
 from cellquorum.subclustering.stage import SubclusteringStage
 
+# Import trajectory stage.
+from cellquorum.trajectory.stage import TrajectoryStage
+
 
 @dataclass(frozen=True)
 class StageRegistry:
@@ -274,6 +277,7 @@ def build_default_stage_registry() -> StageRegistry:
             "enrichment_viz": EnrichmentVizStage(),
             "ccc_viz": CccVizStage(),
             "embeddings": EmbeddingsStage(),
+            "trajectory": TrajectoryStage(),
             "cell_cell_communication": CellCellCommunicationStage(),
             "ccc_network": CCCNetworkStage(),
         }

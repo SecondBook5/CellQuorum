@@ -76,6 +76,9 @@ class ManifestRecord:
     # resolved later against ambient_correction.cellranger_root — NOT here).
     cellranger_path: str | None = None
 
+    # Store the optional loom file path for velocity analysis (relative or absolute).
+    loom_path: str | None = None
+
     # Store the optional donor or patient identifier.
     donor_id: str | None = None
 
@@ -117,6 +120,7 @@ class ManifestRecord:
             "sample_id": self.sample_id,
             "path": str(self.path) if self.path is not None else None,
             "cellranger_path": self.cellranger_path,
+            "loom_path": self.loom_path,
             "donor_id": self.donor_id,
             "condition": self.condition,
             "batch": self.batch,
@@ -167,6 +171,7 @@ class Manifest:
     OPTIONAL_COLUMNS: tuple[str, ...] = (
         "path",
         "cellranger_path",
+        "loom_path",
         "donor_id",
         "condition",
         "batch",
@@ -640,6 +645,7 @@ def validate_manifest_dataframe(
             sample_id=sample_id,
             path=resolved_path,
             cellranger_path=cellranger_path,
+            loom_path=_clean_optional_string(row.get("loom_path")),
             donor_id=_clean_optional_string(row.get("donor_id")),
             condition=_clean_optional_string(row.get("condition")),
             batch=_clean_optional_string(row.get("batch")),
