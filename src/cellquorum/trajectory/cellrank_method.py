@@ -110,7 +110,7 @@ class CellRankMethod(AnalysisMethod):
             results_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
             notes.append(f"could not create results dir: {exc}")
-        artifact, write_note = write_cellrank_h5ad(work, results_dir)
+        artifact, write_note = write_cellrank_h5ad(work, results_dir, subsampled=subsampled)
         notes.append(write_note)
         if artifact is not None:
             artifacts.append(artifact)

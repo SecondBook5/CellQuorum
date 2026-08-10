@@ -42,9 +42,14 @@ def write_velocity_h5ad(
 
 
 def write_cellrank_h5ad(
-    adata: ad.AnnData, results_dir: Path | str
+    adata: ad.AnnData, results_dir: Path | str, subsampled: bool = False
 ) -> tuple[StageArtifact | None, str]:
     """Write the whole-object CellRank fate-mapping ``.h5ad``.
+
+    Args:
+        adata: The fate-mapping AnnData to write.
+        results_dir: Directory to write the h5ad file into.
+        subsampled: Whether ``adata`` is a seeded subsample (drives the label).
 
     Returns (artifact | None, note). Never raises (skip-not-crash).
     """
@@ -53,11 +58,12 @@ def write_cellrank_h5ad(
         adata.write_h5ad(path)
     except Exception as exc:  # noqa: BLE001 — skip-not-crash
         return None, f"cellrank h5ad write failed: {exc}"
+    scope = "subsampled" if subsampled else "whole atlas"
     artifact = StageArtifact(
         name="cellrank_fate_mapping",
         path=path,
         kind="h5ad",
-        description="CellRank GPCCA fate-mapping object (whole atlas)",
+        description=f"CellRank GPCCA fate-mapping object ({scope})",
     )
     return artifact, "wrote cellrank fate-mapping h5ad"
 

@@ -17,6 +17,17 @@ def test_write_cellrank_h5ad(tmp_path):
     assert artifact.path.exists()
     assert artifact.path.name == "fate_mapping.h5ad"
     assert "cellrank" in note.lower()
+    # Default label reflects the whole atlas.
+    assert "whole atlas" in artifact.description
+    assert "subsampled" not in artifact.description
+
+
+def test_write_cellrank_h5ad_subsampled_label(tmp_path):
+    a = ad.AnnData(np.ones((5, 3), dtype="float32"))
+    artifact, _ = write_cellrank_h5ad(a, tmp_path, subsampled=True)
+    assert isinstance(artifact, StageArtifact)
+    assert "subsampled" in artifact.description
+    assert "whole atlas" not in artifact.description
 
 
 def test_write_cellrank_h5ad_write_failure_returns_note(tmp_path):

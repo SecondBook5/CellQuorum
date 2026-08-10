@@ -133,3 +133,35 @@ def test_run_gpcca_schur_failure_raises_typed(monkeypatch):
             n_initial_states=1,
             seed=0,
         )
+
+
+def test_run_gpcca_macrostates_failure_raises_typed(monkeypatch):
+    a = _make_adata()
+    k = _kernel(a)
+
+    class _MacroBoom:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def compute_schur(self, *args, **kwargs):
+            return None
+
+        def compute_macrostates(self, *args, **kwargs):
+            raise ValueError("cannot split complex-conjugate eigenvalue pair")
+
+    monkeypatch.setattr(cr.estimators, "GPCCA", _MacroBoom)
+    with pytest.raises(_cellrank.MacrostatesFailed) as excinfo:
+        _cellrank.run_gpcca(
+            a,
+            k,
+            cluster_key="cell_type",
+            n_components=10,
+            n_states=3,
+            n_terminal_states=2,
+            terminal_method="stability",
+            predict_initial_states=False,
+            n_initial_states=1,
+            seed=0,
+        )
+    # MacrostatesFailed is a recoverable CellRankComputeError → MethodSkip.
+    assert isinstance(excinfo.value, _cellrank.CellRankComputeError)

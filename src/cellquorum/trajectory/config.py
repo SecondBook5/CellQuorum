@@ -100,7 +100,6 @@ class CellRankConfig(StrictBaseModel):
         predict_initial_states: Best-effort initial-state prediction.
         n_initial_states: Initial states to predict when enabled.
         max_cells: None = no cap; else seeded subsample for GPCCA.
-        n_jobs: Worker count (1 = reproducible).
         seed: Random seed for subsample + lineage drivers.
     """
 
@@ -119,7 +118,6 @@ class CellRankConfig(StrictBaseModel):
     predict_initial_states: bool = False
     n_initial_states: int = 1
     max_cells: int | None = None
-    n_jobs: int = 1
     seed: int = 1337
 
 

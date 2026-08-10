@@ -98,6 +98,52 @@ def test_build_kernel_raises_no_kernel_input():
         )
 
 
+def test_build_kernel_connectivity_failure_raises_typed(monkeypatch):
+    a = _make_adata()
+
+    class _Boom:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def compute_transition_matrix(self, *args, **kwargs):
+            raise RuntimeError("degenerate transition matrix")
+
+    monkeypatch.setattr(cr.kernels, "ConnectivityKernel", _Boom)
+    with pytest.raises(_cellrank.NoKernelInput) as excinfo:
+        _cellrank.build_kernel(
+            a,
+            pseudotime_key=None,
+            cytotrace_key=None,
+            use_rep=None,
+            use_rep_fallback=["X_pca"],
+            n_neighbors=15,
+            weight_connectivities=0.2,
+            seed=0,
+        )
+    assert isinstance(excinfo.value, _cellrank.CellRankComputeError)
+
+
+def test_build_kernel_neighbors_failure_raises_typed(monkeypatch):
+    a = _make_adata(with_graph=False)  # forces sc.pp.neighbors path
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("neighbor graph blew up")
+
+    monkeypatch.setattr(sc.pp, "neighbors", _boom)
+    with pytest.raises(_cellrank.NoKernelInput) as excinfo:
+        _cellrank.build_kernel(
+            a,
+            pseudotime_key=None,
+            cytotrace_key=None,
+            use_rep=None,
+            use_rep_fallback=["X_pca"],
+            n_neighbors=15,
+            weight_connectivities=0.2,
+            seed=0,
+        )
+    assert isinstance(excinfo.value, _cellrank.CellRankComputeError)
+
+
 def test_build_kernel_drops_pseudotime_when_all_nan():
     a = _make_adata()
     a.obs["pseudotime"] = np.nan

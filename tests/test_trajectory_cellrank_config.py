@@ -25,8 +25,12 @@ def test_cellrank_config_defaults():
     assert cfg.predict_initial_states is False
     assert cfg.n_initial_states == 1
     assert cfg.max_cells is None
-    assert cfg.n_jobs == 1
     assert cfg.seed == 1337
+
+
+def test_cellrank_config_has_no_n_jobs():
+    # n_jobs was dead config surface (never read by the method); it was removed.
+    assert "n_jobs" not in CellRankConfig.model_fields
 
 
 def test_trajectory_config_has_cellrank():

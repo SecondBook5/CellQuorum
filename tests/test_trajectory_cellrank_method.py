@@ -53,7 +53,6 @@ def _config(**over):
         "predict_initial_states": False,
         "n_initial_states": 1,
         "max_cells": None,
-        "n_jobs": 1,
         "seed": 0,
     }
     base.update(over)

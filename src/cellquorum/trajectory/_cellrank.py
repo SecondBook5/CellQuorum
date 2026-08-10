@@ -34,6 +34,10 @@ class SchurFailed(CellRankComputeError):
     """compute_schur raised; the estimator chain cannot proceed."""
 
 
+class MacrostatesFailed(CellRankComputeError):
+    """compute_macrostates raised; the estimator chain cannot proceed."""
+
+
 def _resolve_use_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) -> str | None:
     """Return a rep present in obsm, or None."""
     if configured and configured in adata.obsm:
@@ -74,12 +78,18 @@ def build_kernel(
         rep = _resolve_use_rep(adata, use_rep, use_rep_fallback)
         if rep is None:
             raise NoKernelInput("no connectivities and no usable representation")
-        np.random.seed(seed)
-        sc.pp.neighbors(adata, use_rep=rep, n_neighbors=n_neighbors)
-        notes.append(f"built neighbor graph on '{rep}'")
+        try:
+            np.random.seed(seed)
+            sc.pp.neighbors(adata, use_rep=rep, n_neighbors=n_neighbors)
+            notes.append(f"built neighbor graph on '{rep}'")
+        except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
+            raise NoKernelInput(f"neighbor graph construction failed on '{rep}': {exc}") from exc
 
     # 2. ConnectivityKernel is always constructible now.
-    ck = ConnectivityKernel(adata).compute_transition_matrix()
+    try:
+        ck = ConnectivityKernel(adata).compute_transition_matrix()
+    except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
+        raise NoKernelInput(f"connectivity kernel failed: {exc}") from exc
     kernels_used = ["connectivity"]
 
     # 3. Directionality kernel: pseudotime preferred, then cytotrace.
@@ -166,8 +176,11 @@ def run_gpcca(
     except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
         raise SchurFailed(f"compute_schur failed: {exc}") from exc
 
-    g.compute_macrostates(n_states=int(n_states), cluster_key=cluster_key)
-    macro_names = [str(x) for x in g.macrostates.cat.categories]
+    try:
+        g.compute_macrostates(n_states=int(n_states), cluster_key=cluster_key)
+        macro_names = [str(x) for x in g.macrostates.cat.categories]
+    except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
+        raise MacrostatesFailed(f"compute_macrostates failed: {exc}") from exc
 
     result: dict = {
         "n_macrostates_requested": int(n_states),
@@ -225,6 +238,7 @@ def run_gpcca(
 __all__ = [
     "CellRankComputeError",
     "CellRankUnavailable",
+    "MacrostatesFailed",
     "NoKernelInput",
     "SchurFailed",
     "build_kernel",
