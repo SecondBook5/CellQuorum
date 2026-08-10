@@ -41,4 +41,25 @@ def write_velocity_h5ad(
     return artifact, f"wrote velocity h5ad for '{group}'"
 
 
-__all__ = ["safe_name", "write_velocity_h5ad"]
+def write_cellrank_h5ad(
+    adata: ad.AnnData, results_dir: Path | str
+) -> tuple[StageArtifact | None, str]:
+    """Write the whole-object CellRank fate-mapping ``.h5ad``.
+
+    Returns (artifact | None, note). Never raises (skip-not-crash).
+    """
+    path = Path(results_dir) / "fate_mapping.h5ad"
+    try:
+        adata.write_h5ad(path)
+    except Exception as exc:  # noqa: BLE001 — skip-not-crash
+        return None, f"cellrank h5ad write failed: {exc}"
+    artifact = StageArtifact(
+        name="cellrank_fate_mapping",
+        path=path,
+        kind="h5ad",
+        description="CellRank GPCCA fate-mapping object (whole atlas)",
+    )
+    return artifact, "wrote cellrank fate-mapping h5ad"
+
+
+__all__ = ["safe_name", "write_velocity_h5ad", "write_cellrank_h5ad"]
