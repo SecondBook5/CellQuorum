@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 
 
 class CellRankComputeError(Exception):
@@ -128,10 +129,104 @@ def build_kernel(
     return kernel, info
 
 
+def run_gpcca(
+    adata: ad.AnnData,
+    kernel: object,
+    *,
+    cluster_key: str,
+    n_components: int,
+    n_states: int,
+    n_terminal_states: int | None,
+    terminal_method: str,
+    predict_initial_states: bool,
+    n_initial_states: int,
+    seed: int,
+) -> dict:
+    """Run the GPCCA chain in place on ``adata``; return a result dict.
+
+    Uses the env-verified deterministic, no-petsc/slepc arguments. Raises
+    ``SchurFailed`` when Schur decomposition fails (chain cannot proceed);
+    later steps degrade gracefully with recorded notes.
+    """
+    import cellrank as cr
+
+    notes: list[str] = []
+
+    # cluster_key MUST be categorical (compute_macrostates uses the .cat accessor).
+    if not isinstance(adata.obs[cluster_key].dtype, pd.CategoricalDtype):
+        adata.obs[cluster_key] = adata.obs[cluster_key].astype("category")
+
+    g = cr.estimators.GPCCA(kernel)
+
+    # Clamp Schur components to [n_states+1, n_obs-1].
+    n_comp = max(int(n_components), int(n_states) + 1)
+    n_comp = min(n_comp, int(adata.n_obs) - 1)
+    try:
+        g.compute_schur(n_components=n_comp, method="brandts")
+    except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
+        raise SchurFailed(f"compute_schur failed: {exc}") from exc
+
+    g.compute_macrostates(n_states=int(n_states), cluster_key=cluster_key)
+    macro_names = [str(x) for x in g.macrostates.cat.categories]
+
+    result: dict = {
+        "n_macrostates_requested": int(n_states),
+        "n_macrostates_actual": len(macro_names),
+        "macrostate_names": macro_names,
+        "terminal_states": [],
+        "fate_prob": None,
+        "fate_names": [],
+        "drivers": None,
+        "notes": notes,
+    }
+
+    # Terminal states: stability, with a top_n fallback.
+    try:
+        g.predict_terminal_states(method=terminal_method, n_states=n_terminal_states)
+    except ValueError as exc:
+        notes.append(f"predict_terminal_states('{terminal_method}') failed: {exc}; trying top_n")
+        try:
+            g.predict_terminal_states(method="top_n", n_states=n_terminal_states or 2)
+        except Exception as exc2:  # noqa: BLE001 — keep macrostates, skip fate probs
+            notes.append(f"terminal-state prediction failed: {exc2}")
+            return result
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"terminal-state prediction failed: {exc}")
+        return result
+
+    result["terminal_states"] = [str(x) for x in g.terminal_states.cat.categories]
+
+    # Optional initial states (best-effort).
+    if predict_initial_states:
+        try:
+            g.predict_initial_states(n_states=int(n_initial_states))
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"predict_initial_states failed: {exc}")
+
+    # Fate probabilities (deterministic, no petsc).
+    try:
+        g.compute_fate_probabilities(use_petsc=False, solver="direct", show_progress_bar=False)
+        fp = g.fate_probabilities
+        result["fate_prob"] = np.asarray(fp)
+        result["fate_names"] = [str(x) for x in fp.names]
+    except Exception as exc:  # noqa: BLE001 — keep macrostates + terminal states
+        notes.append(f"compute_fate_probabilities failed: {exc}")
+        return result
+
+    # Lineage drivers (best-effort).
+    try:
+        result["drivers"] = g.compute_lineage_drivers(cluster_key=cluster_key, seed=seed)
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"compute_lineage_drivers failed: {exc}")
+
+    return result
+
+
 __all__ = [
     "CellRankComputeError",
     "CellRankUnavailable",
     "NoKernelInput",
     "SchurFailed",
     "build_kernel",
+    "run_gpcca",
 ]
