@@ -10,15 +10,15 @@ import pandas as pd
 import pytest
 import scanpy as sc
 
-from cellquorum.core.stage import StageResult
-from cellquorum.trajectory.config import (
+pytest.importorskip("cellrank")
+
+from cellquorum.core.stage import StageResult  # noqa: E402
+from cellquorum.trajectory.config import (  # noqa: E402
     CellRankConfig,
     DptConfig,
     TrajectoryConfig,
 )
-from cellquorum.trajectory.stage import TrajectoryStage
-
-pytest.importorskip("cellrank")
+from cellquorum.trajectory.stage import TrajectoryStage  # noqa: E402
 
 
 def _make_adata(n=250):
