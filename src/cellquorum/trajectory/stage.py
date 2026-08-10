@@ -27,6 +27,27 @@ _VELOCITY_KEYS = (
     "generation",
 )
 
+# Keys flattened from config.cellrank.* into each method's config dict.
+_CELLRANK_KEYS = (
+    "enabled",
+    "cluster_key",
+    "pseudotime_key",
+    "cytotrace_key",
+    "use_rep",
+    "use_rep_fallback",
+    "n_neighbors",
+    "weight_connectivities",
+    "n_components",
+    "n_states",
+    "n_terminal_states",
+    "terminal_method",
+    "predict_initial_states",
+    "n_initial_states",
+    "max_cells",
+    "n_jobs",
+    "seed",
+)
+
 
 class TrajectoryStage(MethodDispatchStage):
     """Run the configured trajectory method(s). Spec #1 registers 'velocity'."""
@@ -51,6 +72,16 @@ class TrajectoryStage(MethodDispatchStage):
             for key in _VELOCITY_KEYS:
                 if key in velocity_dict and key not in augmented:
                     augmented[key] = velocity_dict[key]
+
+        # Flatten config.trajectory.cellrank.* into the stage config.
+        cellrank = getattr(traj, "cellrank", None) if traj is not None else None
+        if cellrank is not None:
+            cellrank_dict = (
+                cellrank.model_dump() if hasattr(cellrank, "model_dump") else dict(cellrank)
+            )
+            for key in _CELLRANK_KEYS:
+                if key in cellrank_dict and key not in augmented:
+                    augmented[key] = cellrank_dict[key]
 
         # Default to the single velocity method when nothing was specified.
         if not augmented.get("methods") and "method" not in augmented:
