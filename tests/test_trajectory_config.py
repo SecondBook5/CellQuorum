@@ -49,3 +49,24 @@ def test_velocity_config_strict_nested():
 
     with pytest.raises(ValidationError):
         VelocityConfig(nope=1)
+
+
+def test_velocity_whole_object_defaults_off():
+    from cellquorum.trajectory.config import VelocityConfig
+    from cellquorum.trajectory.stage import _VELOCITY_KEYS
+
+    assert VelocityConfig().whole_object is False
+    assert "whole_object" in _VELOCITY_KEYS
+
+
+def test_cellrank_new_kernel_fields_default_off():
+    from cellquorum.trajectory.config import CellRankConfig
+    from cellquorum.trajectory.stage import _CELLRANK_KEYS
+
+    c = CellRankConfig()
+    assert c.use_velocity is False
+    assert c.velocity_model == "deterministic"
+    assert c.time_key is None
+    assert c.realtime_epsilon == 0.1
+    for k in ("use_velocity", "velocity_model", "time_key", "realtime_epsilon"):
+        assert k in _CELLRANK_KEYS

@@ -55,6 +55,9 @@ class VelocityConfig(StrictBaseModel):
         min_cells: Minimum cells per group to attempt velocity.
         n_jobs: Worker count (1 = reproducible).
         seed: Random seed threaded into ``recover_dynamics``.
+        whole_object: Also run velocity once on the WHOLE object (writes
+            ``whole_object.h5ad`` with Ms + velocity layers) so CellRank's
+            VelocityKernel can consume it. Per-group behaviour is unchanged.
         generation: Nested loom-generation gate.
     """
 
@@ -73,6 +76,7 @@ class VelocityConfig(StrictBaseModel):
     min_cells: int = 30
     n_jobs: int = 1
     seed: int = 1337
+    whole_object: bool = False
     generation: VelocityGenerationConfig = VelocityGenerationConfig()
 
 
@@ -89,6 +93,13 @@ class CellRankConfig(StrictBaseModel):
         cluster_key: obs column seeding macrostate→terminal assignment.
         pseudotime_key: Whole-object pseudotime obs col; None → connectivity-only.
         cytotrace_key: Optional CytoTRACE obs col for a CytoTRACEKernel.
+        use_velocity: Consume the whole-object velocity h5ad (written when
+            ``VelocityConfig.whole_object`` is set) to build a VelocityKernel.
+        velocity_model: VelocityKernel transition model
+            (``deterministic`` | ``stochastic`` | ``monte_carlo``).
+        time_key: obs column naming an experimental time/stage axis for a moscot
+            RealTimeKernel; None → the RealTimeKernel is skipped.
+        realtime_epsilon: moscot ``TemporalProblem.solve`` regularization.
         use_rep: Rep to build neighbors when connectivities absent; None → fallback.
         use_rep_fallback: Ordered obsm keys tried when ``use_rep`` unset/absent.
         n_neighbors: Neighbor count when a graph must be built.
@@ -107,6 +118,10 @@ class CellRankConfig(StrictBaseModel):
     cluster_key: str = "cell_type"
     pseudotime_key: str | None = None
     cytotrace_key: str | None = None
+    use_velocity: bool = False
+    velocity_model: str = "deterministic"
+    time_key: str | None = None
+    realtime_epsilon: float = 0.1
     use_rep: str | None = None
     use_rep_fallback: list[str] = ["X_scANVI", "X_scVI", "X_pca"]
     n_neighbors: int = 30

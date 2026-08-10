@@ -24,6 +24,7 @@ _VELOCITY_KEYS = (
     "min_cells",
     "n_jobs",
     "seed",
+    "whole_object",
     "generation",
 )
 
@@ -33,6 +34,10 @@ _CELLRANK_KEYS = (
     "cluster_key",
     "pseudotime_key",
     "cytotrace_key",
+    "use_velocity",
+    "velocity_model",
+    "time_key",
+    "realtime_epsilon",
     "use_rep",
     "use_rep_fallback",
     "n_neighbors",
