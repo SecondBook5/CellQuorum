@@ -38,3 +38,17 @@ def test_renders_fate_per_lineage(tmp_path):
 def test_skips_without_fate(tmp_path):
     res = FateVizMethod()._run(_adata(fate=False), {}, _Ctx(tmp_path))
     assert isinstance(res, MethodSkip)
+
+
+def test_fallback_lineage_names_when_uns_trajectory_not_dict(tmp_path):
+    """Regression: uns['trajectory'] as non-dict must not raise AttributeError."""
+    a = ad.AnnData(np.zeros((40, 3), dtype="float32"))
+    a.obs_names = [f"c{i}" for i in range(40)]
+    a.obsm["X_umap"] = np.random.RandomState(0).rand(40, 2)
+    fp = np.random.RandomState(1).dirichlet(np.ones(2), size=40)
+    a.obsm["cellrank_fate_probabilities"] = fp
+    a.uns["trajectory"] = "not_a_dict"  # Poison the uns chain
+    res = FateVizMethod()._run(a, {"figure_formats": ["png"], "dpi": 72}, _Ctx(tmp_path))
+    assert not isinstance(res, MethodSkip)  # Should render with fallback lineage_N names
+    figs = list((tmp_path / "f" / "trajectory").glob("fate_*.png"))
+    assert len(figs) == 2  # Falls back to lineage_0, lineage_1

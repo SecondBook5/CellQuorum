@@ -28,9 +28,8 @@ class FateVizMethod(AnalysisMethod):
         self, adata: ad.AnnData, n_lin: int, wanted: list[str] | None
     ) -> list[tuple[int, str]]:
         names = None
-        cr = (
-            adata.uns.get("trajectory", {}).get("cellrank", {}) if "trajectory" in adata.uns else {}
-        )
+        traj = adata.uns.get("trajectory", {})
+        cr = traj.get("cellrank", {}) if isinstance(traj, dict) else {}
         fate_names = cr.get("fate_names") if isinstance(cr, dict) else None
         if fate_names and len(fate_names) == n_lin:
             names = [str(x) for x in fate_names]
