@@ -38,6 +38,14 @@ class MacrostatesFailed(CellRankComputeError):
     """compute_macrostates raised; the estimator chain cannot proceed."""
 
 
+class MoscotUnavailable(CellRankComputeError):
+    """moscot/RealTimeKernel not importable; the RealTimeKernel is skipped."""
+
+
+class RealTimeKernelFailed(CellRankComputeError):
+    """moscot TemporalProblem solve / RealTimeKernel construction raised."""
+
+
 def _resolve_use_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) -> str | None:
     """Return a rep present in obsm, or None."""
     if configured and configured in adata.obsm:
@@ -46,6 +54,55 @@ def _resolve_use_rep(adata: ad.AnnData, configured: str | None, fallback: list[s
         if candidate in adata.obsm:
             return candidate
     return None
+
+
+def _build_realtime_kernel(
+    adata: ad.AnnData,
+    time_key: str,
+    time_numeric: pd.Series,
+    use_rep: str | None,
+    use_rep_fallback: list[str],
+    realtime_epsilon: float,
+    notes: list[str],
+) -> object | None:
+    """Build a moscot-backed RealTimeKernel; return it or None (with a note).
+
+    Solves a moscot ``TemporalProblem`` over the numeric ``time_key`` axis using
+    a resolved representation as the joint attribute, then wraps the solution
+    with ``RealTimeKernel.from_moscot``. Never raises: import failure or a solve
+    error is recorded as a note and returns None (skip-not-crash).
+    """
+    rep = _resolve_use_rep(adata, use_rep, use_rep_fallback)
+    if rep is None:
+        notes.append("realtime kernel skipped: no usable representation for moscot joint_attr")
+        return None
+    try:
+        from cellrank.kernels import RealTimeKernel
+        from moscot.problems.time import TemporalProblem
+    except ImportError as exc:
+        notes.append(f"realtime kernel skipped: moscot/RealTimeKernel unavailable ({exc})")
+        return None
+
+    try:
+        # A dedicated numeric, ordered-categorical time column drives the problem;
+        # never mutate the caller's obs in place.
+        tp_adata = adata.copy()
+        levels = sorted(time_numeric.dropna().unique())
+        tp_adata.obs["_cq_time"] = pd.Categorical(
+            time_numeric.to_numpy(), categories=levels, ordered=True
+        )
+        # Cells with a non-numeric/missing time cannot enter the problem.
+        tp_adata = tp_adata[~time_numeric.isna().to_numpy()].copy()
+
+        problem = TemporalProblem(tp_adata)
+        problem = problem.prepare(time_key="_cq_time", joint_attr={"attr": "obsm", "key": rep})
+        problem = problem.solve(epsilon=float(realtime_epsilon))
+        rtk = RealTimeKernel.from_moscot(problem)
+        rtk = rtk.compute_transition_matrix()
+        return rtk
+    except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
+        notes.append(f"realtime kernel failed: {exc}")
+        return None
 
 
 def build_kernel(
@@ -153,6 +210,33 @@ def build_kernel(
                 directionals.append(("velocity", vk))
             except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
                 notes.append(f"velocity kernel failed: {exc}")
+
+    # 3c. RealTimeKernel via a moscot TemporalProblem (gated on time_key). Common
+    # case/control lymphedema data has no experimental time axis, so this is
+    # skipped by default. Requires ≥2 distinct finite numeric time levels.
+    if time_key:
+        if time_key not in adata.obs:
+            notes.append(f"realtime kernel skipped: time_key '{time_key}' absent")
+        else:
+            time_numeric = pd.to_numeric(adata.obs[time_key], errors="coerce")
+            n_levels = int(time_numeric.dropna().nunique())
+            if n_levels < 2:
+                notes.append(
+                    f"realtime kernel skipped: time_key '{time_key}' has "
+                    f"{n_levels} distinct numeric level(s)"
+                )
+            else:
+                rtk = _build_realtime_kernel(
+                    adata,
+                    time_key,
+                    time_numeric,
+                    use_rep,
+                    use_rep_fallback,
+                    realtime_epsilon,
+                    notes,
+                )
+                if rtk is not None:
+                    directionals.append(("realtime", rtk))
 
     # 4. Combine: connectivity carries weight_connectivities; the remainder is
     # split equally across the resolved directional kernels. With exactly one
@@ -281,7 +365,9 @@ __all__ = [
     "CellRankComputeError",
     "CellRankUnavailable",
     "MacrostatesFailed",
+    "MoscotUnavailable",
     "NoKernelInput",
+    "RealTimeKernelFailed",
     "SchurFailed",
     "build_kernel",
     "run_gpcca",

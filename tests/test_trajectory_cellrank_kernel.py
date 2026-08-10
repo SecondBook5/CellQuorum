@@ -274,6 +274,72 @@ def test_velocity_kernel_skipped_on_obs_mismatch():
     assert any("velocity" in n.lower() for n in info["notes"])
 
 
+# --- Task 5: RealTimeKernel (moscot) branch ---------------------------------
+
+
+def test_realtime_kernel_skipped_without_time_key():
+    a = _adata_with_graph()
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep="X_pca",
+        use_rep_fallback=["X_pca"],
+        n_neighbors=10,
+        weight_connectivities=0.2,
+        seed=1337,
+        velocity_adata=None,
+        velocity_model="deterministic",
+        time_key=None,
+        realtime_epsilon=0.1,
+    )
+    assert "realtime" not in info["kernels"]
+
+
+def test_realtime_kernel_skipped_single_level():
+    a = _adata_with_graph()
+    a.obs["stage"] = 0.0  # single distinct numeric level
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep="X_pca",
+        use_rep_fallback=["X_pca"],
+        n_neighbors=10,
+        weight_connectivities=0.2,
+        seed=1337,
+        velocity_adata=None,
+        velocity_model="deterministic",
+        time_key="stage",
+        realtime_epsilon=0.1,
+    )
+    assert "realtime" not in info["kernels"]
+    assert any(("realtime" in n.lower() or "time" in n.lower()) for n in info["notes"])
+
+
+def test_realtime_kernel_skipped_non_numeric_time():
+    a = _adata_with_graph()
+    half = a.n_obs // 2
+    a.obs["stage"] = ["x"] * half + ["y"] * (a.n_obs - half)
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep="X_pca",
+        use_rep_fallback=["X_pca"],
+        n_neighbors=10,
+        weight_connectivities=0.2,
+        seed=1337,
+        velocity_adata=None,
+        velocity_model="deterministic",
+        time_key="stage",
+        realtime_epsilon=0.1,
+    )
+    # Non-numeric levels coerce to NaN → 0 distinct numeric levels → skip w/ note.
+    assert "realtime" not in info["kernels"]
+    assert any(("realtime" in n.lower() or "time" in n.lower()) for n in info["notes"])
+
+
 def test_velocity_kernel_skipped_without_layers():
     a = _adata_with_graph(50)
     velo = a.copy()  # no Ms / velocity layers
