@@ -223,6 +223,7 @@ class PipelinePlanner:
             # which happens mid-backbone, so it slots in after molecular_inference
             # and before the CCC chain.
             ("trajectory", self.config.stages.trajectory),
+            ("trajectory_viz", self.config.stages.trajectory_viz),
             # CCC chain runs producer-before-consumer: the communication stage
             # writes the LR tables, ccc_network derives topology+curvature from
             # them, and ccc_viz renders figures from both. ccc_viz MUST come

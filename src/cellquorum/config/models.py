@@ -87,6 +87,9 @@ from cellquorum.subclustering.config import SubclusteringConfig
 # Import the trajectory configuration model.
 from cellquorum.trajectory.config import TrajectoryConfig
 
+# Import the trajectory-visualization configuration model.
+from cellquorum.trajectory_viz.config import TrajectoryVizConfig
+
 
 class ProjectConfig(StrictBaseModel):
     """
@@ -608,6 +611,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether the trajectory stage (velocity/RNA-velocity/potency) is enabled.
     trajectory: bool = True
 
+    # Store whether trajectory visualization (figures from producer outputs) is enabled.
+    trajectory_viz: bool = True
+
     # Store whether molecular inference is enabled as a gated capability.
     molecular_inference: bool = True
 
@@ -741,6 +747,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store trajectory settings.
     trajectory: TrajectoryConfig = Field(default_factory=TrajectoryConfig)
+
+    # Store trajectory-visualization settings.
+    trajectory_viz: TrajectoryVizConfig = Field(default_factory=TrajectoryVizConfig)
 
     # Store cell-cell-communication settings.
     cell_cell_communication: CellCellCommunicationConfig = Field(
