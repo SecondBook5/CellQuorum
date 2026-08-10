@@ -22,6 +22,30 @@ def test_categorical_palette_has_18_hex_colors():
     assert all(c.startswith("#") and len(c) == 7 for c in figstyle.CATEGORICAL_PALETTE)
 
 
+def test_categorical_palette_first_eight_are_validated_dataviz_core():
+    # Slots 1-8 are the dataviz reference categorical theme in its CVD-safe
+    # order. This pins them so a future edit cannot silently swap in a palette
+    # that fails the colorblind-separation gate (see module docstring).
+    expected_core = [
+        "#2a78d6",
+        "#eb6834",
+        "#1baf7a",
+        "#eda100",
+        "#e87ba4",
+        "#008300",
+        "#4a3aa7",
+        "#e34948",
+    ]
+    assert figstyle.CATEGORICAL_PALETTE[:8] == expected_core
+
+
+def test_categorical_palette_hues_are_distinct():
+    # No duplicate hues anywhere in the 18 slots (a duplicate would collapse
+    # two categories onto one color).
+    palette = figstyle.CATEGORICAL_PALETTE
+    assert len(set(palette)) == len(palette)
+
+
 def test_condition_palette_maps_case_red_control_blue():
     pal = figstyle.condition_palette("LE", "Normal")
     assert pal["LE"] == figstyle.LE_RED

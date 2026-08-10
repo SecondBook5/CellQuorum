@@ -26,26 +26,42 @@ TEXT = "#202428"
 NORMAL_BLUE = "#1B4F8A"
 LE_RED = "#C41E3A"
 
-# 18-hue colorblind-safe ordered palette (matches the house figure library).
+# 18-hue colorblind-safe ordered categorical palette.
+#
+# Slots 1-8 are the validated dataviz reference categorical theme, in its
+# CVD-safe order (each adjacent pair clears the colorblind-separation and
+# normal-vision gates on the light chart surface `#fcfcfb`). Slots 9-18 are an
+# overflow tier for high-cardinality categorical use (e.g. many cell types /
+# trajectory states); they are ordered so no two look-alike hues sit adjacent
+# and the whole 18 clears the hard gates (lightness band, chroma floor, CVD
+# separation, normal-vision floor) on the light surface.
+#
+# The ordering is NOT cosmetic: it was chosen by running the dataviz palette
+# validator (`skills/dataviz/scripts/validate_palette.py`) over candidate
+# orders and keeping one that passes. Do NOT reorder or add hues without
+# re-running that validator — categorical identity beyond ~8 series relies on
+# secondary encoding (direct labels / legend / position), which every figure in
+# this engine provides. cellquorum renders only on the light (white) surface,
+# so the palette is validated light-mode only.
 CATEGORICAL_PALETTE: list[str] = [
-    "#4C72B0",
-    "#DD8452",
-    "#55A868",
-    "#C44E52",
-    "#8172B3",
-    "#937860",
-    "#DA8BC3",
-    "#8C8C8C",
-    "#CCB974",
-    "#64B5CD",
-    "#1f77b4",
-    "#ff7f0e",
-    "#2ca02c",
-    "#d62728",
-    "#9467bd",
-    "#8c564b",
-    "#e377c2",
-    "#7f7f7f",
+    "#2a78d6",  # blue      (dataviz core 1)
+    "#eb6834",  # orange    (dataviz core 2)
+    "#1baf7a",  # aqua      (dataviz core 3)
+    "#eda100",  # yellow    (dataviz core 4)
+    "#e87ba4",  # magenta   (dataviz core 5)
+    "#008300",  # green     (dataviz core 6)
+    "#4a3aa7",  # violet    (dataviz core 7)
+    "#e34948",  # red       (dataviz core 8)
+    "#17becf",  # overflow: cyan
+    "#7b2ff7",  # overflow: purple
+    "#0aa86b",  # overflow: emerald
+    "#c1121f",  # overflow: crimson
+    "#118ab2",  # overflow: steel blue
+    "#e07a00",  # overflow: amber
+    "#b5179e",  # overflow: fuchsia
+    "#00a1b0",  # overflow: teal
+    "#ef476f",  # overflow: rose
+    "#d05ce3",  # overflow: orchid
 ]
 
 
