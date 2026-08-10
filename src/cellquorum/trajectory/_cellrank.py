@@ -213,14 +213,23 @@ def build_kernel(
 
     # 3c. RealTimeKernel via a moscot TemporalProblem (gated on time_key). Common
     # case/control lymphedema data has no experimental time axis, so this is
-    # skipped by default. Requires ≥2 distinct finite numeric time levels.
+    # skipped by default. Requires EVERY cell to carry a finite numeric time and
+    # ≥2 distinct levels: a partially-populated time column would yield a
+    # subset-shaped kernel that neither combines with the full-atlas connectivity
+    # kernel (shape mismatch) nor corresponds to it cell-for-cell.
     if time_key:
         if time_key not in adata.obs:
             notes.append(f"realtime kernel skipped: time_key '{time_key}' absent")
         else:
             time_numeric = pd.to_numeric(adata.obs[time_key], errors="coerce")
             n_levels = int(time_numeric.dropna().nunique())
-            if n_levels < 2:
+            if time_numeric.isna().any():
+                n_missing = int(time_numeric.isna().sum())
+                notes.append(
+                    f"realtime kernel skipped: time_key '{time_key}' has "
+                    f"{n_missing} cell(s) with non-numeric/missing time"
+                )
+            elif n_levels < 2:
                 notes.append(
                     f"realtime kernel skipped: time_key '{time_key}' has "
                     f"{n_levels} distinct numeric level(s)"
@@ -240,15 +249,21 @@ def build_kernel(
 
     # 4. Combine: connectivity carries weight_connectivities; the remainder is
     # split equally across the resolved directional kernels. With exactly one
-    # directional this is IDENTICAL to (1-w)*dir + w*conn.
+    # directional this is IDENTICAL to (1-w)*dir + w*conn. The gates above ensure
+    # every directional kernel is full-atlas-shaped, but the combine is guarded
+    # anyway (skip-not-crash): a CellRank shape/validation error retypes into a
+    # recoverable NoKernelInput rather than escaping _run.
     w_conn = float(weight_connectivities)
     if directionals:
         w_each = (1.0 - w_conn) / len(directionals)
-        kernel = w_conn * ck
-        weights = {"connectivity": w_conn}
-        for name, k in directionals:
-            kernel = kernel + w_each * k
-            weights[name] = w_each
+        try:
+            kernel = w_conn * ck
+            weights = {"connectivity": w_conn}
+            for name, k in directionals:
+                kernel = kernel + w_each * k
+                weights[name] = w_each
+        except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
+            raise NoKernelInput(f"kernel combine failed: {exc}") from exc
     else:
         kernel = ck
         weights = {"connectivity": 1.0}

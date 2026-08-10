@@ -317,6 +317,35 @@ def test_realtime_kernel_skipped_single_level():
     assert any(("realtime" in n.lower() or "time" in n.lower()) for n in info["notes"])
 
 
+def test_realtime_kernel_skipped_when_time_has_nans():
+    """A time column mixing numeric values with NaN must NOT build a subset
+    RealTimeKernel — that would be shape-incompatible with the full-atlas
+    connectivity kernel and crash the combine. Skip with a note instead."""
+    a = _adata_with_graph(50)
+    stage = np.full(a.n_obs, np.nan, dtype="float64")
+    stage[: a.n_obs // 2] = 0.0
+    stage[a.n_obs // 2 : a.n_obs - 5] = 1.0  # last 5 cells stay NaN
+    a.obs["stage"] = stage
+    kernel, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep="X_pca",
+        use_rep_fallback=["X_pca"],
+        n_neighbors=10,
+        weight_connectivities=0.2,
+        seed=1337,
+        velocity_adata=None,
+        velocity_model="deterministic",
+        time_key="stage",
+        realtime_epsilon=0.1,
+    )
+    # No crash, no realtime kernel, connectivity-only fallback with a note.
+    assert kernel is not None
+    assert "realtime" not in info["kernels"]
+    assert any(("realtime" in n.lower() or "time" in n.lower()) for n in info["notes"])
+
+
 def test_realtime_kernel_skipped_non_numeric_time():
     a = _adata_with_graph()
     half = a.n_obs // 2
