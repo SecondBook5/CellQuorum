@@ -116,3 +116,90 @@ def test_velocity_end_to_end_with_looms(tmp_path):
     # A StageResult (not a skip) with per-group metrics recorded.
     assert not isinstance(result, MethodSkip)
     assert "per_group" in result.metrics
+
+
+def test_velocity_disambiguates_colliding_group_names(tmp_path):
+    """Groups with colliding safe_names must produce distinct h5ad files."""
+    import pytest
+
+    pytest.importorskip("scvelo")
+    pytest.importorskip("loompy")
+    import loompy
+
+    atlas_genes = [f"GENE_{i}" for i in range(50)]
+    barcodes = [f"{b}{i:04d}" for i, b in enumerate(["AAAA"] * 40)]
+    names = [f"s1_{bc}-1" for bc in barcodes]
+    rng = np.random.default_rng(0)
+    # Two groups with colliding safe_names: "CD8+" and "CD8 " both → "CD8_"
+    groups = ["CD8+"] * 20 + ["CD8 "] * 20
+    a = ad.AnnData(
+        X=rng.random((40, 50)).astype("float32"),
+        obs=pd.DataFrame({"sample_id": ["s1"] * 40, "cell_type": groups}, index=names),
+    )
+    a.var_names = atlas_genes
+    a.obsm["X_pca"] = rng.random((40, 10))
+    a.obsm["X_umap"] = rng.random((40, 2))
+
+    loom = tmp_path / "s1.loom"
+    n_g, n_c = len(atlas_genes), len(barcodes)
+    loompy.create(
+        str(loom),
+        layers={
+            "": rng.integers(0, 5, size=(n_g, n_c)).astype("float32"),
+            "spliced": rng.integers(0, 5, size=(n_g, n_c)).astype("float32"),
+            "unspliced": rng.integers(0, 3, size=(n_g, n_c)).astype("float32"),
+        },
+        row_attrs={"Gene": np.array(atlas_genes, dtype=object)},
+        col_attrs={"CellID": np.array([f"s1:{bc}x" for bc in barcodes], dtype=object)},
+    )
+    manifest = pd.DataFrame({"sample_id": ["s1"], "loom_path": [str(loom)]})
+    ctx = _Ctx(tmp_path, a, manifest=manifest)
+    result = VelocityMethod().run(a, _cfg(n_top_genes=30, n_pcs=5, n_neighbors=5, min_cells=5), ctx)
+    assert not isinstance(result, MethodSkip)
+    # Two artifacts, with distinct paths.
+    assert len(result.artifacts) == 2
+    assert result.artifacts[0].path != result.artifacts[1].path
+    assert result.artifacts[0].path.exists()
+    assert result.artifacts[1].path.exists()
+
+
+def test_velocity_writes_back_per_group_obs_columns(tmp_path):
+    """Per-group velocity_pseudotime/confidence must be namespaced onto working adata.obs."""
+    import pytest
+
+    pytest.importorskip("scvelo")
+    pytest.importorskip("loompy")
+    import loompy
+
+    atlas_genes = [f"GENE_{i}" for i in range(50)]
+    barcodes = [f"{b}{i:04d}" for i, b in enumerate(["AAAA"] * 40)]
+    names = [f"s1_{bc}-1" for bc in barcodes]
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(
+        X=rng.random((40, 50)).astype("float32"),
+        obs=pd.DataFrame({"sample_id": ["s1"] * 40, "cell_type": ["T"] * 40}, index=names),
+    )
+    a.var_names = atlas_genes
+    a.obsm["X_pca"] = rng.random((40, 10))
+
+    loom = tmp_path / "s1.loom"
+    n_g, n_c = len(atlas_genes), len(barcodes)
+    loompy.create(
+        str(loom),
+        layers={
+            "": rng.integers(0, 5, size=(n_g, n_c)).astype("float32"),
+            "spliced": rng.integers(0, 5, size=(n_g, n_c)).astype("float32"),
+            "unspliced": rng.integers(0, 3, size=(n_g, n_c)).astype("float32"),
+        },
+        row_attrs={"Gene": np.array(atlas_genes, dtype=object)},
+        col_attrs={"CellID": np.array([f"s1:{bc}x" for bc in barcodes], dtype=object)},
+    )
+    manifest = pd.DataFrame({"sample_id": ["s1"], "loom_path": [str(loom)]})
+    ctx = _Ctx(tmp_path, a, manifest=manifest)
+    result = VelocityMethod().run(a, _cfg(n_top_genes=30, n_pcs=5, n_neighbors=5, min_cells=5), ctx)
+    assert not isinstance(result, MethodSkip)
+    # Working adata must gain namespaced columns for the successful group.
+    assert "velocity_pseudotime_T" in result.adata.obs.columns
+    assert "velocity_confidence_T" in result.adata.obs.columns
+    # In-group cells must have values; out-group cells would be NaN (but here all are group T).
+    assert result.adata.obs["velocity_pseudotime_T"].notna().sum() == 40

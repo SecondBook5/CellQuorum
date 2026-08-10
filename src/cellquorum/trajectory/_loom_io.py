@@ -59,10 +59,23 @@ def _reindex_columns(
     source_genes: pd.Index | NDArray[np.str_],
     target_genes: pd.Index | NDArray[np.str_],
 ) -> csr_matrix:
-    """Reindex a cells×genes CSR from source_genes onto target_genes (fill 0)."""
+    """Reindex a cells×genes CSR from source_genes onto target_genes (fill 0).
+
+    If source_genes has duplicates (common in velocyto looms where multiple
+    Ensembl IDs map to the same symbol), keeps the first occurrence of each
+    duplicated gene deterministically.
+    """
     from scipy import sparse
 
     source_index = pd.Index(np.asarray(source_genes).astype(str))
+
+    # Collapse duplicate source columns: keep first occurrence.
+    if not source_index.is_unique:
+        _, unique_cols = np.unique(source_index, return_index=True)
+        unique_cols = np.sort(unique_cols)  # deterministic: sorted by first occurrence
+        mat = mat[:, unique_cols]
+        source_index = source_index[unique_cols]
+
     col_for_target = source_index.get_indexer(pd.Index(np.asarray(target_genes).astype(str)))
     n_cells = mat.shape[0]
     n_target = len(target_genes)
@@ -99,6 +112,10 @@ def reconcile_looms(
         notes.append(f"manifest missing '{sample_col}' or '{loom_path_col}' column")
         return None, notes
 
+    if sample_col not in adata.obs.columns:
+        notes.append(f"atlas obs missing '{sample_col}' column")
+        return None, notes
+
     atlas_samples = adata.obs[sample_col].astype(str)
     parts: list[ad.AnnData] = []
 
@@ -131,10 +148,21 @@ def reconcile_looms(
             continue
 
         new_names = [bare_to_obj[b] for b in loom_bare[keep]]
+        gene_index = np.asarray(gene_names).astype(str)
+
+        # Collapse duplicate gene symbols (common in velocyto looms where multiple
+        # Ensembl IDs → same symbol): keep first occurrence deterministically.
+        if len(gene_index) != len(set(gene_index)):
+            _, unique_gene_cols = np.unique(gene_index, return_index=True)
+            unique_gene_cols = np.sort(unique_gene_cols)  # first-occurrence order
+            gene_index = gene_index[unique_gene_cols]
+            spliced = spliced[:, unique_gene_cols]
+            unspliced = unspliced[:, unique_gene_cols]
+
         part = ad.AnnData(
             X=spliced[keep],
             obs=pd.DataFrame(index=new_names),
-            var=pd.DataFrame(index=np.asarray(gene_names).astype(str)),
+            var=pd.DataFrame(index=gene_index),
         )
         part.layers["spliced"] = spliced[keep]
         part.layers["unspliced"] = unspliced[keep]

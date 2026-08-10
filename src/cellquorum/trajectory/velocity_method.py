@@ -80,13 +80,34 @@ class VelocityMethod(AnalysisMethod):
         artifacts: list[StageArtifact] = []
         uns = adata.uns.setdefault("trajectory", {}).setdefault("velocity", {})
 
+        # Track used stems to disambiguate colliding safe_names.
+        used_stems: dict[str, int] = {}
+
         for group in levels:
-            record = self._run_group(velo_adata, group, grouping_col, config, results_dir)
+            from cellquorum.trajectory.save import safe_name
+
+            base_stem = safe_name(group)
+            if base_stem in used_stems:
+                used_stems[base_stem] += 1
+                stem = f"{base_stem}_{used_stems[base_stem]}"
+            else:
+                used_stems[base_stem] = 0
+                stem = base_stem
+
+            record = self._run_group(velo_adata, group, grouping_col, config, results_dir, stem)
             per_group.append(record["metrics"])
             notes.extend(record["notes"])
             if record["artifact"] is not None:
                 artifacts.append(record["artifact"])
             uns[group] = record["metrics"]
+
+            # Writeback per-group velocity obs columns onto the working adata.
+            if record["writeback"] is not None:
+                try:
+                    for col_name, series in record["writeback"].items():
+                        adata.obs[col_name] = series
+                except Exception as exc:  # noqa: BLE001 — skip-not-crash
+                    notes.append(f"{group}: obs writeback failed: {exc}")
 
         return StageResult(
             adata=adata,
@@ -139,8 +160,13 @@ class VelocityMethod(AnalysisMethod):
         grouping_col: str,
         config: dict,
         results_dir: Path,
+        stem: str,
     ) -> dict:
-        """Compute velocity for one group; never raises (skip-not-crash)."""
+        """Compute velocity for one group; never raises (skip-not-crash).
+
+        Args:
+            stem: Collision-free filename stem for the h5ad output.
+        """
         notes: list[str] = []
         mask = (velo_adata.obs[grouping_col].astype(str) == group).to_numpy()
         sub = velo_adata[mask].copy()
@@ -149,6 +175,7 @@ class VelocityMethod(AnalysisMethod):
             return {
                 "artifact": None,
                 "notes": [f"{group}: {sub.n_obs} cells < min_cells"],
+                "writeback": None,
                 "metrics": {
                     "group": group,
                     "n_cells": int(sub.n_obs),
@@ -165,6 +192,7 @@ class VelocityMethod(AnalysisMethod):
             return {
                 "artifact": None,
                 "notes": [f"{group}: no usable representation"],
+                "writeback": None,
                 "metrics": {
                     "group": group,
                     "n_cells": int(sub.n_obs),
@@ -190,6 +218,7 @@ class VelocityMethod(AnalysisMethod):
             return {
                 "artifact": None,
                 "notes": [f"{group}: {exc}"],
+                "writeback": None,
                 "metrics": {
                     "group": group,
                     "n_cells": int(sub.n_obs),
@@ -200,11 +229,26 @@ class VelocityMethod(AnalysisMethod):
             }
 
         bases = compute.reproject_velocity(sub, bases=compute.embedding_bases(sub))
-        artifact, write_note = write_velocity_h5ad(sub, results_dir, group)
+        artifact, write_note = write_velocity_h5ad(sub, results_dir, group, stem=stem)
         notes.append(write_note)
+
+        # Build per-group namespaced obs columns for writeback onto the working adata.
+        # The stem is collision-free; use it for namespacing.
+        import pandas as pd
+
+        writeback: dict[str, pd.Series] = {}
+        if "velocity_pseudotime" in sub.obs:
+            col_name = f"velocity_pseudotime_{stem}"
+            # Series aligned to the working adata's full obs_names; NaN for out-of-group cells.
+            writeback[col_name] = pd.Series(sub.obs["velocity_pseudotime"], index=sub.obs_names)
+        if "velocity_confidence" in sub.obs:
+            col_name = f"velocity_confidence_{stem}"
+            writeback[col_name] = pd.Series(sub.obs["velocity_confidence"], index=sub.obs_names)
+
         return {
             "artifact": artifact,
             "notes": notes,
+            "writeback": writeback if writeback else None,
             "metrics": {
                 "group": group,
                 "n_cells": int(sub.n_obs),

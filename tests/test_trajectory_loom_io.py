@@ -128,3 +128,36 @@ def test_reconcile_returns_none_when_no_overlap(tmp_path):
     out, notes = reconcile_looms(atlas, manifest, sample_col="sample_id", loom_path_col="loom_path")
     assert out is None
     assert notes  # a recorded reason
+
+
+def test_reconcile_handles_duplicate_gene_symbols(tmp_path):
+    """Real velocyto looms frequently have duplicate gene symbols."""
+    atlas = _atlas(["s1"], ["AAAA", "CCCC"], ["GENE_A", "GENE_B", "GENE_C"])
+    # loom has GENE_A twice (e.g. two Ensembl IDs map to same symbol)
+    _write_loom(
+        tmp_path / "s1.loom", "s1", ["AAAA", "CCCC"], ["GENE_A", "GENE_A", "GENE_B"], seed=1
+    )
+    manifest = pd.DataFrame({"sample_id": ["s1"], "loom_path": [str(tmp_path / "s1.loom")]})
+    out, notes = reconcile_looms(atlas, manifest, sample_col="sample_id", loom_path_col="loom_path")
+    # Must not raise, must return valid AnnData with atlas var_names and correct shape.
+    assert out is not None
+    assert list(out.var_names) == ["GENE_A", "GENE_B", "GENE_C"]
+    assert out.layers["spliced"].shape == (2, 3)
+    assert out.layers["unspliced"].shape == (2, 3)
+
+
+def test_reconcile_returns_none_when_sample_col_absent(tmp_path):
+    """If sample_col not in atlas obs, return (None, notes) with reason."""
+    names = ["s1_AAAA-1", "s1_CCCC-1"]
+    # Atlas has only 'other_col', not 'sample_id'
+    a = ad.AnnData(
+        X=np.ones((2, 1), dtype="float32"),
+        obs=pd.DataFrame({"other_col": ["val1", "val2"]}, index=names),
+    )
+    a.var_names = ["GENE_A"]
+    _write_loom(tmp_path / "s1.loom", "s1", ["AAAA", "CCCC"], ["GENE_A"], seed=1)
+    # Manifest has sample_id column (so that check passes), but adata.obs doesn't.
+    manifest = pd.DataFrame({"sample_id": ["s1"], "loom_path": [str(tmp_path / "s1.loom")]})
+    out, notes = reconcile_looms(a, manifest, sample_col="sample_id", loom_path_col="loom_path")
+    assert out is None
+    assert any("sample_id" in n for n in notes)
