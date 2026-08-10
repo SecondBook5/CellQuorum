@@ -90,18 +90,23 @@ def build_kernel(
         ck = ConnectivityKernel(adata).compute_transition_matrix()
     except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
         raise NoKernelInput(f"connectivity kernel failed: {exc}") from exc
-    kernels_used = ["connectivity"]
 
-    # 3. Directionality kernel: pseudotime preferred, then cytotrace.
-    directional = None
+    # 3. Collect EVERY resolvable directional kernel (not pick-one). Each entry
+    # is (name, kernel); order controls only the display list, not the weight.
+    directionals: list[tuple[str, object]] = []
+
     if pseudotime_key and pseudotime_key in adata.obs:
         col = adata.obs[pseudotime_key]
         if not col.isna().all():
             try:
-                directional = PseudotimeKernel(
-                    adata, time_key=pseudotime_key
-                ).compute_transition_matrix()
-                kernels_used.insert(0, "pseudotime")
+                directionals.append(
+                    (
+                        "pseudotime",
+                        PseudotimeKernel(
+                            adata, time_key=pseudotime_key
+                        ).compute_transition_matrix(),
+                    )
+                )
             except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
                 notes.append(f"pseudotime kernel failed: {exc}")
         else:
@@ -109,31 +114,40 @@ def build_kernel(
     elif pseudotime_key:
         notes.append(f"pseudotime '{pseudotime_key}' absent; connectivity-only")
 
-    if directional is None and cytotrace_key:
+    if cytotrace_key:
         try:
             from cellrank.kernels import CytoTRACEKernel
 
             if cytotrace_key in adata.obs or "Ms" in adata.layers:
                 ctk = CytoTRACEKernel(adata)
                 ctk = ctk.compute_cytotrace() if hasattr(ctk, "compute_cytotrace") else ctk
-                directional = ctk.compute_transition_matrix()
-                kernels_used.insert(0, "cytotrace")
+                directionals.append(("cytotrace", ctk.compute_transition_matrix()))
             else:
                 notes.append(f"cytotrace '{cytotrace_key}' absent; connectivity-only")
         except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
             notes.append(f"cytotrace kernel failed: {exc}")
 
-    # 4. Combine.
-    if directional is not None:
-        w = float(weight_connectivities)
-        kernel = (1.0 - w) * directional + w * ck
+    # 4. Combine: connectivity carries weight_connectivities; the remainder is
+    # split equally across the resolved directional kernels. With exactly one
+    # directional this is IDENTICAL to (1-w)*dir + w*conn.
+    w_conn = float(weight_connectivities)
+    if directionals:
+        w_each = (1.0 - w_conn) / len(directionals)
+        kernel = w_conn * ck
+        weights = {"connectivity": w_conn}
+        for name, k in directionals:
+            kernel = kernel + w_each * k
+            weights[name] = w_each
     else:
         kernel = ck
+        weights = {"connectivity": 1.0}
         notes.append("connectivity-only kernel (no directionality input)")
 
+    kernels_used = [name for name, _ in directionals] + ["connectivity"]
     info = {
         "kernels": kernels_used,
-        "weight_connectivities": float(weight_connectivities),
+        "weight_connectivities": w_conn,
+        "weights": weights,
         "notes": notes,
     }
     return kernel, info

@@ -158,3 +158,42 @@ def test_build_kernel_drops_pseudotime_when_all_nan():
         seed=0,
     )
     assert info["kernels"] == ["connectivity"]
+
+
+# --- Task 3: multi-directional weighted combine -----------------------------
+
+
+def test_single_directional_weights_unchanged():
+    """One directional kernel → identical (1-w)*dir + w*conn behaviour, now
+    surfaced as an explicit per-kernel weights map."""
+    a = _make_adata()
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key="pseudotime",
+        cytotrace_key=None,
+        use_rep=None,
+        use_rep_fallback=["X_pca"],
+        n_neighbors=15,
+        weight_connectivities=0.2,
+        seed=0,
+    )
+    assert info["weights"]["connectivity"] == pytest.approx(0.2)
+    assert info["weights"]["pseudotime"] == pytest.approx(0.8)
+    # Back-compat: the scalar is still reported for existing consumers.
+    assert info["weight_connectivities"] == pytest.approx(0.2)
+
+
+def test_connectivity_only_weights_are_full():
+    """No directional kernel → connectivity carries the full weight."""
+    a = _make_adata()
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key=None,
+        use_rep=None,
+        use_rep_fallback=["X_pca"],
+        n_neighbors=15,
+        weight_connectivities=0.2,
+        seed=0,
+    )
+    assert info["weights"] == {"connectivity": pytest.approx(1.0)}
