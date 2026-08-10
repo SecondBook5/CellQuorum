@@ -121,6 +121,87 @@ class CellRankConfig(StrictBaseModel):
     seed: int = 1337
 
 
+class DptConfig(StrictBaseModel):
+    """Diffusion pseudotime (scanpy) producer configuration.
+
+    All keys are structural, not biology. Writes a whole-object
+    ``dpt_pseudotime`` obs column that CellRank's PseudotimeKernel can consume.
+    A root MUST be resolvable (marker-score argmax or a root group); scanpy 1.12
+    silently emits meaningless pseudotime when ``iroot`` is unset, so the method
+    skips rather than emit an unrooted result.
+
+    Attributes:
+        enabled: Whether the method runs.
+        use_rep: Rep to build neighbors/diffmap; None → fallback chain.
+        use_rep_fallback: Ordered obsm keys tried when ``use_rep`` unset/absent.
+        n_neighbors: Neighbor count when a graph must be built.
+        n_comps: Diffusion-map components (``sc.tl.diffmap``).
+        n_dcs: Diffusion components used by ``sc.tl.dpt``.
+        n_branchings: DPT branch detections (0 = pseudotime only).
+        root_key: obs column naming the root group (used with ``root_group``).
+        root_group: level of ``root_key`` whose centroid seeds the root.
+        root_marker_score_key: obs column with a precomputed score; root = argmax.
+        exclude_outliers: Opt-in 5-MAD robust-z outlier flagging before diffmap.
+        outlier_mad: Robust-z threshold for outlier flagging.
+        orient_by_score_key: obs column; sign-check corr(dpt, score), re-root once
+            if orientation is reversed.
+        seed: Random seed (determinism; diffmap/dpt are otherwise deterministic).
+    """
+
+    enabled: bool = True
+    use_rep: str | None = None
+    use_rep_fallback: list[str] = ["X_scANVI", "X_scVI", "X_pca"]
+    n_neighbors: int = 15
+    n_comps: int = 15
+    n_dcs: int = 10
+    n_branchings: int = 0
+    root_key: str | None = None
+    root_group: str | None = None
+    root_marker_score_key: str | None = None
+    exclude_outliers: bool = False
+    outlier_mad: float = 5.0
+    orient_by_score_key: str | None = None
+    seed: int = 1337
+
+
+class PalantirConfig(StrictBaseModel):
+    """Palantir pseudotime producer configuration.
+
+    All keys are structural, not biology. Runs the mandatory 3-step Palantir
+    pipeline (diffusion maps → multiscale space → run_palantir) on the whole
+    object and writes ``palantir_pseudotime`` + ``palantir_entropy`` obs columns
+    (plus fate probabilities in obsm) that downstream methods can consume.
+
+    Attributes:
+        enabled: Whether the method runs.
+        use_rep: Rep for diffusion maps; None → fallback chain.
+        use_rep_fallback: Ordered obsm keys tried when ``use_rep`` unset/absent.
+        n_components: Diffusion-map components.
+        knn: Nearest neighbors for diffusion maps / palantir.
+        n_eigs: Eigenvectors for ``determine_multiscale_space``.
+        num_waypoints: Waypoint count (clamped to n_obs at runtime).
+        root_key: obs column naming the root group (used with ``root_group``).
+        root_group: level of ``root_key`` whose centroid seeds ``early_cell``.
+        root_marker_score_key: obs column with a precomputed score; root = argmax.
+        max_cells: None = no cap; else seeded subsample, results reindexed (NaN
+            outside sample); the root cell is always retained in the subsample.
+        seed: Random seed threaded into diffusion maps + run_palantir + subsample.
+    """
+
+    enabled: bool = True
+    use_rep: str | None = None
+    use_rep_fallback: list[str] = ["X_scANVI", "X_scVI", "X_pca"]
+    n_components: int = 10
+    knn: int = 30
+    n_eigs: int = 10
+    num_waypoints: int = 1200
+    root_key: str | None = None
+    root_group: str | None = None
+    root_marker_score_key: str | None = None
+    max_cells: int | None = None
+    seed: int = 1337
+
+
 class TrajectoryConfig(StrictBaseModel):
     """Trajectory stage config. Spec #1 exposes one method: velocity.
 
@@ -129,12 +210,23 @@ class TrajectoryConfig(StrictBaseModel):
         methods: Method sub-configs (empty → default [velocity] injected).
         velocity: The RNA-velocity method config.
         cellrank: The CellRank fate-mapping method config.
+        dpt: The DPT pseudotime method config.
+        palantir: The Palantir pseudotime method config.
     """
 
     enabled: bool = True
     methods: list[dict] = []
     velocity: VelocityConfig = VelocityConfig()
     cellrank: CellRankConfig = CellRankConfig()
+    dpt: DptConfig = DptConfig()
+    palantir: PalantirConfig = PalantirConfig()
 
 
-__all__ = ["TrajectoryConfig", "VelocityConfig", "VelocityGenerationConfig", "CellRankConfig"]
+__all__ = [
+    "TrajectoryConfig",
+    "VelocityConfig",
+    "VelocityGenerationConfig",
+    "CellRankConfig",
+    "DptConfig",
+    "PalantirConfig",
+]
