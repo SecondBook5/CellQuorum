@@ -12,7 +12,7 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
 ![Tests](https://img.shields.io/badge/tests-~1200-brightgreen)
-![Stages](https://img.shields.io/badge/stages-26%20implemented-blue)
+![Stages](https://img.shields.io/badge/stages-27%20implemented-blue)
 ![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
@@ -44,14 +44,14 @@ sanity such as rejecting raw counts mislabeled as log-normalized). A method whos
 required inputs are absent *skips with a recorded reason* rather than crashing or
 silently producing wrong output.
 
-**Config-driven analysis backbone** — twenty-six registered stages run in
+**Config-driven analysis backbone** — twenty-seven registered stages run in
 best-practices order, each dispatching to a config-selected method:
 
 ```
 ambient_correction → qc → preprocessing → dimensionality → integration
     → clustering → annotation → embeddings → differential_expression
     → differential_abundance → enrichment → enrichment_viz → coexpression
-    → grn → trajectory → cell_cell_communication → ccc_network → ccc_viz
+    → grn → perturbation → trajectory → cell_cell_communication → ccc_network → ccc_viz
 ```
 
 Every method is chosen by config (e.g. `integration.method: harmony | scvi`),
@@ -66,8 +66,12 @@ publication module-UMAP figure. The `grn` stage infers directed
 transcription-factor→target regulons with classic pySCENIC
 (GRNBoost2 → cisTarget → AUCell) in an isolated frozen environment, emitting
 adjacency/regulon/AUC tables plus RSS panels, regulon clustermaps, and a
-regulon-UMAP overlay. Remaining discovery stages (in-silico perturbation and
-cellular potency) are planned slots not yet implemented.
+regulon-UMAP overlay. The `perturbation` stage runs in-silico transcription-factor knockouts with
+CellOracle in an isolated frozen environment: it infers its own simulation-ready
+GRN from counts + a built-in promoter base GRN, simulates each knockout, and emits
+a ranked therapeutic-target table (disease→healthy shift) plus KO shift-field,
+fate-redistribution, and GRN-connectivity figures. The remaining discovery slot
+(cellular potency) is planned but not yet implemented.
 
 **GPU acceleration, by default when available** — normalization (PFlog1pPF via
 cupy), PCA, and neighbors + Leiden (via rapids-singlecell) run on the GPU when
@@ -123,6 +127,7 @@ path-independent.
 | `enrichment_viz` | 8 figure types over GSEA / ORA / GSVA / activity | Implemented |
 | `coexpression` | hdWGCNA gene co-expression modules (isolated R env) — module/eigengene/hub tables + module–condition correlation + module-UMAP figure | Implemented |
 | `grn` | classic pySCENIC regulon inference (GRNBoost2 → cisTarget → AUCell, isolated env) — adjacency/regulon/AUC tables + RSS panels, regulon clustermaps, per-cell clustermap, and regulon-UMAP overlay | Implemented |
+| `perturbation` | in-silico TF-knockout with CellOracle (own GRN + KO simulation, isolated env) — ranked therapeutic-target table + KO shift-field, fate-redistribution, and GRN-connectivity figures | Implemented |
 | `adjudication` | cross-method result adjudication | Implemented |
 | `cell_cell_communication` | LIANA consensus (per-sample rank_aggregate); Tensor-cell2cell decomposition; NicheNet + MultiNicheNet (ligand→target/receptor, R) | Implemented |
 | `ccc_network` | network topology (Listener/Influencer/Mediator/PageRank + comparative); Ollivier-Ricci curvature + differential curvature | Implemented |
@@ -441,7 +446,7 @@ Stages marked ✅ are implemented and run today; ◐ are partially implemented;
 ✅ cell-cell communication (LIANA consensus + Tensor-cell2cell + NicheNet / MultiNicheNet)
 ✅ communication network topology + Ollivier-Ricci curvature (ccc_network)
 ✅ communication visualization (dotplot / chord / Sankey / curvature-network / summary)
-◐ gene-regulatory networks — ✅ co-expression modules (hdWGCNA); ✅ regulon/GRN inference (pySCENIC); ⏳ in-silico perturbation
+◐ gene-regulatory networks — ✅ co-expression modules (hdWGCNA); ✅ regulon/GRN inference (pySCENIC); ✅ in-silico perturbation (CellOracle; ranked-target + KO shift-field figures)
 ✅ trajectory / potency — RNA velocity (scVelo); CellRank / CytoTRACE 2 / Palantir / viz planned
 ⏳ report generation (auto methods text)
 ```
