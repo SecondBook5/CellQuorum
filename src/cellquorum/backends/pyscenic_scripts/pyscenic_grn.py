@@ -435,7 +435,7 @@ def main() -> None:
         _write_empty(
             out_dir,
             args.tag,
-            f"ranking DB missing ({args.rankings!r}) — download hg38 cisTarget DBs",
+            f"ranking DB missing ({args.rankings!r}) — download cisTarget DBs for your organism",
         )
         sys.exit(0)
 
@@ -616,6 +616,8 @@ def main() -> None:
                 str(adj),
                 "--num_workers",
                 str(args.num_workers),
+                "--seed",
+                str(args.seed),
             ],
             "grn (GRNBoost2)",
         )

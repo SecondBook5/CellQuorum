@@ -90,3 +90,76 @@ def test_input_contract_does_not_require_group_by() -> None:
     contract = m.input_contract({})
     assert "cell_type" not in contract.required_obs
     assert m.requires_obs({}) == []
+
+
+def test_success_path_builds_artifacts_and_metrics(tmp_path: Path) -> None:
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            # Determine which script was called by inspecting args
+            if "--out-dir" in args:
+                # This is the grn script
+                out_dir_idx = args.index("--out-dir") + 1
+                out_dir = Path(args[out_dir_idx])
+                tag_idx = args.index("--tag") + 1
+                tag = args[tag_idx]
+
+                # Write stub regulons CSV (at least one data row so non-empty guard passes)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                regulons_csv = out_dir / f"scenic_regulons_{tag}.csv"
+                regulons_csv.write_text("TF,TargetGenes\nSTAT1,GENE1;GENE2\nIRF1,GENE3;GENE4\n")
+
+                # Write stub adjacencies
+                adjacencies_tsv = out_dir / f"scenic_adjacencies_{tag}.tsv"
+                adjacencies_tsv.write_text("TF\ttarget\timportance\n")
+
+                # Write stub loom
+                loom_path = out_dir / f"scenic_input_{tag}.loom"
+                loom_path.write_text("")
+
+            elif "--loom" in args and "--out" in args:
+                # This is the aucell script
+                out_idx = args.index("--out") + 1
+                out_path = Path(args[out_idx])
+                loom_idx = args.index("--loom") + 1
+                loom_path = Path(args[loom_idx])
+
+                # Extract tag from loom path to determine cell count
+                # Read the grn output dir to determine context
+                out_dir = loom_path.parent
+                tag = loom_path.stem.replace("scenic_input_", "")
+
+                # Build stub AUC matrix: cells x regulons
+                # Need to get cell count from _adata() default (300 cells)
+                cell_ids = [f"cell_{i}" for i in range(300)]
+                auc_data = pd.DataFrame(
+                    {
+                        "STAT1(+)": np.random.rand(300),
+                        "IRF1(+)": np.random.rand(300),
+                    },
+                    index=cell_ids,
+                )
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                auc_data.to_parquet(out_path)
+
+            return SimpleNamespace(returncode=0, stderr="")
+
+    cfg = {"launcher": "python", **_db_config(tmp_path)}
+    m = PyscenicMethod()
+    res = m._run(_adata(), cfg, _ctx(tmp_path, FakeBackend()))
+
+    # Should NOT be a MethodSkip
+    assert not isinstance(res, MethodSkip)
+
+    # Check metrics
+    assert res.metrics["n_regulons"] == 2  # 2 AUC columns
+    assert res.metrics["n_cells_scored"] == 300
+    assert res.metrics["group_by"] == "cell_type"
+    assert res.metrics["n_obs"] == 300
+
+    # Check artifacts
+    artifact_names = {a.name for a in res.artifacts}
+    assert "regulons" in artifact_names
+    assert "auc_mtx" in artifact_names

@@ -291,7 +291,7 @@ class PyscenicMethod(AnalysisMethod):
         # 9. Metrics
         n_tfs = int(regulons_df.iloc[:, 0].nunique()) if len(regulons_df.columns) else 0
         metrics = {
-            "n_regulons": int(len(regulons_df)),
+            "n_regulons": int(auc.shape[1]) if auc is not None else int(len(regulons_df)),
             "n_tfs": n_tfs,
             "n_cells_scored": int(auc.shape[0]) if auc is not None else 0,
             "group_by": group_by,
