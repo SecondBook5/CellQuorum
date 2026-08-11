@@ -49,6 +49,25 @@ def test_shift_field_no_overlap_returns_empty(tmp_path: Path) -> None:
     assert pf.plot_ko_shift_field(shift, emb, tmp_path, tf="X") == []
 
 
+def test_shift_grid_writes_and_masks(tmp_path: Path) -> None:
+    np.random.seed(1)
+    idx = [f"c{i}" for i in range(200)]
+    shift = pd.DataFrame(
+        {"d0": np.random.randn(200) * 0.1, "d1": np.random.randn(200) * 0.1}, index=idx
+    )
+    emb = pd.DataFrame({"DIM1": np.random.rand(200), "DIM2": np.random.rand(200)}, index=idx)
+    groups = pd.Series(np.random.choice(["A", "B"], 200), index=idx)
+    paths = pf.plot_ko_shift_grid(shift, emb, tmp_path, tf="PROX1", groups=groups, n_grid=12)
+    assert sorted(p.suffix for p in paths) == [".pdf", ".png"]
+    assert all(p.exists() for p in paths)
+
+
+def test_shift_grid_no_overlap_returns_empty(tmp_path: Path) -> None:
+    shift = pd.DataFrame({"d0": [1.0], "d1": [1.0]}, index=["a"])
+    emb = pd.DataFrame({"DIM1": [1.0], "DIM2": [1.0]}, index=["b"])
+    assert pf.plot_ko_shift_grid(shift, emb, tmp_path, tf="X") == []
+
+
 def test_fate_summary_writes(tmp_path: Path) -> None:
     fate = pd.DataFrame({"cluster": ["A", "B", "C"], "delta": [0.1, -0.2, 0.05]})
     paths = pf.plot_ko_fate_summary(fate, tmp_path, tf="PROX1")

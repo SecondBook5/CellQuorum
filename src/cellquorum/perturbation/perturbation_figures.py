@@ -150,6 +150,129 @@ def plot_ko_shift_field(
     return figstyle.save_figure(fig, out_dir, name)
 
 
+def plot_ko_shift_grid(
+    shift_df: pd.DataFrame,
+    embedding_df: pd.DataFrame,
+    out_dir: Path | str,
+    *,
+    tf: str,
+    groups: pd.Series | None = None,
+    n_grid: int = 40,
+    smooth: float = 0.5,
+    n_neighbors: int = 100,
+    min_mass_percentile: float = 30.0,
+    name: str | None = None,
+) -> list[Path]:
+    """Gridded KO shift vector field on the 2-D embedding (CellOracle-style).
+
+    Reproduces CellOracle's ``calculate_grid_arrows`` in-process from the per-cell
+    shift parquet: a regular grid over the embedding, each gridpoint's arrow a
+    Gaussian-distance-weighted mean of its neighboring cells' shift vectors, with
+    low-density gridpoints masked out. This is the legible publication figure the
+    raw per-cell quiver approximates — cells give context, the grid gives the flow.
+
+    Args:
+        shift_df: per-cell shift vectors; first two columns are the 2-D components.
+        embedding_df: 2-D embedding; first two columns are coordinates; index = cell.
+        out_dir: output directory.
+        tf: TF name for the title.
+        groups: optional per-cell grouping for faint background coloring.
+        n_grid: grid steps per axis.
+        smooth: Gaussian kernel width as a multiple of grid step (CellOracle default 0.5).
+        n_neighbors: neighbors per gridpoint used in the weighted average.
+        min_mass_percentile: gridpoints below this density percentile are dropped.
+        name: output basename (default: f"perturbation_ko_shift_grid_{tf}").
+
+    Returns:
+        List of written figure paths (PNG+PDF), or [] on empty/no-overlap.
+    """
+    if shift_df is None or shift_df.shape[0] == 0 or shift_df.shape[1] < 2:
+        return []
+    if embedding_df is None or embedding_df.shape[0] == 0 or embedding_df.shape[1] < 2:
+        return []
+    common = shift_df.index.intersection(embedding_df.index)
+    if len(common) < 3:
+        return []
+
+    from scipy.stats import norm as _norm
+    from sklearn.neighbors import NearestNeighbors
+
+    emb = embedding_df.loc[common].iloc[:, :2].to_numpy(dtype=float)
+    delta = shift_df.loc[common].iloc[:, :2].to_numpy(dtype=float)
+
+    # Regular grid over the embedding, matching CellOracle's 2.5% margin expansion.
+    grs = []
+    for dim in range(2):
+        m, M = float(emb[:, dim].min()), float(emb[:, dim].max())
+        m = m - 0.025 * abs(M - m)
+        M = M + 0.025 * abs(M - m)
+        grs.append(np.linspace(m, M, n_grid))
+    mesh = np.meshgrid(*grs)
+    gridpoints = np.vstack([g.flat for g in mesh]).T
+
+    k = min(n_neighbors, len(common))
+    nn = NearestNeighbors(n_neighbors=k)
+    nn.fit(emb)
+    dists, neighs = nn.kneighbors(gridpoints)
+
+    std = float(np.mean([g[1] - g[0] for g in grs]))
+    gaussian_w = _norm.pdf(loc=0, scale=smooth * std, x=dists)
+    total_mass = gaussian_w.sum(1)
+    uz = (delta[neighs] * gaussian_w[:, :, None]).sum(1) / np.maximum(1, total_mass)[:, None]
+
+    # Mass filter: keep only gridpoints with enough underlying cell density.
+    mass_thresh = np.percentile(total_mass, min_mass_percentile)
+    keep = total_mass >= mass_thresh
+    if not keep.any():
+        return []
+
+    figstyle.set_style()
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8, 7))
+
+    # Faint cell background for anatomical context.
+    if groups is not None:
+        g = groups.reindex(common).astype(str)
+        for i, cat in enumerate(sorted(g.unique())):
+            mask = (g == cat).to_numpy()
+            ax.scatter(
+                emb[mask, 0],
+                emb[mask, 1],
+                c=[figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]],
+                s=6,
+                alpha=0.25,
+                edgecolors="none",
+                label=cat,
+                rasterized=True,
+            )
+        ax.legend(loc="best", markerscale=2, fontsize=7, framealpha=0.7)
+    else:
+        ax.scatter(
+            emb[:, 0], emb[:, 1], c="#d9d9d9", s=6, alpha=0.3, edgecolors="none", rasterized=True
+        )
+
+    ax.quiver(
+        gridpoints[keep, 0],
+        gridpoints[keep, 1],
+        uz[keep, 0],
+        uz[keep, 1],
+        color=figstyle.CATEGORICAL_PALETTE[1],
+        angles="xy",
+        scale_units="xy",
+        scale=None,
+        width=0.004,
+        alpha=0.9,
+    )
+    ax.set_xlabel(str(embedding_df.columns[0]))
+    ax.set_ylabel(str(embedding_df.columns[1]))
+    ax.set_title(f"{tf} knockout — gridded shift field", fontweight="bold")
+
+    if name is None:
+        name = f"perturbation_ko_shift_grid_{tf}"
+    return figstyle.save_figure(fig, out_dir, name)
+
+
 def plot_ko_fate_summary(
     fate_df: pd.DataFrame,
     out_dir: Path | str,

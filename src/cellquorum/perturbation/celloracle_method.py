@@ -239,6 +239,26 @@ class CellOracleMethod(AnalysisMethod):
                         )
                     except Exception as exc:
                         notes.append(f"shift-field figure failed: {str(exc)[:150]}")
+                    # Gridded vector field (CellOracle-style) — the publication view
+                    if shift_df is not None:
+                        try:
+                            emb_grid = pd.DataFrame(
+                                adata.obsm[embedding_key][:, :2],
+                                index=adata.obs_names,
+                                columns=["DIM1", "DIM2"],
+                            )
+                            groups_grid = (
+                                adata.obs[cluster_key].astype(str)
+                                if cluster_key in adata.obs.columns
+                                else None
+                            )
+                            figs.extend(
+                                pfig.plot_ko_shift_grid(
+                                    shift_df, emb_grid, out_dir, tf=top_tf, groups=groups_grid
+                                )
+                            )
+                        except Exception as exc:
+                            notes.append(f"shift-grid figure failed: {str(exc)[:150]}")
                     # Fate summary: per-cluster mean shift magnitude (direction-agnostic)
                     if shift_df is not None and cluster_key in adata.obs.columns:
                         try:

@@ -82,10 +82,45 @@ def _parse_tf_list(raw: str) -> list[str]:
     return [t for t in raw.replace(",", " ").split() if t]
 
 
+def _load_base_grn(co, organism: str):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN202 -- pragma: no cover
+    """Load CellOracle's built-in promoter base GRN for the organism.
+
+    Returns the base-GRN DataFrame, or None if no loader matches the organism.
+    Loader names and default genome versions are taken verbatim from
+    ``celloracle.data.load_promoter_base_GRN`` (hg19 human / mm10 mouse).
+    """
+    org = (organism or "").strip().lower()
+    loaders = {
+        "human": "load_human_promoter_base_GRN",
+        "hsapiens": "load_human_promoter_base_GRN",
+        "hs": "load_human_promoter_base_GRN",
+        "mouse": "load_mouse_promoter_base_GRN",
+        "mmusculus": "load_mouse_promoter_base_GRN",
+        "mm": "load_mouse_promoter_base_GRN",
+        "rat": "load_rat_promoter_base_GRN",
+        "zebrafish": "load_zebrafish_promoter_base_GRN",
+        "drosophila": "load_drosophila_promoter_base_GRN",
+        "chicken": "load_chicken_promoter_base_GRN",
+    }
+    loader_name = loaders.get(org)
+    if loader_name is None:
+        return None
+    loader = getattr(co.data, loader_name, None)
+    if loader is None:
+        return None
+    return loader()
+
+
 def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     """CellOracle-dependent workflow: GRN inference → KO simulation → scoring.
 
-    This function is not covered by CI tests as it requires a real CellOracle environment.
+    Mirrors the maintainers' canonical Network-analysis + Gata1-KO tutorials:
+    Oracle → import counts + base GRN → PCA → kNN imputation → get_links →
+    filter_links → get_cluster_specific_TFdict_from_Links → fit_GRN_for_simulation,
+    then per TF: simulate_shift → estimate_transition_prob → calculate_embedding_shift,
+    reading the per-cell shift field from ``oracle.delta_embedding``.
+
+    Not covered by CI: requires a live CellOracle environment.
     """
     import anndata
     import celloracle as co
@@ -95,192 +130,170 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Load data and check base GRN availability
+    # Step 1: Load data and the built-in base GRN for this organism.
     print(f"[celloracle] Loading {args.h5ad}")
     adata = anndata.read_h5ad(args.h5ad)
 
-    # Resolve keys (use args if provided, else CellOracle defaults)
-    cluster_key = args.cluster_key if args.cluster_key else "louvain"
-    rep_key = args.rep_key if args.rep_key else "X_pca"
+    cluster_key = args.cluster_key if args.cluster_key else "cluster"
     embedding_key = args.embedding_key if args.embedding_key else "X_umap"
 
-    # Check if base GRN is available for the organism
+    if embedding_key not in adata.obsm:
+        write_skip(out_dir, args.tag, f"embedding {embedding_key} not found in adata.obsm")
+        return
+
+    # CellOracle needs a real cluster column; synthesize a single group if the
+    # resolved key is absent (the "all"/no-clustering generic fallback).
+    if cluster_key not in adata.obs.columns:
+        adata.obs[cluster_key] = "all"
+    adata.obs[cluster_key] = adata.obs[cluster_key].astype("category")
+
     try:
-        base_grn = co.data.load_TF_info_ref(args.organism)
+        base_grn = _load_base_grn(co, args.organism)
     except Exception as e:
         write_skip(out_dir, args.tag, f"base GRN unavailable for organism {args.organism}: {e}")
         return
-
     if base_grn is None or len(base_grn) == 0:
-        write_skip(out_dir, args.tag, f"base GRN unavailable for organism {args.organism}")
+        write_skip(out_dir, args.tag, f"no base GRN for organism {args.organism!r}")
         return
 
-    # Step 2: Build Oracle, fit GRN
-    print(f"[celloracle] Building Oracle with cluster_key={cluster_key}, rep_key={rep_key}")
+    # Step 2: Build Oracle and import counts + base GRN.
+    print(f"[celloracle] Building Oracle (cluster_key={cluster_key}, embedding={embedding_key})")
     oracle = co.Oracle()
-
-    # Import the AnnData
     oracle.import_anndata_as_raw_count(
         adata=adata, cluster_column_name=cluster_key, embedding_name=embedding_key
     )
-
-    # Import reference base GRN
     oracle.import_TF_data(TF_info_matrix=base_grn)
 
-    # Perform PCA
+    # Step 3: PCA + kNN imputation (tutorial-style component/k auto-selection).
     oracle.perform_PCA()
-
-    # kNN imputation with seeded reproducibility
-    print(f"[celloracle] kNN imputation (n_neighbors={args.knn_n_neighbors}, seed={args.seed})")
-    oracle.knn_imputation(n_neighbors=args.knn_n_neighbors, random_state=args.seed)
-
-    # Get cluster-specific links
-    print(f"[celloracle] Fitting cluster-specific GRN links (n_top={args.n_top_targets})")
-    links = oracle.get_cluster_specific_TFdict_from_Links(
-        oracle_object=oracle, n_top=args.n_top_targets
+    evr = np.cumsum(oracle.pca.explained_variance_ratio_)
+    cand = np.where(np.diff(np.diff(evr) > 0.002))[0]
+    n_comps = int(cand[0]) if len(cand) else 50
+    n_comps = max(1, min(n_comps, 50))
+    n_cell = oracle.adata.shape[0]
+    k = max(1, int(0.025 * n_cell))
+    print(f"[celloracle] kNN imputation (k={k}, n_pca_dims={n_comps}, n_cells={n_cell})")
+    oracle.knn_imputation(
+        n_pca_dims=n_comps,
+        k=k,
+        balanced=True,
+        b_sight=min(k * 8, n_cell - 1),
+        b_maxl=min(k * 4, n_cell - 1),
+        n_jobs=4,
     )
 
-    # Write GRN summary
-    grn_rows = []
-    for cluster, tf_dict in links.items():
-        for tf, targets in tf_dict.items():
-            grn_rows.append(
-                {"cluster": cluster, "tf": tf, "n_targets": len(targets) if targets else 0}
-            )
+    # Step 4: Cluster-specific GRN → filter → simulation-ready model.
+    print(f"[celloracle] Inferring cluster-specific GRN (get_links, cluster={cluster_key})")
+    links = oracle.get_links(cluster_name_for_GRN_unit=cluster_key, alpha=10, verbose_level=0)
+    links.filter_links(p=0.001, weight="coef_abs", threshold_number=args.n_top_targets)
+    oracle.get_cluster_specific_TFdict_from_Links(links_object=links)
+    oracle.fit_GRN_for_simulation(alpha=10, use_cluster_specific_TFdict=True, verbose_level=0)
 
+    # GRN summary: per (cluster, TF) target count, from the filtered edge lists.
+    # Each filtered_links[cluster] is a DataFrame with source/target/coef columns.
+    grn_rows = []
+    for cluster, df in links.filtered_links.items():
+        if df is None or len(df) == 0:
+            continue
+        counts = df.groupby("source").size()
+        for tf, n_targets in counts.items():
+            grn_rows.append({"cluster": cluster, "tf": str(tf), "n_targets": int(n_targets)})
     if grn_rows:
-        grn_df = pd.DataFrame(grn_rows)
-        grn_df.to_csv(out_dir / "grn_summary.csv", index=False)
+        pd.DataFrame(grn_rows).to_csv(out_dir / "grn_summary.csv", index=False)
         print(f"[celloracle] Wrote grn_summary.csv ({len(grn_rows)} rows)")
 
-    # Write per-cluster links
-    for cluster, tf_dict in links.items():
-        rows = []
-        for tf, targets in tf_dict.items():
-            if targets:
-                for target in targets:
-                    rows.append({"tf": tf, "target": target})
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_parquet(out_dir / f"links_{cluster}.parquet")
+    # Step 5: TF set to screen — regulators in the fitted GRN present as genes.
+    fitted_tfs: set[str] = set()
+    for df in links.filtered_links.values():
+        if df is not None and len(df) > 0:
+            fitted_tfs.update(str(s) for s in df["source"].unique())
+    available_tfs = fitted_tfs & set(map(str, oracle.adata.var_names))
 
-    # Step 3: Determine TF set to screen
     tf_list = _parse_tf_list(args.tf_list)
-
-    # Get all TFs present in fitted GRN
-    fitted_tfs = set()
-    for tf_dict in links.values():
-        fitted_tfs.update(tf_dict.keys())
-
-    # Filter to TFs present in both GRN and gene expression
-    available_tfs = fitted_tfs & set(adata.var_names)
-
     if tf_list:
-        # User specified TFs - filter to available ones
         tfs_to_screen = [tf for tf in tf_list if tf in available_tfs]
         if not tfs_to_screen:
             write_skip(out_dir, args.tag, f"no requested TFs available (requested: {tf_list})")
             return
     else:
-        # Screen all available TFs
         tfs_to_screen = sorted(available_tfs)
         if not tfs_to_screen:
-            write_skip(out_dir, args.tag, "no TFs to screen")
+            write_skip(out_dir, args.tag, "no TFs to screen in fitted GRN")
             return
-
     print(f"[celloracle] Screening {len(tfs_to_screen)} TFs")
 
-    # Step 4: Simulate KO for each TF and compute shift vectors
-    # Determine if we're doing directional or magnitude scoring
+    # Step 6: Scoring geometry. delta_embedding aligns with oracle.adata cells.
     directional = bool(args.condition_key and args.healthy_label)
     direction_label = "directional" if directional else "magnitude"
+    obs = oracle.adata.obs
+    emb = np.asarray(oracle.adata.obsm[embedding_key])
 
-    # Get embedding coordinates
-    if embedding_key not in adata.obsm:
-        write_skip(out_dir, args.tag, f"embedding {embedding_key} not found in adata.obsm")
-        return
-
-    embedding = adata.obsm[embedding_key]
-
-    # Compute healthy centroid if directional
+    direction_unit = None
     if directional:
-        if args.condition_key not in adata.obs:
-            write_skip(
-                out_dir, args.tag, f"condition key {args.condition_key} not found in adata.obs"
-            )
+        if args.condition_key not in obs.columns:
+            write_skip(out_dir, args.tag, f"condition key {args.condition_key} not in adata.obs")
             return
-
-        healthy_mask = adata.obs[args.condition_key] == args.healthy_label
-        diseased_mask = ~healthy_mask
-
+        healthy_mask = (obs[args.condition_key].astype(str) == args.healthy_label).to_numpy()
         if not healthy_mask.any():
             write_skip(out_dir, args.tag, f"no cells with healthy label {args.healthy_label}")
             return
-
-        if not diseased_mask.any():
+        if healthy_mask.all():
             write_skip(out_dir, args.tag, f"all cells are healthy (label {args.healthy_label})")
             return
-
-        healthy_centroid = embedding[healthy_mask].mean(axis=0)
-        diseased_centroid = embedding[diseased_mask].mean(axis=0)
-
-        # Unit direction vector from diseased to healthy
+        # 2D embedding axis from diseased centroid -> healthy centroid.
+        healthy_centroid = emb[healthy_mask, :2].mean(axis=0)
+        diseased_centroid = emb[~healthy_mask, :2].mean(axis=0)
         direction_vec = healthy_centroid - diseased_centroid
-        direction_norm = np.linalg.norm(direction_vec)
+        direction_norm = float(np.linalg.norm(direction_vec))
         if direction_norm == 0:
             write_skip(out_dir, args.tag, "healthy and diseased centroids coincide")
             return
-
         direction_unit = direction_vec / direction_norm
 
-    # Simulate each TF KO
+    # Step 7: Simulate each TF KO -> per-cell shift field -> score.
+    n_neighbors = min(int(args.knn_n_neighbors), n_cell - 1)
     tf_scores = []
     for tf in tfs_to_screen:
         print(f"[celloracle] Simulating KO: {tf}")
-
-        # Simulate shift by setting TF to 0
-        oracle.simulate_shift(
-            perturb_condition={tf: 0.0}, n_propagation=args.n_propagation, random_state=args.seed
-        )
-
-        # Get simulated embedding (oracle stores this in oracle.delta_embedding or similar)
-        # The shift vectors are the difference between perturbed and original embeddings
-        # CellOracle stores these in oracle.delta_embedding
-        if not hasattr(oracle, "delta_embedding") or oracle.delta_embedding is None:
-            print(f"[celloracle] WARNING: No delta_embedding for {tf}, skipping")
+        try:
+            oracle.simulate_shift(
+                perturb_condition={tf: 0.0}, n_propagation=int(args.n_propagation)
+            )
+            oracle.estimate_transition_prob(
+                n_neighbors=n_neighbors,
+                knn_random=True,
+                sampled_fraction=1,
+                random_seed=int(args.seed),
+            )
+            oracle.calculate_embedding_shift(sigma_corr=0.05)
+        except Exception as e:  # one infeasible TF must not sink the screen
+            print(f"[celloracle] skip {tf}: {type(e).__name__}: {e}")
             continue
 
-        shift_vectors = oracle.delta_embedding
+        shift_vectors = np.asarray(oracle.delta_embedding)
+        if shift_vectors.ndim != 2 or shift_vectors.shape[1] < 2:
+            print(f"[celloracle] skip {tf}: unexpected delta_embedding shape")
+            continue
 
-        # Write shift vectors
-        shift_df = pd.DataFrame(
+        pd.DataFrame(
             shift_vectors,
-            index=adata.obs_names,
+            index=oracle.adata.obs_names,
             columns=[f"d{i}" for i in range(shift_vectors.shape[1])],
-        )
-        shift_df.to_parquet(out_dir / f"shift_vectors_{tf}.parquet")
+        ).to_parquet(out_dir / f"shift_vectors_{tf}.parquet")
 
-        # Score the TF
         if directional:
-            # Project shift onto disease->healthy axis
-            projections = shift_vectors @ direction_unit
-            score = float(np.mean(projections))
+            score = float(np.mean(shift_vectors[:, :2] @ direction_unit))
         else:
-            # Mean magnitude
-            magnitudes = np.linalg.norm(shift_vectors, axis=1)
-            score = float(np.mean(magnitudes))
-
+            score = float(np.mean(np.linalg.norm(shift_vectors[:, :2], axis=1)))
         tf_scores.append(
-            {"tf": tf, "score": score, "n_cells": len(adata), "direction": direction_label}
+            {"tf": tf, "score": score, "n_cells": int(n_cell), "direction": direction_label}
         )
 
     if not tf_scores:
         write_skip(out_dir, args.tag, "no TF simulations produced results")
         return
 
-    # Step 5: Sort by score descending and write ranking
     tf_scores.sort(key=lambda x: x["score"], reverse=True)
-
     write_ranking(out_dir, args.tag, tf_scores)
     print(f"[celloracle] Wrote perturbation_ranking.csv ({len(tf_scores)} TFs)")
 
