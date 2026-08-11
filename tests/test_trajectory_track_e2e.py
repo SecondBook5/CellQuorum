@@ -116,6 +116,7 @@ def build_trajectory_config(h5ad_path: Path) -> CellQuorumConfig:
             "enrichment_viz": False,
             "de_viz": False,
             "coexpression": False,
+            "grn": False,
             "ccc_viz": False,
             "embeddings": False,
             "trajectory": True,

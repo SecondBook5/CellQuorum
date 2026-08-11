@@ -223,6 +223,11 @@ class PipelinePlanner:
             # metacell grouping, so it slots in after DE/enrichment and before the
             # molecular-inference and trajectory/CCC tracks.
             ("coexpression", self.config.stages.coexpression),
+            # GRN (pySCENIC) is a discovery-tail stage: it needs only the counts
+            # layer plus (optionally) cluster/annotation labels for RSS grouping,
+            # so it slots in right after co-expression and before the
+            # molecular-inference and trajectory/CCC tracks.
+            ("grn", self.config.stages.grn),
             ("molecular_inference", self.config.stages.molecular_inference),
             # Trajectory/potency runs with the tail-end discovery tracks: it only
             # needs embeddings (integration rep + 2D coords) to have already run,

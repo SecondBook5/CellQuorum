@@ -107,6 +107,23 @@ def test_coexpression_stage_is_planned_in_canonical_order() -> None:
     assert order.index("coexpression") < order.index("cell_cell_communication")
 
 
+def test_grn_stage_is_planned_in_canonical_order() -> None:
+    """The grn (pySCENIC) stage is registered + config-flagged, so the planner's
+    canonical order must emit it — otherwise it is never planned and silently
+    never runs (the seam missed for the coexpression stage). It slots into the
+    discovery tail after coexpression and before the CCC chain."""
+    from cellquorum.config.models import CellQuorumConfig
+    from cellquorum.core.planner import build_pipeline_plan
+
+    config = CellQuorumConfig()
+    plan = build_pipeline_plan(config)
+    order = plan.enabled_stage_names()
+
+    assert "grn" in order
+    assert order.index("coexpression") < order.index("grn")
+    assert order.index("grn") < order.index("cell_cell_communication")
+
+
 def test_pipeline_planner_respects_disabled_stage_flags() -> None:
     """
     Verify that disabled stage flags are reflected in the plan.
