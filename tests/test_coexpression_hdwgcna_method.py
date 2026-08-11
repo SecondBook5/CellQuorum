@@ -1,0 +1,117 @@
+# tests/test_coexpression_hdwgcna_method.py
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
+
+import anndata as ad
+import numpy as np
+import pandas as pd
+import pytest
+
+from cellquorum.coexpression.hdwgcna_method import HdwgcnaMethod
+from cellquorum.methods.base import MethodSkip
+
+
+def _adata(n: int = 200) -> ad.AnnData:
+    rng = np.random.default_rng(0)
+    x = rng.poisson(1.0, size=(n, 30)).astype(float)
+    obs = pd.DataFrame(
+        {
+            "cell_type": (["A"] * (n // 2)) + (["B"] * (n - n // 2)),
+            "condition": (["ctrl"] * (n // 2)) + (["case"] * (n - n // 2)),
+        },
+        index=[f"c{i}" for i in range(n)],
+    )
+    a = ad.AnnData(x, obs=obs)
+    a.layers["counts"] = x.copy()
+    return a
+
+
+def _ctx(tmp_path: Path, backend) -> SimpleNamespace:  # noqa: ANN001
+    paths = SimpleNamespace(results=tmp_path / "res", scratch=tmp_path / "scr")
+    reg = SimpleNamespace(get=lambda name: backend if name == "hdwgcna_r" else None)
+    return SimpleNamespace(paths=paths, backend_registry=reg)
+
+
+def test_skips_when_too_few_cells(tmp_path: Path) -> None:
+    m = HdwgcnaMethod()
+    res = m._run(_adata(10), {"min_cells_total": 100}, _ctx(tmp_path, None))
+    assert isinstance(res, MethodSkip)
+    assert "min" in res.reason.lower() or "cells" in res.reason.lower()
+
+
+def test_skips_when_launcher_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    m = HdwgcnaMethod()
+    res = m._run(_adata(), {}, _ctx(tmp_path, None))
+    assert isinstance(res, MethodSkip)
+
+
+def test_skips_when_backend_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+    m = HdwgcnaMethod()
+    res = m._run(_adata(), {}, _ctx(tmp_path, None))  # backend_registry.get -> None
+    assert isinstance(res, MethodSkip)
+
+
+def test_success_path_with_canned_csvs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame({"gene": ["G0", "G1", "G2"], "module": ["M1", "M1", "M2"]}).to_csv(
+                out_dir / "modules.csv", index=False
+            )
+            pd.DataFrame(
+                {
+                    "gene": ["G0", "G2"],
+                    "UMAP1": [0.1, 0.9],
+                    "UMAP2": [0.1, 0.9],
+                    "module": ["M1", "M2"],
+                    "color": ["red", "blue"],
+                    "hub": ["hub", "hub"],
+                    "kME": [0.9, 0.8],
+                }
+            ).to_csv(out_dir / "module_umap.csv", index=False)
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr="")
+
+    m = HdwgcnaMethod()
+    res = m._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    from cellquorum.core.stage import StageResult
+
+    assert isinstance(res, StageResult)
+    names = {a.name for a in res.artifacts}
+    assert any("module" in n for n in names)
+    assert res.metrics["n_modules"] == 2
+
+
+def test_skips_on_sentinel_skip_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "modules.csv").write_text("gene,module\n")
+            (out_dir / "hdwgcna_SKIPPED.txt").write_text("missing R packages")
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr="")
+
+    res = HdwgcnaMethod()._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    assert isinstance(res, MethodSkip)
+
+
+def test_method_registered() -> None:
+    import cellquorum.coexpression  # noqa: F401
+    from cellquorum.methods.registry import METHOD_REGISTRY
+
+    assert METHOD_REGISTRY.has("coexpression", "hdwgcna")
