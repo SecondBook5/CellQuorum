@@ -35,6 +35,9 @@ from cellquorum.ccc_viz.config import CccVizConfig
 # Import the cell-cell-communication configuration model.
 from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
 
+# Import the coexpression configuration model.
+from cellquorum.coexpression.config import CoexpressionConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -531,6 +534,7 @@ class StageSelectionConfig(StrictBaseModel):
         adjudication: Whether cluster/state adjudication is enabled.
         composition: Whether composition analysis is enabled.
         differential_expression: Whether differential expression is enabled.
+        coexpression: Whether co-expression (hdWGCNA) is enabled.
         molecular_inference: Whether molecular inference is enabled.
         cell_cell_communication: Whether communication analysis is enabled.
         network_analysis: Whether network analysis is enabled.
@@ -595,6 +599,9 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether differential expression is enabled.
     differential_expression: bool = True
+
+    # Store whether co-expression (hdWGCNA) is enabled.
+    coexpression: bool = True
 
     # Store whether differential abundance is enabled.
     differential_abundance: bool = True
@@ -738,6 +745,9 @@ class CellQuorumConfig(StrictBaseModel):
     differential_expression: DifferentialExpressionConfig = Field(
         default_factory=DifferentialExpressionConfig
     )
+
+    # Store co-expression (hdWGCNA) settings.
+    coexpression: CoexpressionConfig = Field(default_factory=CoexpressionConfig)
 
     # Store enrichment / pathway-activity settings.
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)

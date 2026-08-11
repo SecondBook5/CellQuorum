@@ -37,6 +37,7 @@ from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage
 
 # Import Phase-2A stages: dimensionality reduction and clustering.
 from cellquorum.clustering.stage import ClusteringStage
+from cellquorum.coexpression.stage import CoexpressionStage
 
 # Import pipeline context.
 from cellquorum.core.context import PipelineContext
@@ -278,6 +279,7 @@ def build_default_stage_registry() -> StageRegistry:
             "reference_mapping": ReferenceMappingStage(),
             "subclustering": SubclusteringStage(),
             "differential_expression": DifferentialExpressionStage(),
+            "coexpression": CoexpressionStage(),
             "differential_abundance": DifferentialAbundanceStage(),
             "enrichment": EnrichmentStage(),
             "enrichment_viz": EnrichmentVizStage(),
