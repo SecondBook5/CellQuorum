@@ -84,6 +84,7 @@ from cellquorum.integration.stage import IntegrationStage
 
 # Import integration-benchmark evaluation stage.
 from cellquorum.integration_benchmark.stage import IntegrationBenchmarkStage
+from cellquorum.perturbation.stage import PerturbationStage
 
 # Import population/state identity evidence stage.
 from cellquorum.population_identity.stage import PopulationIdentityStage
@@ -282,6 +283,7 @@ def build_default_stage_registry() -> StageRegistry:
             "differential_expression": DifferentialExpressionStage(),
             "coexpression": CoexpressionStage(),
             "grn": GrnStage(),
+            "perturbation": PerturbationStage(),
             "differential_abundance": DifferentialAbundanceStage(),
             "enrichment": EnrichmentStage(),
             "enrichment_viz": EnrichmentVizStage(),

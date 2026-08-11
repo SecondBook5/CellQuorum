@@ -321,6 +321,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "grn",
         "integration",
         "integration_benchmark",
+        "perturbation",
         "population_identity",
         "preprocessing",
         "qc",

@@ -228,6 +228,11 @@ class PipelinePlanner:
             # so it slots in right after co-expression and before the
             # molecular-inference and trajectory/CCC tracks.
             ("grn", self.config.stages.grn),
+            # In-silico perturbation (CellOracle) is a discovery-tail stage: it
+            # infers its OWN GRN from counts + a built-in base GRN and simulates
+            # TF knockouts, so it slots in right after grn and before the
+            # trajectory/CCC tracks.
+            ("perturbation", self.config.stages.perturbation),
             ("molecular_inference", self.config.stages.molecular_inference),
             # Trajectory/potency runs with the tail-end discovery tracks: it only
             # needs embeddings (integration rep + 2D coords) to have already run,
