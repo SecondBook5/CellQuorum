@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from cellquorum.backends.base import Backend, BackendStatus, BackendUnavailableError
+from cellquorum.backends.celloracle_backend import build_celloracle_backend
 from cellquorum.backends.gpu import build_gpu_backend
 from cellquorum.backends.hdwgcna_backend import build_hdwgcna_backend
 from cellquorum.backends.pyscenic_backend import build_pyscenic_backend
@@ -320,6 +321,9 @@ def build_default_backend_registry() -> BackendRegistry:
 
     # Register the isolated-env pySCENIC backend (gene regulatory networks).
     registry.register(build_pyscenic_backend())
+
+    # Register the isolated-env CellOracle backend (in-silico perturbations).
+    registry.register(build_celloracle_backend())
 
     # Return the populated backend registry.
     return registry
