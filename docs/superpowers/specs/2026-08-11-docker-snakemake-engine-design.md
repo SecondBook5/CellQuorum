@@ -99,19 +99,23 @@ Two artifacts, layered:
     title: "IL33/ST2 alarmin KC→ILC2 axis"      # human-readable, drives report title
     cell_types: [KC, ILC]                         # one or more (cross-type is first-class)
     inputs: {KC: <h5ad>, ILC: <h5ad>}             # per cell type
-    methods: [subclustering, pathway_enrichment, cell_cell_communication]
+    # NO `methods:` key → the hypothesis inherits the FULL Table 0 scaffold.
+    # You subtract, you never add:
+    skip: [pseudobulk]                             # N/A for this hypothesis; reason recorded
+    blocked: [rna_velocity]                        # engine support not built; reason in status
     gene_programs:                                # the hypothesis-specific biology
       alarmin: [IL33, IL1RL1, IL13, ...]
     config_overrides: {...}                        # per-hypothesis knobs
-    blocked: [rna_velocity]                        # engine support not built; reason in status
   ```
-- **Interface:** consumed by C5. Methods absent from `methods` don't run; `blocked` methods are surfaced in the status report with a reason, never silently run. `gene_programs` feed the scoring/enrichment/target-figure stages so the biology is declared, not hardcoded — preserving the engine's zero-study-specific-biology invariant (biology lives in the manifest, engine stays generic).
+- **Scaffold-by-default (the "can't forget a step" guarantee):** the manifest is **opt-out, not opt-in**. Every hypothesis runs the complete Table 0 core scaffold (`pseudobulk, subclustering, pathway_enrichment, rna_velocity, phate_pseudotime, cell_cell_communication, progeny`) *unless* a method appears in `skip` (deliberately N/A — reason recorded) or `blocked` (engine support not built — reason in status). There is no `methods:` allow-list to forget to update; the only way a scaffold method does not run is an explicit, recorded decision. An optional `extra_methods:` key adds Table-1-specific programs beyond the scaffold. C5 must account for **every** scaffold method for **every** hypothesis as exactly one of {run, skip, blocked} — see the completeness check in C5.
+- **Interface:** consumed by C5. `skip`/`blocked` methods are surfaced in the status report with their reason, never silently omitted. `gene_programs` feed the scoring/enrichment/target-figure stages so the biology is declared, not hardcoded — preserving the engine's zero-study-specific-biology invariant (biology lives in the manifest, engine stays generic).
 - **Depends on:** the track sheet — Table 1 hypotheses (EMT/KRT-high, IL33/ST2 alarmin, PAR2/F2RL1, PIEZO/YAP–TEAD mechanosensing, patient Th2 response score, LEC EndoMT, IL13/Th2 mast state, KC↔ILC IL33 axis, Fib↔KC periostin, …) and the Table 0 core scaffold (methods: pseudobulk, subclustering, pathway enrichment, RNA velocity, PHATE/pseudotime, cell–cell communication, PROGENy).
 - **Note on repo mapping:** one implementing repo = one high-impact publication = one hypothesis (or a tightly-related hypothesis group). A repo's `hypotheses.yaml` may hold a single entry or a small related set; the workflow treats each entry independently and bundles each.
 
 ### C5. Config generator — `workflow/gen_configs.py`
-- **Responsibility:** expand `hypotheses.yaml` × a base config template into N validated cellquorum configs under `workflow/configs/<hypothesis>__<method>.yaml`. Gene programs + overrides are merged into each config so the run is fully specified. Avoids hand-maintaining dozens of YAMLs.
-- **Interface:** `gen_configs(hypotheses: dict, template: dict) -> dict[str, dict]` (pure, unit-tested: manifest → expected config dicts). CLI wrapper writes them to disk.
+- **Responsibility:** expand `hypotheses.yaml` × a base config template into N validated cellquorum configs under `workflow/configs/<hypothesis>__<method>.yaml`. For each hypothesis, resolve the scaffold: `run = SCAFFOLD - skip - blocked` (plus `extra_methods`), emitting one config per `run` method. Gene programs + overrides are merged into each config so the run is fully specified. Avoids hand-maintaining dozens of YAMLs.
+- **Completeness check (the guarantee's enforcement):** `gen_configs` fails loudly if, for any hypothesis, the union of `run ∪ skip ∪ blocked` does not equal the full scaffold — i.e. a scaffold method that is neither run nor explicitly accounted for is an error, not a silent omission. It also errors on an unknown method name (typo guard) or a method in two categories at once. This is what makes "forgot a step" structurally impossible.
+- **Interface:** `gen_configs(hypotheses: dict, template: dict, scaffold: list[str]) -> dict[str, dict]` (pure, unit-tested: manifest → expected config dicts; raises on an incomplete or inconsistent manifest). CLI wrapper writes the configs to disk and also emits a per-hypothesis `{run, skip, blocked}` accounting consumed by the status report.
 - **Depends on:** existing config schema (`cellquorum.config.models.CellQuorumConfig`) — generated configs must validate against it.
 
 ### C6. Snakemake workflow — `workflow/Snakefile` + `workflow/rules/matrix.smk`
@@ -129,6 +133,8 @@ Two artifacts, layered:
 
 ## Error Handling & Skip Semantics
 
+- **Scaffold accounting** (the completeness guarantee): because the manifest is opt-out, every hypothesis is checked against the full Table 0 scaffold at config-generation time. A scaffold method must be exactly one of run / `skip` / `blocked`; anything unaccounted for is a hard error before any job runs. The status report shows this `{run, skip, blocked}` breakdown per hypothesis so a reader sees the whole scaffold was considered, not just what happened to be listed.
+- **Skipped methods** (`skip:` — deliberately N/A for this hypothesis): recorded in the status report as `skip` with the reason; not dispatched. Distinct from an engine-internal MethodSkip below.
 - **Blocked methods** (engine support not built): declared per hypothesis in `hypotheses.yaml`, emitted into the status report as `blocked` with the reason, never dispatched as jobs. This is how the ⬜ track-sheet items (KC/DC RNA velocity, LEC in-silico KO, EndoMT) stay visible without being faked.
 - **Skipped stages** (engine's existing MethodSkip): a target can succeed with skipped internal stages; the status report reflects the engine's own summary (already in the run JSON).
 - **Failed target:** Snakemake marks the job failed; `--keep-going` lets the rest of the matrix finish; the status report lists failures. A failed target does not corrupt sibling targets (separate run dirs).
@@ -136,7 +142,7 @@ Two artifacts, layered:
 
 ## Testing
 
-- **C5 config generator:** unit tests — a small hypothesis manifest + template produces the expected config dicts; every generated config validates via `validate_config_dict`. Edge cases: empty method list, blocked method excluded from output, gene-program + override merge precedence, multi-cell-type hypothesis (per-input configs).
+- **C5 config generator:** unit tests — a small hypothesis manifest + template produces the expected config dicts; every generated config validates via `validate_config_dict`. Edge cases: scaffold-by-default (a hypothesis with no `skip`/`blocked` yields one config per scaffold method), `skip`/`blocked` methods excluded from output but present in the accounting, gene-program + override merge precedence, multi-cell-type hypothesis (per-input configs). **Completeness check must fail loudly:** a manifest that leaves a scaffold method unaccounted, names an unknown method, or lists a method in two categories raises — assert each raises.
 - **C6 Snakefile:** a `snakemake -n` dry-run test asserts the DAG expands to exactly the expected `(hypothesis, method)` target set plus the per-hypothesis bundle target for a fixture manifest (no missing/extra targets). Uses a tiny fixture manifest, not the real one.
 - **C6 bundling:** unit test of the bundle assembler — given fixture run dirs for a hypothesis's methods, it collects the expected figure/table set and emits a report with the manifest title.
 - **C2 image:** `make smoke` runs the existing `configs/le_smoke.yaml` inside the freshly built CPU image and asserts exit 0 + expected artifact manifest — reuses the engine's existing smoke path. (Image build itself is not unit-tested in CI; it's a `make` verification.)
