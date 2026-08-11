@@ -1,0 +1,25 @@
+from pathlib import Path
+
+import yaml
+
+# `config` is a Snakemake global populated from --config key=value pairs.
+MANIFEST = Path(config.get("manifest", "workflow/hypotheses.yaml"))
+WORKDIR = Path(config.get("workdir", "."))
+TEMPLATE = Path(config.get("template", "workflow/template.yaml"))
+
+manifest = yaml.safe_load(MANIFEST.read_text())
+
+RUNS = WORKDIR / "runs"
+BUNDLES = WORKDIR / "bundles"
+GEN = WORKDIR / "generated"
+
+# (hypothesis, cell_type) pairs
+PAIRS = [(h, ct) for h, entry in manifest.items() for ct in entry["cell_types"]]
+
+include: "rules/matrix.smk"
+
+rule all:
+    input:
+        [str(BUNDLES / h / "report.html") for h in manifest],
+        str(RUNS / "matrix_status.csv"),
+        str(RUNS / "matrix_status.md"),

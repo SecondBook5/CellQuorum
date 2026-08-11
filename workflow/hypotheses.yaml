@@ -1,0 +1,36 @@
+emt_krt_high:
+  title: "EMT / KRT-high keratinocyte program"
+  cell_types: [KC]
+  inputs: {KC: TODO_SET_PATH}
+il33_st2_alarmin:
+  title: "IL33/ST2 alarmin axis"
+  cell_types: [KC, ILC]
+  inputs: {KC: TODO_SET_PATH, ILC: TODO_SET_PATH}
+  blocked:
+    rna_velocity: "spliced/unspliced not yet generated for these subsets"
+par2_f2rl1:
+  title: "PAR2 / F2RL1 protease-activated signaling"
+  cell_types: [KC]
+  inputs: {KC: TODO_SET_PATH}
+piezo_yap_tead:
+  title: "PIEZO / YAP-TEAD mechanosensing"
+  cell_types: [Fibroblast]
+  inputs: {Fibroblast: TODO_SET_PATH}
+lec_endomt:
+  title: "LEC EndoMT"
+  cell_types: [LEC]
+  inputs: {LEC: TODO_SET_PATH}
+  blocked:
+    rna_velocity: "EndoMT velocity not wired for LEC"
+il13_th2_mast:
+  title: "IL13 / Th2 mast-cell state"
+  cell_types: [Mast]
+  inputs: {Mast: TODO_SET_PATH}
+kc_ilc_il33_axis:
+  title: "KC<->ILC IL33 crosstalk"
+  cell_types: [KC, ILC]
+  inputs: {KC: TODO_SET_PATH, ILC: TODO_SET_PATH}
+fib_kc_periostin:
+  title: "Fibroblast<->KC periostin axis"
+  cell_types: [Fibroblast, KC]
+  inputs: {Fibroblast: TODO_SET_PATH, KC: TODO_SET_PATH}

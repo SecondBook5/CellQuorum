@@ -1,0 +1,14 @@
+project:
+  name: placeholder
+input:
+  h5ad: /placeholder.h5ad
+  counts_layer: counts
+compute:
+  backend: auto
+  fallback_to_cpu: true
+run:
+  random_seed: 1337
+report:
+  enabled: true
+  html: true
+  markdown: true
