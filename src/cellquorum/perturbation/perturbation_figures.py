@@ -58,7 +58,8 @@ def plot_ko_shift_field(
     """Quiver of per-cell shift vectors on the 2-D embedding, aligned by index intersection.
 
     Args:
-        shift_df: per-cell shift vectors; columns `dx`, `dy`; index = cell.
+        shift_df: per-cell shift vectors; the first two columns are the 2-D shift
+            components (e.g. d0, d1); index = cell.
         embedding_df: 2-D embedding; columns like `DIM1`, `DIM2`; index = cell.
         out_dir: output directory.
         tf: TF name for the title.
@@ -72,7 +73,7 @@ def plot_ko_shift_field(
         return []
     if embedding_df is None or embedding_df.shape[0] == 0:
         return []
-    if "dx" not in shift_df.columns or "dy" not in shift_df.columns:
+    if shift_df.shape[1] < 2:
         return []
 
     # Align by index intersection
@@ -90,8 +91,8 @@ def plot_ko_shift_field(
     # Extract embedding coordinates (first two columns)
     x = emb.iloc[:, 0].to_numpy()
     y = emb.iloc[:, 1].to_numpy()
-    dx = shift["dx"].to_numpy()
-    dy = shift["dy"].to_numpy()
+    dx = shift.iloc[:, 0].to_numpy()
+    dy = shift.iloc[:, 1].to_numpy()
 
     fig, ax = plt.subplots(figsize=(8, 7))
 
@@ -208,8 +209,12 @@ def plot_grn_connectivity(
 ) -> list[Path]:
     """Bar of top regulators by degree/connectivity.
 
+    Accepts either the consumer's `degree` schema (columns `tf`, `degree`) or the
+    producer's real per-cluster schema (columns `cluster`, `tf`, `n_targets`); in the
+    latter case per-TF degree is derived by summing `n_targets` across clusters.
+
     Args:
-        grn_summary_df: GRN summary; columns `tf`, `degree`.
+        grn_summary_df: GRN summary; columns `tf` + either `degree` or `n_targets`.
         out_dir: output directory.
         n_top: number of top regulators to display.
         name: output basename.
@@ -219,14 +224,23 @@ def plot_grn_connectivity(
     """
     if grn_summary_df is None or grn_summary_df.shape[0] == 0:
         return []
-    if "degree" not in grn_summary_df.columns:
+    if "tf" not in grn_summary_df.columns:
+        return []
+    if "degree" not in grn_summary_df.columns and "n_targets" not in grn_summary_df.columns:
         return []
 
     figstyle.set_style()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    df = grn_summary_df.sort_values("degree", ascending=False).head(n_top).iloc[::-1]
+    df = grn_summary_df
+    if "degree" not in df.columns:
+        df = (
+            df.groupby("tf", as_index=False)["n_targets"]
+            .sum()
+            .rename(columns={"n_targets": "degree"})
+        )
+    df = df.sort_values("degree", ascending=False).head(n_top).iloc[::-1]
     color = figstyle.CATEGORICAL_PALETTE[2]  # aqua
 
     fig, ax = plt.subplots(figsize=(6, max(3, 0.32 * len(df))))

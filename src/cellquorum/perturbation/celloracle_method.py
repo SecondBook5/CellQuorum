@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from cellquorum.backends.celloracle_backend import CELLORACLE_KO_PY
@@ -176,7 +177,7 @@ class CellOracleMethod(AnalysisMethod):
                 reason=f"celloracle skipped: {failed_marker.read_text().strip()[:300]}",
                 details={"method": self.name},
             )
-        if not ranking_csv.exists() and skip_marker.exists():
+        if skip_marker.exists():
             return MethodSkip(
                 reason=f"celloracle skipped: {skip_marker.read_text().strip()[:300]}",
                 details={"method": self.name},
@@ -218,7 +219,9 @@ class CellOracleMethod(AnalysisMethod):
                 top_tf = str(ranking.sort_values("score", ascending=False).iloc[0]["tf"])
                 shift_pq = out_dir / f"shift_vectors_{top_tf}.parquet"
                 if shift_pq.exists():
+                    shift_df = None
                     try:
+                        shift_df = pd.read_parquet(shift_pq)
                         emb = pd.DataFrame(
                             adata.obsm[embedding_key][:, :2],
                             index=adata.obs_names,
@@ -231,11 +234,34 @@ class CellOracleMethod(AnalysisMethod):
                         )
                         figs.extend(
                             pfig.plot_ko_shift_field(
-                                pd.read_parquet(shift_pq), emb, out_dir, tf=top_tf, groups=groups
+                                shift_df, emb, out_dir, tf=top_tf, groups=groups
                             )
                         )
                     except Exception as exc:
                         notes.append(f"shift-field figure failed: {str(exc)[:150]}")
+                    # Fate summary: per-cluster mean shift magnitude (direction-agnostic)
+                    if shift_df is not None and cluster_key in adata.obs.columns:
+                        try:
+                            common = shift_df.index.intersection(adata.obs_names)
+                            if len(common) > 0:
+                                mags = np.linalg.norm(
+                                    shift_df.loc[common].iloc[:, :2].to_numpy(), axis=1
+                                )
+                                fate_df = (
+                                    pd.DataFrame(
+                                        {
+                                            "cluster": adata.obs.loc[common, cluster_key]
+                                            .astype(str)
+                                            .to_numpy(),
+                                            "delta": mags,
+                                        }
+                                    )
+                                    .groupby("cluster", as_index=False)["delta"]
+                                    .mean()
+                                )
+                                figs.extend(pfig.plot_ko_fate_summary(fate_df, out_dir, tf=top_tf))
+                        except Exception as exc:
+                            notes.append(f"fate-summary figure failed: {str(exc)[:150]}")
 
         # 7. Artifacts
         artifacts: list[StageArtifact] = [
