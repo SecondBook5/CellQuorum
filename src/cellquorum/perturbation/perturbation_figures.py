@@ -157,10 +157,14 @@ def plot_ko_fate_summary(
     tf: str,
     name: str | None = None,
 ) -> list[Path]:
-    """Bar of per-cluster net transition-probability change for one KO.
+    """Bar of per-cluster mean KO shift magnitude for one knockout.
+
+    `delta` is a non-negative per-cluster mean shift magnitude (how strongly each
+    cluster's cells move under the knockout), so bars are ranked largest-first and
+    share one color — there is no sign to encode.
 
     Args:
-        fate_df: per-cluster fate summary; columns `cluster`, `delta`.
+        fate_df: per-cluster fate summary; columns `cluster`, `delta` (delta >= 0).
         out_dir: output directory.
         tf: TF name for the title.
         name: output basename (default: f"perturbation_ko_fate_{tf}").
@@ -177,21 +181,16 @@ def plot_ko_fate_summary(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Rank clusters by how strongly they move under the KO (largest at top).
     df = fate_df.sort_values("delta", ascending=True)
-
-    # Color bars by sign: positive (enriched) vs negative (depleted)
-    colors = [
-        figstyle.CATEGORICAL_PALETTE[1] if d >= 0 else figstyle.CATEGORICAL_PALETTE[7]
-        for d in df["delta"]
-    ]
+    color = figstyle.CATEGORICAL_PALETTE[1]
 
     fig, ax = plt.subplots(figsize=(6, max(3, 0.28 * len(df))))
     y = np.arange(len(df))
-    ax.barh(y, df["delta"].to_numpy(), color=colors, edgecolor="#333", linewidth=0.5)
+    ax.barh(y, df["delta"].to_numpy(), color=color, edgecolor="#333", linewidth=0.5)
     ax.set_yticks(y)
     ax.set_yticklabels(df["cluster"].astype(str).tolist(), fontsize=8)
-    ax.set_xlabel("Net transition probability change")
-    ax.axvline(0, color="#555", linewidth=1.0, linestyle="--")
+    ax.set_xlabel("Mean KO shift magnitude")
     ax.set_title(f"{tf} knockout fate summary", fontweight="bold")
 
     if name is None:
