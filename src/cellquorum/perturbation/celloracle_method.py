@@ -46,6 +46,7 @@ class CellOracleMethod(AnalysisMethod):
         organism = config.get("organism", "human")
         min_cells_total = int(config.get("min_cells_total", 200))
         n_top_targets = int(config.get("n_top_targets", 20))
+        filter_edge_number = int(config.get("filter_edge_number", 10000))
         knn_n_neighbors = int(config.get("knn_n_neighbors", 200))
         n_propagation = int(config.get("n_propagation", 3))
         seed = int(config.get("seed", 0))
@@ -146,6 +147,8 @@ class CellOracleMethod(AnalysisMethod):
             " ".join(tf_list) if tf_list else "",
             "--n-top-targets",
             str(n_top_targets),
+            "--filter-edge-number",
+            str(filter_edge_number),
             "--knn-n-neighbors",
             str(knn_n_neighbors),
             "--n-propagation",

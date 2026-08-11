@@ -42,6 +42,9 @@ def test_parser_has_expected_args() -> None:
     assert args.tag == "t"
     assert args.organism == "human"
     assert args.n_top_targets == 20
+    # filter_edge_number is the PER-CLUSTER edge cap (CellOracle default 10000),
+    # distinct from n_top_targets (the figure top-N) -- must not collapse to 20.
+    assert args.filter_edge_number == 10000
     assert args.knn_n_neighbors == 200
     assert args.n_propagation == 3
     assert args.seed == 0

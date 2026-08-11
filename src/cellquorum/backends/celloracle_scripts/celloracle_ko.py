@@ -43,6 +43,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--healthy-label", default="")
     p.add_argument("--tf-list", default="", help="space/comma-separated; empty -> screen all")
     p.add_argument("--n-top-targets", type=int, default=20)
+    p.add_argument(
+        "--filter-edge-number",
+        type=int,
+        default=10000,
+        help="filter_links threshold_number: top-N edges kept PER CLUSTER network "
+        "(CellOracle default 10000); distinct from --n-top-targets (figure top-N).",
+    )
     p.add_argument("--knn-n-neighbors", type=int, default=200)
     p.add_argument("--n-propagation", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
@@ -184,8 +191,13 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
 
     # Step 4: Cluster-specific GRN → filter → simulation-ready model.
     print(f"[celloracle] Inferring cluster-specific GRN (get_links, cluster={cluster_key})")
+    # NOTE: get_links uses bagging-ridge (bootstrap) and exposes no random_state, so
+    # the inferred edge set is not bit-reproducible run-to-run; only the downstream
+    # embedding-shift step (estimate_transition_prob) is seeded. threshold_number caps
+    # the edges kept PER CLUSTER network (CellOracle default 10000) -- NOT a per-TF
+    # target count, so it is decoupled from n_top_targets (the figure top-N).
     links = oracle.get_links(cluster_name_for_GRN_unit=cluster_key, alpha=10, verbose_level=0)
-    links.filter_links(p=0.001, weight="coef_abs", threshold_number=args.n_top_targets)
+    links.filter_links(p=0.001, weight="coef_abs", threshold_number=int(args.filter_edge_number))
     oracle.get_cluster_specific_TFdict_from_Links(links_object=links)
     oracle.fit_GRN_for_simulation(alpha=10, use_cluster_specific_TFdict=True, verbose_level=0)
 
@@ -253,6 +265,7 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     # Step 7: Simulate each TF KO -> per-cell shift field -> score.
     n_neighbors = min(int(args.knn_n_neighbors), n_cell - 1)
     tf_scores = []
+    n_sim_errors = 0  # TFs that raised in the simulate/transition/shift calls
     for tf in tfs_to_screen:
         print(f"[celloracle] Simulating KO: {tf}")
         try:
@@ -268,6 +281,7 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
             oracle.calculate_embedding_shift(sigma_corr=0.05)
         except Exception as e:  # one infeasible TF must not sink the screen
             print(f"[celloracle] skip {tf}: {type(e).__name__}: {e}")
+            n_sim_errors += 1
             continue
 
         shift_vectors = np.asarray(oracle.delta_embedding)
@@ -290,6 +304,16 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
         )
 
     if not tf_scores:
+        # Distinguish a harmless "nothing to do" from a real systematic failure.
+        # If we had TFs to screen but every one raised in the simulation calls, that
+        # is a genuine failure (e.g. an API regression) and MUST surface as a FAILED
+        # sentinel + non-zero exit -- not a silent skip. An empty screen with no
+        # errors is the harmless case.
+        if n_sim_errors > 0 and n_sim_errors == len(tfs_to_screen):
+            raise RuntimeError(
+                f"all {len(tfs_to_screen)} TF simulations raised; last error path hit "
+                f"{n_sim_errors} times (see logged per-TF errors above)"
+            )
         write_skip(out_dir, args.tag, "no TF simulations produced results")
         return
 
