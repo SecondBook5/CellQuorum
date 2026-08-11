@@ -480,6 +480,7 @@ def test_build_default_backend_registry_registers_expected_backends() -> None:
     # Confirm the expected default backend names are registered.
     assert registry.names() == [
         "gpu",
+        "hdwgcna_r",
         "python",
         "python_optional",
         "r",
@@ -511,6 +512,7 @@ def test_build_default_backend_registry_status_table_contains_expected_backends(
     # Confirm all expected backend names are represented.
     assert row_names == {
         "gpu",
+        "hdwgcna_r",
         "python",
         "python_optional",
         "r",
