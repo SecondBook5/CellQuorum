@@ -1,0 +1,11 @@
+project:
+  name: docker_smoke
+input:
+  h5ad: /nonexistent/smoke.h5ad
+  counts_layer: counts
+compute:
+  backend: cpu
+run:
+  random_seed: 1337
+report:
+  enabled: false
