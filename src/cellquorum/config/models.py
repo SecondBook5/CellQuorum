@@ -69,6 +69,9 @@ from cellquorum.enrichment_viz.config import EnrichmentVizConfig
 # Import the feature-selection configuration model.
 from cellquorum.feature_selection.config import FeatureSelectionConfig
 
+# Import the GRN configuration model.
+from cellquorum.grn.config import GrnConfig
+
 # Import the integration configuration model.
 from cellquorum.integration.config import IntegrationConfig
 
@@ -535,6 +538,7 @@ class StageSelectionConfig(StrictBaseModel):
         composition: Whether composition analysis is enabled.
         differential_expression: Whether differential expression is enabled.
         coexpression: Whether co-expression (hdWGCNA) is enabled.
+        grn: Whether GRN (pySCENIC) regulon inference is enabled.
         molecular_inference: Whether molecular inference is enabled.
         cell_cell_communication: Whether communication analysis is enabled.
         network_analysis: Whether network analysis is enabled.
@@ -602,6 +606,9 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether co-expression (hdWGCNA) is enabled.
     coexpression: bool = True
+
+    # Store whether GRN (pySCENIC) regulon inference is enabled.
+    grn: bool = True
 
     # Store whether differential abundance is enabled.
     differential_abundance: bool = True
@@ -748,6 +755,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store co-expression (hdWGCNA) settings.
     coexpression: CoexpressionConfig = Field(default_factory=CoexpressionConfig)
+
+    # Store GRN (pySCENIC) settings.
+    grn: GrnConfig = Field(default_factory=GrnConfig)
 
     # Store enrichment / pathway-activity settings.
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
