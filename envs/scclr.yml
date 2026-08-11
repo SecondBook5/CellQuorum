@@ -1,0 +1,11 @@
+name: scclr
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - rust
+  - maturin
+  - pip
+  - numpy
+  - scipy
+  - anndata<0.10.9

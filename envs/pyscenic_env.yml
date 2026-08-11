@@ -1,0 +1,14 @@
+name: pyscenic_env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - numpy=1.23.5
+  - pandas=1.5.3
+  - setuptools<81
+  - scipy
+  - h5py
+  - pyarrow
+  - pyscenic
+  - loompy

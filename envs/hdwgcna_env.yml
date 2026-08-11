@@ -1,0 +1,11 @@
+name: hdwgcna_env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-seurat
+  - r-hdwgcna
+  - r-wgcna
+  - bioconductor-zellkonverter
+  - bioconductor-singlecellexperiment
+  - bioconductor-summarizedexperiment

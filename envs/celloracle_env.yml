@@ -1,0 +1,23 @@
+name: celloracle_env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - numpy
+  - cython
+  - pandas
+  - scipy
+  - scikit-learn
+  - numba
+  - matplotlib
+  - h5py
+  - louvain
+  - python-igraph
+  - setuptools<81
+  - anndata
+  - scanpy
+  - pip
+  - pip:
+      - velocyto
+      - celloracle
