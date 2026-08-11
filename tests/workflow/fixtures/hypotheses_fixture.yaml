@@ -1,0 +1,21 @@
+il33_axis:
+  title: "IL33/ST2 alarmin KC->ILC2 axis"
+  cell_types: [KC, ILC]
+  inputs:
+    KC: /data/kc.h5ad
+    ILC: /data/ilc.h5ad
+  skip:
+    pseudobulk: "single-condition subset; pseudobulk N/A"
+  blocked:
+    rna_velocity: "no spliced/unspliced layers for this subset"
+  gene_programs:
+    alarmin: [Il33, Il1rl1, Il13]
+  config_overrides:
+    run:
+      random_seed: 7
+emt_krt:
+  title: "EMT / KRT-high keratinocyte program"
+  cell_types: [KC]
+  inputs:
+    KC: /data/kc.h5ad
+  # no skip / blocked -> full scaffold runs
