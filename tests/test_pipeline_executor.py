@@ -318,6 +318,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "enrichment",
         "enrichment_viz",
         "feature_selection",
+        "grn",
         "integration",
         "integration_benchmark",
         "population_identity",

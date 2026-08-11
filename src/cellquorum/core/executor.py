@@ -77,6 +77,7 @@ from cellquorum.enrichment_viz.stage import EnrichmentVizStage
 
 # Import feature selection stage.
 from cellquorum.feature_selection.stage import FeatureSelectionStage
+from cellquorum.grn.stage import GrnStage
 
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage
@@ -280,6 +281,7 @@ def build_default_stage_registry() -> StageRegistry:
             "subclustering": SubclusteringStage(),
             "differential_expression": DifferentialExpressionStage(),
             "coexpression": CoexpressionStage(),
+            "grn": GrnStage(),
             "differential_abundance": DifferentialAbundanceStage(),
             "enrichment": EnrichmentStage(),
             "enrichment_viz": EnrichmentVizStage(),
