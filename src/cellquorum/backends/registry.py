@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from cellquorum.backends.base import Backend, BackendStatus, BackendUnavailableError
 from cellquorum.backends.gpu import build_gpu_backend
+from cellquorum.backends.hdwgcna_backend import build_hdwgcna_backend
 from cellquorum.backends.python import build_default_python_backends
 from cellquorum.backends.r import build_r_backend
 from cellquorum.backends.rapids import build_rapids_backend
@@ -312,6 +313,9 @@ def build_default_backend_registry() -> BackendRegistry:
 
     # Register the isolated-env scCODA backend (compositional DA).
     registry.register(build_sccoda_backend())
+
+    # Register the isolated-env hdWGCNA backend (co-expression modules).
+    registry.register(build_hdwgcna_backend())
 
     # Return the populated backend registry.
     return registry
