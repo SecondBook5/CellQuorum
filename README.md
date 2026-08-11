@@ -12,7 +12,7 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
 ![Tests](https://img.shields.io/badge/tests-~1200-brightgreen)
-![Stages](https://img.shields.io/badge/stages-25%20implemented-blue)
+![Stages](https://img.shields.io/badge/stages-26%20implemented-blue)
 ![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
@@ -44,14 +44,14 @@ sanity such as rejecting raw counts mislabeled as log-normalized). A method whos
 required inputs are absent *skips with a recorded reason* rather than crashing or
 silently producing wrong output.
 
-**Config-driven analysis backbone** — twenty-five registered stages run in
+**Config-driven analysis backbone** — twenty-six registered stages run in
 best-practices order, each dispatching to a config-selected method:
 
 ```
 ambient_correction → qc → preprocessing → dimensionality → integration
     → clustering → annotation → embeddings → differential_expression
     → differential_abundance → enrichment → enrichment_viz → coexpression
-    → trajectory → cell_cell_communication → ccc_network → ccc_viz
+    → grn → trajectory → cell_cell_communication → ccc_network → ccc_viz
 ```
 
 Every method is chosen by config (e.g. `integration.method: harmony | scvi`),
@@ -62,9 +62,12 @@ Ollivier-Ricci curvature from them, and `ccc_viz` renders the publication
 figures — so the full communication analysis runs end-to-end from one command.
 The `coexpression` stage discovers gene co-expression modules with hdWGCNA in
 an isolated R environment, emitting module/eigengene/hub tables plus a
-publication module-UMAP figure. Remaining discovery stages (regulon/GRN
-inference and in-silico perturbation, cellular potency) are planned slots not
-yet implemented.
+publication module-UMAP figure. The `grn` stage infers directed
+transcription-factor→target regulons with classic pySCENIC
+(GRNBoost2 → cisTarget → AUCell) in an isolated frozen environment, emitting
+adjacency/regulon/AUC tables plus RSS panels, regulon clustermaps, and a
+regulon-UMAP overlay. Remaining discovery stages (in-silico perturbation and
+cellular potency) are planned slots not yet implemented.
 
 **GPU acceleration, by default when available** — normalization (PFlog1pPF via
 cupy), PCA, and neighbors + Leiden (via rapids-singlecell) run on the GPU when
@@ -119,6 +122,7 @@ path-independent.
 | `enrichment` | GSEA; ORA; GSVA; decoupler activity (CollecTRI / PROGENy) | Implemented |
 | `enrichment_viz` | 8 figure types over GSEA / ORA / GSVA / activity | Implemented |
 | `coexpression` | hdWGCNA gene co-expression modules (isolated R env) — module/eigengene/hub tables + module–condition correlation + module-UMAP figure | Implemented |
+| `grn` | classic pySCENIC regulon inference (GRNBoost2 → cisTarget → AUCell, isolated env) — adjacency/regulon/AUC tables + RSS panels, regulon clustermaps, per-cell clustermap, and regulon-UMAP overlay | Implemented |
 | `adjudication` | cross-method result adjudication | Implemented |
 | `cell_cell_communication` | LIANA consensus (per-sample rank_aggregate); Tensor-cell2cell decomposition; NicheNet + MultiNicheNet (ligand→target/receptor, R) | Implemented |
 | `ccc_network` | network topology (Listener/Influencer/Mediator/PageRank + comparative); Ollivier-Ricci curvature + differential curvature | Implemented |
@@ -433,10 +437,11 @@ Stages marked ✅ are implemented and run today; ◐ are partially implemented;
 ✅ enrichment (GSEA / ORA / GSVA / decoupler activity)
 ✅ enrichment visualization (8 figure types)
 ✅ co-expression modules (hdWGCNA, isolated R env; module-UMAP figure)
+✅ regulon inference (pySCENIC; RSS / clustermap / regulon-UMAP figures)
 ✅ cell-cell communication (LIANA consensus + Tensor-cell2cell + NicheNet / MultiNicheNet)
 ✅ communication network topology + Ollivier-Ricci curvature (ccc_network)
 ✅ communication visualization (dotplot / chord / Sankey / curvature-network / summary)
-◐ gene-regulatory networks — ✅ co-expression modules (hdWGCNA); ⏳ regulon/GRN inference + in-silico perturbation
+◐ gene-regulatory networks — ✅ co-expression modules (hdWGCNA); ✅ regulon/GRN inference (pySCENIC); ⏳ in-silico perturbation
 ✅ trajectory / potency — RNA velocity (scVelo); CellRank / CytoTRACE 2 / Palantir / viz planned
 ⏳ report generation (auto methods text)
 ```
