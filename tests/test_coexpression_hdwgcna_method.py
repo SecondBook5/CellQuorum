@@ -152,6 +152,59 @@ def test_skips_on_modules_csv_missing_module_column(
     assert "module" in res.reason.lower() and "column" in res.reason.lower()
 
 
+def test_skips_when_r_script_times_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A subprocess timeout must become a MethodSkip, never raise out of _run."""
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            raise subprocess.TimeoutExpired(cmd=["micromamba"], timeout=timeout or 1)
+
+    res = HdwgcnaMethod()._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    assert isinstance(res, MethodSkip)
+    assert "time" in res.reason.lower() or "fail" in res.reason.lower()
+
+
+def test_metrics_exclude_grey_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The unassigned 'grey' bin must not inflate n_modules / n_genes_assigned."""
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # Two real modules (M1, M2) plus a grey unassigned bin.
+            pd.DataFrame(
+                {"gene": ["G0", "G1", "G2", "G3"], "module": ["M1", "M1", "M2", "grey"]}
+            ).to_csv(out_dir / "modules.csv", index=False)
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr="")
+
+    res = HdwgcnaMethod()._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    from cellquorum.core.stage import StageResult
+
+    assert isinstance(res, StageResult)
+    # grey excluded: 2 real modules, 3 genes assigned to real modules.
+    assert res.metrics["n_modules"] == 2
+    assert res.metrics["n_genes_assigned"] == 3
+
+
+def test_input_contract_does_not_require_group_by() -> None:
+    """A configured-but-absent group_by must not hard-fail the contract.
+
+    The R script falls back to a single 'all' group, so group_by is never a
+    hard obs requirement; missing columns route through the R fallback / skip.
+    """
+    m = HdwgcnaMethod()
+    contract = m.input_contract({"group_by": "cell_type"})
+    assert "cell_type" not in contract.required_obs
+
+
 def test_method_registered() -> None:
     import cellquorum.coexpression  # noqa: F401
     from cellquorum.methods.registry import METHOD_REGISTRY

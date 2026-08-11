@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import anndata as ad
@@ -29,15 +30,18 @@ class HdwgcnaMethod(AnalysisMethod):
     backend = "hdwgcna_r"
 
     def input_contract(self, config: dict) -> DataContract:
-        """Require the counts layer for co-expression analysis."""
+        """Require the counts layer for co-expression analysis.
+
+        ``group_by`` is deliberately NOT a hard obs requirement: when the
+        configured column is absent the R script falls back to a single "all"
+        group (see hdwgcna.R), so requiring it here would hard-fail the
+        contract instead of allowing that graceful fallback.
+        """
         layer = config.get("layer", "counts")
-        # Resolve group_by lenient: if it's explicitly set, require it; otherwise lenient
-        group_by = config.get("group_by")
-        required_obs = [group_by] if group_by else []
 
         return DataContract(
             required_layers=[layer],
-            required_obs=required_obs,
+            required_obs=[],
             expression_layer=layer,
             expected_kind="counts",
         )
@@ -150,9 +154,9 @@ class HdwgcnaMethod(AnalysisMethod):
         # 7. Run the hdWGCNA R script
         try:
             proc = backend.run_script(HDWGCNA_R, args, timeout=timeout_seconds)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             return MethodSkip(
-                reason="hdwgcna skipped: R script execution failed",
+                reason="hdwgcna skipped: R script execution failed or timed out",
                 details={"method": self.name, "error": str(exc)[:500]},
             )
 
@@ -269,8 +273,11 @@ class HdwgcnaMethod(AnalysisMethod):
             )
 
         # 11. Build metrics
-        n_modules = modules_df["module"].nunique()
-        n_genes_assigned = len(modules_df)
+        # Exclude the unassigned "grey" bin (WGCNA/hdWGCNA label for genes not
+        # placed in any real module) so counts reflect true co-expression modules.
+        real_modules = modules_df[modules_df["module"].astype(str).str.lower() != "grey"]
+        n_modules = real_modules["module"].nunique()
+        n_genes_assigned = len(real_modules)
 
         metrics = {
             "n_modules": int(n_modules),

@@ -85,6 +85,9 @@ tryCatch({
       mc <- tryCatch(GetMetacellObject(seu), error = function(e) NULL)
       if (!is.null(mc) && condition_col %in% colnames(mc@meta.data)) {
         cond_num <- enc[as.character(mc@meta.data[[condition_col]])]
+        # Index by metacell ID so cond_num[common] aligns with the eigengene rows
+        # (enc's names are condition LEVELS, not metacell barcodes).
+        names(cond_num) <- rownames(mc@meta.data)
         common <- intersect(rownames(me), rownames(mc@meta.data))
         if (length(common) >= 5) {
           cors <- sapply(colnames(me), function(m)
