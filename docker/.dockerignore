@@ -1,0 +1,9 @@
+.git
+.claude
+.superpowers
+runs
+bundles
+generated
+**/__pycache__
+*.pyc
+docs/superpowers
