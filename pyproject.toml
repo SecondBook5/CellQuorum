@@ -75,6 +75,7 @@ Issues = "https://github.com/SecondBook5/cellquorum/issues"
 [project.scripts]
 cellquorum = "cellquorum.cli.app:main"
 cq = "cellquorum.cli.app:main"
+gen-configs = "cellquorum.workflow.gen_configs_cli:app"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
