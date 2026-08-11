@@ -83,6 +83,30 @@ def test_ccc_stages_run_in_producer_before_consumer_order() -> None:
     )
 
 
+def test_coexpression_stage_is_planned_in_canonical_order() -> None:
+    """Verify the coexpression (hdWGCNA) stage is planned on a default run.
+
+    The stage is registered in the executor and has a config flag, so the
+    planner's canonical order must emit it — otherwise it is never planned and
+    silently never runs. It slots into the discovery tail after
+    differential_expression and before the CCC chain.
+    """
+
+    # Build the default configuration and ordered plan.
+    config = CellQuorumConfig()
+    plan = build_pipeline_plan(config)
+
+    # Read the enabled stage names in canonical run order.
+    order = plan.enabled_stage_names()
+
+    # Confirm the coexpression stage is planned.
+    assert "coexpression" in order
+
+    # Confirm it runs after DE and before the CCC chain.
+    assert order.index("differential_expression") < order.index("coexpression")
+    assert order.index("coexpression") < order.index("cell_cell_communication")
+
+
 def test_pipeline_planner_respects_disabled_stage_flags() -> None:
     """
     Verify that disabled stage flags are reflected in the plan.

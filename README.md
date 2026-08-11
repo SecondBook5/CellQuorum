@@ -12,7 +12,7 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
 ![Tests](https://img.shields.io/badge/tests-~1200-brightgreen)
-![Stages](https://img.shields.io/badge/stages-24%20implemented-blue)
+![Stages](https://img.shields.io/badge/stages-25%20implemented-blue)
 ![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
@@ -44,13 +44,13 @@ sanity such as rejecting raw counts mislabeled as log-normalized). A method whos
 required inputs are absent *skips with a recorded reason* rather than crashing or
 silently producing wrong output.
 
-**Config-driven analysis backbone** — twenty-four registered stages run in
+**Config-driven analysis backbone** — twenty-five registered stages run in
 best-practices order, each dispatching to a config-selected method:
 
 ```
 ambient_correction → qc → preprocessing → dimensionality → integration
     → clustering → annotation → embeddings → differential_expression
-    → differential_abundance → enrichment → enrichment_viz
+    → differential_abundance → enrichment → enrichment_viz → coexpression
     → trajectory → cell_cell_communication → ccc_network → ccc_viz
 ```
 
@@ -60,8 +60,11 @@ communication track runs producer-before-consumer: `cell_cell_communication`
 produces the ligand-receptor tables, `ccc_network` derives topology and
 Ollivier-Ricci curvature from them, and `ccc_viz` renders the publication
 figures — so the full communication analysis runs end-to-end from one command.
-Remaining discovery stages (gene-regulatory network construction,
-potency) are planned slots not yet implemented.
+The `coexpression` stage discovers gene co-expression modules with hdWGCNA in
+an isolated R environment, emitting module/eigengene/hub tables plus a
+publication module-UMAP figure. Remaining discovery stages (regulon/GRN
+inference and in-silico perturbation, cellular potency) are planned slots not
+yet implemented.
 
 **GPU acceleration, by default when available** — normalization (PFlog1pPF via
 cupy), PCA, and neighbors + Leiden (via rapids-singlecell) run on the GPU when
@@ -115,6 +118,7 @@ path-independent.
 | `differential_abundance` | paired arcsin-sqrt t-test; Milo; scCODA; sccomp | Implemented |
 | `enrichment` | GSEA; ORA; GSVA; decoupler activity (CollecTRI / PROGENy) | Implemented |
 | `enrichment_viz` | 8 figure types over GSEA / ORA / GSVA / activity | Implemented |
+| `coexpression` | hdWGCNA gene co-expression modules (isolated R env) — module/eigengene/hub tables + module–condition correlation + module-UMAP figure | Implemented |
 | `adjudication` | cross-method result adjudication | Implemented |
 | `cell_cell_communication` | LIANA consensus (per-sample rank_aggregate); Tensor-cell2cell decomposition; NicheNet + MultiNicheNet (ligand→target/receptor, R) | Implemented |
 | `ccc_network` | network topology (Listener/Influencer/Mediator/PageRank + comparative); Ollivier-Ricci curvature + differential curvature | Implemented |
@@ -410,8 +414,8 @@ Registry-driven executor
 
 ## Workflow spine
 
-Stages marked ✅ are implemented and run today; ⏳ are planned slots the planner
-already reserves.
+Stages marked ✅ are implemented and run today; ◐ are partially implemented;
+⏳ are planned slots the planner already reserves.
 
 ```text
 ✅ ambient correction (SoupX)
@@ -428,10 +432,11 @@ already reserves.
 ✅ differential abundance (paired t-test / Milo / scCODA / sccomp)
 ✅ enrichment (GSEA / ORA / GSVA / decoupler activity)
 ✅ enrichment visualization (8 figure types)
+✅ co-expression modules (hdWGCNA, isolated R env; module-UMAP figure)
 ✅ cell-cell communication (LIANA consensus + Tensor-cell2cell + NicheNet / MultiNicheNet)
 ✅ communication network topology + Ollivier-Ricci curvature (ccc_network)
 ✅ communication visualization (dotplot / chord / Sankey / curvature-network / summary)
-⏳ gene-regulatory networks
+◐ gene-regulatory networks — ✅ co-expression modules (hdWGCNA); ⏳ regulon/GRN inference + in-silico perturbation
 ✅ trajectory / potency — RNA velocity (scVelo); CellRank / CytoTRACE 2 / Palantir / viz planned
 ⏳ report generation (auto methods text)
 ```

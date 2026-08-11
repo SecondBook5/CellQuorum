@@ -218,6 +218,11 @@ class PipelinePlanner:
             ("enrichment", self.config.stages.enrichment),
             ("enrichment_viz", self.config.stages.enrichment_viz),
             ("de_viz", self.config.stages.de_viz),
+            # Co-expression (hdWGCNA) is a discovery-tail stage: it needs only the
+            # counts layer plus (optionally) cluster/annotation labels for its
+            # metacell grouping, so it slots in after DE/enrichment and before the
+            # molecular-inference and trajectory/CCC tracks.
+            ("coexpression", self.config.stages.coexpression),
             ("molecular_inference", self.config.stages.molecular_inference),
             # Trajectory/potency runs with the tail-end discovery tracks: it only
             # needs embeddings (integration rep + 2D coords) to have already run,
