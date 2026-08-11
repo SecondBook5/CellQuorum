@@ -78,6 +78,9 @@ from cellquorum.integration.config import IntegrationConfig
 # Import the integration-benchmark configuration model.
 from cellquorum.integration_benchmark.config import IntegrationBenchmarkConfig
 
+# Import the perturbation configuration model.
+from cellquorum.perturbation.config import PerturbationConfig
+
 # Import the population-identity configuration model.
 from cellquorum.population_identity.config import PopulationIdentityConfig
 
@@ -539,6 +542,7 @@ class StageSelectionConfig(StrictBaseModel):
         differential_expression: Whether differential expression is enabled.
         coexpression: Whether co-expression (hdWGCNA) is enabled.
         grn: Whether GRN (pySCENIC) regulon inference is enabled.
+        perturbation: Whether in-silico perturbation (CellOracle) is enabled.
         molecular_inference: Whether molecular inference is enabled.
         cell_cell_communication: Whether communication analysis is enabled.
         network_analysis: Whether network analysis is enabled.
@@ -609,6 +613,9 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether GRN (pySCENIC) regulon inference is enabled.
     grn: bool = True
+
+    # Store whether in-silico perturbation (CellOracle) is enabled.
+    perturbation: bool = True
 
     # Store whether differential abundance is enabled.
     differential_abundance: bool = True
@@ -758,6 +765,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store GRN (pySCENIC) settings.
     grn: GrnConfig = Field(default_factory=GrnConfig)
+
+    # Store in-silico perturbation (CellOracle) settings.
+    perturbation: PerturbationConfig = Field(default_factory=PerturbationConfig)
 
     # Store enrichment / pathway-activity settings.
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
