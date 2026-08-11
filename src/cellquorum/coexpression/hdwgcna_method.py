@@ -131,7 +131,7 @@ class HdwgcnaMethod(AnalysisMethod):
             adata.write_h5ad(h5ad)
 
         # 5. Create output directory
-        out_dir = Path(context.paths.results) / "coexpression"
+        out_dir = Path(getattr(context.paths, "results", ".")) / "coexpression"
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # 6. Build args for R script
@@ -179,10 +179,24 @@ class HdwgcnaMethod(AnalysisMethod):
             )
 
         # Read modules and check for results
-        modules_df = pd.read_csv(modules_csv)
+        try:
+            modules_df = pd.read_csv(modules_csv)
+        except Exception as exc:
+            return MethodSkip(
+                reason="hdwgcna skipped: could not read modules.csv",
+                details={"method": self.name, "error": str(exc)[:500]},
+            )
+
         if len(modules_df) == 0:
             return MethodSkip(
                 reason="hdwgcna skipped: no modules detected",
+                details={"method": self.name},
+            )
+
+        # Guard against missing 'module' column
+        if "module" not in modules_df.columns:
+            return MethodSkip(
+                reason="hdwgcna skipped: modules.csv missing 'module' column",
                 details={"method": self.name},
             )
 

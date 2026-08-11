@@ -110,6 +110,48 @@ def test_skips_on_sentinel_skip_file(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert isinstance(res, MethodSkip)
 
 
+def test_skips_on_malformed_modules_csv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # Write malformed CSV that pandas cannot read
+            (out_dir / "modules.csv").write_bytes(b"\xff\xfe\x00malformed")
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr="")
+
+    res = HdwgcnaMethod()._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    assert isinstance(res, MethodSkip)
+    assert "could not read" in res.reason.lower()
+
+
+def test_skips_on_modules_csv_missing_module_column(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # Write modules.csv with rows but no 'module' column
+            pd.DataFrame({"gene": ["G0", "G1", "G2"], "foo": ["A", "B", "C"]}).to_csv(
+                out_dir / "modules.csv", index=False
+            )
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr="")
+
+    res = HdwgcnaMethod()._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    assert isinstance(res, MethodSkip)
+    assert "module" in res.reason.lower() and "column" in res.reason.lower()
+
+
 def test_method_registered() -> None:
     import cellquorum.coexpression  # noqa: F401
     from cellquorum.methods.registry import METHOD_REGISTRY
