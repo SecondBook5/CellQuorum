@@ -70,6 +70,40 @@ def test_gene_programs_and_overrides_merged(manifest, template) -> None:
     assert kc["markers"]["panels"]["alarmin"] == ["Il33", "Il1rl1", "Il13"]
 
 
+def test_subset_on_emits_input_subset_block(manifest, template) -> None:
+    # When a manifest entry declares subset_on, every generated config points at
+    # the shared object and carries an input.subset that restricts it to that
+    # cell_type at load time (no per-cell-type pre-sliced file).
+    subset_manifest = copy.deepcopy(manifest)
+    entry = subset_manifest["emt_krt"]
+    entry["subset_on"] = "cell_type"
+    entry["inputs"] = {"KC": "/data/global.h5ad"}
+
+    out = gen_configs(subset_manifest, template)
+    kc = out["emt_krt__KC"]
+
+    assert kc["input"]["h5ad"] == "/data/global.h5ad"
+    assert kc["input"]["subset"] == {"column": "cell_type", "values": ["KC"]}
+
+
+def test_subset_on_configs_still_validate(manifest, template) -> None:
+    # The input.subset block must be accepted by the config schema, otherwise the
+    # generated configs would fail to load at run time.
+    subset_manifest = copy.deepcopy(manifest)
+    entry = subset_manifest["emt_krt"]
+    entry["subset_on"] = "cell_type"
+    entry["inputs"] = {"KC": "/data/global.h5ad"}
+
+    out = gen_configs(subset_manifest, template)
+    validate_config_dict(out["emt_krt__KC"])  # raises if invalid
+
+
+def test_no_subset_on_omits_input_subset_block(manifest, template) -> None:
+    # Without subset_on the input block stays subset-free (full-object behavior).
+    out = gen_configs(manifest, template)
+    assert "subset" not in out["emt_krt__KC"]["input"]
+
+
 def test_unknown_method_raises(manifest) -> None:
     bad = copy.deepcopy(manifest)
     bad["emt_krt"]["skip"] = {"not_a_method": "typo"}

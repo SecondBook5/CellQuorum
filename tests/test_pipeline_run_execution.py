@@ -298,7 +298,36 @@ def test_execute_pipeline_run_records_failure_without_input(tmp_path: Path) -> N
     assert qc_record["error"]["error_type"] in {"QCStageError", "CellQuorumDataError"}
 
 
-def test_execute_pipeline_run_from_config_file_runs_qc(tmp_path: Path) -> None:
+def test_continue_on_stage_failure_attempts_stages_past_a_failure(tmp_path: Path) -> None:
+    """
+    Verify run.continue_on_stage_failure keeps executing after a failed stage.
+
+    With no input, qc fails first. Under the default fail-fast policy the run
+    stops there. With continue_on_stage_failure the executor must go on and
+    attempt later mandatory stages, so more than one stage is recorded failed.
+    This is the contract an unattended canary relies on to surface every break
+    in a single pass instead of halting on the first.
+    """
+
+    # Build an input-less config and opt into continue-on-failure.
+    config = build_execution_config(None)
+    config = config.model_copy(
+        update={"run": config.run.model_copy(update={"continue_on_stage_failure": True})}
+    )
+
+    # Execute the pipeline.
+    result = execute_pipeline_run(
+        config,
+        output_dir=tmp_path / "continue_run",
+        backend_registry=build_test_backend_registry(),
+    )
+
+    # qc still fails, but execution did not stop at it: at least one later stage
+    # was attempted and also recorded (failed or otherwise), so the failure set
+    # is not the single-element ["qc"] the fail-fast path produces.
+    failed = result.execution_result.failed_stage_names()
+    assert "qc" in failed
+    assert len(failed) > 1
     """
     Verify config-file execution loads YAML and runs QC.
 

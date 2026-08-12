@@ -97,14 +97,21 @@ def gen_configs(
         inputs = entry["inputs"]
         overrides = entry.get("config_overrides", {})
         programs = entry.get("gene_programs", {})
+        # When ``subset_on`` names an obs column, every cell_type points at the
+        # same shared object and the engine restricts it to that cell_type at
+        # load time (recorded in provenance) — no per-cell-type pre-sliced file.
+        subset_on = entry.get("subset_on")
         for cell_type in cell_types:
             key = f"{hyp_id}__{cell_type}"
             cfg = _deep_merge(dict(template), overrides)
+            input_block: dict[str, Any] = {"h5ad": inputs[cell_type]}
+            if subset_on is not None:
+                input_block["subset"] = {"column": subset_on, "values": [cell_type]}
             cfg = _deep_merge(
                 cfg,
                 {
                     "project": {"name": key},
-                    "input": {"h5ad": inputs[cell_type]},
+                    "input": input_block,
                     "stages": stages,
                 },
             )

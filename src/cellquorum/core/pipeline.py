@@ -174,8 +174,17 @@ def load_input_adata_from_config(config: CellQuorumConfig) -> ad.AnnData | None:
     if config.input.h5ad is None:
         return None
 
-    # Load and return the configured AnnData object.
-    return load_adata(config.input.h5ad)
+    # Apply a configured row restriction (e.g. cell_type == Fibroblasts) at load
+    # time. The I/O layer reads it in backed mode so the full object is never
+    # materialized; without a subset the whole object is read as before.
+    subset = config.input.subset
+    if subset is None:
+        return load_adata(config.input.h5ad)
+    return load_adata(
+        config.input.h5ad,
+        subset_column=subset.column,
+        subset_values=subset.values,
+    )
 
 
 def build_pipeline_context(
@@ -251,6 +260,11 @@ def build_pipeline_context(
         "input_h5ad": str(config.input.h5ad) if config.input.h5ad is not None else None,
         "input_counts_layer": config.input.counts_layer,
         "input_loaded": loaded_adata is not None,
+        # Record the applied row restriction (column, values, n_before/n_after)
+        # so a cell-type subset is a visible provenance step, not a silent cut.
+        "input_subset": (
+            loaded_adata.uns.get("cellquorum_input_subset") if loaded_adata is not None else None
+        ),
         "manifest_path": str(config.paths.manifest) if config.paths.manifest is not None else None,
         "manifest_n_samples": int(len(loaded_manifest)) if loaded_manifest is not None else 0,
         "bootstrap_time_utc": datetime.now(UTC).isoformat(),
@@ -991,8 +1005,12 @@ def execute_pipeline_run(
     # Mark the end of execution-frame setup before stage execution.
     bootstrap_ended_at = datetime.now(UTC)
 
-    # Resolve the executor.
-    resolved_executor = executor or PipelineExecutor()
+    # Resolve the executor. Honor the run-level continue-on-failure switch so an
+    # unattended canary attempts every stage instead of halting on the first
+    # failure (a caller-supplied executor keeps its own policy).
+    resolved_executor = executor or PipelineExecutor(
+        stop_on_failure=not config.run.continue_on_stage_failure
+    )
 
     # Build the run reporter from config verbosity settings.
     reporter = RunReporter(verbose=config.run.verbose, level=config.run.log_level)

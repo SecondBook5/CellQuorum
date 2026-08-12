@@ -6,8 +6,14 @@ input:
 compute:
   backend: auto
   fallback_to_cpu: true
+preprocessing:
+  normalization:
+    # The pipeline owns its namespaced output layer; re-deriving it must not
+    # error when an input already carries a prior cellquorum_normalized layer.
+    overwrite: true
 run:
   random_seed: 1337
+  resume: true
 report:
   enabled: true
   html: true

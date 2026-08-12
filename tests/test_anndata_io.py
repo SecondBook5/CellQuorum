@@ -257,3 +257,99 @@ def test_load_adata_rejects_non_h5ad_path_before_reading(tmp_path: Path) -> None
     # Confirm unsupported files fail at validation time.
     with pytest.raises(AnnDataLoadError, match="supports AnnData input only"):
         load_adata(path)
+
+
+def make_celltype_adata() -> ad.AnnData:
+    """
+    Build a small AnnData with a ``cell_type`` obs column for subset tests.
+
+    Returns:
+        AnnData with four cells across two cell types.
+    """
+
+    matrix = np.arange(12, dtype=float).reshape(4, 3)
+    obs = pd.DataFrame(
+        {"cell_type": ["Fibroblasts", "T/NK", "Fibroblasts", "Mast"]},
+        index=["c1", "c2", "c3", "c4"],
+    )
+    var = pd.DataFrame(index=["g1", "g2", "g3"])
+    return ad.AnnData(X=matrix, obs=obs, var=var)
+
+
+def test_load_adata_subset_keeps_only_matching_rows(tmp_path: Path) -> None:
+    """
+    Verify load_adata restricts to rows whose column value is in the values.
+
+    This is the load-time cell-type restriction a hypothesis relies on so it
+    never has to pre-slice a separate file.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata().write_h5ad(path)
+
+    observed = load_adata(path, subset_column="cell_type", subset_values=["Fibroblasts"])
+
+    # Only the two Fibroblast rows survive, in original order.
+    assert list(observed.obs_names) == ["c1", "c3"]
+    assert observed.obs["cell_type"].tolist() == ["Fibroblasts", "Fibroblasts"]
+
+
+def test_load_adata_subset_records_provenance(tmp_path: Path) -> None:
+    """
+    Verify the applied subset is recorded on uns for run provenance.
+
+    The run reads this to log n_before/n_after so the cut is never silent.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata().write_h5ad(path)
+
+    observed = load_adata(path, subset_column="cell_type", subset_values=["Fibroblasts"])
+
+    prov = observed.uns["cellquorum_input_subset"]
+    assert prov["column"] == "cell_type"
+    assert prov["values"] == ["Fibroblasts"]
+    assert prov["n_before"] == 4
+    assert prov["n_after"] == 2
+
+
+def test_load_adata_subset_rejects_unknown_column(tmp_path: Path) -> None:
+    """
+    Verify a subset on a missing obs column fails loudly.
+
+    A typo'd column must not silently return the whole object.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata().write_h5ad(path)
+
+    with pytest.raises(AnnDataLoadError, match="not found in obs"):
+        load_adata(path, subset_column="celltype", subset_values=["Fibroblasts"])
+
+
+def test_load_adata_subset_rejects_zero_match(tmp_path: Path) -> None:
+    """
+    Verify a subset that matches no rows fails rather than running on 0 cells.
+
+    An empty slice is almost always a mislabeled value.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata().write_h5ad(path)
+
+    with pytest.raises(AnnDataLoadError, match="matched 0 of"):
+        load_adata(path, subset_column="cell_type", subset_values=["Neuron"])
+
+
+def test_load_adata_rejects_half_specified_subset(tmp_path: Path) -> None:
+    """
+    Verify a subset needs both column and values, or neither.
+
+    A half-specified subset is a programming error and must fail clearly.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata().write_h5ad(path)
+
+    with pytest.raises(AnnDataLoadError, match="both subset_column and subset_values"):
+        load_adata(path, subset_column="cell_type")

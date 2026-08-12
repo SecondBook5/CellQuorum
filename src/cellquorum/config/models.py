@@ -192,6 +192,50 @@ class PathConfig(StrictBaseModel):
     output_dir: Path | None = None
 
 
+class InputSubsetConfig(StrictBaseModel):
+    """
+    Restrict the input AnnData to rows whose ``column`` value is in ``values``.
+
+    A per-cell-type (or per-condition) hypothesis analyzes a slice of a shared
+    annotated object, never the whole thing. Declaring that slice here makes the
+    restriction a first-class, reproducible part of the run instead of a manual
+    pre-slice someone has to remember: the loader applies it in backed mode so a
+    large global object is never fully materialized (only the matching slice is
+    read into memory), and records n_before/n_after in run provenance so the cut
+    is never a silent step.
+
+    Args:
+        column: obs column to filter on (e.g. ``cell_type``).
+        values: keep rows whose ``column`` value is one of these.
+    """
+
+    # Store the obs column to filter rows on.
+    column: str
+
+    # Store the accepted values; a row is kept when its column value is in here.
+    values: list[str] = Field(min_length=1)
+
+    @field_validator("column")
+    @classmethod
+    def validate_column(cls, value: str) -> str:
+        """Reject an empty subset column name."""
+
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("input.subset.column cannot be empty.")
+        return cleaned
+
+    @field_validator("values")
+    @classmethod
+    def validate_values(cls, value: list[str]) -> list[str]:
+        """Strip values and reject empty entries."""
+
+        cleaned = [str(item).strip() for item in value]
+        if any(not item for item in cleaned):
+            raise ValueError("input.subset.values cannot contain empty strings.")
+        return cleaned
+
+
 class InputConfig(StrictBaseModel):
     """
     Store input data configuration.
@@ -203,6 +247,7 @@ class InputConfig(StrictBaseModel):
     Args:
         h5ad: Optional path to an AnnData h5ad file.
         counts_layer: Optional AnnData layer containing raw counts.
+        subset: Optional row restriction applied at load time (backed mode).
     """
 
     # Store an optional AnnData h5ad input path.
@@ -210,6 +255,9 @@ class InputConfig(StrictBaseModel):
 
     # Store an optional AnnData layer containing raw counts.
     counts_layer: str | None = None
+
+    # Store an optional row restriction (e.g. cell_type == Fibroblasts).
+    subset: InputSubsetConfig | None = None
 
     @field_validator("h5ad")
     @classmethod
@@ -324,6 +372,13 @@ class RunConfig(StrictBaseModel):
 
     # Store the filename (under the run's objects dir) for the final AnnData.
     final_object_name: str = "final_annotated.h5ad"
+
+    # Store whether execution continues past a failed stage. Default False keeps
+    # the fail-fast contract for normal runs. Set True for an unattended canary
+    # so one broken optional stage does not halt the whole pipeline: every stage
+    # is attempted, all failures are recorded, and a later resume rerun only
+    # re-executes the stages that failed.
+    continue_on_stage_failure: bool = False
 
     @field_validator("random_seed")
     @classmethod
