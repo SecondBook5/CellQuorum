@@ -14,6 +14,16 @@ from cellquorum.workflow.gen_configs import accounting, gen_configs
 app = typer.Typer(name="gen-configs", add_completion=False)
 
 
+@app.callback()
+def _root() -> None:
+    """Expand a hypothesis manifest into per-(hypothesis, cell_type) configs.
+
+    A no-op root callback keeps ``run`` a real subcommand: without it Typer
+    collapses a single-command app to a bare invocation, breaking the
+    documented ``gen-configs run ...`` interface the Snakefile calls.
+    """
+
+
 def main(manifest_path: Path, template_path: Path, out_dir: Path) -> None:
     manifest = yaml.safe_load(Path(manifest_path).read_text())
     template = yaml.safe_load(Path(template_path).read_text())
