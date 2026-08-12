@@ -602,6 +602,13 @@ def write_h5ad_artifact(adata: ad.AnnData, path: Path) -> Path:
 
     # Try writing the h5ad artifact.
     try:
+        # anndata >= 0.11 refuses to write pandas nullable / Arrow-backed
+        # string columns (common in externally annotated objects) unless the
+        # caller opts in. Enable it when the setting exists; older anndata
+        # writes these dtypes without a flag, so the getattr guard is a no-op.
+        if hasattr(ad.settings, "allow_write_nullable_strings"):
+            ad.settings.allow_write_nullable_strings = True
+
         # Write AnnData to a temporary h5ad file.
         adata.write_h5ad(temp_path)
 

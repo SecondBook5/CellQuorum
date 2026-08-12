@@ -963,6 +963,14 @@ def execute_pipeline_run(
             f"Received: {type(config).__name__}"
         )
 
+    # anndata >= 0.11 refuses to write pandas nullable / Arrow-backed string
+    # columns (common in externally annotated inputs) unless the caller opts
+    # in. Enable it once for the whole run so every stage's h5ad write
+    # succeeds. Older anndata lacks the setting and writes these dtypes
+    # unconditionally, so the guard is a no-op there.
+    if hasattr(ad.settings, "allow_write_nullable_strings"):
+        ad.settings.allow_write_nullable_strings = True
+
     # Mark the start of execution-frame setup.
     bootstrap_started_at = datetime.now(UTC)
 

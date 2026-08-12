@@ -440,6 +440,23 @@ def test_write_h5ad_artifact_writes_readable_anndata(tmp_path: Path) -> None:
     assert list(observed.var_names) == ["gene_1", "gene_2"]
 
 
+def test_write_h5ad_artifact_writes_nullable_string_obs(tmp_path: Path) -> None:
+    """Externally annotated inputs often carry pandas nullable / Arrow-backed
+    string obs columns. anndata >= 0.11 refuses to write these unless opted in;
+    the writer must enable that so real annotated objects round-trip.
+    """
+
+    adata = make_test_adata()
+    # A pandas nullable StringDtype column is what anndata >= 0.11 blocks.
+    adata.obs["annot_label"] = pd.array(["fibroblast", "keratinocyte"], dtype="string")
+
+    # Default-off writes would raise; the writer opts in, so this must succeed.
+    path = write_h5ad_artifact(adata, tmp_path / "qc.h5ad")
+
+    observed = ad.read_h5ad(path)
+    assert list(observed.obs["annot_label"]) == ["fibroblast", "keratinocyte"]
+
+
 def test_write_h5ad_artifact_rejects_non_anndata(tmp_path: Path) -> None:
     """
     Verify AnnData artifact writing rejects invalid objects.
