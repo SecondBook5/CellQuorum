@@ -49,6 +49,10 @@ class CellCellCommunicationConfig(StrictBaseModel):
     tensor_how: str = "outer"
     outer_fraction: float = 1.0 / 3.0
     timeout_seconds: int = 1800
+    # Device for the tensor decomposition: 'cpu', 'cuda'/'gpu', or None to
+    # auto-resolve from compute.prefer_gpu (falls back to CPU if CUDA is
+    # unavailable). GPU offload keeps robust factorization tractable.
+    device: str | None = None
     # --- NicheNet / MultiNicheNet (spec #2) — optional; MethodSkip when unset ---
     # Prior-model RDS paths (organism-specific biology → config, never bundled).
     nichenet_ligand_target_matrix: str | None = None

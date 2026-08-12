@@ -45,6 +45,57 @@ class TensorCell2CellMethod(AnalysisMethod):
             config.get("sample_col", "sample_id"),
         ]
 
+    def _resolve_device(self, config: dict, context: object) -> str:
+        """Decide the tensor-decomposition device.
+
+        Precedence: an explicit ``device`` in the CCC config wins; otherwise
+        auto-resolve from the pipeline's ``compute.prefer_gpu`` preference. A
+        CUDA request is honored only when torch reports a usable GPU — otherwise
+        we fall back to CPU so the stage never hard-fails on a GPU-less host.
+        """
+        explicit = config.get("device")
+        if explicit:
+            candidate = str(explicit).lower()
+        else:
+            compute = getattr(getattr(context, "config", None), "compute", None)
+            prefer_gpu = bool(getattr(compute, "prefer_gpu", False))
+            candidate = "cuda" if prefer_gpu else "cpu"
+
+        if candidate in ("cuda", "gpu"):
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    return "cuda"
+            except Exception:
+                pass
+            return "cpu"
+        return "cpu"
+
+    def _place_tensor_on_device(self, tensor: object, device: str) -> tuple[str, str | None]:
+        """Move the tensor onto ``device`` for decomposition.
+
+        Returns the device actually used and an optional note. GPU needs the
+        tensorly PyTorch backend; any failure degrades to CPU (numpy backend)
+        rather than aborting the stage.
+        """
+        if device != "cuda":
+            return "cpu", None
+        try:
+            import tensorly as tl
+
+            tl.set_backend("pytorch")
+            tensor.to_device("cuda")
+            return "cuda", "tensor_c2c decomposition on GPU (tensorly pytorch backend)."
+        except Exception as exc:
+            try:
+                import tensorly as tl
+
+                tl.set_backend("numpy")
+            except Exception:
+                pass
+            return "cpu", f"GPU requested but unavailable ({str(exc)[:150]}); ran on CPU."
+
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         seed = int(config.get("seed", 42))
 
@@ -91,6 +142,12 @@ class TensorCell2CellMethod(AnalysisMethod):
                 reason="tensor_c2c skipped: tensor construction failed",
                 details={"method": self.name, "error": str(exc)[:300]},
             )
+
+        # Place the tensor on GPU when requested/available (keeps robust
+        # factorization tractable); degrade to CPU rather than hard-fail.
+        device_note = None
+        device = self._resolve_device(config, context)
+        device, device_note = self._place_tensor_on_device(tensor, device)
 
         # Rank: explicit, or elbow auto-select.
         rank = config.get("rank")
@@ -150,15 +207,19 @@ class TensorCell2CellMethod(AnalysisMethod):
             )
 
         adata.uns["tensor_c2c"] = dict(loadings)
+        notes = [f"Tensor-cell2cell decomposition at rank {int(rank)} on {device}."]
+        if device_note:
+            notes.append(device_note)
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=[f"Tensor-cell2cell decomposition at rank {int(rank)}."],
+            notes=notes,
             metrics={
                 "method": self.name,
                 "rank": int(rank),
                 "elbow_selected": elbow_selected,
                 "n_samples": n_samples,
+                "device": device,
             },
             backend="python",
         )
