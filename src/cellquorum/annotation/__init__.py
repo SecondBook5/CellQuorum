@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cellquorum.annotation.celltypist_method import CellTypistMethod
 from cellquorum.annotation.marker_vote import MarkerVoteMethod
+from cellquorum.annotation.passthrough import PassthroughAnnotationMethod
 from cellquorum.annotation.stage import AnnotationStage
 from cellquorum.methods.registry import METHOD_REGISTRY
 
@@ -15,4 +16,13 @@ if not METHOD_REGISTRY.has("annotation", "marker_vote"):
 if not METHOD_REGISTRY.has("annotation", "celltypist"):
     METHOD_REGISTRY.register(CellTypistMethod)
 
-__all__ = ["AnnotationStage", "MarkerVoteMethod", "CellTypistMethod"]
+# Self-register the passthrough method (guarded against double registration).
+if not METHOD_REGISTRY.has("annotation", "passthrough"):
+    METHOD_REGISTRY.register(PassthroughAnnotationMethod)
+
+__all__ = [
+    "AnnotationStage",
+    "MarkerVoteMethod",
+    "CellTypistMethod",
+    "PassthroughAnnotationMethod",
+]

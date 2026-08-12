@@ -145,3 +145,23 @@ def test_population_identity_skips_when_no_identity_signal(tmp_path: Path) -> No
 
     assert result.status == "skipped"
     assert "no population identity column" in result.skip_reason
+
+
+def test_population_identity_handles_empty_summary_without_crash(tmp_path: Path) -> None:
+    """A candidate column but zero cells must skip, not KeyError on evidence_status.
+
+    Regression: a 0-cell object (e.g. an upstream stage that emptied the working
+    object) produces an empty population_summary with no 'evidence_status' column;
+    the metrics block indexed that column and crashed the whole stage.
+    """
+
+    obs = pd.DataFrame(
+        {"leiden": pd.Series([], dtype="object")},
+        index=pd.Index([], dtype="object"),
+    )
+    adata = ad.AnnData(X=np.empty((0, 3), dtype=np.float32), obs=obs)
+    context = build_context(tmp_path, adata, write_figures=False)
+    result = PopulationIdentityStage().run(context)
+
+    assert result.status == "skipped"
+    assert result.metrics["n_populations"] == 0

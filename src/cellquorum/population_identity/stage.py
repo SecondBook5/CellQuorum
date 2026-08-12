@@ -81,6 +81,26 @@ class PopulationIdentityStage:
             )
 
         tables = build_population_identity_tables(adata, resolution, config)
+
+        # A candidate column can still yield no populations (0 cells, or all-NA
+        # labels). An empty summary has no 'evidence_status' column, so skip
+        # cleanly rather than crashing the metrics block that indexes it.
+        if tables["population_summary"].empty:
+            return StageResult.skipped(
+                adata=adata,
+                reason="no populations to characterize (empty candidate grouping)",
+                warnings=[
+                    "population_identity: candidate column "
+                    f"'{resolution.candidate_key}' produced no populations "
+                    "(0 cells or all-NA labels)."
+                ],
+                metrics={
+                    "candidate_key": resolution.candidate_key,
+                    "candidate_source": resolution.candidate_source,
+                    "n_populations": 0,
+                },
+            )
+
         audit = build_population_identity_audit(adata, resolution, tables, config)
 
         cq = adata.uns.setdefault("cellquorum", {})

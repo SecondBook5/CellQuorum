@@ -26,6 +26,10 @@ class AnnotationConfig(StrictBaseModel):
     # obs column that receives the assigned cell-type label.
     key_added: str = "cell_type"
 
+    # Source obs column for the 'passthrough' method (preserve an already-trusted
+    # label). None means read the trusted label directly from key_added.
+    source_key: str | None = None
+
     # Random seed for deterministic scoring.
     random_state: int = 0
 

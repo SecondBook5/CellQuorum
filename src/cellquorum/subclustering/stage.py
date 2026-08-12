@@ -103,6 +103,26 @@ class SubclusteringStage:
             metrics["n_cells_before_focus"] = prov["n_cells_total"]
             metrics["n_cells_after_focus"] = prov["n_cells_kept"]
 
+        # Guard: a focus that matches zero cells must NOT propagate an empty
+        # object as the pipeline's working adata. Doing so previously poisoned
+        # every downstream stage (population_identity/embeddings/DE/CCC all ran
+        # on 0 cells). Skip cleanly, returning the parent object untouched.
+        if focused.n_obs == 0:
+            return StageResult(
+                adata=adata,
+                notes=notes,
+                warnings=[
+                    "subclustering skipped: focus "
+                    f"'{focus_config.label_key} in {focus_config.labels}' matched 0 cells; "
+                    "returning the parent object unchanged."
+                ],
+                metrics={
+                    **metrics,
+                    "skipped": True,
+                    "reason": "focus matched 0 cells",
+                },
+            )
+
         # Apply group filter (if configured).
         group_key = sc_config.group_filter.group_key
         min_cells = sc_config.group_filter.min_cells
@@ -337,13 +357,75 @@ class SubclusteringStage:
         if sc_config.diagnostics.clustree:
             notes.append("Clustree: deferred (leiden_grid not implemented)")
 
+        # Project subclustering results back onto the ORIGINAL parent object and
+        # return THAT, not the focus subset. extract_focus stripped the parent's
+        # X_* embeddings and (under a group filter or focus < all cells) shrank
+        # the cell set; returning it would deprive downstream stages of the
+        # integration embedding they depend on. Instead we keep the parent (all
+        # cells, embeddings intact) and merge the per-cell subcluster labels /
+        # donor-QC flags back on by obs index. Cells outside the analyzed focus
+        # simply carry NaN for those columns.
+        result_adata = self._project_onto_parent(
+            parent=adata,
+            focused=focused,
+            filtered=filtered,
+            sc_config=sc_config,
+        )
+
         return StageResult(
-            adata=filtered,
+            adata=result_adata,
             artifacts=artifacts,
             notes=notes,
             warnings=warnings,
             metrics=metrics,
         )
+
+    def _project_onto_parent(
+        self,
+        parent: object,
+        focused: object,
+        filtered: object,
+        sc_config: object,
+    ) -> object:
+        """
+        Merge subclustering outputs back onto the parent object.
+
+        Args:
+            parent: The pipeline's working AnnData (embeddings intact, all cells).
+            focused: The focus subset (carries subcluster_extraction provenance).
+            filtered: The analyzed subset (carries subcluster labels + QC flags).
+            sc_config: Resolved subclustering config.
+
+        Returns:
+            The parent object with subcluster labels / QC flags projected on, and
+            (for action='drop') restricted to the cells the donor gate retained.
+        """
+        # Project the per-cell subcluster labels back onto the parent by index.
+        # Cells not present in `filtered` (outside focus or group-filtered out)
+        # receive NaN — they were not part of the subclustering analysis.
+        key = sc_config.key_added
+        if key in filtered.obs.columns:
+            parent.obs[key] = filtered.obs[key].reindex(parent.obs_names)
+
+        # Project donor-QC flags the same way when the gate produced them.
+        for col in ("donor_qc_qc_pass", "donor_qc_qc_reason"):
+            if col in filtered.obs.columns:
+                parent.obs[col] = filtered.obs[col].reindex(parent.obs_names)
+
+        # Carry provenance forward on the parent's uns.
+        if "subcluster_extraction" in focused.uns:
+            parent.uns["subcluster_extraction"] = focused.uns["subcluster_extraction"]
+        if "subclustering" in filtered.uns:
+            parent.uns["subclustering"] = filtered.uns["subclustering"]
+
+        # action='drop' is an explicit removal of gate-failed cells. Honor it by
+        # restricting the parent to the cells that survived in `filtered`
+        # (embeddings preserved, unlike returning the stripped subset).
+        if sc_config.action == "drop":
+            keep = parent.obs_names.isin(filtered.obs_names)
+            return parent[keep].copy()
+
+        return parent
 
     def _resolve_rscript_backend(self, context: object) -> object | None:
         """Return the Rscript backend from context registry, or None."""
