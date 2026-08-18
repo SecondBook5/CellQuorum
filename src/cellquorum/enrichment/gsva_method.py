@@ -98,6 +98,19 @@ class GsvaMethod(AnalysisMethod):
                 details={"method": self.name, "n_case": n_case, "n_control": n_control},
             )
 
+        # Auto-promote to a paired contrast when the design is fully matched, so
+        # the sample-level GSVA test blocks on donor (ttest_rel) instead of the
+        # weaker independent test — mirrors the pseudobulk edgeR auto-promotion.
+        _case_donors = set(meta.loc[meta[condition_col] == case, donor_col])
+        _control_donors = set(meta.loc[meta[condition_col] == control, donor_col])
+        if (
+            not paired
+            and _case_donors
+            and _case_donors == _control_donors
+            and len(_case_donors) >= 2
+        ):
+            paired = True
+
         # CPM + log1p normalize the surviving (nonzero-library) pseudobulk counts.
         data = np.log1p(counts.div(counts.sum(axis=1), axis=0) * 1e6)
 
@@ -139,6 +152,7 @@ class GsvaMethod(AnalysisMethod):
                 es, _ = dc.mt.gsva(data, net, tmin=min_size)
                 # Align conditions to decoupler's returned sample order.
                 cond = meta[condition_col].reindex(es.index)
+                donor_of = meta[donor_col].reindex(es.index)
                 case_mask = (cond == case).values
                 control_mask = (cond == control).values
                 if int(case_mask.sum()) < 2 or int(control_mask.sum()) < 2:
@@ -150,13 +164,32 @@ class GsvaMethod(AnalysisMethod):
                     )
                     continue
 
+                # For a paired test, arms must be aligned by donor — never by
+                # positional mask order, which is not donor-consistent. Build the
+                # ordered donor list present in BOTH arms (a collection can lose a
+                # donor to decoupler filtering, so recompute per collection).
+                case_donor = donor_of[case_mask]
+                control_donor = donor_of[control_mask]
+                paired_donors = sorted(set(case_donor) & set(control_donor))
+                use_paired = paired and len(paired_donors) >= 2
+
                 rows = []
                 for source in es.columns:
-                    case_vals = es.loc[case_mask, source].values
-                    control_vals = es.loc[control_mask, source].values
-                    if paired and len(case_vals) == len(control_vals) and len(case_vals) >= 2:
+                    if use_paired:
+                        # Index each arm by donor, then align on the shared donors
+                        # so ttest_rel compares matched case/control per patient.
+                        case_by_donor = pd.Series(
+                            es.loc[case_mask, source].values, index=case_donor.values
+                        ).loc[paired_donors]
+                        control_by_donor = pd.Series(
+                            es.loc[control_mask, source].values, index=control_donor.values
+                        ).loc[paired_donors]
+                        case_vals = case_by_donor.values
+                        control_vals = control_by_donor.values
                         res = stats.ttest_rel(case_vals, control_vals)
                     else:
+                        case_vals = es.loc[case_mask, source].values
+                        control_vals = es.loc[control_mask, source].values
                         res = stats.ttest_ind(case_vals, control_vals, equal_var=False)
                     rows.append(
                         {

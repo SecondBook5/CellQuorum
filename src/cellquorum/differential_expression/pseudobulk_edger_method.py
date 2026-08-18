@@ -112,14 +112,52 @@ class PseudobulkEdgeRMethod(AnalysisMethod):
             extra_obs=covariates,
         )
 
+        # Inspect donor pairing in the pseudobulk meta so a matched design is
+        # never analysed unpaired by accident. This is the safety net for the
+        # class of error where `design.paired` is left False on data where every
+        # donor contributes both a case and a control sample: blocking on donor
+        # removes inter-patient baseline variance and is strictly more powerful.
+        sample_meta = pb.sample_meta
+        counts_df = pb.counts
+        case_donors = set(sample_meta.loc[sample_meta[condition_col] == case, donor_col])
+        control_donors = set(sample_meta.loc[sample_meta[condition_col] == control, donor_col])
+        all_donors = case_donors | control_donors
+        complete_pairs = case_donors & control_donors
+        design_notes: list[str] = []
+
+        # Auto-promote to paired when the design is fully matched but was not
+        # declared paired — the corrected, higher-powered default for such data.
+        if not paired and complete_pairs and complete_pairs == all_donors and len(all_donors) >= 2:
+            paired = True
+            design_notes.append(
+                "Auto-promoted to PAIRED: every donor contributes both a "
+                f"{case} and a {control} pseudobulk sample "
+                f"({len(complete_pairs)} complete donor pairs). Blocking on donor."
+            )
+
+        # For a paired fit, keep only donors with a complete pair so the
+        # donor-blocked design stays estimable (mixed/rare cell types can lose a
+        # donor from one arm); log what was dropped rather than failing silently.
+        if paired:
+            incomplete = all_donors - complete_pairs
+            if incomplete:
+                keep = sample_meta.index[sample_meta[donor_col].isin(complete_pairs)]
+                counts_df = counts_df.loc[keep]
+                sample_meta = sample_meta.loc[keep]
+                design_notes.append(
+                    f"Paired fit restricted to {len(complete_pairs)} complete donor "
+                    f"pairs; dropped {len(incomplete)} donor(s) present in only one "
+                    f"arm: {sorted(str(d) for d in incomplete)}."
+                )
+
         # Write pseudobulk inputs to scratch.
         scratch = Path(getattr(context.paths, "scratch", "."))
         scratch.mkdir(parents=True, exist_ok=True)
         counts_csv = scratch / "pb_counts.csv"
         meta_csv = scratch / "pb_meta.csv"
-        pb.counts.reset_index(names="sample").to_csv(counts_csv, index=False)
+        counts_df.reset_index(names="sample").to_csv(counts_csv, index=False)
         # Rename design cols so the R script's fixed names (condition/donor) apply.
-        meta = pb.sample_meta.rename(columns={condition_col: "condition", donor_col: "donor"})
+        meta = sample_meta.rename(columns={condition_col: "condition", donor_col: "donor"})
         meta.to_csv(meta_csv)
 
         # Build the design right-hand side: covariates + [donor +] condition.
@@ -170,15 +208,20 @@ class PseudobulkEdgeRMethod(AnalysisMethod):
                     description=f"Pseudobulk edgeR DE ({case} vs {control}), {design_rhs}.",
                 )
             ],
-            notes=[f"Pseudobulk edgeR DE: {case} vs {control}, design ~ {design_rhs}."],
+            notes=[
+                f"Pseudobulk edgeR DE: {case} vs {control}, design ~ {design_rhs}.",
+                *design_notes,
+            ],
             metrics={
                 "case": case,
                 "control": control,
                 "paired": paired,
                 "design_rhs": design_rhs,
                 "covariates": covariates,
-                "n_pseudosamples": int(pb.counts.shape[0]),
-                "n_genes_input": int(pb.counts.shape[1]),
+                "n_complete_donor_pairs": len(complete_pairs),
+                "design_notes": design_notes,
+                "n_pseudosamples": int(counts_df.shape[0]),
+                "n_genes_input": int(counts_df.shape[1]),
             },
             backend="rscript",
         )

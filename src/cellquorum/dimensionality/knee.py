@@ -15,6 +15,12 @@ def select_n_pcs(variance_ratio: np.ndarray, *, max_pcs: int) -> int:
     """
     Return the elbow component count from a descending variance-ratio curve.
 
+    NOTE: the kneedle elbow of a scRNA-seq variance curve is known to UNDER-select
+    (steep-then-flat curves put max-curvature very low). Hypothesis configs
+    therefore set an explicit ``n_pcs`` (typically 50, matching field practice)
+    rather than relying on ``auto``. A more principled ``auto`` (Marchenko-Pastur
+    noise threshold / parallel analysis) is a possible future replacement.
+
     Args:
         variance_ratio: Per-PC explained-variance ratios, descending.
         max_pcs: Upper bound on the returned count.
