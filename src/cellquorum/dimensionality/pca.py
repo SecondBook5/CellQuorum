@@ -7,6 +7,7 @@ embedding, and emits a house-style scree/elbow figure so the choice is auditable
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import anndata as ad
@@ -17,6 +18,8 @@ from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.dimensionality.knee import select_n_pcs
 from cellquorum.methods.base import AnalysisMethod
+
+logger = logging.getLogger(__name__)
 
 
 def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Path) -> None:
@@ -151,6 +154,36 @@ class PCAMethod(AnalysisMethod):
             chosen = int(min(int(n_pcs), n_comps))
             mode = "fixed"
 
+        # Cumulative variance captured by the chosen components (for provenance
+        # and the under-selection guard).
+        cumulative_variance = float(np.sum(variance_ratio[:chosen]))
+
+        # Record the choice for provenance.
+        notes = [f"Selected {chosen} PCs ({mode})."]
+
+        # No-silent-decisions guard: `n_pcs=auto` picks the kneedle elbow, which
+        # is KNOWN to under-select on scRNA variance curves (steep-then-flat
+        # curves put max curvature very low). Log the decision where it acts and
+        # warn loudly when the auto elbow lands far below the cap, so a silent
+        # under-selection (e.g. 8/50 PCs) is visible rather than buried.
+        if mode == "auto":
+            logger.info(
+                "n_pcs=auto selected %d of %d computed PCs (%.1f%% cumulative variance).",
+                chosen,
+                n_comps,
+                100.0 * cumulative_variance,
+            )
+            under_select_floor = max(10, max_pcs // 2)
+            if chosen < under_select_floor:
+                under_msg = (
+                    f"n_pcs=auto selected only {chosen} of up to {max_pcs} PCs "
+                    f"({100.0 * cumulative_variance:.1f}% cumulative variance). The kneedle "
+                    "elbow is known to under-select on scRNA variance curves; set an "
+                    "explicit n_pcs (e.g. 50) if downstream steps use the PCA embedding."
+                )
+                logger.warning(under_msg)
+                notes.append(under_msg)
+
         # Truncate the embedding to the chosen number of components.
         adata.obsm["X_pca"] = adata.obsm["X_pca"][:, :chosen]
 
@@ -159,8 +192,6 @@ class PCAMethod(AnalysisMethod):
         scree_path = figures_dir / "dimensionality_scree.png"
         write_scree_plot(variance_ratio, chosen, scree_path)
 
-        # Record the choice for provenance.
-        notes = [f"Selected {chosen} PCs ({mode})."]
         if gpu_fallback_note is not None:
             notes.append(gpu_fallback_note)
 
@@ -178,6 +209,7 @@ class PCAMethod(AnalysisMethod):
                 "n_pcs": int(chosen),
                 "n_pcs_mode": mode,
                 "n_comps_computed": int(n_comps),
+                "n_pcs_cumulative_variance": cumulative_variance,
                 "compute": compute_used,
             },
             notes=notes,
