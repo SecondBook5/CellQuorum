@@ -4,6 +4,14 @@ channels:
   - bioconda
 dependencies:
   - python=3.10
+  # Build toolchain: the micromamba base image has NO system compiler, and
+  # velocyto / pybedtools / gimmemotifs (pulled by celloracle) have native
+  # (Cython/C++) extensions with no PyPI wheels, so they compile from sdist.
+  # Provide gcc/g++ + zlib headers via conda so the --no-build-isolation pip
+  # build in the Dockerfile has a working toolchain.
+  - c-compiler
+  - cxx-compiler
+  - zlib
   - numpy
   - cython
   - pandas
@@ -15,9 +23,14 @@ dependencies:
   - louvain
   - python-igraph
   - setuptools<81
+  - wheel
   - anndata
   - scanpy
   - pip
-  - pip:
-      - velocyto
-      - celloracle
+  # NOTE: velocyto + celloracle are installed via a dedicated Dockerfile RUN,
+  # NOT here. They are legacy sdists whose setup.py imports numpy at build time
+  # without declaring it in build-system requires, so they must be installed
+  # with `pip --no-build-isolation` against the conda-provided numpy/cython/
+  # setuptools(<81)/wheel above. micromamba's env-file pip handler treats every
+  # list item as a REQUIREMENT (not a flag), so `--no-build-isolation` cannot be
+  # expressed here — it belongs in a real pip invocation in the Dockerfile.

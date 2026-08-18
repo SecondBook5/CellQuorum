@@ -34,6 +34,17 @@ dependencies:
   # HVG and preprocessing support.
   - scikit-misc>=0.3
 
+  # CellRank sparse Schur solver (SLEPc/PETSc), as CONDA packages — building
+  # these from pip is fragile (PETSc configures + compiles from source). Without
+  # them, CellRank's GPCCA Schur decomposition silently falls back to the dense
+  # 'brandts' method, which materializes the full n_obs x n_obs transition matrix
+  # (~42 GB at 72k cells) and OOM-kills the whole pipeline. With them, CellRank
+  # uses the sparse 'krylov' method: identical partial real Schur decomposition,
+  # ~1000x less memory. conda-forge ships abi3 wheels compatible with py3.10+.
+  # trajectory/_cellrank.py auto-detects them and selects the solver accordingly.
+  - petsc4py>=3.22
+  - slepc4py>=3.22
+
   # Batch correction and CPU integration.
   - harmonypy>=0.0.10
   - bbknn>=1.6
@@ -68,6 +79,30 @@ dependencies:
   - typer>=0.12
   - rich>=13.0
 
-  # Install the local CellQuorum package in editable mode.
+  # In-process analysis stacks + local package.
+  #
+  # Cell-cell communication (liana, tensor-cell2cell) and trajectory
+  # (scvelo, cellrank, palantir) run IN the cellquorum process — unlike the
+  # isolated R/celloracle/pyscenic backends dispatched as subprocesses. Their
+  # heavy libs are imported lazily inside each method's `_run()` and return a
+  # MethodSkip when absent, so without them here the shipped image SILENTLY
+  # SKIPS every CCC / RNA-velocity / pseudotime stage. Versions are pinned to
+  # the validated working set that ran the fibroblast canary end-to-end
+  # (tensor_c2c GPU + CellRank trajectory). torch is the CPU-capable build in
+  # this env; the cellquorum-gpu env installs the CUDA build.
   - pip:
-      - -e .
+      # NOTE: the editable install of the repo (`pip install -e .`) is NOT done
+      # here — at env-create time the source is not yet copied into the image,
+      # and conda resolves a pip local path relative to this file's dir (/tmp in
+      # the image), where no package exists. The Dockerfile installs the package
+      # editable in a dedicated RUN step after `COPY . /opt/cellquorum`.
+      # Cell-cell communication (in-process).
+      - liana==1.7.1
+      - cell2cell==0.8.4
+      - tensorly==0.9.0
+      # Trajectory / RNA velocity / potency (in-process).
+      - scvelo==0.3.4
+      - cellrank==2.2.0
+      - palantir==1.4.4
+      # Deep generative models (scVI/scArches); pulls torch.
+      - scvi-tools==1.4.3

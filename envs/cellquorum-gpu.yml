@@ -1,5 +1,18 @@
 name: cellquorum-gpu
 
+# GPU runtime env. MUST be a SUPERSET of cellquorum-core: GPU selection is
+# capability-detected at runtime (compute/router.py -> gpu_compute_available()
+# imports cupy + rapids_singlecell and checks for a CUDA device), and the CLI
+# runs entirely IN this env in the GPU image, so every stage's in-process deps
+# (CCC, trajectory, decoupler, plotting, CLI, ...) must be present here too —
+# not just the GPU accelerators. Keep this list in sync with cellquorum-core.yml
+# whenever core changes. Mirrors the validated base env that ran the fibroblast
+# canary on GPU (tensor_c2c cuda + CellRank).
+#
+# NOTE: the CUDA/torch/rapids solve cannot be validated without a full
+# `docker build --target gpu`; the CPU image (cellquorum-core) is the
+# build-verified path. Rebuild + smoke-test the GPU target before relying on it.
+
 channels:
   - pytorch
   - nvidia
@@ -12,19 +25,80 @@ dependencies:
   - python=3.12
   - pip
 
-  # Core CPU stack.
-  - numpy
-  - scipy
-  - pandas
-  - scikit-learn
-  - anndata
-  - scanpy
+  # Core numerical and statistical stack (mirror of cellquorum-core).
+  - numpy>=1.24
+  - scipy>=1.11
+  - pandas>=2.1
+  - scikit-learn>=1.4
+  - statsmodels>=0.14
+  - numba>=0.59
 
-  # GPU/deep-learning stack.
+  # Single-cell data structures and analysis.
+  - anndata>=0.11
+  - scanpy>=1.10
+  - h5py>=3.10
+  - zarr>=2.17
+  - natsort>=8.4
+
+  # Neighbor graphs, dimensionality reduction, and clustering.
+  - umap-learn>=0.5
+  - pynndescent>=0.5
+  - python-igraph>=0.11
+  - leidenalg>=0.10
+  - louvain>=0.8
+  - scikit-misc>=0.3
+
+  # CellRank sparse Schur solver (SLEPc/PETSc), as CONDA packages — mirror of
+  # cellquorum-core. Without them CellRank's GPCCA Schur falls back to dense
+  # 'brandts' (~42 GB at 72k cells → OOM); with them it uses sparse 'krylov'
+  # (identical math, ~1000x less memory). See cellquorum-core.yml for detail.
+  - petsc4py>=3.22
+  - slepc4py>=3.22
+
+  # Batch correction and CPU integration.
+  - harmonypy>=0.0.10
+  - bbknn>=1.6
+
+  # Doublet/QC, activity inference, utilities.
+  - scrublet>=0.2
+  - decoupler-py>=1.8
+  - networkx>=3.2
+  - joblib>=1.3
+  - tqdm>=4.66
+
+  # Plotting and report rendering.
+  - matplotlib>=3.8
+  - seaborn>=0.13
+  - jinja2>=3.1
+  - markdown>=3.6
+
+  # File formats and tables.
+  - pyarrow>=14
+  - fastparquet>=2024.2
+  - openpyxl>=3.1
+
+  # Configuration and CLI.
+  - pyyaml>=6.0
+  - hydra-core>=1.3
+  - omegaconf>=2.3
+  - pydantic>=2.7
+  - typer>=0.12
+  - rich>=13.0
+
+  # ---- GPU / deep-learning accelerators (the cellquorum-core delta) ----
   - pytorch::pytorch
   - pytorch::torchvision
   - pytorch::torchaudio
   - pytorch-cuda=12.1
+  # MKL runtime pin. The pytorch conda channel forces BLAS to MKL, and
+  # conda-forge's `blas=*=mkl` metapackage otherwise resolves mkl to 2020.4,
+  # which ships only the UNVERSIONED libmkl_intel_lp64.so. PyTorch 2.4's
+  # libtorch_*.so link the VERSIONED libmkl_intel_lp64.so.2 (mkl >= 2023), so
+  # without this pin `import torch` (and therefore `import cellquorum`) dies
+  # with `libmkl_intel_lp64.so.2: cannot open shared object file` and the CLI
+  # cannot start in this env. Verified: mkl 2023.2 provides the .so.2 and
+  # gpu_compute_available() returns True in-container.
+  - mkl>=2023.2
 
   # RAPIDS stack. cuvs is required by rapids-singlecell's neighbors backend;
   # without it rapids_singlecell fails to import (CellQuorum then falls back to
@@ -36,7 +110,7 @@ dependencies:
   - cugraph
   - cuvs
 
-  # scRNA-seq deep generative models.
+  # scRNA-seq deep generative models + in-process analysis stacks.
   # NOTE paths in this pip block resolve relative to THIS file's directory
   # (envs/), so the editable install of the repo root is `..`, not `.`.
   # rapids-singlecell-cu12 is the prebuilt CUDA-12 wheel; the bare
@@ -44,8 +118,22 @@ dependencies:
   # rapids-singlecell is OPTIONAL (GPU acceleration for normalization/PCA/
   # neighbors/Leiden); scVI + scArches only need torch/scvi-tools. If the
   # rapids-singlecell import ever fails, the pipeline still runs on CPU for
-  # those steps — remove this line to skip it entirely.
+  # those steps — remove this line to skip it entirely. The CCC/trajectory
+  # libs reuse the conda-installed (CUDA) torch above. Versions pinned to the
+  # validated canary set (see cellquorum-core.yml).
   - pip:
-      - scvi-tools>=1.2
+      - scvi-tools==1.4.3
       - rapids-singlecell-cu12
-      - -e ..
+      # Cell-cell communication (in-process).
+      - liana==1.7.1
+      - cell2cell==0.8.4
+      - tensorly==0.9.0
+      # Trajectory / RNA velocity / potency (in-process).
+      - scvelo==0.3.4
+      - cellrank==2.2.0
+      - palantir==1.4.4
+      # NOTE: the editable install of the repo is NOT done here. At env-create
+      # time conda resolves a pip local path relative to THIS file's dir, which
+      # is /tmp in the image (not envs/), so `-e ..` would point at `/` and fail.
+      # The Dockerfile installs the package editable into cellquorum-gpu in a
+      # dedicated RUN step after the env is created and the source is present.

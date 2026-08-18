@@ -60,6 +60,9 @@ dependencies:
   - bioconductor-dorothea
   - bioconductor-viper
 
-  # Install the local CellQuorum package in editable mode.
-  - pip:
-      - -e .
+  # NOTE: the editable install of CellQuorum is done in a dedicated Dockerfile
+  # RUN step (after the source is copied), NOT here. At env-create time conda
+  # resolves a pip local path relative to this file's dir (/tmp in the image),
+  # where no package exists; and micromamba's env-file pip handler treats list
+  # items as requirements. All of CellQuorum's runtime deps are conda-provided
+  # above, so the editable install only registers the package itself.
