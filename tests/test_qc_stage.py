@@ -712,8 +712,9 @@ def test_qc_stage_run_report_only_writes_artifacts_and_preserves_shape(tmp_path:
     assert result.adata.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
     assert result.adata.var["cellquorum_qc_keep"].tolist() == [True, True, False, False]
 
-    # Confirm no warnings were emitted with the deterministic test config.
-    assert result.warnings == []
+    # Confirm the no-drop mode warns LOUDLY that it flagged cells it did not
+    # remove (no-silent-decisions): cell_2 fails QC but stays in the object.
+    assert any("did NOT remove them" in warning for warning in result.warnings)
 
     # Confirm stage notes summarize QC.
     assert result.notes[0] == "QC completed in report_only mode."
@@ -772,6 +773,31 @@ def test_qc_stage_run_filter_mode_returns_filtered_anndata(tmp_path: Path) -> No
 
     # Confirm stage metrics include filtered output shape.
     assert result.metrics["output_shape"] == {"n_obs": 2, "n_vars": 2}
+
+    # Filter mode drops flagged cells, so the no-drop warning must NOT fire.
+    assert not any("did NOT remove them" in warning for warning in result.warnings)
+
+
+def test_qc_stage_run_flag_no_drop_synonym_matches_report_only(tmp_path: Path) -> None:
+    """`flag_no_drop` is the truthful synonym of `report_only`: keep + warn.
+
+    It must preserve shape (no cells dropped) and still emit the loud no-drop
+    warning, exactly like `report_only`.
+    """
+
+    # Build context and stage using the truthful mode name.
+    context = make_context(tmp_path)
+    stage = QCStage(config=make_stage_qc_config(mode="flag_no_drop"))
+
+    # Run the QC stage.
+    result = stage.run(context)
+
+    # Confirm no-drop behavior preserved shape (cell_2 flagged but kept).
+    assert result.adata.shape == (3, 4)
+    assert result.adata.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
+
+    # Confirm the loud no-drop warning fired under the synonym too.
+    assert any("did NOT remove them" in warning for warning in result.warnings)
 
 
 def test_qc_stage_run_disabled_returns_no_artifacts(tmp_path: Path) -> None:

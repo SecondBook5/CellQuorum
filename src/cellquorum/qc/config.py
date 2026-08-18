@@ -21,8 +21,11 @@ from cellquorum.config.validation import (
     require_mapping,
 )
 
-# Define supported QC execution modes.
-type QCMode = Literal["report_only", "filter", "both"]
+# Define supported QC execution modes. `flag_no_drop` (preferred, truthful name)
+# and its legacy synonym `report_only` both FLAG failing cells WITHOUT removing
+# them — the flagged cells remain in the object and enter downstream analysis.
+# `filter` keeps only passing cells; `both` reports metrics and filters.
+type QCMode = Literal["flag_no_drop", "report_only", "filter", "both"]
 
 # Define supported QC threshold strategies.
 type ThresholdStrategy = Literal["fixed", "mad", "fixed_and_mad"]
@@ -1053,7 +1056,11 @@ class QCConfig(StrictBaseModel):
 
     Args:
         enabled: Whether the QC module is enabled.
-        mode: QC behavior, one of report_only, filter, or both.
+        mode: QC behavior. `flag_no_drop` (preferred) / `report_only` (legacy
+            synonym) FLAG failing cells but keep them in the object; `filter`
+            removes failing cells; `both` reports and filters. The default is a
+            no-drop mode, so the stage warns loudly when it flags cells it does
+            not remove.
         threshold_strategy: Which threshold family should be used.
         metrics: QC metric calculation settings.
         basic: Fixed QC threshold settings.
@@ -1144,11 +1151,11 @@ class QCConfig(StrictBaseModel):
         Return whether QC should produce reports and metrics.
 
         Returns:
-            True when mode is report_only or both.
+            True in a no-drop mode (report_only / flag_no_drop) or both.
         """
 
-        # Return whether the QC mode includes reporting.
-        return self.mode in {"report_only", "both"}
+        # Return whether the QC mode includes reporting (either no-drop synonym).
+        return self.mode in {"report_only", "flag_no_drop", "both"}
 
     def enabled_metric_families(self) -> list[str]:
         """

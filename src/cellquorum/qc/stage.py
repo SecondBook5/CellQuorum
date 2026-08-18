@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# Import logging for loud, auditable QC decisions (no-silent-decisions rule).
+import logging
+
 # Import Mapping for dictionary-like config resolution.
 from collections.abc import Mapping
 
@@ -37,6 +40,8 @@ from cellquorum.qc.metrics import QCMetricsResult, calculate_qc_metrics
 
 # Import QC threshold construction.
 from cellquorum.qc.thresholds import QCThresholdResult, build_qc_thresholds
+
+logger = logging.getLogger(__name__)
 
 
 class QCStageError(CellQuorumDataError):
@@ -262,6 +267,24 @@ class QCStage:
 
         # Surface any preserved-not-overwritten metric-column conflicts.
         warnings.extend(metric_annotation_warnings)
+
+        # No-silent-decisions guard: in a no-drop mode (report_only / flag_no_drop)
+        # flagged cells REMAIN in the object and flow into every downstream stage.
+        # Say so loudly — a resolved config's benign-looking mode must not hide the
+        # fact that N% of cells failed QC yet nothing was removed.
+        if not qc_config.should_filter():
+            n_failed = int(decision_result.summary.get("n_cells_failed", 0))
+            n_total = int(decision_result.summary.get("n_cells", 0))
+            if n_failed > 0:
+                pct = (100.0 * n_failed / n_total) if n_total else 0.0
+                no_drop_msg = (
+                    f"QC mode '{qc_config.mode}' flagged {n_failed} of {n_total} cells "
+                    f"({pct:.1f}%) as failing QC but did NOT remove them — they remain "
+                    "in the object and enter downstream analysis. Set qc.mode='filter' "
+                    "or 'both' to drop them."
+                )
+                logger.warning(no_drop_msg)
+                warnings.append(no_drop_msg)
 
         # Build human-readable stage notes.
         notes = build_qc_stage_notes(
