@@ -10,6 +10,8 @@ def _fake_run(dir_: Path) -> Path:
         (dir_ / sub).mkdir(parents=True)
     (dir_ / "figures" / "umap.png").write_bytes(b"PNG")
     (dir_ / "results" / "de_table.csv").write_text("gene,lfc\nIl33,1.2\n")
+    (dir_ / "provenance" / "artifact_manifest.csv").write_text("name,path\n")
+    (dir_ / "provenance" / "stage_execution_records.json").write_text("[]")
     return dir_
 
 
@@ -29,6 +31,9 @@ def test_assemble_bundle_collects_and_reports(tmp_path: Path) -> None:
     assert report.exists()
     assert (bundle_dir / "KC" / "figures" / "umap.png").exists()
     assert (bundle_dir / "ILC" / "results" / "de_table.csv").exists()
+    # Provenance travels with the published bundle for reproducibility.
+    assert (bundle_dir / "KC" / "provenance" / "artifact_manifest.csv").exists()
+    assert (bundle_dir / "ILC" / "provenance" / "stage_execution_records.json").exists()
     html = report.read_text()
     assert "IL33/ST2 alarmin KC-&gt;ILC2 axis" in html or "IL33/ST2 alarmin KC->ILC2 axis" in html
     assert "KC" in html and "ILC" in html

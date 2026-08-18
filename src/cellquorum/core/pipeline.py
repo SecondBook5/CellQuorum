@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+# Import importlib.metadata so dependency versions can be resolved from metadata.
+import importlib.metadata
+
+# Import platform so run metadata can stamp the interpreter and OS environment.
+import platform
+
 # Import time for wall-clock measurement.
 import time
 
@@ -281,6 +287,39 @@ def build_pipeline_context(
         random_seed=config.run.random_seed,
         metadata=metadata,
     )
+
+
+def _environment_stamp() -> dict[str, Any]:
+    """
+    Capture a run-level environment stamp for reproducibility provenance.
+
+    Records the CellQuorum version, the interpreter, the OS platform, and the
+    versions of key scientific dependencies. Each dependency import is guarded so
+    a missing (or broken) package records ``None`` instead of crashing the run.
+
+    Returns:
+        Dict with keys: cellquorum_version, python_version, platform, and a
+        nested "dependencies" map of package name to version (or None).
+    """
+    # Version-carrying scientific dependencies worth stamping into provenance.
+    dependency_packages = ("scanpy", "anndata", "numpy", "scipy", "pandas")
+
+    # Resolve each dependency version from installed metadata, tolerating any that
+    # are absent (records None) so a missing dep never crashes the run.
+    dependencies: dict[str, str | None] = {}
+    for package_name in dependency_packages:
+        try:
+            dependencies[package_name] = importlib.metadata.version(package_name)
+        except Exception:
+            dependencies[package_name] = None
+
+    # Assemble the stamp in the same explicit dict style as run metadata.
+    return {
+        "cellquorum_version": __version__,
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "dependencies": dependencies,
+    }
 
 
 def _stage_plan_dataframe(plan: PipelinePlan) -> pd.DataFrame:
@@ -817,6 +856,7 @@ def write_pipeline_provenance(
         {
             "run_id": context.run_id,
             "random_seed": context.random_seed,
+            "environment": _environment_stamp(),
             "paths": {
                 "root": str(context.paths.root),
                 "results": str(context.paths.results),

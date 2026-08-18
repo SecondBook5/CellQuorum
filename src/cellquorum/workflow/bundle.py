@@ -6,7 +6,10 @@ import html
 import shutil
 from pathlib import Path
 
-_COPY_SUBDIRS = ("figures", "results")
+# "provenance" carries the reproducibility record (artifact_manifest.csv,
+# stage_execution_records.json, pipeline_plan.json) into the published bundle.
+# It is copied on the same silent-degrade-if-missing basis as figures/results.
+_COPY_SUBDIRS = ("figures", "results", "provenance")
 
 
 def assemble_bundle(

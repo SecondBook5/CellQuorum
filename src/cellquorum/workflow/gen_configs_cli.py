@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -33,7 +34,14 @@ def main(manifest_path: Path, template_path: Path, out_dir: Path) -> None:
     cfg_dir = Path(out_dir) / "configs"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     for key, cfg in configs.items():
-        (cfg_dir / f"{key}.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
+        # The config KEY is ``{hyp_id}__{cell_type}`` and the cell_type is a raw
+        # obs label that may contain path-hostile characters (e.g. "T/NK", where
+        # the "/" would make Path treat "…__T" as a missing subdirectory and the
+        # write crash). Sanitize ONLY the on-disk filename; the true label is
+        # preserved inside the config (project.name + input.subset.values) so the
+        # engine still subsets against the exact obs value.
+        safe_key = re.sub(r"[^A-Za-z0-9._-]+", "_", key)
+        (cfg_dir / f"{safe_key}.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
     (Path(out_dir) / "accounting.json").write_text(json.dumps(acct, indent=2))
 
 

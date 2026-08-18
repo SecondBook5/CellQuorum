@@ -10,6 +10,12 @@ from cellquorum.workflow.scaffold import SCAFFOLD_METHOD_STAGES
 _FAIL = "failed"
 _OK = "succeeded"
 _SKIP = "skipped"
+_BLOCKED = "blocked"
+# A method the manifest slated to RUN that produced no successful record after an
+# attempted/crashed run is honestly "missing" (never reached / crashed before it)
+# or "incomplete" (partially recorded), never silently "skipped".
+_MISSING = "missing"
+_INCOMPLETE = "incomplete"
 
 
 def _records(stage_records: list[dict] | dict) -> list[dict]:
@@ -37,9 +43,18 @@ def method_status(
     """
     Roll up per-stage status into per-method status.
 
-    A method succeeds if all its stages are present and succeeded (status="success").
-    A method fails if any of its stages failed (status="failed").
-    Otherwise the method is skipped.
+    These are run-methods: the manifest slated them to RUN, so absence of a
+    successful record is a real problem, not an intentional skip. The states are
+    kept honest:
+
+    - "failed": any of the method's stages recorded status="failed".
+    - "missing": the method produced no stage records at all -- the run crashed
+      or never reached it. This is NOT "skipped".
+    - "incomplete": some stages recorded but others have no record -- a partial
+      run (e.g. crashed mid-method).
+    - "skipped": every stage was explicitly engine-skipped (status="skipped").
+    - "succeeded": every stage is present and each is success (or an intentional
+      engine skip) with no failures.
 
     Args:
         stage_records: List of stage execution records (or dict wrapper).
@@ -47,22 +62,33 @@ def method_status(
         method_stages: Mapping of method name to list of stage names.
 
     Returns:
-        Dict mapping method name to status ("succeeded", "failed", or "skipped").
+        Dict mapping method name to one of: succeeded, failed, missing,
+        incomplete, skipped.
     """
     by_stage = {rec["stage_name"]: rec.get("status", _SKIP) for rec in _records(stage_records)}
     result: dict[str, str] = {}
     for method in run_methods:
         stages = method_stages[method]
+        # ``None`` marks a stage with no execution record on disk.
         statuses = [by_stage.get(s) for s in stages]
         present = [s for s in statuses if s is not None]
-        if not present:
-            result[method] = _SKIP
-        elif _FAIL in present:
+        if _FAIL in present:
             result[method] = _FAIL
-        elif all(s == "success" for s in present):
+        elif not present:
+            # Slated to run but nothing recorded: crashed before/at this method.
+            result[method] = _MISSING
+        elif None in statuses:
+            # Some stages ran, others never recorded: a partial (crashed) run.
+            result[method] = _INCOMPLETE
+        elif all(s == _SKIP for s in present):
+            # Every stage was an explicit, intentional engine skip.
+            result[method] = _SKIP
+        elif all(s in ("success", _SKIP) for s in present):
+            # All stages accounted for, at least one success, no failures.
             result[method] = _OK
         else:
-            result[method] = _SKIP
+            # Unknown non-success statuses present: not a clean success.
+            result[method] = _INCOMPLETE
     return result
 
 
@@ -118,7 +144,7 @@ def build_matrix(
                         "hypothesis": hyp_id,
                         "cell_type": cell_type,
                         "method": method,
-                        "status": "blocked",
+                        "status": _BLOCKED,
                     }
                 )
     return rows

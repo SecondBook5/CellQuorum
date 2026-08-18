@@ -38,8 +38,14 @@ rule bundle_hypothesis:
                         run_dirs, BUNDLES / wildcards.hyp)
 
 rule aggregate_status:
+    # The status matrix's whole job is to SURFACE failures, so it must be able to
+    # build when runs fail. `cellquorum run` exits non-zero on a failed stage;
+    # Snakemake then deletes that job's declared output (artifact_manifest.csv), so
+    # requiring every pair's manifest as a hard input would make this rule
+    # unsatisfiable exactly when it matters most (even under --keep-going). Instead
+    # we depend only on accounting.json (the known set of pairs + method plan) and
+    # read whatever provenance exists per pair, reporting the rest as failed/missing.
     input:
-        [str(RUNS / h / ct / "provenance" / "artifact_manifest.csv") for h, ct in PAIRS],
         accounting=str(GEN / "accounting.json"),
     output:
         csv=str(RUNS / "matrix_status.csv"),
@@ -48,6 +54,8 @@ rule aggregate_status:
         import json
         from cellquorum.workflow.status import build_matrix, matrix_to_csv, matrix_to_markdown
         accounting = json.loads(Path(input.accounting).read_text())
+        # Drive aggregation off the known PAIRS, not off which provenance happens to
+        # exist: a pair whose stage records are missing (crashed run) is still a row.
         run_records = {}
         for h, ct in PAIRS:
             rec = RUNS / h / ct / "provenance" / "stage_execution_records.json"
