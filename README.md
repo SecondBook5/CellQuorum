@@ -8,10 +8,11 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 
 <br>
 
+[![CI](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml/badge.svg)](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
-![Tests](https://img.shields.io/badge/tests-~1200-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1558-brightgreen)
 ![Stages](https://img.shields.io/badge/stages-27%20implemented-blue)
 ![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
@@ -138,7 +139,7 @@ path-independent.
 
 ### Verification
 
-- Test suite: **~1200 tests** (`python -m pytest`). GPU tests skip in a CPU-only
+- Test suite: **1558 tests** (`python -m pytest`). GPU tests skip in a CPU-only
   environment and run in the `cellquorum-gpu` env.
 - **End-to-end chain tests** run the full backbone
   (`qc → preprocessing → dimensionality → integration → clustering → annotation

@@ -79,13 +79,23 @@ gen-configs = "cellquorum.workflow.gen_configs_cli:app"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"cellquorum.backends" = ["r_scripts/*.R"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --strict-markers"
+markers = [
+  "gpu: tests requiring a CUDA GPU / rapids-singlecell / scvi backends",
+  "slow: long-running tests excluded from the fast core tier",
+  "r: tests requiring an R/Rscript + Bioconductor backend",
+  "integration: end-to-end tests exercising real external tools or data",
+]
 
 [tool.ruff]
 line-length = 100

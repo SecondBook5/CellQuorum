@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install ruff
+        # Pinned to match the ruff-pre-commit rev in .pre-commit-config.yaml so CI
+        # and the local pre-commit hook enforce identical lint/format rules.
+        run: pip install ruff==0.8.6
+      - name: Ruff check
+        run: ruff check src tests
+      - name: Ruff format check
+        run: ruff format --check src tests
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package (dev)
+        run: pip install -e .[dev]
+      - name: Run core test tier
+        # Heavy GPU/R/external-backend tests self-skip via importorskip when their
+        # deps are absent, so this plain runner naturally runs the core-only tier.
+        run: pytest -q
+
+  build:
+    name: Build & verify wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install build
+        run: pip install build
+      - name: Build distributions
+        run: python -m build
+      - name: Verify wheel bundles the 12 R scripts
+        run: |
+          count=$(unzip -l dist/*.whl | grep -c '\.R$')
+          echo "R scripts in wheel: $count"
+          if [ "$count" -ne 12 ]; then
+            echo "::error::Expected 12 R scripts in wheel, found $count"
+            exit 1
+          fi
+      - name: Verify wheel bundles a non-empty LICENSE
+        run: |
+          license_line=$(unzip -l dist/*.whl | grep -E '(^|/)LICENSE( |$)' | awk '$1 != "" && $1 != "0" {print}')
+          if [ -z "$license_line" ]; then
+            echo "::error::Wheel is missing a non-empty LICENSE"
+            unzip -l dist/*.whl | grep -i license || true
+            exit 1
+          fi
+          echo "LICENSE in wheel: $license_line"
