@@ -323,6 +323,58 @@ def test_build_pipeline_context_load_input_true_without_h5ad_keeps_adata_none(
     assert context.metadata["input_loaded"] is False
 
 
+def _config_with_cohort(h5ad_path: Path, cohort: dict[str, object]) -> CellQuorumConfig:
+    """Build an input-loading config that also declares a cohort block."""
+    return CellQuorumConfig(
+        project={"name": "cohort_project"},
+        compute={"backend": "cpu", "prefer_gpu": False, "fallback_to_cpu": True},
+        r={"enabled": False},
+        input={"h5ad": str(h5ad_path), "counts_layer": "counts"},
+        cohort=cohort,
+    )
+
+
+def test_build_pipeline_context_warns_on_cohort_key_absent_from_obs(tmp_path: Path, caplog) -> None:
+    """A cohort key declared in config but absent from obs must warn (wired guard).
+
+    The test AnnData carries only a ``sample`` obs column; a cohort declaring
+    ``donor_key='patient_id'`` therefore references a missing column. The startup
+    guard must log the mismatch and record it in run metadata rather than letting
+    it surface only as an obscure per-stage fallback later.
+    """
+    h5ad_path = write_test_h5ad(tmp_path)
+    config = _config_with_cohort(h5ad_path, {"sample_key": "sample", "donor_key": "patient_id"})
+
+    with caplog.at_level("WARNING"):
+        context = build_pipeline_context(
+            config,
+            output_dir=tmp_path / "cohort_mismatch_run",
+            backend_registry=build_test_backend_registry(),
+            load_input=True,
+        )
+
+    warnings = context.metadata["cohort_warnings"]
+    assert any("donor_key" in warning and "patient_id" in warning for warning in warnings)
+    # sample_key IS present, so it must not be flagged.
+    assert not any("sample_key" in warning for warning in warnings)
+    assert any("patient_id" in record.message for record in caplog.records)
+
+
+def test_build_pipeline_context_clean_cohort_records_no_warnings(tmp_path: Path) -> None:
+    """A cohort whose declared keys all exist in obs records no warnings."""
+    h5ad_path = write_test_h5ad(tmp_path)
+    config = _config_with_cohort(h5ad_path, {"sample_key": "sample"})
+
+    context = build_pipeline_context(
+        config,
+        output_dir=tmp_path / "cohort_clean_run",
+        backend_registry=build_test_backend_registry(),
+        load_input=True,
+    )
+
+    assert context.metadata["cohort_warnings"] == []
+
+
 def test_build_pipeline_context_load_input_true_raises_for_missing_h5ad(
     tmp_path: Path,
 ) -> None:

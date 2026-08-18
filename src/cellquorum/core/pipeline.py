@@ -5,6 +5,9 @@ from __future__ import annotations
 # Import importlib.metadata so dependency versions can be resolved from metadata.
 import importlib.metadata
 
+# Import logging so startup config/data-mismatch warnings surface where they occur.
+import logging
+
 # Import platform so run metadata can stamp the interpreter and OS environment.
 import platform
 
@@ -61,6 +64,8 @@ from cellquorum.io import load_adata
 
 # Import package version.
 from cellquorum.version import __version__
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -247,6 +252,23 @@ def build_pipeline_context(
     # Optionally load the configured AnnData input.
     loaded_adata = load_input_adata_from_config(config) if load_input else None
 
+    # Validate the declared cohort keys against the loaded obs columns once, at
+    # startup. This is warn-not-raise: a cohort block may declare keys only some
+    # stages use, but a key that is present in config yet absent from obs (a
+    # typo, or the wrong input file) would otherwise surface only as an obscure
+    # per-stage fallback or failure. Surface it loudly here and record it for the
+    # run report so the mismatch is visible at the top, not hunted for later.
+    cohort_warnings: list[str] = []
+    cohort_config = getattr(config, "cohort", None)
+    if cohort_config is not None and loaded_adata is not None:
+        from cellquorum.config.cohort import validate_cohort_against_obs
+
+        cohort_warnings = validate_cohort_against_obs(
+            list(loaded_adata.obs.columns), cohort=cohort_config
+        )
+        for warning in cohort_warnings:
+            logger.warning("Cohort/config mismatch: %s", warning)
+
     # Load the sample manifest whenever one is configured. This is independent of
     # load_input: ambient_correction needs the manifest to locate CellRanger
     # libraries even when there is no pre-built input AnnData.
@@ -273,6 +295,8 @@ def build_pipeline_context(
         ),
         "manifest_path": str(config.paths.manifest) if config.paths.manifest is not None else None,
         "manifest_n_samples": int(len(loaded_manifest)) if loaded_manifest is not None else 0,
+        # Cohort keys declared in config but absent from obs (empty when clean).
+        "cohort_warnings": cohort_warnings,
         "bootstrap_time_utc": datetime.now(UTC).isoformat(),
     }
 
