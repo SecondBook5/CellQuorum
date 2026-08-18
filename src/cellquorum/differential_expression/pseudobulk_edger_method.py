@@ -7,6 +7,7 @@ from pathlib import Path
 
 import anndata as ad
 
+from cellquorum.config.design import DesignConfig, validate_design_against_obs
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.differential_expression.pseudobulk import aggregate_pseudobulk
@@ -74,6 +75,29 @@ class PseudobulkEdgeRMethod(AnalysisMethod):
                 reason="pseudobulk_edger skipped: case/control labels not set in config",
                 details={"method": self.name},
             )
+
+        # Pre-flight estimability gate. This HALTS LOUDLY on a comparison that
+        # cannot yield valid statistics — a missing condition arm, or an arm
+        # without independent donor replication — the class of silent-wrong DE
+        # that the inline paired-handling below cannot catch (an unreplicated
+        # arm produces confident-but-meaningless p-values). Paired completeness
+        # and donor-confounding are owned by the graceful auto-promote/restrict
+        # logic further down, so validate with paired=False here: this runs only
+        # the existence + per-arm replication checks and never pre-empts that
+        # recovery. The per-arm floor is config-overridable so a deliberate,
+        # documented pilot design can lower it rather than tripping a silent cap.
+        min_donors_per_arm = int(config.get("min_donors_per_arm", 2))
+        validate_design_against_obs(
+            adata.obs,
+            design=DesignConfig(
+                donor_col=donor_col,
+                condition_col=condition_col,
+                case=case,
+                control=control,
+                paired=False,
+            ),
+            min_donors_per_arm=min_donors_per_arm,
+        )
 
         # Rscript availability guard (mirrors SoupX/scDiagnostics).
         if shutil.which("Rscript") is None:
