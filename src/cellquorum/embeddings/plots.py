@@ -13,6 +13,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE as _PALETTE
+from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
 
 # Single source of truth: tag -> obsm key + axis labels.
@@ -154,7 +155,7 @@ def continuous_overlay(
     *,
     title: str,
     axis_labels: tuple[str, str],
-    cmap: str = "viridis",
+    cmap: str = _SEQUENTIAL_CMAP,
     sort_high_on_top: bool = True,
     clip_pct: float = 0.0,
     vmin: float | None = None,

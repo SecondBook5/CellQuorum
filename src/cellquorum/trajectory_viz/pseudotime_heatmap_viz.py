@@ -149,7 +149,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 state_cats=state_cats,
                 state_colors=state_colors,
                 present_state_codes=present_codes,
-                expr_cmap=config.get("heatmap_expr_cmap", "viridis"),
+                expr_cmap=config.get("heatmap_expr_cmap", figstyle.SEQUENTIAL_CMAP),
                 title=f"Expression along {pt_key}",
             )
         except Exception as exc:  # noqa: BLE001

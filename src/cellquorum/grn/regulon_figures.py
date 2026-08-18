@@ -399,7 +399,7 @@ def plot_regulon_clustermap(
 
         g = sns.clustermap(
             cat_mean,
-            cmap="viridis",
+            cmap=figstyle.SEQUENTIAL_CMAP,
             figsize=(max(8, 0.35 * len(topreg)), 5),
             linewidths=0.3,
             linecolor="#eee",
@@ -422,7 +422,7 @@ def plot_regulon_clustermap(
     except Exception:
         # fallback: plain matshow
         fig, ax = plt.subplots(figsize=(max(8, 0.35 * len(topreg)), 5))
-        im = ax.imshow(cat_mean.values, cmap="viridis", aspect="auto")
+        im = ax.imshow(cat_mean.values, cmap=figstyle.SEQUENTIAL_CMAP, aspect="auto")
         ax.set_xticks(range(len(cat_mean.columns)))
         ax.set_xticklabels(
             [r.replace("_(+)", "") for r in cat_mean.columns], rotation=90, fontsize=7

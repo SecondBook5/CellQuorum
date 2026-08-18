@@ -12,7 +12,7 @@ import seaborn as sns
 from anndata import AnnData
 
 from cellquorum.core.exceptions import CellQuorumDataError
-from cellquorum.visualization.style import (
+from cellquorum.visualization.figstyle import (
     CELLQUORUM_BLUE,
     CELLQUORUM_FIGSIZE_SMALL,
     CELLQUORUM_GRAY,

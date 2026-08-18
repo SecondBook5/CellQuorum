@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
 from cellquorum.core.stage import StageArtifact
-from cellquorum.visualization.style import apply_cellquorum_theme
+from cellquorum.visualization.figstyle import apply_cellquorum_theme
 
 
 def apply_theme() -> None:

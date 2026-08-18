@@ -7,7 +7,7 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 
-from cellquorum.visualization.style import (
+from cellquorum.visualization.figstyle import (
     CELLQUORUM_BLUE,
     CELLQUORUM_RED,
     apply_cellquorum_axis_style,

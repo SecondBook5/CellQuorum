@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from cellquorum.config.base import StrictBaseModel
+from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP
 
 
 class TrajectoryVizConfig(StrictBaseModel):
@@ -30,7 +31,7 @@ class TrajectoryVizConfig(StrictBaseModel):
     heatmap_n_bins: int = 100
     heatmap_max_genes: int = 60
     heatmap_corr_cut: float = 0.1
-    heatmap_expr_cmap: str = "viridis"
+    heatmap_expr_cmap: str = SEQUENTIAL_CMAP
 
 
 __all__ = ["TrajectoryVizConfig"]

@@ -13,6 +13,8 @@ import numpy as np
 from matplotlib.colors import TwoSlopeNorm
 from matplotlib.figure import Figure
 
+from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP
+
 
 def _signed_norm(values: np.ndarray) -> TwoSlopeNorm:
     arr = np.asarray(values, dtype=float)
@@ -32,7 +34,7 @@ def embedding_scatter(coords: Any, values: Any, *, title: str, cbar_label: str) 
         coords[:, 1],
         c=np.asarray(values, dtype=float),
         s=8,
-        cmap="viridis",
+        cmap=SEQUENTIAL_CMAP,
         linewidths=0,
     )
     ax.set_title(title)
@@ -64,7 +66,7 @@ def matrix_heatmap(
 ) -> Figure:
     matrix = np.asarray(matrix, dtype=float)
     fig, ax = plt.subplots(figsize=(1.2 + 0.5 * len(col_labels), 1.2 + 0.4 * len(row_labels)))
-    im = ax.imshow(matrix, aspect="auto", cmap="viridis")
+    im = ax.imshow(matrix, aspect="auto", cmap=SEQUENTIAL_CMAP)
     ax.set_xticks(range(len(col_labels)))
     ax.set_xticklabels(col_labels, rotation=90)
     ax.set_yticks(range(len(row_labels)))

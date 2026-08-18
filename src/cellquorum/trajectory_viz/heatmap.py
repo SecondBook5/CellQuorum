@@ -15,6 +15,8 @@ from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 
+from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP
+
 
 def bin_masks(pt: np.ndarray, n_bins: int) -> tuple[np.ndarray, np.ndarray]:
     """Return (sort order over pt, bin id per cell in that sorted order)."""
@@ -78,7 +80,7 @@ def condition_split_heatmap(
     state_cats: list,
     state_colors: list,
     present_state_codes: list,
-    expr_cmap: str = "viridis",
+    expr_cmap: str = SEQUENTIAL_CMAP,
     title: str = "",
 ) -> Figure:
     """Build the stacked-annotation, condition-split expression heatmap."""

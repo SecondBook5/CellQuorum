@@ -17,6 +17,8 @@ from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.patches import Wedge
 
+from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP
+
 # Colorblind-validated categorical theme (dataviz skill default; validated via
 # scripts/validate_palette.js, CVD dE >= 8). Colors map to sorted cell-type
 # positions at render time -- never to named biological types.
@@ -31,7 +33,7 @@ _CELLTYPE_HEXES = [
     "#FF9DA7",
 ]
 _OTHER_GRAY = "#9E9E9E"
-_SEQ_CMAP = "viridis"
+_SEQ_CMAP = SEQUENTIAL_CMAP
 
 
 def signed_norm(values: np.ndarray) -> TwoSlopeNorm:

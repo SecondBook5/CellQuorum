@@ -13,7 +13,7 @@ from cellquorum.enrichment_viz import plots
 from cellquorum.enrichment_viz.discovery import collections_from_glob
 from cellquorum.enrichment_viz.save import apply_theme, figure_artifacts, save_figure
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.visualization.style import get_group_palette
+from cellquorum.visualization.figstyle import get_group_palette
 
 # Keep the heatmap readable when a collection has many sources.
 _HEATMAP_TOP_N = 50

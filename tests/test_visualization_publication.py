@@ -6,9 +6,9 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.visualization.publication import (
-    DISEASE_COLOR,
-    NORMAL_COLOR,
+from cellquorum.visualization.figstyle import (
+    LE_RED,
+    NORMAL_BLUE,
     categorical_embedding,
     condition_palette,
     pvalue_to_stars,
@@ -17,13 +17,14 @@ from cellquorum.visualization.publication import (
 )
 
 
-def test_condition_palette_reuses_reference_condition_colors() -> None:
-    """Normal and LE/Lymphedema should use the reference project colors."""
+def test_condition_palette_maps_case_and_control() -> None:
+    # removed: biology-free consolidation (#152) — condition_palette is now the
+    # canonical case/control-keyed mapping; extras fall back to the categorical
+    # palette rather than a hardcoded disease-condition table.
+    palette = condition_palette("Lymphedema", "Normal", others=["Other"])
 
-    palette = condition_palette(["Normal", "Lymphedema", "Other"])
-
-    assert palette["Normal"] == NORMAL_COLOR
-    assert palette["Lymphedema"] == DISEASE_COLOR
+    assert palette["Lymphedema"] == LE_RED
+    assert palette["Normal"] == NORMAL_BLUE
     assert palette["Other"].startswith("#")
 
 
@@ -66,7 +67,7 @@ def test_violin_with_stats_and_categorical_embedding_render(tmp_path) -> None:
         frame,
         "condition",
         "score",
-        palette=condition_palette(["Normal", "Lymphedema"]),
+        palette=condition_palette("Lymphedema", "Normal"),
         order=["Normal", "Lymphedema"],
     )
     violin_path = tmp_path / "violin.png"

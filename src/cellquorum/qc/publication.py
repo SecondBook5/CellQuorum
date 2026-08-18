@@ -22,11 +22,12 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.exceptions import CellQuorumDataError
-from cellquorum.visualization.publication import (
-    DISEASE_COLOR,
+from cellquorum.visualization.figstyle import (
     DOUBLET_COLOR,
+    LE_RED,
     NORMAL_COLOR,
     QC_FAIL_COLOR,
+    SEQUENTIAL_CMAP,
     TEXT_COLOR,
     add_panel_label,
     set_publication_style,
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
 
 
 NORMAL = NORMAL_COLOR
-LE = DISEASE_COLOR
+LE = LE_RED
 QC_FAIL = QC_FAIL_COLOR
 DOUBLET = DOUBLET_COLOR
 TEXT = TEXT_COLOR
@@ -742,7 +743,7 @@ def _plot_umi_detected_gene_gradient(
             sub["total_counts"],
             sub["n_genes_by_counts"],
             c=sub["pct_counts_mito"],
-            cmap="viridis",
+            cmap=SEQUENTIAL_CMAP,
             vmin=0,
             vmax=vmax,
             s=1.0,

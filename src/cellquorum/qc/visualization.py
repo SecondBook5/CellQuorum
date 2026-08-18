@@ -13,11 +13,12 @@ import seaborn as sns
 from anndata import AnnData
 
 from cellquorum.core.exceptions import CellQuorumDataError
-from cellquorum.visualization.style import (
+from cellquorum.visualization.figstyle import (
     CELLQUORUM_BLUE,
     CELLQUORUM_FIGSIZE_SMALL,
     CELLQUORUM_GRAY,
     CELLQUORUM_RED,
+    SEQUENTIAL_CMAP,
     apply_cellquorum_axis_style,
     apply_cellquorum_theme,
     get_group_palette,
@@ -789,7 +790,7 @@ def _plot_counts_vs_genes_colored(
                 plot_df["total_counts"],
                 plot_df["n_genes"],
                 c=plot_df["color"],
-                cmap="viridis",
+                cmap=SEQUENTIAL_CMAP,
                 alpha=0.5,
                 s=10,
                 edgecolor="none",

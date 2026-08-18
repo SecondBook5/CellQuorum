@@ -20,7 +20,7 @@ import pandas as pd
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.population_identity.config import PopulationIdentityConfig
-from cellquorum.visualization.publication import (
+from cellquorum.visualization.figstyle import (
     categorical_embedding,
     clean_axis,
     condition_palette,
@@ -110,6 +110,7 @@ class PopulationIdentityStage:
             "summary": tables["population_summary"].to_dict(orient="records"),
         }
 
+        case, control = resolve_case_control(context)
         manager = ArtifactManager.from_root(context.paths.root)
         artifacts = write_population_identity_artifacts(
             manager=manager,
@@ -118,6 +119,8 @@ class PopulationIdentityStage:
             tables=tables,
             audit=audit,
             config=config,
+            case=case,
+            control=control,
         )
 
         return StageResult(
@@ -263,6 +266,18 @@ def resolve_design_keys(
             else getattr(design, "condition_col", "condition")
         )
     return donor_key, condition_key
+
+
+def resolve_case_control(context: object) -> tuple[str | None, str | None]:
+    """Resolve primary case/control condition tokens from the design config."""
+
+    context_config = getattr(context, "config", None)
+    design = getattr(context_config, "design", None)
+    if isinstance(context_config, Mapping):
+        design = context_config.get("design", {})
+    if isinstance(design, Mapping):
+        return design.get("case"), design.get("control")
+    return getattr(design, "case", None), getattr(design, "control", None)
 
 
 def build_population_identity_tables(
@@ -540,6 +555,8 @@ def write_population_identity_artifacts(
     tables: dict[str, pd.DataFrame],
     audit: dict[str, Any],
     config: PopulationIdentityConfig,
+    case: str | None = None,
+    control: str | None = None,
 ) -> list[StageArtifact]:
     """Write population-identity tables, metadata, evidence, and plots."""
 
@@ -590,6 +607,8 @@ def write_population_identity_artifacts(
                 resolution=resolution,
                 tables=tables,
                 plot_dir=plot_dir,
+                case=case,
+                control=control,
             )
         )
     return artifacts
@@ -602,6 +621,8 @@ def write_population_identity_figures(
     resolution: IdentityResolution,
     tables: dict[str, pd.DataFrame],
     plot_dir: Path,
+    case: str | None = None,
+    control: str | None = None,
 ) -> list[StageArtifact]:
     """Write optional publication-style plots when required data exist."""
 
@@ -634,6 +655,8 @@ def write_population_identity_figures(
                 stem="embedding_by_population",
                 title="Population identity",
                 basis=resolution.embedding_key,
+                case=case,
+                control=control,
             )
         )
         for key, stem, title in [
@@ -653,6 +676,8 @@ def write_population_identity_figures(
                     stem=stem,
                     title=title,
                     basis=resolution.embedding_key,
+                    case=case,
+                    control=control,
                 )
             )
 
@@ -703,6 +728,8 @@ def write_embedding_panel(
     stem: str,
     title: str,
     basis: str,
+    case: str | None = None,
+    control: str | None = None,
 ) -> list[StageArtifact]:
     """Write one categorical embedding panel as PNG and PDF."""
 
@@ -710,7 +737,11 @@ def write_embedding_panel(
         return []
     values = adata.obs[group_key].astype(str)
     categories = values.value_counts().index.tolist()
-    palette = condition_palette(categories) if group_key == "condition" else None
+    if group_key == "condition":
+        others = [c for c in categories if c not in {case, control}]
+        palette = condition_palette(case, control, others=others)
+    else:
+        palette = None
     fig = categorical_embedding(
         adata,
         group_key,

@@ -274,7 +274,7 @@ def test_add_panel_letter_draws_text():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from cellquorum.visualization.style import add_panel_letter
+    from cellquorum.visualization.figstyle import add_panel_letter
 
     fig, ax = plt.subplots()
     add_panel_letter(ax, "A")
@@ -284,7 +284,7 @@ def test_add_panel_letter_draws_text():
 
 
 def test_get_group_palette_stable_and_covers_groups():
-    from cellquorum.visualization.style import get_group_palette
+    from cellquorum.visualization.figstyle import get_group_palette
 
     groups = ["Tumor", "Adjacent", "Normal"]
     pal = get_group_palette(groups)
