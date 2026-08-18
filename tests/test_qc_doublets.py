@@ -5,6 +5,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
+from cellquorum.qc import doublets as dbl
 from cellquorum.qc.config import QCDoubletConfig
 from cellquorum.qc.doublets import detect_doublets
 
@@ -67,6 +68,64 @@ def test_per_sample_falls_back_to_pooled_without_sample_key():
 
     assert metrics["scored_scope"] == "pooled"
     assert metrics["sample_key"] is None
+
+
+def test_score_threshold_flags_at_ceiling(monkeypatch):
+    """A score AT the default 0.5 threshold must flag (regression for `> 0.5`).
+
+    The historical bug used ``scores > 0.5`` while observed scores ceiling at
+    exactly 0.5, so no cell was ever flagged. The fix uses ``>=``.
+    """
+
+    a = _counts_adata(n=5)
+    scores = np.array([0.1, 0.2, 0.3, 0.4, 0.5], dtype=float)
+    # No native call → the score-threshold fallback path is exercised.
+    monkeypatch.setattr(
+        dbl, "run_scrublet", lambda adata, *, expected_rate, random_state: (scores, None)
+    )
+
+    cfg = QCDoubletConfig(enabled=True, methods=["scrublet"], consensus="any", per_sample=False)
+    metrics = detect_doublets(a, cfg, backend=None)
+
+    assert a.obs["predicted_doublet"].to_numpy().tolist() == [False, False, False, False, True]
+    assert metrics["used_native_calls"] == {"scrublet": False}
+    assert int(metrics["n_predicted_doublets"]) == 1
+
+
+def test_native_calls_take_precedence(monkeypatch):
+    """The detector's own call is used, not a re-threshold of the score."""
+
+    a = _counts_adata(n=4)
+    # Every cell scores "high", but the detector's native call flags only 0 and 2.
+    scores = np.array([0.9, 0.9, 0.1, 0.1], dtype=float)
+    native = np.array([True, False, True, False])
+    monkeypatch.setattr(
+        dbl, "run_scrublet", lambda adata, *, expected_rate, random_state: (scores, native)
+    )
+
+    cfg = QCDoubletConfig(enabled=True, methods=["scrublet"], consensus="any", per_sample=False)
+    metrics = detect_doublets(a, cfg, backend=None)
+
+    assert a.obs["predicted_doublet"].to_numpy().tolist() == [True, False, True, False]
+    assert metrics["used_native_calls"] == {"scrublet": True}
+
+
+def test_zero_flagged_warns_loudly(monkeypatch, caplog):
+    """A detector that scored cells but flagged none must warn (no-silent-decisions)."""
+
+    a = _counts_adata(n=4)
+    # All below the 0.5 threshold, no native call → zero flagged.
+    scores = np.array([0.1, 0.2, 0.3, 0.4], dtype=float)
+    monkeypatch.setattr(
+        dbl, "run_scrublet", lambda adata, *, expected_rate, random_state: (scores, None)
+    )
+
+    cfg = QCDoubletConfig(enabled=True, methods=["scrublet"], consensus="any", per_sample=False)
+    with caplog.at_level("WARNING"):
+        metrics = detect_doublets(a, cfg, backend=None)
+
+    assert int(metrics["n_predicted_doublets"]) == 0
+    assert any("flagged 0 doublets" in record.message for record in caplog.records)
 
 
 def test_consensus_any_vs_all_semantics():
