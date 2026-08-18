@@ -77,7 +77,16 @@ def compute_velocity(
         sc.pp.highly_variable_genes(adata, n_top_genes=min(n_top_genes, adata.n_vars))
         if "highly_variable" in adata.var and adata.n_vars > n_top_genes:
             adata._inplace_subset_var(adata.var["highly_variable"].to_numpy())
-        scv.pp.moments(adata, n_pcs=n_pcs, n_neighbors=n_neighbors, use_rep=use_rep)
+        # scvelo rejects n_pcs > (width of use_rep): "does not have enough
+        # Dimensions". When moments runs on a precomputed representation, cap
+        # n_pcs at that rep's width so a small/auto-truncated embedding (e.g. a
+        # low-cell slice, or PCA truncated below the requested n_pcs) still runs
+        # instead of skipping velocity on every cluster.
+        eff_n_pcs = n_pcs
+        if use_rep and use_rep in adata.obsm:
+            rep_dim = int(np.asarray(adata.obsm[use_rep]).shape[1])
+            eff_n_pcs = min(n_pcs, rep_dim)
+        scv.pp.moments(adata, n_pcs=eff_n_pcs, n_neighbors=n_neighbors, use_rep=use_rep)
         if mode == "dynamical":
             scv.tl.recover_dynamics(adata, n_jobs=n_jobs, show_progress_bar=False)
         scv.tl.velocity(adata, mode=mode)

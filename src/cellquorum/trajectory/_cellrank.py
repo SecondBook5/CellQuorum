@@ -6,9 +6,16 @@ CellRank 2.x ONLY: kernels (``cellrank.kernels.*``) + estimators
 valid. Every heavy call is guarded and retyped into a recoverable error so the
 method layer can skip-not-crash.
 
-Environment: ``petsc4py``/``slepc4py`` are absent, so Schur uses
-``method="brandts"`` and fate probabilities use ``use_petsc=False,
-solver="direct"`` — both also the deterministic choices.
+Schur decomposition auto-selects its solver: when ``slepc4py``/``petsc4py`` are
+importable, Schur uses the *sparse* ``method="krylov"`` (SLEPc), which computes
+the same partial real Schur decomposition without ever densifying the
+transition matrix. When they are absent, it falls back to ``method="brandts"``,
+which densifies the ``n_obs x n_obs`` matrix — safe only for small objects, so a
+memory guard skips-not-crashes above a RAM budget rather than OOM-killing the
+whole pipeline. Fate probabilities follow the SAME backend: with SLEPc present
+they solve through PETSc (``use_petsc=True, solver="gmres"``) because a dense
+OpenBLAS solve after a SLEPc eigensolve deadlocks in-process; without SLEPc they
+use the deterministic dense ``use_petsc=False, solver="direct"``.
 """
 
 from __future__ import annotations
@@ -16,6 +23,28 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+
+
+def _slepc_available() -> bool:
+    """True when the SLEPc/PETSc sparse Schur backend is importable."""
+    try:
+        import petsc4py  # noqa: F401
+        import slepc4py  # noqa: F401
+    except Exception:  # noqa: BLE001 — any import failure → sparse path off
+        return False
+    return True
+
+
+def _available_memory_bytes() -> int | None:
+    """Best-effort MemAvailable (bytes) from /proc/meminfo, or None."""
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except Exception:  # noqa: BLE001 — unreadable → caller uses a fixed cap
+        return None
+    return None
 
 
 class CellRankComputeError(Exception):
@@ -311,10 +340,34 @@ def run_gpcca(
     # Clamp Schur components to [n_states+1, n_obs-1].
     n_comp = max(int(n_components), int(n_states) + 1)
     n_comp = min(n_comp, int(adata.n_obs) - 1)
+
+    # Solver selection: prefer the sparse SLEPc 'krylov' Schur when available —
+    # it computes the same partial real Schur decomposition as 'brandts' but on
+    # the sparse transition matrix, so memory stays ~O(nnz + n_obs * n_comp)
+    # instead of densifying to n_obs^2. Fall back to dense 'brandts' otherwise.
+    if _slepc_available():
+        schur_method = "krylov"
+    else:
+        schur_method = "brandts"
+        # 'brandts' densifies the n_obs x n_obs matrix and scipy's real Schur
+        # makes a second copy. Estimate the dense footprint and skip-not-crash
+        # if it would blow past a safe RAM budget — an OOM here SIGKILLs the
+        # whole pipeline (uncatchable), which is exactly what we must avoid.
+        n = int(adata.n_obs)
+        needed = n * n * 8 * 3  # transition matrix + Schur workspace + vectors
+        avail = _available_memory_bytes()
+        budget = int(avail * 0.6) if avail else (20000 * 20000 * 8 * 3)
+        if needed > budget:
+            raise SchurFailed(
+                f"dense Schur (method='brandts') needs ~{needed / 1e9:.0f} GB for "
+                f"{n} cells but only ~{budget / 1e9:.0f} GB is safely available; "
+                "install petsc4py + slepc4py to enable the sparse 'krylov' solver"
+            )
+    notes.append(f"schur method: {schur_method}")
     try:
-        g.compute_schur(n_components=n_comp, method="brandts")
+        g.compute_schur(n_components=n_comp, method=schur_method)
     except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
-        raise SchurFailed(f"compute_schur failed: {exc}") from exc
+        raise SchurFailed(f"compute_schur ({schur_method}) failed: {exc}") from exc
 
     try:
         g.compute_macrostates(n_states=int(n_states), cluster_key=cluster_key)
@@ -356,9 +409,20 @@ def run_gpcca(
         except Exception as exc:  # noqa: BLE001
             notes.append(f"predict_initial_states failed: {exc}")
 
-    # Fate probabilities (deterministic, no petsc).
+    # Fate probabilities. Solver choice MUST match the Schur backend: when the
+    # sparse SLEPc 'krylov' Schur ran, PETSc/SLEPc is initialized in this process
+    # and a subsequent *dense OpenBLAS* solve (use_petsc=False, solver="direct")
+    # DEADLOCKS against the thread state SLEPc leaves behind — an unrecoverable
+    # hang, not an exception. So when SLEPc is available we solve the fate-prob
+    # linear system through PETSc too (use_petsc=True, iterative 'gmres', which is
+    # also CellRank's default and the scalable path); otherwise we keep the
+    # deterministic dense direct solve. Both are deterministic given the inputs.
+    if _slepc_available():
+        fate_kwargs = {"use_petsc": True, "solver": "gmres"}
+    else:
+        fate_kwargs = {"use_petsc": False, "solver": "direct"}
     try:
-        g.compute_fate_probabilities(use_petsc=False, solver="direct", show_progress_bar=False)
+        g.compute_fate_probabilities(show_progress_bar=False, **fate_kwargs)
         fp = g.fate_probabilities
         result["fate_prob"] = np.asarray(fp)
         result["fate_names"] = [str(x) for x in fp.names]
