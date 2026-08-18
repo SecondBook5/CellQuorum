@@ -92,6 +92,18 @@ def test_tensor_skips_without_liana_res(tmp_path):
     assert "liana_res" in result.reason
 
 
+def test_tensor_skips_on_partial_dict_liana_res(tmp_path):
+    # Regression: liana's by_sample aborts mid-loop on a sparse sample and can
+    # leave a partial ``{sample: DataFrame}`` dict in uns['liana_res']. That dict
+    # has len>0, so it passes the presence guard; tensor_c2c must NOT then crash
+    # on ``res.columns`` (AttributeError) — it must skip cleanly.
+    a = _adata_with_liana_res()
+    a.uns["liana_res"] = {"s0": a.uns["liana_res"]}  # simulate the partial dict
+    result = TensorCell2CellMethod().run(a, _config(), _Ctx(tmp_path))
+    assert isinstance(result, MethodSkip)
+    assert "tabular" in result.reason.lower() or "liana_res" in result.reason
+
+
 def test_tensor_skips_below_min_samples(tmp_path):
     a = _adata_with_liana_res(n_samples=2)
     result = TensorCell2CellMethod().run(a, _config(), _Ctx(tmp_path))

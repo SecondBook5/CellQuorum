@@ -107,6 +107,19 @@ class TensorCell2CellMethod(AnalysisMethod):
                 details={"method": self.name},
             )
 
+        # Defensive: liana_res must be a long-format table with a "sample"
+        # column. A partial/aborted liana run can leave a per-sample dict here;
+        # skip cleanly rather than crashing on ``.columns`` (LianaMethod now
+        # normalizes this, but tensor_c2c must not depend on that upstream).
+        import pandas as pd
+
+        if not isinstance(res, pd.DataFrame):
+            return MethodSkip(
+                reason="tensor_c2c skipped: uns['liana_res'] is not a tabular result "
+                f"(got {type(res).__name__}); run liana first",
+                details={"method": self.name},
+            )
+
         # Need enough distinct samples/contexts to decompose.
         min_samples = int(config.get("min_samples", 3))
         n_samples = int(res["sample"].nunique()) if "sample" in res.columns else 0

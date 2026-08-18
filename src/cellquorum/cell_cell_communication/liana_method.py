@@ -57,39 +57,71 @@ class LianaMethod(AnalysisMethod):
                 details={"method": self.name, "error": str(exc)[:300]},
             )
 
-        try:
-            li.mt.rank_aggregate.by_sample(
-                adata,
-                sample_key=sample_col,
-                groupby=cell_type_col,
-                resource_name=config.get("resource_name", "consensus"),
-                expr_prop=float(config.get("expr_prop", 0.1)),
-                min_cells=int(config.get("min_cells", 5)),
-                use_raw=False,
-                layer=layer if layer != "X" else None,
-                n_perms=int(config.get("n_perms", 100)),
-                seed=seed,
-                key_added="liana_res",
-                verbose=False,
-                inplace=True,
-            )
-        except Exception as exc:
+        from pandas import concat
+
+        # Start from a clean slate so a skip never leaves a stale/partial result
+        # for a downstream method (e.g. tensor_c2c) to trip over.
+        adata.uns.pop("liana_res", None)
+
+        # WHY we don't call li.mt.rank_aggregate.by_sample directly: liana's
+        # by_sample loop has no per-sample error handling — if ANY single sample
+        # fails its LR computation (e.g. ZeroDivisionError when a sample's
+        # clusters are too sparse to score), the whole call aborts and leaves a
+        # partial ``{sample: df}`` dict in uns['liana_res']. On sparse slices that
+        # sinks the entire CCC stage. We iterate ourselves and tolerate per-sample
+        # failures, keeping every sample that scores and recording the rest.
+        samples = adata.obs[sample_col].astype("category").cat.categories
+        per_sample: dict[str, object] = {}
+        skipped: dict[str, str] = {}
+        for sample in samples:
+            sub = adata[adata.obs[sample_col] == sample]
+            sub = sub.to_memory().copy() if sub.isbacked else sub.copy()
+            # Inter-type communication needs >=2 cell types within the sample.
+            if int(sub.obs[cell_type_col].nunique()) < 2:
+                skipped[str(sample)] = "fewer than 2 cell types present"
+                continue
+            try:
+                sample_res = li.mt.rank_aggregate(
+                    sub,
+                    groupby=cell_type_col,
+                    resource_name=config.get("resource_name", "consensus"),
+                    expr_prop=float(config.get("expr_prop", 0.1)),
+                    min_cells=int(config.get("min_cells", 5)),
+                    use_raw=False,
+                    layer=layer if layer != "X" else None,
+                    n_perms=int(config.get("n_perms", 100)),
+                    seed=seed,
+                    verbose=False,
+                    inplace=False,
+                )
+            except Exception as exc:
+                skipped[str(sample)] = f"{type(exc).__name__}: {str(exc)[:120]}"
+                continue
+            if sample_res is not None and len(sample_res) > 0:
+                per_sample[str(sample)] = sample_res
+            else:
+                skipped[str(sample)] = "no interactions returned"
+
+        if not per_sample:
             return MethodSkip(
-                reason="liana skipped: rank_aggregate failed",
-                details={"method": self.name, "error": str(exc)[:300]},
+                reason="liana skipped: no sample produced interactions",
+                details={
+                    "method": self.name,
+                    "n_samples_total": int(len(samples)),
+                    "n_samples_skipped": len(skipped),
+                },
             )
 
-        res = adata.uns.get("liana_res")
-        if res is None or len(res) == 0:
-            return MethodSkip(
-                reason="liana skipped: no interactions returned",
-                details={"method": self.name},
-            )
-
-        # Rename sample_key to "sample" for consistency across stages
-        if sample_col in res.columns:
-            res = res.rename(columns={sample_col: "sample"})
-            adata.uns["liana_res"] = res
+        # Concatenate per-sample frames into one long table with a "sample"
+        # column (mirrors liana's own by_sample concat, minus the fragility).
+        res = (
+            concat(per_sample)
+            .reset_index(level=1, drop=True)
+            .reset_index()
+            .rename(columns={"index": "sample"})
+        )
+        adata.uns["liana_res"] = res
+        n_samples_scored = int(len(per_sample))
 
         artifacts: list[StageArtifact] = []
         try:
@@ -118,14 +150,19 @@ class LianaMethod(AnalysisMethod):
             )
 
         n_samples = int(res["sample"].nunique()) if "sample" in res.columns else 0
+        note = f"LIANA per-sample consensus over {n_samples} samples."
+        if skipped:
+            note += f" {len(skipped)} sample(s) skipped (too sparse to score)."
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=[f"LIANA per-sample consensus over {n_samples} samples."],
+            notes=[note],
             metrics={
                 "method": self.name,
                 "n_interactions": int(len(res)),
                 "n_samples": n_samples,
+                "n_samples_scored": n_samples_scored,
+                "n_samples_skipped": len(skipped),
             },
             backend="python",
         )

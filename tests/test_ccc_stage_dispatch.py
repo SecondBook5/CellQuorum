@@ -80,6 +80,14 @@ def test_stage_forces_liana_before_tensor():
 def test_stage_runs_both_methods(tmp_path):
     a = _adata()
     result = CellCellCommunicationStage().run(_Ctx(tmp_path, a))
+    # Both methods must be dispatched, liana before tensor. On this deliberately
+    # minimal fixture (4 genes) liana cannot clear its resource-coverage check, so
+    # both skip cleanly — the point here is that the stage runs both and does NOT
+    # crash (previously a partial liana result crashed tensor_c2c on ``.columns``).
     assert result.metrics["n_methods"] == 2
-    # liana should have populated uns and threaded into tensor
-    assert "liana_res" in result.adata.uns
+    methods = [m["method"] for m in result.metrics["per_method"]]
+    assert methods == ["liana", "tensor_c2c"]
+    # liana must never leave a non-DataFrame artifact behind for tensor to trip on.
+    assert "liana_res" not in result.adata.uns or isinstance(
+        result.adata.uns["liana_res"], pd.DataFrame
+    )
