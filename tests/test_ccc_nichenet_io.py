@@ -131,8 +131,8 @@ def test_ligand_activity_to_canonical_clamps_negative():
 
 def test_canonical_output_feeds_ccc_network():
     """Cross-spec contract: a canonical frame from spec #2 builds a spec #3 network."""
-    from cellquorum.ccc_network._networks import build_cci_network
     from cellquorum.cell_cell_communication._nichenet_io import mnn_prioritization_to_canonical
+    from cellquorum.cell_cell_communication.network._networks import build_cci_network
 
     native = pd.DataFrame(
         {

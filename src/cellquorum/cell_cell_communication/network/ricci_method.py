@@ -8,7 +8,7 @@ import anndata as ad
 import networkx as nx
 import pandas as pd
 
-from cellquorum.ccc_network._networks import (
+from cellquorum.cell_cell_communication.network._networks import (
     build_cci_network,
     build_gci_network,
     liana_to_canonical,

@@ -26,11 +26,11 @@ from cellquorum.annotation_consensus.stage import AnnotationConsensusStage
 # Import annotation-diagnostics evaluation stage.
 from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
 
-# Import ccc-network (topology + curvature) stage.
-from cellquorum.ccc_network.stage import CCCNetworkStage
-
 # Import CCC-visualization stage.
 from cellquorum.ccc_viz.stage import CccVizStage
+
+# Import ccc-network (topology + curvature) stage.
+from cellquorum.cell_cell_communication.network.stage import CCCNetworkStage
 
 # Import cell-cell-communication stage.
 from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage

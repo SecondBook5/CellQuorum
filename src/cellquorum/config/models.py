@@ -26,14 +26,14 @@ from cellquorum.annotation_consensus.config import AnnotationConsensusConfig
 # Import the annotation-diagnostics configuration model.
 from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
 
-# Import the ccc-network (topology + curvature) configuration model.
-from cellquorum.ccc_network.config import CCCNetworkConfig
-
 # Import the CCC-visualization configuration model.
 from cellquorum.ccc_viz.config import CccVizConfig
 
 # Import the cell-cell-communication configuration model.
 from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+
+# Import the ccc-network (topology + curvature) configuration model.
+from cellquorum.cell_cell_communication.network.config import CCCNetworkConfig
 
 # Import the coexpression configuration model.
 from cellquorum.coexpression.config import CoexpressionConfig

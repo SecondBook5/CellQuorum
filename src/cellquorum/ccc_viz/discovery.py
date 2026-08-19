@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from cellquorum.ccc_network._networks import liana_to_canonical
+from cellquorum.cell_cell_communication.network._networks import liana_to_canonical
 
 
 def _read_csv(path: Path) -> pd.DataFrame | None:
