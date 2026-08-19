@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cellquorum.ambient_correction.config import AmbientCorrectionConfig
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.planner import PipelinePlanner
+from cellquorum.qc.ambient.config import AmbientCorrectionConfig
 
 
 def test_ambient_defaults():

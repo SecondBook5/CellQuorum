@@ -51,11 +51,11 @@ pytestmark = pytest.mark.skipif(
 def test_soupx_on_real_library(tmp_path):
     """SoupX corrects one real library and imports as integer counts."""
 
-    from cellquorum.ambient_correction.soupx import (
+    from cellquorum.backends.rscript import RscriptBackend
+    from cellquorum.qc.ambient.soupx import (
         import_corrected_matrix,
         run_soupx_library,
     )
-    from cellquorum.backends.rscript import RscriptBackend
 
     # Run SoupX on the real raw+filtered pair.
     out_dir = tmp_path / "LE1"

@@ -14,9 +14,6 @@ from datetime import UTC, datetime
 # Import adjudication stage.
 from cellquorum.adjudication.stage import AdjudicationStage
 
-# Import ambient correction stage.
-from cellquorum.ambient_correction.stage import AmbientCorrectionStage
-
 # Import annotation stage.
 from cellquorum.annotation.stage import AnnotationStage
 
@@ -91,6 +88,9 @@ from cellquorum.preprocessing.feature_selection.stage import FeatureSelectionSta
 
 # Import the preprocessing stage.
 from cellquorum.preprocessing.stage import PreprocessingStage
+
+# Import ambient correction stage.
+from cellquorum.qc.ambient.stage import AmbientCorrectionStage
 
 # Import the first fully implemented scientific stage.
 from cellquorum.qc.stage import QCStage

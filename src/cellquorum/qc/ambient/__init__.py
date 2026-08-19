@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from cellquorum.ambient_correction.stage import AmbientCorrectionStage
+from cellquorum.qc.ambient.stage import AmbientCorrectionStage
 
 __all__ = ["AmbientCorrectionStage"]

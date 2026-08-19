@@ -14,9 +14,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from cellquorum.ambient_correction.config import AmbientCorrectionConfig
-from cellquorum.ambient_correction.stage import AmbientCorrectionStage
 from cellquorum.core.stage import StageResult
+from cellquorum.qc.ambient.config import AmbientCorrectionConfig
+from cellquorum.qc.ambient.stage import AmbientCorrectionStage
 
 
 class _Ctx:
@@ -133,7 +133,7 @@ def test_resolve_manifest_skips_path_only_manifest_without_crash():
 
     import types
 
-    from cellquorum.ambient_correction.stage import _resolve_manifest
+    from cellquorum.qc.ambient.stage import _resolve_manifest
 
     # A path-only manifest: the cellranger_path column exists (per schema) but
     # all values are None — mimics the to_dataframe() output after the schema change.
@@ -153,7 +153,7 @@ def test_resolve_manifest_keeps_only_rows_with_cellranger_path():
 
     import types
 
-    from cellquorum.ambient_correction.stage import _resolve_manifest
+    from cellquorum.qc.ambient.stage import _resolve_manifest
 
     # A mixed manifest: one row has a real cellranger_path, one is null.
     df = pd.DataFrame(

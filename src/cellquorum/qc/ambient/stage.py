@@ -15,14 +15,14 @@ from pathlib import Path
 
 import anndata as ad
 
-from cellquorum.ambient_correction.soupx import (
+from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.qc.ambient.soupx import (
     corrected_output_exists,
     import_corrected_matrix,
     read_rho_sidecar,
     run_soupx_library,
 )
-from cellquorum.contracts import CellQuorumContractError
-from cellquorum.core.stage import StageArtifact, StageResult
 
 
 class AmbientCorrectionStage:
