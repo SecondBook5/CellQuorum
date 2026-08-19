@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from cellquorum.cell_cell_communication.viz.chord_viz import ChordVizMethod
+from cellquorum.cell_cell_communication.viz._viz_methods import (
+    ChordVizMethod,
+    DotplotVizMethod,
+    NetworkVizMethod,
+    SankeyVizMethod,
+    SummaryVizMethod,
+)
 from cellquorum.cell_cell_communication.viz.config import CccVizConfig
-from cellquorum.cell_cell_communication.viz.dotplot_viz import DotplotVizMethod
-from cellquorum.cell_cell_communication.viz.network_viz import NetworkVizMethod
-from cellquorum.cell_cell_communication.viz.sankey_viz import SankeyVizMethod
-from cellquorum.cell_cell_communication.viz.summary_viz import SummaryVizMethod
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 for _method in (

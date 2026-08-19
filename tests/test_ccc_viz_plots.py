@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 
 
 def test_save_figure_writes_formats(tmp_path):
-    from cellquorum.cell_cell_communication.viz.save import figure_artifacts, save_figure
+    from cellquorum.cell_cell_communication.viz._io import figure_artifacts, save_figure
 
     fig, ax = plt.subplots()
     ax.plot([0, 1], [0, 1])
