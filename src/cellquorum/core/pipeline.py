@@ -746,7 +746,7 @@ def _write_run_report_after_provenance(
         return
 
     try:
-        from cellquorum.reports.run_report import write_run_report
+        from cellquorum.core.reports import write_run_report
 
         write_run_report(config=config, records=records, artifact_manager=artifact_manager)
     except Exception:

@@ -10,13 +10,13 @@ import numpy as np
 
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.artifacts import ArtifactManager
-from cellquorum.core.stage import StageExecutionRecord, StageResult
-from cellquorum.reports.run_report import (
+from cellquorum.core.reports import (
     render_html,
     render_markdown,
     render_methods_text,
     write_run_report,
 )
+from cellquorum.core.stage import StageExecutionRecord, StageResult
 
 
 def _records() -> list[StageExecutionRecord]:
