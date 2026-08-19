@@ -352,7 +352,7 @@ def test_full_gpu_chain_threads_every_stage_output(tmp_path):
 
     import pytest
 
-    from cellquorum.compute.router import gpu_compute_available
+    from cellquorum.backends.compute import gpu_compute_available
 
     if not gpu_compute_available():
         pytest.skip("rapids-singlecell/cupy unavailable")

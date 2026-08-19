@@ -273,7 +273,7 @@ class PCAMethod(AnalysisMethod):
         """
 
         # Decide GPU vs CPU once via the shared router.
-        from cellquorum.compute.router import resolve_compute
+        from cellquorum.backends.compute import resolve_compute
 
         routing = resolve_compute(context)
         compute_used = "cpu"

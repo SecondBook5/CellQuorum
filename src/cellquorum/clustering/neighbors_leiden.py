@@ -74,7 +74,7 @@ class LeidenMethod(AnalysisMethod):
         key_added = config.get("key_added", "leiden")
         use_rep = config.get("use_rep", "X_pca")
 
-        from cellquorum.compute.router import resolve_compute
+        from cellquorum.backends.compute import resolve_compute
 
         routing = resolve_compute(context)
         compute_used = "cpu"

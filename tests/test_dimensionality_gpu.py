@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.compute.router import gpu_compute_available
+from cellquorum.backends.compute import gpu_compute_available
 from cellquorum.preprocessing.dimensionality.pca import PCAMethod
 
 pytestmark = pytest.mark.skipif(

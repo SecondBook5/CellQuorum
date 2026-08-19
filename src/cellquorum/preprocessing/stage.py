@@ -18,7 +18,7 @@ from pathlib import Path
 import anndata as ad
 
 # Import GPU compute routing.
-from cellquorum.compute.router import should_use_gpu
+from cellquorum.backends.compute import should_use_gpu
 
 # Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
