@@ -114,10 +114,7 @@ class RicciMethod(AnalysisMethod):
         try:
             import GraphRicciCurvature  # noqa: F401
         except Exception as exc:
-            return MethodSkip(
-                reason="ricci skipped: GraphRicciCurvature unavailable",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("GraphRicciCurvature unavailable", error=str(exc)[:300])
 
         source_key = config.get("source_key", "liana_res")
         sample_col = config.get("sample_col", "sample")
@@ -128,16 +125,10 @@ class RicciMethod(AnalysisMethod):
 
         liana_res = adata.uns.get(source_key)
         if liana_res is None or len(liana_res) == 0:
-            return MethodSkip(
-                reason=f"ricci skipped: uns['{source_key}'] absent or empty",
-                details={"method": self.name, "source_key": source_key},
-            )
+            return self._skip(f"uns['{source_key}'] absent or empty", source_key=source_key)
         canon, notes = liana_to_canonical(liana_res)
         if canon.empty:
-            return MethodSkip(
-                reason="ricci skipped: no canonical edges",
-                details={"method": self.name, "notes": notes},
-            )
+            return self._skip("no canonical edges", notes=notes)
 
         # Split into case/control arms using the shared helper.
         arms = resolve_condition_arms(

@@ -41,17 +41,11 @@ class TopologyMethod(AnalysisMethod):
 
         liana_res = adata.uns.get(source_key)
         if liana_res is None or len(liana_res) == 0:
-            return MethodSkip(
-                reason=f"topology skipped: uns['{source_key}'] absent or empty",
-                details={"method": self.name, "source_key": source_key},
-            )
+            return self._skip(f"uns['{source_key}'] absent or empty", source_key=source_key)
 
         canon, notes = liana_to_canonical(liana_res)
         if canon.empty:
-            return MethodSkip(
-                reason="topology skipped: no canonical edges after adapter",
-                details={"method": self.name, "notes": notes},
-            )
+            return self._skip("no canonical edges after adapter", notes=notes)
 
         # Attach condition per sample from obs when a design is present.
         condition_col = config.get("condition_col")
