@@ -2,7 +2,7 @@
 
 
 from cellquorum.differential_expression.viz.config import DeVizConfig
-from cellquorum.differential_expression.viz.discovery import load_de_table
+from cellquorum.differential_expression.viz.volcano_viz import load_de_table
 
 
 def test_config_defaults():
