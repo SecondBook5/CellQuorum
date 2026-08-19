@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -12,13 +11,14 @@ import pandas as pd
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.methods.base import MethodSkip
+from cellquorum.methods.r_method import RAnalysisMethod
 
 # Path to the bundled milo script.
 _MILO_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "milo.R"
 
 
-class MiloMethod(AnalysisMethod):
+class MiloMethod(RAnalysisMethod):
     """Milo neighborhood-level differential-abundance test via miloR.
 
     Milo tests for local abundance differences at the neighborhood level using
@@ -29,7 +29,7 @@ class MiloMethod(AnalysisMethod):
 
     name = "milo"
     stage_category = "differential_abundance"
-    backend = "rscript"
+    r_package = "miloR"
 
     def input_contract(self, config: dict) -> DataContract:
         """Require the design obs columns (no layer needed for Milo DA)."""
@@ -85,33 +85,10 @@ class MiloMethod(AnalysisMethod):
                     details={"method": self.name, "use_rep": use_rep},
                 )
 
-        # Rscript availability guard.
-        if shutil.which("Rscript") is None:
-            return MethodSkip(
-                reason="milo skipped: Rscript unavailable",
-                details={"method": self.name},
-            )
-
-        # Resolve the Rscript backend from the context registry.
-        registry = getattr(context, "backend_registry", None)
-        backend = None
-        if registry is not None:
-            try:
-                backend = registry.get("rscript")
-            except Exception:
-                backend = None
-        if backend is None:
-            return MethodSkip(
-                reason="milo skipped: rscript backend unavailable",
-                details={"method": self.name},
-            )
-
-        # miloR package guard.
-        if not backend._r_package_available("miloR"):
-            return MethodSkip(
-                reason="milo skipped: miloR R package unavailable",
-                details={"method": self.name},
-            )
+        # Rscript + backend + package guards (hoisted to RAnalysisMethod).
+        backend, skip = self._resolve_rscript_backend(context)
+        if skip is not None:
+            return skip
 
         # Extract reduced-dim rep (densify if sparse).
         embedding = np.asarray(adata.obsm[rep])
