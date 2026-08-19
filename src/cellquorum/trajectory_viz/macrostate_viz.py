@@ -26,24 +26,15 @@ class MacrostateVizMethod(AnalysisMethod):
         try:
             import cellrank as cr
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"macrostate_viz skipped: cellrank unavailable ({exc})",
-                details={"method": self.name},
-            )
+            return self._skip(f"cellrank unavailable ({exc})")
 
         pkl = inputs.results_file(context, "cellrank", "gpcca_estimator.pickle")
         if not Path(pkl).exists():
-            return MethodSkip(
-                reason="macrostate_viz skipped: no gpcca_estimator.pickle",
-                details={"method": self.name},
-            )
+            return self._skip("no gpcca_estimator.pickle")
         try:
             estimator = cr.estimators.GPCCA.read(str(pkl))
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"macrostate_viz skipped: estimator read failed ({exc})",
-                details={"method": self.name},
-            )
+            return self._skip(f"estimator read failed ({exc})")
 
         est_adata = getattr(estimator, "adata", None)
         basis = (
@@ -95,10 +86,7 @@ class MacrostateVizMethod(AnalysisMethod):
             warnings.append(f"macrostate_viz: plot_coarse_T failed: {str(exc)[:200]}")
 
         if n == 0:
-            return MethodSkip(
-                reason="macrostate_viz skipped: nothing rendered",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("nothing rendered", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,

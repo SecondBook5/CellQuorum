@@ -24,10 +24,7 @@ class DriverVizMethod(AnalysisMethod):
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         if "cellrank_lineage_drivers" not in adata.varm:
-            return MethodSkip(
-                reason="driver_viz skipped: no cellrank_lineage_drivers in varm",
-                details={"method": self.name},
-            )
+            return self._skip("no cellrank_lineage_drivers in varm")
         mat = np.asarray(adata.varm["cellrank_lineage_drivers"], dtype="float64")
 
         # Defensive uns-guard: handle non-dict uns["trajectory"]
@@ -108,10 +105,7 @@ class DriverVizMethod(AnalysisMethod):
             warnings.append(f"driver_viz: heatmap failed: {str(exc)[:200]}")
 
         if n == 0:
-            return MethodSkip(
-                reason="driver_viz skipped: nothing rendered",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("nothing rendered", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,

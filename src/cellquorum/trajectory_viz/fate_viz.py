@@ -43,15 +43,10 @@ class FateVizMethod(AnalysisMethod):
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         fate_key = next((k for k in _FATE_KEYS if k in adata.obsm), None)
         if fate_key is None:
-            return MethodSkip(
-                reason="fate_viz skipped: no *_fate_probabilities in obsm",
-                details={"method": self.name},
-            )
+            return self._skip("no *_fate_probabilities in obsm")
         basis = inputs.resolve_basis(adata, config.get("embedding_basis"))
         if basis is None:
-            return MethodSkip(
-                reason="fate_viz skipped: no embedding basis", details={"method": self.name}
-            )
+            return self._skip("no embedding basis")
 
         fp = np.asarray(adata.obsm[fate_key], dtype="float64")
         lineages = self._lineage_names(adata, fp.shape[1], config.get("lineages"))
@@ -97,10 +92,7 @@ class FateVizMethod(AnalysisMethod):
                 warnings.append(f"fate_viz: violin failed: {str(exc)[:200]}")
 
         if n == 0:
-            return MethodSkip(
-                reason="fate_viz skipped: nothing rendered",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("nothing rendered", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,

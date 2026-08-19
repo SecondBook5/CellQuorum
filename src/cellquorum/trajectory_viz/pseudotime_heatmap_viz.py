@@ -62,10 +62,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         pts = inputs.available_pseudotimes(adata, config.get("pseudotime_keys"))
         if not pts:
-            return MethodSkip(
-                reason="pseudotime_heatmap skipped: no *_pseudotime obs column",
-                details={"method": self.name},
-            )
+            return self._skip("no *_pseudotime obs column")
         pt_key = pts[0]
 
         try:
@@ -73,10 +70,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
 
             genes = self._select_genes(adata, pt, config)
             if not genes:
-                return MethodSkip(
-                    reason="pseudotime_heatmap skipped: no genes resolved",
-                    details={"method": self.name},
-                )
+                return self._skip("no genes resolved")
             gi = [adata.var_names.get_loc(g) for g in genes]
             M = _dense(adata.layers["magic"] if "magic" in adata.layers else adata.X)[:, gi]
 
@@ -123,10 +117,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 profiles[c] = p
                 tracks[c] = heatmap.binned_tracks(pt[m], score[m], state_codes[m], n_bins)
             if not profiles:
-                return MethodSkip(
-                    reason="pseudotime_heatmap skipped: no condition had enough cells",
-                    details={"method": self.name},
-                )
+                return self._skip("no condition had enough cells")
             condition_order = [c for c in condition_order if c in profiles]
 
             combined = np.mean([profiles[c] for c in condition_order], axis=0)
@@ -153,10 +144,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 title=f"Expression along {pt_key}",
             )
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"pseudotime_heatmap skipped: input/render failed ({str(exc)[:200]})",
-                details={"method": self.name},
-            )
+            return self._skip(f"input/render failed ({str(exc)[:200]})")
         paths = figstyle.save_figure(
             fig, figures_dir, "pseudotime_heatmap", formats=formats, dpi=dpi
         )

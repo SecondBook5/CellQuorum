@@ -24,34 +24,22 @@ class GeneTrendVizMethod(AnalysisMethod):
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         genes = config.get("genes")
         if not genes:  # no defaulted biology
-            return MethodSkip(
-                reason="gene_trend_viz skipped: no genes configured", details={"method": self.name}
-            )
+            return self._skip("no genes configured")
         try:
             import cellrank as cr
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"gene_trend_viz skipped: cellrank unavailable ({exc})",
-                details={"method": self.name},
-            )
+            return self._skip(f"cellrank unavailable ({exc})")
         fate_path = inputs.results_file(context, "cellrank", "fate_mapping.h5ad")
         if not Path(fate_path).exists():
-            return MethodSkip(
-                reason="gene_trend_viz skipped: no fate_mapping.h5ad", details={"method": self.name}
-            )
+            return self._skip("no fate_mapping.h5ad")
         try:
             fate = ad.read_h5ad(fate_path)
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"gene_trend_viz skipped: read failed ({exc})", details={"method": self.name}
-            )
+            return self._skip(f"read failed ({exc})")
 
         present = sorted(g for g in genes if g in set(map(str, fate.var_names)))
         if not present:
-            return MethodSkip(
-                reason="gene_trend_viz skipped: no requested gene in var_names",
-                details={"method": self.name, "requested": list(genes)},
-            )
+            return self._skip("no requested gene in var_names", requested=list(genes))
 
         import matplotlib.pyplot as plt
 
@@ -68,10 +56,7 @@ class GeneTrendVizMethod(AnalysisMethod):
                 paths, name="trajectory_figure", description=f"GAM gene trends: {present}."
             )
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"gene_trend_viz skipped: gene_trends failed ({str(exc)[:200]})",
-                details={"method": self.name},
-            )
+            return self._skip(f"gene_trends failed ({str(exc)[:200]})")
         return StageResult(
             adata=adata,
             artifacts=artifacts,

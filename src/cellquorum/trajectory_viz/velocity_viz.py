@@ -25,16 +25,11 @@ class VelocityVizMethod(AnalysisMethod):
         try:
             import scvelo as scv
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"velocity_viz skipped: scvelo unavailable ({exc})",
-                details={"method": self.name},
-            )
+            return self._skip(f"scvelo unavailable ({exc})")
         vel_dir = inputs.results_file(context, "velocity")
         files = sorted(Path(vel_dir).glob("*.h5ad")) if Path(vel_dir).exists() else []
         if not files:
-            return MethodSkip(
-                reason="velocity_viz skipped: no velocity h5ads", details={"method": self.name}
-            )
+            return self._skip("no velocity h5ads")
 
         import matplotlib.pyplot as plt
 
@@ -58,10 +53,7 @@ class VelocityVizMethod(AnalysisMethod):
                 warnings.append(f"velocity_viz: {f.stem} failed: {str(exc)[:200]}")
 
         if n == 0:
-            return MethodSkip(
-                reason="velocity_viz skipped: nothing rendered",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("nothing rendered", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,

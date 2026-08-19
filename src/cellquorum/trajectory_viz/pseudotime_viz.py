@@ -24,16 +24,10 @@ class PseudotimeVizMethod(AnalysisMethod):
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         basis = inputs.resolve_basis(adata, config.get("embedding_basis"))
         if basis is None:
-            return MethodSkip(
-                reason="pseudotime_viz skipped: no embedding basis in obsm",
-                details={"method": self.name},
-            )
+            return self._skip("no embedding basis in obsm")
         pts = inputs.available_pseudotimes(adata, config.get("pseudotime_keys"))
         if not pts:
-            return MethodSkip(
-                reason="pseudotime_viz skipped: no *_pseudotime obs column",
-                details={"method": self.name},
-            )
+            return self._skip("no *_pseudotime obs column")
 
         figures_dir = Path(context.paths.figures) / "trajectory"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -55,10 +49,7 @@ class PseudotimeVizMethod(AnalysisMethod):
                 warnings.append(f"pseudotime_viz: {key} failed: {str(exc)[:200]}")
 
         if n == 0:
-            return MethodSkip(
-                reason="pseudotime_viz skipped: no plottable pseudotime",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no plottable pseudotime", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,
