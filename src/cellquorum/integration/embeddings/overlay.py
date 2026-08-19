@@ -17,7 +17,7 @@ import scanpy as sc
 import scipy.sparse as sp
 
 from cellquorum.contracts.layer_tags import set_layer_tag
-from cellquorum.embeddings.config import OverlayConfig
+from cellquorum.integration.embeddings.config import OverlayConfig
 
 
 class MagicUnavailable(Exception):

@@ -57,9 +57,6 @@ from cellquorum.differential_expression.config import DifferentialExpressionConf
 # Import the differential-expression-visualization configuration model.
 from cellquorum.differential_expression.viz.config import DeVizConfig
 
-# Import the embeddings configuration model.
-from cellquorum.embeddings.config import EmbeddingsConfig
-
 # Import the enrichment configuration model.
 from cellquorum.enrichment.config import EnrichmentConfig
 
@@ -77,6 +74,9 @@ from cellquorum.integration.benchmark.config import IntegrationBenchmarkConfig
 
 # Import the integration configuration model.
 from cellquorum.integration.config import IntegrationConfig
+
+# Import the embeddings configuration model.
+from cellquorum.integration.embeddings.config import EmbeddingsConfig
 
 # Import the perturbation configuration model.
 from cellquorum.perturbation.config import PerturbationConfig

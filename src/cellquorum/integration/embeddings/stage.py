@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Import the package so methods register themselves as a side effect.
-import cellquorum.embeddings  # noqa: F401
+import cellquorum.integration.embeddings  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage
 

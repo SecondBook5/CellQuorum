@@ -66,9 +66,6 @@ from cellquorum.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.differential_expression.viz.stage import DeVizStage
 from cellquorum.dimensionality.stage import DimensionalityStage
 
-# Import embeddings stage.
-from cellquorum.embeddings.stage import EmbeddingsStage
-
 # Import enrichment stage.
 from cellquorum.enrichment.stage import EnrichmentStage
 
@@ -81,6 +78,9 @@ from cellquorum.grn.stage import GrnStage
 
 # Import integration-benchmark evaluation stage.
 from cellquorum.integration.benchmark.stage import IntegrationBenchmarkStage
+
+# Import embeddings stage.
+from cellquorum.integration.embeddings.stage import EmbeddingsStage
 
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage

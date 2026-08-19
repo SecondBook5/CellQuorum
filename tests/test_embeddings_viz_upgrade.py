@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import anndata as ad
 import numpy as np
 
-from cellquorum.embeddings import plots
+from cellquorum.integration.embeddings import plots
 from cellquorum.visualization import figstyle
 
 

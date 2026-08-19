@@ -9,10 +9,10 @@ import anndata as ad
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.embeddings import overlay, plots
-from cellquorum.embeddings.config import MagicConfig, OverlayConfig
-from cellquorum.embeddings.save import apply_theme, figure_artifacts, save_figure
-from cellquorum.embeddings.umap_method import _seed
+from cellquorum.integration.embeddings import overlay, plots
+from cellquorum.integration.embeddings.config import MagicConfig, OverlayConfig
+from cellquorum.integration.embeddings.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.integration.embeddings.umap_method import _seed
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 

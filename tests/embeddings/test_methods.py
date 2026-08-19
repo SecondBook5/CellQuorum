@@ -4,12 +4,12 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from cellquorum.embeddings.categorical_method import CategoricalEmbeddingMethod
-from cellquorum.embeddings.config import MagicConfig, OverlayConfig
-from cellquorum.embeddings.overlay_method import ContinuousOverlayMethod
-from cellquorum.embeddings.paga_method import PagaMethod
-from cellquorum.embeddings.phate_method import PhateMethod
-from cellquorum.embeddings.umap_method import UmapMethod
+from cellquorum.integration.embeddings.categorical_method import CategoricalEmbeddingMethod
+from cellquorum.integration.embeddings.config import MagicConfig, OverlayConfig
+from cellquorum.integration.embeddings.overlay_method import ContinuousOverlayMethod
+from cellquorum.integration.embeddings.paga_method import PagaMethod
+from cellquorum.integration.embeddings.phate_method import PhateMethod
+from cellquorum.integration.embeddings.umap_method import UmapMethod
 from cellquorum.methods.base import MethodSkip
 
 

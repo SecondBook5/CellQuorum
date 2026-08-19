@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from cellquorum.config.models import CellQuorumConfig, StageSelectionConfig
-from cellquorum.embeddings.config import EmbeddingsConfig, MagicConfig, OverlayConfig
+from cellquorum.integration.embeddings.config import EmbeddingsConfig, MagicConfig, OverlayConfig
 
 
 def test_embeddings_config_defaults():

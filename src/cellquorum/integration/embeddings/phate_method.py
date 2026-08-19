@@ -1,4 +1,4 @@
-"""UMAP compute method: writes obsm['X_umap'] on the existing neighbors graph."""
+"""PHATE compute method: writes obsm['X_phate']; skips if phate unavailable."""
 
 from __future__ import annotations
 
@@ -6,21 +6,15 @@ import anndata as ad
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.embeddings import compute
+from cellquorum.integration.embeddings import compute
+from cellquorum.integration.embeddings.umap_method import _seed
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
-def _seed(config: dict, context: object) -> int:
-    """Prefer config random_state, else context.random_seed, else 1337."""
-    if config.get("random_state") is not None:
-        return int(config["random_state"])
-    return int(getattr(context, "random_seed", 1337))
+class PhateMethod(AnalysisMethod):
+    """Compute PHATE coordinates from a representation."""
 
-
-class UmapMethod(AnalysisMethod):
-    """Compute UMAP coordinates from the neighbors graph."""
-
-    name = "umap"
+    name = "phate"
     stage_category = "embeddings"
     backend = "python"
 
@@ -29,19 +23,21 @@ class UmapMethod(AnalysisMethod):
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         try:
-            compute.compute_umap(
+            compute.compute_phate(
                 adata,
-                min_dist=float(config.get("umap_min_dist", 0.3)),
+                use_rep=config.get("use_rep", "X_pca_harmony"),
+                knn=int(config.get("phate_knn", 15)),
+                decay=int(config.get("phate_decay", 40)),
                 random_state=_seed(config, context),
             )
         except compute.EmbeddingsComputeError as exc:
             return self._skip(f"{exc}")
         return StageResult(
             adata=adata,
-            notes=["umap: wrote obsm['X_umap']"],
+            notes=["phate: wrote obsm['X_phate']"],
             metrics={"method": self.name},
             backend="python",
         )
 
 
-__all__ = ["UmapMethod"]
+__all__ = ["PhateMethod"]

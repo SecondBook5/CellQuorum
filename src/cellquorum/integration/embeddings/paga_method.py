@@ -6,7 +6,7 @@ import anndata as ad
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.embeddings import compute
+from cellquorum.integration.embeddings import compute
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 

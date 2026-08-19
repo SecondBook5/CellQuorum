@@ -8,8 +8,8 @@ import anndata as ad
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.embeddings import compute, plots
-from cellquorum.embeddings.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.integration.embeddings import compute, plots
+from cellquorum.integration.embeddings.save import apply_theme, figure_artifacts, save_figure
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
