@@ -37,10 +37,7 @@ class OraVizMethod(AnalysisMethod):
         if wanted:
             collections = [c for c in collections if c in set(wanted)]
         if not collections:
-            return MethodSkip(
-                reason="ora_viz skipped: no enrichment_ora_*.csv in results",
-                details={"method": self.name},
-            )
+            return self._skip("no enrichment_ora_*.csv in results")
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -94,10 +91,7 @@ class OraVizMethod(AnalysisMethod):
                 warnings.append(f"ora_viz: dotplot failed ({collection}): {str(exc)[:200]}")
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="ora_viz skipped: no plottable rows in any ORA CSV",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no plottable rows in any ORA CSV", warnings=warnings)
 
         return StageResult(
             adata=adata,

@@ -43,10 +43,7 @@ class GseaVizMethod(AnalysisMethod):
         if wanted:
             collections = [c for c in collections if c in set(wanted)]
         if not collections:
-            return MethodSkip(
-                reason="gsea_viz skipped: no enrichment_gsea_*.csv in results",
-                details={"method": self.name},
-            )
+            return self._skip("no enrichment_gsea_*.csv in results")
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -124,10 +121,7 @@ class GseaVizMethod(AnalysisMethod):
                 warnings.append(f"gsea_viz: no running-ES CSV for {collection} (figure 3 skipped)")
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="gsea_viz skipped: no plottable rows in any GSEA CSV",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no plottable rows in any GSEA CSV", warnings=warnings)
 
         return StageResult(
             adata=adata,

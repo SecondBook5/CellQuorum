@@ -45,10 +45,7 @@ class GsvaVizMethod(AnalysisMethod):
         if wanted:
             collections = [c for c in collections if c in set(wanted)]
         if not collections:
-            return MethodSkip(
-                reason="gsva_viz skipped: no enrichment_gsva_*.csv in results",
-                details={"method": self.name},
-            )
+            return self._skip("no enrichment_gsva_*.csv in results")
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -128,10 +125,7 @@ class GsvaVizMethod(AnalysisMethod):
                     )
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="gsva_viz skipped: no plottable GSVA data",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no plottable GSVA data", warnings=warnings)
 
         return StageResult(
             adata=adata,
