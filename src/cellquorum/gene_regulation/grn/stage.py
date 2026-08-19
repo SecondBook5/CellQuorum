@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import cellquorum.grn  # noqa: F401  (registers the method as a side effect)
+import cellquorum.gene_regulation.grn  # noqa: F401  (registers the method as a side effect)
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage
 

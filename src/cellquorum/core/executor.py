@@ -76,7 +76,7 @@ from cellquorum.enrichment.stage import EnrichmentStage
 
 # Import enrichment-visualization stage.
 from cellquorum.enrichment.viz.stage import EnrichmentVizStage
-from cellquorum.grn.stage import GrnStage
+from cellquorum.gene_regulation.grn.stage import GrnStage
 
 # Import integration-benchmark evaluation stage.
 from cellquorum.integration.benchmark.stage import IntegrationBenchmarkStage

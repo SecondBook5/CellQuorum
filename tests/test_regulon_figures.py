@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from cellquorum.grn import regulon_figures as rf
+from cellquorum.gene_regulation.grn import regulon_figures as rf
 
 
 def _auc(n_cells: int = 60, n_reg: int = 8) -> pd.DataFrame:
@@ -67,7 +67,8 @@ def test_plots_return_empty_on_empty_auc(tmp_path: Path) -> None:
 
 def test_no_theme_import() -> None:
     src = (
-        Path(__file__).resolve().parents[1] / "src/cellquorum/grn/regulon_figures.py"
+        Path(__file__).resolve().parents[1]
+        / "src/cellquorum/gene_regulation/grn/regulon_figures.py"
     ).read_text()
     assert "crrt" not in src
     assert "get_stage_colors_for_cancer" not in src

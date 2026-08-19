@@ -13,7 +13,7 @@ import pandas as pd
 from cellquorum.backends.pyscenic_backend import PYSCENIC_AUCELL_PY, PYSCENIC_GRN_PY
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.grn import regulon_figures as rf
+from cellquorum.gene_regulation.grn import regulon_figures as rf
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 

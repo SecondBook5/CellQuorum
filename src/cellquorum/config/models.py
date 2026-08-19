@@ -70,7 +70,7 @@ from cellquorum.enrichment.config import EnrichmentConfig
 from cellquorum.enrichment.viz.config import EnrichmentVizConfig
 
 # Import the GRN configuration model.
-from cellquorum.grn.config import GrnConfig
+from cellquorum.gene_regulation.grn.config import GrnConfig
 
 # Import the integration-benchmark configuration model.
 from cellquorum.integration.benchmark.config import IntegrationBenchmarkConfig

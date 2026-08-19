@@ -10,7 +10,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.grn.pyscenic_method import PyscenicMethod
+from cellquorum.gene_regulation.grn.pyscenic_method import PyscenicMethod
 from cellquorum.methods.base import MethodSkip
 
 

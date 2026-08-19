@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cellquorum.grn.config import GrnConfig
+from cellquorum.gene_regulation.grn.config import GrnConfig
 
 
 def test_grn_config_defaults() -> None:
