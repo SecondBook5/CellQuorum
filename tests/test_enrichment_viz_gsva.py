@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.context import PipelineContext, PipelinePaths
-from cellquorum.enrichment.viz.gsva_viz import GsvaVizMethod
+from cellquorum.enrichment.viz.viz_methods import GsvaVizMethod
 from cellquorum.methods.base import MethodSkip
 
 

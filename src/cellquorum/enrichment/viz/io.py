@@ -1,9 +1,4 @@
-"""House-style figure saving for the enrichment-visualization stage.
-
-Resolves two codebase inconsistencies for THIS stage only (no refactor of other
-stages): the save helper creates parent directories, and every produced figure is
-tagged ``kind="figure"``.
-"""
+"""I/O helpers for enrichment visualization: CSV discovery and figure saving."""
 
 from __future__ import annotations
 
@@ -15,6 +10,14 @@ from matplotlib.figure import Figure
 
 from cellquorum.core.stage import StageArtifact
 from cellquorum.visualization.figstyle import apply_cellquorum_theme
+
+
+def collections_from_glob(results_dir: Path, prefix: str, suffix: str = ".csv") -> list[str]:
+    """Return collection/resource names parsed from files matching prefix*suffix."""
+    names = []
+    for path in sorted(results_dir.glob(f"{prefix}*{suffix}")):
+        names.append(path.name[len(prefix) : -len(suffix)])
+    return names
 
 
 def apply_theme() -> None:
@@ -59,4 +62,4 @@ def figure_artifacts(
     ]
 
 
-__all__ = ["apply_theme", "save_figure", "figure_artifacts"]
+__all__ = ["collections_from_glob", "apply_theme", "save_figure", "figure_artifacts"]
