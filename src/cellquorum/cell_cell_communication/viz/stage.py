@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import cellquorum.ccc_viz  # noqa: F401  (side-effect: registers methods)
+import cellquorum.cell_cell_communication.viz  # noqa: F401  (side-effect: registers methods)
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage
 

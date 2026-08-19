@@ -1,4 +1,4 @@
-"""Sankey viz method: source->ligand->receptor->target flow from canonical LR frames."""
+"""Dotplot viz method: source->target x LR-pair, color=weight, size=#samples."""
 
 from __future__ import annotations
 
@@ -6,18 +6,18 @@ from pathlib import Path
 
 import anndata as ad
 
-from cellquorum.ccc_viz import _plots
-from cellquorum.ccc_viz.discovery import load_canonical_lr_sources
-from cellquorum.ccc_viz.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.cell_cell_communication.viz import _plots
+from cellquorum.cell_cell_communication.viz.discovery import load_canonical_lr_sources
+from cellquorum.cell_cell_communication.viz.save import apply_theme, figure_artifacts, save_figure
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
-class SankeyVizMethod(AnalysisMethod):
-    """Render Sankey flow diagrams from canonical LR frames."""
+class DotplotVizMethod(AnalysisMethod):
+    """Render source->target x ligand-receptor dotplots from canonical LR frames."""
 
-    name = "sankey_viz"
+    name = "dotplot_viz"
     stage_category = "ccc_viz"
     backend = "python"
 
@@ -42,33 +42,25 @@ class SankeyVizMethod(AnalysisMethod):
         artifacts, warnings, n_figures = [], [], 0
         for label, df in sources:
             try:
-                # Build palette from union of source/ligand/receptor/target values
-                vals = (
-                    set(df["source"].astype(str))
-                    | set(df["target"].astype(str))
-                    | set(df["ligand"].astype(str))
-                    | set(df["receptor"].astype(str))
-                )
-                palette = _plots.celltype_palette(list(vals))
-                fig = _plots.sankey_flow(df, palette=palette, top_k=top_k)
-                paths = save_figure(fig, figures_dir, f"sankey_{label}", formats=formats, dpi=dpi)
+                fig = _plots.interaction_dotplot(df, top_k=top_k)
+                paths = save_figure(fig, figures_dir, f"dotplot_{label}", formats=formats, dpi=dpi)
                 artifacts += figure_artifacts(
-                    paths, name="ccc_figure", description=f"Sankey diagram ({label})."
+                    paths, name="ccc_figure", description=f"LR dotplot ({label})."
                 )
                 n_figures += 1
             except Exception as exc:  # noqa: BLE001
-                warnings.append(f"sankey_viz: {label} failed: {str(exc)[:200]}")
+                warnings.append(f"dotplot_viz: {label} failed: {str(exc)[:200]}")
 
         if n_figures == 0:
             return self._skip("no plottable rows in any source", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=[f"sankey_viz rendered {n_figures} figures."],
+            notes=[f"dotplot_viz rendered {n_figures} figures."],
             warnings=warnings,
             metrics={"method": self.name, "n_figures": n_figures},
             backend="python",
         )
 
 
-__all__ = ["SankeyVizMethod"]
+__all__ = ["DotplotVizMethod"]

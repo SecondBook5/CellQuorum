@@ -6,9 +6,9 @@ from pathlib import Path
 
 import anndata as ad
 
-from cellquorum.ccc_viz import _plots
-from cellquorum.ccc_viz.discovery import load_curvature
-from cellquorum.ccc_viz.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.cell_cell_communication.viz import _plots
+from cellquorum.cell_cell_communication.viz.discovery import load_curvature
+from cellquorum.cell_cell_communication.viz.save import apply_theme, figure_artifacts, save_figure
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip

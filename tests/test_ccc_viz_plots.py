@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 
 
 def test_save_figure_writes_formats(tmp_path):
-    from cellquorum.ccc_viz.save import figure_artifacts, save_figure
+    from cellquorum.cell_cell_communication.viz.save import figure_artifacts, save_figure
 
     fig, ax = plt.subplots()
     ax.plot([0, 1], [0, 1])
@@ -38,7 +38,7 @@ def _lr(n_pairs=3):
 
 
 def test_celltype_palette_deterministic_and_entity_keyed():
-    from cellquorum.ccc_viz._plots import celltype_palette
+    from cellquorum.cell_cell_communication.viz._plots import celltype_palette
 
     p1 = celltype_palette(["B", "A", "C"])
     p2 = celltype_palette(["C", "A", "B"])  # different order
@@ -47,7 +47,11 @@ def test_celltype_palette_deterministic_and_entity_keyed():
 
 
 def test_celltype_palette_overflow_to_other():
-    from cellquorum.ccc_viz._plots import _CELLTYPE_HEXES, _OTHER_GRAY, celltype_palette
+    from cellquorum.cell_cell_communication.viz._plots import (
+        _CELLTYPE_HEXES,
+        _OTHER_GRAY,
+        celltype_palette,
+    )
 
     many = [f"ct{i}" for i in range(len(_CELLTYPE_HEXES) + 3)]
     pal = celltype_palette(many)
@@ -55,20 +59,20 @@ def test_celltype_palette_overflow_to_other():
 
 
 def test_interaction_dotplot_returns_figure():
-    from cellquorum.ccc_viz._plots import interaction_dotplot
+    from cellquorum.cell_cell_communication.viz._plots import interaction_dotplot
 
     assert isinstance(interaction_dotplot(_lr(4), top_k=2), Figure)
 
 
 def test_interaction_dotplot_empty_guarded():
-    from cellquorum.ccc_viz._plots import interaction_dotplot
+    from cellquorum.cell_cell_communication.viz._plots import interaction_dotplot
 
     empty = pd.DataFrame(columns=["source", "target", "ligand", "receptor", "weight", "sample"])
     assert isinstance(interaction_dotplot(empty), Figure)
 
 
 def test_cci_heatmap_sequential_and_diverging():
-    from cellquorum.ccc_viz._plots import cci_heatmap
+    from cellquorum.cell_cell_communication.viz._plots import cci_heatmap
 
     assert isinstance(cci_heatmap(_lr(3)), Figure)
     diff = _lr(3).assign(weight=[-0.2, 0.1, 0.3])
@@ -76,7 +80,11 @@ def test_cci_heatmap_sequential_and_diverging():
 
 
 def test_chord_and_sankey_return_figure():
-    from cellquorum.ccc_viz._plots import celltype_palette, chord_diagram, sankey_flow
+    from cellquorum.cell_cell_communication.viz._plots import (
+        celltype_palette,
+        chord_diagram,
+        sankey_flow,
+    )
 
     df = _lr(4)
     pal = celltype_palette(list(set(df["source"]) | set(df["target"])))
@@ -87,7 +95,7 @@ def test_chord_and_sankey_return_figure():
 def test_chord_sankey_fallback_when_dep_missing(monkeypatch):
     import builtins
 
-    from cellquorum.ccc_viz import _plots
+    from cellquorum.cell_cell_communication.viz import _plots
 
     real_import = builtins.__import__
 
@@ -104,7 +112,7 @@ def test_chord_sankey_fallback_when_dep_missing(monkeypatch):
 
 
 def test_curvature_network_returns_figure():
-    from cellquorum.ccc_viz._plots import curvature_network
+    from cellquorum.cell_cell_communication.viz._plots import curvature_network
 
     edges = pd.DataFrame(
         {
@@ -119,7 +127,7 @@ def test_curvature_network_returns_figure():
 
 
 def test_curvature_network_empty_guarded():
-    from cellquorum.ccc_viz._plots import curvature_network
+    from cellquorum.cell_cell_communication.viz._plots import curvature_network
 
     e = pd.DataFrame(columns=["source", "target", "ricci_curvature", "weight"])
     n = pd.DataFrame(columns=["node", "ricci_curvature"])
@@ -127,7 +135,7 @@ def test_curvature_network_empty_guarded():
 
 
 def test_curvature_network_without_weight_col():
-    from cellquorum.ccc_viz._plots import curvature_network
+    from cellquorum.cell_cell_communication.viz._plots import curvature_network
 
     edges = pd.DataFrame({"source": ["A"], "target": ["B"], "delta_curvature": [-0.1]})
     fig = curvature_network(
@@ -137,7 +145,7 @@ def test_curvature_network_without_weight_col():
 
 
 def test_topology_facets_returns_figure():
-    from cellquorum.ccc_viz._plots import topology_facets
+    from cellquorum.cell_cell_communication.viz._plots import topology_facets
 
     topo = pd.DataFrame(
         {
@@ -152,7 +160,7 @@ def test_topology_facets_returns_figure():
 
 
 def test_interaction_dotplot_all_nan_weight():
-    from cellquorum.ccc_viz._plots import interaction_dotplot
+    from cellquorum.cell_cell_communication.viz._plots import interaction_dotplot
 
     df = pd.DataFrame(
         {
