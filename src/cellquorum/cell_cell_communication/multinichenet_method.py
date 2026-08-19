@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import shutil
+import shutil  # noqa: F401 - test mocks through this module path
 import subprocess
 from pathlib import Path
 
@@ -15,17 +15,18 @@ from cellquorum.cell_cell_communication._nichenet_io import (
 )
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.methods.base import MethodSkip
+from cellquorum.methods.r_method import RAnalysisMethod
 
 _MNN_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "multinichenet.R"
 
 
-class MultiNicheNetMethod(AnalysisMethod):
+class MultiNicheNetMethod(RAnalysisMethod):
     """Tissue-wide differential cell-cell communication (multinichenetr)."""
 
     name = "multinichenet"
     stage_category = "cell_cell_communication"
-    backend = "rscript"
+    r_package = "multinichenetr"
 
     def input_contract(self, config: dict) -> DataContract:
         return DataContract(
@@ -73,28 +74,10 @@ class MultiNicheNetMethod(AnalysisMethod):
                 details={"method": self.name},
             )
 
-        if shutil.which("Rscript") is None:
-            return MethodSkip(
-                reason="multinichenet skipped: Rscript unavailable",
-                details={"method": self.name},
-            )
-        registry = getattr(context, "backend_registry", None)
-        backend = None
-        if registry is not None:
-            try:
-                backend = registry.get("rscript")
-            except Exception:
-                backend = None
-        if backend is None:
-            return MethodSkip(
-                reason="multinichenet skipped: rscript backend unavailable",
-                details={"method": self.name},
-            )
-        if not backend._r_package_available("multinichenetr"):
-            return MethodSkip(
-                reason="multinichenet skipped: multinichenetr R package unavailable",
-                details={"method": self.name},
-            )
+        # Rscript + backend + package guards (hoisted to RAnalysisMethod).
+        backend, skip = self._resolve_rscript_backend(context)
+        if skip is not None:
+            return skip
 
         scratch = Path(context.paths.scratch)
         paths = export_sce_inputs(adata, [cell_type_col, sample_col, condition_col], scratch)
