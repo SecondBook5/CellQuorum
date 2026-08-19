@@ -68,15 +68,11 @@ class PyscenicMethod(AnalysisMethod):
 
         # 3. Guards -> MethodSkip
         if adata.n_obs < min_cells_total:
-            return MethodSkip(
-                reason=f"pyscenic skipped: too few cells ({adata.n_obs} < {min_cells_total})",
-                details={"method": self.name, "n_obs": int(adata.n_obs)},
+            return self._skip(
+                f"too few cells ({adata.n_obs} < {min_cells_total})", n_obs=int(adata.n_obs)
             )
         if shutil.which(launcher) is None:
-            return MethodSkip(
-                reason=f"pyscenic skipped: launcher '{launcher}' not found on PATH",
-                details={"method": self.name, "launcher": launcher},
-            )
+            return self._skip(f"launcher '{launcher}' not found on PATH", launcher=launcher)
         registry = getattr(context, "backend_registry", None)
         backend = None
         if registry is not None:
@@ -85,19 +81,13 @@ class PyscenicMethod(AnalysisMethod):
             except Exception:
                 backend = None
         if backend is None:
-            return MethodSkip(
-                reason="pyscenic skipped: pyscenic backend unavailable",
-                details={"method": self.name},
-            )
+            return self._skip("pyscenic backend unavailable")
         try:
             module_ok = backend._py_module_available("pyscenic")
         except Exception:
             module_ok = False
         if not module_ok:
-            return MethodSkip(
-                reason="pyscenic skipped: pyscenic module unavailable in env",
-                details={"method": self.name},
-            )
+            return self._skip("pyscenic module unavailable in env")
         # cisTarget resources: unset OR unresolvable -> skip before spawning subprocess
         rankings_files = sorted(glob.glob(rankings_glob)) if rankings_glob else []
         if not rankings_files and rankings_glob and os.path.exists(rankings_glob):
@@ -110,13 +100,11 @@ class PyscenicMethod(AnalysisMethod):
         if not rankings_files:
             missing_db.append("rankings_glob")
         if missing_db:
-            return MethodSkip(
-                reason=(
-                    "pyscenic skipped: cisTarget resources unset/missing "
-                    f"({', '.join(missing_db)}); download the cisTarget DBs and set "
-                    "grn.tfs_path / motifs_path / rankings_glob"
-                ),
-                details={"method": self.name, "missing": missing_db},
+            return self._skip(
+                "cisTarget resources unset/missing "
+                f"({', '.join(missing_db)}); download the cisTarget DBs and set "
+                "grn.tfs_path / motifs_path / rankings_glob",
+                missing=missing_db,
             )
 
         # 4. Write counts h5ad to scratch
@@ -160,15 +148,9 @@ class PyscenicMethod(AnalysisMethod):
         try:
             proc = backend.run_script(PYSCENIC_GRN_PY, grn_args, timeout=timeout_seconds)
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-            return MethodSkip(
-                reason="pyscenic skipped: grn script execution failed or timed out",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("grn script execution failed or timed out", error=str(exc)[:500])
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="pyscenic skipped: grn/ctx script failed",
-                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
-            )
+            return self._skip("grn/ctx script failed", stderr=proc.stderr.strip()[:500])
 
         regulons_csv = out_dir / f"scenic_regulons_{tag}.csv"
         adjacencies_tsv = out_dir / f"scenic_adjacencies_{tag}.tsv"
@@ -178,22 +160,13 @@ class PyscenicMethod(AnalysisMethod):
             reason = (
                 skip_marker.read_text().strip() if skip_marker.exists() else "no regulons produced"
             )
-            return MethodSkip(
-                reason=f"pyscenic skipped: {reason}",
-                details={"method": self.name},
-            )
+            return self._skip(reason)
         try:
             regulons_df = pd.read_csv(regulons_csv)
         except Exception as exc:
-            return MethodSkip(
-                reason="pyscenic skipped: could not read regulons CSV",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("could not read regulons CSV", error=str(exc)[:500])
         if len(regulons_df) == 0:
-            return MethodSkip(
-                reason="pyscenic skipped: no regulons detected",
-                details={"method": self.name},
-            )
+            return self._skip("no regulons detected")
 
         # 6. AUCell
         auc_parquet = out_dir / f"scenic_auc_mtx_{tag}.parquet"
