@@ -28,14 +28,11 @@ class PagaMethod(AnalysisMethod):
             cluster_key=config.get("cluster_key", "leiden"),
         )
         if groupby is None:
-            return MethodSkip(
-                reason="paga skipped: no grouping column (cell_type/leiden) present",
-                details={"method": self.name},
-            )
+            return self._skip("no grouping column (cell_type/leiden) present")
         try:
             compute.compute_paga(adata, groupby=groupby)
         except compute.EmbeddingsComputeError as exc:
-            return MethodSkip(reason=f"paga skipped: {exc}", details={"method": self.name})
+            return self._skip(f"{exc}")
         return StageResult(
             adata=adata,
             notes=[f"paga: wrote uns['paga'] over '{groupby}'"],

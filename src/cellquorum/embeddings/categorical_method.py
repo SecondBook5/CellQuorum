@@ -36,10 +36,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
             cluster_key=config.get("cluster_key", "leiden"),
         )
         if groupby is None:
-            return MethodSkip(
-                reason="categorical_embedding skipped: no grouping column present",
-                details={"method": self.name},
-            )
+            return self._skip("no grouping column present")
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -72,10 +69,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                 warnings.append(f"categorical_embedding: {tag} failed: {str(exc)[:200]}")
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="categorical_embedding skipped: no embeddings available to render",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no embeddings available to render", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,

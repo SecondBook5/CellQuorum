@@ -35,7 +35,7 @@ class UmapMethod(AnalysisMethod):
                 random_state=_seed(config, context),
             )
         except compute.EmbeddingsComputeError as exc:
-            return MethodSkip(reason=f"umap skipped: {exc}", details={"method": self.name})
+            return self._skip(f"{exc}")
         return StageResult(
             adata=adata,
             notes=["umap: wrote obsm['X_umap']"],

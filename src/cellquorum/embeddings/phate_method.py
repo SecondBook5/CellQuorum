@@ -31,7 +31,7 @@ class PhateMethod(AnalysisMethod):
                 random_state=_seed(config, context),
             )
         except compute.EmbeddingsComputeError as exc:
-            return MethodSkip(reason=f"phate skipped: {exc}", details={"method": self.name})
+            return self._skip(f"{exc}")
         return StageResult(
             adata=adata,
             notes=["phate: wrote obsm['X_phate']"],

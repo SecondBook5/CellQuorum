@@ -76,10 +76,7 @@ class ContinuousOverlayMethod(AnalysisMethod):
         )
         warnings += feat_warnings
         if not features:
-            return MethodSkip(
-                reason="continuous_overlay skipped: no resolvable overlay features",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no resolvable overlay features", warnings=warnings)
 
         apply_theme()
         artifacts, n_figures = [], 0
@@ -123,10 +120,7 @@ class ContinuousOverlayMethod(AnalysisMethod):
                     )
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="continuous_overlay skipped: no figures rendered",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no figures rendered", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,
