@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -11,13 +10,14 @@ import anndata as ad
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.differential_abundance.aggregation import aggregate_celltype_counts
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.methods.base import MethodSkip
+from cellquorum.methods.r_method import RAnalysisMethod
 
 # Path to the bundled propeller script.
 _PROPELLER_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "propeller.R"
 
 
-class PropellerMethod(AnalysisMethod):
+class PropellerMethod(RAnalysisMethod):
     """Speckle propeller moderated-t proportion test for differential abundance.
 
     Propeller tests for cell-type proportion differences between conditions using
@@ -28,7 +28,7 @@ class PropellerMethod(AnalysisMethod):
 
     name = "propeller"
     stage_category = "differential_abundance"
-    backend = "rscript"
+    r_package = "speckle"
 
     def input_contract(self, config: dict) -> DataContract:
         """Require the design obs columns (no layer needed for DA)."""
@@ -69,33 +69,10 @@ class PropellerMethod(AnalysisMethod):
                 details={"method": self.name},
             )
 
-        # Rscript availability guard.
-        if shutil.which("Rscript") is None:
-            return MethodSkip(
-                reason="propeller skipped: Rscript unavailable",
-                details={"method": self.name},
-            )
-
-        # Resolve the Rscript backend from the context registry.
-        registry = getattr(context, "backend_registry", None)
-        backend = None
-        if registry is not None:
-            try:
-                backend = registry.get("rscript")
-            except Exception:
-                backend = None
-        if backend is None:
-            return MethodSkip(
-                reason="propeller skipped: rscript backend unavailable",
-                details={"method": self.name},
-            )
-
-        # speckle package guard.
-        if not backend._r_package_available("speckle"):
-            return MethodSkip(
-                reason="propeller skipped: speckle R package unavailable",
-                details={"method": self.name},
-            )
+        # Rscript + backend + package guards (hoisted to RAnalysisMethod).
+        backend, skip = self._resolve_rscript_backend(context)
+        if skip is not None:
+            return skip
 
         # Aggregate to sample × cell-type counts.
         cc = aggregate_celltype_counts(
