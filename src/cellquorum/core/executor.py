@@ -14,11 +14,11 @@ from datetime import UTC, datetime
 # Import adjudication stage.
 from cellquorum.adjudication.stage import AdjudicationStage
 
+# Import annotation-consensus stage.
+from cellquorum.annotation.consensus.stage import AnnotationConsensusStage
+
 # Import annotation stage.
 from cellquorum.annotation.stage import AnnotationStage
-
-# Import annotation-consensus stage.
-from cellquorum.annotation_consensus.stage import AnnotationConsensusStage
 
 # Import annotation-diagnostics evaluation stage.
 from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage

@@ -18,7 +18,7 @@ from cellquorum.adjudication.config import AdjudicationConfig
 from cellquorum.annotation.config import AnnotationConfig
 
 # Import the annotation-consensus configuration model.
-from cellquorum.annotation_consensus.config import AnnotationConsensusConfig
+from cellquorum.annotation.consensus.config import AnnotationConsensusConfig
 
 # Import the annotation-diagnostics configuration model.
 from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cellquorum.annotation_consensus.config import AnnotationConsensusConfig
+from cellquorum.annotation.consensus.config import AnnotationConsensusConfig
 
 
 def test_defaults():
