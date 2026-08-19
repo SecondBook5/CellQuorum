@@ -73,7 +73,7 @@ from cellquorum.embeddings.stage import EmbeddingsStage
 from cellquorum.enrichment.stage import EnrichmentStage
 
 # Import enrichment-visualization stage.
-from cellquorum.enrichment_viz.stage import EnrichmentVizStage
+from cellquorum.enrichment.viz.stage import EnrichmentVizStage
 
 # Import feature selection stage.
 from cellquorum.feature_selection.stage import FeatureSelectionStage

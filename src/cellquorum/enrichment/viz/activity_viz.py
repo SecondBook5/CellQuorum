@@ -9,9 +9,9 @@ import pandas as pd
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.enrichment_viz import plots
-from cellquorum.enrichment_viz.discovery import collections_from_glob
-from cellquorum.enrichment_viz.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.enrichment.viz import plots
+from cellquorum.enrichment.viz.discovery import collections_from_glob
+from cellquorum.enrichment.viz.save import apply_theme, figure_artifacts, save_figure
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 

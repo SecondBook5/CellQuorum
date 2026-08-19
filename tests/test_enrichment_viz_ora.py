@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.context import PipelineContext, PipelinePaths
-from cellquorum.enrichment_viz.ora_viz import OraVizMethod
+from cellquorum.enrichment.viz.ora_viz import OraVizMethod
 from cellquorum.methods.base import MethodSkip
 
 

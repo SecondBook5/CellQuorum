@@ -64,7 +64,7 @@ from cellquorum.embeddings.config import EmbeddingsConfig
 from cellquorum.enrichment.config import EnrichmentConfig
 
 # Import the enrichment-visualization configuration model.
-from cellquorum.enrichment_viz.config import EnrichmentVizConfig
+from cellquorum.enrichment.viz.config import EnrichmentVizConfig
 
 # Import the feature-selection configuration model.
 from cellquorum.feature_selection.config import FeatureSelectionConfig

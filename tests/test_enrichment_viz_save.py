@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from cellquorum.enrichment_viz.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.enrichment.viz.save import apply_theme, figure_artifacts, save_figure
 
 
 def test_save_figure_creates_parent_dirs_and_all_formats(tmp_path):

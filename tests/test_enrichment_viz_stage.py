@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.context import PipelineContext, PipelinePaths
-from cellquorum.enrichment_viz.stage import EnrichmentVizStage
+from cellquorum.enrichment.viz.stage import EnrichmentVizStage
 
 
 def _ctx(tmp_path, config=None):
@@ -87,7 +87,7 @@ def test_stage_always_on_skips_cleanly_when_no_inputs(tmp_path):
 
 
 def test_methods_registered():
-    import cellquorum.enrichment_viz  # noqa: F401  (triggers registration)
+    import cellquorum.enrichment.viz  # noqa: F401  (triggers registration)
     from cellquorum.methods.registry import METHOD_REGISTRY
 
     for name in ["gsea_viz", "ora_viz", "gsva_viz", "activity_viz"]:
