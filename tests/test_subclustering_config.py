@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cellquorum.subclustering.config import SubclusteringConfig
+from cellquorum.clustering.subclustering.config import SubclusteringConfig
 
 
 def test_subclustering_config_defaults() -> None:

@@ -17,8 +17,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.subclustering.config import SubclusteringConfig
-from cellquorum.subclustering.stage import SubclusteringStage
+from cellquorum.clustering.subclustering.config import SubclusteringConfig
+from cellquorum.clustering.subclustering.stage import SubclusteringStage
 
 
 def _parent_adata(seed=0):

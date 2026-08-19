@@ -34,6 +34,9 @@ from cellquorum.cell_cell_communication.viz.stage import CccVizStage
 
 # Import Phase-2A stages: dimensionality reduction and clustering.
 from cellquorum.clustering.stage import ClusteringStage
+
+# Import subclustering stage.
+from cellquorum.clustering.subclustering.stage import SubclusteringStage
 from cellquorum.coexpression.stage import CoexpressionStage
 
 # Import pipeline context.
@@ -97,9 +100,6 @@ from cellquorum.qc.stage import QCStage
 
 # Import reference-mapping stage.
 from cellquorum.reference_mapping.stage import ReferenceMappingStage
-
-# Import subclustering stage.
-from cellquorum.subclustering.stage import SubclusteringStage
 
 # Import trajectory stage.
 from cellquorum.trajectory.stage import TrajectoryStage

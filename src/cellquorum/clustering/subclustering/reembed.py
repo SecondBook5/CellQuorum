@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import anndata as ad
 
-    from cellquorum.subclustering.config import ReembedConfig
+    from cellquorum.clustering.subclustering.config import ReembedConfig
 
 
 def ensure_focus_embedding(

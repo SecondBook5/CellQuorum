@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.subclustering.extract import apply_group_filter, extract_focus
+from cellquorum.clustering.subclustering.extract import apply_group_filter, extract_focus
 
 
 def make_synthetic_adata() -> ad.AnnData:
@@ -54,7 +54,7 @@ def test_extract_focus_subset_to_labels() -> None:
     adata = make_synthetic_adata()
 
     # Import FocusConfig for the test.
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
     focus = FocusConfig(label_key="cell_type", labels=["A"])
 
@@ -75,7 +75,7 @@ def test_extract_focus_restores_counts_to_X() -> None:
     adata = make_synthetic_adata()
 
     # Import FocusConfig.
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
     focus = FocusConfig(label_key="cell_type", labels=["A"])
 
@@ -92,7 +92,7 @@ def test_extract_focus_clears_stale_obsm() -> None:
     adata = make_synthetic_adata()
 
     # Import FocusConfig.
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
     focus = FocusConfig(label_key="cell_type", labels=["A"])
 
@@ -112,7 +112,7 @@ def test_extract_focus_records_provenance() -> None:
     adata = make_synthetic_adata()
 
     # Import FocusConfig.
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
     focus = FocusConfig(label_key="cell_type", labels=["A"])
 
@@ -134,7 +134,7 @@ def test_extract_focus_empty_labels_no_op() -> None:
     adata = make_synthetic_adata()
 
     # Import FocusConfig.
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
     focus = FocusConfig(label_key="cell_type", labels=[])
 
@@ -151,7 +151,7 @@ def test_apply_group_filter_drops_low_groups() -> None:
     adata = make_synthetic_adata()
 
     # Import FocusConfig and extract A cells first.
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
     focus = FocusConfig(label_key="cell_type", labels=["A"])
     adata_a = extract_focus(adata, focus, counts_layer="counts")
@@ -217,7 +217,7 @@ def test_extract_focus_input_immutable() -> None:
     original_has_pca = "X_pca" in adata.obsm
 
     # Import FocusConfig.
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
     focus = FocusConfig(label_key="cell_type", labels=["A"])
 

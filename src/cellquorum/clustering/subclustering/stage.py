@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.methods.base import MethodSkip
-from cellquorum.subclustering.diagnostics import (
+from cellquorum.clustering.subclustering.diagnostics import (
     plot_group_recovery,
     plot_subcluster_qc_panel,
 )
-from cellquorum.subclustering.donor_gate import apply_qc_flags, donor_reproducibility
-from cellquorum.subclustering.extract import apply_group_filter, extract_focus
-from cellquorum.subclustering.partition import run_choir, run_scshc_test
-from cellquorum.subclustering.reembed import ensure_focus_embedding
+from cellquorum.clustering.subclustering.donor_gate import apply_qc_flags, donor_reproducibility
+from cellquorum.clustering.subclustering.extract import apply_group_filter, extract_focus
+from cellquorum.clustering.subclustering.partition import run_choir, run_scshc_test
+from cellquorum.clustering.subclustering.reembed import ensure_focus_embedding
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.methods.base import MethodSkip
 
 
 class SubclusteringStage:

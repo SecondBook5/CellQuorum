@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 
-from cellquorum.subclustering.donor_gate import (
+from cellquorum.clustering.subclustering.donor_gate import (
     apply_qc_flags,
     donor_reproducibility,
 )

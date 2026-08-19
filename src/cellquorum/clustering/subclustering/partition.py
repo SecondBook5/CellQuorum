@@ -13,11 +13,11 @@ from cellquorum.core.exceptions import CellQuorumBackendError
 from cellquorum.methods.base import MethodSkip
 
 if TYPE_CHECKING:
-    from cellquorum.subclustering.config import PartitionConfig, SubclusteringConfig
+    from cellquorum.clustering.subclustering.config import PartitionConfig, SubclusteringConfig
 
 # Path to bundled R scripts.
-_CHOIR_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "choir.R"
-_SCSHC_TEST_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "scshc_test.R"
+_CHOIR_R = Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "choir.R"
+_SCSHC_TEST_R = Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "scshc_test.R"
 
 
 def run_choir(

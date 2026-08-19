@@ -32,6 +32,9 @@ from cellquorum.cell_cell_communication.network.config import CCCNetworkConfig
 # Import the CCC-visualization configuration model.
 from cellquorum.cell_cell_communication.viz.config import CccVizConfig
 
+# Import the subclustering configuration model.
+from cellquorum.clustering.subclustering.config import SubclusteringConfig
+
 # Import the coexpression configuration model.
 from cellquorum.coexpression.config import CoexpressionConfig
 
@@ -92,9 +95,6 @@ from cellquorum.qc.config import QCConfig
 
 # Import the reference-mapping configuration model.
 from cellquorum.reference_mapping.config import ReferenceMappingConfig
-
-# Import the subclustering configuration model.
-from cellquorum.subclustering.config import SubclusteringConfig
 
 # Import the trajectory configuration model.
 from cellquorum.trajectory.config import TrajectoryConfig

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import anndata as ad
 
-    from cellquorum.subclustering.config import FocusConfig
+    from cellquorum.clustering.subclustering.config import FocusConfig
 
 
 def extract_focus(

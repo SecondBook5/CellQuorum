@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from cellquorum.clustering.subclustering.partition import run_choir, run_scshc_test
 from cellquorum.methods.base import MethodSkip
-from cellquorum.subclustering.partition import run_choir, run_scshc_test
 
 
 def make_synthetic_counts_adata() -> ad.AnnData:
