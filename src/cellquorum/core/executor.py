@@ -43,7 +43,6 @@ from cellquorum.clustering.stage import ClusteringStage
 
 # Import subclustering stage.
 from cellquorum.clustering.subclustering.stage import SubclusteringStage
-from cellquorum.coexpression.stage import CoexpressionStage
 
 # Import pipeline context.
 from cellquorum.core.context import PipelineContext
@@ -76,6 +75,7 @@ from cellquorum.enrichment.stage import EnrichmentStage
 
 # Import enrichment-visualization stage.
 from cellquorum.enrichment.viz.stage import EnrichmentVizStage
+from cellquorum.gene_regulation.coexpression.stage import CoexpressionStage
 from cellquorum.gene_regulation.grn.stage import GrnStage
 
 # Import integration-benchmark evaluation stage.

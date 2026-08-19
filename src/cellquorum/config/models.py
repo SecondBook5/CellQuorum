@@ -41,9 +41,6 @@ from cellquorum.cell_cell_communication.viz.config import CccVizConfig
 # Import the subclustering configuration model.
 from cellquorum.clustering.subclustering.config import SubclusteringConfig
 
-# Import the coexpression configuration model.
-from cellquorum.coexpression.config import CoexpressionConfig
-
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -68,6 +65,9 @@ from cellquorum.enrichment.config import EnrichmentConfig
 
 # Import the enrichment-visualization configuration model.
 from cellquorum.enrichment.viz.config import EnrichmentVizConfig
+
+# Import the coexpression configuration model.
+from cellquorum.gene_regulation.coexpression.config import CoexpressionConfig
 
 # Import the GRN configuration model.
 from cellquorum.gene_regulation.grn.config import GrnConfig

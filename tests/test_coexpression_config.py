@@ -1,4 +1,4 @@
-from cellquorum.coexpression.config import CoexpressionConfig
+from cellquorum.gene_regulation.coexpression.config import CoexpressionConfig
 
 
 def test_defaults() -> None:

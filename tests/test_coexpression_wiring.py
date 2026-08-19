@@ -1,7 +1,7 @@
 # tests/test_coexpression_wiring.py
 def test_config_has_coexpression() -> None:
-    from cellquorum.coexpression.config import CoexpressionConfig
     from cellquorum.config.models import CellQuorumConfig
+    from cellquorum.gene_regulation.coexpression.config import CoexpressionConfig
 
     cfg = CellQuorumConfig()
     assert isinstance(cfg.coexpression, CoexpressionConfig)

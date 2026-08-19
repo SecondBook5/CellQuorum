@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from cellquorum.coexpression.module_umap_plot import plot_module_umap
+from cellquorum.gene_regulation.coexpression.module_umap_plot import (
+    plot_module_umap,
+)
 
 
 def _write_csv(path: Path) -> None:

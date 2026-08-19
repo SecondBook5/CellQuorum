@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.coexpression.hdwgcna_method import HdwgcnaMethod
+from cellquorum.gene_regulation.coexpression.hdwgcna_method import HdwgcnaMethod
 from cellquorum.methods.base import MethodSkip
 
 
@@ -206,7 +206,7 @@ def test_input_contract_does_not_require_group_by() -> None:
 
 
 def test_method_registered() -> None:
-    import cellquorum.coexpression  # noqa: F401
+    import cellquorum.gene_regulation.coexpression  # noqa: F401
     from cellquorum.methods.registry import METHOD_REGISTRY
 
     assert METHOD_REGISTRY.has("coexpression", "hdwgcna")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Import the package so the method registers itself as a side effect.
-import cellquorum.coexpression  # noqa: F401
+import cellquorum.gene_regulation.coexpression  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage

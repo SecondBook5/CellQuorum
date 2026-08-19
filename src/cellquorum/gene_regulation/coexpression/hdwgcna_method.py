@@ -10,9 +10,11 @@ import anndata as ad
 import pandas as pd
 
 from cellquorum.backends.hdwgcna_backend import HDWGCNA_R
-from cellquorum.coexpression.module_umap_plot import plot_module_umap
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.gene_regulation.coexpression.module_umap_plot import (
+    plot_module_umap,
+)
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 

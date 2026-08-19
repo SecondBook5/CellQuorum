@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from cellquorum.coexpression.stage import CoexpressionStage
+from cellquorum.gene_regulation.coexpression.stage import CoexpressionStage
 
 
 def test_stage_identity() -> None:
