@@ -20,6 +20,10 @@ def mock_context():
     class MockBackend:
         """Mock Rscript backend."""
 
+        def _rscript_available(self) -> bool:
+            """Rscript is present; availability is gated on the R package below."""
+            return True
+
         def _r_package_available(self, package: str) -> bool:
             """Check if an R package is available."""
             # miloR is installed in test env

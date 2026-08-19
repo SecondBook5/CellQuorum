@@ -49,6 +49,10 @@ def _cohort_adata():
 class _TimingOutBackend:
     """A backend whose script/helper invocation always times out."""
 
+    def _rscript_available(self) -> bool:
+        # Rscript is present; the timeout occurs later in run_script/run_helper.
+        return True
+
     def _r_package_available(self, pkg: str) -> bool:
         # Pretend the R package is present so the method reaches run_script.
         return True

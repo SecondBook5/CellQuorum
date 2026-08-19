@@ -16,6 +16,10 @@ def mock_context():
         def __init__(self, has_pkg=True):
             self._has_pkg = has_pkg
 
+        def _rscript_available(self) -> bool:
+            # Rscript is present; the test varies R-package availability below.
+            return True
+
         def _r_package_available(self, package: str) -> bool:
             return self._has_pkg
 
