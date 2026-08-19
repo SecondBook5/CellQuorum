@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from cellquorum.annotation_diagnostics.scdiagnostics_method import (
+from cellquorum.annotation.diagnostics.scdiagnostics_method import (
     ScdiagnosticsMethod,
 )
-from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
+from cellquorum.annotation.diagnostics.stage import AnnotationDiagnosticsStage
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 # Register the scDiagnostics method.

@@ -21,7 +21,7 @@ from cellquorum.annotation.config import AnnotationConfig
 from cellquorum.annotation.consensus.config import AnnotationConsensusConfig
 
 # Import the annotation-diagnostics configuration model.
-from cellquorum.annotation_diagnostics.config import AnnotationDiagnosticsConfig
+from cellquorum.annotation.diagnostics.config import AnnotationDiagnosticsConfig
 
 # Import the cell-cell-communication configuration model.
 from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig

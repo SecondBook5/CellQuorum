@@ -17,11 +17,11 @@ from cellquorum.adjudication.stage import AdjudicationStage
 # Import annotation-consensus stage.
 from cellquorum.annotation.consensus.stage import AnnotationConsensusStage
 
+# Import annotation-diagnostics evaluation stage.
+from cellquorum.annotation.diagnostics.stage import AnnotationDiagnosticsStage
+
 # Import annotation stage.
 from cellquorum.annotation.stage import AnnotationStage
-
-# Import annotation-diagnostics evaluation stage.
-from cellquorum.annotation_diagnostics.stage import AnnotationDiagnosticsStage
 
 # Import ccc-network (topology + curvature) stage.
 from cellquorum.cell_cell_communication.network.stage import CCCNetworkStage

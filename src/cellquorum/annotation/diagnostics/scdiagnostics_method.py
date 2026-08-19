@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     import pandas as pd
 
 # Path to the bundled scDiagnostics R script.
-_SCDIAGNOSTICS_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "scdiagnostics.R"
+_SCDIAGNOSTICS_R = (
+    Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "scdiagnostics.R"
+)
 
 
 class ScdiagnosticsMethod(RAnalysisMethod):
