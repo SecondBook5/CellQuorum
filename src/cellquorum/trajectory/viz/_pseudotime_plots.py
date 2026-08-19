@@ -1,4 +1,10 @@
-"""Condition-split annotated pseudotime heatmap method."""
+"""Pseudotime-ordered plot methods: embedding scatter, GAM gene trends, and heatmaps.
+
+Combines:
+- PseudotimeVizMethod (scatter of pseudotime on embedding)
+- GeneTrendVizMethod (CellRank GAM gene trends along pseudotime)
+- PseudotimeHeatmapVizMethod (condition-split annotated pseudotime heatmap)
+"""
 
 from __future__ import annotations
 
@@ -10,7 +16,7 @@ import numpy as np
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.trajectory.viz import heatmap, inputs
+from cellquorum.trajectory.viz import _helpers, heatmap
 from cellquorum.visualization import figstyle
 
 _SCORE_FALLBACKS = ("G2M_score", "S_score", "phase_score")
@@ -19,6 +25,126 @@ _STATE_FALLBACKS = ("cell_type", "leiden")
 
 def _dense(mat: object) -> np.ndarray:
     return mat.toarray() if hasattr(mat, "toarray") else np.asarray(mat)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PseudotimeVizMethod (from pseudotime_viz.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class PseudotimeVizMethod(AnalysisMethod):
+    name = "pseudotime_viz"
+    stage_category = "trajectory_viz"
+    backend = "python"
+
+    def input_contract(self, config: dict) -> DataContract:
+        return DataContract()
+
+    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        basis = _helpers.resolve_basis(adata, config.get("embedding_basis"))
+        if basis is None:
+            return self._skip("no embedding basis in obsm")
+        pts = _helpers.available_pseudotimes(adata, config.get("pseudotime_keys"))
+        if not pts:
+            return self._skip("no *_pseudotime obs column")
+
+        figures_dir = Path(context.paths.figures) / "trajectory"
+        formats = tuple(config.get("figure_formats", ["pdf", "png"]))
+        dpi = int(config.get("dpi", 300))
+        coords = adata.obsm[basis]
+
+        _helpers.apply_theme()
+        artifacts, warnings, n = [], [], 0
+        for key in pts:
+            try:
+                values = _helpers.numeric_obs(adata, key)
+                fig = _helpers.embedding_scatter(coords, values, title=key, cbar_label=key)
+                paths = _helpers.save_figure(
+                    fig, figures_dir, f"pseudotime_{key}", formats=formats, dpi=dpi
+                )
+                artifacts += _helpers.figure_artifacts(
+                    paths, name="trajectory_figure", description=f"{key} on {basis}."
+                )
+                n += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"pseudotime_viz: {key} failed: {str(exc)[:200]}")
+
+        if n == 0:
+            return self._skip("no plottable pseudotime", warnings=warnings)
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=[f"pseudotime_viz rendered {n} figures."],
+            warnings=warnings,
+            metrics={"method": self.name, "n_figures": n, "basis": basis},
+            backend="python",
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GeneTrendVizMethod (from gene_trend_viz.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class GeneTrendVizMethod(AnalysisMethod):
+    name = "gene_trend_viz"
+    stage_category = "trajectory_viz"
+    backend = "python"
+
+    def input_contract(self, config: dict) -> DataContract:
+        return DataContract()
+
+    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        genes = config.get("genes")
+        if not genes:  # no defaulted biology
+            return self._skip("no genes configured")
+        try:
+            import cellrank as cr
+        except Exception as exc:  # noqa: BLE001
+            return self._skip(f"cellrank unavailable ({exc})")
+        fate_path = _helpers.results_file(context, "cellrank", "fate_mapping.h5ad")
+        if not Path(fate_path).exists():
+            return self._skip("no fate_mapping.h5ad")
+        try:
+            fate = ad.read_h5ad(fate_path)
+        except Exception as exc:  # noqa: BLE001
+            return self._skip(f"read failed ({exc})")
+
+        present = sorted(g for g in genes if g in set(map(str, fate.var_names)))
+        if not present:
+            return self._skip("no requested gene in var_names", requested=list(genes))
+
+        import matplotlib.pyplot as plt
+
+        figures_dir = Path(context.paths.figures) / "trajectory"
+        formats = tuple(config.get("figure_formats", ["pdf", "png"]))
+        dpi = int(config.get("dpi", 300))
+        _helpers.apply_theme()
+        warnings = []
+        try:
+            model = cr.models.GAM(fate)
+            cr.pl.gene_trends(fate, model=model, genes=present, show=False)
+            paths = _helpers.save_figure(
+                plt.gcf(), figures_dir, "gene_trends", formats=formats, dpi=dpi
+            )
+            artifacts = _helpers.figure_artifacts(
+                paths, name="trajectory_figure", description=f"GAM gene trends: {present}."
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self._skip(f"gene_trends failed ({str(exc)[:200]})")
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=[f"gene_trend_viz rendered trends for {present}."],
+            warnings=warnings,
+            metrics={"method": self.name, "n_figures": 1, "genes": present},
+            backend="python",
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PseudotimeHeatmapVizMethod (from pseudotime_heatmap_viz.py)
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 class PseudotimeHeatmapVizMethod(AnalysisMethod):
@@ -60,13 +186,13 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
         return [str(adata.var_names[i]) for i in idx]
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
-        pts = inputs.available_pseudotimes(adata, config.get("pseudotime_keys"))
+        pts = _helpers.available_pseudotimes(adata, config.get("pseudotime_keys"))
         if not pts:
             return self._skip("no *_pseudotime obs column")
         pt_key = pts[0]
 
         try:
-            pt = inputs.numeric_obs(adata, pt_key)
+            pt = _helpers.numeric_obs(adata, pt_key)
 
             genes = self._select_genes(adata, pt, config)
             if not genes:
@@ -167,4 +293,4 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
         )
 
 
-__all__ = ["PseudotimeHeatmapVizMethod"]
+__all__ = ["PseudotimeVizMethod", "GeneTrendVizMethod", "PseudotimeHeatmapVizMethod"]

@@ -5,7 +5,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory.viz.velocity_viz import VelocityVizMethod
+from cellquorum.trajectory.viz._kernel_plots import VelocityVizMethod
 
 
 class _Ctx:

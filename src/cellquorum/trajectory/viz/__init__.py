@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.trajectory.viz import (
+    _helpers as inputs,  # re-export as 'inputs' for backward compat
+)
+from cellquorum.trajectory.viz import _helpers as plots  # re-export as 'plots' for backward compat
+from cellquorum.trajectory.viz._kernel_plots import (
+    DriverVizMethod,
+    FateVizMethod,
+    MacrostateVizMethod,
+    VelocityVizMethod,
+)
+from cellquorum.trajectory.viz._pseudotime_plots import (
+    GeneTrendVizMethod,
+    PseudotimeHeatmapVizMethod,
+    PseudotimeVizMethod,
+)
 from cellquorum.trajectory.viz.config import TrajectoryVizConfig
-from cellquorum.trajectory.viz.driver_viz import DriverVizMethod
-from cellquorum.trajectory.viz.fate_viz import FateVizMethod
-from cellquorum.trajectory.viz.gene_trend_viz import GeneTrendVizMethod
-from cellquorum.trajectory.viz.macrostate_viz import MacrostateVizMethod
-from cellquorum.trajectory.viz.pseudotime_heatmap_viz import PseudotimeHeatmapVizMethod
-from cellquorum.trajectory.viz.pseudotime_viz import PseudotimeVizMethod
-from cellquorum.trajectory.viz.velocity_viz import VelocityVizMethod
 
 # Method classes are appended to this tuple as each figure family lands (Tasks 4-9).
 _METHODS: tuple = (
@@ -36,4 +44,6 @@ __all__ = [
     "MacrostateVizMethod",
     "VelocityVizMethod",
     "PseudotimeHeatmapVizMethod",
+    "inputs",  # backward compat alias for _helpers
+    "plots",  # backward compat alias for _helpers
 ]

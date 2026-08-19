@@ -3,8 +3,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from cellquorum.trajectory.viz._helpers import apply_theme, figure_artifacts, save_figure
 from cellquorum.trajectory.viz.config import TrajectoryVizConfig
-from cellquorum.trajectory.viz.save import apply_theme, figure_artifacts, save_figure
 from cellquorum.trajectory.viz.stage import TrajectoryVizStage
 
 
