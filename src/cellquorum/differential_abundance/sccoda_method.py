@@ -65,10 +65,7 @@ class SccodaMethod(AnalysisMethod):
 
         # A comparison needs both case and control labels.
         if not case or not control:
-            return MethodSkip(
-                reason="sccoda skipped: case/control labels not set in config",
-                details={"method": self.name},
-            )
+            return self._skip("case/control labels not set in config")
 
         # Resolve the sccoda backend from the context registry.
         registry = getattr(context, "backend_registry", None)
@@ -79,19 +76,13 @@ class SccodaMethod(AnalysisMethod):
             except Exception:
                 backend = None
         if backend is None:
-            return MethodSkip(
-                reason="sccoda skipped: sccoda backend unavailable",
-                details={"method": self.name},
-            )
+            return self._skip("sccoda backend unavailable")
 
         # Check backend availability (micromamba + sccoda_env import).
         status = backend.status()
         if not status.available:
             missing_str = ", ".join(status.missing) if status.missing else "unknown"
-            return MethodSkip(
-                reason=f"sccoda skipped: sccoda backend unavailable ({missing_str})",
-                details={"method": self.name, "missing": status.missing},
-            )
+            return self._skip(f"sccoda backend unavailable ({missing_str})", missing=status.missing)
 
         # Aggregate to sample × cell-type counts.
         cc = aggregate_celltype_counts(
@@ -136,22 +127,13 @@ class SccodaMethod(AnalysisMethod):
         try:
             proc = backend.run_helper(SCCODA_HELPER, args, timeout=timeout)
         except FileNotFoundError as exc:
-            return MethodSkip(
-                reason="sccoda skipped: helper execution failed",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("helper execution failed", error=str(exc)[:500])
         except subprocess.TimeoutExpired as exc:
             # A configured timeout must skip this method, not crash the stage
             # and abort the sibling methods still queued after it.
-            return MethodSkip(
-                reason=f"sccoda skipped: helper execution timed out after {timeout}s",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip(f"helper execution timed out after {timeout}s", error=str(exc)[:500])
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="sccoda skipped: sccoda helper failed",
-                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
-            )
+            return self._skip("sccoda helper failed", stderr=proc.stderr.strip()[:500])
 
         # Read output CSV to compute metrics (skip-not-crash).
         n_credible = None

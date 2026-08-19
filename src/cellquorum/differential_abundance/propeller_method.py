@@ -64,10 +64,7 @@ class PropellerMethod(RAnalysisMethod):
 
         # A comparison needs both case and control labels.
         if not case or not control:
-            return MethodSkip(
-                reason="propeller skipped: case/control labels not set in config",
-                details={"method": self.name},
-            )
+            return self._skip("case/control labels not set in config")
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
         backend, skip = self._resolve_rscript_backend(context)
@@ -115,22 +112,13 @@ class PropellerMethod(RAnalysisMethod):
         try:
             proc = backend.run_script(_PROPELLER_R, args, timeout=timeout)
         except FileNotFoundError as exc:
-            return MethodSkip(
-                reason="propeller skipped: R execution failed",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("R execution failed", error=str(exc)[:500])
         except subprocess.TimeoutExpired as exc:
             # A configured timeout must skip this method, not crash the stage
             # and abort the sibling methods still queued after it.
-            return MethodSkip(
-                reason=f"propeller skipped: R execution timed out after {timeout}s",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip(f"R execution timed out after {timeout}s", error=str(exc)[:500])
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="propeller skipped: propeller script failed",
-                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
-            )
+            return self._skip("propeller script failed", stderr=proc.stderr.strip()[:500])
 
         # Return the DA table as an artifact plus provenance metrics.
         return StageResult(

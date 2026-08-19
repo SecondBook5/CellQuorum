@@ -64,10 +64,7 @@ class ProportionTTestMethod(AnalysisMethod):
 
         # Guard: case/control unset → skip
         if not case or not control:
-            return MethodSkip(
-                reason="proportion_ttest skipped: case/control labels not set in config",
-                details={"method": self.name},
-            )
+            return self._skip("case/control labels not set in config")
 
         # Aggregate to sample × cell-type counts
         cc = aggregate_celltype_counts(
@@ -97,13 +94,10 @@ class ProportionTTestMethod(AnalysisMethod):
 
         # Guard: <2 samples per arm → skip
         if len(case_samples) < 2 or len(control_samples) < 2:
-            return MethodSkip(
-                reason="proportion_ttest skipped: need ≥2 samples per arm",
-                details={
-                    "method": self.name,
-                    "n_case": len(case_samples),
-                    "n_control": len(control_samples),
-                },
+            return self._skip(
+                "need ≥2 samples per arm",
+                n_case=len(case_samples),
+                n_control=len(control_samples),
             )
 
         # Paired branch
@@ -115,15 +109,9 @@ class ProportionTTestMethod(AnalysisMethod):
 
             # Guard: <2 paired donors → skip
             if len(paired_donors) < 2:
-                return MethodSkip(
-                    reason=(
-                        "proportion_ttest skipped: <2 donors present in both "
-                        "arms for paired test"
-                    ),
-                    details={
-                        "method": self.name,
-                        "n_paired": len(paired_donors),
-                    },
+                return self._skip(
+                    "<2 donors present in both arms for paired test",
+                    n_paired=len(paired_donors),
                 )
 
             # Restrict to paired donors
