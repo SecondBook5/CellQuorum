@@ -440,24 +440,34 @@ class RConfig(StrictBaseModel):
     config only expresses preference; the backend registry determines what is
     actually available.
 
+    NOTE: ``preferred_backend`` and ``fallback_to_rscript`` are **reserved and
+    not yet honored** — every R-backed method currently dispatches through the
+    Rscript backend regardless of these values (there is no in-process rpy2
+    dispatch for the bundled R scripts). They are documented here so the schema
+    is explicit rather than silently ignoring them; wiring rpy2 dual-dispatch is
+    tracked separately. ``rscript_path`` and ``enabled``, by contrast, ARE
+    honored: ``rscript_path`` is threaded to the Rscript backend and its
+    availability check.
+
     Args:
         enabled: Whether R-backed methods are allowed.
-        preferred_backend: Preferred R execution mode.
-        fallback_to_rscript: Whether Rscript fallback is allowed.
-        rscript_path: Rscript executable name or path.
+        preferred_backend: Preferred R execution mode (reserved; not yet honored).
+        fallback_to_rscript: Whether Rscript fallback is allowed (reserved; not
+            yet honored — Rscript is always used).
+        rscript_path: Rscript executable name or path (honored).
         timeout_seconds: Timeout for lightweight R checks.
     """
 
     # Store whether R-backed methods are allowed.
     enabled: bool = True
 
-    # Store the preferred R backend.
+    # Store the preferred R backend. Reserved: not yet honored (see class NOTE).
     preferred_backend: Literal["auto", "r", "rscript"] = "auto"
 
-    # Store whether Rscript fallback is allowed.
+    # Store whether Rscript fallback is allowed. Reserved: not yet honored.
     fallback_to_rscript: bool = True
 
-    # Store the Rscript executable path.
+    # Store the Rscript executable path. Honored: threaded to the Rscript backend.
     rscript_path: str = "Rscript"
 
     # Store timeout for lightweight R backend checks.

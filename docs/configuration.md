@@ -30,6 +30,22 @@ instance (see the [Python API](../README.md#python-api)).
 A whole-config validator rejects contradictory combinations — for example,
 `compute.backend: auto` together with `compute.fallback_to_cpu: false`.
 
+### The `r` backend section
+
+`r.enabled` gates whether R-backed methods (edgeR pseudobulk DE, Milo, propeller,
+NicheNet, MultiNicheNet, scDiagnostics, SoupX) may run, and `r.rscript_path` selects
+the `Rscript` executable used to reach them — both are honored. Set `r.rscript_path`
+to an explicit path when `Rscript` is not on the CLI environment's `PATH`, as in the
+layered Docker image (see [`docker.md`](docker.md)).
+
+`r.preferred_backend` and `r.fallback_to_rscript` are **reserved and not yet
+honored**: every R-backed method currently dispatches through the Rscript backend
+regardless of their values. They are accepted by the schema (and may appear in
+example configs) so the field is explicit rather than silently dropped, but there is
+no in-process rpy2 dispatch for the bundled R scripts today. Wiring rpy2 dual-dispatch
+is tracked as future work; until then, setting `preferred_backend: r` does not change
+behavior.
+
 ## Enabling stages
 
 The `stages:` block is a set of boolean flags, one per stage. All default to `true`

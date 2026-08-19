@@ -47,6 +47,12 @@ Correctness defects that could silently produce wrong output (#168):
   threaded into the default backend registry, and R methods check the backend's
   *configured* path, so an R install outside the default `PATH` (as in the
   layered container/HPC image) is reachable instead of silently skipped.
+- **Reserved R preference fields documented (#183).** `r.preferred_backend` and
+  `r.fallback_to_rscript` express an rpy2-vs-Rscript preference that is not yet
+  wired — every R-backed method dispatches through the Rscript backend. The
+  `RConfig` docstrings and `docs/configuration.md` now state plainly that these
+  fields are reserved and currently no-ops, rather than silently ignoring them.
+  Wiring rpy2 dual-dispatch is tracked as future work.
 
 ### Added
 
