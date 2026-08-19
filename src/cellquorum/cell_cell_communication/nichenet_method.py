@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -16,17 +15,18 @@ from cellquorum.cell_cell_communication._nichenet_io import (
 )
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.methods.base import MethodSkip
+from cellquorum.methods.r_method import RAnalysisMethod
 
 _NICHENET_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "nichenet.R"
 
 
-class NicheNetMethod(AnalysisMethod):
+class NicheNetMethod(RAnalysisMethod):
     """Single sender->receiver ligand-activity prediction (nichenetr)."""
 
     name = "nichenet"
     stage_category = "cell_cell_communication"
-    backend = "rscript"
+    r_package = "nichenetr"
 
     def input_contract(self, config: dict) -> DataContract:
         return DataContract(required_obs=[config.get("cell_type_col", "cell_type")])
@@ -73,27 +73,10 @@ class NicheNetMethod(AnalysisMethod):
                 details={"method": self.name},
             )
 
-        if shutil.which("Rscript") is None:
-            return MethodSkip(
-                reason="nichenet skipped: Rscript unavailable", details={"method": self.name}
-            )
-        registry = getattr(context, "backend_registry", None)
-        backend = None
-        if registry is not None:
-            try:
-                backend = registry.get("rscript")
-            except Exception:
-                backend = None
-        if backend is None:
-            return MethodSkip(
-                reason="nichenet skipped: rscript backend unavailable",
-                details={"method": self.name},
-            )
-        if not backend._r_package_available("nichenetr"):
-            return MethodSkip(
-                reason="nichenet skipped: nichenetr R package unavailable",
-                details={"method": self.name},
-            )
+        # Rscript + backend + package guards (hoisted to RAnalysisMethod).
+        backend, skip = self._resolve_rscript_backend(context)
+        if skip is not None:
+            return skip
 
         # Build geneset + background and write them for R. A user-supplied DE CSV
         # is an external surface — a malformed/mis-columned file must skip, not crash.
