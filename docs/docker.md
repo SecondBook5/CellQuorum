@@ -107,6 +107,37 @@ docker run --rm \
   cellquorum run --config /data/my_config.yaml --output /data/results
 ```
 
+### Running R-backed methods (pseudobulk DE, Milo, propeller, NicheNet, SoupX)
+
+The image runs the CLI inside `cellquorum-core` (CPU image) or `cellquorum-gpu`
+(GPU image). R/Bioconductor lives in the **separate** `cellquorum-r` environment,
+and CellQuorum invokes R by running `Rscript` as a direct subprocess — *not* via
+`micromamba run -n cellquorum-r`. Because `Rscript` is therefore not on the CLI
+env's `PATH`, R-backed methods would otherwise record a clean
+`Rscript unavailable` skip.
+
+To make them run, point `r.rscript_path` at the `cellquorum-r` env's Rscript in
+your config:
+
+```yaml
+r:
+  enabled: true
+  rscript_path: /opt/conda/envs/cellquorum-r/bin/Rscript
+```
+
+`/opt/conda` is the `MAMBA_ROOT_PREFIX` of the `mambaorg/micromamba` base image;
+confirm the exact path for your build with:
+
+```bash
+docker run --rm cellquorum:<version> micromamba run -n cellquorum-r which Rscript
+```
+
+Invoking that env's `Rscript` binary directly loads the `cellquorum-r` R library,
+so edgeR/limma/DESeq2/Milo/propeller resolve without any further activation. The
+engine honors this configured path (it checks the *configured* Rscript, not a bare
+`Rscript` on `PATH`); a missing or wrong path still yields a recorded skip rather
+than a crash.
+
 ### Using Snakemake Workflow
 
 Run the multi-hypothesis workflow matrix (see `docs/snakemake.md` for details):
@@ -127,6 +158,6 @@ docker run --rm \
 
 ## Notes
 
-- All isolated backend environments are pre-installed and available inside the image. CellQuorum will automatically invoke them via `micromamba run -n <env>` as needed.
+- All isolated backend environments are pre-installed and available inside the image. CellQuorum will automatically invoke the isolated *Python* backends (pySCENIC, hdWGCNA, scCODA, scclr, CellOracle) via `micromamba run -n <env>` as needed. The `cellquorum-r` environment is the exception: R is reached as a direct `Rscript` subprocess, so set `r.rscript_path` as described in "Running R-backed methods" above.
 - The GPU image requires a host with NVIDIA drivers and `nvidia-docker` runtime configured.
 - See `envs/README.md` for details on the environment architecture and `docs/snakemake.md` for the Snakemake workflow structure.

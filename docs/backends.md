@@ -65,5 +65,10 @@ the Rscript adapter, and **hdWGCNA** (`coexpression`) runs in the isolated
   recipes for reproducible solves (requires `conda-lock` on `PATH`).
 - **Docker.** A layered image bakes the primary environments and, on the optional
   `backends`/`celloracle` targets, the isolated backends. The CLI runs inside the
-  correct environment so GPU, R, and CCC/trajectory stages are reachable in-image.
-  See [`docker.md`](docker.md).
+  correct environment (`cellquorum-core` for the CPU image, `cellquorum-gpu` for the
+  GPU image), so the GPU and CCC/trajectory stages are reachable in-image. R is the
+  one exception: R/Bioconductor lives in the separate `cellquorum-r` environment and
+  is invoked as a direct `Rscript` subprocess, so `Rscript` is **not** on the CLI
+  env's `PATH`. To use R-backed methods (pseudobulk edgeR DE, Milo, propeller,
+  NicheNet, SoupX) in-image, point `r.rscript_path` at the `cellquorum-r` env's
+  Rscript — see the R-methods section of [`docker.md`](docker.md).
