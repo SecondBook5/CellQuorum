@@ -54,6 +54,12 @@ docker_build_*.log
 *.rda
 *.qs
 
+# Downloaded external reference databases (NicheNet networks, SCENIC/cisTarget
+# rankings + motif tables, etc.) — populated locally per install, never tracked.
+# Some payloads (*.feather, *.tbl, *.txt, *.pre_soupx) fall outside the data-object
+# patterns above, so ignore the whole directory to keep 800MB+ out of the repo.
+resources/
+
 # Local environment files
 .env
 .envrc
