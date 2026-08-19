@@ -100,7 +100,7 @@ from cellquorum.subclustering.config import SubclusteringConfig
 from cellquorum.trajectory.config import TrajectoryConfig
 
 # Import the trajectory-visualization configuration model.
-from cellquorum.trajectory_viz.config import TrajectoryVizConfig
+from cellquorum.trajectory.viz.config import TrajectoryVizConfig
 
 
 class ProjectConfig(StrictBaseModel):

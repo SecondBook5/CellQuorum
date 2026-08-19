@@ -9,8 +9,8 @@ import anndata as ad
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.trajectory_viz import inputs
-from cellquorum.trajectory_viz.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.trajectory.viz import inputs
+from cellquorum.trajectory.viz.save import apply_theme, figure_artifacts, save_figure
 
 
 class GeneTrendVizMethod(AnalysisMethod):

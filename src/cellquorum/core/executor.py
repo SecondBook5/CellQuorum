@@ -105,7 +105,7 @@ from cellquorum.subclustering.stage import SubclusteringStage
 from cellquorum.trajectory.stage import TrajectoryStage
 
 # Import trajectory-visualization stage.
-from cellquorum.trajectory_viz.stage import TrajectoryVizStage
+from cellquorum.trajectory.viz.stage import TrajectoryVizStage
 
 
 @dataclass(frozen=True)

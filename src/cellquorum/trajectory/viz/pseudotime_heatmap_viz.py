@@ -10,7 +10,7 @@ import numpy as np
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.trajectory_viz import heatmap, inputs
+from cellquorum.trajectory.viz import heatmap, inputs
 from cellquorum.visualization import figstyle
 
 _SCORE_FALLBACKS = ("G2M_score", "S_score", "phase_score")

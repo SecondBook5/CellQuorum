@@ -8,7 +8,7 @@ import pytest
 import scanpy as sc
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory_viz.macrostate_viz import MacrostateVizMethod
+from cellquorum.trajectory.viz.macrostate_viz import MacrostateVizMethod
 
 cr = pytest.importorskip("cellrank")
 

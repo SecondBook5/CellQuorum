@@ -5,7 +5,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory_viz.pseudotime_viz import PseudotimeVizMethod
+from cellquorum.trajectory.viz.pseudotime_viz import PseudotimeVizMethod
 
 
 class _Paths:

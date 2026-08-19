@@ -10,8 +10,8 @@ import numpy as np
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.trajectory_viz import plots
-from cellquorum.trajectory_viz.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.trajectory.viz import plots
+from cellquorum.trajectory.viz.save import apply_theme, figure_artifacts, save_figure
 
 
 class DriverVizMethod(AnalysisMethod):

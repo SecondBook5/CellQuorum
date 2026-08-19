@@ -8,10 +8,10 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-import cellquorum.trajectory_viz  # noqa: F401  (registers methods)
+import cellquorum.trajectory.viz  # noqa: F401  (registers methods)
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.registry import METHOD_REGISTRY
-from cellquorum.trajectory_viz.pseudotime_heatmap_viz import PseudotimeHeatmapVizMethod
+from cellquorum.trajectory.viz.pseudotime_heatmap_viz import PseudotimeHeatmapVizMethod
 
 
 def _adata(with_condition=True, with_pt=True):

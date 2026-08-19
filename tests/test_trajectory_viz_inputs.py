@@ -2,7 +2,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.trajectory_viz import inputs
+from cellquorum.trajectory.viz import inputs
 
 
 def _adata(n=20):

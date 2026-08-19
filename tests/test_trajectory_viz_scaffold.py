@@ -3,9 +3,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from cellquorum.trajectory_viz.config import TrajectoryVizConfig
-from cellquorum.trajectory_viz.save import apply_theme, figure_artifacts, save_figure
-from cellquorum.trajectory_viz.stage import TrajectoryVizStage
+from cellquorum.trajectory.viz.config import TrajectoryVizConfig
+from cellquorum.trajectory.viz.save import apply_theme, figure_artifacts, save_figure
+from cellquorum.trajectory.viz.stage import TrajectoryVizStage
 
 
 def test_config_defaults_are_render_only():

@@ -5,7 +5,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory_viz.gene_trend_viz import GeneTrendVizMethod
+from cellquorum.trajectory.viz.gene_trend_viz import GeneTrendVizMethod
 
 
 class _Ctx:

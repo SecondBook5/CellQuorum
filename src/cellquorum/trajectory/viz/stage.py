@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import cellquorum.trajectory_viz  # noqa: F401  (side-effect: method registration)
+import cellquorum.trajectory.viz  # noqa: F401  (side-effect: method registration)
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage
 

@@ -5,7 +5,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory_viz.fate_viz import FateVizMethod
+from cellquorum.trajectory.viz.fate_viz import FateVizMethod
 
 
 class _Ctx:
