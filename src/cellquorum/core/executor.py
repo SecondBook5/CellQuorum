@@ -20,6 +20,9 @@ from cellquorum.annotation.consensus.stage import AnnotationConsensusStage
 # Import annotation-diagnostics evaluation stage.
 from cellquorum.annotation.diagnostics.stage import AnnotationDiagnosticsStage
 
+# Import population/state identity evidence stage.
+from cellquorum.annotation.population_identity.stage import PopulationIdentityStage
+
 # Import reference-mapping stage.
 from cellquorum.annotation.reference_mapping.stage import ReferenceMappingStage
 
@@ -84,9 +87,6 @@ from cellquorum.integration.embeddings.stage import EmbeddingsStage
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage
 from cellquorum.perturbation.stage import PerturbationStage
-
-# Import population/state identity evidence stage.
-from cellquorum.population_identity.stage import PopulationIdentityStage
 from cellquorum.preprocessing.dimensionality.stage import DimensionalityStage
 
 # Import feature selection stage.

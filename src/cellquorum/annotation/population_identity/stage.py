@@ -17,9 +17,9 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.annotation.population_identity.config import PopulationIdentityConfig
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.population_identity.config import PopulationIdentityConfig
 from cellquorum.visualization.figstyle import (
     categorical_embedding,
     clean_axis,

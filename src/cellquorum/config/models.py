@@ -23,6 +23,9 @@ from cellquorum.annotation.consensus.config import AnnotationConsensusConfig
 # Import the annotation-diagnostics configuration model.
 from cellquorum.annotation.diagnostics.config import AnnotationDiagnosticsConfig
 
+# Import the population-identity configuration model.
+from cellquorum.annotation.population_identity.config import PopulationIdentityConfig
+
 # Import the reference-mapping configuration model.
 from cellquorum.annotation.reference_mapping.config import ReferenceMappingConfig
 
@@ -80,9 +83,6 @@ from cellquorum.integration.embeddings.config import EmbeddingsConfig
 
 # Import the perturbation configuration model.
 from cellquorum.perturbation.config import PerturbationConfig
-
-# Import the population-identity configuration model.
-from cellquorum.population_identity.config import PopulationIdentityConfig
 
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
