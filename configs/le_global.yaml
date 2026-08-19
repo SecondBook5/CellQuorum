@@ -58,7 +58,7 @@ ambient_correction:
 
 qc:
   enabled: true
-  mode: report_only           # threshold QC never deletes; only flags (cellquorum_qc_keep)
+  mode: flag_no_drop           # threshold QC never deletes; only flags (cellquorum_qc_keep)
   threshold_strategy: fixed_and_mad
   metrics:
     layer: counts

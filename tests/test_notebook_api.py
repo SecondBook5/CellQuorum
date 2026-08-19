@@ -34,17 +34,17 @@ def test_namespaces_are_exposed() -> None:
     assert hasattr(cq, "run_pipeline")
 
 
-def test_pp_qc_report_only_annotates_metrics() -> None:
+def test_pp_qc_flag_no_drop_annotates_metrics() -> None:
     """cq.pp.qc runs the real QC stage and returns annotated adata + result."""
 
     adata = _counts_adata()
-    out = cq.pp.qc(adata, mode="report_only", metrics={"layer": "counts"})
+    out = cq.pp.qc(adata, mode="flag_no_drop", metrics={"layer": "counts"})
 
     assert isinstance(out, NotebookStageOutput)
     # QC metric columns are present on the returned adata.
     assert "pct_counts_mito" in out.adata.obs.columns
     assert "total_counts" in out.adata.obs.columns
-    # report_only never drops cells.
+    # flag_no_drop never drops cells.
     assert out.adata.n_obs == adata.n_obs
     # The full StageResult is exposed for artifacts/metrics.
     assert isinstance(out.metrics, dict)
@@ -57,7 +57,7 @@ def test_pp_qc_accepts_base_config_and_kwargs() -> None:
     out = cq.pp.qc(
         adata,
         config={"project": {"name": "nb"}},
-        mode="report_only",
+        mode="flag_no_drop",
         metrics={"layer": "counts"},
     )
     assert "pct_counts_mito" in out.adata.obs.columns

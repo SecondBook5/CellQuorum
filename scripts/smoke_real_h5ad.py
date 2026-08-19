@@ -128,7 +128,7 @@ def main(
         compute=ComputeConfig(backend="cpu", prefer_gpu=False, fallback_to_cpu=True),
         r=RConfig(enabled=False),
         qc=QCConfig(
-            mode="report_only",
+            mode="flag_no_drop",
             threshold_strategy="fixed",
             metrics={"percent_top": [20]},
             basic={

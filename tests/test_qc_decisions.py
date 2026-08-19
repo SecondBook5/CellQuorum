@@ -840,7 +840,7 @@ def test_build_qc_decisions_applies_cell_and_gene_thresholds() -> None:
         cell_metrics=cell_metrics,
         gene_metrics=gene_metrics,
         thresholds=thresholds,
-        config=QCConfig(mode="report_only"),
+        config=QCConfig(mode="flag_no_drop"),
     )
 
     # Confirm a structured result was returned.

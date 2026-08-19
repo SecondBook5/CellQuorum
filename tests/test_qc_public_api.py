@@ -76,7 +76,7 @@ def make_public_api_qc_config() -> qc.QCConfig:
 
     # Return fixed-threshold QC configuration.
     return qc.QCConfig(
-        mode="report_only",
+        mode="flag_no_drop",
         threshold_strategy="fixed",
         metrics={"percent_top": [2]},
         basic={
@@ -164,7 +164,7 @@ def test_qc_public_api_can_validate_config_mapping() -> None:
     config = qc.validate_qc_config_dict(
         {
             "enabled": True,
-            "mode": "report_only",
+            "mode": "flag_no_drop",
             "threshold_strategy": "fixed",
             "mad": {"enabled": False},
         }
@@ -175,7 +175,7 @@ def test_qc_public_api_can_validate_config_mapping() -> None:
 
     # Confirm configured fields were preserved.
     assert config.enabled is True
-    assert config.mode == "report_only"
+    assert config.mode == "flag_no_drop"
     assert config.threshold_strategy == "fixed"
 
 

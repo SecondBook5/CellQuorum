@@ -145,7 +145,7 @@ def build_execution_config(h5ad_path: Path | None) -> CellQuorumConfig:
             "normalization": {"recipe": "cellquorum_log1p_cp10k_v1"},
         },
         qc={
-            "mode": "report_only",
+            "mode": "flag_no_drop",
             "threshold_strategy": "fixed",
             "metrics": {
                 "percent_top": [2],
@@ -354,7 +354,7 @@ compute:
 r:
   enabled: false
 qc:
-  mode: report_only
+  mode: flag_no_drop
   threshold_strategy: fixed
   metrics:
     percent_top: [2]

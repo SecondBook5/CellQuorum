@@ -75,7 +75,7 @@ def test_cellquorum_config_default_includes_qc_config() -> None:
 
     # Confirm key QC defaults are available from the top-level config.
     assert config.qc.enabled is True
-    assert config.qc.mode == "report_only"
+    assert config.qc.mode == "flag_no_drop"
     assert config.qc.threshold_strategy == "fixed_and_mad"
     assert config.qc.basic.min_genes_per_cell == 200
     assert config.qc.basic.min_cells_per_gene == 3

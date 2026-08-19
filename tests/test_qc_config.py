@@ -42,8 +42,8 @@ def test_qc_config_defaults_follow_single_cell_best_practices() -> None:
     # Confirm QC is enabled by default.
     assert config.enabled is True
 
-    # Confirm default QC mode is report-only.
-    assert config.mode == "report_only"
+    # Confirm default QC mode is flag_no_drop.
+    assert config.mode == "flag_no_drop"
 
     # Confirm default thresholding uses fixed and MAD logic.
     assert config.threshold_strategy == "fixed_and_mad"
@@ -113,12 +113,12 @@ def test_qc_config_mode_helpers_report_filter_and_both() -> None:
     whether a config should write metrics, apply filters, or do both.
     """
 
-    # Build a report-only configuration.
-    report_only = QCConfig(mode="report_only")
+    # Build a flag_no_drop configuration.
+    flag_no_drop = QCConfig(mode="flag_no_drop")
 
-    # Confirm report-only mode reports but does not filter.
-    assert report_only.should_report() is True
-    assert report_only.should_filter() is False
+    # Confirm flag_no_drop mode reports but does not filter.
+    assert flag_no_drop.should_report() is True
+    assert flag_no_drop.should_filter() is False
 
     # Build a filter-only configuration.
     filter_only = QCConfig(mode="filter")
@@ -133,6 +133,23 @@ def test_qc_config_mode_helpers_report_filter_and_both() -> None:
     # Confirm both mode reports and filters.
     assert both.should_report() is True
     assert both.should_filter() is True
+
+
+def test_qc_config_rejects_removed_report_only_mode() -> None:
+    """
+    Verify that the removed 'report_only' mode alias raises a clear migration error.
+
+    The mode was renamed to 'flag_no_drop' in #181; this ensures configs using the
+    old name fail loudly with a message pointing to the new name.
+    """
+
+    import pytest
+
+    from cellquorum.core.exceptions import CellQuorumConfigError
+
+    # Confirm that 'report_only' is rejected with a clear error.
+    with pytest.raises(CellQuorumConfigError, match="flag_no_drop"):
+        QCConfig(mode="report_only")
 
 
 def test_qc_config_enabled_metric_families_reflect_enabled_submodules() -> None:

@@ -77,7 +77,7 @@ def run_stage(
         output_dir: Optional directory for any artifacts the stage writes. A
             temporary directory is used when omitted.
         **stage_kwargs: Stage-specific settings merged into the stage's config
-            block (e.g. ``mode="report_only"`` for qc).
+            block (e.g. ``mode="flag_no_drop"`` for qc).
 
     Returns:
         A NotebookStageOutput carrying the resulting adata and StageResult.

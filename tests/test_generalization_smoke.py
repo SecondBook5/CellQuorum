@@ -82,7 +82,7 @@ def _generic_config(h5ad_path: Path, output_dir: Path) -> dict:
             "adjudication": False,
         },
         "qc": {
-            "mode": "report_only",
+            "mode": "flag_no_drop",
             "threshold_strategy": "fixed",
             "metrics": {"layer": "counts", "percent_top": [2]},
             "mad": {"enabled": False},

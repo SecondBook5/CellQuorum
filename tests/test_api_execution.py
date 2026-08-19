@@ -127,7 +127,7 @@ def build_execution_config(h5ad_path: Path) -> CellQuorumConfig:
             "enabled": False,
         },
         qc={
-            "mode": "report_only",
+            "mode": "flag_no_drop",
             "threshold_strategy": "fixed",
             "metrics": {
                 "percent_top": [2],
@@ -233,7 +233,7 @@ def test_run_pipeline_executes_by_default_for_dictionary(tmp_path: Path) -> None
                 "enabled": False,
             },
             "qc": {
-                "mode": "report_only",
+                "mode": "flag_no_drop",
                 "threshold_strategy": "fixed",
                 "metrics": {
                     "percent_top": [2],
@@ -286,7 +286,7 @@ compute:
 r:
   enabled: false
 qc:
-  mode: report_only
+  mode: flag_no_drop
   threshold_strategy: fixed
   metrics:
     percent_top: [2]

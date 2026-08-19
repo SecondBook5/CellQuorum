@@ -47,7 +47,7 @@ stages:
 
 qc:
   enabled: true
-  mode: report_only           # production audit: write QC tables/plots, no filtering
+  mode: flag_no_drop           # production audit: write QC tables/plots, no filtering
   metrics:
     layer: counts
   doublets:

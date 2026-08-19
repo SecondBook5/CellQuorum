@@ -91,7 +91,7 @@ def make_stage_test_adata() -> ad.AnnData:
     return ad.AnnData(X=matrix, obs=obs, var=var)
 
 
-def make_stage_qc_config(*, mode: str = "report_only") -> QCConfig:
+def make_stage_qc_config(*, mode: str = "flag_no_drop") -> QCConfig:
     """
     Build a deterministic QC configuration for stage tests.
 
@@ -270,7 +270,7 @@ def test_resolve_qc_config_accepts_mapping_qc_field(tmp_path: Path) -> None:
         config={
             "qc": {
                 "enabled": False,
-                "mode": "report_only",
+                "mode": "flag_no_drop",
             }
         },
     )
@@ -512,7 +512,7 @@ def test_filter_adata_by_qc_decisions_subsets_cells_and_genes() -> None:
     assert filtered.shape == (2, 2)
 
 
-def test_build_qc_output_adata_report_only_preserves_shape() -> None:
+def test_build_qc_output_adata_flag_no_drop_preserves_shape() -> None:
     """
     Verify report-only QC annotates but does not filter AnnData.
 
@@ -527,7 +527,7 @@ def test_build_qc_output_adata_report_only_preserves_shape() -> None:
     output = build_qc_output_adata(
         adata=adata,
         decision_result=decisions,
-        config=make_stage_qc_config(mode="report_only"),
+        config=make_stage_qc_config(mode="flag_no_drop"),
     )
 
     # Confirm shape was preserved.
@@ -686,7 +686,7 @@ def test_build_qc_stage_summary_extra_uses_context_metadata(tmp_path: Path) -> N
     assert payload["enabled_metric_families"] == ["basic", "doublets", "ambient_rna"]
 
 
-def test_qc_stage_run_report_only_writes_artifacts_and_preserves_shape(tmp_path: Path) -> None:
+def test_qc_stage_run_flag_no_drop_writes_artifacts_and_preserves_shape(tmp_path: Path) -> None:
     """
     Verify the full QC stage runs in report-only mode.
 
@@ -696,7 +696,7 @@ def test_qc_stage_run_report_only_writes_artifacts_and_preserves_shape(tmp_path:
 
     # Build context and stage.
     context = make_context(tmp_path)
-    stage = QCStage(config=make_stage_qc_config(mode="report_only"))
+    stage = QCStage(config=make_stage_qc_config(mode="flag_no_drop"))
 
     # Run the QC stage.
     result = stage.run(context)
@@ -717,7 +717,7 @@ def test_qc_stage_run_report_only_writes_artifacts_and_preserves_shape(tmp_path:
     assert any("did NOT remove them" in warning for warning in result.warnings)
 
     # Confirm stage notes summarize QC.
-    assert result.notes[0] == "QC completed in report_only mode."
+    assert result.notes[0] == "QC completed in flag_no_drop mode."
 
     # Confirm stage metrics include input and output shapes.
     assert result.metrics["input_shape"] == {"n_obs": 3, "n_vars": 4}
@@ -778,14 +778,14 @@ def test_qc_stage_run_filter_mode_returns_filtered_anndata(tmp_path: Path) -> No
     assert not any("did NOT remove them" in warning for warning in result.warnings)
 
 
-def test_qc_stage_run_flag_no_drop_synonym_matches_report_only(tmp_path: Path) -> None:
-    """`flag_no_drop` is the truthful synonym of `report_only`: keep + warn.
+def test_qc_stage_run_flag_no_drop_keeps_all_cells_and_warns(tmp_path: Path) -> None:
+    """`flag_no_drop` mode preserves failing cells and warns loudly.
 
     It must preserve shape (no cells dropped) and still emit the loud no-drop
-    warning, exactly like `report_only`.
+    warning that flagged cells were kept.
     """
 
-    # Build context and stage using the truthful mode name.
+    # Build context and stage using the no-drop mode.
     context = make_context(tmp_path)
     stage = QCStage(config=make_stage_qc_config(mode="flag_no_drop"))
 
@@ -796,7 +796,7 @@ def test_qc_stage_run_flag_no_drop_synonym_matches_report_only(tmp_path: Path) -
     assert result.adata.shape == (3, 4)
     assert result.adata.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
 
-    # Confirm the loud no-drop warning fired under the synonym too.
+    # Confirm the loud no-drop warning fired.
     assert any("did NOT remove them" in warning for warning in result.warnings)
 
 

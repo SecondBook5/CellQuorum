@@ -268,7 +268,7 @@ class QCStage:
         # Surface any preserved-not-overwritten metric-column conflicts.
         warnings.extend(metric_annotation_warnings)
 
-        # No-silent-decisions guard: in a no-drop mode (report_only / flag_no_drop)
+        # No-silent-decisions guard: in a no-drop mode (flag_no_drop)
         # flagged cells REMAIN in the object and flow into every downstream stage.
         # Say so loudly — a resolved config's benign-looking mode must not hide the
         # fact that N% of cells failed QC yet nothing was removed.

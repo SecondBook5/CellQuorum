@@ -23,10 +23,10 @@ def test_fingerprint_is_deterministic() -> None:
 
     a = _adata()
     fp1 = compute_input_fingerprint(
-        stage_name="qc", stage_config={"mode": "report_only"}, adata=a, random_seed=1337
+        stage_name="qc", stage_config={"mode": "flag_no_drop"}, adata=a, random_seed=1337
     )
     fp2 = compute_input_fingerprint(
-        stage_name="qc", stage_config={"mode": "report_only"}, adata=a, random_seed=1337
+        stage_name="qc", stage_config={"mode": "flag_no_drop"}, adata=a, random_seed=1337
     )
     assert fp1 == fp2
     assert isinstance(fp1, str) and len(fp1) == 64
@@ -37,7 +37,7 @@ def test_fingerprint_changes_with_config() -> None:
 
     a = _adata()
     fp_report = compute_input_fingerprint(
-        stage_name="qc", stage_config={"mode": "report_only"}, adata=a, random_seed=1337
+        stage_name="qc", stage_config={"mode": "flag_no_drop"}, adata=a, random_seed=1337
     )
     fp_filter = compute_input_fingerprint(
         stage_name="qc", stage_config={"mode": "filter"}, adata=a, random_seed=1337

@@ -40,7 +40,7 @@ def make_test_adata() -> ad.AnnData:
     return ad.AnnData(X=matrix, obs=obs, var=var)
 
 
-def build_test_config(*, qc_mode: str = "report_only") -> CellQuorumConfig:
+def build_test_config(*, qc_mode: str = "flag_no_drop") -> CellQuorumConfig:
     """Build a deterministic CellQuorum config for executor tests."""
     return CellQuorumConfig(
         project={
@@ -80,7 +80,7 @@ def test_executor_with_verbose_reporter_emits_stage_markers(tmp_path: Path):
     """Verify executor with verbose reporter emits per-stage ▶/✓ lines."""
     # Build a context + plan.
     context = build_pipeline_context(
-        build_test_config(qc_mode="report_only"),
+        build_test_config(qc_mode="flag_no_drop"),
         output_dir=tmp_path / "run",
         backend_registry=build_test_backend_registry(),
     ).with_adata(make_test_adata())
@@ -115,7 +115,7 @@ def test_executor_with_noop_reporter_produces_no_output(tmp_path: Path):
     """Verify executor with a no-op reporter produces zero output."""
     # Build a context + plan.
     context = build_pipeline_context(
-        build_test_config(qc_mode="report_only"),
+        build_test_config(qc_mode="flag_no_drop"),
         output_dir=tmp_path / "run",
         backend_registry=build_test_backend_registry(),
     ).with_adata(make_test_adata())
@@ -147,7 +147,7 @@ def test_executor_with_noop_reporter_produces_no_output(tmp_path: Path):
 def test_executor_results_identical_with_verbose_and_noop_reporter(tmp_path: Path):
     """Verify that verbose and no-op reporters produce identical results."""
     # Build a shared context + plan.
-    config = build_test_config(qc_mode="report_only")
+    config = build_test_config(qc_mode="flag_no_drop")
     plan = PipelinePlan(
         profile="standard",
         stages=[
@@ -203,7 +203,7 @@ def test_executor_without_reporter_arg_still_works(tmp_path: Path):
     """Verify backward compat: executor.run() with NO reporter arg works."""
     # Build a context + plan.
     context = build_pipeline_context(
-        build_test_config(qc_mode="report_only"),
+        build_test_config(qc_mode="flag_no_drop"),
         output_dir=tmp_path / "run",
         backend_registry=build_test_backend_registry(),
     ).with_adata(make_test_adata())

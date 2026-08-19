@@ -93,7 +93,7 @@ def make_test_adata() -> ad.AnnData:
     return ad.AnnData(X=matrix, obs=obs, var=var)
 
 
-def build_test_config(*, qc_mode: str = "report_only") -> CellQuorumConfig:
+def build_test_config(*, qc_mode: str = "flag_no_drop") -> CellQuorumConfig:
     """
     Build a deterministic CellQuorum config for executor tests.
 
@@ -139,7 +139,7 @@ def build_test_config(*, qc_mode: str = "report_only") -> CellQuorumConfig:
     )
 
 
-def build_test_context(tmp_path: Path, *, qc_mode: str = "report_only") -> PipelineContext:
+def build_test_context(tmp_path: Path, *, qc_mode: str = "flag_no_drop") -> PipelineContext:
     """
     Build a PipelineContext containing AnnData.
 

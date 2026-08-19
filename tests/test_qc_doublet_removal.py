@@ -41,7 +41,7 @@ def test_doublets_removed_when_remove_true(tmp_path):
     config = {
         "qc": {
             "enabled": True,
-            "mode": "report_only",
+            "mode": "flag_no_drop",
             "metrics": {"layer": "counts"},
             "doublets": {
                 "enabled": True,
@@ -85,7 +85,7 @@ def test_doublets_kept_when_remove_false(tmp_path):
     config = {
         "qc": {
             "enabled": True,
-            "mode": "report_only",
+            "mode": "flag_no_drop",
             "metrics": {"layer": "counts"},
             "doublets": {
                 "enabled": True,

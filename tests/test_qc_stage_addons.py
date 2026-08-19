@@ -55,7 +55,7 @@ class _Ctx:
 
 def test_qc_stage_runs_cell_cycle_when_enabled(tmp_path):
     a = _adata()
-    qc = QCConfig(mode="report_only", cell_cycle={"enabled": True})
+    qc = QCConfig(mode="flag_no_drop", cell_cycle={"enabled": True})
     ctx = _Ctx(a, tmp_path, qc)
     result = QCStage().run(ctx)
     assert "phase" in result.adata.obs
@@ -63,7 +63,7 @@ def test_qc_stage_runs_cell_cycle_when_enabled(tmp_path):
 
 def test_qc_stage_flags_doublets_when_enabled(tmp_path):
     a = _adata()
-    qc = QCConfig(mode="report_only", doublets={"enabled": True, "methods": ["scrublet"]})
+    qc = QCConfig(mode="flag_no_drop", doublets={"enabled": True, "methods": ["scrublet"]})
     ctx = _Ctx(a, tmp_path, qc)
     result = QCStage().run(ctx)
     assert "predicted_doublet" in result.adata.obs
@@ -86,7 +86,7 @@ def test_qc_stage_exposes_feature_family_metrics_to_plots(tmp_path):
     a = ad.AnnData(X=x, var=pd.DataFrame(index=genes))
     a.layers["counts"] = x.copy()
     qc = QCConfig(
-        mode="report_only",
+        mode="flag_no_drop",
         metrics={"layer": "counts", "percent_top": [20]},
         doublets={"enabled": False},
         ambient={"enabled": False},
