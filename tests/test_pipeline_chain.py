@@ -41,11 +41,14 @@ def _backend_registry() -> BackendRegistry:
 
 
 def _synthetic_cohort(seed: int = 0) -> ad.AnnData:
-    """Two batches x two cell types, integer counts — a realistic small cohort.
+    """Two donors x two conditions x two cell types, integer counts.
 
     Batch offset is injected so integration (Harmony) has something to correct;
     two marker programs so clustering finds >=2 groups and annotation can label
-    them.
+    them. Condition is decoupled from donor so BOTH donors are sampled in BOTH
+    arms — two independent donors per condition arm — which is what the
+    pseudobulk-DE estimability gate requires (an arm with a single donor yields
+    confident-but-meaningless statistics, so the DE stage halts loudly on it).
     """
 
     rng = np.random.default_rng(seed)
@@ -63,8 +66,13 @@ def _synthetic_cohort(seed: int = 0) -> ad.AnnData:
     batch = np.array(["P1", "P2"] * (n // 2))
     counts[batch == "P2", 6:12] += rng.poisson(5.0, size=((batch == "P2").sum(), 6))
 
+    # Condition alternates in 2-cell blocks (Normal, Normal, Lymphedema, ...) so
+    # it is orthogonal to the P1/P2 donor cycle: each donor contributes cells to
+    # both arms, giving two independent donors per arm for DE/DA.
+    condition = np.array(["Normal", "Normal", "Lymphedema", "Lymphedema"] * (n // 4))
+
     obs = pd.DataFrame(
-        {"patient_id": batch, "condition": ["Normal", "Lymphedema"] * (n // 2)},
+        {"patient_id": batch, "condition": condition},
         index=[f"cell_{i}" for i in range(n)],
     )
     var = pd.DataFrame(index=genes)
