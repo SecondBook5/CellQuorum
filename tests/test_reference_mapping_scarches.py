@@ -10,15 +10,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.contracts import CellQuorumContractError, set_layer_tag
-from cellquorum.methods.base import MethodSkip
-from cellquorum.reference_mapping.scarches import (
+from cellquorum.annotation.reference_mapping.scarches import (
     ScArchesMethod,
     _load_seed_checkpoint,
     _mean_soft_probabilities,
     _save_seed_checkpoint,
     _scvi_gpu_available,
 )
+from cellquorum.contracts import CellQuorumContractError, set_layer_tag
+from cellquorum.methods.base import MethodSkip
 
 
 def _synth(n: int, seed: int, labels: bool = True) -> ad.AnnData:

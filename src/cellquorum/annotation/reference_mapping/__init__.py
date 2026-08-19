@@ -1,7 +1,7 @@
 """Reference mapping package for atlas-based label transfer."""
 
-from cellquorum.reference_mapping.config import ReferenceMappingConfig
-from cellquorum.reference_mapping.stage import ReferenceMappingStage
+from cellquorum.annotation.reference_mapping.config import ReferenceMappingConfig
+from cellquorum.annotation.reference_mapping.stage import ReferenceMappingStage
 
 # Guard scvi import for environments without GPU dependencies.
 _has_scvi = False
@@ -13,8 +13,8 @@ except ImportError:
     pass
 
 if _has_scvi:
+    from cellquorum.annotation.reference_mapping.scarches import ScArchesMethod
     from cellquorum.methods.registry import METHOD_REGISTRY
-    from cellquorum.reference_mapping.scarches import ScArchesMethod
 
     # Self-register the scarches method (guarded against double registration).
     if not METHOD_REGISTRY.has("reference_mapping", "scarches"):

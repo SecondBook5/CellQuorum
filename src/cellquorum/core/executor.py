@@ -20,6 +20,9 @@ from cellquorum.annotation.consensus.stage import AnnotationConsensusStage
 # Import annotation-diagnostics evaluation stage.
 from cellquorum.annotation.diagnostics.stage import AnnotationDiagnosticsStage
 
+# Import reference-mapping stage.
+from cellquorum.annotation.reference_mapping.stage import ReferenceMappingStage
+
 # Import annotation stage.
 from cellquorum.annotation.stage import AnnotationStage
 
@@ -97,9 +100,6 @@ from cellquorum.qc.ambient.stage import AmbientCorrectionStage
 
 # Import the first fully implemented scientific stage.
 from cellquorum.qc.stage import QCStage
-
-# Import reference-mapping stage.
-from cellquorum.reference_mapping.stage import ReferenceMappingStage
 
 # Import trajectory stage.
 from cellquorum.trajectory.stage import TrajectoryStage

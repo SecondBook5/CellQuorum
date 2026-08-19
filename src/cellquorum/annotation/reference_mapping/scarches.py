@@ -473,7 +473,7 @@ class ScArchesMethod(AnalysisMethod):
         if write_loss_curves and hasattr(context.paths, "figures"):
             figures_path = Path(context.paths.figures)
             if figures_path.exists():
-                from cellquorum.reference_mapping.diagnostics import (
+                from cellquorum.annotation.reference_mapping.diagnostics import (
                     plot_loss_curves,
                     plot_uncertainty,
                 )

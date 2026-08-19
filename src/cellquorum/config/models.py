@@ -23,6 +23,9 @@ from cellquorum.annotation.consensus.config import AnnotationConsensusConfig
 # Import the annotation-diagnostics configuration model.
 from cellquorum.annotation.diagnostics.config import AnnotationDiagnosticsConfig
 
+# Import the reference-mapping configuration model.
+from cellquorum.annotation.reference_mapping.config import ReferenceMappingConfig
+
 # Import the cell-cell-communication configuration model.
 from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
 
@@ -92,9 +95,6 @@ from cellquorum.qc.ambient.config import AmbientCorrectionConfig
 
 # Import the QC configuration model.
 from cellquorum.qc.config import QCConfig
-
-# Import the reference-mapping configuration model.
-from cellquorum.reference_mapping.config import ReferenceMappingConfig
 
 # Import the trajectory configuration model.
 from cellquorum.trajectory.config import TrajectoryConfig
