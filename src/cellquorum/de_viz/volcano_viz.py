@@ -28,10 +28,7 @@ class VolcanoVizMethod(AnalysisMethod):
         results_dir = Path(context.paths.results)
         df = load_de_table(results_dir)
         if df is None:
-            return MethodSkip(
-                reason="volcano_viz skipped: no usable de_pseudobulk_edger.csv in results",
-                details={"method": self.name},
-            )
+            return self._skip("no usable de_pseudobulk_edger.csv in results")
 
         case = config.get("case")
         control = config.get("control")
@@ -59,10 +56,7 @@ class VolcanoVizMethod(AnalysisMethod):
                 top_n_labels=int(config.get("top_n_labels", 40)),
             )
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"volcano_viz skipped: render failed ({str(exc)[:200]})",
-                details={"method": self.name},
-            )
+            return self._skip(f"render failed ({str(exc)[:200]})")
 
         paths = figstyle.save_figure(fig, figures_dir, "volcano", formats=formats, dpi=dpi)
         artifacts = [
