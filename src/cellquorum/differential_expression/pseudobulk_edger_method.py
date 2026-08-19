@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import anndata as ad
@@ -11,13 +10,14 @@ from cellquorum.config.design import DesignConfig, validate_design_against_obs
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.differential_expression.pseudobulk import aggregate_pseudobulk
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.methods.base import MethodSkip
+from cellquorum.methods.r_method import RAnalysisMethod
 
 # Path to the bundled edgeR script.
 _EDGER_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "edger.R"
 
 
-class PseudobulkEdgeRMethod(AnalysisMethod):
+class PseudobulkEdgeRMethod(RAnalysisMethod):
     """Donor-blocked pseudobulk DE via edgeR quasi-likelihood.
 
     Pseudobulk is the primary DE test (spec §6). Aggregates cells to donor x
@@ -27,7 +27,7 @@ class PseudobulkEdgeRMethod(AnalysisMethod):
 
     name = "pseudobulk_edger"
     stage_category = "differential_expression"
-    backend = "rscript"
+    r_package = "edgeR"
 
     def input_contract(self, config: dict) -> DataContract:
         """Require the raw-counts layer plus the design obs columns."""
@@ -67,7 +67,6 @@ class PseudobulkEdgeRMethod(AnalysisMethod):
         min_count = int(config.get("min_count", 10))
         min_total_count = int(config.get("min_total_count", 15))
         timeout = int(config.get("timeout_seconds", 1800))
-        r_package = config.get("r_package", "edgeR")
 
         # A comparison needs both case and control labels.
         if not case or not control:
@@ -99,33 +98,10 @@ class PseudobulkEdgeRMethod(AnalysisMethod):
             min_donors_per_arm=min_donors_per_arm,
         )
 
-        # Rscript availability guard (mirrors SoupX/scDiagnostics).
-        if shutil.which("Rscript") is None:
-            return MethodSkip(
-                reason="pseudobulk_edger skipped: Rscript unavailable",
-                details={"method": self.name},
-            )
-
-        # Resolve the Rscript backend from the context registry.
-        registry = getattr(context, "backend_registry", None)
-        backend = None
-        if registry is not None:
-            try:
-                backend = registry.get("rscript")
-            except Exception:
-                backend = None
-        if backend is None:
-            return MethodSkip(
-                reason="pseudobulk_edger skipped: rscript backend unavailable",
-                details={"method": self.name},
-            )
-
-        # edgeR package guard.
-        if not backend._r_package_available(r_package):
-            return MethodSkip(
-                reason=f"pseudobulk_edger skipped: {r_package} R package unavailable",
-                details={"method": self.name, "r_package": r_package},
-            )
+        # Rscript + backend + package guards (hoisted to RAnalysisMethod).
+        backend, skip = self._resolve_rscript_backend(context, config)
+        if skip is not None:
+            return skip
 
         # Aggregate to donor x condition pseudobulk counts.
         pb = aggregate_pseudobulk(
