@@ -70,10 +70,7 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
 
         # A comparison needs both case and control labels.
         if not case or not control:
-            return MethodSkip(
-                reason="pseudobulk_edger skipped: case/control labels not set in config",
-                details={"method": self.name},
-            )
+            return self._skip("case/control labels not set in config")
 
         # Pre-flight estimability gate. This HALTS LOUDLY on a comparison that
         # cannot yield valid statistics — a missing condition arm, or an arm
@@ -187,15 +184,9 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
         try:
             proc = backend.run_script(_EDGER_R, args, timeout=timeout)
         except FileNotFoundError as exc:
-            return MethodSkip(
-                reason="pseudobulk_edger skipped: R execution failed",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("R execution failed", error=str(exc)[:500])
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="pseudobulk_edger skipped: edgeR script failed",
-                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
-            )
+            return self._skip("edgeR script failed", stderr=proc.stderr.strip()[:500])
 
         # Return the DE table as an artifact plus provenance metrics.
         return StageResult(
