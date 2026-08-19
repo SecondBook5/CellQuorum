@@ -8,7 +8,7 @@ import pytest
 
 from cellquorum.contracts import CellQuorumContractError
 from cellquorum.contracts.layer_tags import set_layer_tag
-from cellquorum.feature_selection.hvg import HVGMethod
+from cellquorum.preprocessing.feature_selection.hvg import HVGMethod
 
 
 def _counts_adata(n=200, g=60, seed=0):

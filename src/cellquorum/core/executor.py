@@ -71,9 +71,6 @@ from cellquorum.enrichment.stage import EnrichmentStage
 
 # Import enrichment-visualization stage.
 from cellquorum.enrichment.viz.stage import EnrichmentVizStage
-
-# Import feature selection stage.
-from cellquorum.feature_selection.stage import FeatureSelectionStage
 from cellquorum.grn.stage import GrnStage
 
 # Import integration-benchmark evaluation stage.
@@ -88,6 +85,9 @@ from cellquorum.perturbation.stage import PerturbationStage
 
 # Import population/state identity evidence stage.
 from cellquorum.population_identity.stage import PopulationIdentityStage
+
+# Import feature selection stage.
+from cellquorum.preprocessing.feature_selection.stage import FeatureSelectionStage
 
 # Import the preprocessing stage.
 from cellquorum.preprocessing.stage import PreprocessingStage

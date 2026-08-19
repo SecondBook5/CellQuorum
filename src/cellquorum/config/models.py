@@ -63,9 +63,6 @@ from cellquorum.enrichment.config import EnrichmentConfig
 # Import the enrichment-visualization configuration model.
 from cellquorum.enrichment.viz.config import EnrichmentVizConfig
 
-# Import the feature-selection configuration model.
-from cellquorum.feature_selection.config import FeatureSelectionConfig
-
 # Import the GRN configuration model.
 from cellquorum.grn.config import GrnConfig
 
@@ -86,6 +83,9 @@ from cellquorum.population_identity.config import PopulationIdentityConfig
 
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
+
+# Import the feature-selection configuration model.
+from cellquorum.preprocessing.feature_selection.config import FeatureSelectionConfig
 
 # Import the QC configuration model.
 from cellquorum.qc.config import QCConfig

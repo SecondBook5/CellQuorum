@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from cellquorum.feature_selection.hvg import HVGMethod
-from cellquorum.feature_selection.stage import FeatureSelectionStage
 from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.preprocessing.feature_selection.hvg import HVGMethod
+from cellquorum.preprocessing.feature_selection.stage import FeatureSelectionStage
 
 
 # Registry only uses cls.name, so create thin subclasses for each flavor name.
