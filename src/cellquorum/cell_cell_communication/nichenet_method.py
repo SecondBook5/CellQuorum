@@ -41,16 +41,12 @@ class NicheNetMethod(RAnalysisMethod):
         seed = int(config.get("seed", 42))
 
         if not sender or not receiver:
-            return MethodSkip(
-                reason="nichenet skipped: nichenet_sender/nichenet_receiver not set",
-                details={"method": self.name},
-            )
+            return self._skip("nichenet_sender/nichenet_receiver not set")
 
         observed = set(adata.obs[cell_type_col].astype(str).unique())
         if sender not in observed or receiver not in observed:
-            return MethodSkip(
-                reason="nichenet skipped: sender/receiver absent from cell_type_col",
-                details={"method": self.name, "observed": sorted(observed)},
+            return self._skip(
+                "sender/receiver absent from cell_type_col", observed=sorted(observed)
             )
 
         # Receiver geneset from a pseudobulk DE CSV.
@@ -59,19 +55,13 @@ class NicheNetMethod(RAnalysisMethod):
             default_de = Path(context.paths.results) / "de_pseudobulk_edger.csv"
             de_csv = str(default_de) if default_de.is_file() else None
         if not de_csv or not Path(de_csv).is_file():
-            return MethodSkip(
-                reason="nichenet skipped: no DE geneset CSV available",
-                details={"method": self.name},
-            )
+            return self._skip("no DE geneset CSV available")
 
         lt = config.get("nichenet_ligand_target_matrix")
         lr = config.get("nichenet_lr_network")
         wn = config.get("nichenet_weighted_networks")
         if not all(p and Path(p).is_file() for p in (lt, lr, wn)):
-            return MethodSkip(
-                reason="nichenet skipped: prior-model paths missing",
-                details={"method": self.name},
-            )
+            return self._skip("prior-model paths missing")
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
         backend, skip = self._resolve_rscript_backend(context)
@@ -88,15 +78,9 @@ class NicheNetMethod(RAnalysisMethod):
                 top_n=int(config.get("nichenet_de_top_n", 200)),
             )
         except Exception as exc:
-            return MethodSkip(
-                reason="nichenet skipped: DE geneset CSV unreadable or misformatted",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("DE geneset CSV unreadable or misformatted", error=str(exc)[:500])
         if not geneset:
-            return MethodSkip(
-                reason="nichenet skipped: DE geneset empty at configured FDR",
-                details={"method": self.name},
-            )
+            return self._skip("DE geneset empty at configured FDR")
 
         scratch = Path(context.paths.scratch)
         paths = export_sce_inputs(adata, [cell_type_col], scratch)
@@ -135,20 +119,11 @@ class NicheNetMethod(RAnalysisMethod):
         try:
             proc = backend.run_script(_NICHENET_R, args, timeout=timeout)
         except FileNotFoundError as exc:
-            return MethodSkip(
-                reason="nichenet skipped: R execution failed",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("R execution failed", error=str(exc)[:500])
         except subprocess.TimeoutExpired as exc:
-            return MethodSkip(
-                reason=f"nichenet skipped: R timed out after {timeout}s",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip(f"R timed out after {timeout}s", error=str(exc)[:500])
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="nichenet skipped: nichenet.R failed",
-                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
-            )
+            return self._skip("nichenet.R failed", stderr=proc.stderr.strip()[:500])
 
         artifacts = [
             StageArtifact(

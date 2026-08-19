@@ -102,10 +102,7 @@ class TensorCell2CellMethod(AnalysisMethod):
         # Hard dependency on LIANA's per-sample output.
         res = adata.uns.get("liana_res")
         if res is None or len(res) == 0:
-            return MethodSkip(
-                reason="tensor_c2c skipped: uns['liana_res'] absent — run liana first",
-                details={"method": self.name},
-            )
+            return self._skip("uns['liana_res'] absent — run liana first")
 
         # Defensive: liana_res must be a long-format table with a "sample"
         # column. A partial/aborted liana run can leave a per-sample dict here;
@@ -114,28 +111,24 @@ class TensorCell2CellMethod(AnalysisMethod):
         import pandas as pd
 
         if not isinstance(res, pd.DataFrame):
-            return MethodSkip(
-                reason="tensor_c2c skipped: uns['liana_res'] is not a tabular result "
-                f"(got {type(res).__name__}); run liana first",
-                details={"method": self.name},
+            return self._skip(
+                "uns['liana_res'] is not a tabular result "
+                f"(got {type(res).__name__}); run liana first"
             )
 
         # Need enough distinct samples/contexts to decompose.
         min_samples = int(config.get("min_samples", 3))
         n_samples = int(res["sample"].nunique()) if "sample" in res.columns else 0
         if n_samples < min_samples:
-            return MethodSkip(
-                reason=f"tensor_c2c skipped: n_samples={n_samples} < min_samples={min_samples}",
-                details={"method": self.name, "n_samples": n_samples},
+            return self._skip(
+                f"n_samples={n_samples} < min_samples={min_samples}",
+                n_samples=n_samples,
             )
 
         try:
             import liana as li
         except Exception as exc:  # pragma: no cover - env dependent
-            return MethodSkip(
-                reason="tensor_c2c skipped: liana unavailable",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("liana unavailable", error=str(exc)[:300])
 
         # Build the tensor with the paper-settled inversion parameters.
         # CRITICAL DEVIATION: use sample_key="sample" (the standardized literal from
@@ -151,10 +144,7 @@ class TensorCell2CellMethod(AnalysisMethod):
                 outer_fraction=float(config.get("outer_fraction", 1.0 / 3.0)),
             )
         except Exception as exc:
-            return MethodSkip(
-                reason="tensor_c2c skipped: tensor construction failed",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("tensor construction failed", error=str(exc)[:300])
 
         # Place the tensor on GPU when requested/available (keeps robust
         # factorization tractable); degrade to CPU rather than hard-fail.
@@ -183,10 +173,7 @@ class TensorCell2CellMethod(AnalysisMethod):
                 tf_type="non_negative_cp",
             )
         except Exception as exc:
-            return MethodSkip(
-                reason="tensor_c2c skipped: factorization failed",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("factorization failed", error=str(exc)[:300])
 
         factors = tensor.factors  # OrderedDict keyed by dimension label
         loadings: OrderedDict = OrderedDict()

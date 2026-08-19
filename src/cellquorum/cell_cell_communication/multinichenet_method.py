@@ -53,26 +53,19 @@ class MultiNicheNetMethod(RAnalysisMethod):
         seed = int(config.get("seed", 42))
 
         if not case or not control:
-            return MethodSkip(
-                reason="multinichenet skipped: no contrast (case/control) declared",
-                details={"method": self.name},
-            )
+            return self._skip("no contrast (case/control) declared")
 
         # Verify the tokens are actually present in the data.
         observed = set(adata.obs[condition_col].astype(str).unique())
         if case not in observed or control not in observed:
-            return MethodSkip(
-                reason="multinichenet skipped: case/control tokens absent from condition_col",
-                details={"method": self.name, "observed": sorted(observed)},
+            return self._skip(
+                "case/control tokens absent from condition_col", observed=sorted(observed)
             )
 
         lt = config.get("nichenet_ligand_target_matrix")
         lr = config.get("nichenet_lr_network")
         if not lt or not lr or not Path(lt).is_file() or not Path(lr).is_file():
-            return MethodSkip(
-                reason="multinichenet skipped: prior-model paths missing",
-                details={"method": self.name},
-            )
+            return self._skip("prior-model paths missing")
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
         backend, skip = self._resolve_rscript_backend(context)
@@ -114,20 +107,11 @@ class MultiNicheNetMethod(RAnalysisMethod):
         try:
             proc = backend.run_script(_MNN_R, args, timeout=timeout)
         except FileNotFoundError as exc:
-            return MethodSkip(
-                reason="multinichenet skipped: R execution failed",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("R execution failed", error=str(exc)[:500])
         except subprocess.TimeoutExpired as exc:
-            return MethodSkip(
-                reason=f"multinichenet skipped: R timed out after {timeout}s",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip(f"R timed out after {timeout}s", error=str(exc)[:500])
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="multinichenet skipped: multinichenet.R failed",
-                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
-            )
+            return self._skip("multinichenet.R failed", stderr=proc.stderr.strip()[:500])
 
         artifacts = [
             StageArtifact(

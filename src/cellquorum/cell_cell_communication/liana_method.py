@@ -44,18 +44,12 @@ class LianaMethod(AnalysisMethod):
         # Eligibility: need ≥2 cell types to have any inter-type communication.
         n_types = int(adata.obs[cell_type_col].nunique())
         if n_types < 2:
-            return MethodSkip(
-                reason=f"liana skipped: need >=2 cell types, found {n_types}",
-                details={"method": self.name, "n_cell_types": n_types},
-            )
+            return self._skip(f"need >=2 cell types, found {n_types}", n_cell_types=n_types)
 
         try:
             import liana as li
         except Exception as exc:  # pragma: no cover - env dependent
-            return MethodSkip(
-                reason="liana skipped: liana unavailable",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("liana unavailable", error=str(exc)[:300])
 
         from pandas import concat
 
@@ -103,13 +97,10 @@ class LianaMethod(AnalysisMethod):
                 skipped[str(sample)] = "no interactions returned"
 
         if not per_sample:
-            return MethodSkip(
-                reason="liana skipped: no sample produced interactions",
-                details={
-                    "method": self.name,
-                    "n_samples_total": int(len(samples)),
-                    "n_samples_skipped": len(skipped),
-                },
+            return self._skip(
+                "no sample produced interactions",
+                n_samples_total=int(len(samples)),
+                n_samples_skipped=len(skipped),
             )
 
         # Concatenate per-sample frames into one long table with a "sample"
