@@ -140,18 +140,11 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         try:
             result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=timeout)
             if result.returncode != 0:
-                return MethodSkip(
-                    reason="annotation_diagnostics skipped: scDiagnostics R script " "failed",
-                    details={
-                        "method": self.name,
-                        "stderr": result.stderr.strip()[:500],
-                    },
+                return self._skip(
+                    "scDiagnostics R script failed", stderr=result.stderr.strip()[:500]
                 )
         except (FileNotFoundError, CellQuorumBackendError) as e:
-            return MethodSkip(
-                reason="annotation_diagnostics skipped: R execution failed",
-                details={"method": self.name, "error": str(e)[:500]},
-            )
+            return self._skip("R execution failed", error=str(e)[:500])
 
         # Read back diagnostic columns from the CSV (indexed by barcode).
         diag_df = self._read_diagnostic_csv(out_csv)
