@@ -16,8 +16,8 @@ import scanpy as sc
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.dimensionality.knee import select_n_pcs
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.preprocessing.dimensionality.knee import select_n_pcs
 
 logger = logging.getLogger(__name__)
 

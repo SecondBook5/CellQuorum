@@ -7,9 +7,9 @@ from pathlib import Path
 import anndata as ad
 import numpy as np
 
-from cellquorum.dimensionality.pca import PCAMethod
-from cellquorum.dimensionality.stage import DimensionalityStage
 from cellquorum.methods.registry import MethodRegistry
+from cellquorum.preprocessing.dimensionality.pca import PCAMethod
+from cellquorum.preprocessing.dimensionality.stage import DimensionalityStage
 
 
 def _adata(n_cells=200, n_genes=50, seed=0):

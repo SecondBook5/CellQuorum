@@ -64,7 +64,6 @@ from cellquorum.differential_expression.stage import DifferentialExpressionStage
 
 # Import differential-expression-visualization stage.
 from cellquorum.differential_expression.viz.stage import DeVizStage
-from cellquorum.dimensionality.stage import DimensionalityStage
 
 # Import enrichment stage.
 from cellquorum.enrichment.stage import EnrichmentStage
@@ -85,6 +84,7 @@ from cellquorum.perturbation.stage import PerturbationStage
 
 # Import population/state identity evidence stage.
 from cellquorum.population_identity.stage import PopulationIdentityStage
+from cellquorum.preprocessing.dimensionality.stage import DimensionalityStage
 
 # Import feature selection stage.
 from cellquorum.preprocessing.feature_selection.stage import FeatureSelectionStage

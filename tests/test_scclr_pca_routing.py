@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from cellquorum.contracts import set_layer_tag
-from cellquorum.dimensionality.pca import PCAMethod
+from cellquorum.preprocessing.dimensionality.pca import PCAMethod
 
 
 class _Paths:

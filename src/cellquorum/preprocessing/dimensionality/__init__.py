@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from cellquorum.dimensionality.pca import PCAMethod
-from cellquorum.dimensionality.stage import DimensionalityStage
 from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.preprocessing.dimensionality.pca import PCAMethod
+from cellquorum.preprocessing.dimensionality.stage import DimensionalityStage
 
 # Self-register the PCA method so config selection can resolve it. Guard against
 # double registration when the module is imported more than once.
