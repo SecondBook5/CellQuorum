@@ -37,10 +37,7 @@ class SummaryVizMethod(AnalysisMethod):
             sources = [(lab, df) for lab, df in sources if lab in set(wanted)]
         topo = load_topology(results_dir)
         if not sources and not topo:
-            return MethodSkip(
-                reason="summary_viz skipped: no LR sources or topology found",
-                details={"method": self.name},
-            )
+            return self._skip("no LR sources or topology found")
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -66,10 +63,7 @@ class SummaryVizMethod(AnalysisMethod):
                 warnings.append(f"summary_viz: topology {level} failed: {str(exc)[:200]}")
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="summary_viz skipped: nothing plottable",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("nothing plottable", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,

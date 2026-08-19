@@ -37,10 +37,7 @@ class NetworkVizMethod(AnalysisMethod):
 
         curv = load_curvature(results_dir)
         if not curv:
-            return MethodSkip(
-                reason="network_viz skipped: no curvature CSVs found",
-                details={"method": self.name},
-            )
+            return self._skip("no curvature CSVs found")
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -85,10 +82,7 @@ class NetworkVizMethod(AnalysisMethod):
                 warnings.append(f"network_viz: differential {level} failed: {str(exc)[:200]}")
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="network_viz skipped: no plottable curvature levels",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no plottable curvature levels", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,

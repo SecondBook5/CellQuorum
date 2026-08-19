@@ -36,10 +36,7 @@ class SankeyVizMethod(AnalysisMethod):
         if wanted:
             sources = [(lab, df) for lab, df in sources if lab in set(wanted)]
         if not sources:
-            return MethodSkip(
-                reason="sankey_viz skipped: no canonical LR sources found",
-                details={"method": self.name},
-            )
+            return self._skip("no canonical LR sources found")
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -63,10 +60,7 @@ class SankeyVizMethod(AnalysisMethod):
                 warnings.append(f"sankey_viz: {label} failed: {str(exc)[:200]}")
 
         if n_figures == 0:
-            return MethodSkip(
-                reason="sankey_viz skipped: no plottable rows in any source",
-                details={"method": self.name, "warnings": warnings},
-            )
+            return self._skip("no plottable rows in any source", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,
