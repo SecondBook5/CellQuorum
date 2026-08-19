@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from cellquorum.contracts import CellQuorumContractError
-from cellquorum.integration_benchmark.scib_benchmark import ScibBenchmarkMethod
+from cellquorum.integration.benchmark.scib_benchmark import ScibBenchmarkMethod
 
 
 def _adata(n=300, seed=0):

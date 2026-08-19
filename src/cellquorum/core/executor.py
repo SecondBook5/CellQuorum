@@ -79,11 +79,11 @@ from cellquorum.enrichment.viz.stage import EnrichmentVizStage
 from cellquorum.feature_selection.stage import FeatureSelectionStage
 from cellquorum.grn.stage import GrnStage
 
+# Import integration-benchmark evaluation stage.
+from cellquorum.integration.benchmark.stage import IntegrationBenchmarkStage
+
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage
-
-# Import integration-benchmark evaluation stage.
-from cellquorum.integration_benchmark.stage import IntegrationBenchmarkStage
 from cellquorum.perturbation.stage import PerturbationStage
 
 # Import population/state identity evidence stage.

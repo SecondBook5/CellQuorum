@@ -72,11 +72,11 @@ from cellquorum.feature_selection.config import FeatureSelectionConfig
 # Import the GRN configuration model.
 from cellquorum.grn.config import GrnConfig
 
+# Import the integration-benchmark configuration model.
+from cellquorum.integration.benchmark.config import IntegrationBenchmarkConfig
+
 # Import the integration configuration model.
 from cellquorum.integration.config import IntegrationConfig
-
-# Import the integration-benchmark configuration model.
-from cellquorum.integration_benchmark.config import IntegrationBenchmarkConfig
 
 # Import the perturbation configuration model.
 from cellquorum.perturbation.config import PerturbationConfig

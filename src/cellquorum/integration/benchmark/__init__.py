@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cellquorum.integration_benchmark.scib_benchmark import ScibBenchmarkMethod
-from cellquorum.integration_benchmark.stage import IntegrationBenchmarkStage
+from cellquorum.integration.benchmark.scib_benchmark import ScibBenchmarkMethod
+from cellquorum.integration.benchmark.stage import IntegrationBenchmarkStage
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 # Register the scib-metrics benchmark method.
