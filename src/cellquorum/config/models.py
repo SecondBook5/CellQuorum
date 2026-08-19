@@ -48,14 +48,14 @@ from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
-# Import the differential-expression-visualization configuration model.
-from cellquorum.de_viz.config import DeVizConfig
-
 # Import the differential-abundance configuration model.
 from cellquorum.differential_abundance.config import DifferentialAbundanceConfig
 
 # Import the differential-expression configuration model.
 from cellquorum.differential_expression.config import DifferentialExpressionConfig
+
+# Import the differential-expression-visualization configuration model.
+from cellquorum.differential_expression.viz.config import DeVizConfig
 
 # Import the embeddings configuration model.
 from cellquorum.embeddings.config import EmbeddingsConfig

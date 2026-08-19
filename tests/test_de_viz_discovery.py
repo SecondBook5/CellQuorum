@@ -1,8 +1,8 @@
 # tests/test_de_viz_discovery.py
 
 
-from cellquorum.de_viz.config import DeVizConfig
-from cellquorum.de_viz.discovery import load_de_table
+from cellquorum.differential_expression.viz.config import DeVizConfig
+from cellquorum.differential_expression.viz.discovery import load_de_table
 
 
 def test_config_defaults():

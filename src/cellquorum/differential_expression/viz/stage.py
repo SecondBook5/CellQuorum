@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import cellquorum.de_viz  # noqa: F401  (side-effect: method registration)
+import cellquorum.differential_expression.viz  # noqa: F401  (side-effect: method registration)
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage
 

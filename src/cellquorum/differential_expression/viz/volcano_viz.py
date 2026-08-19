@@ -8,8 +8,8 @@ import anndata as ad
 
 from cellquorum.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.de_viz import plots
-from cellquorum.de_viz.discovery import load_de_table
+from cellquorum.differential_expression.viz import plots
+from cellquorum.differential_expression.viz.discovery import load_de_table
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.visualization import figstyle
 

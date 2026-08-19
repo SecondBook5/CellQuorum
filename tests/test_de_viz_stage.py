@@ -7,8 +7,8 @@ import types
 import anndata as ad
 import numpy as np
 
-import cellquorum.de_viz  # noqa: F401  (registers the method)
-from cellquorum.de_viz.volcano_viz import VolcanoVizMethod
+import cellquorum.differential_expression.viz  # noqa: F401  (registers the method)
+from cellquorum.differential_expression.viz.volcano_viz import VolcanoVizMethod
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.registry import METHOD_REGISTRY
 

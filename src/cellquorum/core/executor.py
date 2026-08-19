@@ -58,12 +58,12 @@ from cellquorum.core.stage import (
     StageResult,
 )
 
-# Import differential-expression-visualization stage.
-from cellquorum.de_viz.stage import DeVizStage
-
 # Import differential expression stage.
 from cellquorum.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.differential_expression.stage import DifferentialExpressionStage
+
+# Import differential-expression-visualization stage.
+from cellquorum.differential_expression.viz.stage import DeVizStage
 from cellquorum.dimensionality.stage import DimensionalityStage
 
 # Import embeddings stage.

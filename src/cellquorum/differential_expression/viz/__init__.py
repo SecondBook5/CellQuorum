@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cellquorum.de_viz.config import DeVizConfig
-from cellquorum.de_viz.volcano_viz import VolcanoVizMethod
+from cellquorum.differential_expression.viz.config import DeVizConfig
+from cellquorum.differential_expression.viz.volcano_viz import VolcanoVizMethod
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 for _method in (VolcanoVizMethod,):
