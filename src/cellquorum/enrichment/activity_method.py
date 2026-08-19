@@ -62,14 +62,9 @@ class ActivityMethod(AnalysisMethod):
         try:
             import decoupler as dc
         except Exception as exc:
-            return MethodSkip(
-                reason="activity skipped: decoupler unavailable",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("decoupler unavailable", error=str(exc)[:300])
         if dc is None:
-            return MethodSkip(
-                reason="activity skipped: decoupler unavailable", details={"method": self.name}
-            )
+            return self._skip("decoupler unavailable")
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -120,10 +115,7 @@ class ActivityMethod(AnalysisMethod):
             done.append(resource)
 
         if not done:
-            return MethodSkip(
-                reason="activity skipped: no resource produced results",
-                details={"method": self.name, "skipped": skipped},
-            )
+            return self._skip("no resource produced results", skipped=skipped)
 
         return StageResult(
             adata=adata,

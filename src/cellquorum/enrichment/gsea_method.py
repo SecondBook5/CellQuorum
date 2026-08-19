@@ -94,30 +94,18 @@ class GseaMethod(AnalysisMethod):
         results_dir = Path(context.paths.results)
         de_path = results_dir / de_name
         if not de_path.exists():
-            return MethodSkip(
-                reason=f"gsea skipped: no DE results table at {de_path}",
-                details={"method": self.name, "de_path": str(de_path)},
-            )
+            return self._skip(f"no DE results table at {de_path}", de_path=str(de_path))
 
         ranking = de_table_to_ranking(pd.read_csv(de_path))
         if ranking.shape[1] == 0:
-            return MethodSkip(
-                reason="gsea skipped: DE table yielded an empty ranking",
-                details={"method": self.name},
-            )
+            return self._skip("DE table yielded an empty ranking")
 
         try:
             import decoupler as dc
         except Exception as exc:
-            return MethodSkip(
-                reason="gsea skipped: decoupler unavailable",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("decoupler unavailable", error=str(exc)[:300])
         if dc is None:
-            return MethodSkip(
-                reason="gsea skipped: decoupler unavailable",
-                details={"method": self.name},
-            )
+            return self._skip("decoupler unavailable")
 
         results_dir.mkdir(parents=True, exist_ok=True)
         artifacts, done, skipped = [], [], []
@@ -228,10 +216,7 @@ class GseaMethod(AnalysisMethod):
             done.append(collection)
 
         if not done:
-            return MethodSkip(
-                reason="gsea skipped: no collection produced results",
-                details={"method": self.name, "skipped": skipped},
-            )
+            return self._skip("no collection produced results", skipped=skipped)
 
         return StageResult(
             adata=adata,

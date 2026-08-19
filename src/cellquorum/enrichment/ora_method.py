@@ -62,10 +62,7 @@ class OraMethod(AnalysisMethod):
         results_dir = Path(context.paths.results)
         de_path = results_dir / de_name
         if not de_path.exists():
-            return MethodSkip(
-                reason=f"ora skipped: no DE results table at {de_path}",
-                details={"method": self.name},
-            )
+            return self._skip(f"no DE results table at {de_path}")
 
         de = pd.read_csv(de_path)
         # Background universe = every gene tested by DE (the design's tested-gene
@@ -172,10 +169,7 @@ class OraMethod(AnalysisMethod):
             done.append(collection)
 
         if not done:
-            return MethodSkip(
-                reason="ora skipped: no collection/direction produced results",
-                details={"method": self.name, "skipped": skipped},
-            )
+            return self._skip("no collection/direction produced results", skipped=skipped)
 
         return StageResult(
             adata=adata,

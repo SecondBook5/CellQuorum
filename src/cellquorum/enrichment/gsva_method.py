@@ -68,10 +68,7 @@ class GsvaMethod(AnalysisMethod):
         fdr = float(config.get("fdr", 0.05))
 
         if not case or not control:
-            return MethodSkip(
-                reason="gsva skipped: case/control labels not set in config",
-                details={"method": self.name},
-            )
+            return self._skip("case/control labels not set in config")
 
         pb = aggregate_pseudobulk(
             adata, layer=counts_layer, donor_col=donor_col, condition_col=condition_col
@@ -93,9 +90,8 @@ class GsvaMethod(AnalysisMethod):
         n_case = int((meta[condition_col] == case).sum())
         n_control = int((meta[condition_col] == control).sum())
         if n_case < 2 or n_control < 2:
-            return MethodSkip(
-                reason="gsva skipped: need ≥2 pseudobulk samples per arm",
-                details={"method": self.name, "n_case": n_case, "n_control": n_control},
+            return self._skip(
+                "need ≥2 pseudobulk samples per arm", n_case=n_case, n_control=n_control
             )
 
         # Auto-promote to a paired contrast when the design is fully matched, so
@@ -117,14 +113,9 @@ class GsvaMethod(AnalysisMethod):
         try:
             import decoupler as dc
         except Exception as exc:
-            return MethodSkip(
-                reason="gsva skipped: decoupler unavailable",
-                details={"method": self.name, "error": str(exc)[:300]},
-            )
+            return self._skip("decoupler unavailable", error=str(exc)[:300])
         if dc is None:
-            return MethodSkip(
-                reason="gsva skipped: decoupler unavailable", details={"method": self.name}
-            )
+            return self._skip("decoupler unavailable")
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -245,10 +236,7 @@ class GsvaMethod(AnalysisMethod):
             done.append(collection)
 
         if not done:
-            return MethodSkip(
-                reason="gsva skipped: no collection produced results",
-                details={"method": self.name, "skipped": skipped},
-            )
+            return self._skip("no collection produced results", skipped=skipped)
 
         return StageResult(
             adata=adata,
