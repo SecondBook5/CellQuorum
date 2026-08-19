@@ -81,6 +81,13 @@ class AnalysisMethod(ABC):
         # Default: no required obs columns beyond the contract.
         return []
 
+    def _skip(self, reason: str, **details: object) -> MethodSkip:
+        """Build a recorded, non-silent MethodSkip with the method name stamped in."""
+        return MethodSkip(
+            reason=f"{self.name} skipped: {reason}",
+            details={"method": self.name, **details},
+        )
+
     def run(
         self,
         adata: ad.AnnData,
