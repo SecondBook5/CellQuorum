@@ -84,21 +84,15 @@ class HdwgcnaMethod(AnalysisMethod):
         # 3. Eligibility guards (each → MethodSkip)
         # a. Check minimum cell count
         if adata.n_obs < min_cells_total:
-            return MethodSkip(
-                reason=f"hdwgcna skipped: too few cells ({adata.n_obs} < {min_cells_total})",
-                details={
-                    "method": self.name,
-                    "n_obs": int(adata.n_obs),
-                    "min_cells_total": min_cells_total,
-                },
+            return self._skip(
+                f"too few cells ({adata.n_obs} < {min_cells_total})",
+                n_obs=int(adata.n_obs),
+                min_cells_total=min_cells_total,
             )
 
         # b. Check launcher availability
         if shutil.which(launcher) is None:
-            return MethodSkip(
-                reason=f"hdwgcna skipped: launcher '{launcher}' not found on PATH",
-                details={"method": self.name, "launcher": launcher},
-            )
+            return self._skip(f"launcher '{launcher}' not found on PATH", launcher=launcher)
 
         # c. Resolve backend from context.backend_registry
         registry = getattr(context, "backend_registry", None)
@@ -109,17 +103,11 @@ class HdwgcnaMethod(AnalysisMethod):
             except Exception:
                 backend = None
         if backend is None:
-            return MethodSkip(
-                reason="hdwgcna skipped: hdwgcna_r backend unavailable",
-                details={"method": self.name},
-            )
+            return self._skip("hdwgcna_r backend unavailable")
 
         # d. Check hdWGCNA R package availability
         if not backend._r_package_available("hdWGCNA"):
-            return MethodSkip(
-                reason="hdwgcna skipped: hdWGCNA R package unavailable",
-                details={"method": self.name},
-            )
+            return self._skip("hdWGCNA R package unavailable")
 
         # 4. Write adata to scratch h5ad
         scratch = Path(getattr(context.paths, "scratch", "."))
@@ -155,54 +143,33 @@ class HdwgcnaMethod(AnalysisMethod):
         try:
             proc = backend.run_script(HDWGCNA_R, args, timeout=timeout_seconds)
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-            return MethodSkip(
-                reason="hdwgcna skipped: R script execution failed or timed out",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("R script execution failed or timed out", error=str(exc)[:500])
 
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="hdwgcna skipped: hdWGCNA script failed",
-                details={"method": self.name, "stderr": proc.stderr.strip()[:500]},
-            )
+            return self._skip("hdWGCNA script failed", stderr=proc.stderr.strip()[:500])
 
         # 8. Check sentinel files and module results
         modules_csv = out_dir / "modules.csv"
         if not modules_csv.exists():
-            return MethodSkip(
-                reason="hdwgcna skipped: modules.csv not found",
-                details={"method": self.name},
-            )
+            return self._skip("modules.csv not found")
 
         skip_file = out_dir / "hdwgcna_SKIPPED.txt"
         if skip_file.exists():
             skip_text = skip_file.read_text().strip()
-            return MethodSkip(
-                reason=f"hdwgcna skipped: {skip_text}",
-                details={"method": self.name, "skip_file_content": skip_text},
-            )
+            return self._skip(skip_text, skip_file_content=skip_text)
 
         # Read modules and check for results
         try:
             modules_df = pd.read_csv(modules_csv)
         except Exception as exc:
-            return MethodSkip(
-                reason="hdwgcna skipped: could not read modules.csv",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("could not read modules.csv", error=str(exc)[:500])
 
         if len(modules_df) == 0:
-            return MethodSkip(
-                reason="hdwgcna skipped: no modules detected",
-                details={"method": self.name},
-            )
+            return self._skip("no modules detected")
 
         # Guard against missing 'module' column
         if "module" not in modules_df.columns:
-            return MethodSkip(
-                reason="hdwgcna skipped: modules.csv missing 'module' column",
-                details={"method": self.name},
-            )
+            return self._skip("modules.csv missing 'module' column")
 
         # 9. Render module UMAP figure if data available
         figs = []
