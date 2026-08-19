@@ -277,7 +277,7 @@ class BackendRegistry:
         return rows
 
 
-def build_default_backend_registry() -> BackendRegistry:
+def build_default_backend_registry(*, rscript_path: str = "Rscript") -> BackendRegistry:
     """
     Build the default CellQuorum backend registry.
 
@@ -286,6 +286,12 @@ def build_default_backend_registry() -> BackendRegistry:
     remain lazy, so users can install and import CellQuorum in CPU-only
     environments while still seeing R, GPU, and RAPIDS availability in planner
     output.
+
+    Args:
+        rscript_path: Path (or bare command name) used to invoke Rscript for the
+            batch Rscript backend. Threaded from ``config.r.rscript_path`` so a
+            container/HPC image that provisions R outside the default PATH is
+            actually reachable. Defaults to the bare ``"Rscript"`` on PATH.
 
     Returns:
         BackendRegistry containing Python, R, Rscript, GPU, and RAPIDS backends.
@@ -301,8 +307,8 @@ def build_default_backend_registry() -> BackendRegistry:
     # Register the in-process rpy2 backend.
     registry.register(build_r_backend())
 
-    # Register the batch/HPC-friendly Rscript backend.
-    registry.register(build_rscript_backend())
+    # Register the batch/HPC-friendly Rscript backend at the configured path.
+    registry.register(build_rscript_backend(rscript_path=rscript_path))
 
     # Register the general GPU backend.
     registry.register(build_gpu_backend())

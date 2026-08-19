@@ -244,7 +244,11 @@ def build_pipeline_context(
     paths.ensure_directories()
 
     # Use the supplied backend registry or build the default CellQuorum registry.
-    resolved_backend_registry = backend_registry or build_default_backend_registry()
+    # Thread the configured Rscript path so R availability reflects where R
+    # actually lives (e.g. a non-default container/HPC path).
+    resolved_backend_registry = backend_registry or build_default_backend_registry(
+        rscript_path=config.r.rscript_path
+    )
 
     # Choose the run identifier from config or project name.
     run_id = config.run.run_id or config.project.name

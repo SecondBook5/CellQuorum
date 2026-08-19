@@ -8,8 +8,6 @@ scDiagnostics) otherwise copy-pastes. Subclasses set ``r_package`` and call
 
 from __future__ import annotations
 
-import shutil
-
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
@@ -23,12 +21,21 @@ class RAnalysisMethod(AnalysisMethod):
     def _resolve_rscript_backend(
         self, context: object, config: dict | None = None
     ) -> tuple[object | None, MethodSkip | None]:
-        """Return (rscript_backend, None) when R is runnable, else (None, skip)."""
-        # Resolve package name with config override support
+        """Return (rscript_backend, None) when R is runnable, else (None, skip).
+
+        Availability is delegated to the resolved backend's own
+        ``_rscript_available`` primitive, which checks the backend's *configured*
+        ``rscript_path`` (threaded from ``r.rscript_path``) — the same primitive
+        ``run_script`` gates on, so the check and the execution agree. Gating on
+        a hardcoded bare ``Rscript`` on PATH instead would ignore that
+        configuration and wrongly skip whenever R lives at a non-default path —
+        the exact failure mode of the layered container image, where Rscript is
+        provisioned outside the default PATH.
+        """
+        # Resolve package name with config override support.
         pkg = (config or {}).get("r_package", self.r_package)
 
-        if shutil.which("Rscript") is None:
-            return None, self._skip("Rscript unavailable")
+        # Resolve the Rscript backend from the run's registry.
         registry = getattr(context, "backend_registry", None)
         backend = None
         if registry is not None:
@@ -38,6 +45,10 @@ class RAnalysisMethod(AnalysisMethod):
                 backend = None
         if backend is None:
             return None, self._skip("rscript backend unavailable")
+
+        # Availability honors the backend's configured rscript_path.
+        if not backend._rscript_available():
+            return None, self._skip("Rscript unavailable")
         if not backend._r_package_available(pkg):
             return None, self._skip(f"{pkg} R package unavailable", r_package=pkg)
         return backend, None

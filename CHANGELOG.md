@@ -41,6 +41,12 @@ Correctness defects that could silently produce wrong output (#168):
 - **`dimensionality` auto-`n_pcs` (#168c / #182).** `n_pcs: auto` now logs the
   selected dimensionality and warns when the knee heuristic under-selects, so an
   under-powered embedding is visible rather than silent.
+- **`r.rscript_path` now honored (#183).** The documented `r.rscript_path`
+  configuration field was dead — never threaded to the Rscript backend, and R
+  methods gated availability on a hardcoded bare `Rscript` on `PATH`. It is now
+  threaded into the default backend registry, and R methods check the backend's
+  *configured* path, so an R install outside the default `PATH` (as in the
+  layered container/HPC image) is reachable instead of silently skipped.
 
 ### Added
 

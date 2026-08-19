@@ -548,3 +548,46 @@ def test_build_default_backend_registry_status_table_contains_expected_backends(
 
         # Confirm the details dictionary exists.
         assert "details" in row
+
+
+def test_build_default_backend_registry_defaults_rscript_path() -> None:
+    """
+    Verify the default registry uses the bare ``Rscript`` command when no path
+    is threaded.
+
+    This is the baseline every current config relies on, so the default must
+    remain the bare command name resolved on PATH.
+    """
+
+    # Build the default CellQuorum backend registry with no override.
+    registry = build_default_backend_registry()
+
+    # Confirm the Rscript backend uses the bare command name.
+    assert registry.get("rscript").rscript_path == "Rscript"
+
+
+def test_build_default_backend_registry_threads_configured_rscript_path() -> None:
+    """
+    Verify a configured Rscript path is threaded onto the registered backend.
+
+    Regression guard for the dead-``r.rscript_path`` config field: a non-default
+    path (as provisioned in the layered container/HPC image) must reach the
+    Rscript backend so R availability reflects where R actually lives.
+    """
+
+    # A non-default absolute path standing in for a container/HPC R install.
+    custom = "/opt/envs/cellquorum-r/bin/Rscript"
+
+    # Build the default registry with the configured Rscript path.
+    registry = build_default_backend_registry(rscript_path=custom)
+
+    # Confirm the Rscript backend carries the configured path.
+    assert registry.get("rscript").rscript_path == custom
+
+    # Confirm the executable requirement is also keyed to the configured path so
+    # planner status output names the right binary.
+    rscript_backend = registry.get("rscript")
+    executable_reqs = [
+        req for req in rscript_backend.requirements() if req.requirement_type == "executable"
+    ]
+    assert executable_reqs and executable_reqs[0].name == custom

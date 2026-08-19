@@ -150,7 +150,11 @@ class PipelinePlanner:
         self.config = config
 
         # Store the backend registry, creating the default one when omitted.
-        self.backend_registry = backend_registry or build_default_backend_registry()
+        # Thread the configured Rscript path so R availability reflects where R
+        # actually lives (e.g. a non-default container/HPC path).
+        self.backend_registry = backend_registry or build_default_backend_registry(
+            rscript_path=config.r.rscript_path
+        )
 
     def build_plan(self) -> PipelinePlan:
         """
