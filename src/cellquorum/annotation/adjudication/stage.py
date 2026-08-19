@@ -6,9 +6,9 @@ from collections.abc import Mapping
 
 import pandas as pd
 
-from cellquorum.adjudication.adjudicate import adjudicate_cluster
-from cellquorum.adjudication.config import AdjudicationConfig
-from cellquorum.adjudication.evidence import (
+from cellquorum.annotation.adjudication.adjudicate import adjudicate_cluster
+from cellquorum.annotation.adjudication.config import AdjudicationConfig
+from cellquorum.annotation.adjudication.evidence import (
     build_cluster_evidence_table,
     cluster_evidence_to_dataframe,
 )

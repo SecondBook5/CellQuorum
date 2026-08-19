@@ -5,8 +5,8 @@ from __future__ import annotations
 import anndata as ad
 import pandas as pd
 
-from cellquorum.adjudication.adjudicate import ClusterEvidence
-from cellquorum.adjudication.config import AdjudicationConfig
+from cellquorum.annotation.adjudication.adjudicate import ClusterEvidence
+from cellquorum.annotation.adjudication.config import AdjudicationConfig
 
 
 def build_cluster_evidence_table(

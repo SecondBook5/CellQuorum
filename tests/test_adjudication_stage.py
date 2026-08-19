@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.adjudication.config import AdjudicationConfig
-from cellquorum.adjudication.evidence import build_cluster_evidence_table
-from cellquorum.adjudication.stage import AdjudicationStage
+from cellquorum.annotation.adjudication.config import AdjudicationConfig
+from cellquorum.annotation.adjudication.evidence import build_cluster_evidence_table
+from cellquorum.annotation.adjudication.stage import AdjudicationStage
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.executor import build_default_stage_registry
 from cellquorum.core.pipeline import build_pipeline_context

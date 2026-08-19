@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 # Import the adjudication configuration model.
-from cellquorum.adjudication.config import AdjudicationConfig
+from cellquorum.annotation.adjudication.config import AdjudicationConfig
 
 # Import the annotation configuration model.
 from cellquorum.annotation.config import AnnotationConfig

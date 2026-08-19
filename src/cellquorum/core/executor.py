@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 # Import adjudication stage.
-from cellquorum.adjudication.stage import AdjudicationStage
+from cellquorum.annotation.adjudication.stage import AdjudicationStage
 
 # Import annotation-consensus stage.
 from cellquorum.annotation.consensus.stage import AnnotationConsensusStage

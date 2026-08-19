@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.adjudication.adjudicate import (
+from cellquorum.annotation.adjudication.adjudicate import (
     AdjudicationResult,
     AdjudicationRuleConfig,
     ClusterEvidence,
@@ -10,8 +10,8 @@ from cellquorum.adjudication.adjudicate import (
     TaxonomyClass,
     adjudicate_cluster,
 )
-from cellquorum.adjudication.config import AdjudicationConfig
-from cellquorum.adjudication.stage import AdjudicationStage
+from cellquorum.annotation.adjudication.config import AdjudicationConfig
+from cellquorum.annotation.adjudication.stage import AdjudicationStage
 
 __all__ = [
     "AdjudicationConfig",

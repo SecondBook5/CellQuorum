@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.adjudication import ClusterEvidence, adjudicate_cluster
+from cellquorum.annotation.adjudication import ClusterEvidence, adjudicate_cluster
 
 
 def test_adjudicate_cluster_labels_reproducible_state():
