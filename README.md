@@ -2,21 +2,16 @@
 
 # CellQuorum
 
-### A reproducible single-cell RNA-seq workflow engine for publication-oriented analysis
+**A publication-grade, config-driven single-cell RNA-seq workflow engine.**
 
-CellQuorum provides a Python API, command-line interface, validated configuration system, backend-aware execution planning, standardized run outputs, and provenance tracking for advanced scRNA-seq workflows.
-
-<br>
+*One configuration file. One command. A validated, reproducible, provenance-tracked analysis — on CPU or GPU, in Python and R.*
 
 [![CI](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml/badge.svg)](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.12-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-active%20development-orange)
-![Tests](https://img.shields.io/badge/tests-1558-brightgreen)
-![Stages](https://img.shields.io/badge/stages-27%20implemented-blue)
-![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
+![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)
+![License](https://img.shields.io/badge/license-BSD--3--Clause-green)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
-![Workflow](https://img.shields.io/badge/workflow-single--cell%20RNA--seq-purple)
+![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
+![Status](https://img.shields.io/badge/status-active%20development-orange)
 
 </div>
 
@@ -24,261 +19,171 @@ CellQuorum provides a Python API, command-line interface, validated configuratio
 
 ## Overview
 
-CellQuorum is designed to make advanced single-cell RNA-seq analysis easier to run without losing reproducibility, auditability, or scientific discipline.
+CellQuorum turns an advanced single-cell RNA-seq analysis into a **single validated
+configuration file** and **one command**. It handles pairwise, factorial, and
+single-sample designs; you describe the dataset and the analysis in YAML, and the
+engine plans, validates, and executes the workflow — threading one `AnnData` object
+through every stage and recording exactly what it did.
 
-The engine provides both the execution spine and a working config-driven analysis backbone:
+The engine pairs an **execution spine** (strict configuration validation, backend
+detection, planning, provenance) with a **config-driven analysis backbone** of
+**29 stages** and **~60 selectable methods**, spanning quality control through
+gene-regulatory networks, cell-cell communication, and trajectory inference. Stages
+dispatch to Python, R/Bioconductor, or GPU backends transparently, and every stage
+boundary is guarded by **fail-loud data contracts** — a method whose inputs are
+missing *skips with a recorded reason* rather than crashing or silently emitting
+wrong results.
 
-**Execution spine**
+> **Design principle — no silent wrong answers.** Configuration is validated before
+> anything runs, data contracts are checked at every stage boundary, and skips,
+> failures, and never-run stages are recorded distinctly in machine-readable
+> provenance. If a result cannot be trusted, the run tells you.
 
-- strict YAML/Pydantic configuration validation
-- backend registry for Python, R/Rscript, GPU, and RAPIDS availability checks
-- execution planner for enabled stages and backend status
-- standardized run directory layout
-- provenance artifact writing
-- command-line interface
-- public Python API
-- pytest and pre-commit support
+## Highlights
 
-**Fail-loud data contracts** — every stage boundary validates the AnnData it
-receives (required layers/obs/embeddings, layer-provenance tags, and statistical
-sanity such as rejecting raw counts mislabeled as log-normalized). A method whose
-required inputs are absent *skips with a recorded reason* rather than crashing or
-silently producing wrong output.
+- **Config over code.** Every method is chosen in YAML (`integration.method: harmony | scvi`), so a dataset is expressed as configuration, not a script.
+- **29 stages, ~60 methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
+- **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto `rapids-singlecell`/`cupy` when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
+- **Python + R, transparently.** R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, SoupX, hdWGCNA) and isolated heavyweight backends (pySCENIC, scCODA, CellOracle) are dispatched behind one interface.
+- **Fail-loud data contracts.** Structural, layer-provenance, and statistical checks reject, for example, raw counts mislabeled as log-normalized.
+- **Reproducible & auditable.** A standardized run directory plus machine-readable provenance (resolved config, plan, backend status, environment/version stamp, artifact manifest).
+- **Two front doors.** A `cellquorum` / `cq` CLI and a `run_pipeline` Python API.
 
-**Config-driven analysis backbone** — twenty-seven registered stages run in
-best-practices order, each dispatching to a config-selected method:
+## Workflow
 
+A run validates the config, plans the enabled stages against detected backends,
+bootstraps the run directory, then executes each enabled stage in canonical order,
+propagating the updated `AnnData` downstream:
+
+```mermaid
+flowchart TD
+    IN(["config.yaml  +  AnnData / 10x matrices"])
+
+    IN --> P1
+
+    subgraph P1["1 · Preprocessing"]
+        direction TB
+        a1["ambient_correction<br/>SoupX · R"] --> a2["qc<br/>MAD · doublets · cell-cycle"] --> a3["preprocessing<br/>normalize · GPU"] --> a4["feature_selection<br/>HVG · deviance"] --> a5["dimensionality<br/>PCA · GPU"]
+    end
+
+    P1 --> P2
+
+    subgraph P2["2 · Integration &amp; clustering"]
+        direction TB
+        b1["integration<br/>Harmony · scVI"] --> b2["clustering<br/>Leiden · GPU"] --> b3["subclustering<br/>recursive · sc-SHC"]
+    end
+
+    P2 --> P3
+
+    subgraph P3["3 · Annotation"]
+        direction TB
+        c1["annotation<br/>marker-vote · CellTypist"] --> c2["consensus · diagnostics · adjudication"] --> c3["reference_mapping<br/>scArches"]
+    end
+
+    P3 --> P4
+
+    subgraph P4["4 · Embeddings"]
+        d1["embeddings<br/>UMAP · PHATE · PAGA · overlays"]
+    end
+
+    P4 --> P5
+
+    subgraph P5["5 · Differential analysis"]
+        direction TB
+        e1["differential_expression<br/>donor-aware pseudobulk · edgeR"] --> e2["differential_abundance<br/>Milo · scCODA · propeller · paired-t"] --> e3["enrichment<br/>GSEA · ORA · GSVA · decoupler"]
+    end
+
+    P5 --> P6
+    P5 --> P7
+
+    subgraph P6["6 · Gene-regulatory networks"]
+        direction TB
+        f1["coexpression<br/>hdWGCNA · R env"] --> f2["grn<br/>pySCENIC · isolated env"] --> f3["perturbation<br/>CellOracle in-silico KO"]
+    end
+
+    subgraph P7["7 · Communication &amp; trajectory"]
+        direction TB
+        g1["cell_cell_communication<br/>LIANA · Tensor-c2c · NicheNet"] --> g2["ccc_network<br/>topology · Ollivier-Ricci"] --> g3["ccc_viz"]
+        g4["trajectory<br/>scVelo RNA velocity"]
+    end
+
+    P6 --> OUT
+    P7 --> OUT
+
+    OUT(["Run directory<br/>figures · results · objects · provenance"])
 ```
-ambient_correction → qc → preprocessing → dimensionality → integration
-    → clustering → annotation → embeddings → differential_expression
-    → differential_abundance → enrichment → enrichment_viz → coexpression
-    → grn → perturbation → trajectory → cell_cell_communication → ccc_network → ccc_viz
-```
 
-Every method is chosen by config (e.g. `integration.method: harmony | scvi`),
-so a dataset is expressed as a YAML config, not code. The cell-cell
-communication track runs producer-before-consumer: `cell_cell_communication`
-produces the ligand-receptor tables, `ccc_network` derives topology and
-Ollivier-Ricci curvature from them, and `ccc_viz` renders the publication
-figures — so the full communication analysis runs end-to-end from one command.
-The `coexpression` stage discovers gene co-expression modules with hdWGCNA in
-an isolated R environment, emitting module/eigengene/hub tables plus a
-publication module-UMAP figure. The `grn` stage infers directed
-transcription-factor→target regulons with classic pySCENIC
-(GRNBoost2 → cisTarget → AUCell) in an isolated frozen environment, emitting
-adjacency/regulon/AUC tables plus RSS panels, regulon clustermaps, and a
-regulon-UMAP overlay. The `perturbation` stage runs in-silico transcription-factor knockouts with
-CellOracle in an isolated frozen environment: it infers its own simulation-ready
-GRN from counts + a built-in promoter base GRN, simulates each knockout, and emits
-a ranked therapeutic-target table (disease→healthy shift) plus KO shift-field,
-fate-redistribution, and GRN-connectivity figures. The remaining discovery slot
-(cellular potency) is planned but not yet implemented.
-
-**GPU acceleration, by default when available** — normalization (PFlog1pPF via
-cupy), PCA, and neighbors + Leiden (via rapids-singlecell) run on the GPU when
-`rapids-singlecell` + `cupy` are installed and a CUDA device is present, and fall
-back to scanpy (CPU) otherwise. A shared compute router gates on real capability
-(not merely a visible device); set `compute.backend: cpu` to force CPU. Routed
-methods produce identical output keys, so results and data contracts are
-path-independent.
-
----
-
-## Current capabilities
-
-### Engine
-
-| Capability | Status |
-|---|---:|
-| Installable Python package | Implemented |
-| CLI entry points: `cellquorum`, `cq` | Implemented |
-| Strict config validation | Implemented |
-| Backend registry (Python / R / Rscript / GPU / RAPIDS) | Implemented |
-| Execution planner + registry-driven executor | Implemented |
-| Run bootstrapper | Implemented |
-| Provenance artifacts | Implemented |
-| Public Python API | Implemented |
-| Pre-commit hooks | Implemented |
-| Fail-loud data contracts (structural + semantic-tag + statistical) | Implemented |
-| Strategy-based method registry (`AnalysisMethod` / `MethodDispatchStage`) | Implemented |
-| R/Bioconductor method execution (`run_script` adapter) | Implemented |
-| GPU-gated method execution (self-gating stages) | Implemented |
-| GPU compute routing (rapids-singlecell / cupy, GPU-by-default) | Implemented |
-
-### Analysis stages
-
-| Stage | Methods | Status |
-|---|---|---:|
-| `ambient_correction` | SoupX (R) | Implemented |
-| `qc` | MAD/fixed thresholds; Scrublet + scDblFinder doublet consensus; Tirosh cell-cycle | Implemented |
-| `preprocessing` | PFlog1pPF / log1p-CP10k normalization (layer-tagged) — GPU via cupy | Implemented |
-| `dimensionality` | PCA + scree plot + `n_pcs: auto` (knee) — GPU via rapids-singlecell | Implemented |
-| `integration` | Harmony (CPU); scVI (GPU-gated) | Implemented |
-| `clustering` | Leiden + neighbors (auto-routes onto the integration embedding) — GPU via rapids-singlecell | Implemented |
-| `annotation` | marker-vote; consensus labeling; annotation diagnostics | Implemented |
-| `feature_selection` | HVG / deviance | Implemented |
-| `subclustering` | recursive Leiden with sc-SHC significance | Implemented |
-| `population_identity` | population-level identity scoring | Implemented |
-| `reference_mapping` | scArches (optional, atlas-agnostic) | Implemented |
-| `integration_benchmark` | scIB-style integration metrics | Implemented |
-| `embeddings` | UMAP + PHATE + PAGA (incl. PAGA-on-UMAP); generic feature-overlay (genes / module scores / cell-cycle / any obs column) with opt-in MAGIC | Implemented |
-| `differential_expression` | donor-aware pseudobulk DE | Implemented |
-| `differential_abundance` | paired arcsin-sqrt t-test; Milo; scCODA; sccomp | Implemented |
-| `enrichment` | GSEA; ORA; GSVA; decoupler activity (CollecTRI / PROGENy) | Implemented |
-| `enrichment_viz` | 8 figure types over GSEA / ORA / GSVA / activity | Implemented |
-| `coexpression` | hdWGCNA gene co-expression modules (isolated R env) — module/eigengene/hub tables + module–condition correlation + module-UMAP figure | Implemented |
-| `grn` | classic pySCENIC regulon inference (GRNBoost2 → cisTarget → AUCell, isolated env) — adjacency/regulon/AUC tables + RSS panels, regulon clustermaps, per-cell clustermap, and regulon-UMAP overlay | Implemented |
-| `perturbation` | in-silico TF-knockout with CellOracle (own GRN + KO simulation, isolated env) — ranked therapeutic-target table + KO shift-field, fate-redistribution, and GRN-connectivity figures | Implemented |
-| `adjudication` | cross-method result adjudication | Implemented |
-| `cell_cell_communication` | LIANA consensus (per-sample rank_aggregate); Tensor-cell2cell decomposition; NicheNet + MultiNicheNet (ligand→target/receptor, R) | Implemented |
-| `ccc_network` | network topology (Listener/Influencer/Mediator/PageRank + comparative); Ollivier-Ricci curvature + differential curvature | Implemented |
-| `ccc_viz` | 5 figure families: dotplot, chord/circos, Sankey, curvature-colored network, summary heatmap + role facets | Implemented |
-| `trajectory` | scVelo RNA velocity (dynamical/stochastic/deterministic) per cell-lineage group, with velocyto loom ingestion + config-gated idempotent generation, velocity graph/confidence/pseudotime, and embedding-independent re-projection | Implemented (velocity; CellRank/CytoTRACE2/Palantir/viz planned) |
-
-**Note on velocity determinism:** scVelo 0.3.4's dynamical EM has an inherent ~1e-6 float-nondeterminism floor that the process-global seed cannot fully eliminate, so velocity_pseudotime is reproducible only to ~1e-3.
-
-### Verification
-
-- Test suite: **1558 tests** (`python -m pytest`). GPU tests skip in a CPU-only
-  environment and run in the `cellquorum-gpu` env.
-- **End-to-end chain tests** run the full backbone
-  (`qc → preprocessing → dimensionality → integration → clustering → annotation
-  → embeddings → differential_expression → differential_abundance → enrichment
-  → enrichment_viz`) and assert every stage's output threads to the final
-  object — on both the CPU and GPU paths — so the pipeline is verified as a
-  chain, not just stage-by-stage.
-- **Communication chain** (`cell_cell_communication → ccc_network → ccc_viz`) is
-  planned and executed in producer-before-consumer order, verified by a planner
-  ordering test plus per-stage end-to-end tests, so the ligand-receptor tables,
-  network topology/curvature, and figures are produced from a single command.
-- A skippable real-data SoupX integration test confirms ambient correction runs
-  end-to-end on Cell Ranger matrices when R + SoupX are present.
-
----
+*Phases group the canonical stage order; stages skip cleanly when disabled in the
+config or when their required inputs or backends are unavailable. Additional
+registered stages — `population_identity`, `integration_benchmark`,
+`enrichment_viz`, `de_viz`, `trajectory_viz` — run alongside the phases above.*
 
 ## Installation
 
-Clone the repository:
+CellQuorum targets Python 3.12–3.14. From a clone:
 
 ```bash
-git clone git@github.com:SecondBook5/CellQuorum.git
-cd CellQuorum
-```
+git clone https://github.com/SecondBook5/cellquorum.git
+cd cellquorum
 
-Create a development environment:
-
-```bash
+# create an environment (conda/mamba/micromamba recommended)
 mamba create -n cellquorum-dev python=3.12 -y
 mamba activate cellquorum-dev
-```
 
-Install CellQuorum in editable mode:
-
-```bash
+# install the package (with dev extras) in editable mode
 python -m pip install -e ".[dev]"
-```
 
-Install pre-commit hooks:
-
-```bash
+# optional: install pre-commit hooks
 pre-commit install
 ```
 
-Run tests:
+Optional extras: `.[r]` (rpy2 bridge for R/Bioconductor methods), `.[gpu]`
+(scvi-tools). The heavyweight and GPU stacks (RAPIDS, pySCENIC, scCODA, CellOracle,
+hdWGCNA) live in dedicated environments — see [Backends & environments](#backends--environments)
+and [`envs/README.md`](envs/README.md). A layered Docker image bakes all of them;
+see [`docs/docker.md`](docs/docker.md).
+
+## Quickstart
 
 ```bash
-pytest
-```
-
-Run repository checks:
-
-```bash
-pre-commit run --all-files
-```
-
----
-
-## Quick start
-
-Show CLI help:
-
-```bash
-cellquorum
-```
-
-Show the installed version:
-
-```bash
-cellquorum --version
-```
-
-Build an execution plan:
-
-```bash
+# 1. inspect the execution plan for a config (which stages run, on which backends)
 cellquorum plan --config configs/config.yaml
-```
 
-Build an execution plan as JSON:
+# 2. run the full pipeline into a run directory
+cellquorum run --config configs/config.yaml --output-dir runs/example_run
 
-```bash
+# initialize the run directory + provenance without executing stages
+cellquorum run --config configs/config.yaml --output-dir runs/example_run --bootstrap-only
+
+# machine-readable output for either command
 cellquorum plan --config configs/config.yaml --json
 ```
 
-Initialize a CellQuorum run:
-
-```bash
-cellquorum run \
-  --config configs/config.yaml \
-  --output-dir runs/example_run
-```
-
-Initialize a run and print a JSON summary:
-
-```bash
-cellquorum run \
-  --config configs/config.yaml \
-  --output-dir runs/example_run \
-  --json
-```
-
-`cellquorum run` initializes the execution frame, writes provenance artifacts, and executes every enabled stage in the registry-driven executor, threading the AnnData object from stage to stage.
-
----
-
-## Python API
-
-```python
-from cellquorum import run_pipeline
-
-result = run_pipeline(
-    config="configs/config.yaml",
-    output_dir="runs/example_run",
-)
-
-print(result.context.paths.root)
-print(result.context.paths.provenance)
-print(result.plan.enabled_stage_names())
-```
-
-`run_pipeline` accepts:
-
-| Input type | Example |
-|---|---|
-| YAML config path | `"configs/config.yaml"` |
-| validated config object | `CellQuorumConfig(...)` |
-| dictionary config | `{"project": {"name": "my_project"}}` |
-
----
+`cellquorum run` validates the config, writes provenance, then executes every
+enabled stage, threading the `AnnData` object from stage to stage and recording a
+structured success / skip / failure for each.
 
 ## Configuration
 
-The default configuration is:
+A dataset and its analysis are described entirely in YAML and validated by a strict
+Pydantic schema (`extra = "forbid"` — unknown keys are rejected). The top-level
+sections:
 
-```text
-configs/config.yaml
-```
+| Section | Configures |
+|---|---|
+| `project` | name, organism, `species_id` |
+| `paths` | `data_root`, `run_root`, `scratch_root`, manifest, `output_dir` |
+| `input` | input `.h5ad` path, counts layer, optional subset |
+| `run` | profile, `run_id`, `random_seed`, `resume`, overwrite, logging |
+| `compute` | `backend` (`auto`/`cpu`/`gpu`), `prefer_gpu`, `fallback_to_cpu`, `n_jobs` |
+| `r` | R/Rscript backend preference, `rscript_path`, timeout |
+| `report` | HTML / Markdown / PDF report toggles |
+| `stages` | per-stage enable flags |
+| *per-stage blocks* | one block per stage (e.g. `integration:`, `enrichment:`) selecting the method and its parameters |
+| `markers`, `cohort`, `design`, `contrasts` | marker panels, obs-key schema, experimental design, named case/control contrasts |
 
-A minimal example:
+Every section has defaults, so a minimal config is small. A method is chosen per
+stage with a `method:` (or `methods:`) key inside that stage's block:
 
 ```yaml
 project:
@@ -286,258 +191,220 @@ project:
   organism: human
   species_id: 9606
 
-paths:
-  data_root: /mnt/e/CellQuorumData
-  run_root: /mnt/e/CellQuorumRuns
-  scratch_root: /mnt/e/CellQuorumScratch
-  manifest: null
-  output_dir: null
-
-run:
-  profile: standard
-  run_id: null
-  random_seed: 1337
-  overwrite: false
-
 compute:
-  backend: auto
+  backend: auto        # prefer GPU when a capable device is present, else CPU
   prefer_gpu: true
   fallback_to_cpu: true
-  n_jobs: 1
 
-r:
-  enabled: true
-  preferred_backend: auto
-  fallback_to_rscript: true
-  rscript_path: Rscript
-  timeout_seconds: 30
-
-report:
-  enabled: true
-  html: true
-  markdown: true
-  pdf: false
-  fail_on_report_error: false
-
-stages:
-  qc: true
+stages:                # enable/disable stages (all default true except
+  qc: true             # ambient_correction and integration_gate)
   preprocessing: true
+  dimensionality: true
   integration: true
+  clustering: true
   annotation: true
-  state_scoring: true
-  discovery: true
-  subclustering: true
-  composition: true
   differential_expression: true
-  molecular_inference: true
-  cell_cell_communication: true
-  network_analysis: true
+  differential_abundance: true
+  enrichment: true
+
+integration:
+  method: harmony      # or: scvi
+
+differential_abundance:
+  method: milo         # or: sccoda | propeller | proportion_ttest
 ```
 
-Stage flags define whether a stage is allowed to run. Individual methods are still expected to pass data, metadata, backend, and statistical validity checks before execution.
+See [`docs/configuration.md`](docs/configuration.md) for the full section-by-section
+reference, and `configs/config.yaml` for a complete example.
 
----
+## Analysis stages
 
-## Output layout
+Each stage validates its input contract, dispatches to the config-selected method,
+and records the outcome. Stages marked *isolated env* run as subprocesses in a
+dedicated environment; *R* methods run over the Rscript/rpy2 bridge.
 
-A run initialized with:
+| Stage | Methods | Backend |
+|---|---|---|
+| `ambient_correction` | SoupX | R |
+| `qc` | MAD/fixed thresholds; Scrublet + scDblFinder doublet consensus; Tirosh cell-cycle | Python (+R) |
+| `preprocessing` | PFlog1pPF / log1p-CP10k normalization (layer-tagged) | Python · GPU |
+| `feature_selection` | HVG; Seurat v3; Pearson-residuals/deviance | Python |
+| `dimensionality` | PCA + scree + `n_pcs: auto` (knee, logged) | Python · GPU |
+| `integration` | Harmony (CPU); scVI (GPU-gated) | Python · GPU |
+| `clustering` | Leiden + neighbors on the integrated embedding | Python · GPU |
+| `subclustering` | recursive Leiden with sc-SHC significance | Python |
+| `annotation` (+ consensus, diagnostics, adjudication) | marker-vote; CellTypist; passthrough; scDiagnostics | Python (+R) |
+| `reference_mapping` | scArches (atlas-agnostic) | Python |
+| `integration_benchmark` | scIB-style metrics | Python |
+| `population_identity` | population-level identity scoring | Python |
+| `embeddings` | UMAP + PHATE + PAGA (incl. PAGA-on-UMAP); feature/score overlays with opt-in MAGIC | Python |
+| `differential_expression` (+ `de_viz`) | donor-aware pseudobulk (edgeR); volcano | R |
+| `differential_abundance` | paired arcsin-sqrt t-test; Milo; scCODA; propeller | Python + R + isolated env |
+| `enrichment` (+ `enrichment_viz`) | GSEA; ORA; GSVA; decoupler activity (CollecTRI/PROGENy) | Python |
+| `coexpression` | hdWGCNA co-expression modules | isolated R env |
+| `grn` | pySCENIC regulons (GRNBoost2 → cisTarget → AUCell) | isolated env |
+| `perturbation` | CellOracle in-silico TF knockouts (ranked target table) | isolated env |
+| `cell_cell_communication` | LIANA consensus; Tensor-cell2cell; NicheNet + MultiNicheNet | Python + R |
+| `ccc_network` | topology (roles + PageRank); Ollivier-Ricci curvature | Python |
+| `ccc_viz` | dotplot / chord / Sankey / curvature-network / summary | Python |
+| `trajectory` (+ `trajectory_viz`) | scVelo RNA velocity per lineage (velocyto loom ingestion) | Python |
 
-```bash
-cellquorum run --config configs/config.yaml --output-dir runs/example_run
-```
+Five further slots (`integration_gate`, `state_scoring`, `discovery`, `composition`,
+`molecular_inference`) are reserved in the planner and skip as *not yet implemented*.
 
-creates:
+## Backends & environments
 
-```text
-runs/example_run/
-├── figures/
-├── logs/
-├── objects/
-├── provenance/
-│   ├── artifact_manifest.csv
-│   ├── backend_status.csv
-│   ├── backend_status.json
-│   ├── pipeline_plan.json
-│   ├── planner_warnings.json
-│   ├── resolved_config.json
-│   ├── run_metadata.json
-│   └── stage_plan.csv
-├── reports/
-├── results/
-└── scratch/
-```
+CellQuorum uses layered environments to isolate incompatible dependency stacks.
+Backend availability is detected at runtime and reported in provenance; an absent
+backend causes the affected method to skip with a reason, never to crash the run.
 
----
+**Primary environments:** `cellquorum-core` (main runtime + CLI), `cellquorum-dev`
+(adds test/lint/build tooling), `cellquorum-gpu` (CUDA PyTorch + scvi-tools + RAPIDS),
+`cellquorum-r` (Seurat, zellkonverter, rpy2, anndata2ri).
 
-## Provenance
+**Isolated backend environments** (invoked as subprocesses; names are hardcoded in
+the dispatch code, so create them exactly as named):
 
-CellQuorum writes machine-readable provenance before analysis begins.
+| Environment | Powers | Why isolated |
+|---|---|---|
+| `pyscenic_env` | `grn` (pySCENIC) | pins `numpy`/`pandas`/`setuptools` incompatible with the core stack |
+| `hdwgcna_env` | `coexpression` (hdWGCNA) | R + Seurat/WGCNA stack |
+| `sccoda_env` | `differential_abundance` (scCODA) | older scipy/tensorflow pins |
+| `celloracle_env` | `perturbation` (CellOracle) | dependency isolation for reproducibility |
+| `scclr` | `preprocessing`/`dimensionality` (sparse PFlog1pPF + PCA) | pins `anndata<0.11`, Python ≤ 3.13 |
+
+R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, MultiNicheNet,
+scDiagnostics) run over the Rscript/rpy2 bridge through one shared abstraction
+(`cellquorum.methods.r_method.RAnalysisMethod`). See
+[`docs/backends.md`](docs/backends.md) and [`envs/README.md`](envs/README.md) for
+setup and `make lock` for pinned environments.
+
+## GPU acceleration
+
+Normalization (PFlog1pPF via cupy), PCA, and neighbors + Leiden (via
+`rapids-singlecell`) run on the GPU when `rapids-singlecell` + `cupy` are installed
+and a CUDA device is present, and fall back to scanpy on CPU otherwise. A shared
+compute router gates on **real capability** — not merely a visible device — and
+routed methods produce identical output keys on both paths, so results and data
+contracts are path-independent. Set `compute.backend: cpu` to force CPU.
+
+## Reproducibility & provenance
+
+Before analysis begins, CellQuorum writes machine-readable provenance into
+`<run>/provenance/`:
 
 | File | Purpose |
 |---|---|
-| `resolved_config.json` | validated runtime configuration |
-| `pipeline_plan.json` | enabled/disabled stage plan and backend summary |
-| `stage_plan.csv` | tabular stage-level execution plan |
-| `backend_status.json` | structured backend availability report |
-| `backend_status.csv` | tabular backend availability report |
+| `resolved_config.json` | the validated, fully-resolved runtime configuration |
+| `pipeline_plan.json` / `stage_plan.csv` | enabled / skipped / unimplemented stage plan |
+| `backend_status.json` / `.csv` | detected backend availability |
 | `planner_warnings.json` | planner warnings |
-| `run_metadata.json` | run identity, paths, profile, seed, and metadata |
-| `artifact_manifest.csv` | index of generated artifacts |
+| `run_metadata.json` | run identity, paths, profile, seed, environment/version stamp |
+| `artifact_manifest.csv` | index of every generated artifact |
 
----
+A run directory has a fixed layout:
+
+```text
+runs/example_run/
+├── figures/      ├── objects/      ├── reports/      ├── results/
+├── logs/         ├── provenance/   └── scratch/
+```
+
+Opt-in resume (`run.resume: true`) skips a side-effect-only stage whose prior
+completion fingerprint matches the current input and whose artifacts still exist.
+
+## Python API
+
+```python
+from cellquorum import run_pipeline
+
+result = run_pipeline(
+    config="configs/config.yaml",     # path, dict, or CellQuorumConfig
+    output_dir="runs/example_run",
+)
+
+print(result.context.paths.root)           # the run directory
+print(result.plan.enabled_stage_names())   # stages the plan enabled
+
+# execution_result is populated when execute=True (the default)
+if result.execution_result is not None:
+    print(result.execution_result.succeeded_stage_names())
+    print(result.execution_result.skipped_stage_names())
+```
+
+`run_pipeline` accepts a YAML config path, a validated `CellQuorumConfig`, or a
+plain `dict`, and returns a `PipelineRunResult` with `config`, `plan`, `context`,
+`artifacts`, and (for executed runs) `execution_result`.
+
+## CLI reference
+
+The `cellquorum` (alias `cq`) command exposes:
+
+| Command | Purpose | Key options |
+|---|---|---|
+| `cellquorum --version` | print the installed version | |
+| `cellquorum plan` | build and display the execution plan | `--config/-c`, `--json` |
+| `cellquorum run` | execute a pipeline run | `--config/-c`, `--output-dir/-o`, `--bootstrap-only`, `--json`, `--quiet/-q` |
+
+A separate `gen-configs run` command expands a hypothesis manifest into
+per-`(hypothesis, cell_type)` configs plus an accounting file:
+
+```bash
+gen-configs run --manifest hypotheses.yaml --template template.yaml --out-dir generated/
+```
 
 ## Architecture
 
-```text
-YAML config
-   │
-   ▼
-Pydantic validation
-   │
-   ▼
-Backend registry ───────► backend availability report
-   │
-   ▼
-Pipeline planner ───────► stage plan
-   │
-   ▼
-Run bootstrapper
-   │
-   ├── standardized directories
-   ├── resolved config
-   ├── pipeline plan
-   ├── backend status
-   ├── run metadata
-   └── artifact manifest
-   │
-   ▼
-Registry-driven executor
-   │  for each planned + enabled stage:
-   ├── resolve config sub-block
-   ├── validate input data contract (fail-loud)
-   ├── dispatch to config-selected method (skip-with-reason if inputs absent)
-   ├── thread updated AnnData to the next stage
-   └── record structured success / skip / failure
+```mermaid
+flowchart LR
+    CFG([YAML config]) --> VAL[Pydantic validation]
+    VAL --> REG[Backend registry]
+    REG --> PLAN[Execution planner]
+    PLAN --> BOOT[Run bootstrapper]
+    BOOT --> EXEC[Registry-driven executor]
+    EXEC -->|per stage| DC{Input contract valid?}
+    DC -->|yes| M[Dispatch config-selected method]
+    DC -->|no| SK[Skip with recorded reason]
+    M --> THREAD[Thread updated AnnData onward]
+    REG -.-> PROV[(Provenance)]
+    PLAN -.-> PROV
+    EXEC -.-> PROV
 ```
 
----
+The source is organized into 18 packages under `src/cellquorum/`: `core` (context,
+planner, executor, contracts, provenance), `config`, `methods` (dispatch + shared
+abstractions), `backends`, the stage packages (`qc`, `preprocessing`, `clustering`,
+`integration`, `annotation`, `differential_expression`, `differential_abundance`,
+`enrichment`, `gene_regulation`, `cell_cell_communication`, `trajectory`), plus
+`io`, `visualization`, and `cli`. See [`docs/architecture.md`](docs/architecture.md).
 
-## Workflow spine
-
-Stages marked ✅ are implemented and run today; ◐ are partially implemented;
-⏳ are planned slots the planner already reserves.
-
-```text
-✅ ambient correction (SoupX)
-✅ quality control (MAD/doublet-consensus/cell-cycle)
-✅ preprocessing (normalization, layer-tagged)
-✅ feature selection (HVG / deviance)
-✅ dimensionality reduction (PCA + scree + auto n_pcs)
-✅ integration (Harmony / scVI) + integration benchmark (scIB-style)
-✅ clustering (Leiden) + recursive subclustering (sc-SHC)
-✅ annotation (marker-vote / consensus / diagnostics)
-✅ reference mapping (scArches, optional/atlas-agnostic)
-✅ embeddings (UMAP + PHATE + PAGA, feature-overlay + opt-in MAGIC)
-✅ differential expression (donor-aware pseudobulk)
-✅ differential abundance (paired t-test / Milo / scCODA / sccomp)
-✅ enrichment (GSEA / ORA / GSVA / decoupler activity)
-✅ enrichment visualization (8 figure types)
-✅ co-expression modules (hdWGCNA, isolated R env; module-UMAP figure)
-✅ regulon inference (pySCENIC; RSS / clustermap / regulon-UMAP figures)
-✅ cell-cell communication (LIANA consensus + Tensor-cell2cell + NicheNet / MultiNicheNet)
-✅ communication network topology + Ollivier-Ricci curvature (ccc_network)
-✅ communication visualization (dotplot / chord / Sankey / curvature-network / summary)
-◐ gene-regulatory networks — ✅ co-expression modules (hdWGCNA); ✅ regulon/GRN inference (pySCENIC); ✅ in-silico perturbation (CellOracle; ranked-target + KO shift-field figures)
-✅ trajectory / potency — RNA velocity (scVelo); CellRank / CytoTRACE 2 / Palantir / viz planned
-⏳ report generation (auto methods text)
-```
-
----
-
-## Planned analysis modules
-
-The full scientific and engineering plan is preserved in
-[`docs/SCIENTIFIC_ENGINEERING_PLAN.md`](docs/SCIENTIFIC_ENGINEERING_PLAN.md).
-The active implementation roadmap is tracked in
-[`docs/ROADMAP.md`](docs/ROADMAP.md), which records current working
-capabilities, the production QC output contract, highest-priority engineering
-work, and the scientific module backlog.
-
-CellQuorum is being built toward advanced scRNA-seq analysis layers, including:
-
-| Layer | Examples |
-|---|---|
-| QC and preprocessing | MAD-based QC, mitochondrial/ribosomal/hemoglobin checks, doublet detection, ambient RNA audit |
-| Annotation | marker-based annotation, reference-assisted annotation, consensus labeling |
-| State scoring | cell cycle, senescence, stress, hypoxia, EMT, fibrosis, inflammation, immune polarization |
-| Differential analysis | donor-aware pseudobulk DE, differential abundance, subcluster DE |
-| Molecular inference | GSEA, pathway activity, TF activity, master regulators |
-| Regulatory networks | GRN inference, VIPER/DoRothEA-style activity, regulator-target networks |
-| Communication | ligand-receptor and ligand-target analysis |
-| Protein/network analysis | STRINGdb, PPI networks, centrality, robustness, curvature |
-| Optional advanced modeling | trajectory, transport, perturbation, lineage, generative models |
-
----
-
-## Development workflow
-
-Run tests:
+## Development
 
 ```bash
-pytest
+pytest                        # full test suite
+pre-commit run --all-files    # ruff + hooks
+cellquorum plan --config configs/config.yaml   # CLI smoke check
 ```
 
-Run pre-commit:
+GPU-marked tests skip on CPU-only machines and run in `cellquorum-gpu`; R-marked
+tests require an Rscript + Bioconductor backend. Markers: `gpu`, `slow`, `r`,
+`integration`.
 
-```bash
-pre-commit run --all-files
-```
+## Documentation
 
-Run CLI smoke checks:
+- [`docs/index.md`](docs/index.md) — documentation home
+- [`docs/architecture.md`](docs/architecture.md) — engine design and execution model
+- [`docs/configuration.md`](docs/configuration.md) — configuration reference
+- [`docs/backends.md`](docs/backends.md) — backends and environments
+- [`docs/docker.md`](docs/docker.md) · [`docs/snakemake.md`](docs/snakemake.md) — containerized and orchestrated runs
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`docs/SCIENTIFIC_ENGINEERING_PLAN.md`](docs/SCIENTIFIC_ENGINEERING_PLAN.md) — roadmap and full plan
+- [`CHANGELOG.md`](CHANGELOG.md)
 
-```bash
-cellquorum --version
-cellquorum plan --config configs/config.yaml
-cellquorum run --config configs/config.yaml --output-dir /tmp/cellquorum_test_run
-```
+## Citing
 
-Check repository status:
-
-```bash
-git status -sb
-```
-
----
-
-## Repository status
-
-CellQuorum is in early development. The execution spine is implemented and tested.
-
-Implemented:
-
-- package scaffold
-- strict config validation
-- backend registry
-- planner
-- CLI `plan`
-- CLI `run`
-- public Python API
-- standardized run directory layout
-- provenance artifact writing
-- smoke tests
-- pre-commit hooks
-
-Next milestones:
-
-1. manifest schema and validation
-2. stage lifecycle records
-3. QC-safe single-cell core
-4. preprocessing stage
-5. report skeleton
-6. method-gated advanced analysis modules
-
----
+If you use CellQuorum in your research, please cite it using the metadata in
+[`CITATION.cff`](CITATION.cff).
 
 ## License
 
-MIT License.
+BSD 3-Clause License. See [`LICENSE`](LICENSE).

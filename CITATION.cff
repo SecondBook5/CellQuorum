@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use CellQuorum in your research, please cite it as below."
+title: CellQuorum
+abstract: >-
+  A publication-grade, config-driven single-cell RNA-seq workflow engine with
+  Python, R/Bioconductor, and GPU backends. A single validated configuration
+  file and one command run a provenance-tracked analysis spanning quality
+  control, integration, annotation, differential expression and abundance,
+  enrichment, gene-regulatory networks, cell-cell communication, and trajectory
+  inference.
+type: software
+authors:
+  - given-names: AJ
+    family-names: Book
+license: BSD-3-Clause
+repository-code: "https://github.com/SecondBook5/cellquorum"
+url: "https://github.com/SecondBook5/cellquorum"
+version: 0.1.0
+keywords:
+  - single-cell
+  - scRNA-seq
+  - anndata
+  - scanpy
+  - bioinformatics
+  - workflow
+  - bioconductor
+  - reproducibility
+  - gpu

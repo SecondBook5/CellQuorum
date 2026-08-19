@@ -1,7 +1,11 @@
 # syntax=docker/dockerfile:1
 
 ########## base: core env + package ##########
-FROM mambaorg/micromamba:1.5.8 AS base
+# The base image is digest-pinned for reproducibility: a tag alone is mutable, so
+# the digest below (the multi-arch manifest list for mambaorg/micromamba:1.5.8)
+# freezes the exact contents while the tag stays human-readable. Refresh it with:
+#   docker buildx imagetools inspect mambaorg/micromamba:1.5.8
+FROM mambaorg/micromamba:1.5.8@sha256:475730daef12ff9c0733e70092aeeefdf4c373a584c952dac3f7bdb739601990 AS base
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 WORKDIR /opt/cellquorum
 COPY --chown=$MAMBA_USER:$MAMBA_USER envs/cellquorum-core.yml /tmp/core.yml
