@@ -43,28 +43,19 @@ class CellTypistMethod(AnalysisMethod):
 
         # No model configured -> skip (a model is a required asset, not a default).
         if not model:
-            return MethodSkip(
-                reason="celltypist skipped: no model configured (annotation.model)",
-                details={"method": self.name},
-            )
+            return self._skip("no model configured (annotation.model)")
 
         # Import + load the model lazily; a missing package/model is a graceful skip.
         try:
             import celltypist
             from celltypist import annotate
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"celltypist skipped: import failed ({type(exc).__name__})",
-                details={"method": self.name, "error": str(exc)[:120]},
-            )
+            return self._skip(f"import failed ({type(exc).__name__})", error=str(exc)[:120])
         try:
             # Resolve the model (name -> downloaded/cached, or a filesystem path).
             loaded_model = celltypist.models.Model.load(model)
         except Exception as exc:  # noqa: BLE001
-            return MethodSkip(
-                reason=f"celltypist skipped: model '{model}' unavailable",
-                details={"method": self.name, "error": str(exc)[:120]},
-            )
+            return self._skip(f"model '{model}' unavailable", error=str(exc)[:120])
 
         # Build the CP10k-log space CellTypist expects, FROM COUNTS, on a copy.
         work = adata.copy()
