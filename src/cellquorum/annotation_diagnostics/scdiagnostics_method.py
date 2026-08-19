@@ -12,7 +12,8 @@ import pandas as pd
 from cellquorum.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumBackendError
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.methods.base import MethodSkip
+from cellquorum.methods.r_method import RAnalysisMethod
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 _SCDIAGNOSTICS_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "scdiagnostics.R"
 
 
-class ScdiagnosticsMethod(AnalysisMethod):
+class ScdiagnosticsMethod(RAnalysisMethod):
     """scDiagnostics annotation-confidence diagnostics (query-only or query+ref).
 
     Runs scDiagnostics R functions to assess annotation confidence:
@@ -34,7 +35,7 @@ class ScdiagnosticsMethod(AnalysisMethod):
 
     name = "scdiagnostics"
     stage_category = "annotation_diagnostics"
-    backend = "rscript"
+    r_package = "scDiagnostics"
 
     def input_contract(self, config: dict) -> DataContract:
         """
@@ -74,7 +75,6 @@ class ScdiagnosticsMethod(AnalysisMethod):
         context: object,
     ) -> StageResult | MethodSkip:
         """Execute scDiagnostics via R; return read-only diagnostics."""
-        import shutil
 
         # Resolve config fields.
         cell_type_col = config.get("cell_type_col", "cell_type")
@@ -100,28 +100,10 @@ class ScdiagnosticsMethod(AnalysisMethod):
                 scratch=scratch,
             )
 
-        # Check Rscript availability BEFORE backend registry (mirrors SoupX).
-        if shutil.which("Rscript") is None:
-            return MethodSkip(
-                reason="annotation_diagnostics skipped: Rscript unavailable",
-                details={"method": self.name},
-            )
-
-        # Resolve the Rscript backend from the context registry.
-        backend = self._resolve_rscript_backend(context)
-        if backend is None:
-            return MethodSkip(
-                reason="scdiagnostics skipped: rscript backend unavailable",
-                details={"method": self.name},
-            )
-
-        # Check scDiagnostics R package availability (FIX 2 + FIX 6).
-        r_package = config.get("r_package", "scDiagnostics")
-        if not backend._r_package_available(r_package):
-            return MethodSkip(
-                reason=f"annotation_diagnostics skipped: {r_package} R package " "unavailable",
-                details={"method": self.name, "r_package": r_package},
-            )
+        # Rscript + backend + package guards (hoisted to RAnalysisMethod).
+        backend, skip = self._resolve_rscript_backend(context, config)
+        if skip is not None:
+            return skip
 
         # Write query h5ad (lognorm layer + X_pca + cell_type).
         query_h5ad = scratch / "scdiag_query.h5ad"
@@ -229,16 +211,6 @@ class ScdiagnosticsMethod(AnalysisMethod):
                 "reference_used": ref_arg != "NONE",
             },
         )
-
-    def _resolve_rscript_backend(self, context: object) -> object | None:
-        """Return the Rscript backend from context registry, or None."""
-        registry = getattr(context, "backend_registry", None)
-        if registry is None:
-            return None
-        try:
-            return registry.get("rscript")
-        except Exception:
-            return None
 
     def _run_probability_entropy_only(
         self,
