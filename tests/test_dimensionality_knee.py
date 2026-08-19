@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from cellquorum.preprocessing.dimensionality.knee import select_n_pcs
+from cellquorum.preprocessing.dimensionality.pca import select_n_pcs
 
 
 def test_selects_elbow_on_clear_knee():
