@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from cellquorum.gene_regulation.perturbation.stage import PerturbationStage
 from cellquorum.methods.registry import METHOD_REGISTRY
-from cellquorum.perturbation.stage import PerturbationStage
 
 
 def test_stage_identity() -> None:
@@ -19,6 +19,6 @@ def test_selects_celloracle_by_default() -> None:
 
 
 def test_method_is_registered_on_import() -> None:
-    import cellquorum.perturbation  # noqa: F401
+    import cellquorum.gene_regulation.perturbation  # noqa: F401
 
     assert METHOD_REGISTRY.has("perturbation", "celloracle")

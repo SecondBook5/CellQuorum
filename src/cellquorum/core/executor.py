@@ -77,6 +77,7 @@ from cellquorum.enrichment.stage import EnrichmentStage
 from cellquorum.enrichment.viz.stage import EnrichmentVizStage
 from cellquorum.gene_regulation.coexpression.stage import CoexpressionStage
 from cellquorum.gene_regulation.grn.stage import GrnStage
+from cellquorum.gene_regulation.perturbation.stage import PerturbationStage
 
 # Import integration-benchmark evaluation stage.
 from cellquorum.integration.benchmark.stage import IntegrationBenchmarkStage
@@ -86,7 +87,6 @@ from cellquorum.integration.embeddings.stage import EmbeddingsStage
 
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage
-from cellquorum.perturbation.stage import PerturbationStage
 from cellquorum.preprocessing.dimensionality.stage import DimensionalityStage
 
 # Import feature selection stage.

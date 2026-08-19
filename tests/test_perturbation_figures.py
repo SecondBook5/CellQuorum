@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from cellquorum.perturbation import perturbation_figures as pf
+from cellquorum.gene_regulation.perturbation import perturbation_figures as pf
 
 
 def _ranking(n: int = 25) -> pd.DataFrame:

@@ -72,6 +72,9 @@ from cellquorum.gene_regulation.coexpression.config import CoexpressionConfig
 # Import the GRN configuration model.
 from cellquorum.gene_regulation.grn.config import GrnConfig
 
+# Import the perturbation configuration model.
+from cellquorum.gene_regulation.perturbation.config import PerturbationConfig
+
 # Import the integration-benchmark configuration model.
 from cellquorum.integration.benchmark.config import IntegrationBenchmarkConfig
 
@@ -80,9 +83,6 @@ from cellquorum.integration.config import IntegrationConfig
 
 # Import the embeddings configuration model.
 from cellquorum.integration.embeddings.config import EmbeddingsConfig
-
-# Import the perturbation configuration model.
-from cellquorum.perturbation.config import PerturbationConfig
 
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
