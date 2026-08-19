@@ -77,15 +77,11 @@ class CellOracleMethod(AnalysisMethod):
 
         # 3. Guards -> MethodSkip
         if adata.n_obs < min_cells_total:
-            return MethodSkip(
-                reason=f"celloracle skipped: too few cells ({adata.n_obs} < {min_cells_total})",
-                details={"method": self.name, "n_obs": int(adata.n_obs)},
+            return self._skip(
+                f"too few cells ({adata.n_obs} < {min_cells_total})", n_obs=int(adata.n_obs)
             )
         if shutil.which(launcher) is None:
-            return MethodSkip(
-                reason=f"celloracle skipped: launcher '{launcher}' not found on PATH",
-                details={"method": self.name, "launcher": launcher},
-            )
+            return self._skip(f"launcher '{launcher}' not found on PATH", launcher=launcher)
         registry = getattr(context, "backend_registry", None)
         backend = None
         if registry is not None:
@@ -94,19 +90,13 @@ class CellOracleMethod(AnalysisMethod):
             except Exception:
                 backend = None
         if backend is None:
-            return MethodSkip(
-                reason="celloracle skipped: celloracle backend unavailable",
-                details={"method": self.name},
-            )
+            return self._skip("celloracle backend unavailable")
         try:
             module_ok = backend._py_module_available("celloracle")
         except Exception:
             module_ok = False
         if not module_ok:
-            return MethodSkip(
-                reason="celloracle skipped: celloracle module unavailable in env",
-                details={"method": self.name},
-            )
+            return self._skip("celloracle module unavailable in env")
 
         # 4. Write counts h5ad to scratch
         scratch = Path(getattr(context.paths, "scratch", "."))
@@ -159,45 +149,26 @@ class CellOracleMethod(AnalysisMethod):
         try:
             proc = backend.run_script(CELLORACLE_KO_PY, ko_args, timeout=timeout_seconds)
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-            return MethodSkip(
-                reason="celloracle skipped: KO script execution failed or timed out",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("KO script execution failed or timed out", error=str(exc)[:500])
         if proc.returncode != 0:
-            return MethodSkip(
-                reason="celloracle skipped: KO script failed",
-                details={
-                    "method": self.name,
-                    "stderr": str(getattr(proc, "stderr", "")).strip()[:500],
-                },
+            return self._skip(
+                "KO script failed", stderr=str(getattr(proc, "stderr", "")).strip()[:500]
             )
 
         ranking_csv = out_dir / "perturbation_ranking.csv"
         failed_marker = out_dir / f"perturbation_FAILED_{tag}.txt"
         skip_marker = out_dir / f"perturbation_SKIPPED_{tag}.txt"
         if failed_marker.exists():
-            return MethodSkip(
-                reason=f"celloracle skipped: {failed_marker.read_text().strip()[:300]}",
-                details={"method": self.name},
-            )
+            return self._skip(failed_marker.read_text().strip()[:300])
         if skip_marker.exists():
-            return MethodSkip(
-                reason=f"celloracle skipped: {skip_marker.read_text().strip()[:300]}",
-                details={"method": self.name},
-            )
+            return self._skip(skip_marker.read_text().strip()[:300])
         if not ranking_csv.exists():
-            return MethodSkip(
-                reason="celloracle skipped: no ranking produced",
-                details={"method": self.name},
-            )
+            return self._skip("no ranking produced")
 
         try:
             ranking = pd.read_csv(ranking_csv)
         except Exception as exc:
-            return MethodSkip(
-                reason="celloracle skipped: could not read ranking CSV",
-                details={"method": self.name, "error": str(exc)[:500]},
-            )
+            return self._skip("could not read ranking CSV", error=str(exc)[:500])
 
         # 6. Figures (in cellquorum env) — never let one failure sink the stage
         notes: list[str] = []
