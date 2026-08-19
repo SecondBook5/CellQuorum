@@ -7,7 +7,7 @@ from pathlib import Path
 
 import anndata as ad
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.integration.embeddings import compute, overlay, plots
 from cellquorum.integration.embeddings.config import MagicConfig, OverlayConfig

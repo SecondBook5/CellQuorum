@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.stage_base import MethodDispatchStage
 

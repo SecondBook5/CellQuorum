@@ -17,9 +17,9 @@ import numpy as np
 import scipy.sparse as sp
 
 from cellquorum.config.base import StrictBaseModel
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.layer_tags import get_layer_tag, get_normalization_recipe
-from cellquorum.contracts.statistical import (
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import get_layer_tag, get_normalization_recipe
+from cellquorum.core.contracts.statistical import (
     assert_integer_valued,
     assert_log_range,
     assert_non_integer_or_zero,

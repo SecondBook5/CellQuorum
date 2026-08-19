@@ -10,7 +10,7 @@ import pandas as pd
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.differential_abundance.aggregation import aggregate_celltype_counts
 from cellquorum.methods.base import AnalysisMethod, MethodSkip

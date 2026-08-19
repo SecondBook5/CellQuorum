@@ -15,7 +15,7 @@ from pathlib import Path
 
 import anndata as ad
 
-from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.qc.ambient.soupx import (
     corrected_output_exists,

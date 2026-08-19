@@ -7,7 +7,7 @@ from pathlib import Path
 import anndata as ad
 
 from cellquorum.config.design import DesignConfig, validate_design_against_obs
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.differential_expression.pseudobulk import aggregate_pseudobulk
 from cellquorum.methods.base import MethodSkip

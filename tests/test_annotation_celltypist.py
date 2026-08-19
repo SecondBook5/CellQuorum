@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from cellquorum.annotation.celltypist_method import CellTypistMethod
-from cellquorum.contracts import CellQuorumContractError
-from cellquorum.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.methods.base import MethodSkip
 
 

@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.integration.harmony import HarmonyMethod
 
 

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from cellquorum.annotation.marker_vote import MarkerVoteMethod
-from cellquorum.contracts import CellQuorumContractError, set_layer_tag
+from cellquorum.core.contracts import CellQuorumContractError, set_layer_tag
 
 
 def _clustered_adata(seed=0):

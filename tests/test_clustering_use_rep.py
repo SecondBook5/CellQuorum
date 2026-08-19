@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from cellquorum.clustering.neighbors_leiden import LeidenMethod
-from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.contracts import CellQuorumContractError
 
 
 def _adata_with_rep(rep, n=160, n_pcs=10, seed=0):

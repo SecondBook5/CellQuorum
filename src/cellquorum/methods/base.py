@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 import anndata as ad
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 
 

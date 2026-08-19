@@ -8,7 +8,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.contracts import set_layer_tag
+from cellquorum.core.contracts import set_layer_tag
 from cellquorum.preprocessing.dimensionality.pca import PCAMethod
 
 

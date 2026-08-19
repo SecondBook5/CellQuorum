@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 # Import the contract exception and its base classes for inheritance tests.
-from cellquorum.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
 from cellquorum.core.exceptions import CellQuorumDataError, CellQuorumError
 
 

@@ -8,8 +8,8 @@ import pandas as pd
 
 from cellquorum.annotation.consensus.config import AnnotationConsensusConfig
 from cellquorum.annotation.consensus.consensus import normalize_label, reconcile_votes
-from cellquorum.contracts import DataContract
 from cellquorum.core.artifacts import ArtifactManager
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 
 

@@ -6,9 +6,9 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.layer_tags import set_layer_tag
-from cellquorum.contracts.magic_guard import assert_not_imputed
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.magic_guard import assert_not_imputed
 
 
 def _adata():

@@ -15,7 +15,7 @@ from cellquorum.cell_cell_communication.viz._io import (
     load_topology,
     save_figure,
 )
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 

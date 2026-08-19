@@ -13,8 +13,8 @@ import anndata as ad
 import numpy as np
 import scipy.sparse as sp
 
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.layer_tags import get_layer_tag
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import get_layer_tag
 
 _STATISTICAL_KIND_ALIASES = {
     "normalized": "lognorm",

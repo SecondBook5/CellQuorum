@@ -8,7 +8,7 @@ import pytest
 
 from cellquorum.clustering.neighbors_leiden import LeidenMethod
 from cellquorum.clustering.stage import ClusteringStage
-from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.methods.registry import MethodRegistry
 
 

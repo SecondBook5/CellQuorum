@@ -15,7 +15,7 @@ import numpy as np
 import scanpy as sc
 from kneed import KneeLocator
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
 

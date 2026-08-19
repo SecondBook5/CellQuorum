@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from cellquorum.annotation.passthrough import PassthroughAnnotationMethod
-from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.methods.base import MethodSkip
 
 

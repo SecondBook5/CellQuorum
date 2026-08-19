@@ -10,7 +10,7 @@ import pytest
 
 anndata = pytest.importorskip("anndata")
 
-from cellquorum.contracts import (  # noqa: E402
+from cellquorum.core.contracts import (  # noqa: E402
     CellQuorumContractError,
     DataContract,
     set_layer_tag,

@@ -8,7 +8,7 @@ import pandas as pd
 
 from cellquorum.annotation.marker_vote import MarkerVoteMethod
 from cellquorum.annotation.stage import AnnotationStage
-from cellquorum.contracts import set_layer_tag
+from cellquorum.core.contracts import set_layer_tag
 from cellquorum.methods.registry import MethodRegistry
 
 

@@ -6,8 +6,8 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.contracts import CellQuorumContractError
-from cellquorum.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.preprocessing.feature_selection.hvg import HVGMethod
 
 

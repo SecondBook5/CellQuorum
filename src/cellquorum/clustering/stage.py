@@ -7,7 +7,7 @@ cluster labels landed in obs before handing the AnnData downstream.
 
 from __future__ import annotations
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.registry import MethodRegistry
 from cellquorum.methods.stage_base import MethodDispatchStage

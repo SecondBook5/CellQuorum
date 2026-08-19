@@ -11,7 +11,7 @@ from __future__ import annotations
 import anndata as ad
 import scanpy as sc
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 

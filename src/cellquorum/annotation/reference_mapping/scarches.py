@@ -17,7 +17,7 @@ from scipy.stats import entropy
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import anndata as ad
 
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.layer_tags import get_layer_tag
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import get_layer_tag
 
 
 def assert_not_imputed(adata: ad.AnnData, layer: str) -> None:

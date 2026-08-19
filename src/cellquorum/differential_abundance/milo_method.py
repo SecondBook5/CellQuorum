@@ -9,7 +9,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod

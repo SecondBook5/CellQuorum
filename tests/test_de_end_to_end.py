@@ -10,8 +10,8 @@ import scipy.sparse as sp
 
 from cellquorum.backends.registry import build_default_backend_registry
 from cellquorum.config.design import DesignConfig, validate_design_against_obs
-from cellquorum.contracts.layer_tags import set_layer_tag
 from cellquorum.core.context import PipelineContext, PipelinePaths
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.differential_expression.stage import DifferentialExpressionStage
 
 

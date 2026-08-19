@@ -7,7 +7,7 @@ import warnings
 import anndata as ad
 import numpy as np
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 

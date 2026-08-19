@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.backends.celloracle_backend import CELLORACLE_KO_PY
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.gene_regulation.perturbation import perturbation_figures as pfig
 from cellquorum.methods.base import AnalysisMethod, MethodSkip

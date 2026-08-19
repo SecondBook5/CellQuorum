@@ -11,7 +11,7 @@ import pandas as pd
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.differential_expression.pseudobulk import aggregate_pseudobulk
 from cellquorum.enrichment.priors import PriorFetchError, get_net

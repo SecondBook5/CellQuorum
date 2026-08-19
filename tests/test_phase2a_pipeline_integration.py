@@ -40,7 +40,7 @@ def test_pca_consumes_normalized_layer_not_raw():
     import anndata as ad
     import numpy as np
 
-    from cellquorum.contracts import set_layer_tag
+    from cellquorum.core.contracts import set_layer_tag
     from cellquorum.preprocessing.dimensionality.pca import PCAMethod
 
     # Build a raw-counts AnnData (integer values).

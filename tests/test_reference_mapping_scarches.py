@@ -17,7 +17,7 @@ from cellquorum.annotation.reference_mapping.scarches import (
     _save_seed_checkpoint,
     _scvi_gpu_available,
 )
-from cellquorum.contracts import CellQuorumContractError, set_layer_tag
+from cellquorum.core.contracts import CellQuorumContractError, set_layer_tag
 from cellquorum.methods.base import MethodSkip
 
 

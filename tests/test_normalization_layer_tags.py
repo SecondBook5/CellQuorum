@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.contracts import DataContract, get_layer_tag
+from cellquorum.core.contracts import DataContract, get_layer_tag
 from cellquorum.preprocessing.config import NormalizationConfig
 from cellquorum.preprocessing.normalization import normalize_adata
 

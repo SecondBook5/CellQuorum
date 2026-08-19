@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.enrichment.priors import PriorFetchError, get_net
 from cellquorum.enrichment.ranking import de_table_to_ranking

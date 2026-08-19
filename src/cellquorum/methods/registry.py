@@ -7,7 +7,7 @@ Lookups fail loud so a typo cannot silently change pipeline behavior.
 
 from __future__ import annotations
 
-from cellquorum.contracts import CellQuorumContractError
+from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.methods.base import AnalysisMethod
 
 

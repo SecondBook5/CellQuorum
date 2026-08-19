@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.contracts import CellQuorumContractError, DataContract
+from cellquorum.core.contracts import CellQuorumContractError, DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.methods.registry import MethodRegistry

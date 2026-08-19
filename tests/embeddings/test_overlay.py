@@ -2,8 +2,8 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.magic_guard import assert_not_imputed
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.magic_guard import assert_not_imputed
 from cellquorum.integration.embeddings import overlay
 from cellquorum.integration.embeddings.config import OverlayConfig
 

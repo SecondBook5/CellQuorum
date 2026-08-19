@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.contracts.data_contract import DataContract
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.data_contract import DataContract
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 
 
 def _adata_lognorm():

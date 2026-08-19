@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from cellquorum.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.differential_abundance.stage import DifferentialAbundanceStage
 
 

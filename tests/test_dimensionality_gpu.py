@@ -41,7 +41,7 @@ def _adata(seed=0):
     x[:100, :5] += 5.0
     a = ad.AnnData(X=x)
     a.layers["cellquorum_normalized"] = x.copy()
-    from cellquorum.contracts import set_layer_tag
+    from cellquorum.core.contracts import set_layer_tag
 
     set_layer_tag(a, "cellquorum_normalized", kind="lognorm", recipe="cellquorum_pf_log1p_pf_v1")
     return a

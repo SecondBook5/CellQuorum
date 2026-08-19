@@ -8,7 +8,7 @@ from pathlib import Path
 import anndata as ad
 import pandas as pd
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.enrichment.viz import plots
 from cellquorum.enrichment.viz.io import (

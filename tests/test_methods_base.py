@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
@@ -77,7 +77,7 @@ def test_run_raises_on_contract_violation():
 
     m = _NoGuardMethod()
     a = ad.AnnData(X=np.zeros((3, 2), dtype=np.float32))  # no 'condition' obs
-    from cellquorum.contracts import CellQuorumContractError
+    from cellquorum.core.contracts import CellQuorumContractError
 
     with pytest.raises(CellQuorumContractError):
         m.run(a, config={}, context=None, donor_col=None)

@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.labels import LabelContract
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.labels import LabelContract
 
 
 def _adata():

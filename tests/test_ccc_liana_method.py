@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from cellquorum.cell_cell_communication.liana_method import LianaMethod
-from cellquorum.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.methods.base import MethodSkip
 
 li = pytest.importorskip("liana")
@@ -153,7 +153,7 @@ def test_liana_skips_when_layer_untagged(tmp_path):
     """Contract requires an explicit lognorm tag; an untagged layer must raise a
     contract error, which the stage layer converts to a skip. Here we call run()
     directly and assert it raises the contract error (stage-level skip is Task 6)."""
-    from cellquorum.contracts import CellQuorumContractError
+    from cellquorum.core.contracts import CellQuorumContractError
 
     a = _adata()
     del a.uns["cellquorum"]["layer_tags"]["cellquorum_normalized"]

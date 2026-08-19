@@ -17,7 +17,7 @@ import scipy.sparse as sp
 from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import DesignConfig
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.differential_expression.stage import DifferentialExpressionStage
 
 

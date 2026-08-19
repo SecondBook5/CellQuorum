@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage
-from cellquorum.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.layer_tags import set_layer_tag
 
 pytest.importorskip("liana")
 

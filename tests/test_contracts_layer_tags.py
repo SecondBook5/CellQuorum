@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.contracts.layer_tags import (
+from cellquorum.core.contracts.layer_tags import (
     get_layer_tag,
     get_normalization_recipe,
     set_layer_tag,

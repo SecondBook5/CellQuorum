@@ -22,7 +22,7 @@ def _adata(n_cells=200, n_genes=50, seed=0):
     lognorm = rng.normal(loc=2.0, scale=1.5, size=(n_cells, n_genes)).astype(np.float32)
     lognorm[: n_cells // 2, :5] += 3.0
     a.layers["cellquorum_normalized"] = lognorm
-    from cellquorum.contracts import set_layer_tag
+    from cellquorum.core.contracts import set_layer_tag
 
     set_layer_tag(a, "cellquorum_normalized", kind="lognorm", recipe="cellquorum_pf_log1p_pf_v1")
     return a

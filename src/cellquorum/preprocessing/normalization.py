@@ -18,7 +18,7 @@ import numpy as np
 import scipy.sparse as sp
 
 # Import layer tagging for provenance contracts.
-from cellquorum.contracts import set_layer_tag
+from cellquorum.core.contracts import set_layer_tag
 
 # Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError

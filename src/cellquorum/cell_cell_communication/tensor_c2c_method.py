@@ -7,7 +7,7 @@ from pathlib import Path
 
 import anndata as ad
 
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 

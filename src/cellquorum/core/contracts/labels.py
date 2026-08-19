@@ -12,7 +12,7 @@ from __future__ import annotations
 import anndata as ad
 
 from cellquorum.config.base import StrictBaseModel
-from cellquorum.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
 
 
 class LabelContract(StrictBaseModel):

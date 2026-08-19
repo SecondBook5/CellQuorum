@@ -91,7 +91,7 @@ def test_annotation_does_not_skip_when_clustering_runs_first() -> None:
     from cellquorum.annotation.stage import AnnotationStage
     from cellquorum.clustering.neighbors_leiden import LeidenMethod
     from cellquorum.clustering.stage import ClusteringStage
-    from cellquorum.contracts import set_layer_tag
+    from cellquorum.core.contracts import set_layer_tag
     from cellquorum.methods.registry import MethodRegistry
 
     # Build a minimal AnnData with an embedding for clustering.

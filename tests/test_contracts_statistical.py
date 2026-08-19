@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from cellquorum.contracts.exceptions import CellQuorumContractError
-from cellquorum.contracts.layer_tags import set_layer_tag
-from cellquorum.contracts.statistical import (
+from cellquorum.core.contracts.exceptions import CellQuorumContractError
+from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.statistical import (
     assert_integer_valued,
     assert_log_range,
     assert_non_integer_or_zero,

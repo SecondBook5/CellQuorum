@@ -9,7 +9,7 @@ import anndata as ad
 import pandas as pd
 
 from cellquorum.backends.sccoda_backend import SCCODA_HELPER
-from cellquorum.contracts import DataContract
+from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.differential_abundance.aggregation import aggregate_celltype_counts
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
