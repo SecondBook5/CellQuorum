@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cellquorum.workflow.status import build_matrix, matrix_to_csv, method_status
+from cellquorum.cli.workflow.status import build_matrix, matrix_to_csv, method_status
 
 STAGE_RECORDS = [
     {"stage_name": "qc", "status": "success"},

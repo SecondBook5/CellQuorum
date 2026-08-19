@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 
-from cellquorum.workflow.scaffold import SCAFFOLD_METHOD_STAGES
+from cellquorum.cli.workflow.scaffold import SCAFFOLD_METHOD_STAGES
 
 _FAIL = "failed"
 _OK = "succeeded"

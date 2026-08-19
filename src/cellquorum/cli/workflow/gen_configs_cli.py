@@ -10,7 +10,7 @@ from typing import Annotated
 import typer
 import yaml
 
-from cellquorum.workflow.gen_configs import accounting, gen_configs
+from cellquorum.cli.workflow.gen_configs import accounting, gen_configs
 
 app = typer.Typer(name="gen-configs", add_completion=False)
 

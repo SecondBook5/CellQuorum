@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cellquorum.workflow.bundle import assemble_bundle
+from cellquorum.cli.workflow.bundle import assemble_bundle
 
 
 def _fake_run(dir_: Path) -> Path:

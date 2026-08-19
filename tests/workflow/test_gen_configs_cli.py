@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from typer.testing import CliRunner
 
-from cellquorum.workflow.gen_configs_cli import app, main
+from cellquorum.cli.workflow.gen_configs_cli import app, main
 
 
 def test_cli_writes_configs_and_accounting(tmp_path: Path) -> None:

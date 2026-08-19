@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from cellquorum.cli.workflow import scaffold
 from cellquorum.config.models import StageSelectionConfig
-from cellquorum.workflow import scaffold
 
 
 def test_scaffold_has_seven_table0_methods() -> None:

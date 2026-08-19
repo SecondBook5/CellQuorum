@@ -9,7 +9,7 @@ import copy
 from collections.abc import Mapping
 from typing import Any
 
-from cellquorum.workflow.scaffold import (
+from cellquorum.cli.workflow.scaffold import (
     ALL_OPTIONAL_STAGES,
     MANDATORY_STAGES,
     SCAFFOLD,

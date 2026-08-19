@@ -4,14 +4,14 @@ import copy
 
 import pytest
 
-from cellquorum.config.loader import validate_config_dict
-from cellquorum.workflow import scaffold
-from cellquorum.workflow.gen_configs import (
+from cellquorum.cli.workflow import scaffold
+from cellquorum.cli.workflow.gen_configs import (
     ManifestError,
     accounting,
     gen_configs,
     resolve_methods,
 )
+from cellquorum.config.loader import validate_config_dict
 
 
 def test_resolve_full_scaffold_when_no_skip_or_blocked(manifest) -> None:
