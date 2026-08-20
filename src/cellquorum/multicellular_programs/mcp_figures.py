@@ -104,7 +104,7 @@ def plot_mcp_summary(
     for i, program in enumerate(program_order):
         supported = support_map.get(program, False)
         marker = "✓" if supported else "✗"
-        color = "green" if supported else "red"
+        color = figstyle.NORMAL_COLOR if supported else figstyle.QC_FAIL_COLOR
         ax_scores.text(
             i,
             ax_scores.get_ylim()[1] * 0.95,
