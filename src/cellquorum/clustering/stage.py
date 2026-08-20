@@ -9,16 +9,20 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.registry import MethodRegistry
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="clustering",
+    order=80,
+    config_flag="clustering",
+    config_field="clustering",
+    category="clustering",
+)
 class ClusteringStage(MethodDispatchStage):
     """Config-driven clustering stage."""
-
-    # Stage identity.
-    name = "clustering"
-    stage_category = "clustering"
 
     def __init__(self, registry: MethodRegistry | None = None) -> None:
         super().__init__(registry)

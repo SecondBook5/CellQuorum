@@ -130,3 +130,39 @@ The package is organized into 19 top-level packages under `src/cellquorum/`:
 Each stage package follows a uniform layout — `stage.py` (the stage implementation),
 `config.py` (its Pydantic block), and one method module per method — which keeps the
 dispatch surface predictable across stages.
+
+## Adding a stage
+
+Every stage announces itself in one place: a `@register_stage(...)` decorator sitting
+directly above its class in that stage's `stage.py`. That one decorator is the single
+source of truth for the stage's identity — its stable `name`, its position in the run
+(`order`), the config toggle that turns it on (`config_flag`), the config block it
+reads (`config_field`), and its method-registry `category`. A central catalog
+(`core/stage_catalog.py`) collects every registration; the **planner** reads it to
+decide the run order and the **executor** reads it to build the set of runnable
+stages. Neither keeps its own hand-written list, so a stage is never wired in two
+places that can drift apart.
+
+To add a new stage, a contributor touches four things — and no more:
+
+1. **Write the stage package** — a new folder under `src/cellquorum/` with the usual
+   `stage.py` / `config.py` / method modules (see *Source layout* above for the
+   pattern to copy).
+2. **Decorate the stage class** — put `@register_stage(name=..., order=...,
+   config_flag=..., config_field=..., category=...)` immediately above the class in
+   `stage.py`. Pick an `order` between the two neighbours it should run between
+   (orders are spaced by 10 precisely so there is room to insert one).
+3. **Add the two config fields** — a boolean on/off flag on `StageSelectionConfig`
+   (matching `config_flag`) and the stage's settings sub-block on `CellQuorumConfig`
+   (matching `config_field`), both in `config/models.py`. These stay explicit on
+   purpose: they are the user-facing knobs, and keeping them spelled out makes the
+   config self-documenting.
+4. **Register the import** — add one `import cellquorum.<your_package>.stage` line to
+   `core/stages.py`, in the canonical-order position, so the decorator actually runs
+   when the engine starts.
+
+`tests/test_stage_catalog.py` is the safety net: it fails loudly if a stage's flag or
+config block is missing or orphaned, if two stages claim the same `order`, or if the
+run order drifts from the frozen golden list. Run it (`pytest tests/test_stage_catalog.py`)
+after adding a stage and it will tell you exactly which of the four steps is
+incomplete.

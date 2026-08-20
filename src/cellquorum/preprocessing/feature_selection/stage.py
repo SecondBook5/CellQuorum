@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="feature_selection",
+    order=40,
+    config_flag="feature_selection",
+    config_field="feature_selection",
+    category="feature_selection",
+)
 class FeatureSelectionStage(MethodDispatchStage):
     """Config-driven highly-variable-gene selection stage."""
-
-    name = "feature_selection"
-    stage_category = "feature_selection"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured HVG method (default 'seurat')."""

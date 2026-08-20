@@ -6,14 +6,19 @@ from __future__ import annotations
 import cellquorum.enrichment  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="enrichment",
+    order=230,
+    config_flag="enrichment",
+    config_field="enrichment",
+    category="enrichment",
+)
 class EnrichmentStage(MethodDispatchStage):
     """Run the configured enrichment / pathway-activity method(s)."""
-
-    name = "enrichment"
-    stage_category = "enrichment"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "gsea")

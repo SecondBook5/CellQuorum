@@ -6,14 +6,19 @@ from __future__ import annotations
 import cellquorum.gene_regulation.coexpression  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="coexpression",
+    order=260,
+    config_flag="coexpression",
+    config_field="coexpression",
+    category="coexpression",
+)
 class CoexpressionStage(MethodDispatchStage):
     """Run the configured co-expression (hdWGCNA) method."""
-
-    name = "coexpression"
-    stage_category = "coexpression"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured co-expression method name."""

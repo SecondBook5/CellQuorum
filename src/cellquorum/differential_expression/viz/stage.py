@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import cellquorum.differential_expression.viz  # noqa: F401  (side-effect: method registration)
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 _VIZ_CONFIG_KEYS = (
@@ -19,11 +20,11 @@ _VIZ_CONFIG_KEYS = (
 )
 
 
+@register_stage(
+    name="de_viz", order=250, config_flag="de_viz", config_field="de_viz", category="de_viz"
+)
 class DeVizStage(MethodDispatchStage):
     """Render publication figures from the DE stage's CSV outputs."""
-
-    name = "de_viz"
-    stage_category = "de_viz"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "volcano_viz")

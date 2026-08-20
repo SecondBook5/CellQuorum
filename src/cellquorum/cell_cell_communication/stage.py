@@ -6,17 +6,22 @@ from __future__ import annotations
 import cellquorum.cell_cell_communication  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 # tensor_c2c has a hard data dependency on liana's uns['liana_res']; enforce order.
 _METHOD_ORDER = {"liana": 0, "tensor_c2c": 1}
 
 
+@register_stage(
+    name="cell_cell_communication",
+    order=320,
+    config_flag="cell_cell_communication",
+    config_field="cell_cell_communication",
+    category="cell_cell_communication",
+)
 class CellCellCommunicationStage(MethodDispatchStage):
     """Run the configured CCC method(s): LIANA (LR) then Tensor-cell2cell."""
-
-    name = "cell_cell_communication"
-    stage_category = "cell_cell_communication"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "liana")

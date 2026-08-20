@@ -25,6 +25,7 @@ from cellquorum.core.exceptions import CellQuorumDataError
 
 # Import pipeline stage artifact and result contracts.
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_catalog import register_stage
 
 # Import QC artifact writer utilities.
 from cellquorum.qc.artifacts import QCArtifactManifest, write_qc_artifacts
@@ -55,6 +56,7 @@ class QCStageError(CellQuorumDataError):
     """
 
 
+@register_stage(name="qc", order=20, config_flag="qc", config_field="qc")
 @dataclass(frozen=True)
 class QCStage:
     """
@@ -76,9 +78,6 @@ class QCStage:
         output_subdir: Subdirectory under context.paths.results where QC
             artifacts should be written.
     """
-
-    # Store the stable stage name expected by the pipeline contract.
-    name: str = "qc"
 
     # Store an optional explicit QC configuration override.
     config: QCConfig | None = None

@@ -4,9 +4,17 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="annotation_diagnostics",
+    order=140,
+    config_flag="annotation_diagnostics",
+    config_field="annotation_diagnostics",
+    category="annotation_diagnostics",
+)
 class AnnotationDiagnosticsStage(MethodDispatchStage):
     """Config-driven annotation-confidence diagnostic stage.
 
@@ -14,9 +22,6 @@ class AnnotationDiagnosticsStage(MethodDispatchStage):
     categorization entropy) via scDiagnostics. READ-ONLY: adds scdiag_* obs
     columns but never modifies cell_type or embeddings.
     """
-
-    name = "annotation_diagnostics"
-    stage_category = "annotation_diagnostics"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured diagnostic method (default 'scdiagnostics')."""

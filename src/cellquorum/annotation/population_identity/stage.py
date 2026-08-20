@@ -20,6 +20,7 @@ import pandas as pd
 from cellquorum.annotation.population_identity.config import PopulationIdentityConfig
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.visualization.figstyle import (
     categorical_embedding,
     clean_axis,
@@ -46,10 +47,14 @@ class IdentityResolution:
     embedding_key: str | None
 
 
+@register_stage(
+    name="population_identity",
+    order=150,
+    config_flag="population_identity",
+    config_field="population_identity",
+)
 class PopulationIdentityStage:
     """Write generic population/state identity tables, plots, and evidence."""
-
-    name = "population_identity"
 
     def run(self, context: object) -> StageResult:
         """Execute the population-identity stage."""

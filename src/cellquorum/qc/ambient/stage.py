@@ -17,6 +17,7 @@ import anndata as ad
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.qc.ambient.soupx import (
     corrected_output_exists,
     import_corrected_matrix,
@@ -25,12 +26,15 @@ from cellquorum.qc.ambient.soupx import (
 )
 
 
+@register_stage(
+    name="ambient_correction",
+    order=10,
+    config_flag="ambient_correction",
+    config_field="ambient_correction",
+    category="ambient_correction",
+)
 class AmbientCorrectionStage:
     """SoupX ambient-RNA correction stage (runs first, per library)."""
-
-    # Stable stage name (satisfies the PipelineStage Protocol).
-    name = "ambient_correction"
-    stage_category = "ambient_correction"
 
     def run(self, context: object) -> StageResult:
         """

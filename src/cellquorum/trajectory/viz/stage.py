@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import cellquorum.trajectory.viz  # noqa: F401  (side-effect: method registration)
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 _VIZ_CONFIG_KEYS = (
@@ -36,11 +37,15 @@ _DEFAULT_METHODS = [
 ]
 
 
+@register_stage(
+    name="trajectory_viz",
+    order=310,
+    config_flag="trajectory_viz",
+    config_field="trajectory_viz",
+    category="trajectory_viz",
+)
 class TrajectoryVizStage(MethodDispatchStage):
     """Render publication figures from the trajectory producers' outputs."""
-
-    name = "trajectory_viz"
-    stage_category = "trajectory_viz"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "pseudotime_viz")

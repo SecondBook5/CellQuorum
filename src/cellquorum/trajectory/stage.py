@@ -5,6 +5,7 @@ from __future__ import annotations
 # Import the package so the method registers itself as a side effect.
 import cellquorum.trajectory  # noqa: F401
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 # Keys flattened from config.velocity.* into each method's config dict.
@@ -98,11 +99,15 @@ _CYTOTRACE_KEYS = (
 )
 
 
+@register_stage(
+    name="trajectory",
+    order=300,
+    config_flag="trajectory",
+    config_field="trajectory",
+    category="trajectory",
+)
 class TrajectoryStage(MethodDispatchStage):
     """Run the configured trajectory method(s). Spec #1 registers 'velocity'."""
-
-    name = "trajectory"
-    stage_category = "trajectory"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "velocity")

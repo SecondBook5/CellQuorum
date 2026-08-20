@@ -6,14 +6,19 @@ from __future__ import annotations
 import cellquorum.cell_cell_communication.network  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="ccc_network",
+    order=340,
+    config_flag="network_analysis",
+    config_field="ccc_network",
+    category="ccc_network",
+)
 class CCCNetworkStage(MethodDispatchStage):
     """Run the configured ccc_network method(s): topology then ricci."""
-
-    name = "ccc_network"
-    stage_category = "ccc_network"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "topology")

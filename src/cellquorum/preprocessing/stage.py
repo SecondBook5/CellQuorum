@@ -25,6 +25,7 @@ from cellquorum.core.exceptions import CellQuorumDataError
 
 # Import pipeline stage artifact and result contracts.
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_catalog import register_stage
 
 # Import preprocessing configuration.
 from cellquorum.preprocessing.config import PreprocessingConfig, validate_preprocessing_config_dict
@@ -46,6 +47,9 @@ class PreprocessingStageError(CellQuorumDataError):
     """
 
 
+@register_stage(
+    name="preprocessing", order=30, config_flag="preprocessing", config_field="preprocessing"
+)
 @dataclass(frozen=True)
 class PreprocessingStage:
     """
@@ -65,9 +69,6 @@ class PreprocessingStage:
         output_subdir: Subdirectory under context.paths.results where
             preprocessing artifacts should be written.
     """
-
-    # Store the stable stage name expected by the pipeline contract.
-    name: str = "preprocessing"
 
     # Store an optional explicit preprocessing configuration override.
     config: PreprocessingConfig | None = None

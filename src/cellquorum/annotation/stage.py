@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="annotation",
+    order=90,
+    config_flag="annotation",
+    config_field="annotation",
+    category="annotation",
+)
 class AnnotationStage(MethodDispatchStage):
     """Config-driven annotation stage."""
-
-    # Stage identity.
-    name = "annotation"
-    stage_category = "annotation"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured annotation method (default 'marker_vote')."""

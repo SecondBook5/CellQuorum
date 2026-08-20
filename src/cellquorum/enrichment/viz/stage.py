@@ -5,17 +5,22 @@ from __future__ import annotations
 # Import the package so the methods register themselves as a side effect.
 import cellquorum.enrichment.viz  # noqa: F401
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 # Keys bridged from config.enrichment_viz into each dispatched viz method's config.
 _VIZ_CONFIG_KEYS = ("enabled", "top_k", "figure_formats", "dpi", "collections", "resources")
 
 
+@register_stage(
+    name="enrichment_viz",
+    order=240,
+    config_flag="enrichment_viz",
+    config_field="enrichment_viz",
+    category="enrichment_viz",
+)
 class EnrichmentVizStage(MethodDispatchStage):
     """Render publication figures from the enrichment stage's CSV outputs."""
-
-    name = "enrichment_viz"
-    stage_category = "enrichment_viz"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "gsea_viz")

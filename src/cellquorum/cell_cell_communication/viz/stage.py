@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import cellquorum.cell_cell_communication.viz  # noqa: F401  (side-effect: registers methods)
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 _VIZ_CONFIG_KEYS = ("enabled", "top_k", "figure_formats", "dpi", "sources", "levels")
 _DEFAULT_METHODS = ["dotplot_viz", "chord_viz", "sankey_viz", "network_viz", "summary_viz"]
 
 
+@register_stage(
+    name="ccc_viz", order=350, config_flag="ccc_viz", config_field="ccc_viz", category="ccc_viz"
+)
 class CccVizStage(MethodDispatchStage):
     """Render publication figures from the CCC stages' CSV/uns outputs."""
-
-    name = "ccc_viz"
-    stage_category = "ccc_viz"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "dotplot_viz")

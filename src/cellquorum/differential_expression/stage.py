@@ -6,14 +6,19 @@ from __future__ import annotations
 import cellquorum.differential_expression  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="differential_expression",
+    order=210,
+    config_flag="differential_expression",
+    config_field="differential_expression",
+    category="differential_expression",
+)
 class DifferentialExpressionStage(MethodDispatchStage):
     """Run the configured pseudobulk differential-expression method."""
-
-    name = "differential_expression"
-    stage_category = "differential_expression"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured DE method name."""

@@ -5,6 +5,7 @@ from __future__ import annotations
 # Import the package so methods register themselves as a side effect.
 import cellquorum.integration.embeddings  # noqa: F401
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 # Keys bridged from config.embeddings into each dispatched method's config.
@@ -35,11 +36,15 @@ _DEFAULT_METHODS = [
 ]
 
 
+@register_stage(
+    name="embeddings",
+    order=200,
+    config_flag="embeddings",
+    config_field="embeddings",
+    category="embeddings",
+)
 class EmbeddingsStage(MethodDispatchStage):
     """Compute embeddings and render house-style figures + overlays."""
-
-    name = "embeddings"
-    stage_category = "embeddings"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "umap")

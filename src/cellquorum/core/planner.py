@@ -189,71 +189,13 @@ class PipelinePlanner:
             Ordered list of planned stages.
         """
 
-        # Define stage names and their enabled flags in canonical run order.
+        from cellquorum.core.stages import all_stage_specs
+
+        # (stage_name, enabled?) in canonical order. Order and flag wiring live
+        # in the stage catalog (@register_stage); see core/stages.py for the
+        # ordering rationale. ccc_network's flag is `network_analysis`.
         stage_flags = [
-            ("ambient_correction", self.config.stages.ambient_correction),
-            ("qc", self.config.stages.qc),
-            ("preprocessing", self.config.stages.preprocessing),
-            ("feature_selection", self.config.stages.feature_selection),
-            ("dimensionality", self.config.stages.dimensionality),
-            ("integration", self.config.stages.integration),
-            # integration_gate sits here (after integration, before clustering) to
-            # rank embeddings BEFORE committing expensive clustering+annotation.
-            ("integration_gate", self.config.stages.integration_gate),
-            ("clustering", self.config.stages.clustering),
-            ("annotation", self.config.stages.annotation),
-            ("subclustering", self.config.stages.subclustering),
-            ("adjudication", self.config.stages.adjudication),
-            ("reference_mapping", self.config.stages.reference_mapping),
-            ("annotation_consensus", self.config.stages.annotation_consensus),
-            # Annotation diagnostics must run after reference mapping so
-            # transferred labels such as ref_state can be audited.
-            ("annotation_diagnostics", self.config.stages.annotation_diagnostics),
-            # Population identity is evidence-driven: it uses reference labels
-            # when present, otherwise annotation labels or native clusters.
-            ("population_identity", self.config.stages.population_identity),
-            ("integration_benchmark", self.config.stages.integration_benchmark),
-            ("state_scoring", self.config.stages.state_scoring),
-            ("discovery", self.config.stages.discovery),
-            ("composition", self.config.stages.composition),
-            ("embeddings", self.config.stages.embeddings),
-            ("differential_expression", self.config.stages.differential_expression),
-            ("differential_abundance", self.config.stages.differential_abundance),
-            ("enrichment", self.config.stages.enrichment),
-            ("enrichment_viz", self.config.stages.enrichment_viz),
-            ("de_viz", self.config.stages.de_viz),
-            # Co-expression (hdWGCNA) is a discovery-tail stage: it needs only the
-            # counts layer plus (optionally) cluster/annotation labels for its
-            # metacell grouping, so it slots in after DE/enrichment and before the
-            # molecular-inference and trajectory/CCC tracks.
-            ("coexpression", self.config.stages.coexpression),
-            # GRN (pySCENIC) is a discovery-tail stage: it needs only the counts
-            # layer plus (optionally) cluster/annotation labels for RSS grouping,
-            # so it slots in right after co-expression and before the
-            # molecular-inference and trajectory/CCC tracks.
-            ("grn", self.config.stages.grn),
-            # In-silico perturbation (CellOracle) is a discovery-tail stage: it
-            # infers its OWN GRN from counts + a built-in base GRN and simulates
-            # TF knockouts, so it slots in right after grn and before the
-            # trajectory/CCC tracks.
-            ("perturbation", self.config.stages.perturbation),
-            ("molecular_inference", self.config.stages.molecular_inference),
-            # Trajectory/potency runs with the tail-end discovery tracks: it only
-            # needs embeddings (integration rep + 2D coords) to have already run,
-            # which happens mid-backbone, so it slots in after molecular_inference
-            # and before the CCC chain.
-            ("trajectory", self.config.stages.trajectory),
-            ("trajectory_viz", self.config.stages.trajectory_viz),
-            # CCC chain runs producer-before-consumer: the communication stage
-            # writes the LR tables, ccc_network derives topology+curvature from
-            # them, and ccc_viz renders figures from both. ccc_viz MUST come
-            # last or it finds no inputs and every method MethodSkips. The
-            # topology stage is registered as "ccc_network"; the enabling toggle
-            # is still stages.network_analysis.
-            ("cell_cell_communication", self.config.stages.cell_cell_communication),
-            ("multicellular_programs", self.config.stages.multicellular_programs),
-            ("ccc_network", self.config.stages.network_analysis),
-            ("ccc_viz", self.config.stages.ccc_viz),
+            (spec.name, getattr(self.config.stages, spec.config_flag)) for spec in all_stage_specs()
         ]
 
         # Initialize the planned stage list.

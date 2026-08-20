@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="reference_mapping",
+    order=120,
+    config_flag="reference_mapping",
+    config_field="reference_mapping",
+    category="reference_mapping",
+)
 class ReferenceMappingStage(MethodDispatchStage):
     """Config-driven reference mapping stage."""
-
-    # Stage identity.
-    name = "reference_mapping"
-    stage_category = "reference_mapping"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured reference mapping method (default 'scarches')."""

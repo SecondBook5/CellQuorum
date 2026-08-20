@@ -14,13 +14,14 @@ from cellquorum.annotation.adjudication.evidence import (
 )
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 
 
+@register_stage(
+    name="adjudication", order=110, config_flag="adjudication", config_field="adjudication"
+)
 class AdjudicationStage:
     """Build cluster evidence, adjudicate claims, and write audit artifacts."""
-
-    # Store stable stage identity.
-    name = "adjudication"
 
     def run(self, context: object) -> StageResult:
         """

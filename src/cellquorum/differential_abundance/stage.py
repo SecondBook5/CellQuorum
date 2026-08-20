@@ -6,14 +6,19 @@ from __future__ import annotations
 import cellquorum.differential_abundance  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="differential_abundance",
+    order=220,
+    config_flag="differential_abundance",
+    config_field="differential_abundance",
+    category="differential_abundance",
+)
 class DifferentialAbundanceStage(MethodDispatchStage):
     """Run the configured differential-abundance method(s)."""
-
-    name = "differential_abundance"
-    stage_category = "differential_abundance"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured DA method name."""

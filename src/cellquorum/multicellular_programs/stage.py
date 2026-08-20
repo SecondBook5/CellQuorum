@@ -5,14 +5,19 @@ from __future__ import annotations
 # Import the package so the method registers itself as a side effect.
 import cellquorum.multicellular_programs  # noqa: F401
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="multicellular_programs",
+    order=330,
+    config_flag="multicellular_programs",
+    config_field="multicellular_programs",
+    category="multicellular_programs",
+)
 class MulticellularProgramsStage(MethodDispatchStage):
     """Run the configured multicellular programs method: DIALOGUE."""
-
-    name = "multicellular_programs"
-    stage_category = "multicellular_programs"
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "dialogue")

@@ -11,39 +11,6 @@ from dataclasses import dataclass, field
 # Import UTC datetime for stage lifecycle timing.
 from datetime import UTC, datetime
 
-# Import adjudication stage.
-from cellquorum.annotation.adjudication.stage import AdjudicationStage
-
-# Import annotation-consensus stage.
-from cellquorum.annotation.consensus.stage import AnnotationConsensusStage
-
-# Import annotation-diagnostics evaluation stage.
-from cellquorum.annotation.diagnostics.stage import AnnotationDiagnosticsStage
-
-# Import population/state identity evidence stage.
-from cellquorum.annotation.population_identity.stage import PopulationIdentityStage
-
-# Import reference-mapping stage.
-from cellquorum.annotation.reference_mapping.stage import ReferenceMappingStage
-
-# Import annotation stage.
-from cellquorum.annotation.stage import AnnotationStage
-
-# Import ccc-network (topology + curvature) stage.
-from cellquorum.cell_cell_communication.network.stage import CCCNetworkStage
-
-# Import cell-cell-communication stage.
-from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage
-
-# Import CCC-visualization stage.
-from cellquorum.cell_cell_communication.viz.stage import CccVizStage
-
-# Import Phase-2A stages: dimensionality reduction and clustering.
-from cellquorum.clustering.stage import ClusteringStage
-
-# Import subclustering stage.
-from cellquorum.clustering.subclustering.stage import SubclusteringStage
-
 # Import pipeline context.
 from cellquorum.core.context import PipelineContext
 
@@ -62,53 +29,6 @@ from cellquorum.core.stage import (
     StageExecutionRecord,
     StageResult,
 )
-
-# Import differential expression stage.
-from cellquorum.differential_abundance.stage import DifferentialAbundanceStage
-from cellquorum.differential_expression.stage import DifferentialExpressionStage
-
-# Import differential-expression-visualization stage.
-from cellquorum.differential_expression.viz.stage import DeVizStage
-
-# Import enrichment stage.
-from cellquorum.enrichment.stage import EnrichmentStage
-
-# Import enrichment-visualization stage.
-from cellquorum.enrichment.viz.stage import EnrichmentVizStage
-from cellquorum.gene_regulation.coexpression.stage import CoexpressionStage
-from cellquorum.gene_regulation.grn.stage import GrnStage
-from cellquorum.gene_regulation.perturbation.stage import PerturbationStage
-
-# Import integration-benchmark evaluation stage.
-from cellquorum.integration.benchmark.stage import IntegrationBenchmarkStage
-
-# Import embeddings stage.
-from cellquorum.integration.embeddings.stage import EmbeddingsStage
-
-# Import integration stage.
-from cellquorum.integration.stage import IntegrationStage
-
-# Import multicellular-programs stage.
-from cellquorum.multicellular_programs.stage import MulticellularProgramsStage
-from cellquorum.preprocessing.dimensionality.stage import DimensionalityStage
-
-# Import feature selection stage.
-from cellquorum.preprocessing.feature_selection.stage import FeatureSelectionStage
-
-# Import the preprocessing stage.
-from cellquorum.preprocessing.stage import PreprocessingStage
-
-# Import ambient correction stage.
-from cellquorum.qc.ambient.stage import AmbientCorrectionStage
-
-# Import the first fully implemented scientific stage.
-from cellquorum.qc.stage import QCStage
-
-# Import trajectory stage.
-from cellquorum.trajectory.stage import TrajectoryStage
-
-# Import trajectory-visualization stage.
-from cellquorum.trajectory.viz.stage import TrajectoryVizStage
 
 
 @dataclass(frozen=True)
@@ -258,47 +178,17 @@ class PipelineExecutionResult:
 
 
 def build_default_stage_registry() -> StageRegistry:
-    """
-    Build the default executable stage registry.
+    """Build the default executable stage registry from the stage catalog.
 
-    Returns:
-        StageRegistry containing all currently implemented executable stages.
+    Instantiates every implemented stage spec (those with a factory). Planned
+    stages have no factory and are absent from the runnable registry. Imported
+    lazily so ``core.stages`` (which imports every stage module) is not pulled
+    into this module's import time.
     """
+    from cellquorum.core.stages import all_stage_specs
 
-    # Register fully implemented scientific stages.
     return StageRegistry(
-        stages={
-            "ambient_correction": AmbientCorrectionStage(),
-            "qc": QCStage(),
-            "preprocessing": PreprocessingStage(),
-            "feature_selection": FeatureSelectionStage(),
-            "dimensionality": DimensionalityStage(),
-            "clustering": ClusteringStage(),
-            "integration": IntegrationStage(),
-            "annotation": AnnotationStage(),
-            "annotation_diagnostics": AnnotationDiagnosticsStage(),
-            "annotation_consensus": AnnotationConsensusStage(),
-            "adjudication": AdjudicationStage(),
-            "integration_benchmark": IntegrationBenchmarkStage(),
-            "population_identity": PopulationIdentityStage(),
-            "reference_mapping": ReferenceMappingStage(),
-            "subclustering": SubclusteringStage(),
-            "differential_expression": DifferentialExpressionStage(),
-            "coexpression": CoexpressionStage(),
-            "grn": GrnStage(),
-            "perturbation": PerturbationStage(),
-            "differential_abundance": DifferentialAbundanceStage(),
-            "enrichment": EnrichmentStage(),
-            "enrichment_viz": EnrichmentVizStage(),
-            "de_viz": DeVizStage(),
-            "ccc_viz": CccVizStage(),
-            "embeddings": EmbeddingsStage(),
-            "trajectory": TrajectoryStage(),
-            "trajectory_viz": TrajectoryVizStage(),
-            "cell_cell_communication": CellCellCommunicationStage(),
-            "multicellular_programs": MulticellularProgramsStage(),
-            "ccc_network": CCCNetworkStage(),
-        }
+        stages={spec.name: spec.factory() for spec in all_stage_specs() if spec.is_implemented}
     )
 
 

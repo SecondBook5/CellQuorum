@@ -9,15 +9,19 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="dimensionality",
+    order=50,
+    config_flag="dimensionality",
+    config_field="dimensionality",
+    category="dimensionality",
+)
 class DimensionalityStage(MethodDispatchStage):
     """Config-driven dimensionality-reduction stage."""
-
-    # Stage identity (matches the config sub-block + registry category).
-    name = "dimensionality"
-    stage_category = "dimensionality"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured reduction method (default 'pca')."""

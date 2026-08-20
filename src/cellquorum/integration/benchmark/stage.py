@@ -4,9 +4,17 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
+@register_stage(
+    name="integration_benchmark",
+    order=160,
+    config_flag="integration_benchmark",
+    config_field="integration_benchmark",
+    category="integration_benchmark",
+)
 class IntegrationBenchmarkStage(MethodDispatchStage):
     """Config-driven integration-quality evaluation stage.
 
@@ -15,9 +23,6 @@ class IntegrationBenchmarkStage(MethodDispatchStage):
     integration embeddings. READ-ONLY: never modifies obsm/obs. Returns ranking
     + per-embedding metrics as StageResult.metrics only.
     """
-
-    name = "integration_benchmark"
-    stage_category = "integration_benchmark"
 
     def _select_method_name(self, config: dict) -> str:
         """Return the configured benchmark method (default 'scib_benchmark')."""

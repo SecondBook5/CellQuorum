@@ -11,13 +11,17 @@ from cellquorum.annotation.consensus.consensus import normalize_label, reconcile
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 
 
+@register_stage(
+    name="annotation_consensus",
+    order=130,
+    config_flag="annotation_consensus",
+    config_field="annotation_consensus",
+)
 class AnnotationConsensusStage:
     """Reconcile several obs label columns into a consensus label + confidence."""
-
-    # Stable stage identity.
-    name = "annotation_consensus"
 
     def run(self, context: object) -> StageResult:
         """

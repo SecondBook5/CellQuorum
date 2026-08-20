@@ -16,9 +16,17 @@ from cellquorum.clustering.subclustering.extract import (
 )
 from cellquorum.clustering.subclustering.partition import run_choir, run_scshc_test
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.base import MethodSkip
 
 
+@register_stage(
+    name="subclustering",
+    order=100,
+    config_flag="subclustering",
+    config_field="subclustering",
+    category="subclustering",
+)
 class SubclusteringStage:
     """
     Principled subclustering stage.
@@ -33,10 +41,6 @@ class SubclusteringStage:
 
     Task 1 scope: steps 1-2 only (extract + group_filter).
     """
-
-    # Stable stage name (satisfies the PipelineStage Protocol).
-    name = "subclustering"
-    stage_category = "subclustering"
 
     def run(self, context: object) -> StageResult:
         """
