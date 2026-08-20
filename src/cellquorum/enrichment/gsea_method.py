@@ -11,7 +11,8 @@ import pandas as pd
 from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.enrichment.priors import PriorFetchError, get_net
 from cellquorum.enrichment.ranking import de_table_to_ranking
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -108,6 +109,7 @@ class GseaMethod(AnalysisMethod):
             return self._skip("decoupler unavailable")
 
         results_dir.mkdir(parents=True, exist_ok=True)
+        writer = StageArtifactWriter.from_context(context)
         artifacts, done, skipped = [], [], []
         for collection in collections:
             try:
@@ -157,14 +159,13 @@ class GseaMethod(AnalysisMethod):
                     "collection": collection,
                 }
             )
-            out_csv = results_dir / f"enrichment_gsea_{collection}.csv"
-            out.to_csv(out_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    out,
+                    f"enrichment_gsea_{collection}.csv",
                     name="enrichment_results",
-                    path=out_csv,
-                    kind="csv",
                     description=f"GSEA ({collection}), signed -log10p ranking.",
+                    index=False,
                 )
             )
 
@@ -198,14 +199,13 @@ class GseaMethod(AnalysisMethod):
                 if walk_rows:
                     running_df = pd.concat(walk_rows, ignore_index=True)
                     running_df = running_df[["source", "rank", "running_es", "hit", "metric"]]
-                    running_csv = results_dir / f"enrichment_gsea_runningES_{collection}.csv"
-                    running_df.to_csv(running_csv, index=False)
                     artifacts.append(
-                        StageArtifact(
+                        writer.table(
+                            running_df,
+                            f"enrichment_gsea_runningES_{collection}.csv",
                             name="enrichment_results",
-                            path=running_csv,
-                            kind="csv",
                             description=f"GSEA running-ES walk ({collection}).",
+                            index=False,
                         )
                     )
             except Exception as exc:  # noqa: BLE001 - degrade to a note, never crash

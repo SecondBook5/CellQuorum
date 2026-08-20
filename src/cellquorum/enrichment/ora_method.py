@@ -22,7 +22,8 @@ from scipy.stats import hypergeom
 from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.enrichment.priors import PriorFetchError, get_net
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
@@ -76,6 +77,7 @@ class OraMethod(AnalysisMethod):
         directions = {"up": up, "down": down}
 
         results_dir.mkdir(parents=True, exist_ok=True)
+        writer = StageArtifactWriter.from_context(context)
         artifacts, done, skipped = [], [], []
         for collection in collections:
             try:
@@ -156,14 +158,13 @@ class OraMethod(AnalysisMethod):
                     "gene_ratio",
                 ]
             ]
-            out_csv = results_dir / f"enrichment_ora_{collection}.csv"
-            out.to_csv(out_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    out,
+                    f"enrichment_ora_{collection}.csv",
                     name="enrichment_results",
-                    path=out_csv,
-                    kind="csv",
                     description=f"ORA ({collection}), background=tested genes.",
+                    index=False,
                 )
             )
             done.append(collection)

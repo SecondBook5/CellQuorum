@@ -10,7 +10,8 @@ import pandas as pd
 import scipy.sparse as sp
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.enrichment.priors import PriorFetchError, get_net
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
@@ -68,6 +69,7 @@ class ActivityMethod(AnalysisMethod):
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
+        writer = StageArtifactWriter.from_context(context)
         artifacts, done, skipped = [], [], []
         for resource in resources:
             try:
@@ -102,14 +104,13 @@ class ActivityMethod(AnalysisMethod):
             )
             long = long.rename(columns={cell_type_col: "cell_type"})
             long = long[["cell_type", "source", "mean_score"]]
-            out_csv = results_dir / f"enrichment_activity_{resource}.csv"
-            long.to_csv(out_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    long,
+                    f"enrichment_activity_{resource}.csv",
                     name="enrichment_results",
-                    path=out_csv,
-                    kind="csv",
                     description=f"decoupler ulm activity ({resource}), per cell type.",
+                    index=False,
                 )
             )
             done.append(resource)

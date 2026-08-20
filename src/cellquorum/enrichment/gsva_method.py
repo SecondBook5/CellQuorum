@@ -12,7 +12,8 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.differential_expression.pseudobulk import aggregate_pseudobulk
 from cellquorum.enrichment.priors import PriorFetchError, get_net
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -119,6 +120,7 @@ class GsvaMethod(AnalysisMethod):
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
+        writer = StageArtifactWriter.from_context(context)
         artifacts, done, skipped = [], [], []
         for collection in collections:
             try:
@@ -196,14 +198,13 @@ class GsvaMethod(AnalysisMethod):
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
 
-            scores_csv = results_dir / f"enrichment_gsva_scores_{collection}.csv"
-            es.to_csv(scores_csv)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    es,
+                    f"enrichment_gsva_scores_{collection}.csv",
                     name="enrichment_results",
-                    path=scores_csv,
-                    kind="csv",
                     description=f"GSVA per-sample scores ({collection}).",
+                    index=True,
                 )
             )
 
@@ -223,14 +224,13 @@ class GsvaMethod(AnalysisMethod):
                     "collection",
                 ]
             ]
-            contrast_csv = results_dir / f"enrichment_gsva_contrast_{collection}.csv"
-            contrast.to_csv(contrast_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    contrast,
+                    f"enrichment_gsva_contrast_{collection}.csv",
                     name="enrichment_results",
-                    path=contrast_csv,
-                    kind="csv",
                     description=f"GSVA contrast {case} vs {control} ({collection}).",
+                    index=False,
                 )
             )
             done.append(collection)

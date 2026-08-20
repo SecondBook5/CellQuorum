@@ -17,6 +17,7 @@ from cellquorum.methods.base import MethodSkip
 
 class _Paths:
     def __init__(self, tmp):
+        self.root = tmp
         self.results = tmp / "results"
         self.results.mkdir(parents=True, exist_ok=True)
 
