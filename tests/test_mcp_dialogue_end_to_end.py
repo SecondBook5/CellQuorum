@@ -87,11 +87,12 @@ def mock_context():
 def _build_dialogue_fixture():
     """Build AnnData with a shared latent signal across cell types.
 
-    This is the verified converging structure: 8 samples, 2 cell types, 240 cells/type,
-    SHARED latent identical across both cell types, X_pca carrying 3.0*latent[samp_idx],
-    and 100 genes with two 20-gene latent-loaded blocks. Smaller/unstructured fixtures
-    return "No programs" because DIALOGUE's ANOVA filter requires per-sample structure
-    that is shared across cell types.
+    This is a robust converging structure chosen to guarantee convergence for the test:
+    8 samples, 2 cell types, 240 cells/type, SHARED latent identical across both cell
+    types, X_pca carrying 3.0*latent[samp_idx], and 100 genes with two 20-gene
+    latent-loaded blocks. Smaller/unstructured fixtures may return "No programs"
+    because DIALOGUE's ANOVA filter requires per-sample structure that is shared
+    across cell types.
     """
     n_samples = 8
     n_cells_per_type = 240  # ~30 cells/sample/type, 2 cell types
@@ -191,6 +192,9 @@ def test_dialogue_end_to_end(tmp_path, mock_context):
     artifact_names = {a.name for a in result.artifacts}
     assert "mcp_gene_programs" in artifact_names
     assert "mcp_scores" in artifact_names
+    assert (
+        "mcp_associations" in artifact_names
+    ), "condition_col set -> mcp_associations artifact expected"
 
     # Assert: gene programs table has expected columns
     programs_artifact = next(a for a in result.artifacts if a.name == "mcp_gene_programs")

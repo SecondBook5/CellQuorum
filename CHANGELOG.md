@@ -12,7 +12,8 @@ public API and the configuration schema.
 ### Changed
 
 - **Package consolidation (#167).** Reorganized the source tree from ~40
-  top-level packages into **18** cohesive packages, and introduced a single
+  top-level packages into **18** cohesive packages (now **19** after adding the
+  ``multicellular_programs`` stage), and introduced a single
   shared R-method abstraction (`cellquorum.methods.r_method.RAnalysisMethod`)
   used by the edgeR, Milo, propeller, NicheNet, MultiNicheNet, DIALOGUE, and
   scDiagnostics adapters. Each `*_viz` module now lives inside its parent stage
