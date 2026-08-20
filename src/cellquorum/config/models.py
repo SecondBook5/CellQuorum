@@ -84,6 +84,9 @@ from cellquorum.integration.config import IntegrationConfig
 # Import the embeddings configuration model.
 from cellquorum.integration.embeddings.config import EmbeddingsConfig
 
+# Import the multicellular-programs configuration model.
+from cellquorum.multicellular_programs.config import MulticellularProgramsConfig
+
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig
 
@@ -715,6 +718,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether network analysis is enabled as a gated capability.
     network_analysis: bool = True
 
+    # Store whether multicellular programs analysis is enabled as a gated capability.
+    multicellular_programs: bool = True
+
 
 class CellQuorumConfig(StrictBaseModel):
     """
@@ -862,6 +868,11 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store ccc_network (topology + curvature) settings.
     ccc_network: CCCNetworkConfig = Field(default_factory=CCCNetworkConfig)
+
+    # Store multicellular-programs settings.
+    multicellular_programs: MulticellularProgramsConfig = Field(
+        default_factory=MulticellularProgramsConfig
+    )
 
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
