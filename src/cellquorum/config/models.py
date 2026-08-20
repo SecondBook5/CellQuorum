@@ -11,6 +11,9 @@ from typing import Literal
 # Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator, model_validator
 
+# Import the ambient-correction configuration model.
+from cellquorum.ambient_correction.config import AmbientCorrectionConfig
+
 # Import the adjudication configuration model.
 from cellquorum.annotation.adjudication.config import AdjudicationConfig
 
@@ -92,9 +95,6 @@ from cellquorum.preprocessing.config import PreprocessingConfig
 
 # Import the feature-selection configuration model.
 from cellquorum.preprocessing.feature_selection.config import FeatureSelectionConfig
-
-# Import the ambient-correction configuration model.
-from cellquorum.qc.ambient.config import AmbientCorrectionConfig
 
 # Import the QC configuration model.
 from cellquorum.qc.config import QCConfig

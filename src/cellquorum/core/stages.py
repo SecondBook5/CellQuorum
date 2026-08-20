@@ -34,7 +34,7 @@ from cellquorum.core.stage_catalog import (
 
 # --- Implemented stages (import fires @register_stage) ---
 # Backbone: QC → preprocessing → dim-reduction → integration.
-import cellquorum.qc.ambient.stage  # noqa: F401
+import cellquorum.ambient_correction.stage  # noqa: F401
 import cellquorum.qc.stage  # noqa: F401
 import cellquorum.preprocessing.stage  # noqa: F401
 import cellquorum.preprocessing.feature_selection.stage  # noqa: F401

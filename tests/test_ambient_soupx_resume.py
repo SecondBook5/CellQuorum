@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import gzip
 
-from cellquorum.qc.ambient.soupx import (
+from cellquorum.ambient_correction.soupx import (
     corrected_output_exists,
     read_rho_sidecar,
     write_rho_sidecar,

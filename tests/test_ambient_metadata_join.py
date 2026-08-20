@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.qc.ambient.stage import _join_manifest_metadata
+from cellquorum.ambient_correction.stage import _join_manifest_metadata
 
 
 def _corrected(sample_id, n):
