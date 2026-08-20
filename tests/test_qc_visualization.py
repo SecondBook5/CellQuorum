@@ -9,7 +9,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.qc.visualization import write_qc_figures
+from cellquorum.visualization.qc.diagnostics import write_qc_figures
 
 
 def make_test_adata_with_qc() -> ad.AnnData:

@@ -266,7 +266,7 @@ def write_qc_artifacts(
     if qc_config.outputs.write_figures:
         if adata is not None:
             # Import figure writer locally to avoid circular imports.
-            from cellquorum.qc.visualization import write_qc_figures
+            from cellquorum.visualization.qc.diagnostics import write_qc_figures
 
             # Generate and write QC figures.
             fig_result = write_qc_figures(
@@ -292,7 +292,7 @@ def write_qc_artifacts(
             # so a large cohort does not pay 3x figure I/O per panel by default.
             if qc_config.outputs.publication_figures:
                 try:
-                    from cellquorum.qc.publication import write_publication_qc_figures
+                    from cellquorum.visualization.qc.publication import write_publication_qc_figures
 
                     publication_paths = write_publication_qc_figures(
                         adata,

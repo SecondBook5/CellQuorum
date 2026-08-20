@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.qc.publication import write_publication_qc_figures
+from cellquorum.visualization.qc.publication import write_publication_qc_figures
 
 
 def test_write_publication_qc_figures(tmp_path):
