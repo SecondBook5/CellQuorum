@@ -19,6 +19,7 @@ from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
@@ -459,14 +460,14 @@ class ScArchesMethod(AnalysisMethod):
                 ]
                 assignments = result_query.obs[assignment_cols].copy()
                 assignments.insert(0, "cell_id", result_query.obs_names)
-                assignments_path = results_path / f"{key_added}_assignments.csv"
-                assignments.to_csv(assignments_path, index=False)
+                writer = StageArtifactWriter.from_context(context)
                 artifacts.append(
-                    StageArtifact(
+                    writer.table(
+                        assignments,
+                        f"{key_added}_assignments.csv",
                         name="reference_mapping_assignments",
-                        path=assignments_path,
-                        kind="csv",
                         description="Per-cell transferred labels and uncertainty scores.",
+                        index=False,
                     )
                 )
 

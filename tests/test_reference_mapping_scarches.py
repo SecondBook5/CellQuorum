@@ -40,7 +40,11 @@ class _Ctx:
     """Minimal context for method testing."""
 
     def __init__(self, tmp: Path) -> None:
-        self.paths = types.SimpleNamespace(objects=tmp, figures=tmp, results=tmp, scratch=tmp)
+        results_dir = tmp / "results"
+        results_dir.mkdir(exist_ok=True)
+        self.paths = types.SimpleNamespace(
+            root=tmp, objects=tmp, figures=tmp, results=results_dir, scratch=tmp
+        )
         self.backend_registry = None
         self.config = None
 
