@@ -83,6 +83,87 @@ R/Bioconductor methods share one abstraction, `cellquorum.methods.r_method.RAnal
 which centralizes Rscript resolution and R-package availability checks for the
 edgeR, Milo, propeller, NicheNet, MultiNicheNet, and scDiagnostics adapters.
 
+## Writing result artifacts
+
+Every stage produces result files — a table of differential-expression statistics, a
+JSON summary, an enrichment-score matrix. Each of those files has to land in the right
+run folder *and* be recorded, so it shows up in the run's report and provenance
+manifest instead of sitting loose on disk. `StageArtifactWriter`
+(`core/stage_artifact_writer.py`) is the single helper that does both in one call.
+
+A stage asks its run context for a writer, then tells the writer to write a table or a
+JSON file. The writer puts the file in the correct folder, records it, and hands back a
+`StageArtifact` — the small record (name, path, kind, description) the report and
+provenance read from:
+
+```python
+# Before — hand-rolled: build the path, write the file, then describe it separately.
+assignments_path = results_path / f"{key_added}_assignments.csv"
+assignments.to_csv(assignments_path, index=False)
+artifacts.append(
+    StageArtifact(
+        name="reference_mapping_assignments",
+        path=assignments_path,
+        kind="csv",
+        description="Per-cell transferred labels and uncertainty scores.",
+    )
+)
+
+# After — one call writes the file and records it.
+writer = StageArtifactWriter.from_context(context)
+artifacts.append(
+    writer.table(
+        assignments,
+        f"{key_added}_assignments.csv",
+        name="reference_mapping_assignments",
+        description="Per-cell transferred labels and uncertainty scores.",
+        index=False,
+    )
+)
+```
+
+Both forms write the exact same bytes to the exact same path — the writer is a tidier
+way to say the same thing, not a change to where files go. Three methods cover the
+cases a stage meets:
+
+- **`writer.table(df, "name.csv", name=…, description=…)`** — write a DataFrame as CSV
+  or Parquet (the format is read from the filename). The row index is dropped by
+  default (`index=False`, matching the usual `to_csv(index=False)`); pass `index=True`
+  only when the row labels are themselves data.
+- **`writer.json(payload, "name.json", name=…, description=…)`** — write a dict or list
+  as JSON (`indent=2, sort_keys=True`).
+- **`writer.register(name=…, filename=…, kind=…, description=…)`** — record a file a
+  specialized library *already* wrote (for example an `.h5ad` saved by
+  `adata.write_h5ad`) without re-writing it, so it still appears in the report.
+
+By default files go into the run's `results/` folder. Passing
+`from_context(context, default_subdir="cell_cell_communication")` makes every
+`table`/`json` call from that writer drop into a named subfolder, so a stage that
+writes several files into one subdirectory sets the subfolder once instead of
+repeating it on every call.
+
+**Where the writer does *not* apply.** The writer is for a stage's own result files.
+Four kinds of writes are deliberately left alone, because routing them through the
+writer would change behavior rather than tidy it:
+
+- **Scratch inputs handed to external tools.** Several R methods (and the
+  CellOracle/pySCENIC subprocesses) write a temporary CSV into `scratch/`, run an
+  external script that reads it, and read the result back. Those temp files are
+  plumbing, not results — they belong in `scratch/`, never `results/`.
+- **Files a library already wrote.** When a subprocess or library writes its own output
+  (pySCENIC's regulon CSV, a CellRank estimator pickle, the deduplicated `.h5ad` from
+  `trajectory/save.py`), the stage records it with `register(...)` — the tool owns that
+  path, so the writer must not recompute or re-write it.
+- **Figures.** Plots are saved by the shared figure helpers and recorded as
+  `kind="figure"`. The writer is for tables and JSON, not images.
+- **The QC stage's own writer.** `qc/artifacts.py` has a small
+  `write_dataframe_artifact`/`write_json_artifact` facade that predates this one; QC is
+  already centralized through it, so it is left as-is.
+
+A contributor writing a new stage uses `StageArtifactWriter` for the tables and JSON
+their stage computes, and reaches for `register(...)` only when an external tool wrote
+the file.
+
 ## Compute routing
 
 A shared compute router selects CPU or GPU execution for routed operations
