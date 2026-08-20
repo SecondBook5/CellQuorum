@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -67,8 +65,6 @@ class ActivityMethod(AnalysisMethod):
         if dc is None:
             return self._skip("decoupler unavailable")
 
-        results_dir = Path(context.paths.results)
-        results_dir.mkdir(parents=True, exist_ok=True)
         writer = StageArtifactWriter.from_context(context)
         artifacts, done, skipped = [], [], []
         for resource in resources:
