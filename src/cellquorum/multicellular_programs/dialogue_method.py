@@ -35,6 +35,7 @@ from cellquorum.multicellular_programs.diagnostics import (
     match_program_loadings,
     program_stability,
 )
+from cellquorum.multicellular_programs.mcp_figures import plot_mcp_summary
 
 _DIALOGUE_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "dialogue.R"
 
@@ -300,6 +301,28 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                     description="Mean subsample loading-correlation stability per program.",
                 )
             )
+
+        # Summary figure (skip-not-crash: plotting failure must not crash method).
+        if not programs.empty:
+            try:
+                fig_path = plot_mcp_summary(
+                    programs,
+                    scores,
+                    donor_support_df,
+                    cell_type_col_values=cell_types_used,
+                    out_dir=results_dir,
+                    name="mcp_summary",
+                )
+                artifacts.append(
+                    StageArtifact(
+                        name="mcp_summary",
+                        path=fig_path,
+                        kind="figure",
+                        description="MCP summary: participation heatmap + score distributions.",
+                    )
+                )
+            except Exception as e:
+                notes.append(f"MCP summary figure skipped: {e}")
 
         n_programs_recovered = int(programs["program"].nunique()) if not programs.empty else 0
         notes.insert(
