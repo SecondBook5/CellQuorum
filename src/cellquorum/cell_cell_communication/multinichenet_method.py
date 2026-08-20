@@ -15,6 +15,7 @@ from cellquorum.cell_cell_communication._nichenet_io import (
 )
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
 
@@ -77,6 +78,7 @@ class MultiNicheNetMethod(RAnalysisMethod):
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
+        writer = StageArtifactWriter.from_context(context)
         native_csv = results_dir / "mnn_prioritization.csv"
 
         timeout = int(config.get("nichenet_timeout_seconds", 7200))
@@ -122,18 +124,17 @@ class MultiNicheNetMethod(RAnalysisMethod):
             )
         ]
         n_prioritized = None
-        canonical_csv = results_dir / "mnn_canonical_lr.csv"
         try:
             native = pd.read_csv(native_csv)
             n_prioritized = len(native)
             canonical = mnn_prioritization_to_canonical(native)
-            canonical.to_csv(canonical_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    canonical,
+                    "mnn_canonical_lr.csv",
                     name="mnn_canonical_lr",
-                    path=canonical_csv,
-                    kind="csv",
                     description="MultiNicheNet LR edges in canonical schema (for ccc_network).",
+                    index=False,
                 )
             )
         except Exception:

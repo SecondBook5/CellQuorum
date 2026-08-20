@@ -15,6 +15,7 @@ from cellquorum.cell_cell_communication._nichenet_io import (
 )
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
 
@@ -91,6 +92,7 @@ class NicheNetMethod(RAnalysisMethod):
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
+        writer = StageArtifactWriter.from_context(context)
         activities_csv = results_dir / "nichenet_activities.csv"
         links_csv = results_dir / "nichenet_target_links.csv"
 
@@ -134,7 +136,6 @@ class NicheNetMethod(RAnalysisMethod):
             )
         ]
         n_ligands = None
-        canonical_csv = results_dir / "nichenet_canonical_lr.csv"
         try:
             links = pd.read_csv(links_csv)
             n_ligands = len(links)
@@ -144,13 +145,13 @@ class NicheNetMethod(RAnalysisMethod):
                 receiver=receiver,
                 condition=config.get("case"),
             )
-            canonical.to_csv(canonical_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    canonical,
+                    "nichenet_canonical_lr.csv",
                     name="nichenet_canonical_lr",
-                    path=canonical_csv,
-                    kind="csv",
                     description="NicheNet LR edges in canonical schema (for ccc_network).",
+                    index=False,
                 )
             )
         except Exception:

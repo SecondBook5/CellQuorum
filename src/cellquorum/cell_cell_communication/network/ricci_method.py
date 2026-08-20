@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import anndata as ad
 import networkx as nx
 import pandas as pd
@@ -16,6 +14,7 @@ from cellquorum.cell_cell_communication.network._networks import (
 )
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 _EDGE_COLS = ["source", "target", "ricci_curvature", "weight"]
@@ -142,7 +141,7 @@ class RicciMethod(AnalysisMethod):
         )
 
         levels = ["cci"] + (["gci"] if build_gci else [])
-        results_dir = Path(context.paths.results) / "ccc_network"
+        writer = StageArtifactWriter.from_context(context, default_subdir="ccc_network")
         artifacts: list[StageArtifact] = []
         store_curv: dict[str, dict[str, pd.DataFrame]] = {}
 
@@ -153,7 +152,7 @@ class RicciMethod(AnalysisMethod):
             edge_df, node_df = compute_ricci_curvature(G, alpha)
             store_curv[level] = {"edges": edge_df, "nodes": node_df}
             artifacts += self._write(
-                results_dir,
+                writer,
                 f"curvature_{level}_edges.csv",
                 edge_df,
                 notes,
@@ -161,7 +160,7 @@ class RicciMethod(AnalysisMethod):
                 desc=f"{level.upper()} edge Ricci curvature.",
             )
             artifacts += self._write(
-                results_dir,
+                writer,
                 f"curvature_{level}_nodes.csv",
                 node_df,
                 notes,
@@ -182,7 +181,7 @@ class RicciMethod(AnalysisMethod):
                     diff = compute_differential_curvature(G_ctrl, G_case, alpha)
                     store_curv[level]["differential"] = diff
                     artifacts += self._write(
-                        results_dir,
+                        writer,
                         f"differential_curvature_{level}.csv",
                         diff,
                         notes,
@@ -226,7 +225,7 @@ class RicciMethod(AnalysisMethod):
 
     def _write(
         self,
-        results_dir: Path,
+        writer: StageArtifactWriter,
         filename: str,
         df: pd.DataFrame,
         notes: list[str],
@@ -235,10 +234,7 @@ class RicciMethod(AnalysisMethod):
         desc: str,
     ) -> list[StageArtifact]:
         try:
-            results_dir.mkdir(parents=True, exist_ok=True)
-            out = results_dir / filename
-            df.to_csv(out, index=False)
-            return [StageArtifact(name=name, path=out, kind="csv", description=desc)]
+            return [writer.table(df, filename, name=name, description=desc, index=False)]
         except Exception as exc:  # pragma: no cover - filesystem dependent
             notes.append(f"ricci: failed to write {filename}: {str(exc)[:200]}")
             return []

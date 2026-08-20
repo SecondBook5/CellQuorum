@@ -71,6 +71,7 @@ def mock_context():
 
     class MockPaths:
         def __init__(self, tmp_path: Path):
+            self.root = tmp_path
             self.scratch = tmp_path / "scratch"
             self.results = tmp_path / "results"
             self.scratch.mkdir(parents=True, exist_ok=True)

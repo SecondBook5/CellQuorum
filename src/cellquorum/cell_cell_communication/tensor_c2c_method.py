@@ -9,6 +9,7 @@ import anndata as ad
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 # Stable mapping from cell2cell's OrderedDict keys to our output slugs. Fixed
@@ -181,20 +182,22 @@ class TensorCell2CellMethod(AnalysisMethod):
         try:
             results_dir = Path(context.paths.results) / "cell_cell_communication"
             results_dir.mkdir(parents=True, exist_ok=True)
+            writer = StageArtifactWriter.from_context(
+                context, default_subdir="cell_cell_communication"
+            )
             for c2c_key, slug in _FACTOR_SLUGS:
                 df = factors.get(c2c_key)
                 if df is None:
                     continue
                 ordered = df.sort_index(kind="mergesort")
                 loadings[slug] = ordered
-                out_csv = results_dir / f"tensor_factors_{slug}.csv"
-                ordered.to_csv(out_csv)
                 artifacts.append(
-                    StageArtifact(
+                    writer.table(
+                        ordered,
+                        f"tensor_factors_{slug}.csv",
                         name=f"ccc_tensor_factors_{slug}",
-                        path=out_csv,
-                        kind="csv",
                         description=f"Tensor-cell2cell factor loadings ({slug}).",
+                        index=True,
                     )
                 )
         except Exception as exc:

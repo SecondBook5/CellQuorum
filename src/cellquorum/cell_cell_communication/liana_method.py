@@ -8,6 +8,7 @@ import anndata as ad
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
@@ -118,16 +119,18 @@ class LianaMethod(AnalysisMethod):
         try:
             results_dir = Path(context.paths.results) / "cell_cell_communication"
             results_dir.mkdir(parents=True, exist_ok=True)
+            writer = StageArtifactWriter.from_context(
+                context, default_subdir="cell_cell_communication"
+            )
             sort_cols = [c for c in ("sample", "magnitude_rank") if c in res.columns]
             ordered = res.sort_values(sort_cols, kind="mergesort") if sort_cols else res
-            out_csv = results_dir / "liana_ranks.csv"
-            ordered.to_csv(out_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    ordered,
+                    "liana_ranks.csv",
                     name="ccc_liana_ranks",
-                    path=out_csv,
-                    kind="csv",
                     description="Per-sample LIANA rank_aggregate consensus ranks.",
+                    index=False,
                 )
             )
         except Exception as exc:

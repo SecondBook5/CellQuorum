@@ -14,6 +14,7 @@ pytest.importorskip("cell2cell")
 
 class _Paths:
     def __init__(self, tmp):
+        self.root = tmp
         self.results = tmp / "results"
         self.results.mkdir(parents=True, exist_ok=True)
 

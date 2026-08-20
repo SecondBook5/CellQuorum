@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import anndata as ad
 import pandas as pd
 
@@ -17,6 +15,7 @@ from cellquorum.cell_cell_communication.network._networks import (
 )
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
@@ -58,7 +57,7 @@ class TopologyMethod(AnalysisMethod):
         topology: dict[str, pd.DataFrame] = {}
         comparative: dict[str, pd.DataFrame] = {}
         artifacts: list[StageArtifact] = []
-        results_dir = Path(context.paths.results) / "ccc_network"
+        writer = StageArtifactWriter.from_context(context, default_subdir="ccc_network")
 
         for level in levels:
             whole = self._build(canon, level, gci_max_edges, min_edges, notes)
@@ -66,7 +65,7 @@ class TopologyMethod(AnalysisMethod):
                 continue
             topology[level] = compute_topology_ranking(whole, pagerank_alpha=pagerank_alpha)
             artifacts += self._write(
-                results_dir,
+                writer,
                 f"topology_{level}.csv",
                 topology[level],
                 notes,
@@ -99,7 +98,7 @@ class TopologyMethod(AnalysisMethod):
                         G_diff=G_diff,
                     )
                     artifacts += self._write(
-                        results_dir,
+                        writer,
                         f"comparative_{level}.csv",
                         comparative[level],
                         notes,
@@ -149,7 +148,7 @@ class TopologyMethod(AnalysisMethod):
 
     def _write(
         self,
-        results_dir: Path,
+        writer: StageArtifactWriter,
         filename: str,
         df: pd.DataFrame,
         notes: list[str],
@@ -159,10 +158,7 @@ class TopologyMethod(AnalysisMethod):
     ) -> list[StageArtifact]:
         """Write one CSV; skip-not-crash on failure."""
         try:
-            results_dir.mkdir(parents=True, exist_ok=True)
-            out = results_dir / filename
-            df.to_csv(out, index=False)
-            return [StageArtifact(name=name, path=out, kind="csv", description=desc)]
+            return [writer.table(df, filename, name=name, description=desc, index=False)]
         except Exception as exc:  # pragma: no cover - filesystem dependent
             notes.append(f"topology: failed to write {filename}: {str(exc)[:200]}")
             return []

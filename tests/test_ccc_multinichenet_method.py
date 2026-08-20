@@ -34,6 +34,7 @@ def mock_context():
 
     class MockPaths:
         def __init__(self, tmp_path):
+            self.root = tmp_path
             self.scratch = tmp_path / "scratch"
             self.results = tmp_path / "results"
             self.scratch.mkdir(parents=True, exist_ok=True)
@@ -53,9 +54,9 @@ def _toy_adata():
     obs = pd.DataFrame(
         {
             "cell_type": (["A", "B"] * 10),
-            "sample_id": ([f"s{i%4}" for i in range(20)]),
+            "sample_id": ([f"s{i % 4}" for i in range(20)]),
             "condition": (["case", "ctrl"] * 10),
-            "patient_id": ([f"p{i%4}" for i in range(20)]),
+            "patient_id": ([f"p{i % 4}" for i in range(20)]),
         },
         index=[f"c{i}" for i in range(20)],
     )

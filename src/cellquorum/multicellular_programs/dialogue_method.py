@@ -24,6 +24,7 @@ import pandas as pd
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
 from cellquorum.multicellular_programs._dialogue_io import (
@@ -87,8 +88,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
             # Slicing [:, :n_pcs] would silently under-return, then the export's
             # PC-named DataFrame ctor raises -- give the loud, specific reason here.
             return self._skip(
-                f"use_rep '{use_rep}' has {n_rep_dims} dim(s), fewer than requested "
-                f"n_pcs={n_pcs}",
+                f"use_rep '{use_rep}' has {n_rep_dims} dim(s), fewer than requested n_pcs={n_pcs}",
                 n_rep_dims=n_rep_dims,
                 n_pcs=n_pcs,
             )
@@ -261,58 +261,53 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         # ---- Write artifacts into results/multicellular_programs/. ----
         results_dir = Path(context.paths.results) / "multicellular_programs"
         results_dir.mkdir(parents=True, exist_ok=True)
-
-        programs_csv = results_dir / "mcp_gene_programs.csv"
-        scores_csv = results_dir / "mcp_scores.csv"
-        donor_csv = results_dir / "program_donor_support.csv"
-        programs.to_csv(programs_csv, index=False)
-        scores.to_csv(scores_csv, index=False)
-        donor_support_df.to_csv(donor_csv, index=False)
+        writer = StageArtifactWriter.from_context(context, default_subdir="multicellular_programs")
 
         artifacts = [
-            StageArtifact(
+            writer.table(
+                programs,
+                "mcp_gene_programs.csv",
                 name="mcp_gene_programs",
-                path=programs_csv,
-                kind="csv",
                 description="DIALOGUE multicellular-program gene loadings (per cell type).",
+                index=False,
             ),
-            StageArtifact(
+            writer.table(
+                scores,
+                "mcp_scores.csv",
                 name="mcp_scores",
-                path=scores_csv,
-                kind="csv",
                 description="Per-cell DIALOGUE program scores (long form).",
+                index=False,
             ),
-            StageArtifact(
+            writer.table(
+                donor_support_df,
+                "program_donor_support.csv",
                 name="program_donor_support",
-                path=donor_csv,
-                kind="csv",
                 description="Distinct donors supporting each multicellular program.",
+                index=False,
             ),
         ]
 
         # Associations only when a phenotype/condition column drove the HLM test.
         if condition_col:
-            assoc_csv = results_dir / "mcp_associations.csv"
-            associations.to_csv(assoc_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    associations,
+                    "mcp_associations.csv",
                     name="mcp_associations",
-                    path=assoc_csv,
-                    kind="csv",
                     description="Program-phenotype associations (HLM z / BH-adjusted p).",
+                    index=False,
                 )
             )
 
         # Stability CSV only when resamples were requested and at least one succeeded.
         if stability_resamples > 0 and program_stability_df is not None:
-            stability_csv = results_dir / "program_stability.csv"
-            program_stability_df.to_csv(stability_csv, index=False)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    program_stability_df,
+                    "program_stability.csv",
                     name="program_stability",
-                    path=stability_csv,
-                    kind="csv",
                     description="Mean subsample loading-correlation stability per program.",
+                    index=False,
                 )
             )
 
