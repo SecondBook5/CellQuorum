@@ -87,6 +87,9 @@ from cellquorum.integration.embeddings.stage import EmbeddingsStage
 
 # Import integration stage.
 from cellquorum.integration.stage import IntegrationStage
+
+# Import multicellular-programs stage.
+from cellquorum.multicellular_programs.stage import MulticellularProgramsStage
 from cellquorum.preprocessing.dimensionality.stage import DimensionalityStage
 
 # Import feature selection stage.
@@ -293,6 +296,7 @@ def build_default_stage_registry() -> StageRegistry:
             "trajectory": TrajectoryStage(),
             "trajectory_viz": TrajectoryVizStage(),
             "cell_cell_communication": CellCellCommunicationStage(),
+            "multicellular_programs": MulticellularProgramsStage(),
             "ccc_network": CCCNetworkStage(),
         }
     )

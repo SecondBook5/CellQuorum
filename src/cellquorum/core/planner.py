@@ -251,6 +251,7 @@ class PipelinePlanner:
             # topology stage is registered as "ccc_network"; the enabling toggle
             # is still stages.network_analysis.
             ("cell_cell_communication", self.config.stages.cell_cell_communication),
+            ("multicellular_programs", self.config.stages.multicellular_programs),
             ("ccc_network", self.config.stages.network_analysis),
             ("ccc_viz", self.config.stages.ccc_viz),
         ]
