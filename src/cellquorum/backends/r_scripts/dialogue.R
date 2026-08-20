@@ -1,6 +1,10 @@
 # DIALOGUE multicellular-program (MCP) detection (Jerby-Arnon & Regev).
 # Usage: Rscript dialogue.R <scratch_dir> <out_dir> <k> <n_program_genes> \
-#        <seed> <pheno_col_or_NA> <abn_c>
+#        <seed> <pheno_col_or_NA> <abn_c> [<confounders_csv_or_NA>]
+#
+# <confounders_csv_or_NA> (optional 8th arg): comma-separated meta.csv columns to
+#   add to DIALOGUE's covar (in addition to 'cellQ'). "NA"/"NULL"/""/absent keeps
+#   the default covar = "cellQ" (so the 7-arg call is unchanged).
 #
 # <scratch_dir>: contains celltypes.json = {stripped_name: {"label": original, "dir": subdir}}
 #   and one subdir per cell type, each holding:
@@ -23,7 +27,7 @@ suppressPackageStartupMessages({ library(DIALOGUE); library(Matrix); library(jso
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 7) {
   stop("Usage: dialogue.R <scratch_dir> <out_dir> <k> <n_program_genes> ",
-       "<seed> <pheno_col_or_NA> <abn_c>")
+       "<seed> <pheno_col_or_NA> <abn_c> [<confounders_csv_or_NA>]")
 }
 scratch_dir <- args[1]
 out_dir <- args[2]
@@ -32,6 +36,12 @@ n_program_genes <- as.integer(args[4])
 seed <- as.integer(args[5])
 pheno <- if (is.na(args[6]) || args[6] %in% c("NA", "NULL", "")) NULL else args[6]
 abn_c <- as.integer(args[7])
+# Optional 8th arg: comma-separated confounder columns added to covar.
+confounders <- if (length(args) >= 8 && !(args[8] %in% c("NA", "NULL", ""))) {
+  strsplit(args[8], ",")[[1]]
+} else {
+  character(0)
+}
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 set.seed(seed)
@@ -82,10 +92,17 @@ for (sct in names(ct_map)) {
     stop("pheno column '", pheno, "' not found in meta.csv for '", sct, "'; have: ",
          paste(colnames(meta), collapse = ", "))
   }
+  for (cf in confounders) {
+    if (!cf %in% colnames(meta)) {
+      stop("confounder column '", cf, "' not found in meta.csv for '", sct, "'; have: ",
+           paste(colnames(meta), collapse = ", "))
+    }
+  }
 
-  # cellQ is added to metadata automatically by make.cell.type; pass only the
-  # phenotype column (confounders are the hardcoded conf/covar='cellQ').
-  md <- if (!is.null(pheno)) meta[, pheno, drop = FALSE] else NULL
+  # cellQ is added to metadata automatically by make.cell.type. Pass the phenotype
+  # column plus any confounders so the covar names resolve inside the cell.type.
+  md_cols <- c(if (!is.null(pheno)) pheno else character(0), confounders)
+  md <- if (length(md_cols)) meta[, md_cols, drop = FALSE] else NULL
 
   # Gotcha #1: rownames(X) must equal colnames(tpm) in identical order.
   if (!identical(rownames(Xmat), colnames(tpm))) {
@@ -105,9 +122,11 @@ for (sct in names(ct_map)) {
 # ---- run DIALOGUE -----------------------------------------------------------
 dlg_dir <- file.path(out_dir, "dlg")
 dir.create(dlg_dir, recursive = TRUE, showWarnings = FALSE)
+# gotcha #3: avoid default tme.qc covar; add configured confounders (R3) to covar.
+covar <- unique(c("cellQ", confounders))
 param <- DLG.get.param(
   k = k, results.dir = paste0(dlg_dir, "/"), seed1 = seed, pheno = pheno,
-  conf = "cellQ", covar = "cellQ",              # gotcha #3: avoid default tme.qc covar
+  conf = "cellQ", covar = covar,
   n.genes = n_program_genes, abn.c = abn_c, plot.flag = FALSE
 )
 res <- tryCatch(
