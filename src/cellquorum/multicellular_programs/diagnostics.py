@@ -37,7 +37,11 @@ def donor_support(
 
     for program, group in scores.groupby("program"):
         mean_score = group["score"].mean()
-        active_cells = group[group["score"] > mean_score]["cell_id"]
+        # Coerce cell_id to str: donor_map is str-keyed, but scores read back from
+        # CSV arrive as int when cell barcodes are purely numeric -- an int/str key
+        # mismatch would silently drop every cell and report 0 donors (wrong-but-
+        # plausible), so match the donor_map key type explicitly.
+        active_cells = group[group["score"] > mean_score]["cell_id"].astype(str)
         active_donors = {donor_map[cell_id] for cell_id in active_cells if cell_id in donor_map}
         n_donors = len(active_donors)
         donor_fraction = n_donors / total_donors if total_donors > 0 else 0.0
@@ -74,7 +78,10 @@ def match_program_loadings(
 
     Returns
     -------
-    Dictionary mapping full_program -> best_r (max correlation across resample programs)
+    Dictionary mapping full_program -> best_r (max |Pearson r| across resample
+    programs). DIALOGUE program loading signs are arbitrary between independent
+    runs (like PCA/CCA components), so magnitude is matched: a reproduced-but-
+    sign-flipped program still scores as reproducible.
     """
     results = {}
 
@@ -102,7 +109,9 @@ def match_program_loadings(
                 if np.isnan(r):
                     r = 0.0
 
-            best_r = max(best_r, r)
+            # Match on |r|: MCP loading sign is arbitrary between independent
+            # runs, so a sign-flipped-but-reproducible program must not score 0.
+            best_r = max(best_r, abs(r))
 
         results[full_program] = best_r
 

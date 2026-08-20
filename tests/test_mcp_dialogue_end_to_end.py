@@ -213,9 +213,14 @@ def test_dialogue_end_to_end(tmp_path, mock_context):
         scores_df.columns
     ), f"Missing columns: {expected_cols - set(scores_df.columns)}"
 
-    # Assert: donor support CSV exists
+    # Assert: donor support CSV exists and the cell_id<->donor join actually resolved
     donor_support_path = ctx.paths.results / "multicellular_programs" / "program_donor_support.csv"
     assert donor_support_path.exists(), "program_donor_support.csv missing"
+    donor_support_df = pd.read_csv(donor_support_path)
+    assert not donor_support_df.empty, "program_donor_support.csv has no rows"
+    assert (
+        donor_support_df["n_donors"] > 0
+    ).any(), "expected >=1 program with n_donors > 0 (cell_id<->donor join must resolve)"
 
     # Assert: stability CSV exists (resamples=2)
     stability_path = ctx.paths.results / "multicellular_programs" / "program_stability.csv"

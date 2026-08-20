@@ -55,7 +55,10 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         return [c for c in (config.get("cell_type_col"), config.get("sample_col")) if c]
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
-        # ---- Config resolution (cohort overlay already applied by the stage). ----
+        # ---- Config resolution. The cohort overlay (applied by the stage) only
+        # maps batch/sample/donor/condition *_key names, not this stage's *_col
+        # identity fields, so those are read straight from the per-stage config
+        # block; when unset they fall through to the loud skips below. ----
         use_rep = config.get("use_rep", "X_pca")
         cell_type_col = config.get("cell_type_col")
         sample_col = config.get("sample_col")
@@ -79,6 +82,16 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         # ---- Skip order: use_rep -> cols -> cell types -> samples -> confounders. ----
         if use_rep not in adata.obsm:
             return self._skip(f"use_rep '{use_rep}' missing from adata.obsm")
+        n_rep_dims = int(adata.obsm[use_rep].shape[1])
+        if n_rep_dims < n_pcs:
+            # Slicing [:, :n_pcs] would silently under-return, then the export's
+            # PC-named DataFrame ctor raises -- give the loud, specific reason here.
+            return self._skip(
+                f"use_rep '{use_rep}' has {n_rep_dims} dim(s), fewer than requested "
+                f"n_pcs={n_pcs}",
+                n_rep_dims=n_rep_dims,
+                n_pcs=n_pcs,
+            )
 
         if not cell_type_col or cell_type_col not in adata.obs.columns:
             return self._skip(f"cell_type_col '{cell_type_col}' unresolved or absent from obs")
@@ -339,6 +352,10 @@ class MulticellularProgramsMethod(RAnalysisMethod):
             "cell_types_used": cell_types_used,
             "n_samples": n_samples,
             "n_cells": int(adata.n_obs),
+            # Provenance: which expression source + representation DIALOGUE saw.
+            "layer": layer,
+            "use_rep": use_rep,
+            "n_pcs": n_pcs,
             "per_program_stability": per_program_stability,
             "per_program_donor_count": per_program_donor_count,
             "dialogue_version": dialogue_version,

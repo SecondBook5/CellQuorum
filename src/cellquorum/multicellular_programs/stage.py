@@ -18,7 +18,7 @@ class MulticellularProgramsStage(MethodDispatchStage):
         return config.get("method", "dialogue")
 
     def _validate_output(self, result: StageResult) -> None:
-        """No-op: writes table artifacts + obs keys, no postcondition."""
+        """No-op: writes table artifacts only (no obs keys), no postcondition."""
 
 
 __all__ = ["MulticellularProgramsStage"]
