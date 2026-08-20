@@ -16,6 +16,10 @@ dist/
 .coverage
 htmlcov/
 
+# R writes this to the CWD when a plotting call runs without an explicit
+# device; the R-backed real-data tests drop it into the repo root.
+Rplots.pdf
+
 # Notebook noise
 .ipynb_checkpoints/
 
