@@ -27,7 +27,7 @@ through every stage and recording exactly what it did.
 
 The engine pairs an **execution spine** (strict configuration validation, backend
 detection, planning, provenance) with a **config-driven analysis backbone** of
-**29 stages** and **~60 selectable methods**, spanning quality control through
+**30 stages** and **~60 selectable methods**, spanning quality control through
 gene-regulatory networks, cell-cell communication, and trajectory inference. Stages
 dispatch to Python, R/Bioconductor, or GPU backends transparently, and every stage
 boundary is guarded by **fail-loud data contracts** — a method whose inputs are
@@ -42,9 +42,9 @@ wrong results.
 ## Highlights
 
 - **Config over code.** Every method is chosen in YAML (`integration.method: harmony | scvi`), so a dataset is expressed as configuration, not a script.
-- **29 stages, ~60 methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
+- **30 stages, ~60 methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
 - **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto `rapids-singlecell`/`cupy` when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
-- **Python + R, transparently.** R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, SoupX, hdWGCNA) and isolated heavyweight backends (pySCENIC, scCODA, CellOracle) are dispatched behind one interface.
+- **Python + R, transparently.** R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, DIALOGUE, SoupX, hdWGCNA) and isolated heavyweight backends (pySCENIC, scCODA, CellOracle) are dispatched behind one interface.
 - **Fail-loud data contracts.** Structural, layer-provenance, and statistical checks reject, for example, raw counts mislabeled as log-normalized.
 - **Reproducible & auditable.** A standardized run directory plus machine-readable provenance (resolved config, plan, backend status, environment/version stamp, artifact manifest).
 - **Two front doors.** A `cellquorum` / `cq` CLI and a `run_pipeline` Python API.
@@ -245,6 +245,7 @@ dedicated environment; *R* methods run over the Rscript/rpy2 bridge.
 | `grn` | pySCENIC regulons (GRNBoost2 → cisTarget → AUCell) | isolated env |
 | `perturbation` | CellOracle in-silico TF knockouts (ranked target table) | isolated env |
 | `cell_cell_communication` | LIANA consensus; Tensor-cell2cell; NicheNet + MultiNicheNet | Python + R |
+| `multicellular_programs` | DIALOGUE cross-cell-type coordinated programs | R |
 | `ccc_network` | topology (roles + PageRank); Ollivier-Ricci curvature | Python |
 | `ccc_viz` | dotplot / chord / Sankey / curvature-network / summary | Python |
 | `trajectory` (+ `trajectory_viz`) | scVelo RNA velocity per lineage (velocyto loom ingestion) | Python |
@@ -273,7 +274,7 @@ the dispatch code, so create them exactly as named):
 | `celloracle_env` | `perturbation` (CellOracle) | dependency isolation for reproducibility |
 | `scclr` | `preprocessing`/`dimensionality` (sparse PFlog1pPF + PCA) | pins `anndata<0.11`, Python ≤ 3.13 |
 
-R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, MultiNicheNet,
+R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, MultiNicheNet, DIALOGUE,
 scDiagnostics) run over the Rscript/rpy2 bridge through one shared abstraction
 (`cellquorum.methods.r_method.RAnalysisMethod`). See
 [`docs/backends.md`](docs/backends.md) and [`envs/README.md`](envs/README.md) for

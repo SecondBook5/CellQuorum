@@ -14,8 +14,9 @@ public API and the configuration schema.
 - **Package consolidation (#167).** Reorganized the source tree from ~40
   top-level packages into **18** cohesive packages, and introduced a single
   shared R-method abstraction (`cellquorum.methods.r_method.RAnalysisMethod`)
-  used by the edgeR, Milo, propeller, NicheNet, MultiNicheNet, and scDiagnostics
-  adapters. Each `*_viz` module now lives inside its parent stage package. This
+  used by the edgeR, Milo, propeller, NicheNet, MultiNicheNet, DIALOGUE, and
+  scDiagnostics adapters. Each `*_viz` module now lives inside its parent stage
+  package. This
   is a pure legibility refactor: behavior, the CLI, the configuration schema, the
   public Python API, and all analysis outputs are unchanged.
 - **Version single-sourcing (#156).** The package version is now defined only in
@@ -58,6 +59,8 @@ Correctness defects that could silently produce wrong output (#168):
 
 Recent engineering and reproducibility hardening:
 
+- **`multicellular_programs` stage:** DIALOGUE-based inference of cross-cell-type
+  coordinated programs, with donor-support and program-stability diagnostics.
 - **CI (#155):** ruff, the fast pytest tier, a build check, and a Docker smoke
   test, plus pytest markers (`gpu`, `slow`, `r`, `integration`) and coverage.
 - **Provenance bundling (#154):** run-level environment and version stamps are
@@ -79,7 +82,7 @@ The execution spine and config-driven analysis backbone.
   layer-provenance, and statistical validation at every stage boundary).
 - Backend registry (Python / R / Rscript / GPU / RAPIDS availability) and an
   execution planner that reports enabled, skipped, and unimplemented stages.
-- Registry-driven executor with **29 stages** covering QC, preprocessing,
+- Registry-driven executor with **30 stages** covering QC, preprocessing,
   dimensionality reduction, integration, clustering, annotation, embeddings,
   differential expression, differential abundance, enrichment, co-expression,
   gene-regulatory networks, in-silico perturbation, cell-cell communication, and

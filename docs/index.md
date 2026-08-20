@@ -13,7 +13,7 @@ quickstart. The guides below go deeper.
 
 | Guide | Contents |
 |---|---|
-| [Architecture](architecture.md) | The execution model — validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance; the 18-package layout. |
+| [Architecture](architecture.md) | The execution model — validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance; the 19-package layout. |
 | [Configuration](configuration.md) | The full configuration reference — top-level sections, per-stage blocks, stage enable flags, and how a method is selected per stage. |
 | [Backends & environments](backends.md) | The primary and isolated environments, runtime backend detection, and the R/Rscript bridge. |
 | [Docker](docker.md) | Building and running the layered container image. |
@@ -24,9 +24,9 @@ quickstart. The guides below go deeper.
 
 ## Key facts
 
-- **29 registered stages**, ~60 config-selectable methods, organized into a
+- **30 registered stages**, ~60 config-selectable methods, organized into a
   best-practices pipeline (see the workflow diagram in the README).
-- **18 top-level packages** under `src/cellquorum/`.
+- **19 top-level packages** under `src/cellquorum/`.
 - **Two front doors:** the `cellquorum` / `cq` CLI and the `cellquorum.run_pipeline`
   Python API.
 - **Fail-loud contracts:** every stage boundary validates its `AnnData`; a method

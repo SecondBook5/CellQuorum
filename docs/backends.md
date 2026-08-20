@@ -52,6 +52,7 @@ and R-package availability checks:
 | propeller (`PropellerMethod`) | `differential_abundance` |
 | NicheNet (`NicheNetMethod`) | `cell_cell_communication` |
 | MultiNicheNet (`MultiNicheNetMethod`) | `cell_cell_communication` |
+| DIALOGUE (`MulticellularProgramsMethod`) | `multicellular_programs` |
 | scDiagnostics (`ScdiagnosticsMethod`) | `annotation_diagnostics` |
 
 Two further R usages sit outside that abstraction: **SoupX** (`ambient_correction`)
@@ -70,5 +71,5 @@ the Rscript adapter, and **hdWGCNA** (`coexpression`) runs in the isolated
   one exception: R/Bioconductor lives in the separate `cellquorum-r` environment and
   is invoked as a direct `Rscript` subprocess, so `Rscript` is **not** on the CLI
   env's `PATH`. To use R-backed methods (pseudobulk edgeR DE, Milo, propeller,
-  NicheNet, SoupX) in-image, point `r.rscript_path` at the `cellquorum-r` env's
+  NicheNet, DIALOGUE, SoupX) in-image, point `r.rscript_path` at the `cellquorum-r` env's
   Rscript — see the R-methods section of [`docker.md`](docker.md).

@@ -216,10 +216,10 @@ a wrapper.
    become unvalidated package wrappers.
 
    **Implemented:** LR co-expression via LIANA per-sample consensus +
-   Tensor-cell2cell decomposition (`cell_cell_communication` stage). Remaining
-   CCC specs: `ccc_network` (topology + Ollivier-Ricci curvature), NicheNet /
-   MultiNicheNet (ligand→target, R), and `ccc_viz` figures. DIALOGUE is a
-   separate multicellular-programs track.
+   Tensor-cell2cell decomposition (`cell_cell_communication` stage), and
+   cross-cell-type multicellular programs via DIALOGUE (`multicellular_programs`
+   stage). Remaining CCC specs: `ccc_network` (topology + Ollivier-Ricci
+   curvature), NicheNet / MultiNicheNet (ligand→target, R), and `ccc_viz` figures.
 
 ## Optional / later modules
 

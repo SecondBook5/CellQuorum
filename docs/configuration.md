@@ -33,7 +33,7 @@ A whole-config validator rejects contradictory combinations — for example,
 ### The `r` backend section
 
 `r.enabled` gates whether R-backed methods (edgeR pseudobulk DE, Milo, propeller,
-NicheNet, MultiNicheNet, scDiagnostics, SoupX) may run, and `r.rscript_path` selects
+NicheNet, MultiNicheNet, DIALOGUE, scDiagnostics, SoupX) may run, and `r.rscript_path` selects
 the `Rscript` executable used to reach them — both are honored. Set `r.rscript_path`
 to an explicit path when `Rscript` is not on the CLI environment's `PATH`, as in the
 layered Docker image (see [`docker.md`](docker.md)).
@@ -71,6 +71,7 @@ stages:
   grn: true
   perturbation: true
   cell_cell_communication: true
+  multicellular_programs: true
   network_analysis: true       # toggles the ccc_network topology stage
   trajectory: true
 ```
@@ -101,6 +102,14 @@ differential_abundance:
 
 enrichment:
   methods: [gsea, ora, gsva] # run several enrichment methods
+
+multicellular_programs:
+  method: dialogue           # cross-cell-type coordinated programs via DIALOGUE
+  n_programs: 5              # number of programs to infer
+  n_program_genes: 200       # genes per program
+  min_cell_types: 2          # minimum cell types required
+  min_samples: 4             # minimum samples required
+  stability_resamples: 5     # resamples for program stability diagnostic
 ```
 
 If a selected method's backend is unavailable at runtime (e.g. an R package or an

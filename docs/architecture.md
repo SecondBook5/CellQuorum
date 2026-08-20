@@ -103,7 +103,7 @@ to a broken run.
 
 ## Source layout
 
-The package is organized into 18 top-level packages under `src/cellquorum/`:
+The package is organized into 19 top-level packages under `src/cellquorum/`:
 
 | Package | Responsibility |
 |---|---|
@@ -121,6 +121,7 @@ The package is organized into 18 top-level packages under `src/cellquorum/`:
 | `enrichment` | GSEA/ORA/GSVA/decoupler and enrichment visualization |
 | `gene_regulation` | co-expression (hdWGCNA), GRN (pySCENIC), perturbation (CellOracle) |
 | `cell_cell_communication` | LIANA/Tensor-c2c/NicheNet, network topology + curvature, CCC visualization |
+| `multicellular_programs` | cross-cell-type coordinated programs via DIALOGUE |
 | `trajectory` | RNA velocity and trajectory visualization |
 | `io` | input/output helpers |
 | `visualization` | shared figure styling and plotting |

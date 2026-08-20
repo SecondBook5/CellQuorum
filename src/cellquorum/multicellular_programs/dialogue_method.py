@@ -155,7 +155,8 @@ class MulticellularProgramsMethod(RAnalysisMethod):
             str(n_programs),
             str(n_program_genes),
             str(seed),
-            (condition_col or "NA"),
+            # Export writes condition_col as "pheno" in meta.csv, so tell R "pheno".
+            ("pheno" if condition_col else "NA"),
             # 7th argv maps to DIALOGUE's abn.c abundance cutoff in dialogue.R;
             # the min_cells_per_type -> abn.c name drift is intentional/spec'd.
             str(min_cells_per_type),
@@ -422,7 +423,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                     str(n_programs),
                     str(n_program_genes),
                     str(seed + r),
-                    (condition_col or "NA"),
+                    ("pheno" if condition_col else "NA"),
                     str(min_cells_per_type),
                     confounders_arg,
                 ]
