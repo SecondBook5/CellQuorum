@@ -130,3 +130,21 @@ def test_skip_on_non_numeric_confounder(tmp_path, mock_context):
     )
     assert isinstance(res, MethodSkip)
     assert "confounder" in res.reason.lower()
+
+
+def test_skip_on_missing_condition_col(tmp_path, mock_context):
+    # An absent condition_col would KeyError inside export_dialogue_inputs -> skip loudly.
+    res = MulticellularProgramsMethod()._run(
+        _adata(), _cfg(condition_col="NOT_A_COLUMN"), mock_context(tmp_path)
+    )
+    assert isinstance(res, MethodSkip)
+    assert "condition_col" in res.reason
+
+
+def test_skip_on_missing_quality_col(tmp_path, mock_context):
+    # An absent quality_col would KeyError inside export_dialogue_inputs -> skip loudly.
+    res = MulticellularProgramsMethod()._run(
+        _adata(), _cfg(quality_col="NOT_A_QUAL_COL"), mock_context(tmp_path)
+    )
+    assert isinstance(res, MethodSkip)
+    assert "quality_col" in res.reason

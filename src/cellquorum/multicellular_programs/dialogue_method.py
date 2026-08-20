@@ -110,6 +110,13 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                     confounder=name,
                 )
 
+        # condition_col / quality_col drive obs reads in export_dialogue_inputs; an
+        # absent column would otherwise raise KeyError out of _run -- skip loudly.
+        if condition_col and condition_col not in adata.obs.columns:
+            return self._skip(f"condition_col '{condition_col}' absent from obs")
+        if quality_col and quality_col not in adata.obs.columns:
+            return self._skip(f"quality_col '{quality_col}' absent from obs")
+
         # ---- Rscript + backend + DIALOGUE package guards. ----
         backend, skip = self._resolve_rscript_backend(context)
         if skip is not None:
@@ -121,19 +128,24 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         out_dir = full_scratch / "dialogue" / "out"
 
         confounders_arg = ",".join(confounders) if confounders else "NA"
-        export = export_dialogue_inputs(
-            adata,
-            cell_type_col=cell_type_col,
-            sample_col=sample_col,
-            use_rep=use_rep,
-            n_pcs=n_pcs,
-            layer=layer,
-            quality_col=quality_col,
-            condition_col=condition_col,
-            confounders=confounders,
-            min_cells_per_type=min_cells_per_type,
-            scratch=full_scratch,
-        )
+        # Belt-and-suspenders for any other latent obs/obsm raise (the explicit
+        # guards above give the loud, testable reasons for the common cases).
+        try:
+            export = export_dialogue_inputs(
+                adata,
+                cell_type_col=cell_type_col,
+                sample_col=sample_col,
+                use_rep=use_rep,
+                n_pcs=n_pcs,
+                layer=layer,
+                quality_col=quality_col,
+                condition_col=condition_col,
+                confounders=confounders,
+                min_cells_per_type=min_cells_per_type,
+                scratch=full_scratch,
+            )
+        except Exception as exc:
+            return self._skip("dialogue input export failed", error=str(exc)[:500])
         cell_types_used = list(export["cell_types"].values())  # ORIGINAL labels
 
         args = [
@@ -143,6 +155,8 @@ class MulticellularProgramsMethod(RAnalysisMethod):
             str(n_program_genes),
             str(seed),
             (condition_col or "NA"),
+            # 7th argv maps to DIALOGUE's abn.c abundance cutoff in dialogue.R;
+            # the min_cells_per_type -> abn.c name drift is intentional/spec'd.
             str(min_cells_per_type),
             confounders_arg,
         ]
@@ -155,7 +169,10 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         if proc.returncode != 0:
             return self._skip("dialogue.R failed", stderr=(proc.stderr or "").strip()[:500])
 
-        outputs = read_dialogue_outputs(out_dir)
+        try:
+            outputs = read_dialogue_outputs(out_dir)
+        except Exception as exc:
+            return self._skip("dialogue.R output unreadable", error=str(exc)[:500])
         programs = outputs["programs"]
         scores = outputs["scores"]
         associations = outputs["associations"]
@@ -293,6 +310,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
 
         metrics = {
             "n_programs": n_programs_recovered,
+            "n_programs_requested": n_programs,
             "n_cell_types_used": len(cell_types_used),
             "cell_types_used": cell_types_used,
             "n_samples": n_samples,
