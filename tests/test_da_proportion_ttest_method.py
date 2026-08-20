@@ -119,6 +119,7 @@ def mock_context(tmp_path):
     """Build a mock stage context with paths and backend registry."""
 
     class Paths:
+        root = tmp_path
         scratch = tmp_path / "scratch"
         results = tmp_path / "results"
 
@@ -265,9 +266,12 @@ def test_determinism(paired_cohort_adata, mock_context, tmp_path):
     df1 = pd.read_csv(result1.artifacts[0].path)
 
     # Run 2 (fresh context)
+    run2_root = tmp_path / "run2"
+
     class Paths:
-        scratch = tmp_path / "run2_scratch"
-        results = tmp_path / "run2_results"
+        root = run2_root
+        scratch = run2_root / "scratch"
+        results = run2_root / "results"
 
     class Context:
         paths = Paths()

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -11,7 +9,8 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.differential_abundance.aggregation import aggregate_celltype_counts
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
@@ -99,6 +98,9 @@ class ProportionTTestMethod(AnalysisMethod):
                 n_case=len(case_samples),
                 n_control=len(control_samples),
             )
+
+        # Initialize artifact writer for result table (used in both paired/unpaired branches)
+        writer = StageArtifactWriter.from_context(context)
 
         # Paired branch
         if paired:
@@ -196,14 +198,6 @@ class ProportionTTestMethod(AnalysisMethod):
                 fdr_values[finite_mask] = multipletests(pvalues[finite_mask], method=fdr_method)[1]
             results_df["fdr"] = fdr_values
 
-            # Prepare output path
-            results_dir = Path(context.paths.results)
-            results_dir.mkdir(parents=True, exist_ok=True)
-            out_csv = results_dir / "da_proportion_ttest.csv"
-
-            # Write CSV
-            results_df.to_csv(out_csv, index=False)
-
             # Count significant results (fdr < 0.05, ignoring NaN)
             n_significant = int((results_df["fdr"] < 0.05).sum())
 
@@ -211,11 +205,12 @@ class ProportionTTestMethod(AnalysisMethod):
             return StageResult(
                 adata=adata,
                 artifacts=[
-                    StageArtifact(
+                    writer.table(
+                        results_df,
+                        "da_proportion_ttest.csv",
                         name="da_results",
-                        path=out_csv,
-                        kind="csv",
                         description=f"Proportion t-test DA (paired, {case} vs {control}).",
+                        index=False,
                     )
                 ],
                 notes=[f"Proportion t-test DA (paired): {case} vs {control}."],
@@ -296,14 +291,6 @@ class ProportionTTestMethod(AnalysisMethod):
                 fdr_values[finite_mask] = multipletests(pvalues[finite_mask], method=fdr_method)[1]
             results_df["fdr"] = fdr_values
 
-            # Prepare output path
-            results_dir = Path(context.paths.results)
-            results_dir.mkdir(parents=True, exist_ok=True)
-            out_csv = results_dir / "da_proportion_ttest.csv"
-
-            # Write CSV
-            results_df.to_csv(out_csv, index=False)
-
             # Count significant results
             n_significant = int((results_df["fdr"] < 0.05).sum())
 
@@ -311,11 +298,12 @@ class ProportionTTestMethod(AnalysisMethod):
             return StageResult(
                 adata=adata,
                 artifacts=[
-                    StageArtifact(
+                    writer.table(
+                        results_df,
+                        "da_proportion_ttest.csv",
                         name="da_results",
-                        path=out_csv,
-                        kind="csv",
                         description=f"Proportion t-test DA (unpaired, {case} vs {control}).",
+                        index=False,
                     )
                 ],
                 notes=[f"Proportion t-test DA (unpaired): {case} vs {control}."],

@@ -13,6 +13,8 @@ left untouched.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -49,7 +51,8 @@ class _Ctx:
         self.config = config
         self.backend_registry = None
         # Mock paths for methods that write artifacts
-        self.paths = type("obj", (object,), {"results": "/tmp/da_test_results"})
+        root = Path("/tmp/da_test")
+        self.paths = type("obj", (object,), {"root": root, "results": root / "results"})
 
     def require_adata(self):
         return self._adata
