@@ -6,8 +6,8 @@ it with one command; the engine plans, validates, and executes the workflow acro
 Python, R/Bioconductor, and GPU backends, and records machine-readable provenance
 for every step.
 
-Start with the [README](../README.md) for an overview, installation, and a
-quickstart. The guides below go deeper.
+Start with the [README](https://github.com/SecondBook5/cellquorum#readme) for an
+overview, installation, and a quickstart. The guides below go deeper.
 
 ## Guides
 
@@ -16,10 +16,15 @@ quickstart. The guides below go deeper.
 | [Architecture](architecture.md) | The execution model — validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance; the 17-package layout (plus compatibility shims). |
 | [Configuration](configuration.md) | The full configuration reference — top-level sections, per-stage blocks, stage enable flags, and how a method is selected per stage. |
 | [Backends & environments](backends.md) | The primary and isolated environments, runtime backend detection, and the R/Rscript bridge. |
+| [Python API](api.md) | The `run_pipeline` entry point and the `tl` / `pp` / `diag` / `evidence` notebook namespaces, generated from the source docstrings. |
 | [Docker](docker.md) | Building and running the layered container image. |
 | [Snakemake](snakemake.md) | Orchestrating runs with Snakemake. |
 | [Developer smoke tests](dev_smoke.md) | Fast local checks. |
 | [Roadmap](ROADMAP.md) | Current capabilities and the engineering/scientific backlog. |
+| [Changelog](changelog.md) | Release notes. |
+
+Build this site locally with `make docs-serve` (live reload) or `make docs`
+(strict build, as CI runs it).
 
 ## Key facts
 
@@ -34,5 +39,6 @@ quickstart. The guides below go deeper.
 - **Reproducible:** standardized run directory + provenance (resolved config, plan,
   backend status, environment/version stamp, artifact manifest).
 
-See [`CHANGELOG.md`](../CHANGELOG.md) for release notes and [`CITATION.cff`](../CITATION.cff)
+See the [Changelog](changelog.md) for release notes and
+[`CITATION.cff`](https://github.com/SecondBook5/cellquorum/blob/main/CITATION.cff)
 for citation metadata. CellQuorum is distributed under the BSD 3-Clause license.

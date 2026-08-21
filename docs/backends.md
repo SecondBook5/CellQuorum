@@ -9,7 +9,7 @@ affected method to skip with a recorded reason — it never crashes the run.
 
 This page summarizes the environments and how dispatch works. For the exact install
 commands, dependency-isolation rationales, and `make lock` usage, see
-[`envs/README.md`](../envs/README.md).
+[`envs/README.md`](https://github.com/SecondBook5/cellquorum/blob/main/envs/README.md).
 
 ## Primary environments
 

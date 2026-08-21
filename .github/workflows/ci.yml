@@ -43,6 +43,24 @@ jobs:
         # deps are absent, so this plain runner naturally runs the core-only tier.
         run: pytest -q
 
+  docs:
+    name: Docs build (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package (dev)
+        # The docs build imports the package (mkdocstrings API reference), so the
+        # package and its docs tooling must both be present.
+        run: pip install -e .[dev]
+      - name: Build docs (strict)
+        # --strict turns broken links and unresolved API references into errors,
+        # so documentation drift fails CI instead of shipping silently.
+        run: mkdocs build --strict
+
   build:
     name: Build & verify wheel
     runs-on: ubuntu-latest

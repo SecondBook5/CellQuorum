@@ -1,0 +1,80 @@
+site_name: CellQuorum
+site_description: >-
+  A publication-grade, config-driven single-cell RNA-seq workflow engine with
+  Python, R/Bioconductor, and GPU backends.
+site_url: https://secondbook5.github.io/cellquorum/
+repo_url: https://github.com/SecondBook5/cellquorum
+repo_name: SecondBook5/cellquorum
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; AJ Book — distributed under the BSD-3-Clause license.
+
+# The internal design/spec archive under docs/superpowers/ is not user-facing
+# documentation; keep it out of the built site (and out of --strict nav checks).
+exclude_docs: |
+  superpowers/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - toc.follow
+    - search.suggest
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            filters: ["!^_"]
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Configuration: configuration.md
+  - Backends & environments: backends.md
+  - Python API: api.md
+  - Docker: docker.md
+  - Snakemake: snakemake.md
+  - Developer smoke tests: dev_smoke.md
+  - Roadmap: ROADMAP.md
+  - Changelog: changelog.md

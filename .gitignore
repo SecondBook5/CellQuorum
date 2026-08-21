@@ -9,6 +9,9 @@ dist/
 *.egg-info/
 .eggs/
 
+# mkdocs build output (the rendered site; docs/ is the source, site/ is generated)
+site/
+
 # Test, lint, and type-check caches
 .pytest_cache/
 .mypy_cache/

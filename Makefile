@@ -3,7 +3,16 @@ IMAGE := cellquorum:$(VERSION)
 IMAGE_GPU := cellquorum:$(VERSION)-gpu
 REQUIRED_ENVS := cellquorum-core celloracle_env pyscenic_env hdwgcna_env scclr sccoda_env cellquorum-r
 
-.PHONY: image image-gpu lock smoke matrix
+.PHONY: image image-gpu lock smoke matrix docs docs-serve
+
+# Build the documentation site (strict: warnings — broken links, unresolved
+# API references — fail the build, matching the CI docs job).
+docs:
+	mkdocs build --strict
+
+# Serve the docs with live reload for local authoring.
+docs-serve:
+	mkdocs serve
 
 image:
 	docker build --target cpu -t $(IMAGE) -f docker/Dockerfile .

@@ -7,7 +7,7 @@ before any compute runs. Every top-level section has a default, so a minimal con
 is small — but explicit is better than implicit for a publication analysis.
 
 A config can be supplied as a file path, a Python `dict`, or a `CellQuorumConfig`
-instance (see the [Python API](../README.md#python-api)).
+instance (see the [Python API](api.md)).
 
 ## Top-level sections
 
@@ -135,7 +135,7 @@ cellquorum plan --config configs/config.yaml
 ```
 
 which prints, per stage, whether it is enabled, skipped, or unimplemented, and the
-backend it would use. See [`configs/config.yaml`](../configs/config.yaml) for a
+backend it would use. See [`configs/config.yaml`](https://github.com/SecondBook5/cellquorum/blob/main/configs/config.yaml) for a
 complete worked example and [architecture.md](architecture.md) for how method
 dispatch and data contracts work.
 
