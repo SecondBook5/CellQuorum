@@ -5,12 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import anndata as ad
+import pandas as pd
 
 from cellquorum.comparative.differential_expression.pseudobulk import (
     aggregate_pseudobulk,
     resolve_donor_pairing,
 )
-from cellquorum.config.design import DesignConfig, validate_design_against_obs
+from cellquorum.config.design import (
+    DesignConfig,
+    validate_design_against_obs,
+    validate_design_matrix,
+)
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
@@ -97,6 +102,27 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
             ),
             min_donors_per_arm=min_donors_per_arm,
         )
+
+        # Multi-factor estimability gate. With covariates in the model the
+        # fixed-effects design ~ [covariates +] condition can be rank-deficient in
+        # ways the two-level check above cannot see -- most commonly a categorical
+        # covariate perfectly aliased with the tested condition (e.g. batch that
+        # coincides with case/control). edgeR would then either error cryptically
+        # or drop columns and return a meaningless condition coefficient. Halt
+        # loudly here, before the fit, on the case/control observations. Numeric
+        # covariates enter edgeR as continuous terms and are not part of this
+        # categorical-aliasing check; donor blocking is resolved separately below.
+        categorical_covariates = [
+            c for c in covariates if not pd.api.types.is_numeric_dtype(adata.obs[c])
+        ]
+        if categorical_covariates:
+            comparison_obs = adata.obs.loc[
+                adata.obs[condition_col].isin([case, control]),
+                [*categorical_covariates, condition_col],
+            ].drop_duplicates()
+            validate_design_matrix(
+                comparison_obs, factors=[*categorical_covariates, condition_col]
+            )
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
         backend, skip = self._resolve_rscript_backend(context, config)

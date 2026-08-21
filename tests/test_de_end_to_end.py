@@ -6,6 +6,7 @@ from pathlib import Path
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 import scipy.sparse as sp
 
 from cellquorum.backends.registry import build_default_backend_registry
@@ -13,6 +14,7 @@ from cellquorum.comparative.differential_expression.stage import DifferentialExp
 from cellquorum.config.design import DesignConfig, validate_design_against_obs
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.core.exceptions import CellQuorumConfigError
 
 
 def _edger_available() -> bool:
@@ -80,6 +82,51 @@ def test_design_guardrail_accepts_paired_cohort():
         ),
     )
     assert len(res.complete_pair_donors) == 3
+
+
+def _adata_with_confounded_covariate():
+    """A paired design whose 'batch' covariate is perfectly aliased with condition.
+
+    Every Normal sample is batch 'b0' and every LE sample is batch 'b1', so the
+    fixed-effects model ~ batch + condition is rank-deficient: the condition
+    effect cannot be separated from batch.
+    """
+    a = _adata()
+    a.obs["batch"] = np.where(a.obs["condition"].to_numpy() == "LE", "b1", "b0")
+    return a
+
+
+class _CfgConfoundedCovariate:
+    # Same design as _Cfg but adds a covariate confounded with condition.
+    differential_expression = {
+        "enabled": True,
+        "method": "pseudobulk_edger",
+        "layer": "counts",
+        "condition_col": "condition",
+        "donor_col": "patient_id",
+        "case": "LE",
+        "control": "Normal",
+        "covariates": ["batch"],
+        "paired": True,
+    }
+    cohort = None
+
+
+def test_stage_halts_on_covariate_confounded_with_condition(tmp_path):
+    # A covariate aliased with the tested condition makes the multi-factor design
+    # non-estimable. The stage must halt loudly BEFORE reaching edgeR (so this
+    # holds with or without R installed), never silently hand a rank-deficient
+    # design to the fit.
+    paths = PipelinePaths.from_output_dir(tmp_path)
+    paths.ensure_directories()
+    ctx = PipelineContext(
+        config=_CfgConfoundedCovariate(),
+        paths=paths,
+        adata=_adata_with_confounded_covariate(),
+        backend_registry=build_default_backend_registry(),
+    )
+    with pytest.raises(CellQuorumConfigError, match="estimable|Confounded|rank"):
+        DifferentialExpressionStage().run(ctx)
 
 
 def test_stage_runs_through_context(tmp_path):
