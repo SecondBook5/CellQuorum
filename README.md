@@ -56,16 +56,16 @@ bootstraps the run directory, then executes each enabled stage in canonical orde
 propagating the updated `AnnData` downstream:
 
 <p align="center">
-  <img src="docs/assets/pipeline.svg" width="560"
-       alt="CellQuorum pipeline: 30 implemented stages across seven colour-coded phases — preprocessing, integration and clustering, annotation and identity, state and embeddings, differential analysis, gene regulation, and communication and trajectory — from config.yaml and an AnnData input to a provenance-tracked run directory. Five reserved stages appear as dashed slots.">
+  <img src="docs/assets/pipeline.svg" width="100%"
+       alt="CellQuorum pipeline: a left-to-right rail of seven colour-coded phases — preprocessing, integration and clustering, annotation and identity, state and embeddings, differential analysis, gene regulation, and communication and trajectory — running from config.yaml and an AnnData input to a provenance-tracked run directory. Each phase drops a column of its stage cards showing that stage's config-selectable methods; five reserved stages appear as dashed slots.">
 </p>
 
 *The diagram is generated from the stage registry (`docs/assets/gen_pipeline_diagram.py`),
-so it always matches the engine: each card is a stage with its config-selectable
-methods, the seven colour-coded lanes are the canonical phase order, and dashed
-cards are reserved slots that skip as not-yet-implemented. A stage also skips
-cleanly when disabled in the config or when its required inputs or backends are
-unavailable.*
+so it always matches the engine: the seven colour-coded phases run left to right
+from `config.yaml` to the run directory, each stage is a card showing its
+config-selectable methods, and dashed cards are reserved slots that skip as
+not-yet-implemented. A stage also skips cleanly when disabled in the config or
+when its required inputs or backends are unavailable.*
 
 ## Installation
 

@@ -96,10 +96,15 @@ def _methods_for(category: str | None) -> list[str]:
 
 
 def _sub_line(spec: StageSpec) -> str:
-    """Muted second line for a stage card (methods / descriptor / planned)."""
+    """Muted second line for a stage card (methods / descriptor / planned).
+
+    Method lists wrap at four-per-line so a many-method stage stays a compact
+    card instead of stretching the whole figure wide.
+    """
     methods = _methods_for(spec.category)
     if methods:
-        return _MIDDOT.join(methods)
+        rows = [methods[i : i + 4] for i in range(0, len(methods), 4)]
+        return "<BR/>".join(_MIDDOT.join(row) for row in rows)
     if not spec.is_implemented:
         return "planned"
     return _STAGE_DESCRIPTORS.get(spec.name, "")
@@ -129,8 +134,27 @@ def _node_stmt(spec: StageSpec) -> str:
     return f"    {spec.name} [{attrs}];"
 
 
+def _text_on(hex_color: str) -> str:
+    """Black or white ink, whichever has more WCAG contrast on a filled hue."""
+    r, g, b = (int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+
+    def _lin(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    lum = 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
+    on_white = 1.05 / (lum + 0.05)  # contrast if white ink
+    on_black = (lum + 0.05) / 0.05  # contrast if black ink
+    return "#ffffff" if on_white >= on_black else _INK
+
+
 def render_dot(specs: list[StageSpec]) -> str:
-    """Render the stage catalog as a Graphviz DOT pipeline DAG (deterministic)."""
+    """Render the stage catalog as a landscape Graphviz DAG (deterministic).
+
+    Layout is wide, not tall: a horizontal rail of colour-coded phase headers
+    (``config.yaml`` → the seven phases → ``Run directory``), and each header
+    drops a vertical column of its stage cards. Height is bounded by the busiest
+    phase (~6 cards); width spans the seven phases — a ~3:1 landscape figure.
+    """
     specs = sorted(specs, key=lambda s: s.order)
     by_phase: dict[str, list] = {phase.key: [] for phase in PHASES}
     for spec in specs:
@@ -141,52 +165,48 @@ def render_dot(specs: list[StageSpec]) -> str:
         "digraph cellquorum_pipeline {",
         "    // Generated from the stage registry by docs/assets/gen_pipeline_diagram.py.",
         "    // Do not edit by hand — regenerate when the stage set changes.",
-        f'    graph [rankdir=TB, fontname="Helvetica", bgcolor="{_SURFACE}", '
-        "nodesep=0.28, ranksep=0.42, splines=true];",
+        f'    graph [rankdir=TB, newrank=true, fontname="Helvetica", bgcolor="{_SURFACE}", '
+        "nodesep=0.24, ranksep=0.40, splines=true];",
         '    node [shape=box, style="rounded,filled", fillcolor="#ffffff", '
-        'fontname="Helvetica", fontsize=12, margin="0.16,0.09"];',
-        '    edge [color="#898781", penwidth=1.3, arrowsize=0.75];',
+        'fontname="Helvetica", fontsize=11, margin="0.15,0.085"];',
+        '    edge [color="#cdcbc7", penwidth=1.1, arrowsize=0.55];',
         "",
         "    // Source + sink (run inputs and the run directory).",
         f"    IN [label=<<B>config.yaml</B><BR/>AnnData / 10x matrices>, "
         f'fillcolor="{_IO_FILL}", color="{_IO_FILL}", fontcolor="{_IO_INK}", penwidth=1];',
         f"    OUT [label=<<B>Run directory</B>"
-        f'<BR/><FONT POINT-SIZE="9">figures {dot} results {dot} objects {dot} provenance</FONT>>, '
+        f'<BR/><FONT POINT-SIZE="8">figures {dot} results {dot} objects {dot} provenance</FONT>>, '
         f'fillcolor="{_IO_FILL}", color="{_IO_FILL}", fontcolor="{_IO_INK}", penwidth=1];',
+        "",
+        "    // Phase headers — the colour-coded rail: config -> 7 phases -> run dir.",
     ]
 
-    # One tinted, labelled cluster per phase; stages chained top-to-bottom inside.
+    header = {phase.key: f"P_{phase.key}" for phase in PHASES}
+    for phase in PHASES:
+        lines.append(
+            f"    {header[phase.key]} "
+            f'[label=<<B>{phase.title}</B>>, fillcolor="{phase.stroke}", '
+            f'color="{phase.stroke}", fontcolor="{_text_on(phase.stroke)}", '
+            "fontsize=12, penwidth=1];"
+        )
+
+    # The rail: IN -> header1 -> ... -> header7 -> OUT, all pinned to one rank so
+    # it reads left-to-right; a heavier, darker edge than the intra-phase drops.
+    rail = ["IN", *[header[phase.key] for phase in PHASES], "OUT"]
+    lines.append("")
+    lines.append("    // Rail pinned to one rank (the pipeline reads left to right).")
+    lines.append("    { rank=same; " + "; ".join(rail) + "; }")
+    lines.append("    " + " -> ".join(rail) + ' [color="#6b6a67", penwidth=1.7, arrowsize=0.85];')
+
+    # Each header drops a vertical column of its stage cards (faint edges).
     for phase in PHASES:
         members = by_phase[phase.key]
         lines.append("")
-        lines.append(f"    subgraph cluster_{phase.key} {{")
-        lines.append(f'        label="{phase.title}";')
-        lines.append('        labeljust="l";')
-        lines.append('        labelloc="t";')
-        lines.append('        fontname="Helvetica-Bold";')
-        lines.append("        fontsize=13;")
-        lines.append(f'        fontcolor="{phase.stroke}";')
-        lines.append('        style="rounded,filled";')
-        lines.append(f'        color="{phase.stroke}";')
-        lines.append(f'        fillcolor="{phase.fill}";')
-        lines.append("        penwidth=1.6;")
-        lines.append("        margin=14;")
+        lines.append(f"    // Column: {phase.title}")
         for spec in members:
             lines.append("    " + _node_stmt(spec).lstrip())
-        if len(members) > 1:
-            chain = " -> ".join(spec.name for spec in members)
-            lines.append(f"        {chain};")
-        lines.append("    }")
-
-    # Monotonic spine: IN -> first stage; last-of-phase -> first-of-next; last -> OUT.
-    firsts = [by_phase[phase.key][0].name for phase in PHASES if by_phase[phase.key]]
-    lasts = [by_phase[phase.key][-1].name for phase in PHASES if by_phase[phase.key]]
-    lines.append("")
-    lines.append("    // Spine (canonical order across the lanes).")
-    lines.append(f"    IN -> {firsts[0]};")
-    for last, nxt in zip(lasts, firsts[1:], strict=False):
-        lines.append(f"    {last} -> {nxt};")
-    lines.append(f"    {lasts[-1]} -> OUT;")
+        column = " -> ".join([header[phase.key], *[spec.name for spec in members]])
+        lines.append(f"    {column};")
 
     lines.append("}")
     return "\n".join(lines) + "\n"
