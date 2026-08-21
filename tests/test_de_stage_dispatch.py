@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+from cellquorum.comparative.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.core.contracts.layer_tags import set_layer_tag
-from cellquorum.differential_expression.stage import DifferentialExpressionStage
 
 
 def _adata():

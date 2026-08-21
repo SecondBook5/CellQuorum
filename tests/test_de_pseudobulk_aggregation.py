@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from cellquorum.differential_expression.pseudobulk import aggregate_pseudobulk
+from cellquorum.comparative.differential_expression.pseudobulk import aggregate_pseudobulk
 
 
 def _toy_adata():

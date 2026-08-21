@@ -7,10 +7,10 @@ This suite verifies the wiring checklist for Task 5:
 3. The default executor registry includes a DeVizStage instance under "de_viz".
 """
 
+from cellquorum.comparative.differential_expression.viz.stage import DeVizStage
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.executor import build_default_stage_registry
 from cellquorum.core.planner import build_pipeline_plan
-from cellquorum.differential_expression.viz.stage import DeVizStage
 
 
 def test_config_defaults() -> None:
