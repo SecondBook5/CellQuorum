@@ -123,6 +123,16 @@ Recent engineering and reproducibility hardening:
   environment so the CCC, trajectory, and GPU stages are reachable in-image.
 - **Environment locking:** `make lock` generates `conda-lock` files from the
   `envs/*.yml` recipes (see `envs/README.md`).
+- **DIALOGUE provisioned reproducibly (#189):** the `multicellular_programs`
+  stage depends on `livnatje/DIALOGUE`, a GitHub-only R package with no
+  conda/CRAN release, so it silently skipped in every image. Its CRAN `Depends:`
+  are now solved from conda-forge in `cellquorum-r.yml` (ABI-matched to
+  `r-base`); the one dependency absent from conda-forge (`unikn`) is
+  source-installed from a date-pinned CRAN snapshot, and DIALOGUE itself is
+  installed at a pinned commit (`dependencies=FALSE`). A build-time
+  `library(DIALOGUE)` check fails the image loudly if the package cannot load,
+  rather than letting the stage skip at runtime. `envs/README.md` documents the
+  same pins for a local `cellquorum-r` env.
 
 ## [0.1.0] — initial development version
 

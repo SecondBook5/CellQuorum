@@ -14,7 +14,27 @@ Development environment extending `cellquorum-core` with testing, linting, and b
 GPU-enabled environment for GPU-accelerated analyses, extending `cellquorum-core` with CUDA-enabled PyTorch and scvi-tools.
 
 ### `cellquorum-r`
-R bridge environment containing Seurat, zellkonverter, and R<->Python interoperability libraries (rpy2, anndata2ri) for analyses requiring R-based tools.
+R bridge environment for the R/Bioconductor methods dispatched over the Rscript
+(and rpy2) bridge: pseudobulk DE (edgeR/limma/DESeq2), SingleR, scran/scater,
+scDblFinder, batchelor, and the regulatory-network tools (AUCell, GENIE3,
+dorothea, viper). It also carries the DIALOGUE `Depends:` from conda-forge.
+
+**DIALOGUE (multicellular_programs):** DIALOGUE is a GitHub-only R package with
+no conda/CRAN release, so it is not created by the env solve. Its CRAN
+`Depends:` are provisioned from conda-forge in `cellquorum-r.yml`; the one
+`Depends:` absent from conda-forge (`unikn`) and DIALOGUE itself are installed
+after the env is created. To run the `multicellular_programs` stage in a local
+`cellquorum-r` env, install them at the same pins the Docker image uses:
+
+```bash
+micromamba run -n cellquorum-r Rscript -e '
+  options(repos = c(CRAN = "https://packagemanager.posit.co/cran/2025-06-02"));
+  install.packages("unikn");
+  remotes::install_github(
+    "livnatje/DIALOGUE@9c146ccf28d7706aaa60d00947a9126b4e75fd69",
+    dependencies = FALSE, upgrade = "never");
+  suppressPackageStartupMessages(library(DIALOGUE))'
+```
 
 ## Isolated Backend Environments
 

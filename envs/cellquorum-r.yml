@@ -60,6 +60,27 @@ dependencies:
   - bioconductor-dorothea
   - bioconductor-viper
 
+  # DIALOGUE (multicellular_programs) CRAN dependencies. DIALOGUE itself is a
+  # GitHub-only package (livnatje/DIALOGUE) with no conda/CRAN release, so it is
+  # installed at a pinned commit in the Dockerfile's cpu stage. Its Depends: are
+  # provisioned here from conda-forge so they are ABI-matched to r-base and
+  # pinned by the env solve. The one Depends: not on conda-forge (unikn) is
+  # source-installed next to DIALOGUE from a date-pinned CRAN snapshot. Without
+  # this block library(DIALOGUE) fails to load and the stage silently skips.
+  - r-lme4
+  - r-lmertest
+  - r-pma
+  - r-plyr
+  - r-matrixstats
+  - r-psych
+  - r-stringi
+  - r-rcolorbrewer
+  - r-reshape2
+  - r-ppcor
+  - r-hmisc
+  - r-beanplot
+  - r-upsetr
+
   # NOTE: the editable install of CellQuorum is done in a dedicated Dockerfile
   # RUN step (after the source is copied), NOT here. At env-create time conda
   # resolves a pip local path relative to this file's dir (/tmp in the image),

@@ -23,6 +23,21 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER envs/cellquorum-r.yml /tmp/r.yml
 RUN micromamba create -y -n cellquorum-r -f /tmp/r.yml && \
     micromamba run -n cellquorum-r pip install -e . && \
     micromamba clean -a -y
+# DIALOGUE (multicellular_programs) is a GitHub-only R package with no conda/CRAN
+# release. Its CRAN Depends: are already provisioned via conda-forge in
+# cellquorum-r.yml (ABI-matched to r-base, pinned by the solve); here we
+# source-install the one Depends: not on conda-forge (unikn) from a date-pinned
+# CRAN snapshot and install DIALOGUE itself pinned to an exact commit
+# (dependencies=FALSE, since conda already supplied them). Pinning both the SHA
+# and the CRAN snapshot keeps the stage reproducible. The trailing
+# library(DIALOGUE) makes the build fail loud if the package cannot load, rather
+# than letting the stage silently skip at runtime.
+ARG DIALOGUE_SHA=9c146ccf28d7706aaa60d00947a9126b4e75fd69
+ARG CRAN_SNAPSHOT=https://packagemanager.posit.co/cran/2025-06-02
+RUN micromamba run -n cellquorum-r Rscript -e \
+    "options(repos=c(CRAN='${CRAN_SNAPSHOT}')); install.packages('unikn'); remotes::install_github('livnatje/DIALOGUE@${DIALOGUE_SHA}', dependencies=FALSE, upgrade='never')" && \
+    micromamba run -n cellquorum-r Rscript -e "suppressPackageStartupMessages(library(DIALOGUE)); cat('DIALOGUE', as.character(packageVersion('DIALOGUE')), 'OK\n')" && \
+    micromamba clean -a -y
 ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "micromamba", "run", "-n", "cellquorum-core", "cellquorum"]
 CMD ["--help"]
 
