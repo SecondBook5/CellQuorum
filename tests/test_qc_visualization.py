@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import struct
 import tempfile
 from pathlib import Path
 
@@ -205,6 +206,71 @@ def test_group_key_none_still_works():
         # Harden: ensure at least one violin figure is actually produced.
         names = {p.name for p in result.figure_paths}
         assert any("violin" in n for n in names), "No violin figure produced"
+
+
+def test_group_key_absent_from_obs_falls_back_gracefully():
+    """#128: a group_key naming a column that is not in .obs must not crash.
+
+    The QC stage resolves the grouping column from the cohort/design schema, but
+    a config can still name a key (historically ``patient_id`` / ``donor_id``)
+    that the current object does not carry. The violins must fall back to a
+    single-group distribution and still emit, rather than raising a KeyError.
+    """
+    adata = _adata_with_group_and_doublet()
+    assert "patient_id" not in adata.obs.columns  # the missing key we pass below
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100, group_key="patient_id")
+        names = {p.name for p in result.figure_paths}
+        assert any("violin" in n for n in names), "No violin figure produced on absent group_key"
+        for p in result.figure_paths:
+            assert p.exists() and p.stat().st_size > 0
+
+
+def _png_pixel_dimensions(path: Path) -> tuple[int, int]:
+    """Return (width, height) in pixels from a PNG's IHDR — stdlib only.
+
+    A PNG is an 8-byte signature, then the IHDR chunk whose 4-byte big-endian
+    width and height start at byte offset 16.
+    """
+    header = path.read_bytes()[16:24]
+    width, height = struct.unpack(">II", header)
+    return width, height
+
+
+def test_high_cardinality_group_keeps_figure_size_bounded():
+    """#129: a high-cardinality grouping column must not produce an unbounded figure.
+
+    Above 30 groups the violin collapses to a single distribution, and the figure
+    size is a fixed constant rather than scaled per group. Render a 40-group case
+    and assert the PNG stays well within a bound a per-group-scaled figure would
+    blow past.
+    """
+    n = 40  # > 30 unique groups triggers the collapse-to-single-distribution guard
+    matrix = np.random.default_rng(0).poisson(3, size=(n, 6)).astype(np.float32)
+    obs = pd.DataFrame(
+        {
+            "total_counts": matrix.sum(axis=1),
+            "n_genes_by_counts": (matrix > 0).sum(axis=1),
+            "pct_counts_mito": np.linspace(1.0, 20.0, n),
+            "sample": [f"S{i}" for i in range(n)],  # 40 distinct groups
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    var = pd.DataFrame(index=[f"gene_{i}" for i in range(6)])
+    adata = ad.AnnData(X=matrix, obs=obs, var=var)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100, group_key="sample")
+        violins = [
+            p for p in result.figure_paths if "violin" in p.name and "total_counts" in p.name
+        ]
+        assert violins, "No total_counts violin produced for a high-cardinality grouping"
+        width, height = _png_pixel_dimensions(violins[0])
+        # Fixed (6, 4) figsize at dpi=100 renders ~600x400 px; a figure scaled per
+        # group (40 groups) would exceed this bound many times over.
+        bounded = width <= 2000 and height <= 2000
+        assert bounded, f"QC violin figure is unbounded: {width}x{height}px"
 
 
 def test_colored_scatter_keep_fail_variant():
