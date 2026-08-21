@@ -372,12 +372,17 @@ flowchart LR
     EXEC -.-> PROV
 ```
 
-The source is organized into 18 packages under `src/cellquorum/`: `core` (context,
-planner, executor, contracts, provenance), `config`, `methods` (dispatch + shared
-abstractions), `backends`, the stage packages (`qc`, `preprocessing`, `clustering`,
-`integration`, `annotation`, `differential_expression`, `differential_abundance`,
-`enrichment`, `gene_regulation`, `cell_cell_communication`, `trajectory`), plus
-`io`, `visualization`, and `cli`. See [`docs/architecture.md`](docs/architecture.md).
+The source is organized into 17 top-level packages under `src/cellquorum/` (plus
+four thin compatibility-shim packages — `differential_expression`,
+`differential_abundance`, `enrichment`, `multicellular_programs` — that preserve
+the pre-#187 import paths): `core` (context, planner, executor, contracts,
+provenance), `config`, `methods` (dispatch + shared abstractions), `backends`, the
+stage packages (`ambient_correction`, `qc`, `preprocessing`, `clustering`,
+`integration`, `annotation`, `comparative`, `gene_regulation`,
+`cell_cell_communication`, `trajectory`), plus `io`, `visualization`, and `cli`.
+The `comparative` package groups the four "compare groups" analyses as submodules —
+`differential_expression`, `differential_abundance`, `enrichment`, and
+`multicellular_programs`. See [`docs/architecture.md`](docs/architecture.md).
 
 ## Development
 
