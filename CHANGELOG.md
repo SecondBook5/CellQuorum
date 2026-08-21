@@ -126,6 +126,14 @@ public API and the configuration schema.
 
 ### Fixed
 
+- **`make lock` targeted impossible platforms (#189).** The conda-lock recipe
+  ran `conda-lock lock` with no `--platform`, so it attempted a multi-platform
+  solve (osx-64/win-64 included). The GPU env carries linux-only CUDA packages
+  (`pytorch-cuda`, the `nvidia` channel) with no osx/win build, so the solve
+  aborted before any lock file was written. The target now pins `-p linux-64` —
+  the image's only build platform and the only one we ship — matching the docs
+  in `envs/README.md` and `docs/backends.md`.
+
 Correctness defects that could silently produce wrong output (#168):
 
 - **QC no-drop mode (#168b / #181).** The QC "report only" behavior silently kept

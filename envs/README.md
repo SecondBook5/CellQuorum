@@ -112,6 +112,13 @@ This scans `envs/*.yml` and generates corresponding `envs/*.conda-lock.yml` file
 pip install conda-lock
 ```
 
+Locks are solved for **linux-64 only** — the platform the Docker image builds
+on. This is deliberate: the GPU env carries linux-only CUDA packages
+(`pytorch-cuda`, the `nvidia` channel) with no osx-64/win-64 build, so an
+unpinned multi-platform solve would fail on those envs. Run `make lock` on a
+linux-64 host (or CI) with `conda-lock` installed; the solve needs network
+access to the conda channels.
+
 ## Docker Integration
 
 All environments (primary + isolated backends) are baked into the `cellquorum` Docker image. See `docs/docker.md` for details on building and using the containerized environments.

@@ -63,7 +63,9 @@ the Rscript adapter, and **hdWGCNA** (`coexpression`) runs in the isolated
 ## Locking and Docker
 
 - **Locking.** `make lock` generates `conda-lock` files from the `envs/*.yml`
-  recipes for reproducible solves (requires `conda-lock` on `PATH`).
+  recipes for reproducible solves (requires `conda-lock` on `PATH`). Locks are
+  pinned to **linux-64** — the image's build platform, and the only one with a
+  CUDA build for the GPU env — so run it on a linux-64 host or in CI.
 - **Docker.** A layered image bakes the primary environments and, on the optional
   `backends`/`celloracle` targets, the isolated backends. The CLI runs inside the
   correct environment (`cellquorum-core` for the CPU image, `cellquorum-gpu` for the

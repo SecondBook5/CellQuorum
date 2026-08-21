@@ -20,11 +20,17 @@ image:
 image-gpu:
 	docker build --target gpu -t $(IMAGE_GPU) -f docker/Dockerfile .
 
+# Generate reproducible conda-lock files for every environment recipe.
+# Platform is pinned to linux-64 on purpose: the image builds on the linux-64
+# micromamba base, and the GPU env carries linux-only CUDA packages
+# (pytorch-cuda, the nvidia channel) that have no osx-64/win-64 build — an
+# unpinned multi-platform solve would fail on those envs. linux-64 is the only
+# platform we ship, so it is the only platform we lock.
 lock:
 	@command -v conda-lock >/dev/null || { echo "install conda-lock first"; exit 1; }
 	for f in envs/*.yml; do \
 	  [ -s "$$f" ] || continue; \
-	  conda-lock lock -f "$$f" --lockfile "$${f%.yml}.conda-lock.yml" || exit 1; \
+	  conda-lock lock -p linux-64 -f "$$f" --lockfile "$${f%.yml}.conda-lock.yml" || exit 1; \
 	done
 
 smoke:
