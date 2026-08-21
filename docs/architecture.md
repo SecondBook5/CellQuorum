@@ -184,7 +184,7 @@ to a broken run.
 
 ## Source layout
 
-The package is organized into 19 top-level packages under `src/cellquorum/`:
+The package is organized into 20 top-level packages under `src/cellquorum/`:
 
 | Package | Responsibility |
 |---|---|
@@ -192,7 +192,8 @@ The package is organized into 19 top-level packages under `src/cellquorum/`:
 | `config` | Pydantic models, loader, validation, cohort/design/markers schemas |
 | `methods` | method dispatch base classes, the method registry, and shared abstractions (incl. `RAnalysisMethod`) |
 | `backends` | backend registry + subprocess adapters (pySCENIC, scCODA, CellOracle, scclr) and bundled R scripts |
-| `qc` | quality control and ambient correction (`qc.ambient`) |
+| `ambient_correction` | SoupX ambient-RNA correction stage (runs first, per library, before QC) |
+| `qc` | quality control: metrics, thresholds, doublets, decisions, artifacts |
 | `preprocessing` | normalization, feature selection, dimensionality reduction |
 | `clustering` | clustering and recursive subclustering |
 | `integration` | batch integration, embeddings, integration benchmark |
@@ -205,7 +206,7 @@ The package is organized into 19 top-level packages under `src/cellquorum/`:
 | `multicellular_programs` | cross-cell-type coordinated programs via DIALOGUE |
 | `trajectory` | RNA velocity and trajectory visualization |
 | `io` | input/output helpers |
-| `visualization` | shared figure styling and plotting |
+| `visualization` | shared figure styling/plotting (`figstyle`) and QC figure builders (`visualization.qc`) |
 | `cli` | the `cellquorum`/`cq` Typer app and the `gen-configs` workflow commands |
 
 Each stage package follows a uniform layout — `stage.py` (the stage implementation),
