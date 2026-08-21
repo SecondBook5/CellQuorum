@@ -139,6 +139,60 @@ backend it would use. See [`configs/config.yaml`](https://github.com/SecondBook5
 complete worked example and [architecture.md](architecture.md) for how method
 dispatch and data contracts work.
 
+## Experimental design
+
+The biological question is declared once in the `design` block (donor/condition
+columns, case/control tokens, pairing) and consumed by the statistical stages. The
+differential-expression engine supports three design shapes, and validates
+estimability before any fit — a non-estimable design halts with a clear
+configuration error rather than reaching the backend and producing a meaningless
+coefficient.
+
+**Pairwise (the default): case vs control.** Requires both arms and at least two
+donors per arm. When every donor contributes both a case and a control sample the
+design is auto-promoted to **paired** (a donor block, `~ donor + condition`), which
+removes inter-donor baseline variance; incomplete pairs are restricted out. Set
+`design.paired: true` to require pairing explicitly.
+
+```yaml
+design:
+  donor_col: patient_id
+  condition_col: condition
+  case: LE
+  control: Normal
+  paired: true
+```
+
+**Covariate-adjusted.** Additive nuisance terms enter the model as
+`~ [covariates +] [donor +] condition`. A categorical covariate perfectly aliased
+with the tested condition (e.g. a batch that coincides with case/control) is
+rank-deficient and halts loudly.
+
+```yaml
+differential_expression:
+  covariates: [sex, batch]     # additive adjustment; still tests case vs control
+```
+
+**Factorial (two-way interaction).** List `[factor_a, factor_b]` pairs under
+`interactions` (each member the condition column or a declared covariate). The fit
+then tests the **interaction** — a difference-of-differences F-test, "is the
+condition effect modified by this factor?" — instead of the case-vs-control main
+effect. An empty factorial-grid cell (e.g. no case sample in one batch) leaves the
+interaction inestimable and halts before the fit. The result artifact is labelled
+as an interaction test, so it is never misread as a plain contrast.
+
+```yaml
+differential_expression:
+  covariates: [batch]              # the interacting factor must be a covariate too
+  interactions:
+    - [condition, batch]           # tests condition x batch (difference of differences)
+```
+
+A single-sample dataset (one condition, or no donor replication) has no valid
+comparative statistics: the descriptive spine (QC, embedding, clustering,
+annotation) runs, but DE/DA halt with an explicit error rather than reporting
+confident-but-meaningless p-values.
+
 ## Generating configs from a manifest
 
 To expand a hypothesis manifest into many per-`(hypothesis, cell_type)` configs, use

@@ -11,6 +11,23 @@ public API and the configuration schema.
 
 ### Added
 
+- **Factorial / interaction differential expression (#192).** The pseudobulk
+  edgeR DE stage now supports two-way *interaction* testing. A new
+  `differential_expression.interactions` config field takes `[factor_a, factor_b]`
+  pairs (each member the condition column or a declared covariate); when set, the
+  fit tests the interaction — a difference-of-differences quasi-likelihood F-test
+  over the interaction coefficients ("is the condition effect modified by this
+  factor?") — instead of the case-vs-control main effect, and the result artifact
+  is labelled accordingly so an interaction table is never misread as a contrast.
+  This is backed by a general multi-factor **design-estimability layer** in
+  `cellquorum.config.design` (`build_design_matrix` / `analyze_design` /
+  `validate_design_matrix`): it treatment-codes an arbitrary set of factors plus
+  interactions exactly as R's `model.matrix` does, then halts loudly on a
+  rank-deficient design — a covariate perfectly aliased with the tested condition,
+  two confounded (nested) factors, or an empty factorial-grid cell that leaves an
+  interaction inestimable. The DE stage runs this gate before the fit, so a
+  confounded covariate or an empty crossed cell fails with a clear configuration
+  error rather than reaching edgeR and producing a meaningless coefficient.
 - **Cell-state program scoring (`state_scoring`, #190).** A new analysis stage
   that scores curated cell-state programs (stress/HSP, hypoxia/HIF, interferon,
   senescence/SASP, fibrosis/ECM) on the annotated object. It runs two scorers by

@@ -17,6 +17,11 @@ class DifferentialExpressionConfig(StrictBaseModel):
         method: DE method registry key (pseudobulk_edger).
         layer: Layer holding raw counts for pseudobulk aggregation.
         covariates: Optional covariates added to the design matrix.
+        interactions: Optional two-way interaction terms. Each is a ``[a, b]``
+            pair of factor columns (each the condition column or a declared
+            covariate). When set, the fit tests the interaction (a
+            difference-of-differences F-test) instead of the case-vs-control
+            main effect.
         min_count: edgeR filterByExpr minimum count threshold.
         min_total_count: edgeR filterByExpr minimum total count threshold.
         fdr: FDR threshold recorded in outputs.
@@ -36,6 +41,11 @@ class DifferentialExpressionConfig(StrictBaseModel):
     # Optional covariates added to the design matrix (schema-driven; validated
     # against obs only when non-empty). Empty for datasets without clinical metadata.
     covariates: list[str] = []
+
+    # Optional two-way interaction terms as [factor_a, factor_b] pairs. Each member
+    # must be the condition column or a declared covariate. When non-empty the fit
+    # tests the interaction (difference-of-differences) rather than the main effect.
+    interactions: list[list[str]] = []
 
     # edgeR filterByExpr thresholds.
     min_count: int = 10
