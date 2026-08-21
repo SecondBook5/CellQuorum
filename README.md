@@ -57,15 +57,16 @@ propagating the updated `AnnData` downstream:
 
 <p align="center">
   <img src="docs/assets/pipeline.svg" width="100%"
-       alt="CellQuorum pipeline: a left-to-right rail of seven colour-coded phases — preprocessing, integration and clustering, annotation and identity, state and embeddings, differential analysis, gene regulation, and communication and trajectory — running from config.yaml and an AnnData input to a provenance-tracked run directory. Each phase drops a column of its stage cards showing that stage's config-selectable methods; five reserved stages appear as dashed slots.">
+       alt="CellQuorum pipeline fan-out: config.yaml and an AnnData input flow through a shared backbone — preprocessing, then integration and clustering, then annotation and identity — that produces one annotated object. From there four analysis families fan out in parallel — state and embeddings, differential analysis, gene regulation, and communication and trajectory — each listing its config-selectable methods (Harmony, scVI, hdWGCNA, pySCENIC, CellOracle, LIANA, Tensor-cell2cell, DIALOGUE, scVelo, CellRank, and more), and all converge on a provenance-tracked run directory. Reserved, not-yet-implemented stages appear as muted rows.">
 </p>
 
 *The diagram is generated from the stage registry (`docs/assets/gen_pipeline_diagram.py`),
-so it always matches the engine: the seven colour-coded phases run left to right
-from `config.yaml` to the run directory, each stage is a card showing its
-config-selectable methods, and dashed cards are reserved slots that skip as
-not-yet-implemented. A stage also skips cleanly when disabled in the config or
-when its required inputs or backends are unavailable.*
+so it always matches the engine: a shared preprocessing → integration → annotation
+backbone produces one annotated object, then the four downstream analysis families
+fan out in parallel and converge on the run directory. Each stage row names its
+config-selectable methods, and reserved (not-yet-implemented) stages appear as muted
+rows. A stage also skips cleanly when disabled in the config or when its required
+inputs or backends are unavailable.*
 
 ## Installation
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """One-shot generator for the README pipeline diagram.
 
-Reads the live stage registry, renders a Graphviz DOT DAG, and writes
+Reads the live stage registry, renders a Graphviz DOT fan-out DAG, and writes
 ``docs/assets/pipeline.dot`` + ``docs/assets/pipeline.svg`` (via ``dot -Tsvg``).
 This is a *dev-time* script — the engine does not depend on it and it is not part
 of the CLI. Regenerate the figure only when the stage set changes:
@@ -10,9 +10,12 @@ of the CLI. Regenerate the figure only when the stage set changes:
 
 Requires the Graphviz ``dot`` binary on PATH (Debian/Ubuntu: ``apt install graphviz``).
 
-The figure is generated from code (stages, order, implemented-vs-planned, and the
-selectable methods per stage all come from the registry), so a regenerated figure
-always matches the engine.
+The figure is a *fan-out*: a shared preprocessing → integration → annotation
+backbone produces one annotated object, which the four downstream analysis
+families (state, differential, regulation, communication) each consume in
+parallel before converging on the run directory. Stages, order, the
+implemented-vs-planned split, and the selectable methods per stage all come from
+the registry, so a regenerated figure always matches the engine.
 """
 
 from __future__ import annotations
@@ -26,16 +29,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from cellquorum.core.stage_catalog import StageSpec
 
-# Middle dot separating method names in a sub-line (literal UTF-8; the .dot/.svg
+# Middle dot separating method names in a detail line (literal UTF-8; the .dot/.svg
 # are UTF-8 and Graphviz HTML-like labels accept it directly).
 _MIDDOT = " · "
 
 # Ink tokens — text never wears a series colour; identity comes from the border.
 _INK = "#0b0b0b"  # primary ink for implemented stage names
-_SUBTLE_INK = "#52514e"  # secondary ink for method sub-lines
-_PLANNED_STROKE = "#898781"  # dashed grey border for planned stages
-_PLANNED_FILL = "#f4f3f1"  # faint grey fill for planned stages
-_PLANNED_INK = "#52514e"  # muted ink for planned stage text
+_SUBTLE_INK = "#52514e"  # secondary ink for method detail lines
+_PLANNED_INK = "#8a8880"  # muted ink for planned (reserved) stage rows
 _IO_FILL = "#0b0b0b"  # dark source/sink nodes
 _IO_INK = "#ffffff"
 _SURFACE = "#ffffff"  # explicit light surface (renders cleanly in GitHub dark mode)
@@ -43,38 +44,97 @@ _SURFACE = "#ffffff"  # explicit light surface (renders cleanly in GitHub dark m
 
 @dataclass(frozen=True)
 class Phase:
-    """One coloured lane of the pipeline diagram (a contiguous ``order`` band)."""
+    """One coloured node of the fan-out DAG (a contiguous ``order`` band)."""
 
     key: str
     title: str
     max_order: int  # holds stages with order <= max_order and > the previous band
-    stroke: str  # CVD-validated categorical hue (borders + lane label)
-    fill: str  # light tint of the hue (lane background)
+    stroke: str  # CVD-validated categorical hue (border + title)
 
 
-# Seven contiguous order-bands → a monotonic spine with no back-edges. Strokes are
-# the CVD-validated 7-hue set (validate_palette.js PASS, light + dark).
+# Seven contiguous order-bands. The first three are the shared backbone; the last
+# four fan out from the annotated object. Strokes are the CVD-validated 7-hue set
+# (validate_palette.js PASS, light + dark).
 PHASES: tuple[Phase, ...] = (
-    Phase("preprocessing", "1 · Preprocessing", 50, "#2a78d6", "#eaf2fc"),
-    Phase("integration", "2 · Integration and clustering", 100, "#eb6834", "#fdeee7"),
-    Phase("annotation", "3 · Annotation and identity", 160, "#1baf7a", "#e6f7f1"),
-    Phase("embeddings", "4 · State and embeddings", 200, "#eda100", "#fdf3dd"),
-    Phase("differential", "5 · Differential analysis", 250, "#e87ba4", "#fcecf2"),
-    Phase("regulation", "6 · Gene regulation", 290, "#008300", "#e3f2e3"),
-    Phase("communication", "7 · Communication and trajectory", 10_000, "#4a3aa7", "#eae7f6"),
+    Phase("preprocessing", "1 · Preprocessing", 50, "#2a78d6"),
+    Phase("integration", "2 · Integration and clustering", 100, "#eb6834"),
+    Phase("annotation", "3 · Annotation and identity", 160, "#1baf7a"),
+    Phase("embeddings", "4 · State and embeddings", 200, "#eda100"),
+    Phase("differential", "5 · Differential analysis", 250, "#e87ba4"),
+    Phase("regulation", "6 · Gene regulation", 290, "#008300"),
+    Phase("communication", "7 · Communication and trajectory", 10_000, "#4a3aa7"),
 )
 
-# Curated one-line descriptors for backbone stages that expose a single
-# implementation (so register no *selectable* methods). Short + accurate to
-# current behaviour; every other sub-line derives from the method registry.
-_STAGE_DESCRIPTORS: dict[str, str] = {
-    "ambient_correction": "SoupX · R",
-    "qc": "MAD · doublets · cell-cycle",
-    "preprocessing": "normalize · log1p · GPU",
+# The backbone is the first three phases; the rest fan out in parallel.
+_BACKBONE = PHASES[:3]
+_FAN = PHASES[3:]
+
+# Registry method ids are terse (``tensor_c2c``, ``sccoda``); the figure shows the
+# tools' published names so the marquee backends read at a glance.
+_PRETTY: dict[str, str] = {
+    "pca": "PCA",
+    "seurat": "Seurat",
+    "seurat_v3": "Seurat v3",
+    "pearson_residuals": "Pearson residuals",
+    "harmony": "Harmony",
+    "scvi": "scVI",
+    "scanvi": "scANVI",
+    "leiden": "Leiden",
+    "marker_vote": "marker-vote",
+    "celltypist": "CellTypist",
+    "passthrough": "passthrough",
+    "scarches": "scArches",
+    "scdiagnostics": "scDiagnostics",
+    "scib_benchmark": "scIB metrics",
+    "umap": "UMAP",
+    "phate": "PHATE",
+    "paga": "PAGA",
+    "categorical_embedding": "categorical",
+    "continuous_overlay": "MAGIC overlay",
+    "pseudobulk_edger": "pseudobulk edgeR",
+    "propeller": "propeller",
+    "milo": "Milo",
+    "sccoda": "scCODA",
+    "proportion_ttest": "arcsin-sqrt t-test",
+    "gsea": "GSEA",
+    "ora": "ORA",
+    "gsva": "GSVA",
+    "activity": "decoupler activity",
+    "hdwgcna": "hdWGCNA",
+    "pyscenic": "pySCENIC",
+    "celloracle": "CellOracle",
+    "velocity": "scVelo",
+    "cellrank": "CellRank",
+    "dpt": "DPT",
+    "palantir": "Palantir",
+    "cytotrace": "CytoTRACE",
+    "liana": "LIANA",
+    "tensor_c2c": "Tensor-cell2cell",
+    "multinichenet": "MultiNicheNet",
+    "nichenet": "NicheNet",
+    "dialogue": "DIALOGUE",
+    "topology": "topology",
+    "ricci": "Ollivier-Ricci",
+}
+
+# Curated detail lines (take precedence over the registry) for stages that either
+# register no *selectable* method — single-implementation backbone steps — or whose
+# many viz variants collapse to a compact phrase. Backbone GPU steps name the
+# rapids-singlecell backend explicitly. Every other detail derives from the registry.
+_CURATED: dict[str, str] = {
+    "ambient_correction": "SoupX",
+    "qc": "MAD · Scrublet · scDblFinder · cell-cycle",
+    "preprocessing": "PFlog1pPF · rapids-singlecell (GPU)",
+    "dimensionality": "PCA · rapids-singlecell (GPU)",
+    "clustering": "Leiden · rapids-singlecell (GPU)",
     "subclustering": "recursive Leiden · sc-SHC",
     "adjudication": "label reconciliation",
     "annotation_consensus": "cross-method consensus",
     "population_identity": "evidence-ranked identity",
+    "de_viz": "volcano",
+    "enrichment_viz": "GSEA · ORA · GSVA plots",
+    "ccc_viz": "dotplot · chord · Sankey · curvature",
+    "trajectory_viz": "pseudotime · fate · drivers · gene trends",
 }
 
 
@@ -95,43 +155,14 @@ def _methods_for(category: str | None) -> list[str]:
     return list(METHOD_REGISTRY.names(category))
 
 
-def _sub_line(spec: StageSpec) -> str:
-    """Muted second line for a stage card (methods / descriptor / planned).
-
-    Method lists wrap at four-per-line so a many-method stage stays a compact
-    card instead of stretching the whole figure wide.
-    """
+def _stage_detail(spec: StageSpec) -> str:
+    """The muted method/tool line for a stage row (curated → registry → empty)."""
+    if spec.name in _CURATED:
+        return _CURATED[spec.name]
     methods = _methods_for(spec.category)
     if methods:
-        rows = [methods[i : i + 4] for i in range(0, len(methods), 4)]
-        return "<BR/>".join(_MIDDOT.join(row) for row in rows)
-    if not spec.is_implemented:
-        return "planned"
-    return _STAGE_DESCRIPTORS.get(spec.name, "")
-
-
-def _node_label(spec: StageSpec) -> str:
-    """Graphviz HTML-like label: bold stage name over a muted sub-line."""
-    sub = _sub_line(spec)
-    ink = _SUBTLE_INK if spec.is_implemented else _PLANNED_INK
-    if sub:
-        return f'<<B>{spec.name}</B><BR/><FONT POINT-SIZE="9" COLOR="{ink}">{sub}</FONT>>'
-    return f"<<B>{spec.name}</B>>"
-
-
-def _node_stmt(spec: StageSpec) -> str:
-    """One DOT node statement for a stage, styled by implemented/planned."""
-    label = _node_label(spec)
-    if spec.is_implemented:
-        stroke = phase_of(spec.order).stroke
-        attrs = f'label={label}, color="{stroke}", fontcolor="{_INK}", penwidth=1.8'
-    else:
-        attrs = (
-            f'label={label}, style="rounded,filled,dashed", '
-            f'color="{_PLANNED_STROKE}", fillcolor="{_PLANNED_FILL}", '
-            f'fontcolor="{_PLANNED_INK}", penwidth=1.5'
-        )
-    return f"    {spec.name} [{attrs}];"
+        return _MIDDOT.join(_PRETTY.get(m, m) for m in methods)
+    return ""  # planned rows carry their marker from the label builder
 
 
 def _text_on(hex_color: str) -> str:
@@ -147,16 +178,45 @@ def _text_on(hex_color: str) -> str:
     return "#ffffff" if on_white >= on_black else _INK
 
 
-def render_dot(specs: list[StageSpec]) -> str:
-    """Render the stage catalog as a landscape Graphviz DAG (deterministic).
+def _phase_node_label(phase: Phase, members: list[StageSpec]) -> str:
+    """HTML-like label: a coloured phase title over one left-aligned row per stage."""
+    rows = [f'<B><FONT POINT-SIZE="15" COLOR="{phase.stroke}">{phase.title}</FONT></B>']
+    for spec in members:
+        detail = _stage_detail(spec)
+        if spec.is_implemented:
+            name = f'<FONT COLOR="{_INK}"><B>{spec.name}</B></FONT>'
+            tail = f'&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="{_SUBTLE_INK}">{detail}</FONT>'
+            rows.append(name + (tail if detail else ""))
+        else:
+            rows.append(
+                f'<FONT COLOR="{_PLANNED_INK}">{spec.name}'
+                f'<FONT POINT-SIZE="9.5">&#160;&#160;· planned</FONT></FONT>'
+            )
+    body = '<BR ALIGN="LEFT"/>'.join(rows) + '<BR ALIGN="LEFT"/>'
+    return f"<{body}>"
 
-    Layout is wide, not tall: a horizontal rail of colour-coded phase headers
-    (``config.yaml`` → the seven phases → ``Run directory``), and each header
-    drops a vertical column of its stage cards. Height is bounded by the busiest
-    phase (~6 cards); width spans the seven phases — a ~3:1 landscape figure.
+
+def _phase_node_stmt(phase: Phase, members: list[StageSpec]) -> str:
+    """One DOT node statement for a phase card (white fill, phase-coloured border)."""
+    label = _phase_node_label(phase, members)
+    return (
+        f'    P_{phase.key} [label={label}, color="{phase.stroke}", '
+        f'fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];'
+    )
+
+
+def render_dot(specs: list[StageSpec]) -> str:
+    """Render the stage catalog as a landscape fan-out DAG (deterministic).
+
+    A shared backbone reads left to right — ``config.yaml`` → Preprocessing →
+    Integration → Annotation — producing one annotated object. From there the four
+    downstream analysis families (state, differential, regulation, communication)
+    fan out in parallel and converge on the run directory. Each phase is a
+    colour-coded card listing its stages and their config-selectable methods;
+    reserved (not-yet-implemented) stages appear as muted rows.
     """
     specs = sorted(specs, key=lambda s: s.order)
-    by_phase: dict[str, list] = {phase.key: [] for phase in PHASES}
+    by_phase: dict[str, list[StageSpec]] = {phase.key: [] for phase in PHASES}
     for spec in specs:
         by_phase[phase_of(spec.order).key].append(spec)
 
@@ -165,48 +225,42 @@ def render_dot(specs: list[StageSpec]) -> str:
         "digraph cellquorum_pipeline {",
         "    // Generated from the stage registry by docs/assets/gen_pipeline_diagram.py.",
         "    // Do not edit by hand — regenerate when the stage set changes.",
-        f'    graph [rankdir=TB, newrank=true, fontname="Helvetica", bgcolor="{_SURFACE}", '
-        "nodesep=0.24, ranksep=0.40, splines=true];",
+        f'    graph [rankdir=LR, fontname="Helvetica", bgcolor="{_SURFACE}", '
+        "nodesep=0.40, ranksep=0.85, splines=true];",
         '    node [shape=box, style="rounded,filled", fillcolor="#ffffff", '
-        'fontname="Helvetica", fontsize=11, margin="0.15,0.085"];',
-        '    edge [color="#cdcbc7", penwidth=1.1, arrowsize=0.55];',
+        'fontname="Helvetica", fontsize=11];',
         "",
         "    // Source + sink (run inputs and the run directory).",
         f"    IN [label=<<B>config.yaml</B><BR/>AnnData / 10x matrices>, "
         f'fillcolor="{_IO_FILL}", color="{_IO_FILL}", fontcolor="{_IO_INK}", penwidth=1];',
         f"    OUT [label=<<B>Run directory</B>"
-        f'<BR/><FONT POINT-SIZE="8">figures {dot} results {dot} objects {dot} provenance</FONT>>, '
+        f'<BR/><FONT POINT-SIZE="9">figures {dot} results {dot} objects {dot} provenance</FONT>>, '
         f'fillcolor="{_IO_FILL}", color="{_IO_FILL}", fontcolor="{_IO_INK}", penwidth=1];',
         "",
-        "    // Phase headers — the colour-coded rail: config -> 7 phases -> run dir.",
+        "    // Phase cards (white fill, phase-coloured border).",
     ]
 
-    header = {phase.key: f"P_{phase.key}" for phase in PHASES}
     for phase in PHASES:
-        lines.append(
-            f"    {header[phase.key]} "
-            f'[label=<<B>{phase.title}</B>>, fillcolor="{phase.stroke}", '
-            f'color="{phase.stroke}", fontcolor="{_text_on(phase.stroke)}", '
-            "fontsize=12, penwidth=1];"
-        )
+        lines.append(_phase_node_stmt(phase, by_phase[phase.key]))
 
-    # The rail: IN -> header1 -> ... -> header7 -> OUT, all pinned to one rank so
-    # it reads left-to-right; a heavier, darker edge than the intra-phase drops.
-    rail = ["IN", *[header[phase.key] for phase in PHASES], "OUT"]
+    # Backbone spine: config -> preprocessing -> integration -> annotation. A
+    # heavier, darker edge than the fan so the shared trunk reads first.
+    spine = ["IN", *[f"P_{phase.key}" for phase in _BACKBONE]]
     lines.append("")
-    lines.append("    // Rail pinned to one rank (the pipeline reads left to right).")
-    lines.append("    { rank=same; " + "; ".join(rail) + "; }")
-    lines.append("    " + " -> ".join(rail) + ' [color="#6b6a67", penwidth=1.7, arrowsize=0.85];')
+    lines.append("    // Shared backbone (heavier spine).")
+    lines.append("    " + " -> ".join(spine) + ' [color="#5f5e5b", penwidth=2.0, arrowsize=0.9];')
 
-    # Each header drops a vertical column of its stage cards (faint edges).
-    for phase in PHASES:
-        members = by_phase[phase.key]
-        lines.append("")
-        lines.append(f"    // Column: {phase.title}")
-        for spec in members:
-            lines.append("    " + _node_stmt(spec).lstrip())
-        column = " -> ".join([header[phase.key], *[spec.name for spec in members]])
-        lines.append(f"    {column};")
+    # Fan-out from the annotated object into the four analysis families, each
+    # converging on the run directory. Lighter curved grey edges.
+    hub = f"P_{_BACKBONE[-1].key}"
+    lines.append("")
+    lines.append("    // Fan-out: the annotated object feeds each analysis family.")
+    for phase in _FAN:
+        lines.append(f'    {hub} -> P_{phase.key} [color="#9a988f", penwidth=1.5, arrowsize=0.8];')
+    lines.append("")
+    lines.append("    // Fan-in: every family converges on the run directory.")
+    for phase in _FAN:
+        lines.append(f'    P_{phase.key} -> OUT [color="#9a988f", penwidth=1.5, arrowsize=0.8];')
 
     lines.append("}")
     return "\n".join(lines) + "\n"

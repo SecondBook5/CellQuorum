@@ -1,80 +1,34 @@
 digraph cellquorum_pipeline {
     // Generated from the stage registry by docs/assets/gen_pipeline_diagram.py.
     // Do not edit by hand — regenerate when the stage set changes.
-    graph [rankdir=TB, newrank=true, fontname="Helvetica", bgcolor="#ffffff", nodesep=0.24, ranksep=0.40, splines=true];
-    node [shape=box, style="rounded,filled", fillcolor="#ffffff", fontname="Helvetica", fontsize=11, margin="0.15,0.085"];
-    edge [color="#cdcbc7", penwidth=1.1, arrowsize=0.55];
+    graph [rankdir=LR, fontname="Helvetica", bgcolor="#ffffff", nodesep=0.40, ranksep=0.85, splines=true];
+    node [shape=box, style="rounded,filled", fillcolor="#ffffff", fontname="Helvetica", fontsize=11];
 
     // Source + sink (run inputs and the run directory).
     IN [label=<<B>config.yaml</B><BR/>AnnData / 10x matrices>, fillcolor="#0b0b0b", color="#0b0b0b", fontcolor="#ffffff", penwidth=1];
-    OUT [label=<<B>Run directory</B><BR/><FONT POINT-SIZE="8">figures · results · objects · provenance</FONT>>, fillcolor="#0b0b0b", color="#0b0b0b", fontcolor="#ffffff", penwidth=1];
+    OUT [label=<<B>Run directory</B><BR/><FONT POINT-SIZE="9">figures · results · objects · provenance</FONT>>, fillcolor="#0b0b0b", color="#0b0b0b", fontcolor="#ffffff", penwidth=1];
 
-    // Phase headers — the colour-coded rail: config -> 7 phases -> run dir.
-    P_preprocessing [label=<<B>1 · Preprocessing</B>>, fillcolor="#2a78d6", color="#2a78d6", fontcolor="#0b0b0b", fontsize=12, penwidth=1];
-    P_integration [label=<<B>2 · Integration and clustering</B>>, fillcolor="#eb6834", color="#eb6834", fontcolor="#0b0b0b", fontsize=12, penwidth=1];
-    P_annotation [label=<<B>3 · Annotation and identity</B>>, fillcolor="#1baf7a", color="#1baf7a", fontcolor="#0b0b0b", fontsize=12, penwidth=1];
-    P_embeddings [label=<<B>4 · State and embeddings</B>>, fillcolor="#eda100", color="#eda100", fontcolor="#0b0b0b", fontsize=12, penwidth=1];
-    P_differential [label=<<B>5 · Differential analysis</B>>, fillcolor="#e87ba4", color="#e87ba4", fontcolor="#0b0b0b", fontsize=12, penwidth=1];
-    P_regulation [label=<<B>6 · Gene regulation</B>>, fillcolor="#008300", color="#008300", fontcolor="#ffffff", fontsize=12, penwidth=1];
-    P_communication [label=<<B>7 · Communication and trajectory</B>>, fillcolor="#4a3aa7", color="#4a3aa7", fontcolor="#ffffff", fontsize=12, penwidth=1];
+    // Phase cards (white fill, phase-coloured border).
+    P_preprocessing [label=<<B><FONT POINT-SIZE="15" COLOR="#2a78d6">1 · Preprocessing</FONT></B><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>ambient_correction</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">SoupX</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>qc</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">MAD · Scrublet · scDblFinder · cell-cycle</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>preprocessing</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">PFlog1pPF · rapids-singlecell (GPU)</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>feature_selection</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">Seurat · Seurat v3 · Pearson residuals</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>dimensionality</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">PCA · rapids-singlecell (GPU)</FONT><BR ALIGN="LEFT"/>>, color="#2a78d6", fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];
+    P_integration [label=<<B><FONT POINT-SIZE="15" COLOR="#eb6834">2 · Integration and clustering</FONT></B><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>integration</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">Harmony · scVI · scANVI</FONT><BR ALIGN="LEFT"/><FONT COLOR="#8a8880">integration_gate<FONT POINT-SIZE="9.5">&#160;&#160;· planned</FONT></FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>clustering</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">Leiden · rapids-singlecell (GPU)</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>annotation</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">marker-vote · CellTypist · passthrough</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>subclustering</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">recursive Leiden · sc-SHC</FONT><BR ALIGN="LEFT"/>>, color="#eb6834", fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];
+    P_annotation [label=<<B><FONT POINT-SIZE="15" COLOR="#1baf7a">3 · Annotation and identity</FONT></B><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>adjudication</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">label reconciliation</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>reference_mapping</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">scArches</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>annotation_consensus</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">cross-method consensus</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>annotation_diagnostics</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">scDiagnostics</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>population_identity</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">evidence-ranked identity</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>integration_benchmark</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">scIB metrics</FONT><BR ALIGN="LEFT"/>>, color="#1baf7a", fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];
+    P_embeddings [label=<<B><FONT POINT-SIZE="15" COLOR="#eda100">4 · State and embeddings</FONT></B><BR ALIGN="LEFT"/><FONT COLOR="#8a8880">state_scoring<FONT POINT-SIZE="9.5">&#160;&#160;· planned</FONT></FONT><BR ALIGN="LEFT"/><FONT COLOR="#8a8880">discovery<FONT POINT-SIZE="9.5">&#160;&#160;· planned</FONT></FONT><BR ALIGN="LEFT"/><FONT COLOR="#8a8880">composition<FONT POINT-SIZE="9.5">&#160;&#160;· planned</FONT></FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>embeddings</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">UMAP · PHATE · PAGA · categorical · MAGIC overlay</FONT><BR ALIGN="LEFT"/>>, color="#eda100", fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];
+    P_differential [label=<<B><FONT POINT-SIZE="15" COLOR="#e87ba4">5 · Differential analysis</FONT></B><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>differential_expression</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">pseudobulk edgeR</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>differential_abundance</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">propeller · Milo · scCODA · arcsin-sqrt t-test</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>enrichment</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">GSEA · ORA · GSVA · decoupler activity</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>enrichment_viz</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">GSEA · ORA · GSVA plots</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>de_viz</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">volcano</FONT><BR ALIGN="LEFT"/>>, color="#e87ba4", fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];
+    P_regulation [label=<<B><FONT POINT-SIZE="15" COLOR="#008300">6 · Gene regulation</FONT></B><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>coexpression</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">hdWGCNA</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>grn</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">pySCENIC</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>perturbation</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">CellOracle</FONT><BR ALIGN="LEFT"/><FONT COLOR="#8a8880">molecular_inference<FONT POINT-SIZE="9.5">&#160;&#160;· planned</FONT></FONT><BR ALIGN="LEFT"/>>, color="#008300", fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];
+    P_communication [label=<<B><FONT POINT-SIZE="15" COLOR="#4a3aa7">7 · Communication and trajectory</FONT></B><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>trajectory</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">scVelo · CellRank · DPT · Palantir · CytoTRACE</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>trajectory_viz</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">pseudotime · fate · drivers · gene trends</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>cell_cell_communication</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">LIANA · Tensor-cell2cell · MultiNicheNet · NicheNet</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>multicellular_programs</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">DIALOGUE</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>ccc_network</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">topology · Ollivier-Ricci</FONT><BR ALIGN="LEFT"/><FONT COLOR="#0b0b0b"><B>ccc_viz</B></FONT>&#160;&#160;<FONT POINT-SIZE="9.5" COLOR="#52514e">dotplot · chord · Sankey · curvature</FONT><BR ALIGN="LEFT"/>>, color="#4a3aa7", fillcolor="#ffffff", penwidth=1.9, margin="0.20,0.13"];
 
-    // Rail pinned to one rank (the pipeline reads left to right).
-    { rank=same; IN; P_preprocessing; P_integration; P_annotation; P_embeddings; P_differential; P_regulation; P_communication; OUT; }
-    IN -> P_preprocessing -> P_integration -> P_annotation -> P_embeddings -> P_differential -> P_regulation -> P_communication -> OUT [color="#6b6a67", penwidth=1.7, arrowsize=0.85];
+    // Shared backbone (heavier spine).
+    IN -> P_preprocessing -> P_integration -> P_annotation [color="#5f5e5b", penwidth=2.0, arrowsize=0.9];
 
-    // Column: 1 · Preprocessing
-    ambient_correction [label=<<B>ambient_correction</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">SoupX · R</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
-    qc [label=<<B>qc</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">MAD · doublets · cell-cycle</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
-    preprocessing [label=<<B>preprocessing</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">normalize · log1p · GPU</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
-    feature_selection [label=<<B>feature_selection</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">seurat · seurat_v3 · pearson_residuals</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
-    dimensionality [label=<<B>dimensionality</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pca</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
-    P_preprocessing -> ambient_correction -> qc -> preprocessing -> feature_selection -> dimensionality;
+    // Fan-out: the annotated object feeds each analysis family.
+    P_annotation -> P_embeddings [color="#9a988f", penwidth=1.5, arrowsize=0.8];
+    P_annotation -> P_differential [color="#9a988f", penwidth=1.5, arrowsize=0.8];
+    P_annotation -> P_regulation [color="#9a988f", penwidth=1.5, arrowsize=0.8];
+    P_annotation -> P_communication [color="#9a988f", penwidth=1.5, arrowsize=0.8];
 
-    // Column: 2 · Integration and clustering
-    integration [label=<<B>integration</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">harmony · scvi · scanvi</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
-    integration_gate [label=<<B>integration_gate</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
-    clustering [label=<<B>clustering</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">leiden</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
-    annotation [label=<<B>annotation</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">marker_vote · celltypist · passthrough</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
-    subclustering [label=<<B>subclustering</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">recursive Leiden · sc-SHC</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
-    P_integration -> integration -> integration_gate -> clustering -> annotation -> subclustering;
-
-    // Column: 3 · Annotation and identity
-    adjudication [label=<<B>adjudication</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">label reconciliation</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
-    reference_mapping [label=<<B>reference_mapping</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">scarches</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
-    annotation_consensus [label=<<B>annotation_consensus</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">cross-method consensus</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
-    annotation_diagnostics [label=<<B>annotation_diagnostics</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">scdiagnostics</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
-    population_identity [label=<<B>population_identity</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">evidence-ranked identity</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
-    integration_benchmark [label=<<B>integration_benchmark</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">scib_benchmark</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
-    P_annotation -> adjudication -> reference_mapping -> annotation_consensus -> annotation_diagnostics -> population_identity -> integration_benchmark;
-
-    // Column: 4 · State and embeddings
-    state_scoring [label=<<B>state_scoring</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
-    discovery [label=<<B>discovery</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
-    composition [label=<<B>composition</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
-    embeddings [label=<<B>embeddings</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">umap · phate · paga · categorical_embedding<BR/>continuous_overlay</FONT>>, color="#eda100", fontcolor="#0b0b0b", penwidth=1.8];
-    P_embeddings -> state_scoring -> discovery -> composition -> embeddings;
-
-    // Column: 5 · Differential analysis
-    differential_expression [label=<<B>differential_expression</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pseudobulk_edger</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
-    differential_abundance [label=<<B>differential_abundance</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">propeller · milo · sccoda · proportion_ttest</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
-    enrichment [label=<<B>enrichment</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">gsea · ora · gsva · activity</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
-    enrichment_viz [label=<<B>enrichment_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">gsea_viz · ora_viz · gsva_viz · activity_viz</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
-    de_viz [label=<<B>de_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">volcano_viz</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
-    P_differential -> differential_expression -> differential_abundance -> enrichment -> enrichment_viz -> de_viz;
-
-    // Column: 6 · Gene regulation
-    coexpression [label=<<B>coexpression</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">hdwgcna</FONT>>, color="#008300", fontcolor="#0b0b0b", penwidth=1.8];
-    grn [label=<<B>grn</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pyscenic</FONT>>, color="#008300", fontcolor="#0b0b0b", penwidth=1.8];
-    perturbation [label=<<B>perturbation</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">celloracle</FONT>>, color="#008300", fontcolor="#0b0b0b", penwidth=1.8];
-    molecular_inference [label=<<B>molecular_inference</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
-    P_regulation -> coexpression -> grn -> perturbation -> molecular_inference;
-
-    // Column: 7 · Communication and trajectory
-    trajectory [label=<<B>trajectory</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">velocity · cellrank · dpt · palantir<BR/>cytotrace</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
-    trajectory_viz [label=<<B>trajectory_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pseudotime_viz · fate_viz · driver_viz · gene_trend_viz<BR/>macrostate_viz · velocity_viz · pseudotime_heatmap</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
-    cell_cell_communication [label=<<B>cell_cell_communication</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">liana · tensor_c2c · multinichenet · nichenet</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
-    multicellular_programs [label=<<B>multicellular_programs</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">dialogue</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
-    ccc_network [label=<<B>ccc_network</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">topology · ricci</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
-    ccc_viz [label=<<B>ccc_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">dotplot_viz · chord_viz · sankey_viz · network_viz<BR/>summary_viz</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
-    P_communication -> trajectory -> trajectory_viz -> cell_cell_communication -> multicellular_programs -> ccc_network -> ccc_viz;
+    // Fan-in: every family converges on the run directory.
+    P_embeddings -> OUT [color="#9a988f", penwidth=1.5, arrowsize=0.8];
+    P_differential -> OUT [color="#9a988f", penwidth=1.5, arrowsize=0.8];
+    P_regulation -> OUT [color="#9a988f", penwidth=1.5, arrowsize=0.8];
+    P_communication -> OUT [color="#9a988f", penwidth=1.5, arrowsize=0.8];
 }
