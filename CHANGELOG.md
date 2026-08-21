@@ -37,7 +37,15 @@ public API and the configuration schema.
   under ``visualization.qc``. The four comparative analyses — differential expression, differential abundance,
   enrichment, and multicellular programs — are now submodules of a single
   ``comparative`` package (their former top-level packages remain as thin
-  compatibility shims). The tree now has **17** top-level packages plus four
+  compatibility shims). The user-facing Python surface — the
+  :func:`run_pipeline` entry point and the notebook namespaces ``tl`` / ``pp``
+  / ``diag`` / ``evidence`` plus the ``_notebook`` adapter — now lives in a
+  single ``cellquorum.api`` package (formerly the ``cellquorum.api`` *module*
+  and five scattered top-level modules); the top-level package re-exports it so
+  ``cq.run_pipeline``, ``cq.tl`` … stay canonical, and the old module paths
+  (``cellquorum.tl``, ``cellquorum.pp``, ``cellquorum.diag``,
+  ``cellquorum.evidence``, ``cellquorum._notebook``) remain as thin re-export
+  shims. The tree now has **17** top-level packages plus four
   compatibility-shim packages. Like
   #167 this is a pure legibility refactor — behavior, the CLI, the configuration
   schema, the public Python API, and all analysis outputs are unchanged, and the

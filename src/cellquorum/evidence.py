@@ -1,25 +1,13 @@
-"""Evidence namespace: ``cq.evidence.*`` (planned).
+"""Compatibility shim — the evidence namespace moved to
+:mod:`cellquorum.api.evidence`.
 
-The unified biological-evidence graph (see ``docs/ROADMAP.md``) is not
-implemented yet. This module reserves the namespace and fails
-loudly with a clear "planned" message rather than silently missing, so callers
-know the capability is on the roadmap but not available.
+Kept so pre-move imports (``import cellquorum.evidence``,
+``from cellquorum.evidence import ...``) keep working unchanged. New code
+should import from :mod:`cellquorum.api.evidence` (or use the ``cq.evidence``
+re-export).
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-_PLANNED = (
-    "cq.evidence is planned but not implemented yet. The unified biological "
-    "evidence graph is a later roadmap phase (see docs/ROADMAP.md)."
-)
-
-
-def build(*_args: Any, **_kwargs: Any) -> None:
-    """Planned: build a unified biological evidence graph. Not yet implemented."""
-
-    raise NotImplementedError(_PLANNED)
-
-
-__all__ = ["build"]
+from cellquorum.api.evidence import *  # noqa: F401,F403
+from cellquorum.api.evidence import __all__  # noqa: F401

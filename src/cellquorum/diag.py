@@ -1,29 +1,12 @@
-"""Diagnostics namespace: ``cq.diag.*``.
+"""Compatibility shim — the diagnostics namespace moved to
+:mod:`cellquorum.api.diag`.
 
-Thin wrappers over the registered read-only diagnostic stages. Each returns a
-:class:`~cellquorum._notebook.NotebookStageOutput`.
+Kept so pre-move imports (``import cellquorum.diag``,
+``from cellquorum.diag import ...``) keep working unchanged. New code should
+import from :mod:`cellquorum.api.diag` (or use the ``cq.diag`` re-export).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-from cellquorum._notebook import NotebookStageOutput, run_stage
-
-if TYPE_CHECKING:
-    import anndata as ad
-
-
-def annotation(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:
-    """Run the annotation-diagnostics stage (entropy, scDiagnostics)."""
-
-    return run_stage("annotation_diagnostics", adata, **kwargs)
-
-
-def integration(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:
-    """Run the integration-benchmark stage (scIB-style metrics)."""
-
-    return run_stage("integration_benchmark", adata, **kwargs)
-
-
-__all__ = ["annotation", "integration"]
+from cellquorum.api.diag import *  # noqa: F401,F403
+from cellquorum.api.diag import __all__  # noqa: F401

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-# Import the notebook-facing namespaces (thin wrappers over registered stages).
-from cellquorum import diag, evidence, pp, tl
-
-# Import the main public pipeline entry point.
-from cellquorum.api import run_pipeline
+# Import the public surface from the api package: the notebook-facing
+# namespaces (thin wrappers over registered stages) and the pipeline entry.
+from cellquorum.api import diag, evidence, pp, run_pipeline, tl
 
 # Import the canonical package version for users and downstream tools.
 from cellquorum.version import __version__

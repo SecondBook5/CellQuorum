@@ -1,42 +1,12 @@
-"""Preprocessing namespace: ``cq.pp.*``.
+"""Compatibility shim — the preprocessing namespace moved to
+:mod:`cellquorum.api.pp`.
 
-Thin wrappers over the registered preprocessing stages. Each returns a
-:class:`~cellquorum._notebook.NotebookStageOutput` (use ``.adata`` for the
-updated object, ``.result`` for artifacts/metrics/warnings).
+Kept so pre-move imports (``import cellquorum.pp``,
+``from cellquorum.pp import ...``) keep working unchanged. New code should
+import from :mod:`cellquorum.api.pp` (or use the ``cq.pp`` re-export).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-from cellquorum._notebook import NotebookStageOutput, run_stage
-
-if TYPE_CHECKING:
-    import anndata as ad
-
-
-def qc(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:
-    """Run the QC stage (metrics, thresholds, decisions, figures)."""
-
-    return run_stage("qc", adata, **kwargs)
-
-
-def normalize(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:
-    """Run the preprocessing/normalization stage."""
-
-    return run_stage("preprocessing", adata, **kwargs)
-
-
-def select_features(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:
-    """Run the feature-selection (HVG) stage."""
-
-    return run_stage("feature_selection", adata, **kwargs)
-
-
-def correct_ambient(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:
-    """Run the ambient-RNA correction stage."""
-
-    return run_stage("ambient_correction", adata, **kwargs)
-
-
-__all__ = ["correct_ambient", "normalize", "qc", "select_features"]
+from cellquorum.api.pp import *  # noqa: F401,F403
+from cellquorum.api.pp import __all__  # noqa: F401
