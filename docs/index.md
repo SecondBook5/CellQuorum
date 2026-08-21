@@ -26,7 +26,7 @@ quickstart. The guides below go deeper.
 
 - **30 registered stages**, ~60 config-selectable methods, organized into a
   best-practices pipeline (see the workflow diagram in the README).
-- **19 top-level packages** under `src/cellquorum/`.
+- **20 top-level packages** under `src/cellquorum/`.
 - **Two front doors:** the `cellquorum` / `cq` CLI and the `cellquorum.run_pipeline`
   Python API.
 - **Fail-loud contracts:** every stage boundary validates its `AnnData`; a method

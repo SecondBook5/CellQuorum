@@ -11,9 +11,20 @@ public API and the configuration schema.
 
 ### Changed
 
+- **Consolidation round 2 (#187).** Continued the source-tree consolidation
+  begun in #167. Stage registration is now single-sited on each stage class
+  through a `@register_stage` decorator; a shared `StageArtifactWriter`
+  centralizes run-directory artifact writing; SoupX ambient-RNA correction
+  moved into its own top-level ``ambient_correction`` package (it runs before
+  QC, so it is no longer nested under ``qc``); and the QC figure builders moved
+  under ``visualization.qc``. The tree now has **20** top-level packages. Like
+  #167 this is a pure legibility refactor — behavior, the CLI, the configuration
+  schema, the public Python API, and all analysis outputs are unchanged, and the
+  pre-move import paths keep working through thin re-export shims.
 - **Package consolidation (#167).** Reorganized the source tree from ~40
-  top-level packages into **18** cohesive packages (now **19** after adding the
-  ``multicellular_programs`` stage), and introduced a single
+  top-level packages into **18** cohesive packages (**19** after adding the
+  ``multicellular_programs`` stage; later **20**, see #187 above), and
+  introduced a single
   shared R-method abstraction (`cellquorum.methods.r_method.RAnalysisMethod`)
   used by the edgeR, Milo, propeller, NicheNet, MultiNicheNet, DIALOGUE, and
   scDiagnostics adapters. Each `*_viz` module now lives inside its parent stage
