@@ -11,6 +11,20 @@ public API and the configuration schema.
 
 ### Added
 
+- **Tensor-cell2cell decomposition cost guardrail (#140).** The non-negative
+  CP factorization cost scales with ``runs x prod(tensor.shape)``, and the
+  sender/receiver axes are the cell-type group count — so a fine-grained
+  (many-subcluster) tensor at the ``robust`` default (100 runs) could silently
+  run for many hours. The stage now always records the tensor shape and run
+  count (in the stage notes and metrics) so the cost is visible rather than
+  silent, and adds two opt-in knobs: ``tf_optimization: auto`` scales the run
+  count down to fit a new ``max_decomposition_cost`` budget (the ``runs x
+  tensor-elements`` proxy), never below one run; an explicit ``robust`` /
+  ``regular`` run that would exceed a set budget is *honored* but logs a loud
+  over-budget warning pointing at the ``auto`` escape hatch, a coarser
+  resolution, or GPU. With no budget set (the default) behavior is unchanged,
+  and ``tf_optimization`` is now a validated enum (``robust`` / ``regular`` /
+  ``auto``) that rejects typos at config-parse time.
 - **Factorial / interaction differential expression (#192).** The pseudobulk
   edgeR DE stage now supports two-way *interaction* testing. A new
   `differential_expression.interactions` config field takes `[factor_a, factor_b]`

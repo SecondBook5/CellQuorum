@@ -8,6 +8,7 @@ from pathlib import Path
 import anndata as ad
 
 from cellquorum.core.contracts import DataContract
+from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -20,6 +21,74 @@ _FACTOR_SLUGS: tuple[tuple[str, str], ...] = (
     ("Sender Cells", "senders"),
     ("Receiver Cells", "receivers"),
 )
+
+# Factorization run counts per optimization level. 'auto' scales within
+# [1, _ROBUST_RUNS] to fit a cost budget.
+_REGULAR_RUNS = 1
+_ROBUST_RUNS = 100
+
+
+def resolve_factorization_runs(
+    *,
+    tf_optimization: str,
+    tensor_elements: int | None,
+    max_cost: int | None,
+) -> tuple[int, str | None]:
+    """Decide the number of non-negative CP factorization runs.
+
+    The decomposition cost scales with ``runs x prod(tensor.shape)``; the
+    sender/receiver axes are the cell-type group count, so a fine-grained tensor
+    at the ``robust`` default (100 runs) can silently run for hours. This turns
+    that into a bounded, visible decision:
+
+    * ``regular`` → 1 run, ``robust`` → 100 runs (the ceiling).
+    * ``auto`` → scale runs down so ``runs x tensor_elements`` fits ``max_cost``
+      (never below 1), noting the scale-down.
+    * an explicit ``robust``/``regular`` whose cost exceeds ``max_cost`` is
+      *honored* (the choice was explicit) but returns a loud warning note.
+
+    ``max_cost`` of ``None`` disables the guardrail (behavior is byte-identical
+    to the pre-guardrail engine), as does an unknown ``tensor_elements`` (an
+    unbuilt tensor exposes shape ``()``): with no size estimate we never block.
+
+    Returns ``(runs, note)`` where ``note`` is an optional human-facing string.
+    """
+    if tf_optimization not in ("robust", "regular", "auto"):
+        raise CellQuorumConfigError(
+            "tf_optimization must be 'robust', 'regular', or 'auto'; "
+            f"got {tf_optimization!r}"
+        )
+
+    base_runs = _REGULAR_RUNS if tf_optimization == "regular" else _ROBUST_RUNS
+
+    # Guardrail disabled or no size estimate → keep the requested run count.
+    if not max_cost or not tensor_elements:
+        return base_runs, None
+
+    if tf_optimization == "auto":
+        scaled = max(1, min(base_runs, max_cost // tensor_elements))
+        note = None
+        if scaled < base_runs:
+            note = (
+                f"tensor_c2c auto-scaled factorization runs {base_runs}→{scaled} to fit "
+                f"max_decomposition_cost={max_cost} (tensor has {tensor_elements} "
+                "elements; cost proxy = runs x elements). Raise the budget or run on "
+                "GPU for more robust factorization."
+            )
+        return scaled, note
+
+    # Explicit robust/regular: honor the level, but flag an over-budget cost.
+    estimated = base_runs * tensor_elements
+    if estimated > max_cost:
+        note = (
+            f"tensor_c2c decomposition cost proxy {estimated} (runs={base_runs} x "
+            f"{tensor_elements} tensor elements) exceeds max_decomposition_cost="
+            f"{max_cost}. Proceeding because tf_optimization={tf_optimization!r} is "
+            "explicit; to bound runtime set tf_optimization='auto', coarsen the "
+            "cell-type resolution, or run on GPU."
+        )
+        return base_runs, note
+    return base_runs, None
 
 
 class TensorCell2CellMethod(AnalysisMethod):
@@ -153,6 +222,21 @@ class TensorCell2CellMethod(AnalysisMethod):
         device = self._resolve_device(config, context)
         device, device_note = self._place_tensor_on_device(tensor, device)
 
+        # Cost guardrail: decompose runtime scales with runs x prod(shape). Decide
+        # the run count (and any over-budget warning) BEFORE the compute try below
+        # so a bad tf_optimization value fails loudly rather than becoming a skip.
+        tensor_shape = tuple(int(d) for d in (getattr(tensor, "shape", ()) or ()))
+        tensor_elements: int | None = None
+        if tensor_shape:
+            tensor_elements = 1
+            for dim in tensor_shape:
+                tensor_elements *= dim
+        runs, cost_note = resolve_factorization_runs(
+            tf_optimization=config.get("tf_optimization", "robust"),
+            tensor_elements=tensor_elements,
+            max_cost=config.get("max_decomposition_cost"),
+        )
+
         # Rank: explicit, or elbow auto-select.
         rank = config.get("rank")
         elbow_selected = False
@@ -166,7 +250,6 @@ class TensorCell2CellMethod(AnalysisMethod):
                 )
                 rank = tensor.rank or 2
                 elbow_selected = True
-            runs = 100 if config.get("tf_optimization", "robust") == "robust" else 1
             tensor.compute_tensor_factorization(
                 rank=int(rank),
                 random_state=seed,
@@ -210,7 +293,14 @@ class TensorCell2CellMethod(AnalysisMethod):
             )
 
         adata.uns["tensor_c2c"] = dict(loadings)
-        notes = [f"Tensor-cell2cell decomposition at rank {int(rank)} on {device}."]
+        # Always surface tensor shape + run count so the decomposition cost is
+        # visible in the log/provenance rather than a silent multi-hour run.
+        notes = [
+            f"Tensor-cell2cell decomposition at rank {int(rank)} on {device} "
+            f"(shape={tensor_shape}, runs={runs})."
+        ]
+        if cost_note:
+            notes.append(cost_note)
         if device_note:
             notes.append(device_note)
         return StageResult(
@@ -223,9 +313,14 @@ class TensorCell2CellMethod(AnalysisMethod):
                 "elbow_selected": elbow_selected,
                 "n_samples": n_samples,
                 "device": device,
+                "tf_optimization": config.get("tf_optimization", "robust"),
+                "runs": runs,
+                "tensor_shape": list(tensor_shape),
+                "tensor_elements": tensor_elements,
+                "max_decomposition_cost": config.get("max_decomposition_cost"),
             },
             backend="python",
         )
 
 
-__all__ = ["TensorCell2CellMethod"]
+__all__ = ["TensorCell2CellMethod", "resolve_factorization_runs"]

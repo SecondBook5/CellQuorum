@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from cellquorum.config.base import StrictBaseModel
 
 
@@ -24,7 +26,16 @@ class CellCellCommunicationConfig(StrictBaseModel):
         min_cells: Minimum cells per group for LIANA.
         n_perms: LIANA permutation count.
         rank: Tensor decomposition rank (None → elbow auto-select).
-        tf_optimization: 'robust' (runs=100) or 'regular' (runs=1).
+        tf_optimization: 'robust' (runs=100), 'regular' (runs=1), or 'auto'
+            (scale runs to fit ``max_decomposition_cost``). Factorization cost
+            scales with ``runs x prod(tensor.shape)`` and the sender/receiver
+            axes are the cell-type group count, so a fine-grained tensor at
+            'robust' can be very slow — 'auto' bounds it against a budget.
+        max_decomposition_cost: Optional ceiling on the decomposition cost proxy
+            (``runs x number of tensor elements``). ``None`` (default) disables
+            the guardrail — behavior is unchanged. When set: 'auto' scales the
+            run count down to fit it; an explicit 'robust'/'regular' that would
+            exceed it proceeds but logs a loud warning.
         min_samples: Minimum distinct samples to attempt tensor decomposition.
         tensor_how: How to handle missing indices when building the tensor.
         outer_fraction: Fraction threshold for the 'outer' join.
@@ -44,7 +55,8 @@ class CellCellCommunicationConfig(StrictBaseModel):
     n_perms: int = 100
     # Tensor-cell2cell
     rank: int | None = None
-    tf_optimization: str = "robust"
+    tf_optimization: Literal["robust", "regular", "auto"] = "robust"
+    max_decomposition_cost: int | None = None
     min_samples: int = 3
     tensor_how: str = "outer"
     outer_fraction: float = 1.0 / 3.0
