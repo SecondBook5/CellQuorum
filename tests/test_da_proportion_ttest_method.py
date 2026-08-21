@@ -8,7 +8,9 @@ import pandas as pd
 import pytest
 
 from cellquorum.backends.registry import build_default_backend_registry
-from cellquorum.differential_abundance.proportion_ttest_method import ProportionTTestMethod
+from cellquorum.comparative.differential_abundance.proportion_ttest_method import (
+    ProportionTTestMethod,
+)
 from cellquorum.methods.base import MethodSkip
 
 

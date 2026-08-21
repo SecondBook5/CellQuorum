@@ -18,9 +18,9 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.differential_abundance.milo_method import MiloMethod
-from cellquorum.differential_abundance.propeller_method import PropellerMethod
-from cellquorum.differential_abundance.sccoda_method import SccodaMethod
+from cellquorum.comparative.differential_abundance.milo_method import MiloMethod
+from cellquorum.comparative.differential_abundance.propeller_method import PropellerMethod
+from cellquorum.comparative.differential_abundance.sccoda_method import SccodaMethod
 from cellquorum.methods.base import MethodSkip
 
 

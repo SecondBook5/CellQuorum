@@ -1,5 +1,5 @@
+from cellquorum.comparative.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.core.executor import build_default_stage_registry
-from cellquorum.differential_abundance.stage import DifferentialAbundanceStage
 
 
 def test_da_stage_is_registered():

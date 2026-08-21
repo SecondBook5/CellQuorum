@@ -9,7 +9,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.differential_abundance.milo_method import MiloMethod
+from cellquorum.comparative.differential_abundance.milo_method import MiloMethod
 from cellquorum.methods.base import MethodSkip
 
 

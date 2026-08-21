@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Import the package so the methods register themselves as a side effect.
-import cellquorum.differential_abundance  # noqa: F401
+import cellquorum.comparative.differential_abundance  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage

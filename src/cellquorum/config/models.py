@@ -44,6 +44,9 @@ from cellquorum.cell_cell_communication.viz.config import CccVizConfig
 # Import the subclustering configuration model.
 from cellquorum.clustering.subclustering.config import SubclusteringConfig
 
+# Import the differential-abundance configuration model.
+from cellquorum.comparative.differential_abundance.config import DifferentialAbundanceConfig
+
 # Import the differential-expression configuration model.
 from cellquorum.comparative.differential_expression.config import DifferentialExpressionConfig
 
@@ -59,9 +62,6 @@ from cellquorum.config.cohort import CohortConfig
 # Import the markers, design, and contrasts configuration models.
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
-
-# Import the differential-abundance configuration model.
-from cellquorum.differential_abundance.config import DifferentialAbundanceConfig
 
 # Import the enrichment configuration model.
 from cellquorum.enrichment.config import EnrichmentConfig

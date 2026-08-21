@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
+from cellquorum.comparative.differential_abundance.propeller_method import PropellerMethod
 from cellquorum.core.contracts.layer_tags import set_layer_tag
-from cellquorum.differential_abundance.propeller_method import PropellerMethod
 from cellquorum.methods.base import MethodSkip
 
 
