@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from cellquorum.multicellular_programs.diagnostics import (
+from cellquorum.comparative.multicellular_programs.diagnostics import (
     donor_support,
     match_program_loadings,
     program_stability,

@@ -59,6 +59,9 @@ from cellquorum.comparative.enrichment.config import EnrichmentConfig
 # Import the enrichment-visualization configuration model.
 from cellquorum.comparative.enrichment.viz.config import EnrichmentVizConfig
 
+# Import the multicellular-programs configuration model.
+from cellquorum.comparative.multicellular_programs.config import MulticellularProgramsConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -86,9 +89,6 @@ from cellquorum.integration.config import IntegrationConfig
 
 # Import the embeddings configuration model.
 from cellquorum.integration.embeddings.config import EmbeddingsConfig
-
-# Import the multicellular-programs configuration model.
-from cellquorum.multicellular_programs.config import MulticellularProgramsConfig
 
 # Import the preprocessing configuration model.
 from cellquorum.preprocessing.config import PreprocessingConfig

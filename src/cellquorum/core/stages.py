@@ -73,7 +73,7 @@ import cellquorum.trajectory.viz.stage  # noqa: F401
 # ccc_network derives topology/curvature, ccc_viz renders from both and MUST be
 # last. multicellular_programs sits alongside the CCC track.
 import cellquorum.cell_cell_communication.stage  # noqa: F401
-import cellquorum.multicellular_programs.stage  # noqa: F401
+import cellquorum.comparative.multicellular_programs.stage  # noqa: F401
 import cellquorum.cell_cell_communication.network.stage  # noqa: F401
 import cellquorum.cell_cell_communication.viz.stage  # noqa: F401
 # isort: on

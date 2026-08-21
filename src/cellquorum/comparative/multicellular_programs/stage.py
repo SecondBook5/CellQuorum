@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Import the package so the method registers itself as a side effect.
-import cellquorum.multicellular_programs  # noqa: F401
+import cellquorum.comparative.multicellular_programs  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage

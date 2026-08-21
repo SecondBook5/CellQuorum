@@ -7,8 +7,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from cellquorum.comparative.multicellular_programs.dialogue_method import (
+    MulticellularProgramsMethod,
+)
 from cellquorum.methods.base import MethodSkip
-from cellquorum.multicellular_programs.dialogue_method import MulticellularProgramsMethod
 
 
 @pytest.fixture

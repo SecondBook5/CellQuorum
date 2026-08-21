@@ -1,16 +1,19 @@
-"""Multicellular programs (DIALOGUE) — cross-cell-type coordinated programs."""
+"""Backward-compatibility shim — pre-#187 import path.
+
+Canonical location: :mod:`cellquorum.comparative.multicellular_programs`.
+
+CellQuorum's four comparative analyses (differential expression, differential
+abundance, enrichment, multicellular programs) were consolidated under the
+``cellquorum.comparative`` package in #187. This module re-exports the public
+API from its new home so pre-consolidation imports keep working unchanged.
+New code should import from the canonical location above.
+"""
 
 from __future__ import annotations
 
-from cellquorum.methods.registry import METHOD_REGISTRY
-from cellquorum.multicellular_programs.config import MulticellularProgramsConfig
-from cellquorum.multicellular_programs.dialogue_method import MulticellularProgramsMethod
+from cellquorum.comparative.multicellular_programs import (
+    MulticellularProgramsConfig,
+    MulticellularProgramsMethod,
+)
 
-for _method in (MulticellularProgramsMethod,):
-    if not METHOD_REGISTRY.has("multicellular_programs", _method.name):
-        METHOD_REGISTRY.register(_method)
-
-__all__ = [
-    "MulticellularProgramsConfig",
-    "MulticellularProgramsMethod",
-]
+__all__ = ["MulticellularProgramsConfig", "MulticellularProgramsMethod"]
