@@ -104,4 +104,123 @@ def aggregate_pseudobulk(
     return PseudobulkResult(counts=counts_df, sample_meta=sample_meta)
 
 
-__all__ = ["PseudobulkResult", "aggregate_pseudobulk"]
+@dataclass(frozen=True)
+class PairingDecision:
+    """Resolved donor-pairing outcome for a pseudobulk DE fit.
+
+    Args:
+        paired: Final paired flag after any auto-promotion.
+        counts: Pseudo-sample counts, restricted to complete donor pairs when
+            the final fit is paired and some donors appear in only one arm.
+        sample_meta: Sample metadata aligned to ``counts`` (same restriction).
+        n_complete_pairs: Distinct donors contributing both the case and the
+            control arm.
+        notes: Human-readable design notes (auto-promotion and/or restriction).
+    """
+
+    # Final paired flag after auto-promotion.
+    paired: bool
+
+    # Counts restricted to complete pairs when the paired fit needs it.
+    counts: pd.DataFrame
+
+    # Sample metadata aligned to counts.
+    sample_meta: pd.DataFrame
+
+    # Donors contributing both arms.
+    n_complete_pairs: int
+
+    # Design notes describing any promotion/restriction.
+    notes: list[str]
+
+
+def resolve_donor_pairing(
+    pb: PseudobulkResult,
+    *,
+    donor_col: str,
+    condition_col: str,
+    case: str,
+    control: str,
+    paired: bool,
+) -> PairingDecision:
+    """
+    Decide the paired flag and complete-pair restriction for a pseudobulk fit.
+
+    This is the safety net for the silent-wrong-DE class where a fully matched
+    (every donor in both arms) design is analysed *unpaired*, leaving donor
+    baseline variance in the residual and producing false nulls. It performs two
+    corrections, in order:
+
+    1. **Auto-promote**: when ``paired`` is ``False`` but every donor contributes
+       both a ``case`` and a ``control`` pseudo-sample (and there are at least two
+       donors), the fit is promoted to paired so donor is blocked.
+    2. **Restrict**: when the (possibly promoted) fit is paired but some donors
+       appear in only one arm, those donors are dropped so the donor-blocked
+       design stays estimable. The drop is reported, never silent.
+
+    The logic is pure — it reads ``pb`` and returns a decision — so the promotion
+    and restriction branches are testable without invoking the R backend.
+
+    Args:
+        pb: Pseudobulk counts and aligned sample metadata.
+        donor_col: Sample-metadata column identifying donors.
+        condition_col: Sample-metadata column holding the condition label.
+        case: Case condition label.
+        control: Control condition label.
+        paired: Whether the caller declared a paired design.
+
+    Returns:
+        A :class:`PairingDecision` with the final paired flag, the (possibly
+        restricted) counts and metadata, the complete-pair count, and notes.
+    """
+
+    # Start from the aggregated pseudobulk; restriction may narrow these.
+    sample_meta = pb.sample_meta
+    counts = pb.counts
+
+    # Compute donor support per arm.
+    case_donors = set(sample_meta.loc[sample_meta[condition_col] == case, donor_col])
+    control_donors = set(sample_meta.loc[sample_meta[condition_col] == control, donor_col])
+    all_donors = case_donors | control_donors
+    complete_pairs = case_donors & control_donors
+    notes: list[str] = []
+
+    # Auto-promote to paired when the design is fully matched but was not
+    # declared paired — the corrected, higher-powered default for such data.
+    if not paired and complete_pairs and complete_pairs == all_donors and len(all_donors) >= 2:
+        paired = True
+        notes.append(
+            "Auto-promoted to PAIRED: every donor contributes both a "
+            f"{case} and a {control} pseudobulk sample "
+            f"({len(complete_pairs)} complete donor pairs). Blocking on donor."
+        )
+
+    # For a paired fit, keep only donors with a complete pair so the
+    # donor-blocked design stays estimable; log what was dropped.
+    if paired:
+        incomplete = all_donors - complete_pairs
+        if incomplete:
+            keep = sample_meta.index[sample_meta[donor_col].isin(complete_pairs)]
+            counts = counts.loc[keep]
+            sample_meta = sample_meta.loc[keep]
+            notes.append(
+                f"Paired fit restricted to {len(complete_pairs)} complete donor "
+                f"pairs; dropped {len(incomplete)} donor(s) present in only one "
+                f"arm: {sorted(str(d) for d in incomplete)}."
+            )
+
+    return PairingDecision(
+        paired=paired,
+        counts=counts,
+        sample_meta=sample_meta,
+        n_complete_pairs=len(complete_pairs),
+        notes=notes,
+    )
+
+
+__all__ = [
+    "PairingDecision",
+    "PseudobulkResult",
+    "aggregate_pseudobulk",
+    "resolve_donor_pairing",
+]
