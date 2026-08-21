@@ -45,7 +45,7 @@ public API and the configuration schema.
   ``cq.run_pipeline``, ``cq.tl`` … stay canonical, and the old module paths
   (``cellquorum.tl``, ``cellquorum.pp``, ``cellquorum.diag``,
   ``cellquorum.evidence``, ``cellquorum._notebook``) remain as thin re-export
-  shims. The tree now has **17** top-level packages plus four
+  shims. The tree now has **20** top-level packages plus four
   compatibility-shim packages. The QC configuration module
   (``cellquorum.qc.config``) is now config-only: the dozen near-identical
   Pydantic field-coercion validators it carried were extracted into a new
@@ -61,7 +61,7 @@ public API and the configuration schema.
   pre-move import paths keep working through thin re-export shims.
 - **Package consolidation (#167).** Reorganized the source tree from ~40
   top-level packages into **18** cohesive packages (**19** after adding the
-  ``multicellular_programs`` stage; later **17** engine packages, see #187 above), and
+  ``multicellular_programs`` stage; later **20** engine packages, see #187 above), and
   introduced a single
   shared R-method abstraction (`cellquorum.methods.r_method.RAnalysisMethod`)
   used by the edgeR, Milo, propeller, NicheNet, MultiNicheNet, DIALOGUE, and

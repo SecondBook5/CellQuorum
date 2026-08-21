@@ -27,7 +27,7 @@ through every stage and recording exactly what it did.
 
 The engine pairs an **execution spine** (strict configuration validation, backend
 detection, planning, provenance) with a **config-driven analysis backbone** of
-**30 stages** and **~60 selectable methods**, spanning quality control through
+**32 stages** and **~60 selectable methods**, spanning quality control through
 gene-regulatory networks, cell-cell communication, and trajectory inference. Stages
 dispatch to Python, R/Bioconductor, or GPU backends transparently, and every stage
 boundary is guarded by **fail-loud data contracts** — a method whose inputs are
@@ -42,7 +42,7 @@ wrong results.
 ## Highlights
 
 - **Config over code.** Every method is chosen in YAML (`integration.method: harmony | scvi`), so a dataset is expressed as configuration, not a script.
-- **30 stages, ~60 methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
+- **32 stages, ~60 methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
 - **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto `rapids-singlecell`/`cupy` when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
 - **Python + R, transparently.** R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, DIALOGUE, SoupX, hdWGCNA) and isolated heavyweight backends (pySCENIC, scCODA, CellOracle) are dispatched behind one interface.
 - **Fail-loud data contracts.** Structural, layer-provenance, and statistical checks reject, for example, raw counts mislabeled as log-normalized.
@@ -324,14 +324,15 @@ flowchart LR
     EXEC -.-> PROV
 ```
 
-The source is organized into 17 top-level packages under `src/cellquorum/` (plus
+The source is organized into 20 top-level packages under `src/cellquorum/` (plus
 four thin compatibility-shim packages — `differential_expression`,
 `differential_abundance`, `enrichment`, `multicellular_programs` — that preserve
 the pre-#187 import paths): `core` (context, planner, executor, contracts,
 provenance), `config`, `methods` (dispatch + shared abstractions), `backends`, the
 stage packages (`ambient_correction`, `qc`, `preprocessing`, `clustering`,
-`integration`, `annotation`, `comparative`, `gene_regulation`,
-`cell_cell_communication`, `trajectory`), plus `io`, `visualization`, and `cli`.
+`integration`, `annotation`, `comparative`, `state_scoring`, `discovery`,
+`gene_regulation`, `cell_cell_communication`, `trajectory`), plus `io`,
+`visualization`, `api` (the public Python API surface), and `cli`.
 The `comparative` package groups the four "compare groups" analyses as submodules —
 `differential_expression`, `differential_abundance`, `enrichment`, and
 `multicellular_programs`. See [`docs/architecture.md`](docs/architecture.md).

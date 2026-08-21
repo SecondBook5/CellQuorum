@@ -184,7 +184,7 @@ to a broken run.
 
 ## Source layout
 
-The package is organized into 17 top-level packages under `src/cellquorum/`
+The package is organized into 20 top-level packages under `src/cellquorum/`
 (plus four thin compatibility-shim packages — `differential_expression`,
 `differential_abundance`, `enrichment`, `multicellular_programs` — that preserve
 the pre-#187 import paths; see the `comparative` row):
@@ -201,12 +201,15 @@ the pre-#187 import paths; see the `comparative` row):
 | `clustering` | clustering and recursive subclustering |
 | `integration` | batch integration, embeddings, integration benchmark |
 | `annotation` | annotation, consensus, diagnostics, adjudication, reference mapping, population identity |
+| `state_scoring` | curated cell-state program scoring (scanpy `score_genes` + decoupler AUCell) |
+| `discovery` | de-novo program discovery via consensus NMF (cNMF-style replicate fits + KMeans consensus) |
 | `comparative` | the four "compare groups" analyses as submodules: `differential_expression` (donor-aware pseudobulk DE + viz), `differential_abundance` (compositional/abundance testing), `enrichment` (GSEA/ORA/GSVA/decoupler + viz), `multicellular_programs` (cross-cell-type programs via DIALOGUE) |
 | `gene_regulation` | co-expression (hdWGCNA), GRN (pySCENIC), perturbation (CellOracle) |
 | `cell_cell_communication` | LIANA/Tensor-c2c/NicheNet, network topology + curvature, CCC visualization |
 | `trajectory` | RNA velocity and trajectory visualization |
 | `io` | input/output helpers |
 | `visualization` | shared figure styling/plotting (`figstyle`) and QC figure builders (`visualization.qc`) |
+| `api` | the public Python API surface (`run_pipeline` + the `tl`/`pp`/`diag`/`evidence` notebook namespaces) |
 | `cli` | the `cellquorum`/`cq` Typer app and the `gen-configs` workflow commands |
 
 Each stage package follows a uniform layout — `stage.py` (the stage implementation),

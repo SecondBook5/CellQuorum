@@ -224,7 +224,7 @@ These remain in scope but should not block the core framework:
 - PHATE and other visualization manifolds — **done** (embeddings stage);
 - MAGIC/imputation, only with strict layer tags and statistics guards —
   **done** (opt-in, scoped to the embeddings feature-overlay; the
-  `contracts/magic_guard.py` tag blocks imputed layers from statistics);
+  `core/contracts/magic_guard.py` tag blocks imputed layers from statistics);
 - trajectory (DPT → Palantir → CellRank; PAGA-as-graph);
 - RNA velocity (scVelo dynamical);
 - optimal transport (moscot);
