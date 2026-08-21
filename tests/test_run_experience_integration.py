@@ -232,7 +232,7 @@ def test_config_echo_with_planned_stage_names_shows_only_runnable_stages():
             "project": {"name": "test"},
             "stages": {
                 "reference_mapping": True,
-                "state_scoring": True,  # RESERVED (not implemented).
+                "composition": True,  # RESERVED (not implemented).
             },
         }
     )
@@ -250,5 +250,5 @@ def test_config_echo_with_planned_stage_names_shows_only_runnable_stages():
     # Check that reference_mapping appears.
     assert "reference_mapping" in output
 
-    # Check that state_scoring does NOT appear (reserved, unimplemented).
-    assert "state_scoring" not in output
+    # Check that composition does NOT appear (reserved, unimplemented).
+    assert "composition" not in output

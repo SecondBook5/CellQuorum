@@ -99,6 +99,9 @@ from cellquorum.preprocessing.feature_selection.config import FeatureSelectionCo
 # Import the QC configuration model.
 from cellquorum.qc.config import QCConfig
 
+# Import the state-scoring configuration model.
+from cellquorum.state_scoring.config import StateScoringConfig
+
 # Import the trajectory configuration model.
 from cellquorum.trajectory.config import TrajectoryConfig
 
@@ -851,6 +854,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store CCC-visualization settings.
     ccc_viz: CccVizConfig = Field(default_factory=CccVizConfig)
+
+    # Store cell-state program scoring settings.
+    state_scoring: StateScoringConfig = Field(default_factory=StateScoringConfig)
 
     # Store embeddings settings.
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
