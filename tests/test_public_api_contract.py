@@ -37,10 +37,18 @@ EXPECTED = {
         "pp",
         "run_pipeline",
         "tl",
+        "utils",
     },
     "cellquorum.api": {
         "PipelineRunResult",
         "run_pipeline",
+    },
+    "cellquorum.utils": {
+        "PriorFetchError",
+        "PseudobulkResult",
+        "aggregate_pseudobulk",
+        "de_table_to_ranking",
+        "get_net",
     },
     "cellquorum.pp": {
         "correct_ambient",

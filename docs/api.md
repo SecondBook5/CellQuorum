@@ -40,3 +40,32 @@ the CLI runs, so a notebook exploration and a config-driven run stay consistent.
 ### Evidence — `cellquorum.evidence`
 
 ::: cellquorum.api.evidence
+
+## Reusable utilities — `cellquorum.utils`
+
+A few of the engine's internal helpers are useful on their own in analysis
+scripts, independent of a full pipeline run. They are exposed here as a stable,
+versioned surface (`cq.utils.*`) — re-exports of the canonical implementations in
+`cellquorum.comparative`, so a fix to the engine is a fix here. Importing this
+module pulls in no heavy optional dependency (`get_net` lazy-imports `decoupler`
+only when called).
+
+```python
+import cellquorum as cq
+
+ranked = cq.utils.de_table_to_ranking(de_table)        # DE table -> preranked GSEA input
+net = cq.utils.get_net("hallmark", organism="human")   # long-format prior-knowledge net
+pb = cq.utils.aggregate_pseudobulk(                     # cells -> donor x condition pseudobulk
+    adata, layer="counts", donor_col="donor_id", condition_col="condition"
+)
+```
+
+::: cellquorum.utils.de_table_to_ranking
+
+::: cellquorum.utils.get_net
+
+::: cellquorum.utils.aggregate_pseudobulk
+
+::: cellquorum.utils.PseudobulkResult
+
+::: cellquorum.utils.PriorFetchError

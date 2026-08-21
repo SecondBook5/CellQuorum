@@ -11,6 +11,20 @@ public API and the configuration schema.
 
 ### Added
 
+- **Public reusable-utility surface `cellquorum.utils` (consolidation Move 5).**
+  The analytical building blocks that analysis scripts already reach for are now
+  a first-class, versioned public surface instead of deep-internal reach-in:
+  `cq.utils.de_table_to_ranking` (DE table → preranked GSEA vector),
+  `cq.utils.get_net` (long-format prior-knowledge net via decoupler/OmniPath), and
+  `cq.utils.aggregate_pseudobulk` (cells → donor × condition pseudobulk), plus the
+  companion types `PseudobulkResult` and `PriorFetchError`. These are **re-exports
+  of the canonical `cellquorum.comparative` implementations, not copies** — a fix
+  to the engine is a fix here — and the pre-consolidation deep-import paths still
+  resolve to the same objects, so existing scripts keep working unchanged.
+  Importing `cellquorum.utils` pulls in no heavy optional dependency (`get_net`
+  lazy-imports `decoupler` only when called), preserving the skip-not-crash
+  invariant. The surface is frozen by `test_public_api_contract` and
+  `test_public_utils_surface`, and documented in `docs/api.md`.
 - **Tensor-cell2cell decomposition cost guardrail (#140).** The non-negative
   CP factorization cost scales with ``runs x prod(tensor.shape)``, and the
   sender/receiver axes are the cell-type group count — so a fine-grained
