@@ -31,7 +31,7 @@ rule bundle_hypothesis:
     output:
         report=str(BUNDLES / "{hyp}" / "report.html"),
     run:
-        from cellquorum.workflow.bundle import assemble_bundle
+        from cellquorum.cli.workflow.bundle import assemble_bundle
         entry = manifest[wildcards.hyp]
         run_dirs = {ct: RUNS / wildcards.hyp / ct for ct in entry["cell_types"]}
         assemble_bundle(wildcards.hyp, entry.get("title", wildcards.hyp),
@@ -52,7 +52,7 @@ rule aggregate_status:
         md=str(RUNS / "matrix_status.md"),
     run:
         import json
-        from cellquorum.workflow.status import build_matrix, matrix_to_csv, matrix_to_markdown
+        from cellquorum.cli.workflow.status import build_matrix, matrix_to_csv, matrix_to_markdown
         accounting = json.loads(Path(input.accounting).read_text())
         # Drive aggregation off the known PAIRS, not off which provenance happens to
         # exist: a pair whose stage records are missing (crashed run) is still a row.

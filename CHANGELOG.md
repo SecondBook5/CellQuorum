@@ -104,6 +104,19 @@ Correctness defects that could silently produce wrong output (#168):
   `RConfig` docstrings and `docs/configuration.md` now state plainly that these
   fields are reserved and currently no-ops, rather than silently ignoring them.
   Wiring rpy2 dual-dispatch is tracked as future work.
+- **Hypothesis bundling survived neither a failed pair nor the #187 move (#161).**
+  Two defects in the Snakemake hypothesis-bundling path: (1) the `bundle_hypothesis`
+  and `aggregate_status` rules imported `cellquorum.workflow.*`, but the modules
+  moved to `cellquorum.cli.workflow.*` in #187 — so both rules crashed with
+  `ModuleNotFoundError` on first real use; the rule imports now point at the
+  canonical location. (2) `assemble_bundle` silently degraded a crashed or
+  never-run cell type to an empty "no artifacts" section indistinguishable from a
+  successful run with no figures. It now classifies each pair as
+  `completed`/`failed`/`missing` (completion signal = `provenance/artifact_manifest.csv`,
+  the same marker the status matrix uses), flags failures loudly in the HTML report
+  with a one-glance "N of M completed" summary, and writes a machine-readable
+  `bundle_status.json` alongside `report.html` so a caller or CI can act on partial
+  failure without scraping HTML.
 
 ### Added
 
