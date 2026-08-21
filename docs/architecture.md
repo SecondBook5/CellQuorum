@@ -184,7 +184,10 @@ to a broken run.
 
 ## Source layout
 
-The package is organized into 20 top-level packages under `src/cellquorum/`:
+The package is organized into 17 top-level packages under `src/cellquorum/`
+(plus four thin compatibility-shim packages — `differential_expression`,
+`differential_abundance`, `enrichment`, `multicellular_programs` — that preserve
+the pre-#187 import paths; see the `comparative` row):
 
 | Package | Responsibility |
 |---|---|
@@ -198,12 +201,9 @@ The package is organized into 20 top-level packages under `src/cellquorum/`:
 | `clustering` | clustering and recursive subclustering |
 | `integration` | batch integration, embeddings, integration benchmark |
 | `annotation` | annotation, consensus, diagnostics, adjudication, reference mapping, population identity |
-| `differential_expression` | donor-aware pseudobulk DE and its visualization |
-| `differential_abundance` | compositional/abundance testing |
-| `enrichment` | GSEA/ORA/GSVA/decoupler and enrichment visualization |
+| `comparative` | the four "compare groups" analyses as submodules: `differential_expression` (donor-aware pseudobulk DE + viz), `differential_abundance` (compositional/abundance testing), `enrichment` (GSEA/ORA/GSVA/decoupler + viz), `multicellular_programs` (cross-cell-type programs via DIALOGUE) |
 | `gene_regulation` | co-expression (hdWGCNA), GRN (pySCENIC), perturbation (CellOracle) |
 | `cell_cell_communication` | LIANA/Tensor-c2c/NicheNet, network topology + curvature, CCC visualization |
-| `multicellular_programs` | cross-cell-type coordinated programs via DIALOGUE |
 | `trajectory` | RNA velocity and trajectory visualization |
 | `io` | input/output helpers |
 | `visualization` | shared figure styling/plotting (`figstyle`) and QC figure builders (`visualization.qc`) |
