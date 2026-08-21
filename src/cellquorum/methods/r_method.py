@@ -12,6 +12,20 @@ from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
 class RAnalysisMethod(AnalysisMethod):
+    """Base class for R-backed methods dispatched over the Rscript backend.
+
+    Centralizes the availability guards every R method shares: resolving the
+    Rscript backend from the run's registry, confirming ``Rscript`` is runnable
+    at the *configured* path, and checking the required R package is installed.
+    Any guard that fails returns a recorded :class:`MethodSkip` rather than
+    raising, so an absent R backend skips the stage with a reason instead of
+    crashing the run.
+
+    Subclasses set the class attribute ``r_package`` (the R package they need,
+    e.g. ``"edgeR"``) and call :meth:`_resolve_rscript_backend` at the top of
+    their ``_run`` to obtain a runnable backend or the skip to return.
+    """
+
     # Execution backend is always the Rscript backend.
     backend = "rscript"
 

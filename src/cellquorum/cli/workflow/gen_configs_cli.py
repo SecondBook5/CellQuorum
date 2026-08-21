@@ -26,6 +26,15 @@ def _root() -> None:
 
 
 def main(manifest_path: Path, template_path: Path, out_dir: Path) -> None:
+    """Expand ``manifest`` against ``template`` and write configs under ``out_dir``.
+
+    Reads the hypothesis manifest and the config template (both YAML), produces
+    one resolved config per ``(hypothesis, cell_type)`` combination, and writes
+    them to ``out_dir/configs/<key>.yaml`` alongside an ``accounting.json`` that
+    records what was generated. On-disk filenames are sanitized so path-hostile
+    obs labels (e.g. ``T/NK``) cannot escape ``out_dir``; the true label is
+    preserved inside each config so the engine subsets against the exact value.
+    """
     manifest = yaml.safe_load(Path(manifest_path).read_text())
     template = yaml.safe_load(Path(template_path).read_text())
     configs = gen_configs(manifest, template)
@@ -51,6 +60,16 @@ def run(
     template: Annotated[Path, typer.Option("--template", "-t")],
     out_dir: Annotated[Path, typer.Option("--out-dir", "-o")],
 ) -> None:
+    """Generate per-(hypothesis, cell_type) configs from a manifest and template.
+
+    Writes ``out_dir/configs/<key>.yaml`` for every combination in the manifest
+    plus an ``out_dir/accounting.json`` recording what was produced.
+
+    Options:
+        --manifest / -m: hypothesis manifest YAML (the hypotheses and their cell types).
+        --template / -t: config template YAML filled in per combination.
+        --out-dir / -o: directory the configs/ tree and accounting.json are written to.
+    """
     main(manifest, template, out_dir)
 
 
