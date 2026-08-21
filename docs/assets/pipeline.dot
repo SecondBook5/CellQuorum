@@ -1,0 +1,161 @@
+digraph cellquorum_pipeline {
+    // Generated from the stage registry by docs/assets/gen_pipeline_diagram.py.
+    // Do not edit by hand — regenerate when the stage set changes.
+    graph [rankdir=TB, fontname="Helvetica", bgcolor="#ffffff", nodesep=0.28, ranksep=0.42, splines=true];
+    node [shape=box, style="rounded,filled", fillcolor="#ffffff", fontname="Helvetica", fontsize=12, margin="0.16,0.09"];
+    edge [color="#898781", penwidth=1.3, arrowsize=0.75];
+
+    // Source + sink (run inputs and the run directory).
+    IN [label=<<B>config.yaml</B><BR/>AnnData / 10x matrices>, fillcolor="#0b0b0b", color="#0b0b0b", fontcolor="#ffffff", penwidth=1];
+    OUT [label=<<B>Run directory</B><BR/><FONT POINT-SIZE="9">figures · results · objects · provenance</FONT>>, fillcolor="#0b0b0b", color="#0b0b0b", fontcolor="#ffffff", penwidth=1];
+
+    subgraph cluster_preprocessing {
+        label="1 · Preprocessing";
+        labeljust="l";
+        labelloc="t";
+        fontname="Helvetica-Bold";
+        fontsize=13;
+        fontcolor="#2a78d6";
+        style="rounded,filled";
+        color="#2a78d6";
+        fillcolor="#eaf2fc";
+        penwidth=1.6;
+        margin=14;
+    ambient_correction [label=<<B>ambient_correction</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">SoupX · R</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
+    qc [label=<<B>qc</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">MAD · doublets · cell-cycle</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
+    preprocessing [label=<<B>preprocessing</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">normalize · log1p · GPU</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
+    feature_selection [label=<<B>feature_selection</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">seurat · seurat_v3 · pearson_residuals</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
+    dimensionality [label=<<B>dimensionality</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pca</FONT>>, color="#2a78d6", fontcolor="#0b0b0b", penwidth=1.8];
+        ambient_correction -> qc -> preprocessing -> feature_selection -> dimensionality;
+    }
+
+    subgraph cluster_integration {
+        label="2 · Integration and clustering";
+        labeljust="l";
+        labelloc="t";
+        fontname="Helvetica-Bold";
+        fontsize=13;
+        fontcolor="#eb6834";
+        style="rounded,filled";
+        color="#eb6834";
+        fillcolor="#fdeee7";
+        penwidth=1.6;
+        margin=14;
+    integration [label=<<B>integration</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">harmony · scvi · scanvi</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
+    integration_gate [label=<<B>integration_gate</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
+    clustering [label=<<B>clustering</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">leiden</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
+    annotation [label=<<B>annotation</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">marker_vote · celltypist · passthrough</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
+    subclustering [label=<<B>subclustering</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">recursive Leiden · sc-SHC</FONT>>, color="#eb6834", fontcolor="#0b0b0b", penwidth=1.8];
+        integration -> integration_gate -> clustering -> annotation -> subclustering;
+    }
+
+    subgraph cluster_annotation {
+        label="3 · Annotation and identity";
+        labeljust="l";
+        labelloc="t";
+        fontname="Helvetica-Bold";
+        fontsize=13;
+        fontcolor="#1baf7a";
+        style="rounded,filled";
+        color="#1baf7a";
+        fillcolor="#e6f7f1";
+        penwidth=1.6;
+        margin=14;
+    adjudication [label=<<B>adjudication</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">label reconciliation</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
+    reference_mapping [label=<<B>reference_mapping</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">scarches</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
+    annotation_consensus [label=<<B>annotation_consensus</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">cross-method consensus</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
+    annotation_diagnostics [label=<<B>annotation_diagnostics</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">scdiagnostics</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
+    population_identity [label=<<B>population_identity</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">evidence-ranked identity</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
+    integration_benchmark [label=<<B>integration_benchmark</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">scib_benchmark</FONT>>, color="#1baf7a", fontcolor="#0b0b0b", penwidth=1.8];
+        adjudication -> reference_mapping -> annotation_consensus -> annotation_diagnostics -> population_identity -> integration_benchmark;
+    }
+
+    subgraph cluster_embeddings {
+        label="4 · State and embeddings";
+        labeljust="l";
+        labelloc="t";
+        fontname="Helvetica-Bold";
+        fontsize=13;
+        fontcolor="#eda100";
+        style="rounded,filled";
+        color="#eda100";
+        fillcolor="#fdf3dd";
+        penwidth=1.6;
+        margin=14;
+    state_scoring [label=<<B>state_scoring</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
+    discovery [label=<<B>discovery</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
+    composition [label=<<B>composition</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
+    embeddings [label=<<B>embeddings</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">umap · phate · paga · categorical_embedding · continuous_overlay</FONT>>, color="#eda100", fontcolor="#0b0b0b", penwidth=1.8];
+        state_scoring -> discovery -> composition -> embeddings;
+    }
+
+    subgraph cluster_differential {
+        label="5 · Differential analysis";
+        labeljust="l";
+        labelloc="t";
+        fontname="Helvetica-Bold";
+        fontsize=13;
+        fontcolor="#e87ba4";
+        style="rounded,filled";
+        color="#e87ba4";
+        fillcolor="#fcecf2";
+        penwidth=1.6;
+        margin=14;
+    differential_expression [label=<<B>differential_expression</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pseudobulk_edger</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
+    differential_abundance [label=<<B>differential_abundance</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">propeller · milo · sccoda · proportion_ttest</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
+    enrichment [label=<<B>enrichment</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">gsea · ora · gsva · activity</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
+    enrichment_viz [label=<<B>enrichment_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">gsea_viz · ora_viz · gsva_viz · activity_viz</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
+    de_viz [label=<<B>de_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">volcano_viz</FONT>>, color="#e87ba4", fontcolor="#0b0b0b", penwidth=1.8];
+        differential_expression -> differential_abundance -> enrichment -> enrichment_viz -> de_viz;
+    }
+
+    subgraph cluster_regulation {
+        label="6 · Gene regulation";
+        labeljust="l";
+        labelloc="t";
+        fontname="Helvetica-Bold";
+        fontsize=13;
+        fontcolor="#008300";
+        style="rounded,filled";
+        color="#008300";
+        fillcolor="#e3f2e3";
+        penwidth=1.6;
+        margin=14;
+    coexpression [label=<<B>coexpression</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">hdwgcna</FONT>>, color="#008300", fontcolor="#0b0b0b", penwidth=1.8];
+    grn [label=<<B>grn</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pyscenic</FONT>>, color="#008300", fontcolor="#0b0b0b", penwidth=1.8];
+    perturbation [label=<<B>perturbation</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">celloracle</FONT>>, color="#008300", fontcolor="#0b0b0b", penwidth=1.8];
+    molecular_inference [label=<<B>molecular_inference</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">planned</FONT>>, style="rounded,filled,dashed", color="#898781", fillcolor="#f4f3f1", fontcolor="#52514e", penwidth=1.5];
+        coexpression -> grn -> perturbation -> molecular_inference;
+    }
+
+    subgraph cluster_communication {
+        label="7 · Communication and trajectory";
+        labeljust="l";
+        labelloc="t";
+        fontname="Helvetica-Bold";
+        fontsize=13;
+        fontcolor="#4a3aa7";
+        style="rounded,filled";
+        color="#4a3aa7";
+        fillcolor="#eae7f6";
+        penwidth=1.6;
+        margin=14;
+    trajectory [label=<<B>trajectory</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">velocity · cellrank · dpt · palantir · cytotrace</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
+    trajectory_viz [label=<<B>trajectory_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">pseudotime_viz · fate_viz · driver_viz · gene_trend_viz · macrostate_viz · velocity_viz · pseudotime_heatmap</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
+    cell_cell_communication [label=<<B>cell_cell_communication</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">liana · tensor_c2c · multinichenet · nichenet</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
+    multicellular_programs [label=<<B>multicellular_programs</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">dialogue</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
+    ccc_network [label=<<B>ccc_network</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">topology · ricci</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
+    ccc_viz [label=<<B>ccc_viz</B><BR/><FONT POINT-SIZE="9" COLOR="#52514e">dotplot_viz · chord_viz · sankey_viz · network_viz · summary_viz</FONT>>, color="#4a3aa7", fontcolor="#0b0b0b", penwidth=1.8];
+        trajectory -> trajectory_viz -> cell_cell_communication -> multicellular_programs -> ccc_network -> ccc_viz;
+    }
+
+    // Spine (canonical order across the lanes).
+    IN -> ambient_correction;
+    dimensionality -> integration;
+    subclustering -> adjudication;
+    integration_benchmark -> state_scoring;
+    embeddings -> differential_expression;
+    de_viz -> coexpression;
+    molecular_inference -> trajectory;
+    ccc_viz -> OUT;
+}

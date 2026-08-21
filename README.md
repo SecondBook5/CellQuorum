@@ -55,68 +55,17 @@ A run validates the config, plans the enabled stages against detected backends,
 bootstraps the run directory, then executes each enabled stage in canonical order,
 propagating the updated `AnnData` downstream:
 
-```mermaid
-flowchart TD
-    IN(["config.yaml  +  AnnData / 10x matrices"])
+<p align="center">
+  <img src="docs/assets/pipeline.svg" width="560"
+       alt="CellQuorum pipeline: 30 implemented stages across seven colour-coded phases — preprocessing, integration and clustering, annotation and identity, state and embeddings, differential analysis, gene regulation, and communication and trajectory — from config.yaml and an AnnData input to a provenance-tracked run directory. Five reserved stages appear as dashed slots.">
+</p>
 
-    IN --> P1
-
-    subgraph P1["1 · Preprocessing"]
-        direction TB
-        a1["ambient_correction<br/>SoupX · R"] --> a2["qc<br/>MAD · doublets · cell-cycle"] --> a3["preprocessing<br/>normalize · GPU"] --> a4["feature_selection<br/>HVG · deviance"] --> a5["dimensionality<br/>PCA · GPU"]
-    end
-
-    P1 --> P2
-
-    subgraph P2["2 · Integration &amp; clustering"]
-        direction TB
-        b1["integration<br/>Harmony · scVI"] --> b2["clustering<br/>Leiden · GPU"] --> b3["subclustering<br/>recursive · sc-SHC"]
-    end
-
-    P2 --> P3
-
-    subgraph P3["3 · Annotation"]
-        direction TB
-        c1["annotation<br/>marker-vote · CellTypist"] --> c2["consensus · diagnostics · adjudication"] --> c3["reference_mapping<br/>scArches"]
-    end
-
-    P3 --> P4
-
-    subgraph P4["4 · Embeddings"]
-        d1["embeddings<br/>UMAP · PHATE · PAGA · overlays"]
-    end
-
-    P4 --> P5
-
-    subgraph P5["5 · Differential analysis"]
-        direction TB
-        e1["differential_expression<br/>donor-aware pseudobulk · edgeR"] --> e2["differential_abundance<br/>Milo · scCODA · propeller · paired-t"] --> e3["enrichment<br/>GSEA · ORA · GSVA · decoupler"]
-    end
-
-    P5 --> P6
-    P5 --> P7
-
-    subgraph P6["6 · Gene-regulatory networks"]
-        direction TB
-        f1["coexpression<br/>hdWGCNA · R env"] --> f2["grn<br/>pySCENIC · isolated env"] --> f3["perturbation<br/>CellOracle in-silico KO"]
-    end
-
-    subgraph P7["7 · Communication &amp; trajectory"]
-        direction TB
-        g1["cell_cell_communication<br/>LIANA · Tensor-c2c · NicheNet"] --> g2["ccc_network<br/>topology · Ollivier-Ricci"] --> g3["ccc_viz"]
-        g4["trajectory<br/>scVelo RNA velocity"]
-    end
-
-    P6 --> OUT
-    P7 --> OUT
-
-    OUT(["Run directory<br/>figures · results · objects · provenance"])
-```
-
-*Phases group the canonical stage order; stages skip cleanly when disabled in the
-config or when their required inputs or backends are unavailable. Additional
-registered stages — `population_identity`, `integration_benchmark`,
-`enrichment_viz`, `de_viz`, `trajectory_viz` — run alongside the phases above.*
+*The diagram is generated from the stage registry (`docs/assets/gen_pipeline_diagram.py`),
+so it always matches the engine: each card is a stage with its config-selectable
+methods, the seven colour-coded lanes are the canonical phase order, and dashed
+cards are reserved slots that skip as not-yet-implemented. A stage also skips
+cleanly when disabled in the config or when its required inputs or backends are
+unavailable.*
 
 ## Installation
 
