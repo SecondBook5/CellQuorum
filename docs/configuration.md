@@ -63,6 +63,8 @@ stages:
   integration: true
   clustering: true
   annotation: true
+  state_scoring: true
+  discovery: true
   embeddings: true
   differential_expression: true
   differential_abundance: true
@@ -80,10 +82,10 @@ Notes:
 
 - **`network_analysis` toggles the `ccc_network` stage** (topology + curvature). This
   is the one place where the config flag name differs from the stage name.
-- **Reserved slots.** The flags `integration_gate`, `state_scoring`, `discovery`,
-  `composition`, and `molecular_inference` are accepted for forward compatibility,
-  but those stages are not yet implemented — enabling them results in a planned stage
-  that is skipped as "not yet implemented", visible in the plan and provenance.
+- **Reserved slots.** The flags `integration_gate`, `composition`, and
+  `molecular_inference` are accepted for forward compatibility, but those stages are
+  not yet implemented — enabling them results in a planned stage that is skipped as
+  "not yet implemented", visible in the plan and provenance.
 
 ## Selecting a method per stage
 
@@ -102,6 +104,17 @@ differential_abundance:
 
 enrichment:
   methods: [gsea, ora, gsva] # run several enrichment methods
+
+state_scoring:
+  methods:                   # curated cell-state programs; runs both scorers by default
+    - method: score_genes    #   scanpy score_genes → obs["state_<program>"]
+    - method: aucell         #   decoupler AUCell   → obsm["score_aucell"]
+
+discovery:
+  method: nmf                # de-novo consensus-NMF program discovery
+  n_components: 10           # number of programs (rank k)
+  n_runs: 20                 # replicate factorizations consensus-clustered into k programs
+  use_hvg: true              # restrict to highly-variable genes when present
 
 multicellular_programs:
   method: dialogue           # cross-cell-type coordinated programs via DIALOGUE

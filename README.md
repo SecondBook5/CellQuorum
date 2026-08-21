@@ -187,6 +187,8 @@ dedicated environment; *R* methods run over the Rscript/rpy2 bridge.
 | `reference_mapping` | scArches (atlas-agnostic) | Python |
 | `integration_benchmark` | scIB-style metrics | Python |
 | `population_identity` | population-level identity scoring | Python |
+| `state_scoring` | curated cell-state program scoring — scanpy `score_genes` + decoupler AUCell (stress/HSP, hypoxia, IFN, senescence, fibrosis) | Python |
+| `discovery` | de-novo program discovery — consensus NMF (replicate fits + KMeans consensus spectra, cNMF-style) | Python |
 | `embeddings` | UMAP + PHATE + PAGA (incl. PAGA-on-UMAP); feature/score overlays with opt-in MAGIC | Python |
 | `differential_expression` (+ `de_viz`) | donor-aware pseudobulk (edgeR); volcano | R |
 | `differential_abundance` | paired arcsin-sqrt t-test; Milo; scCODA; propeller | Python + R + isolated env |
@@ -200,8 +202,8 @@ dedicated environment; *R* methods run over the Rscript/rpy2 bridge.
 | `ccc_viz` | dotplot / chord / Sankey / curvature-network / summary | Python |
 | `trajectory` (+ `trajectory_viz`) | scVelo RNA velocity per lineage (velocyto loom ingestion) | Python |
 
-Five further slots (`integration_gate`, `state_scoring`, `discovery`, `composition`,
-`molecular_inference`) are reserved in the planner and skip as *not yet implemented*.
+Three further slots (`integration_gate`, `composition`, `molecular_inference`) are
+reserved in the planner and skip as *not yet implemented*.
 
 ## Backends & environments
 

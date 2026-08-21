@@ -111,10 +111,12 @@
 <title>P_embeddings</title>
 <path fill="#ffffff" stroke="#eda100" stroke-width="1.9" d="M1630.5,-429C1630.5,-429 1315.5,-429 1315.5,-429 1309.5,-429 1303.5,-423 1303.5,-417 1303.5,-417 1303.5,-364 1303.5,-364 1303.5,-358 1309.5,-352 1315.5,-352 1315.5,-352 1630.5,-352 1630.5,-352 1636.5,-352 1642.5,-358 1642.5,-364 1642.5,-364 1642.5,-417 1642.5,-417 1642.5,-423 1636.5,-429 1630.5,-429"/>
 <text text-anchor="start" x="1317.5" y="-409" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="15.00" fill="#eda100">4 · State and embeddings</text>
-<text text-anchor="start" x="1317.5" y="-397.2" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#8a8880">state_scoring</text>
-<text text-anchor="start" x="1391.5" y="-397.2" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#8a8880">  · planned</text>
-<text text-anchor="start" x="1317.5" y="-386.2" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#8a8880">discovery</text>
-<text text-anchor="start" x="1371.5" y="-386.2" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#8a8880">  · planned</text>
+<text text-anchor="start" x="1317.5" y="-397.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#0b0b0b">state_scoring</text>
+<text text-anchor="start" x="1400.5" y="-397.2" font-family="Helvetica,sans-Serif" font-size="11.00">  </text>
+<text text-anchor="start" x="1408.5" y="-397.2" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#52514e">score_genes · AUCell</text>
+<text text-anchor="start" x="1317.5" y="-386.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#0b0b0b">discovery</text>
+<text text-anchor="start" x="1378.5" y="-386.2" font-family="Helvetica,sans-Serif" font-size="11.00">  </text>
+<text text-anchor="start" x="1386.5" y="-386.2" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#52514e">consensus NMF</text>
 <text text-anchor="start" x="1317.5" y="-375.2" font-family="Helvetica,sans-Serif" font-size="11.00" fill="#8a8880">composition</text>
 <text text-anchor="start" x="1384.5" y="-375.2" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#8a8880">  · planned</text>
 <text text-anchor="start" x="1317.5" y="-364.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00" fill="#0b0b0b">embeddings</text>

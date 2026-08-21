@@ -9,6 +9,23 @@ public API and the configuration schema.
 
 ## [Unreleased]
 
+### Added
+
+- **Cell-state program scoring (`state_scoring`, #190).** A new analysis stage
+  that scores curated cell-state programs (stress/HSP, hypoxia/HIF, interferon,
+  senescence/SASP, fibrosis/ECM) on the annotated object. It runs two scorers by
+  default — scanpy `score_genes` (per-program scores into `obs`) and decoupler
+  AUCell (into `obsm`) — and resolves programs from the built-in curated set,
+  user-supplied programs, the markers config, and/or a `.gmt` file.
+- **De-novo program discovery (`discovery`, #191).** A new consensus-NMF stage
+  that discovers data-driven expression programs without prior curation: it runs
+  scikit-learn NMF at rank *k* across `n_runs` seeds, consensus-clusters the
+  replicate gene spectra (the cNMF idea, in-process), and projects every cell
+  onto the consensus spectra for a non-negative usage matrix (`obsm["X_cnmf"]`),
+  writing per-program top-gene loadings and per-cell-type mean usage. Together
+  these fill the two remaining phase-4 (state) slots; three planner slots
+  (`integration_gate`, `composition`, `molecular_inference`) remain reserved.
+
 ### Changed
 
 - **Consolidation round 2 (#187).** Continued the source-tree consolidation
