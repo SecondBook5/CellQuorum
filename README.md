@@ -398,7 +398,7 @@ tests require an Rscript + Bioconductor backend. Markers: `gpu`, `slow`, `r`,
 - [`docs/configuration.md`](docs/configuration.md) — configuration reference
 - [`docs/backends.md`](docs/backends.md) — backends and environments
 - [`docs/docker.md`](docs/docker.md) · [`docs/snakemake.md`](docs/snakemake.md) — containerized and orchestrated runs
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`docs/SCIENTIFIC_ENGINEERING_PLAN.md`](docs/SCIENTIFIC_ENGINEERING_PLAN.md) — roadmap and full plan
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — roadmap and backlog
 - [`CHANGELOG.md`](CHANGELOG.md)
 
 ## Citing

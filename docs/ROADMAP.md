@@ -3,10 +3,6 @@
 This file records the working plan for CellQuorum so the project direction is
 not dependent on chat history.
 
-The full finalized scientific and engineering plan is preserved in
-[`docs/SCIENTIFIC_ENGINEERING_PLAN.md`](SCIENTIFIC_ENGINEERING_PLAN.md). This
-roadmap is the shorter implementation tracker derived from that plan.
-
 CellQuorum is being built as a Python-native, GPU-capable scientific framework
 for single-cell RNA-seq systems biology. The execution engine is one feature of
 that framework: it should make analyses reproducible, resumable, inspectable,

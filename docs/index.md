@@ -20,7 +20,6 @@ quickstart. The guides below go deeper.
 | [Snakemake](snakemake.md) | Orchestrating runs with Snakemake. |
 | [Developer smoke tests](dev_smoke.md) | Fast local checks. |
 | [Roadmap](ROADMAP.md) | Current capabilities and the engineering/scientific backlog. |
-| [Scientific & engineering plan](SCIENTIFIC_ENGINEERING_PLAN.md) | The full design and scientific plan. |
 
 ## Key facts
 
