@@ -1,0 +1,65 @@
+"""I/O helpers for enrichment visualization: CSV discovery and figure saving."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+
+from cellquorum.core.stage import StageArtifact
+from cellquorum.visualization.figstyle import apply_cellquorum_theme
+
+
+def collections_from_glob(results_dir: Path, prefix: str, suffix: str = ".csv") -> list[str]:
+    """Return collection/resource names parsed from files matching prefix*suffix."""
+    names = []
+    for path in sorted(results_dir.glob(f"{prefix}*{suffix}")):
+        names.append(path.name[len(prefix) : -len(suffix)])
+    return names
+
+
+def apply_theme() -> None:
+    """Apply the house theme plus enrichment-viz vector-font overrides."""
+    apply_cellquorum_theme()
+    mpl.rcParams.update({"svg.fonttype": "none", "pdf.fonttype": 42})
+
+
+def save_figure(
+    fig: Figure,
+    out_dir: str | Path,
+    stem: str,
+    *,
+    formats: tuple[str, ...] = ("pdf", "png"),
+    dpi: int = 300,
+) -> list[Path]:
+    """Write ``fig`` to ``out_dir/stem.<fmt>`` for each format, then close it.
+
+    Creates ``out_dir`` (and parents) if absent. Returns paths in ``formats`` order.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    for fmt in formats:
+        path = out_dir / f"{stem}.{fmt}"
+        fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
+        paths.append(path)
+    plt.close(fig)
+    return paths
+
+
+def figure_artifacts(
+    paths: list[Path],
+    *,
+    name: str,
+    description: str,
+) -> list[StageArtifact]:
+    """Wrap saved figure paths as ``kind="figure"`` stage artifacts."""
+    return [
+        StageArtifact(name=name, path=path, kind="figure", description=description)
+        for path in paths
+    ]
+
+
+__all__ = ["collections_from_glob", "apply_theme", "save_figure", "figure_artifacts"]

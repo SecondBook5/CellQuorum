@@ -1,7 +1,7 @@
 """Tests for EnrichmentVizConfig defaults and wiring into CellQuorumConfig."""
 
+from cellquorum.comparative.enrichment.viz.config import EnrichmentVizConfig
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.enrichment.viz.config import EnrichmentVizConfig
 
 
 def test_enrichment_viz_config_defaults():

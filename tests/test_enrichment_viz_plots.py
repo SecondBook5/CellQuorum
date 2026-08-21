@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.colors import TwoSlopeNorm
 
-from cellquorum.enrichment.viz import plots
+from cellquorum.comparative.enrichment.viz import plots
 
 
 def test_signed_norm_straddles_zero_even_when_all_positive():

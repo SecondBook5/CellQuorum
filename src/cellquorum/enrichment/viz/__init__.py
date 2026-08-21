@@ -1,19 +1,23 @@
-"""Enrichment visualization stage package."""
+"""Backward-compatibility shim — pre-#187 import path.
+
+Canonical location: :mod:`cellquorum.comparative.enrichment.viz`.
+
+CellQuorum's four comparative analyses (differential expression, differential
+abundance, enrichment, multicellular programs) were consolidated under the
+``cellquorum.comparative`` package in #187. This module re-exports the public
+API from its new home so pre-consolidation imports keep working unchanged.
+New code should import from the canonical location above.
+"""
 
 from __future__ import annotations
 
-from cellquorum.enrichment.viz.config import EnrichmentVizConfig
-from cellquorum.enrichment.viz.viz_methods import (
+from cellquorum.comparative.enrichment.viz import (
     ActivityVizMethod,
+    EnrichmentVizConfig,
     GseaVizMethod,
     GsvaVizMethod,
     OraVizMethod,
 )
-from cellquorum.methods.registry import METHOD_REGISTRY
-
-for _method in (GseaVizMethod, OraVizMethod, GsvaVizMethod, ActivityVizMethod):
-    if not METHOD_REGISTRY.has("enrichment_viz", _method.name):
-        METHOD_REGISTRY.register(_method)
 
 __all__ = [
     "ActivityVizMethod",

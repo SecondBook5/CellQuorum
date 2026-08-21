@@ -60,8 +60,8 @@ import cellquorum.integration.embeddings.stage  # noqa: F401
 # Comparison + discovery-tail tracks.
 import cellquorum.comparative.differential_expression.stage  # noqa: F401
 import cellquorum.comparative.differential_abundance.stage  # noqa: F401
-import cellquorum.enrichment.stage  # noqa: F401
-import cellquorum.enrichment.viz.stage  # noqa: F401
+import cellquorum.comparative.enrichment.stage  # noqa: F401
+import cellquorum.comparative.enrichment.viz.stage  # noqa: F401
 import cellquorum.comparative.differential_expression.viz.stage  # noqa: F401
 import cellquorum.gene_regulation.coexpression.stage  # noqa: F401
 import cellquorum.gene_regulation.grn.stage  # noqa: F401

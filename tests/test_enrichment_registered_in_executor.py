@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from cellquorum.comparative.enrichment.stage import EnrichmentStage
 from cellquorum.core.executor import build_default_stage_registry
-from cellquorum.enrichment.stage import EnrichmentStage
 
 
 def test_enrichment_stage_registered():

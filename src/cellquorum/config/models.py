@@ -53,6 +53,12 @@ from cellquorum.comparative.differential_expression.config import DifferentialEx
 # Import the differential-expression-visualization configuration model.
 from cellquorum.comparative.differential_expression.viz.config import DeVizConfig
 
+# Import the enrichment configuration model.
+from cellquorum.comparative.enrichment.config import EnrichmentConfig
+
+# Import the enrichment-visualization configuration model.
+from cellquorum.comparative.enrichment.viz.config import EnrichmentVizConfig
+
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
@@ -62,12 +68,6 @@ from cellquorum.config.cohort import CohortConfig
 # Import the markers, design, and contrasts configuration models.
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
-
-# Import the enrichment configuration model.
-from cellquorum.enrichment.config import EnrichmentConfig
-
-# Import the enrichment-visualization configuration model.
-from cellquorum.enrichment.viz.config import EnrichmentVizConfig
 
 # Import the coexpression configuration model.
 from cellquorum.gene_regulation.coexpression.config import CoexpressionConfig

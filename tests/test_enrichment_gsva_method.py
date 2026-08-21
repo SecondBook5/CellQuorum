@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.enrichment.gsva_method import GsvaMethod
+from cellquorum.comparative.enrichment.gsva_method import GsvaMethod
 from cellquorum.methods.base import MethodSkip
 
 # Exercises the REAL dc.mt.gsva. One pseudobulk sample has zero library size, so
@@ -61,7 +61,7 @@ def _net():
 
 def _patch_get_net(monkeypatch, net):
     monkeypatch.setattr(
-        "cellquorum.enrichment.gsva_method.get_net",
+        "cellquorum.comparative.enrichment.gsva_method.get_net",
         lambda collection, **kw: net.copy(),
     )
 

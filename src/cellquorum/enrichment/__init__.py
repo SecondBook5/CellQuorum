@@ -1,22 +1,22 @@
-"""Enrichment / pathway-activity stage package."""
+"""Backward-compatibility shim — pre-#187 import path.
+
+Canonical location: :mod:`cellquorum.comparative.enrichment`.
+
+CellQuorum's four comparative analyses (differential expression, differential
+abundance, enrichment, multicellular programs) were consolidated under the
+``cellquorum.comparative`` package in #187. This module re-exports the public
+API from its new home so pre-consolidation imports keep working unchanged.
+New code should import from the canonical location above.
+"""
 
 from __future__ import annotations
 
-from cellquorum.enrichment.activity_method import ActivityMethod
-from cellquorum.enrichment.config import EnrichmentConfig
-from cellquorum.enrichment.gsea_method import GseaMethod
-from cellquorum.enrichment.gsva_method import GsvaMethod
-from cellquorum.enrichment.ora_method import OraMethod
-from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.comparative.enrichment import (
+    ActivityMethod,
+    EnrichmentConfig,
+    GseaMethod,
+    GsvaMethod,
+    OraMethod,
+)
 
-for _method in (GseaMethod, OraMethod, GsvaMethod, ActivityMethod):
-    if not METHOD_REGISTRY.has("enrichment", _method.name):
-        METHOD_REGISTRY.register(_method)
-
-__all__ = [
-    "ActivityMethod",
-    "EnrichmentConfig",
-    "GseaMethod",
-    "GsvaMethod",
-    "OraMethod",
-]
+__all__ = ["ActivityMethod", "EnrichmentConfig", "GseaMethod", "GsvaMethod", "OraMethod"]
