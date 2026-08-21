@@ -46,7 +46,16 @@ public API and the configuration schema.
   (``cellquorum.tl``, ``cellquorum.pp``, ``cellquorum.diag``,
   ``cellquorum.evidence``, ``cellquorum._notebook``) remain as thin re-export
   shims. The tree now has **17** top-level packages plus four
-  compatibility-shim packages. Like
+  compatibility-shim packages. The QC configuration module
+  (``cellquorum.qc.config``) is now config-only: the dozen near-identical
+  Pydantic field-coercion validators it carried were extracted into a new
+  standard-library-only leaf module ``cellquorum.qc.config_validators`` (six
+  parametrized ``coerce_*`` helpers), so each coercion pattern lives once and is
+  directly unit-tested; the config models delegate to them and stay declarative.
+  The seam is a new leaf module rather than a fold into ``qc.thresholds`` because
+  ``qc.thresholds`` already imports ``qc.config`` — the validators' error
+  messages and coerced values are byte-identical to the per-model versions they
+  replace. Like
   #167 this is a pure legibility refactor — behavior, the CLI, the configuration
   schema, the public Python API, and all analysis outputs are unchanged, and the
   pre-move import paths keep working through thin re-export shims.

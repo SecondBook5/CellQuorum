@@ -24,6 +24,16 @@ from cellquorum.config.validation import (
 # Import CellQuorum exceptions for mode-rejection validation.
 from cellquorum.core.exceptions import CellQuorumConfigError
 
+# Import the reusable field-coercion helpers backing the field validators below.
+from cellquorum.qc.config_validators import (
+    coerce_float_in_range,
+    coerce_non_negative_int,
+    coerce_percent_top,
+    coerce_positive_float,
+    coerce_string_list,
+    coerce_stripped_string,
+)
+
 # Define supported QC execution modes. `flag_no_drop` FLAGS failing cells WITHOUT
 # removing them — the flagged cells remain in the object and enter downstream
 # analysis. `filter` keeps only passing cells; `both` reports metrics and filters.
@@ -92,49 +102,8 @@ class QCMetricCalculationConfig(StrictBaseModel):
             ValueError: If the value is not a non-empty list of positive integers.
         """
 
-        # Reject a missing percent_top list.
-        if value is None:
-            raise ValueError("percent_top cannot be None.")
-
-        # Reject strings because they are sequences but not valid integer lists.
-        if isinstance(value, str):
-            raise ValueError("percent_top must be a list of positive integers, not a string.")
-
-        # Reject non-list and non-tuple values.
-        if not isinstance(value, list | tuple):
-            raise ValueError(
-                "percent_top must be a list of positive integers. "
-                f"Received: {type(value).__name__}."
-            )
-
-        # Reject empty percent_top lists.
-        if not value:
-            raise ValueError("percent_top must contain at least one positive integer.")
-
-        # Initialize the cleaned percent_top list.
-        cleaned_values: list[int] = []
-
-        # Iterate over each candidate value.
-        for item in value:
-            # Reject booleans because bool is a subclass of int.
-            if isinstance(item, bool):
-                raise ValueError("percent_top values must be integers, not booleans.")
-
-            # Reject non-integer values.
-            if not isinstance(item, int):
-                raise ValueError(
-                    "percent_top values must be integers. " f"Received: {type(item).__name__}."
-                )
-
-            # Reject non-positive values.
-            if item <= 0:
-                raise ValueError("percent_top values must be > 0.")
-
-            # Store the cleaned integer.
-            cleaned_values.append(item)
-
-        # Return the sorted unique values for deterministic metric names.
-        return sorted(set(cleaned_values))
+        # Delegate to the shared positive-integer-rank coercion helper.
+        return coerce_percent_top(value)
 
     @field_validator("layer", mode="before")
     @classmethod
@@ -152,25 +121,13 @@ class QCMetricCalculationConfig(StrictBaseModel):
             ValueError: If the layer name is empty or non-string.
         """
 
-        # Preserve absent layer names.
-        if value is None:
-            return None
-
-        # Reject non-string layer names.
-        if not isinstance(value, str):
-            raise ValueError(
-                "QC metric layer must be a string or None. " f"Received: {type(value).__name__}."
-            )
-
-        # Strip harmless whitespace.
-        cleaned_value = value.strip()
-
-        # Reject empty layer names.
-        if not cleaned_value:
-            raise ValueError("QC metric layer cannot be empty.")
-
-        # Return the cleaned layer name.
-        return cleaned_value
+        # Delegate to the shared optional stripped-string coercion helper.
+        return coerce_stripped_string(
+            value,
+            optional=True,
+            type_message="QC metric layer must be a string or None.",
+            empty_message="QC metric layer cannot be empty.",
+        )
 
 
 class QCFeaturePatternConfig(StrictBaseModel):
@@ -223,44 +180,14 @@ class QCFeaturePatternConfig(StrictBaseModel):
             ValueError: If the value is not a list of non-empty strings.
         """
 
-        # Return an empty list when an optional list is omitted.
-        if value is None:
-            return []
-
-        # Reject a single string because users should provide a list explicitly.
-        if isinstance(value, str):
-            raise ValueError("Feature patterns must be provided as a list, not a string.")
-
-        # Reject non-list and non-tuple values.
-        if not isinstance(value, list | tuple):
-            raise ValueError(
-                "Feature patterns must be provided as a list of strings. "
-                f"Received: {type(value).__name__}."
-            )
-
-        # Initialize the cleaned pattern list.
-        cleaned_patterns: list[str] = []
-
-        # Iterate over candidate patterns.
-        for item in value:
-            # Reject non-string patterns.
-            if not isinstance(item, str):
-                raise ValueError(
-                    "Feature patterns must be strings. " f"Received: {type(item).__name__}."
-                )
-
-            # Strip harmless whitespace.
-            cleaned_item = item.strip()
-
-            # Reject empty patterns.
-            if not cleaned_item:
-                raise ValueError("Feature patterns cannot be empty.")
-
-            # Store the cleaned pattern.
-            cleaned_patterns.append(cleaned_item)
-
-        # Return the cleaned patterns.
-        return cleaned_patterns
+        # Delegate to the shared string-list coercion helper.
+        return coerce_string_list(
+            value,
+            not_a_list_message="Feature patterns must be provided as a list, not a string.",
+            wrong_container_message="Feature patterns must be provided as a list of strings.",
+            item_type_message="Feature patterns must be strings.",
+            empty_item_message="Feature patterns cannot be empty.",
+        )
 
 
 class QCBasicThresholdConfig(StrictBaseModel):
@@ -329,26 +256,14 @@ class QCBasicThresholdConfig(StrictBaseModel):
             ValueError: If the value is negative, boolean, or non-integer.
         """
 
-        # Preserve absent thresholds.
-        if value is None:
-            return None
-
-        # Reject booleans because bool is a subclass of int.
-        if isinstance(value, bool):
-            raise ValueError("Integer QC thresholds cannot be boolean values.")
-
-        # Reject non-integer values.
-        if not isinstance(value, int):
-            raise ValueError(
-                "Integer QC thresholds must be integers. " f"Received: {type(value).__name__}."
-            )
-
-        # Reject negative values.
-        if value < 0:
-            raise ValueError("Integer QC thresholds must be >= 0.")
-
-        # Return the validated integer.
-        return value
+        # Delegate to the shared optional non-negative-integer coercion helper.
+        return coerce_non_negative_int(
+            value,
+            optional=True,
+            bool_message="Integer QC thresholds cannot be boolean values.",
+            type_message="Integer QC thresholds must be integers.",
+            negative_message="Integer QC thresholds must be >= 0.",
+        )
 
     @field_validator(
         "max_mito_percent",
@@ -371,29 +286,16 @@ class QCBasicThresholdConfig(StrictBaseModel):
             ValueError: If the value is outside [0, 100], boolean, or non-numeric.
         """
 
-        # Preserve absent thresholds.
-        if value is None:
-            return None
-
-        # Reject booleans because bool values are not valid percentages.
-        if isinstance(value, bool):
-            raise ValueError("Percentage QC thresholds cannot be boolean values.")
-
-        # Reject non-numeric values.
-        if not isinstance(value, int | float):
-            raise ValueError(
-                "Percentage QC thresholds must be numeric. " f"Received: {type(value).__name__}."
-            )
-
-        # Convert the threshold to float.
-        float_value = float(value)
-
-        # Reject values outside the valid percentage range.
-        if float_value < 0.0 or float_value > 100.0:
-            raise ValueError("Percentage QC thresholds must be between 0 and 100.")
-
-        # Return the validated percentage.
-        return float_value
+        # Delegate to the shared bounded-float coercion helper (0-100 percent).
+        return coerce_float_in_range(
+            value,
+            optional=True,
+            low=0.0,
+            high=100.0,
+            bool_message="Percentage QC thresholds cannot be boolean values.",
+            type_message="Percentage QC thresholds must be numeric.",
+            range_message="Percentage QC thresholds must be between 0 and 100.",
+        )
 
     @model_validator(mode="after")
     def validate_threshold_pairs(self) -> QCBasicThresholdConfig:
@@ -493,25 +395,13 @@ class QCMadThresholdConfig(StrictBaseModel):
             ValueError: If the value is boolean, non-numeric, or non-positive.
         """
 
-        # Reject booleans because they behave numerically but are invalid here.
-        if isinstance(value, bool):
-            raise ValueError("MAD multipliers cannot be boolean values.")
-
-        # Reject non-numeric values.
-        if not isinstance(value, int | float):
-            raise ValueError(
-                "MAD multipliers must be numeric. " f"Received: {type(value).__name__}."
-            )
-
-        # Convert the value to float.
-        float_value = float(value)
-
-        # Reject non-positive multipliers.
-        if float_value <= 0.0:
-            raise ValueError("MAD multipliers must be > 0.")
-
-        # Return the validated multiplier.
-        return float_value
+        # Delegate to the shared strictly-positive-float coercion helper.
+        return coerce_positive_float(
+            value,
+            bool_message="MAD multipliers cannot be boolean values.",
+            type_message="MAD multipliers must be numeric.",
+            nonpositive_message="MAD multipliers must be > 0.",
+        )
 
     @field_validator("metrics", "groupby", mode="before")
     @classmethod
@@ -529,43 +419,14 @@ class QCMadThresholdConfig(StrictBaseModel):
             ValueError: If the value is not a list of non-empty strings.
         """
 
-        # Return an empty list when an optional list is omitted.
-        if value is None:
-            return []
-
-        # Reject a single string because it is ambiguous.
-        if isinstance(value, str):
-            raise ValueError("MAD fields must be provided as lists, not strings.")
-
-        # Reject non-list and non-tuple values.
-        if not isinstance(value, list | tuple):
-            raise ValueError(
-                "MAD fields must be lists of strings. " f"Received: {type(value).__name__}."
-            )
-
-        # Initialize the cleaned list.
-        cleaned_values: list[str] = []
-
-        # Iterate over candidate entries.
-        for item in value:
-            # Reject non-string entries.
-            if not isinstance(item, str):
-                raise ValueError(
-                    "MAD list entries must be strings. " f"Received: {type(item).__name__}."
-                )
-
-            # Strip harmless whitespace.
-            cleaned_item = item.strip()
-
-            # Reject empty entries.
-            if not cleaned_item:
-                raise ValueError("MAD list entries cannot be empty.")
-
-            # Store the cleaned entry.
-            cleaned_values.append(cleaned_item)
-
-        # Return the cleaned values.
-        return cleaned_values
+        # Delegate to the shared string-list coercion helper.
+        return coerce_string_list(
+            value,
+            not_a_list_message="MAD fields must be provided as lists, not strings.",
+            wrong_container_message="MAD fields must be lists of strings.",
+            item_type_message="MAD list entries must be strings.",
+            empty_item_message="MAD list entries cannot be empty.",
+        )
 
     @field_validator("mito_metric", mode="before")
     @classmethod
@@ -583,19 +444,13 @@ class QCMadThresholdConfig(StrictBaseModel):
             ValueError: If the metric name is not a non-empty string.
         """
 
-        # Reject non-string metric names.
-        if not isinstance(value, str):
-            raise ValueError("mito_metric must be a string. " f"Received: {type(value).__name__}.")
-
-        # Strip harmless whitespace.
-        cleaned_value = value.strip()
-
-        # Reject empty metric names.
-        if not cleaned_value:
-            raise ValueError("mito_metric cannot be empty.")
-
-        # Return the cleaned metric name.
-        return cleaned_value
+        # Delegate to the shared required stripped-string coercion helper.
+        return coerce_stripped_string(
+            value,
+            optional=False,
+            type_message="mito_metric must be a string.",
+            empty_message="mito_metric cannot be empty.",
+        )
 
 
 class QCDoubletConfig(StrictBaseModel):
@@ -659,29 +514,16 @@ class QCDoubletConfig(StrictBaseModel):
             ValueError: If the value is outside [0, 1], boolean, or non-numeric.
         """
 
-        # Preserve absent optional probabilities.
-        if value is None:
-            return None
-
-        # Reject booleans because they are not valid probabilities.
-        if isinstance(value, bool):
-            raise ValueError("Doublet probability fields cannot be boolean values.")
-
-        # Reject non-numeric values.
-        if not isinstance(value, int | float):
-            raise ValueError(
-                "Doublet probability fields must be numeric. " f"Received: {type(value).__name__}."
-            )
-
-        # Convert the value to float.
-        float_value = float(value)
-
-        # Reject values outside the probability range.
-        if float_value < 0.0 or float_value > 1.0:
-            raise ValueError("Doublet probability fields must be between 0 and 1.")
-
-        # Return the validated probability.
-        return float_value
+        # Delegate to the shared bounded-float coercion helper (0-1 probability).
+        return coerce_float_in_range(
+            value,
+            optional=True,
+            low=0.0,
+            high=1.0,
+            bool_message="Doublet probability fields cannot be boolean values.",
+            type_message="Doublet probability fields must be numeric.",
+            range_message="Doublet probability fields must be between 0 and 1.",
+        )
 
     @model_validator(mode="after")
     def validate_doublet_consistency(self) -> QCDoubletConfig:
@@ -754,41 +596,14 @@ class QCCellCycleConfig(StrictBaseModel):
             ValueError: If the value is not a list of non-empty strings.
         """
 
-        # Return an empty list when genes are omitted.
-        if value is None:
-            return []
-
-        # Reject a single string because it is ambiguous.
-        if isinstance(value, str):
-            raise ValueError("Gene lists must be provided as lists, not strings.")
-
-        # Reject non-list and non-tuple values.
-        if not isinstance(value, list | tuple):
-            raise ValueError(
-                "Gene lists must be lists of strings. " f"Received: {type(value).__name__}."
-            )
-
-        # Initialize the cleaned gene list.
-        cleaned_genes: list[str] = []
-
-        # Iterate over gene values.
-        for gene in value:
-            # Reject non-string genes.
-            if not isinstance(gene, str):
-                raise ValueError("Gene names must be strings. " f"Received: {type(gene).__name__}.")
-
-            # Strip harmless whitespace.
-            cleaned_gene = gene.strip()
-
-            # Reject empty genes.
-            if not cleaned_gene:
-                raise ValueError("Gene names cannot be empty.")
-
-            # Store the cleaned gene.
-            cleaned_genes.append(cleaned_gene)
-
-        # Return the cleaned genes.
-        return cleaned_genes
+        # Delegate to the shared string-list coercion helper.
+        return coerce_string_list(
+            value,
+            not_a_list_message="Gene lists must be provided as lists, not strings.",
+            wrong_container_message="Gene lists must be lists of strings.",
+            item_type_message="Gene names must be strings.",
+            empty_item_message="Gene names cannot be empty.",
+        )
 
     @field_validator("random_state", mode="before")
     @classmethod
@@ -806,22 +621,14 @@ class QCCellCycleConfig(StrictBaseModel):
             ValueError: If the value is not a non-negative integer.
         """
 
-        # Reject booleans because bool is a subclass of int.
-        if isinstance(value, bool):
-            raise ValueError("random_state cannot be a boolean value.")
-
-        # Reject non-integer values.
-        if not isinstance(value, int):
-            raise ValueError(
-                "random_state must be an integer. " f"Received: {type(value).__name__}."
-            )
-
-        # Reject negative values.
-        if value < 0:
-            raise ValueError("random_state must be >= 0.")
-
-        # Return the validated random state.
-        return value
+        # Delegate to the shared required non-negative-integer coercion helper.
+        return coerce_non_negative_int(
+            value,
+            optional=False,
+            bool_message="random_state cannot be a boolean value.",
+            type_message="random_state must be an integer.",
+            negative_message="random_state must be >= 0.",
+        )
 
 
 class QCAmbientRNAConfig(StrictBaseModel):
@@ -875,29 +682,16 @@ class QCAmbientRNAConfig(StrictBaseModel):
             ValueError: If the value is outside [0, 1], boolean, or non-numeric.
         """
 
-        # Preserve absent contamination fractions.
-        if value is None:
-            return None
-
-        # Reject booleans because they are not valid fractions.
-        if isinstance(value, bool):
-            raise ValueError("contamination_fraction cannot be boolean.")
-
-        # Reject non-numeric values.
-        if not isinstance(value, int | float):
-            raise ValueError(
-                "contamination_fraction must be numeric. " f"Received: {type(value).__name__}."
-            )
-
-        # Convert the value to float.
-        float_value = float(value)
-
-        # Reject invalid fractions.
-        if float_value < 0.0 or float_value > 1.0:
-            raise ValueError("contamination_fraction must be between 0 and 1.")
-
-        # Return the validated fraction.
-        return float_value
+        # Delegate to the shared bounded-float coercion helper (0-1 fraction).
+        return coerce_float_in_range(
+            value,
+            optional=True,
+            low=0.0,
+            high=1.0,
+            bool_message="contamination_fraction cannot be boolean.",
+            type_message="contamination_fraction must be numeric.",
+            range_message="contamination_fraction must be between 0 and 1.",
+        )
 
     @field_validator("marker_genes", mode="before")
     @classmethod
@@ -915,43 +709,14 @@ class QCAmbientRNAConfig(StrictBaseModel):
             ValueError: If the value is not a list of non-empty strings.
         """
 
-        # Return an empty list when marker genes are omitted.
-        if value is None:
-            return []
-
-        # Reject a single string because it is ambiguous.
-        if isinstance(value, str):
-            raise ValueError("marker_genes must be provided as a list, not a string.")
-
-        # Reject non-list and non-tuple values.
-        if not isinstance(value, list | tuple):
-            raise ValueError(
-                "marker_genes must be a list of strings. " f"Received: {type(value).__name__}."
-            )
-
-        # Initialize the cleaned marker gene list.
-        cleaned_genes: list[str] = []
-
-        # Iterate over marker gene values.
-        for gene in value:
-            # Reject non-string marker genes.
-            if not isinstance(gene, str):
-                raise ValueError(
-                    "Ambient RNA marker genes must be strings. " f"Received: {type(gene).__name__}."
-                )
-
-            # Strip harmless whitespace.
-            cleaned_gene = gene.strip()
-
-            # Reject empty marker genes.
-            if not cleaned_gene:
-                raise ValueError("Ambient RNA marker genes cannot be empty.")
-
-            # Store the cleaned marker gene.
-            cleaned_genes.append(cleaned_gene)
-
-        # Return the cleaned marker genes.
-        return cleaned_genes
+        # Delegate to the shared string-list coercion helper.
+        return coerce_string_list(
+            value,
+            not_a_list_message="marker_genes must be provided as a list, not a string.",
+            wrong_container_message="marker_genes must be a list of strings.",
+            item_type_message="Ambient RNA marker genes must be strings.",
+            empty_item_message="Ambient RNA marker genes cannot be empty.",
+        )
 
     @model_validator(mode="after")
     def validate_ambient_consistency(self) -> QCAmbientRNAConfig:
