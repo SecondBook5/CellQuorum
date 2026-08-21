@@ -72,6 +72,9 @@ from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
+# Import the discovery (consensus-NMF) configuration model.
+from cellquorum.discovery.config import DiscoveryConfig
+
 # Import the coexpression configuration model.
 from cellquorum.gene_regulation.coexpression.config import CoexpressionConfig
 
@@ -857,6 +860,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store cell-state program scoring settings.
     state_scoring: StateScoringConfig = Field(default_factory=StateScoringConfig)
+
+    # Store de-novo program discovery (consensus-NMF) settings.
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
 
     # Store embeddings settings.
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
