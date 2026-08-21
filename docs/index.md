@@ -7,12 +7,14 @@ Python, R/Bioconductor, and GPU backends, and records machine-readable provenanc
 for every step.
 
 Start with the [README](https://github.com/SecondBook5/cellquorum#readme) for an
-overview, installation, and a quickstart. The guides below go deeper.
+overview and installation, then work through the [Tutorial](tutorial.md) for a
+hands-on first run. The guides below go deeper.
 
 ## Guides
 
 | Guide | Contents |
 |---|---|
+| [Tutorial](tutorial.md) | A hands-on first run — from a raw `.h5ad` to a provenance-tracked run: point the config at your data, preview the plan, run it, and read every output. |
 | [Architecture](architecture.md) | The execution model — validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance; the 17-package layout (plus compatibility shims). |
 | [Configuration](configuration.md) | The full configuration reference — top-level sections, per-stage blocks, stage enable flags, and how a method is selected per stage. |
 | [Backends & environments](backends.md) | The primary and isolated environments, runtime backend detection, and the R/Rscript bridge. |

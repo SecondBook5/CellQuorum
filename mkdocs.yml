@@ -69,6 +69,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Tutorial: tutorial.md
   - Architecture: architecture.md
   - Configuration: configuration.md
   - Backends & environments: backends.md
