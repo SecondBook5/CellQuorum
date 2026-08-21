@@ -8,8 +8,10 @@ stages consume these so the biological question is declared once, per dataset.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 from cellquorum.config.base import StrictBaseModel
@@ -281,10 +283,323 @@ def validate_design_against_obs(
     )
 
 
+# ---------------------------------------------------------------------------
+# General (multi-factor / factorial) design estimability
+#
+# The pairwise path above answers "is this two-level case/control comparison
+# estimable?". A factorial design (multiple crossed factors, optional
+# interactions) can fail in ways a two-level check cannot see: a rank-deficient
+# model matrix, two factors that are perfectly confounded (aliased), or an empty
+# cell in the factorial grid that leaves an interaction inestimable. The helpers
+# below build the treatment-coded model matrix from arbitrary factor columns and
+# surface those failures explicitly, in the same fail-loud spirit.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DesignMatrixReport:
+    """Estimability diagnostics for a multi-factor design matrix.
+
+    Args:
+        factors: The main-effect factor columns, in order.
+        interactions: Two-way interaction terms as ``(factor_a, factor_b)`` pairs.
+        n_samples: Number of rows (samples/pseudo-samples) the matrix was built from.
+        n_columns: Number of model-matrix columns (intercept + coded terms).
+        rank: Numerical rank of the model matrix.
+        full_rank: Whether ``rank == n_columns`` (the design is estimable).
+        confounded_pairs: Main-effect factor pairs that are perfectly aliased
+            (one factor nested within the other), so their effects cannot be
+            separated.
+        empty_cells: Factorial-grid cells (as ``{factor: level}`` dicts) with
+            fewer than ``min_per_cell`` samples.
+        warnings: Human-readable summaries of any problems found.
+    """
+
+    # Main-effect factor columns, in order.
+    factors: list[str]
+
+    # Two-way interaction terms, as ordered factor pairs.
+    interactions: list[tuple[str, str]] = field(default_factory=list)
+
+    # Rows the matrix was built from.
+    n_samples: int = 0
+
+    # Model-matrix columns (intercept + coded terms).
+    n_columns: int = 0
+
+    # Numerical rank of the model matrix.
+    rank: int = 0
+
+    # Whether the matrix has full column rank (estimable).
+    full_rank: bool = True
+
+    # Perfectly-aliased main-effect factor pairs.
+    confounded_pairs: list[tuple[str, str]] = field(default_factory=list)
+
+    # Factorial-grid cells below the per-cell minimum.
+    empty_cells: list[dict[str, str]] = field(default_factory=list)
+
+    # Non-empty when a problem was found.
+    warnings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert the report to a JSON-friendly dictionary."""
+
+        return {
+            "factors": list(self.factors),
+            "interactions": [list(pair) for pair in self.interactions],
+            "n_samples": self.n_samples,
+            "n_columns": self.n_columns,
+            "rank": self.rank,
+            "full_rank": self.full_rank,
+            "confounded_pairs": [list(pair) for pair in self.confounded_pairs],
+            "empty_cells": [dict(cell) for cell in self.empty_cells],
+            "warnings": list(self.warnings),
+        }
+
+
+def build_design_matrix(
+    sample_meta: pd.DataFrame,
+    factors: list[str],
+    interactions: list[tuple[str, str]] | None = None,
+) -> pd.DataFrame:
+    """
+    Build a treatment-coded model matrix from categorical factor columns.
+
+    Every factor is dummy-coded with the first level dropped (treatment coding),
+    an intercept column is prepended, and each requested two-way interaction adds
+    the products of its two factors' surviving dummy columns. This is the same
+    parameterization ``model.matrix(~ a + b + a:b)`` produces in R, so the rank of
+    the returned matrix is the rank the downstream fit will see.
+
+    Args:
+        sample_meta: Per-sample metadata (rows are samples/pseudo-samples).
+        factors: Main-effect factor columns to include, in order.
+        interactions: Optional two-way interaction terms as ``(a, b)`` pairs; each
+            member is coded even if it is not also listed in ``factors``.
+
+    Returns:
+        A DataFrame of model-matrix columns aligned to ``sample_meta.index``.
+
+    Raises:
+        CellQuorumConfigError: If any referenced column is absent from
+            ``sample_meta``.
+    """
+
+    interactions = list(interactions or [])
+
+    # Every referenced column (main effects + interaction members) must exist.
+    referenced = list(
+        dict.fromkeys([*factors, *(m for pair in interactions for m in pair)])
+    )
+    missing = [c for c in referenced if c not in sample_meta.columns]
+    if missing:
+        raise CellQuorumConfigError(
+            f"Design factor column(s) missing from metadata: {missing}; "
+            f"available columns: {list(sample_meta.columns)}."
+        )
+
+    n = len(sample_meta)
+    index = sample_meta.index
+
+    # Treatment-coded dummies per referenced factor (first level dropped).
+    dummies: dict[str, pd.DataFrame] = {}
+    for column in referenced:
+        coded = pd.get_dummies(
+            sample_meta[column].astype(str), prefix=column, drop_first=True
+        ).astype(float)
+        coded.index = index
+        dummies[column] = coded
+
+    blocks: list[pd.DataFrame] = [
+        pd.DataFrame({"Intercept": np.ones(n, dtype=float)}, index=index)
+    ]
+
+    # Main-effect blocks (a single-level factor contributes no columns).
+    for column in factors:
+        if not dummies[column].empty:
+            blocks.append(dummies[column])
+
+    # Two-way interaction blocks: products of the coded dummy columns.
+    for a, b in interactions:
+        da, db = dummies[a], dummies[b]
+        products: dict[str, np.ndarray] = {}
+        for ca in da.columns:
+            for cb in db.columns:
+                products[f"{ca}:{cb}"] = da[ca].to_numpy() * db[cb].to_numpy()
+        if products:
+            blocks.append(pd.DataFrame(products, index=index))
+
+    return pd.concat(blocks, axis=1)
+
+
+def _factors_confounded(sample_meta: pd.DataFrame, a: str, b: str) -> bool:
+    """Return whether two multi-level factors are perfectly aliased (nested)."""
+
+    sa = sample_meta[a].astype(str)
+    sb = sample_meta[b].astype(str)
+
+    # A single-level factor absorbs into the intercept; it is degenerate, not
+    # confounding, so it takes two informative factors to be aliased.
+    if sa.nunique() < 2 or sb.nunique() < 2:
+        return False
+
+    # a is nested in b when every level of a co-occurs with exactly one level of
+    # b (and vice versa); either direction makes the two effects inseparable.
+    a_nested_in_b = bool((sample_meta.groupby(sa)[b].nunique() <= 1).all())
+    b_nested_in_a = bool((sample_meta.groupby(sb)[a].nunique() <= 1).all())
+    return a_nested_in_b or b_nested_in_a
+
+
+def _empty_factorial_cells(
+    sample_meta: pd.DataFrame, factors: list[str], min_per_cell: int
+) -> list[dict[str, str]]:
+    """List cells of the full factorial grid with fewer than ``min_per_cell`` rows."""
+
+    if not factors:
+        return []
+
+    levels = [sorted(sample_meta[f].astype(str).unique()) for f in factors]
+    coded = sample_meta[list(factors)].astype(str)
+    counts = coded.groupby(list(factors)).size()
+
+    empty: list[dict[str, str]] = []
+    for combo in itertools.product(*levels):
+        key = combo if len(factors) > 1 else combo[0]
+        if int(counts.get(key, 0)) < min_per_cell:
+            empty.append(dict(zip(factors, combo, strict=True)))
+    return empty
+
+
+def analyze_design(
+    sample_meta: pd.DataFrame,
+    *,
+    factors: list[str],
+    interactions: list[tuple[str, str]] | None = None,
+    min_per_cell: int = 1,
+) -> DesignMatrixReport:
+    """
+    Diagnose the estimability of a multi-factor design without raising.
+
+    Builds the model matrix, measures its rank, and reports confounded factor
+    pairs and empty factorial cells. This is the non-raising analyzer; use
+    :func:`validate_design_matrix` at a stage boundary to halt on a non-estimable
+    design.
+
+    Args:
+        sample_meta: Per-sample metadata.
+        factors: Main-effect factor columns.
+        interactions: Optional two-way interaction terms.
+        min_per_cell: Minimum samples required per factorial-grid cell.
+
+    Returns:
+        A :class:`DesignMatrixReport` describing the design.
+
+    Raises:
+        CellQuorumConfigError: If a referenced column is absent (from
+            :func:`build_design_matrix`).
+    """
+
+    interactions = list(interactions or [])
+    design_matrix = build_design_matrix(sample_meta, factors, interactions)
+
+    matrix = design_matrix.to_numpy(dtype=float)
+    n_columns = int(design_matrix.shape[1])
+    rank = int(np.linalg.matrix_rank(matrix)) if matrix.size else 0
+    full_rank = rank == n_columns
+
+    confounded: list[tuple[str, str]] = []
+    for i in range(len(factors)):
+        for j in range(i + 1, len(factors)):
+            if _factors_confounded(sample_meta, factors[i], factors[j]):
+                confounded.append((factors[i], factors[j]))
+
+    empty_cells = _empty_factorial_cells(sample_meta, factors, min_per_cell)
+
+    warnings: list[str] = []
+    if not full_rank:
+        warnings.append(
+            f"Design matrix is rank-deficient: {n_columns} columns but rank {rank}."
+        )
+    if confounded:
+        warnings.append(
+            "Confounded (aliased) factor pair(s): "
+            + ", ".join(f"{a} ~ {b}" for a, b in confounded)
+            + "."
+        )
+    if empty_cells:
+        warnings.append(
+            f"{len(empty_cells)} empty factorial cell(s) with < {min_per_cell} "
+            "sample(s); interactions involving them are not estimable."
+        )
+
+    return DesignMatrixReport(
+        factors=list(factors),
+        interactions=[tuple(pair) for pair in interactions],
+        n_samples=len(sample_meta),
+        n_columns=n_columns,
+        rank=rank,
+        full_rank=full_rank,
+        confounded_pairs=confounded,
+        empty_cells=empty_cells,
+        warnings=warnings,
+    )
+
+
+def validate_design_matrix(
+    sample_meta: pd.DataFrame,
+    *,
+    factors: list[str],
+    interactions: list[tuple[str, str]] | None = None,
+    min_per_cell: int = 1,
+) -> DesignMatrixReport:
+    """
+    Validate that a multi-factor design is estimable, halting loudly if not.
+
+    Args:
+        sample_meta: Per-sample metadata.
+        factors: Main-effect factor columns.
+        interactions: Optional two-way interaction terms.
+        min_per_cell: Minimum samples required per factorial-grid cell.
+
+    Returns:
+        The :class:`DesignMatrixReport` when the design has full column rank.
+
+    Raises:
+        CellQuorumConfigError: If a referenced column is absent, or the model
+            matrix is rank-deficient (a non-estimable design).
+    """
+
+    report = analyze_design(
+        sample_meta,
+        factors=factors,
+        interactions=interactions,
+        min_per_cell=min_per_cell,
+    )
+    if not report.full_rank:
+        detail = ""
+        if report.confounded_pairs:
+            detail += " Confounded factor(s): " + ", ".join(
+                f"{a} ~ {b}" for a, b in report.confounded_pairs
+            )
+        if report.empty_cells:
+            detail += f" Empty factorial cell(s): {report.empty_cells}."
+        raise CellQuorumConfigError(
+            "Design is not estimable: the model matrix is rank-deficient "
+            f"({report.n_columns} columns, rank {report.rank})."
+            + detail
+        )
+    return report
+
+
 __all__ = [
     "Contrast",
     "ContrastsConfig",
     "DesignConfig",
+    "DesignMatrixReport",
     "DesignValidationResult",
+    "analyze_design",
+    "build_design_matrix",
     "validate_design_against_obs",
+    "validate_design_matrix",
 ]
