@@ -56,12 +56,15 @@ jobs:
         run: pip install build
       - name: Build distributions
         run: python -m build
-      - name: Verify wheel bundles the 12 R scripts
+      - name: Verify wheel bundles every R script
+        # Dynamic: the wheel must bundle exactly the R scripts that live in source,
+        # so adding/removing one never silently drifts from a hardcoded count.
         run: |
+          expected=$(find src/cellquorum -name '*.R' | wc -l)
           count=$(unzip -l dist/*.whl | grep -c '\.R$')
-          echo "R scripts in wheel: $count"
-          if [ "$count" -ne 12 ]; then
-            echo "::error::Expected 12 R scripts in wheel, found $count"
+          echo "R scripts — source: $expected, wheel: $count"
+          if [ "$count" -ne "$expected" ]; then
+            echo "::error::Wheel bundles $count R scripts but src/cellquorum has $expected"
             exit 1
           fi
       - name: Verify wheel bundles a non-empty LICENSE

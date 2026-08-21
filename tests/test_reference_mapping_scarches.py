@@ -20,6 +20,12 @@ from cellquorum.annotation.reference_mapping.scarches import (
 from cellquorum.core.contracts import CellQuorumContractError, set_layer_tag
 from cellquorum.methods.base import MethodSkip
 
+# scvi is an optional GPU backend, not installed in the core test tier. Every test
+# here exercises the scVI→scANVI surgery path, so skip the whole module cleanly when
+# scvi is absent (these run in the cellquorum-gpu env). Placed after the imports so
+# ruff's E402 (module-import-not-at-top) stays satisfied.
+pytest.importorskip("scvi")
+
 
 def _synth(n: int, seed: int, labels: bool = True) -> ad.AnnData:
     """Build a tiny synthetic anndata for CPU-fast training."""

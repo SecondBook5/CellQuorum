@@ -12,7 +12,6 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import scanpy as sc
-import scvi
 from scipy.stats import entropy
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
@@ -201,6 +200,12 @@ class ScArchesMethod(AnalysisMethod):
         seed_loss_history = {}
         resumed_seeds: list[int] = []
         trained_seeds: list[int] = []
+
+        # scvi is an optional GPU backend, absent from the core install and CI. Import
+        # it lazily here (never at module scope) so importing this module — e.g. during
+        # test collection — does not hard-fail when scvi is missing. The reference_mapping
+        # __init__ guard registers this method only when scvi is importable.
+        import scvi
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=FutureWarning)
