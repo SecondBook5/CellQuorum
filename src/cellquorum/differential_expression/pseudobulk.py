@@ -12,8 +12,15 @@ New code should import from the canonical location above.
 from __future__ import annotations
 
 from cellquorum.comparative.differential_expression.pseudobulk import (
+    PairingDecision,
     PseudobulkResult,
     aggregate_pseudobulk,
+    resolve_donor_pairing,
 )
 
-__all__ = ["PseudobulkResult", "aggregate_pseudobulk"]
+__all__ = [
+    "PairingDecision",
+    "PseudobulkResult",
+    "aggregate_pseudobulk",
+    "resolve_donor_pairing",
+]
