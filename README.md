@@ -340,18 +340,19 @@ flowchart LR
     EXEC -.-> PROV
 ```
 
-The source is organized into 20 top-level packages under `src/cellquorum/` (plus
-four thin compatibility-shim packages — `differential_expression`,
-`differential_abundance`, `enrichment`, `multicellular_programs` — that preserve
-the pre-#187 import paths): `core` (context, planner, executor, contracts,
-provenance), `config`, `methods` (dispatch + shared abstractions), `backends`, the
-stage packages (`ambient_correction`, `qc`, `preprocessing`, `clustering`,
-`integration`, `annotation`, `comparative`, `state_scoring`, `discovery`,
-`gene_regulation`, `cell_cell_communication`, `trajectory`), plus `io`,
-`visualization`, `api` (the public Python API surface), and `cli`.
-The `comparative` package groups the four "compare groups" analyses as submodules —
-`differential_expression`, `differential_abundance`, `enrichment`, and
-`multicellular_programs`. See [`docs/architecture.md`](docs/architecture.md).
+The source is organized into **10 top-level packages** under `src/cellquorum/`, with
+the 12 pipeline-step packages grouped together under `stages/` — one canonical import
+path per public thing, no compatibility shims (frozen by
+`tests/test_old_paths_removed.py`). The engine machinery is `core` (context, planner,
+executor, contracts, provenance), `config`, `methods` (dispatch + shared
+abstractions), and `backends`; `stages` holds the 12 step packages
+(`ambient_correction`, `qc`, `preprocessing`, `clustering`, `integration`,
+`annotation`, `comparative`, `state_scoring`, `discovery`, `gene_regulation`,
+`cell_cell_communication`, `trajectory`) in run order; and `io`, `visualization`,
+`api` (the public Python API surface), `cli`, and `utils` round out the public
+surfaces. The `stages/comparative` package groups the four "compare groups" analyses
+as submodules — `differential_expression`, `differential_abundance`, `enrichment`,
+and `multicellular_programs`. See [`docs/architecture.md`](docs/architecture.md).
 
 ## Development
 
