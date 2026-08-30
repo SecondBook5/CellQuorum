@@ -72,10 +72,11 @@ The planner **does not yet instantiate stages** — it only decides *which* stag
   scratch/          # temporary R inputs/outputs
 ```
 
-Bootstrap writes three provenance files to `provenance/`:
-- `config.json` — the resolved, validated configuration
-- `pipeline_plan.json` — the ordered stage plan with enablement reasons
-- `backend_status.json` — backend availability at run start
+Bootstrap writes the pre-execution provenance to `provenance/`, including:
+- `resolved_config.json` — the resolved, validated configuration
+- `pipeline_plan.json` / `stage_plan.csv` — the ordered stage plan with enablement reasons
+- `backend_status.json` / `.csv` — backend availability at run start
+- `planner_warnings.json` and `run_metadata.json` — planner warnings and the run identity / environment-version stamp
 
 It also initializes the artifact manifest CSV, which stages append to as they produce outputs.
 
@@ -116,8 +117,8 @@ At the end of execution, the executor returns a `PipelineExecutionResult` contai
 
 ### Step 6: Write Execution Provenance
 
-**`core/pipeline.py`** appends post-execution provenance to `provenance/`:
-- `execution_summary.json` — per-stage success/skip/fail records, timestamps, fingerprints
+**`core/pipeline.py`** (via `write_pipeline_provenance`) appends post-execution provenance to `provenance/`:
+- `stage_execution_records.json` / `.csv` — per-stage success/skip/fail records, timestamps, fingerprints
 - `artifact_manifest.csv` — the complete list of every CSV, figure, and h5ad produced
 
 If `run.write_final_object=True` (the default), the final `adata` is written to `objects/final_annotated.h5ad`.
@@ -132,7 +133,7 @@ If `run.write_final_object=True` (the default), the final `adata` is written to 
    - Retrieves `adata = context.adata`
    - Resolves its config from `context.config.<stage_name>` (with fallback to the override)
    - Checks enablement and prerequisites — if not met, returns a skipped `StageResult`
-   - Computes its analysis (calling domain modules like `qc/metrics.py`, `qc/thresholds.py`, `qc/decisions.py`)
+   - Computes its analysis (calling domain modules like `stages/qc/metrics.py`, `stages/qc/thresholds.py`, `stages/qc/decisions.py`)
    - Writes artifacts to `context.paths.results/<stage_subdir>/`
    - Returns `StageResult(adata=updated_adata, artifacts=[...], notes=[...], warnings=[...], metrics={...})`
 
@@ -174,7 +175,7 @@ This table maps common developer questions to the files that answer them:
 
 - **The stage catalog is the single source of truth.** The ordered list of stages, their enablement flags, and their config blocks are all declared once via `@register_stage`. The planner reads this catalog to order stages; the executor reads it to instantiate them. There is no hand-maintained "stage list" file.
 
-- **Stages are self-contained packages.** Each stage lives in `cellquorum/stages/<stage_name>/`, with its own `stage.py` (the `@register_stage` class), `config.py` (the Pydantic config model), and any domain modules (e.g., `qc/metrics.py`, `qc/thresholds.py`). Some stages also have a `viz/` subpackage for stage-local figures, but shared visualization lives in `cellquorum/visualization/`.
+- **Stages are self-contained packages.** Each stage lives in `cellquorum/stages/<stage_name>/`, with its own `stage.py` (the `@register_stage` class), `config.py` (the Pydantic config model), and any domain modules (e.g., `stages/qc/metrics.py`, `stages/qc/thresholds.py`). Some stages also have a `viz/` subpackage for stage-local figures, but shared visualization lives in `cellquorum/visualization/`.
 
 - **Notebook and programmatic namespaces are in `cellquorum.api`.** The `cq.tl`, `cq.pp`, `cq.diag`, and `cq.evidence` namespaces (for users who want to call individual stages or methods interactively) are defined in `api/tl.py`, `api/pp.py`, `api/diag.py`, `api/evidence.py` (re-exported via `api/__init__.py`) and backed by the same stage classes and methods the pipeline uses.
 
