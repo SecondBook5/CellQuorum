@@ -149,15 +149,15 @@ This table maps common developer questions to the files that answer them:
 | A stage's main logic | `stages/<stage_name>/stage.py` (e.g., `stages/qc/stage.py`, `stages/comparative/differential_expression/stage.py`) |
 | A stage's configuration schema | `stages/<stage_name>/config.py` |
 | A stage's visualization code | `visualization/<category>/` (shared) or `stages/<stage_name>/viz/` (stage-local) |
-| Reusable analytics utilities | `cellquorum.utils` (e.g., `utils/data.py`, `utils/validation.py`) |
-| Notebook-facing helpers | `api/analysis.py` — exposes `cq.tl`, `cq.pp`, `cq.diag`, `cq.evidence` namespaces |
+| Reusable analytics utilities | `cellquorum.utils` — a flat re-export surface (`utils/__init__.py`) exposing `aggregate_pseudobulk`, `de_table_to_ranking`, `get_net` (canonical code in `cellquorum.stages.comparative`) |
+| Notebook-facing helpers | `api/tl.py`, `api/pp.py`, `api/diag.py`, `api/evidence.py` — the `cq.tl` / `cq.pp` / `cq.diag` / `cq.evidence` namespaces, re-exported via `api/__init__.py` |
 | The ordered list of all stages | `stages/README.md` (the catalog table) |
 | Config validation | `config/models.py` (Pydantic schemas) and `config/loader.py` (YAML loading) |
 | Backend detection | `backends/registry.py` |
 | Stage ordering and planning | `core/planner.py` (reads from `core/stage_catalog.py`) |
 | Stage execution loop | `core/executor.py` |
 | Artifact writing | `core/stage_artifact_writer.py` |
-| Input data loading | `io/manifest.py` (manifests), `io/loaders.py` (AnnData h5ad) |
+| Input data loading | `io/manifest.py` (manifests), `io/anndata.py` (AnnData h5ad) |
 | Run directory layout | `core/context.py:PipelinePaths` |
 | Provenance writing | `core/provenance.py` |
 | Method registries | `methods/registry.py` (method contracts and dispatch) |
@@ -169,13 +169,13 @@ This table maps common developer questions to the files that answer them:
 - **One canonical import path per public thing.** The old top-level re-export shims (`cellquorum.differential_expression`, `cellquorum.tl`) were removed. Every stage, config, and utility has exactly one import path:
   - Stages: `cellquorum.stages.<stage_name>` (e.g., `cellquorum.stages.qc`, `cellquorum.stages.comparative.differential_expression`)
   - Config: `cellquorum.config.models` (top-level) or `cellquorum.stages.<stage_name>.config` (stage-local)
-  - Notebook API: `cellquorum.api.analysis` (the `cq.tl` / `cq.pp` / `cq.diag` / `cq.evidence` namespaces)
+  - Notebook API: `cellquorum.api.tl` / `cellquorum.api.pp` / `cellquorum.api.diag` / `cellquorum.api.evidence` (separate modules, re-exported from `cellquorum.api`)
   - Utilities: `cellquorum.utils.<module>`
 
 - **The stage catalog is the single source of truth.** The ordered list of stages, their enablement flags, and their config blocks are all declared once via `@register_stage`. The planner reads this catalog to order stages; the executor reads it to instantiate them. There is no hand-maintained "stage list" file.
 
 - **Stages are self-contained packages.** Each stage lives in `cellquorum/stages/<stage_name>/`, with its own `stage.py` (the `@register_stage` class), `config.py` (the Pydantic config model), and any domain modules (e.g., `qc/metrics.py`, `qc/thresholds.py`). Some stages also have a `viz/` subpackage for stage-local figures, but shared visualization lives in `cellquorum/visualization/`.
 
-- **Notebook and programmatic namespaces are in `cellquorum.api`.** The `cq.tl`, `cq.pp`, `cq.diag`, and `cq.evidence` namespaces (for users who want to call individual stages or methods interactively) are defined in `api/analysis.py` and backed by the same stage classes and methods the pipeline uses.
+- **Notebook and programmatic namespaces are in `cellquorum.api`.** The `cq.tl`, `cq.pp`, `cq.diag`, and `cq.evidence` namespaces (for users who want to call individual stages or methods interactively) are defined in `api/tl.py`, `api/pp.py`, `api/diag.py`, `api/evidence.py` (re-exported via `api/__init__.py`) and backed by the same stage classes and methods the pipeline uses.
 
 - **Fail-loud data contracts.** Every stage validates its inputs (required layers, obs columns, sample support, etc.) at the top of its `run` method. If a prerequisite is missing, the stage returns a skipped `StageResult` with a recorded reason — it never crashes with a cryptic KeyError or silently produces wrong results.
