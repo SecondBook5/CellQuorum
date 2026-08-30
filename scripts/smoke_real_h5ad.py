@@ -84,7 +84,7 @@ def main(
         QCConfig,
         RConfig,
     )
-    from cellquorum.preprocessing.config import NormalizationConfig
+    from cellquorum.stages.preprocessing.config import NormalizationConfig
 
     # Create output directory.
     output_dir.mkdir(parents=True, exist_ok=overwrite_output)

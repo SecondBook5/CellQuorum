@@ -71,6 +71,7 @@ nav:
   - Home: index.md
   - Tutorial: tutorial.md
   - Architecture: architecture.md
+  - How it works: how-it-works.md
   - Configuration: configuration.md
   - Backends & environments: backends.md
   - Python API: api.md

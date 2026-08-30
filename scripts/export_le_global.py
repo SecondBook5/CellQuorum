@@ -28,12 +28,12 @@ def _score_cell_cycle(a: ad.AnnData) -> None:
         print(f"cell-cycle: skipped ('{layer}' layer absent)")
         return
     try:
-        from cellquorum.qc.cell_cycle import (
+        from cellquorum.stages.qc.cell_cycle import (
             TIROSH_G2M_GENES,
             TIROSH_S_GENES,
             score_cell_cycle,
         )
-        from cellquorum.qc.config import QCCellCycleConfig
+        from cellquorum.stages.qc.config import QCCellCycleConfig
 
         cc = QCCellCycleConfig(
             enabled=True,
