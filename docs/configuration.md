@@ -30,6 +30,26 @@ instance (see the [Python API](api.md)).
 A whole-config validator rejects contradictory combinations — for example,
 `compute.backend: auto` together with `compute.fallback_to_cpu: false`.
 
+### The `input` section
+
+For a **single-object run**, `input` points the engine at one AnnData file:
+
+```yaml
+input:
+  h5ad: /path/to/your_data.h5ad   # the AnnData to analyze
+  counts_layer: counts            # the layer holding raw (un-normalized) counts
+  subset: null                    # optional: restrict to a lineage/obs filter first
+```
+
+`counts_layer` names the layer treated as raw counts; it is validated at load time,
+so a mislabeled layer fails loud instead of silently producing wrong results.
+`input.subset` optionally restricts the object to a subset of cells (for example, a
+single lineage) before the pipeline runs, without splitting the file by hand.
+
+For a **multi-sample run**, set `paths.manifest` instead and list the per-sample
+`.h5ad` files in the manifest CSV; the loader concatenates them. Supply one or the
+other — `input.h5ad` for a single object, or `paths.manifest` for many.
+
 ### The `r` backend section
 
 `r.enabled` gates whether R-backed methods (edgeR pseudobulk DE, Milo, propeller,

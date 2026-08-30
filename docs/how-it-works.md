@@ -2,6 +2,10 @@
 
 This document walks you through one CellQuorum run from entry point to artifact, file by file. It's designed for collaborators who want to understand the control flow, locate implementation logic, or modify a stage — without needing the author present.
 
+> **Paths below are relative to `src/cellquorum/`** — e.g. `cli/app.py` is
+> `src/cellquorum/cli/app.py`, and `stages/qc/stage.py` is
+> `src/cellquorum/stages/qc/stage.py`.
+
 ---
 
 ## The Two Front Doors

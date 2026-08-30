@@ -250,11 +250,11 @@ To add a new stage, a contributor touches four things — and no more:
    (orders are spaced by 10 precisely so there is room to insert one).
 3. **Add the two config fields** — a boolean on/off flag on `StageSelectionConfig`
    (matching `config_flag`) and the stage's settings sub-block on `CellQuorumConfig`
-   (matching `config_field`), both in `config/models.py`. These stay explicit on
+   (matching `config_field`), both in `src/cellquorum/config/models.py`. These stay explicit on
    purpose: they are the user-facing knobs, and keeping them spelled out makes the
    config self-documenting.
 4. **Register the import** — add one `import cellquorum.stages.<your_package>.stage`
-   line to `core/stages.py`, in the canonical-order position, so the decorator actually
+   line to `src/cellquorum/core/stages.py`, in the canonical-order position, so the decorator actually
    runs when the engine starts.
 
 `tests/test_stage_catalog.py` is the safety net: it fails loudly if a stage's flag or

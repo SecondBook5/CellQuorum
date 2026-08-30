@@ -19,7 +19,12 @@
 
 ## START HERE
 
-**New to the codebase?** Begin with these files:
+**Want to run an analysis?** You drive CellQuorum entirely from a config file and the
+CLI — no need to read the source. See **[Getting started](#getting-started)** and the
+hands-on **[tutorial](docs/tutorial.md)**.
+
+**Want to read or modify the code?** Begin with these files (paths below are under
+`src/cellquorum/`):
 
 1. **Entry point:** The CLI lives in `cli/app.py` — look for the `main()` function that launches the `cellquorum` / `cq` command. The programmatic API lives in `api/pipeline.py` — `run_pipeline` is the main Python entry point.
 
@@ -109,6 +114,19 @@ hdWGCNA) live in dedicated environments — see [Backends & environments](#backe
 and [`envs/README.md`](envs/README.md). A layered Docker image bakes all of them;
 see [`docs/docker.md`](docs/docker.md).
 
+## Getting started
+
+**New here? Work through the [hands-on tutorial](docs/tutorial.md).** It takes you
+from a raw `.h5ad` to a finished, provenance-tracked run in five steps:
+
+1. Copy the shipped example — `cp configs/generic_pbmc_example.yaml configs/my_run.yaml`
+2. Point `input.h5ad` at your data and set your `cohort:` / `design:` obs columns
+3. Preview — `cellquorum plan -c configs/my_run.yaml`
+4. Execute — `cellquorum run -c configs/my_run.yaml -o runs/my_run`
+5. Read `runs/my_run/reports/` first, then `figures/` and `results/`
+
+The command reference below is the quick lookup once you have a config.
+
 ## Quickstart
 
 ```bash
@@ -181,7 +199,9 @@ differential_abundance:
 ```
 
 See [`docs/configuration.md`](docs/configuration.md) for the full section-by-section
-reference, and `configs/config.yaml` for a complete example.
+reference, `configs/generic_pbmc_example.yaml` for a runnable single-object example
+(point `input.h5ad` at your data), and `configs/config.yaml` for the reference
+configuration.
 
 ## Analysis stages
 
@@ -369,6 +389,7 @@ tests require an Rscript + Bioconductor backend. Markers: `gpu`, `slow`, `r`,
 ## Documentation
 
 - [`docs/index.md`](docs/index.md) — documentation home
+- [`docs/tutorial.md`](docs/tutorial.md) — hands-on first run, from a raw `.h5ad` to results
 - [`docs/architecture.md`](docs/architecture.md) — engine design and execution model
 - [`docs/configuration.md`](docs/configuration.md) — configuration reference
 - [`docs/backends.md`](docs/backends.md) — backends and environments
