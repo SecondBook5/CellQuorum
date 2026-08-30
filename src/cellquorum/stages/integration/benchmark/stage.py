@@ -1,3 +1,4 @@
+# Pipeline step (order=160): integration_benchmark — score integration quality via scib-metrics.
 """Integration-benchmark evaluation stage: dispatch to scib-metrics method."""
 
 from __future__ import annotations

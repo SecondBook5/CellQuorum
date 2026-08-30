@@ -1,3 +1,4 @@
+# Pipeline step (order=20): qc — per-cell QC metrics, thresholds, doublet flags, and optional cell-cycle scoring.
 """QC pipeline stage for CellQuorum."""
 
 from __future__ import annotations

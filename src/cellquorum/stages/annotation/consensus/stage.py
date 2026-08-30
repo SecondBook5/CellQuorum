@@ -1,3 +1,4 @@
+# Pipeline step (order=130): annotation_consensus — reconcile per-method label columns into one consensus label.
 """Pipeline stage that reconciles per-method label columns into one label."""
 
 from __future__ import annotations

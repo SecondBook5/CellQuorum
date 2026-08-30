@@ -1,3 +1,4 @@
+# Pipeline step (order=330): multicellular_programs — detect multicellular programs via DIALOGUE.
 """Multicellular programs stage: dispatches DIALOGUE."""
 
 from __future__ import annotations

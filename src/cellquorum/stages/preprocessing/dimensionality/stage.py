@@ -1,3 +1,4 @@
+# Pipeline step (order=50): dimensionality — reduce dimensions via the configured reduction method.
 """Dimensionality stage: dispatch to the configured reduction method.
 
 Subclasses the Phase-1 MethodDispatchStage. Selects the reduction method from

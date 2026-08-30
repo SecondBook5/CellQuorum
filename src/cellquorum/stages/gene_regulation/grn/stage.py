@@ -1,3 +1,4 @@
+# Pipeline step (order=270): grn — infer gene-regulatory networks via the configured method.
 """GRN stage: dispatches to the configured GRN method."""
 
 from __future__ import annotations

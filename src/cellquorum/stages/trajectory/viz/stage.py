@@ -1,3 +1,4 @@
+# Pipeline step (order=310): trajectory_viz — render trajectory results.
 """Trajectory-visualization stage: dispatches the configured viz method(s)."""
 
 from __future__ import annotations

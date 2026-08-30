@@ -1,3 +1,4 @@
+# Pipeline step (order=250): de_viz — render differential-expression results.
 """DE-visualization stage: dispatches the configured viz method(s)."""
 
 from __future__ import annotations

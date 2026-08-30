@@ -1,3 +1,4 @@
+# Pipeline step (order=180): discovery — discover de-novo programs via consensus NMF.
 """Discovery stage: de-novo program discovery via consensus NMF."""
 
 from __future__ import annotations

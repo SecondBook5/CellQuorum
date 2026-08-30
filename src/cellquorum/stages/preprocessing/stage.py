@@ -1,3 +1,4 @@
+# Pipeline step (order=30): preprocessing — normalize and log-transform the count matrix.
 """Preprocessing pipeline stage for CellQuorum."""
 
 from __future__ import annotations

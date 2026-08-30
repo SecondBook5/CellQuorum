@@ -1,3 +1,4 @@
+# Pipeline step (order=300): trajectory — infer trajectories/velocity via the configured method(s).
 """Trajectory stage: dispatches the configured method(s) (spec #1: velocity)."""
 
 from __future__ import annotations

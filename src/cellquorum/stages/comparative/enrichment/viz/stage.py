@@ -1,3 +1,4 @@
+# Pipeline step (order=240): enrichment_viz — render enrichment results.
 """Enrichment-visualization stage: dispatches the configured viz method(s)."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# Pipeline step (order=80): clustering — cluster cells via the configured clustering method.
 """Clustering stage: dispatch to the configured clustering method.
 
 Mirrors DimensionalityStage: resolves its config sub-block from a pydantic-or-dict

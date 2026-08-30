@@ -1,3 +1,4 @@
+# Pipeline step (order=60): integration — batch-correct via the configured integration method.
 """Integration stage: dispatch to the configured batch-correction method.
 
 Subclasses the generalized MethodDispatchStage (config resolution, enabled-gate,

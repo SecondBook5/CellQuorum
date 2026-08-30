@@ -1,3 +1,4 @@
+# Pipeline step (order=260): coexpression — build co-expression modules via the configured method.
 """Co-expression stage: dispatches to the configured co-expression method."""
 
 from __future__ import annotations

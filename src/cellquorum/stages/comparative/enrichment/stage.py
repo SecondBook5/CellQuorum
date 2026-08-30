@@ -1,3 +1,4 @@
+# Pipeline step (order=230): enrichment — score pathway/gene-set enrichment via the configured method(s).
 """Enrichment stage: dispatches to the configured enrichment method(s)."""
 
 from __future__ import annotations

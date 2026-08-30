@@ -1,3 +1,4 @@
+# Pipeline step (order=220): differential_abundance — test differential abundance via the configured DA method.
 """Differential-abundance stage: dispatches to the configured DA method."""
 
 from __future__ import annotations

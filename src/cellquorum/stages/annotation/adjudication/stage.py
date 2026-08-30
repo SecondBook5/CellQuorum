@@ -1,3 +1,4 @@
+# Pipeline step (order=110): adjudication — adjudicate competing cluster/state claims.
 """Pipeline stage for adjudicating cluster/state claims."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# Pipeline step (order=280): perturbation — run in-silico perturbation via the configured method.
 """Perturbation stage: dispatches to the configured perturbation method."""
 
 from __future__ import annotations

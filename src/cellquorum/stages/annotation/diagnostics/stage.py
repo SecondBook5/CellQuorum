@@ -1,3 +1,4 @@
+# Pipeline step (order=140): annotation_diagnostics — assess annotation quality via scDiagnostics.
 """Annotation-diagnostics stage: dispatch to scDiagnostics method."""
 
 from __future__ import annotations

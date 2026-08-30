@@ -1,3 +1,4 @@
+# Pipeline step (order=350): ccc_viz — render cell-cell communication results.
 """CCC-visualization stage: dispatches the configured viz method(s)."""
 
 from __future__ import annotations

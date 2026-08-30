@@ -1,3 +1,4 @@
+# Pipeline step (order=100): subclustering — resolve finer structure within annotated clusters.
 """Subclustering stage implementation."""
 
 from __future__ import annotations

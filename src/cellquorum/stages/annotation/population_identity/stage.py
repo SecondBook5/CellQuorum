@@ -1,3 +1,4 @@
+# Pipeline step (order=150): population_identity — gather population/state identity evidence.
 """Generic population/state identity evidence stage.
 
 This stage is deliberately not atlas-specific. If reference mapping exists, the

@@ -1,3 +1,4 @@
+# Pipeline step (order=340): ccc_network — analyze CCC network topology and Ricci curvature.
 """ccc_network stage: dispatches topology (always) and ricci (dep-guarded)."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# Pipeline step (order=200): embeddings — compute embeddings (UMAP/PHATE/PAGA) and render them.
 """Embeddings stage: compute (UMAP/PHATE/PAGA) then render (categorical/overlay)."""
 
 from __future__ import annotations

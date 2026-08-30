@@ -1,3 +1,4 @@
+# Pipeline step (order=10): ambient_correction — SoupX ambient-RNA correction per library, run before QC.
 """Ambient-correction stage: run SoupX per library before QC.
 
 Unlike downstream stages, this does NOT consume context.adata — it operates on

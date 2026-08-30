@@ -1,3 +1,4 @@
+# Pipeline step (order=40): feature_selection — select highly variable genes via the configured HVG method.
 """Feature-selection stage: dispatch to the configured HVG method."""
 
 from __future__ import annotations

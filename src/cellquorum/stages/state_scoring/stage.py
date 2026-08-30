@@ -1,3 +1,4 @@
+# Pipeline step (order=170): state_scoring — score cell states via the configured method(s).
 """State-scoring stage: dispatches to the configured state-scoring method(s)."""
 
 from __future__ import annotations
