@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 import cellquorum as cq
-from cellquorum._notebook import NotebookStageOutput
+from cellquorum.api._notebook import NotebookStageOutput
 
 
 def _counts_adata(n: int = 60, seed: int = 0) -> ad.AnnData:
@@ -73,7 +73,7 @@ def test_evidence_build_is_planned_not_silent() -> None:
 def test_unknown_stage_raises() -> None:
     """run_stage rejects an unknown stage name with the available list."""
 
-    from cellquorum._notebook import run_stage
+    from cellquorum.api._notebook import run_stage
 
     with pytest.raises(KeyError, match="Unknown stage"):
         run_stage("not_a_stage", _counts_adata())
@@ -82,11 +82,7 @@ def test_unknown_stage_raises() -> None:
 def test_notebook_api_adds_no_new_stage_classes() -> None:
     """The namespaces wrap existing stages; they define no new stage classes."""
 
-    import cellquorum.diag as diag_mod
-    import cellquorum.pp as pp_mod
-    import cellquorum.tl as tl_mod
-
-    for module in (pp_mod, tl_mod, diag_mod):
+    for module in (cq.pp, cq.tl, cq.diag):
         for name in dir(module):
             obj = getattr(module, name)
             # No class whose name ends in "Stage" should be defined here.

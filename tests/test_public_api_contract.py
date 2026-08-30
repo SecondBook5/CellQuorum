@@ -50,13 +50,13 @@ EXPECTED = {
         "de_table_to_ranking",
         "get_net",
     },
-    "cellquorum.pp": {
+    "cellquorum.api.pp": {
         "correct_ambient",
         "normalize",
         "qc",
         "select_features",
     },
-    "cellquorum.tl": {
+    "cellquorum.api.tl": {
         "adjudicate",
         "annotate",
         "cluster",
@@ -100,3 +100,15 @@ def test_declared_symbols_are_accessible(module_name):
     module = importlib.import_module(module_name)
     missing = sorted(name for name in EXPECTED[module_name] if not hasattr(module, name))
     assert not missing, f"{module_name} declares but does not provide: {missing}"
+
+
+def test_notebook_namespaces_are_the_api_modules():
+    """The top-level cq.* namespaces ARE the cellquorum.api.* modules (scanpy-style)."""
+    import cellquorum
+    import cellquorum.api.diag
+    import cellquorum.api.pp
+    import cellquorum.api.tl
+
+    assert cellquorum.tl is cellquorum.api.tl
+    assert cellquorum.pp is cellquorum.api.pp
+    assert cellquorum.diag is cellquorum.api.diag
