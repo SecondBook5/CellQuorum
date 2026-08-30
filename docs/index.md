@@ -15,7 +15,7 @@ hands-on first run. The guides below go deeper.
 | Guide | Contents |
 |---|---|
 | [Tutorial](tutorial.md) | A hands-on first run — from a raw `.h5ad` to a provenance-tracked run: point the config at your data, preview the plan, run it, and read every output. |
-| [Architecture](architecture.md) | The execution model — validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance; the 20-package layout (plus compatibility shims). |
+| [Architecture](architecture.md) | The execution model — validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance; the 10-package layout, with the 12 pipeline-step packages grouped under `stages/`. |
 | [Configuration](configuration.md) | The full configuration reference — top-level sections, per-stage blocks, stage enable flags, and how a method is selected per stage. |
 | [Backends & environments](backends.md) | The primary and isolated environments, runtime backend detection, and the R/Rscript bridge. |
 | [Python API](api.md) | The `run_pipeline` entry point and the `tl` / `pp` / `diag` / `evidence` notebook namespaces, generated from the source docstrings. |
@@ -32,8 +32,9 @@ Build this site locally with `make docs-serve` (live reload) or `make docs`
 
 - **32 registered stages**, ~60 config-selectable methods, organized into a
   best-practices pipeline (see the workflow diagram in the README).
-- **20 top-level packages** under `src/cellquorum/` (plus four compatibility-shim
-  packages preserving pre-#187 import paths).
+- **10 top-level packages** under `src/cellquorum/`, with the 12 pipeline-step
+  packages grouped under `stages/` — one canonical import path per public thing
+  (no compatibility shims).
 - **Two front doors:** the `cellquorum` / `cq` CLI and the `cellquorum.run_pipeline`
   Python API.
 - **Fail-loud contracts:** every stage boundary validates its `AnnData`; a method

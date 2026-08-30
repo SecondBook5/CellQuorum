@@ -18,9 +18,10 @@ public API and the configuration schema.
   `cq.utils.get_net` (long-format prior-knowledge net via decoupler/OmniPath), and
   `cq.utils.aggregate_pseudobulk` (cells → donor × condition pseudobulk), plus the
   companion types `PseudobulkResult` and `PriorFetchError`. These are **re-exports
-  of the canonical `cellquorum.comparative` implementations, not copies** — a fix
-  to the engine is a fix here — and the pre-consolidation deep-import paths still
-  resolve to the same objects, so existing scripts keep working unchanged.
+  of the canonical implementations in `cellquorum.stages.comparative`, not copies** —
+  a fix to the engine is a fix here. (The pre-consolidation deep-import paths have
+  since been removed in the API clean break — see *Removed* below — so
+  `cellquorum.utils` is now the single supported import path for these helpers.)
   Importing `cellquorum.utils` pulls in no heavy optional dependency (`get_net`
   lazy-imports `decoupler` only when called), preserving the skip-not-crash
   invariant. The surface is frozen by `test_public_api_contract` and
@@ -73,7 +74,32 @@ public API and the configuration schema.
 
 ### Changed
 
-- **Consolidation round 2 (#187).** Continued the source-tree consolidation
+- **API clean break + stage-package regroup (Adoptability A+B).** Established
+  **one canonical import path per public thing** and grouped the pipeline-step
+  packages under a single namespace, so a newcomer can navigate the tree without
+  the author. The 12 pipeline-step packages (`ambient_correction`, `qc`,
+  `preprocessing`, `clustering`, `integration`, `annotation`, `state_scoring`,
+  `discovery`, `comparative`, `gene_regulation`, `cell_cell_communication`,
+  `trajectory`) now live under `cellquorum.stages.*`, leaving `src/cellquorum/`
+  with **10** top-level packages (`core`, `config`, `methods`, `backends`,
+  `stages`, `io`, `visualization`, `api`, `cli`, `utils`). Every retired
+  re-export shim is deleted (see *Removed*), so each stage, config, and utility
+  has exactly one import path — frozen by `tests/test_old_paths_removed.py`. The
+  convenience top-level re-exports on the `cellquorum` package are unchanged:
+  `cq.run_pipeline`, `cq.tl` / `cq.pp` / `cq.diag` / `cq.evidence`, and
+  `cq.utils` stay canonical. New legibility docs land alongside: per-stage
+  `# Pipeline step (order=…)` module headers, a catalog-pinned ordered stage map
+  (`src/cellquorum/stages/README.md`), a file-level run walkthrough
+  (`docs/how-it-works.md`), and a README START-HERE section. **Breaking**
+  (permitted pre-1.0): code importing a retired deep path must move to the
+  canonical one — `cellquorum.stages.<stage>` for stages, `cellquorum.utils` for
+  the reusable helpers, `cellquorum.api.<ns>` for the notebook namespaces (or the
+  unchanged `cq.<ns>` top-level alias).
+- **Consolidation round 2 (#187).** *(Superseded in part by the API clean break +
+  stage-package regroup above: the package counts and import-compatibility claims
+  in this entry describe the tree as of #187 — every compatibility shim has since
+  been removed, and the 12 pipeline-step packages regrouped under
+  `cellquorum.stages.*`.)* Continued the source-tree consolidation
   begun in #167. Stage registration is now single-sited on each stage class
   through a `@register_stage` decorator; a shared `StageArtifactWriter`
   centralizes run-directory artifact writing; SoupX ambient-RNA correction
@@ -123,6 +149,27 @@ public API and the configuration schema.
 - **Documentation rewrite (#156).** The `README` was rewritten with a rendered
   workflow diagram, and the `docs/` guides (index, architecture, configuration,
   backends) were filled in.
+
+### Removed
+
+- **All 12 backward-compatibility re-export shims (API clean break).** The
+  pre-consolidation import paths no longer resolve — each raises
+  `ModuleNotFoundError`, frozen gone by `tests/test_old_paths_removed.py`: the
+  four comparative-analysis package shims `cellquorum.differential_expression`,
+  `cellquorum.differential_abundance`, `cellquorum.enrichment`,
+  `cellquorum.multicellular_programs`; the five notebook/API standalone-module
+  shims `cellquorum.tl`, `cellquorum.pp`, `cellquorum.diag`, `cellquorum.evidence`,
+  `cellquorum._notebook`; and the three QC submodule shims `cellquorum.qc.ambient`,
+  `cellquorum.qc.publication`, `cellquorum.qc.visualization`. Canonical
+  replacements: import comparative analyses from `cellquorum.stages.comparative.*`,
+  the reusable helpers from `cellquorum.utils`, and the notebook namespaces from
+  `cellquorum.api.*`. This removes the *module* paths `cellquorum.tl` etc.; the
+  `cq.tl` / `cq.pp` / `cq.diag` / `cq.evidence` attribute re-exports on the
+  top-level package are retained.
+- **Old top-level paths of the 12 relocated stage packages.** Importing a
+  pipeline step as `cellquorum.<stage>` (e.g. `cellquorum.qc`,
+  `cellquorum.comparative`) now raises `ModuleNotFoundError`; the canonical path
+  is `cellquorum.stages.<stage>`.
 
 ### Fixed
 

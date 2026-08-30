@@ -184,10 +184,11 @@ to a broken run.
 
 ## Source layout
 
-The package is organized into 20 top-level packages under `src/cellquorum/`
-(plus four thin compatibility-shim packages — `differential_expression`,
-`differential_abundance`, `enrichment`, `multicellular_programs` — that preserve
-the pre-#187 import paths; see the `comparative` row):
+The package is organized into **10** top-level packages under `src/cellquorum/`.
+The 12 pipeline-step packages live together under `stages/` (see the *Stage packages*
+table below); everything else is engine machinery or a public surface. There are no
+compatibility-shim packages — the clean break left exactly one canonical import path
+per public thing (frozen by `tests/test_old_paths_removed.py`):
 
 | Package | Responsibility |
 |---|---|
@@ -195,6 +196,20 @@ the pre-#187 import paths; see the `comparative` row):
 | `config` | Pydantic models, loader, validation, cohort/design/markers schemas |
 | `methods` | method dispatch base classes, the method registry, and shared abstractions (incl. `RAnalysisMethod`) |
 | `backends` | backend registry + subprocess adapters (pySCENIC, scCODA, CellOracle, scclr) and bundled R scripts |
+| `stages` | the 12 pipeline-step packages, one subpackage each, in run order (see *Stage packages* below and `stages/README.md`) |
+| `io` | input/output helpers |
+| `visualization` | shared figure styling/plotting (`figstyle`) and QC figure builders (`visualization.qc`) |
+| `api` | the public Python API surface (`run_pipeline` + the `tl`/`pp`/`diag`/`evidence` notebook namespaces) |
+| `cli` | the `cellquorum`/`cq` Typer app and the `gen-configs` workflow commands |
+| `utils` | reusable analytical helpers exposed as the public `cellquorum.utils` surface (`aggregate_pseudobulk`, `de_table_to_ranking`, `get_net`) |
+
+### Stage packages
+
+The 12 pipeline-step packages live under `cellquorum.stages.*`, one subpackage per
+step, and run in the catalog order described in `stages/README.md`:
+
+| Stage package | Responsibility |
+|---|---|
 | `ambient_correction` | SoupX ambient-RNA correction stage (runs first, per library, before QC) |
 | `qc` | quality control: metrics, thresholds, doublets, decisions, artifacts |
 | `preprocessing` | normalization, feature selection, dimensionality reduction |
@@ -207,10 +222,6 @@ the pre-#187 import paths; see the `comparative` row):
 | `gene_regulation` | co-expression (hdWGCNA), GRN (pySCENIC), perturbation (CellOracle) |
 | `cell_cell_communication` | LIANA/Tensor-c2c/NicheNet, network topology + curvature, CCC visualization |
 | `trajectory` | RNA velocity and trajectory visualization |
-| `io` | input/output helpers |
-| `visualization` | shared figure styling/plotting (`figstyle`) and QC figure builders (`visualization.qc`) |
-| `api` | the public Python API surface (`run_pipeline` + the `tl`/`pp`/`diag`/`evidence` notebook namespaces) |
-| `cli` | the `cellquorum`/`cq` Typer app and the `gen-configs` workflow commands |
 
 Each stage package follows a uniform layout — `stage.py` (the stage implementation),
 `config.py` (its Pydantic block), and one method module per method — which keeps the
@@ -230,8 +241,8 @@ places that can drift apart.
 
 To add a new stage, a contributor touches four things — and no more:
 
-1. **Write the stage package** — a new folder under `src/cellquorum/` with the usual
-   `stage.py` / `config.py` / method modules (see *Source layout* above for the
+1. **Write the stage package** — a new folder under `src/cellquorum/stages/` with the
+   usual `stage.py` / `config.py` / method modules (see *Source layout* above for the
    pattern to copy).
 2. **Decorate the stage class** — put `@register_stage(name=..., order=...,
    config_flag=..., config_field=..., category=...)` immediately above the class in
@@ -242,9 +253,9 @@ To add a new stage, a contributor touches four things — and no more:
    (matching `config_field`), both in `config/models.py`. These stay explicit on
    purpose: they are the user-facing knobs, and keeping them spelled out makes the
    config self-documenting.
-4. **Register the import** — add one `import cellquorum.<your_package>.stage` line to
-   `core/stages.py`, in the canonical-order position, so the decorator actually runs
-   when the engine starts.
+4. **Register the import** — add one `import cellquorum.stages.<your_package>.stage`
+   line to `core/stages.py`, in the canonical-order position, so the decorator actually
+   runs when the engine starts.
 
 `tests/test_stage_catalog.py` is the safety net: it fails loudly if a stage's flag or
 config block is missing or orphaned, if two stages claim the same `order`, or if the

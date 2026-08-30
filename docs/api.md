@@ -25,19 +25,19 @@ These namespaces expose the engine's stages as ergonomic functions for
 interactive (notebook) use. Each is a thin adapter over the same stage classes
 the CLI runs, so a notebook exploration and a config-driven run stay consistent.
 
-### Tools — `cellquorum.tl`
+### Tools — `cq.tl`
 
 ::: cellquorum.api.tl
 
-### Preprocessing — `cellquorum.pp`
+### Preprocessing — `cq.pp`
 
 ::: cellquorum.api.pp
 
-### Diagnostics — `cellquorum.diag`
+### Diagnostics — `cq.diag`
 
 ::: cellquorum.api.diag
 
-### Evidence — `cellquorum.evidence`
+### Evidence — `cq.evidence`
 
 ::: cellquorum.api.evidence
 
@@ -46,7 +46,7 @@ the CLI runs, so a notebook exploration and a config-driven run stay consistent.
 A few of the engine's internal helpers are useful on their own in analysis
 scripts, independent of a full pipeline run. They are exposed here as a stable,
 versioned surface (`cq.utils.*`) — re-exports of the canonical implementations in
-`cellquorum.comparative`, so a fix to the engine is a fix here. Importing this
+`cellquorum.stages.comparative`, so a fix to the engine is a fix here. Importing this
 module pulls in no heavy optional dependency (`get_net` lazy-imports `decoupler`
 only when called).
 
