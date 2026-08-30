@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.gene_regulation.grn.stage import GrnStage
+from cellquorum.stages.gene_regulation.grn.stage import GrnStage
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 
@@ -19,6 +19,6 @@ def test_selects_pyscenic_by_default() -> None:
 
 
 def test_method_is_registered() -> None:
-    import cellquorum.gene_regulation.grn  # noqa: F401
+    import cellquorum.stages.gene_regulation.grn  # noqa: F401
 
     assert METHOD_REGISTRY.has("grn", "pyscenic")

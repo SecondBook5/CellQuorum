@@ -51,7 +51,7 @@ pytestmark = pytest.mark.skipif(
 def test_soupx_on_real_library(tmp_path):
     """SoupX corrects one real library and imports as integer counts."""
 
-    from cellquorum.ambient_correction.soupx import (
+    from cellquorum.stages.ambient_correction.soupx import (
         import_corrected_matrix,
         run_soupx_library,
     )

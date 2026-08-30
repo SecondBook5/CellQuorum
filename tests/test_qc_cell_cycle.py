@@ -6,12 +6,12 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.qc.cell_cycle import (
+from cellquorum.stages.qc.cell_cycle import (
     TIROSH_G2M_GENES,
     TIROSH_S_GENES,
     score_cell_cycle,
 )
-from cellquorum.qc.config import QCCellCycleConfig
+from cellquorum.stages.qc.config import QCCellCycleConfig
 
 
 def _adata_with_cc_genes(seed=0):

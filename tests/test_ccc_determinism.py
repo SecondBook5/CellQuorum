@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.cell_cell_communication.tensor_c2c_method import TensorCell2CellMethod
+from cellquorum.stages.cell_cell_communication.tensor_c2c_method import TensorCell2CellMethod
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 
 pytest.importorskip("liana")

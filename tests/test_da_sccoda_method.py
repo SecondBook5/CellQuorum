@@ -9,7 +9,7 @@ import pytest
 
 from cellquorum.backends.registry import build_default_backend_registry
 from cellquorum.backends.sccoda_backend import build_sccoda_backend
-from cellquorum.comparative.differential_abundance.sccoda_method import SccodaMethod
+from cellquorum.stages.comparative.differential_abundance.sccoda_method import SccodaMethod
 from cellquorum.methods.base import MethodSkip
 
 # Check sccoda_env availability once.

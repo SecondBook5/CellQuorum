@@ -2,7 +2,7 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from cellquorum.integration.embeddings.stage import EmbeddingsStage
+from cellquorum.stages.integration.embeddings.stage import EmbeddingsStage
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 
@@ -56,7 +56,7 @@ def test_stage_runs_end_to_end(tmp_path):
     a.var_names = [f"GENE_{i}" for i in range(a.n_vars)]
     sc.pp.neighbors(a, use_rep="X_pca_harmony", random_state=0)
 
-    from cellquorum.integration.embeddings.config import EmbeddingsConfig
+    from cellquorum.stages.integration.embeddings.config import EmbeddingsConfig
 
     class _Cfg:
         embeddings = EmbeddingsConfig(figure_formats=["png"], dpi=80, embeddings=["umap"])

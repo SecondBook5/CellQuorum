@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.integration.config import IntegrationConfig
+from cellquorum.stages.integration.config import IntegrationConfig
 
 
 def test_integration_defaults():

@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from cellquorum.comparative.differential_abundance.stage import DifferentialAbundanceStage
+from cellquorum.stages.comparative.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 
 
@@ -56,7 +56,7 @@ def test_stage_selects_default_method_name():
 
 def test_all_four_methods_registered():
     """Verify all 4 DA methods are available in the registry."""
-    import cellquorum.comparative.differential_abundance  # noqa: F401
+    import cellquorum.stages.comparative.differential_abundance  # noqa: F401
     from cellquorum.methods.registry import METHOD_REGISTRY
 
     assert METHOD_REGISTRY.has("differential_abundance", "milo")

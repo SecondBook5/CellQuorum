@@ -13,12 +13,12 @@ import scanpy as sc
 pytest.importorskip("cellrank")
 
 from cellquorum.core.stage import StageResult  # noqa: E402
-from cellquorum.trajectory.config import (  # noqa: E402
+from cellquorum.stages.trajectory.config import (  # noqa: E402
     CellRankConfig,
     DptConfig,
     TrajectoryConfig,
 )
-from cellquorum.trajectory.stage import TrajectoryStage  # noqa: E402
+from cellquorum.stages.trajectory.stage import TrajectoryStage  # noqa: E402
 
 
 def _make_adata(n=250):

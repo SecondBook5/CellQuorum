@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.trajectory._loom_io import (
+from cellquorum.stages.trajectory._loom_io import (
     loom_cellid_to_bare,
     read_loom_layers,
     reconcile_looms,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_methods_registered():
-    import cellquorum.cell_cell_communication  # noqa: F401
+    import cellquorum.stages.cell_cell_communication  # noqa: F401
     from cellquorum.methods.registry import METHOD_REGISTRY
 
     assert METHOD_REGISTRY.has("cell_cell_communication", "liana")
@@ -10,7 +10,7 @@ def test_methods_registered():
 
 
 def test_nichenet_methods_registered():
-    import cellquorum.cell_cell_communication  # noqa: F401
+    import cellquorum.stages.cell_cell_communication  # noqa: F401
     from cellquorum.methods.registry import METHOD_REGISTRY
 
     assert METHOD_REGISTRY.has("cell_cell_communication", "multinichenet")

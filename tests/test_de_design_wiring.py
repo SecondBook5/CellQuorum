@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from cellquorum.comparative.differential_expression.stage import DifferentialExpressionStage
+from cellquorum.stages.comparative.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import DesignConfig
 from cellquorum.config.models import CellQuorumConfig

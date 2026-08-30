@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cellquorum.cell_cell_communication.tensor_c2c_method import TensorCell2CellMethod
+from cellquorum.stages.cell_cell_communication.tensor_c2c_method import TensorCell2CellMethod
 
 
 def _context(prefer_gpu: bool):

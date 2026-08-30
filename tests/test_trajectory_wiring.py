@@ -6,7 +6,7 @@ from __future__ import annotations
 def test_config_has_trajectory():
     """Verify trajectory config field and toggle are present in CellQuorumConfig."""
     from cellquorum.config.models import CellQuorumConfig
-    from cellquorum.trajectory.config import TrajectoryConfig
+    from cellquorum.stages.trajectory.config import TrajectoryConfig
 
     cfg = CellQuorumConfig()
     assert isinstance(cfg.trajectory, TrajectoryConfig)
@@ -16,7 +16,7 @@ def test_config_has_trajectory():
 def test_trajectory_stage_registered():
     """Verify trajectory stage is registered in default stage registry."""
     from cellquorum.core.executor import build_default_stage_registry
-    from cellquorum.trajectory.stage import TrajectoryStage
+    from cellquorum.stages.trajectory.stage import TrajectoryStage
 
     reg = build_default_stage_registry()
     assert "trajectory" in reg.stages

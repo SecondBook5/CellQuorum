@@ -4,7 +4,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.differential_abundance.aggregation import aggregate_celltype_counts
+from cellquorum.stages.comparative.differential_abundance.aggregation import aggregate_celltype_counts
 
 
 def _adata():

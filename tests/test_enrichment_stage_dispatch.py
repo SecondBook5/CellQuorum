@@ -4,7 +4,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.enrichment.stage import EnrichmentStage
+from cellquorum.stages.comparative.enrichment.stage import EnrichmentStage
 from cellquorum.config.design import DesignConfig
 
 

@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.comparative.enrichment.gsea_method import GseaMethod
+from cellquorum.stages.comparative.enrichment.gsea_method import GseaMethod
 from cellquorum.methods.base import MethodSkip
 
 # These tests exercise the REAL decoupler package (gsea via its low-level
@@ -64,7 +64,7 @@ def _write_de(tmp, genes):
 
 def _patch_get_net(monkeypatch, net):
     monkeypatch.setattr(
-        "cellquorum.comparative.enrichment.gsea_method.get_net",
+        "cellquorum.stages.comparative.enrichment.gsea_method.get_net",
         lambda collection, **kw: net.copy(),
     )
 
@@ -142,7 +142,7 @@ def test_gsea_fdr_is_single_bh_of_reported_pvalue(tmp_path, monkeypatch):
 
     # (2) padj equals the high-level dc.mt.gsea output (its single internal BH of
     # the raw p) — computed here with REAL decoupler on the same ranking/net.
-    from cellquorum.comparative.enrichment.ranking import de_table_to_ranking
+    from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 
     de = pd.read_csv(ctx.paths.results / "de_pseudobulk_edger.csv")
     ranking = de_table_to_ranking(de)

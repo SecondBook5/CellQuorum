@@ -10,8 +10,8 @@ import pandas as pd
 
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory import _cytotrace
-from cellquorum.trajectory.cytotrace_method import CytoTraceMethod
+from cellquorum.stages.trajectory import _cytotrace
+from cellquorum.stages.trajectory.cytotrace_method import CytoTraceMethod
 
 
 def _adata(n=40, g=50):

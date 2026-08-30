@@ -24,10 +24,10 @@ from cellquorum.config.loader import ConfigLoadError, load_config, validate_conf
 from cellquorum.config.models import CellQuorumConfig
 
 # Import the QC configuration model.
-from cellquorum.qc.config import QCConfig
+from cellquorum.stages.qc.config import QCConfig
 
 # Import QC stage config-resolution helpers.
-from cellquorum.qc.stage import is_qc_stage_enabled, resolve_qc_config
+from cellquorum.stages.qc.stage import is_qc_stage_enabled, resolve_qc_config
 
 
 class TinyStrictConfig(StrictBaseModel):

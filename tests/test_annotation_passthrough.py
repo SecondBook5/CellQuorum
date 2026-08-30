@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.annotation.passthrough import PassthroughAnnotationMethod
+from cellquorum.stages.annotation.passthrough import PassthroughAnnotationMethod
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.methods.base import MethodSkip
 
@@ -69,7 +69,7 @@ def test_passthrough_raises_when_source_absent():
 
 def test_passthrough_is_registered():
     """The method self-registers under the annotation stage category."""
-    import cellquorum.annotation  # noqa: F401  (import triggers registration)
+    import cellquorum.stages.annotation  # noqa: F401  (import triggers registration)
     from cellquorum.methods.registry import METHOD_REGISTRY
 
     method_cls = METHOD_REGISTRY.get("annotation", "passthrough")

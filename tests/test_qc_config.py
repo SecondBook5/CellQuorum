@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from cellquorum.config.validation import ConfigValidationError
 
 # Import QC configuration models under test.
-from cellquorum.qc.config import (
+from cellquorum.stages.qc.config import (
     QCAmbientRNAConfig,
     QCBasicThresholdConfig,
     QCConfig,

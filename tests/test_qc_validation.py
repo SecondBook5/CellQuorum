@@ -18,10 +18,10 @@ import pytest
 import scipy.sparse as sp
 
 # Import QC configuration objects used by validation.
-from cellquorum.qc.config import QCConfig, QCDuplicateNameConfig
+from cellquorum.stages.qc.config import QCConfig, QCDuplicateNameConfig
 
 # Import QC validation utilities under test.
-from cellquorum.qc.validation import (
+from cellquorum.stages.qc.validation import (
     QCInputValidationError,
     QCInputValidationSummary,
     get_qc_matrix,

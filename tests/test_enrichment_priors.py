@@ -6,7 +6,7 @@ import types
 import pandas as pd
 import pytest
 
-from cellquorum.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 
 
 def _install_fake_decoupler(monkeypatch, hallmark_df=None, raise_on=None):

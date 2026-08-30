@@ -11,8 +11,8 @@ import pytest
 import scanpy as sc
 
 from cellquorum.core.stage import StageResult
-from cellquorum.trajectory.config import CellRankConfig, TrajectoryConfig
-from cellquorum.trajectory.stage import TrajectoryStage
+from cellquorum.stages.trajectory.config import CellRankConfig, TrajectoryConfig
+from cellquorum.stages.trajectory.stage import TrajectoryStage
 
 pytest.importorskip("cellrank")
 

@@ -20,10 +20,10 @@ import pytest
 import scipy.sparse as sp
 
 from cellquorum.backends.registry import build_default_backend_registry
-from cellquorum.comparative.differential_expression.pseudobulk_edger_method import (
+from cellquorum.stages.comparative.differential_expression.pseudobulk_edger_method import (
     build_edger_design_rhs,
 )
-from cellquorum.comparative.differential_expression.stage import DifferentialExpressionStage
+from cellquorum.stages.comparative.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.core.exceptions import CellQuorumConfigError

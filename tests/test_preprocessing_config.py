@@ -3,7 +3,7 @@
 import pytest
 
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.preprocessing.config import (
+from cellquorum.stages.preprocessing.config import (
     NormalizationConfig,
     PreprocessingConfig,
     validate_preprocessing_config_dict,

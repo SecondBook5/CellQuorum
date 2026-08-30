@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from cellquorum.core.contracts import set_layer_tag
-from cellquorum.preprocessing.dimensionality.pca import PCAMethod
+from cellquorum.stages.preprocessing.dimensionality.pca import PCAMethod
 
 
 class _Paths:
@@ -41,8 +41,8 @@ def _scclr_registry_or_skip():
 def _scclr_normalized_adata(tmp: Path, registry):
     """Build an adata whose normalized layer was produced by the scclr backend."""
 
-    from cellquorum.preprocessing.config import NormalizationConfig
-    from cellquorum.preprocessing.normalization import normalize_adata
+    from cellquorum.stages.preprocessing.config import NormalizationConfig
+    from cellquorum.stages.preprocessing.normalization import normalize_adata
 
     rng = np.random.default_rng(0)
     counts = rng.negative_binomial(2, 0.15, size=(80, 30)).astype(np.float32)

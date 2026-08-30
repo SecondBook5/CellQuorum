@@ -27,7 +27,7 @@ from cellquorum.visualization.figstyle import (
 
 # Import QCThresholdResult only for type checking to avoid circular import.
 if TYPE_CHECKING:
-    from cellquorum.qc.thresholds import QCThresholdResult
+    from cellquorum.stages.qc.thresholds import QCThresholdResult
 
 
 class QCVisualizationError(CellQuorumDataError):

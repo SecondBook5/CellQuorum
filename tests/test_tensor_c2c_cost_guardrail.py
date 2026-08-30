@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
-from cellquorum.cell_cell_communication.tensor_c2c_method import (
+from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
+from cellquorum.stages.cell_cell_communication.tensor_c2c_method import (
     resolve_factorization_runs,
 )
 from cellquorum.core.exceptions import CellQuorumConfigError

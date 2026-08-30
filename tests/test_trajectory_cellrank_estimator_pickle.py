@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 import scanpy as sc
 
-from cellquorum.trajectory.cellrank_method import CellRankMethod
+from cellquorum.stages.trajectory.cellrank_method import CellRankMethod
 
 cr = pytest.importorskip("cellrank")
 

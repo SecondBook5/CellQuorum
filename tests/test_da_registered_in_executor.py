@@ -1,4 +1,4 @@
-from cellquorum.comparative.differential_abundance.stage import DifferentialAbundanceStage
+from cellquorum.stages.comparative.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.core.executor import build_default_stage_registry
 
 

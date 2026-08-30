@@ -56,7 +56,7 @@ def stub_context_no_rscript(tmp_path: Path) -> MagicMock:
 
 def test_scdiagnostics_method_contract_requires_pca(adata_missing_pca: ad.AnnData) -> None:
     """Verify the method's input_contract requires X_pca in obsm."""
-    from cellquorum.annotation.diagnostics.scdiagnostics_method import (
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
 
@@ -71,7 +71,7 @@ def test_scdiagnostics_method_contract_requires_pca(adata_missing_pca: ad.AnnDat
 
 def test_scdiagnostics_contract_uses_configured_expression_layer() -> None:
     """Verify scDiagnostics can audit CellQuorum-tagged normalized layers."""
-    from cellquorum.annotation.diagnostics.scdiagnostics_method import (
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
 
@@ -98,7 +98,7 @@ def test_scdiagnostics_method_skip_when_rscript_unavailable(
     monkeypatch,
 ) -> None:
     """Verify the method returns MethodSkip when Rscript is missing."""
-    from cellquorum.annotation.diagnostics.scdiagnostics_method import (
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
 
@@ -129,7 +129,7 @@ def test_scdiagnostics_entropy_from_soft_scores_without_r(
     monkeypatch,
 ) -> None:
     """Soft-score entropy should work without R when no reference is configured."""
-    from cellquorum.annotation.diagnostics.scdiagnostics_method import (
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
 
@@ -166,7 +166,7 @@ def test_scdiagnostics_method_real_r_run(
     tmp_path: Path,
 ) -> None:
     """Real R integration test (skippable when Rscript/scDiagnostics absent)."""
-    from cellquorum.annotation.diagnostics.scdiagnostics_method import (
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
     from cellquorum.backends.rscript import build_rscript_backend
@@ -217,7 +217,7 @@ def test_scdiagnostics_method_real_r_run(
 
 def test_scdiagnostics_barcode_alignment_with_reordered_csv(tmp_path: Path) -> None:
     """Prove barcode-keyed join: reordered CSV still assigns correct values."""
-    from cellquorum.annotation.diagnostics.scdiagnostics_method import (
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
 

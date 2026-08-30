@@ -5,7 +5,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
-from cellquorum.annotation.consensus.stage import AnnotationConsensusStage
+from cellquorum.stages.annotation.consensus.stage import AnnotationConsensusStage
 
 
 class _Paths:

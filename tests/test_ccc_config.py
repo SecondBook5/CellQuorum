@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_defaults():
-    from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+    from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
 
     c = CellCellCommunicationConfig()
     assert c.enabled is True
@@ -27,14 +27,14 @@ def test_strict_rejects_unknown_field():
     import pytest
     from pydantic import ValidationError
 
-    from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+    from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
 
     with pytest.raises(ValidationError):
         CellCellCommunicationConfig(not_a_field=1)
 
 
 def test_nichenet_config_defaults():
-    from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+    from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
 
     cfg = CellCellCommunicationConfig()
     # prior models unset by default -> methods skip cleanly

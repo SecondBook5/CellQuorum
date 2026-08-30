@@ -24,7 +24,7 @@ import pandas.testing as pdt
 import pytest
 
 # Import QC artifact utilities under test.
-from cellquorum.qc.artifacts import (
+from cellquorum.stages.qc.artifacts import (
     QCArtifactError,
     QCArtifactManifest,
     build_qc_summary_payload,
@@ -42,16 +42,16 @@ from cellquorum.qc.artifacts import (
 )
 
 # Import QC configuration.
-from cellquorum.qc.config import QCConfig
+from cellquorum.stages.qc.config import QCConfig
 
 # Import QC decision result container.
-from cellquorum.qc.decisions import QCDecisionResult
+from cellquorum.stages.qc.decisions import QCDecisionResult
 
 # Import QC metrics result container.
-from cellquorum.qc.metrics import QCMetricsResult
+from cellquorum.stages.qc.metrics import QCMetricsResult
 
 # Import QC threshold records and result container.
-from cellquorum.qc.thresholds import QCThreshold, QCThresholdResult
+from cellquorum.stages.qc.thresholds import QCThreshold, QCThresholdResult
 
 
 def make_metrics_result() -> QCMetricsResult:

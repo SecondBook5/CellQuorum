@@ -19,9 +19,9 @@ and :class:`PriorFetchError` — are exported alongside them so a caller never h
 reach back into the internal modules to type-annotate or handle results.
 
 These names are **re-exports of the canonical implementations** in
-:mod:`cellquorum.comparative`, not copies: a fix to the engine is a fix here. The
+:mod:`cellquorum.stages.comparative`, not copies: a fix to the engine is a fix here. The
 pre-consolidation deep-import paths (``cellquorum.enrichment.ranking`` etc.) have
-been removed — import from :mod:`cellquorum.utils` or :mod:`cellquorum.comparative`
+been removed — import from :mod:`cellquorum.utils` or :mod:`cellquorum.stages.comparative`
 instead. Importing this module pulls in no heavy optional
 dependency — ``get_net`` lazy-imports ``decoupler`` only when called — preserving
 the engine-wide skip-not-crash invariant.
@@ -29,12 +29,12 @@ the engine-wide skip-not-crash invariant.
 
 from __future__ import annotations
 
-from cellquorum.comparative.differential_expression.pseudobulk import (
+from cellquorum.stages.comparative.differential_expression.pseudobulk import (
     PseudobulkResult,
     aggregate_pseudobulk,
 )
-from cellquorum.comparative.enrichment.priors import PriorFetchError, get_net
-from cellquorum.comparative.enrichment.ranking import de_table_to_ranking
+from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 
 __all__ = [
     "PriorFetchError",

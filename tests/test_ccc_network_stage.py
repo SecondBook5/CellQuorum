@@ -4,7 +4,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.cell_cell_communication.network.stage import CCCNetworkStage
+from cellquorum.stages.cell_cell_communication.network.stage import CCCNetworkStage
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 

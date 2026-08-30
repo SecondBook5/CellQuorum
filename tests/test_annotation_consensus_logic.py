@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.annotation.consensus.consensus import normalize_label, reconcile_votes
+from cellquorum.stages.annotation.consensus.consensus import normalize_label, reconcile_votes
 
 
 def test_normalize_label_applies_alias():

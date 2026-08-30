@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.ambient_correction.soupx import parse_rho
+from cellquorum.stages.ambient_correction.soupx import parse_rho
 
 
 def test_parse_rho_from_stdout():
@@ -13,7 +13,7 @@ def test_parse_rho_from_stdout():
 def test_parse_rho_missing_raises():
     import pytest
 
-    from cellquorum.ambient_correction.soupx import SoupXError
+    from cellquorum.stages.ambient_correction.soupx import SoupXError
 
     with pytest.raises(SoupXError, match="RHO"):
         parse_rho("no rho here")

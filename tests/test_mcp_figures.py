@@ -9,7 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import pandas as pd
 
-from cellquorum.comparative.multicellular_programs.mcp_figures import plot_mcp_summary
+from cellquorum.stages.comparative.multicellular_programs.mcp_figures import plot_mcp_summary
 
 
 def test_plot_mcp_summary_writes_figure(tmp_path):

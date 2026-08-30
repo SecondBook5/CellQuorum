@@ -1,4 +1,4 @@
-from cellquorum.comparative.differential_expression.stage import DifferentialExpressionStage
+from cellquorum.stages.comparative.differential_expression.stage import DifferentialExpressionStage
 from cellquorum.core.executor import build_default_stage_registry
 
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
-from cellquorum.integration.harmony import HarmonyMethod
-from cellquorum.integration.stage import IntegrationStage
+from cellquorum.stages.integration.harmony import HarmonyMethod
+from cellquorum.stages.integration.stage import IntegrationStage
 from cellquorum.methods.registry import MethodRegistry
 
 

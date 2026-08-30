@@ -5,7 +5,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory.viz._kernel_plots import DriverVizMethod
+from cellquorum.stages.trajectory.viz._kernel_plots import DriverVizMethod
 
 
 class _Ctx:

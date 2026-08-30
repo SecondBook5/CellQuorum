@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
-from cellquorum.comparative.differential_expression.pseudobulk_edger_method import (
+from cellquorum.stages.comparative.differential_expression.pseudobulk_edger_method import (
     PseudobulkEdgeRMethod,
 )
 from cellquorum.core.contracts.layer_tags import set_layer_tag

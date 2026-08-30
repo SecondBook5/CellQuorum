@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.enrichment.ranking import de_table_to_ranking
+from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 
 
 def test_signed_neglog10p_metric():

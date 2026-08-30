@@ -10,15 +10,15 @@ def test_integration_annotation_methods_registered() -> None:
     """
     Verify that integration and annotation methods self-register.
 
-    When the cellquorum.integration and cellquorum.annotation modules are
+    When the cellquorum.stages.integration and cellquorum.stages.annotation modules are
     imported, their methods must automatically register with METHOD_REGISTRY.
     This test ensures the required methods are available for stage construction.
     """
 
     # Import the integration module to trigger self-registration.
     # Import the annotation module to trigger self-registration.
-    import cellquorum.annotation  # noqa: F401
-    import cellquorum.integration  # noqa: F401
+    import cellquorum.stages.annotation  # noqa: F401
+    import cellquorum.stages.integration  # noqa: F401
 
     # Confirm the Harmony integration method registered.
     assert METHOD_REGISTRY.get("integration", "harmony") is not None
@@ -87,10 +87,10 @@ def test_annotation_does_not_skip_when_clustering_runs_first() -> None:
     import numpy as np
     import pandas as pd
 
-    from cellquorum.annotation.marker_vote import MarkerVoteMethod
-    from cellquorum.annotation.stage import AnnotationStage
-    from cellquorum.clustering.neighbors_leiden import LeidenMethod
-    from cellquorum.clustering.stage import ClusteringStage
+    from cellquorum.stages.annotation.marker_vote import MarkerVoteMethod
+    from cellquorum.stages.annotation.stage import AnnotationStage
+    from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
+    from cellquorum.stages.clustering.stage import ClusteringStage
     from cellquorum.core.contracts import set_layer_tag
     from cellquorum.methods.registry import MethodRegistry
 
@@ -173,8 +173,8 @@ def test_clustering_auto_couples_use_rep_when_integration_enabled() -> None:
     import anndata as ad
     import numpy as np
 
-    from cellquorum.clustering.neighbors_leiden import LeidenMethod
-    from cellquorum.clustering.stage import ClusteringStage
+    from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
+    from cellquorum.stages.clustering.stage import ClusteringStage
     from cellquorum.config.models import CellQuorumConfig
     from cellquorum.methods.registry import MethodRegistry
 

@@ -6,9 +6,9 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.qc.cell_cycle import TIROSH_G2M_GENES, TIROSH_S_GENES
-from cellquorum.qc.config import QCConfig
-from cellquorum.qc.stage import QCStage
+from cellquorum.stages.qc.cell_cycle import TIROSH_G2M_GENES, TIROSH_S_GENES
+from cellquorum.stages.qc.config import QCConfig
+from cellquorum.stages.qc.stage import QCStage
 
 
 def _adata(seed=0):

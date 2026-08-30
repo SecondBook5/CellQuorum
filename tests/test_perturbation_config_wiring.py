@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.gene_regulation.perturbation.config import PerturbationConfig
+from cellquorum.stages.gene_regulation.perturbation.config import PerturbationConfig
 
 
 def test_stage_flag_present_and_default_true() -> None:

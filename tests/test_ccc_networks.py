@@ -4,7 +4,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from cellquorum.cell_cell_communication.network._networks import (
+from cellquorum.stages.cell_cell_communication.network._networks import (
     _comparative_pagerank,
     _safe_pagerank,
     build_cci_network,
@@ -13,7 +13,7 @@ from cellquorum.cell_cell_communication.network._networks import (
     compute_topology_ranking,
     liana_to_canonical,
 )
-from cellquorum.cell_cell_communication.network.config import CCCNetworkConfig
+from cellquorum.stages.cell_cell_communication.network.config import CCCNetworkConfig
 
 
 def _liana_res() -> pd.DataFrame:

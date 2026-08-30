@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.methods.registry import METHOD_REGISTRY
-from cellquorum.trajectory.stage import TrajectoryStage
+from cellquorum.stages.trajectory.stage import TrajectoryStage
 
 
 class _Paths:

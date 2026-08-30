@@ -2,7 +2,7 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from cellquorum.integration.embeddings.methods import PhateMethod, UmapMethod
+from cellquorum.stages.integration.embeddings.methods import PhateMethod, UmapMethod
 
 
 class _Ctx:

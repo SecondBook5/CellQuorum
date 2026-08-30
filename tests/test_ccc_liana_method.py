@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.cell_cell_communication.liana_method import LianaMethod
+from cellquorum.stages.cell_cell_communication.liana_method import LianaMethod
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.methods.base import MethodSkip
 

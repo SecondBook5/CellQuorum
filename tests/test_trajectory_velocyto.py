@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from cellquorum.trajectory import _velocyto
-from cellquorum.trajectory.config import VelocityGenerationConfig
+from cellquorum.stages.trajectory import _velocyto
+from cellquorum.stages.trajectory.config import VelocityGenerationConfig
 
 
 def test_ensure_loom_skips_when_disabled(tmp_path):

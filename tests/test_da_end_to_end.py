@@ -17,7 +17,7 @@ import pandas as pd
 
 from cellquorum.backends.registry import build_default_backend_registry
 from cellquorum.backends.sccoda_backend import build_sccoda_backend
-from cellquorum.comparative.differential_abundance.stage import DifferentialAbundanceStage
+from cellquorum.stages.comparative.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.config.design import DesignConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
 

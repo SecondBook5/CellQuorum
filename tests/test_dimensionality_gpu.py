@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from cellquorum.backends.compute import gpu_compute_available
-from cellquorum.preprocessing.dimensionality.pca import PCAMethod
+from cellquorum.stages.preprocessing.dimensionality.pca import PCAMethod
 
 pytestmark = pytest.mark.skipif(
     not gpu_compute_available(), reason="rapids-singlecell/cupy unavailable"

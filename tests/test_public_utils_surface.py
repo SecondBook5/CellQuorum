@@ -26,11 +26,11 @@ def test_utils_names_are_the_canonical_objects_not_copies():
     # Re-export, not reimplementation: the public name must BE the canonical one,
     # so a bug fixed in the engine is a bug fixed for power-user scripts too.
     from cellquorum import utils
-    from cellquorum.comparative.differential_expression.pseudobulk import (
+    from cellquorum.stages.comparative.differential_expression.pseudobulk import (
         aggregate_pseudobulk,
     )
-    from cellquorum.comparative.enrichment.priors import get_net
-    from cellquorum.comparative.enrichment.ranking import de_table_to_ranking
+    from cellquorum.stages.comparative.enrichment.priors import get_net
+    from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 
     assert utils.de_table_to_ranking is de_table_to_ranking
     assert utils.get_net is get_net
@@ -40,10 +40,10 @@ def test_utils_names_are_the_canonical_objects_not_copies():
 def test_companion_types_exposed():
     # A public function is only usable with the types it returns/raises.
     from cellquorum import utils
-    from cellquorum.comparative.differential_expression.pseudobulk import (
+    from cellquorum.stages.comparative.differential_expression.pseudobulk import (
         PseudobulkResult,
     )
-    from cellquorum.comparative.enrichment.priors import PriorFetchError
+    from cellquorum.stages.comparative.enrichment.priors import PriorFetchError
 
     assert utils.PseudobulkResult is PseudobulkResult
     assert utils.PriorFetchError is PriorFetchError

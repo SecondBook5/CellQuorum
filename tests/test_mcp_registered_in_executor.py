@@ -1,5 +1,5 @@
 def test_stage_registered_in_executor():
-    from cellquorum.comparative.multicellular_programs.stage import MulticellularProgramsStage
+    from cellquorum.stages.comparative.multicellular_programs.stage import MulticellularProgramsStage
     from cellquorum.core.executor import build_default_stage_registry
 
     reg = build_default_stage_registry()

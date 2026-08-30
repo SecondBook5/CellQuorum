@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_ccc_stage_registered():
-    from cellquorum.cell_cell_communication.stage import CellCellCommunicationStage
+    from cellquorum.stages.cell_cell_communication.stage import CellCellCommunicationStage
     from cellquorum.core.executor import build_default_stage_registry
 
     reg = build_default_stage_registry()
@@ -11,7 +11,7 @@ def test_ccc_stage_registered():
 
 
 def test_pipeline_config_has_ccc():
-    from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+    from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
     from cellquorum.config.models import CellQuorumConfig
 
     cfg = CellQuorumConfig()

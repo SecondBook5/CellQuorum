@@ -8,7 +8,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.annotation.population_identity.stage import PopulationIdentityStage
+from cellquorum.stages.annotation.population_identity.stage import PopulationIdentityStage
 from cellquorum.backends.base import BaseBackend
 from cellquorum.backends.registry import BackendRegistry
 from cellquorum.config.models import CellQuorumConfig

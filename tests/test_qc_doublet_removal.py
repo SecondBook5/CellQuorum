@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.qc.stage import QCStage
+from cellquorum.stages.qc.stage import QCStage
 
 
 class _Paths:
@@ -57,7 +57,7 @@ def test_doublets_removed_when_remove_true(tmp_path):
     # Force a deterministic predicted_doublet column by pre-seeding it: the
     # remover must act on whatever detect_doublets leaves in obs. We simulate a
     # detector result by monkeypatching detect_doublets to flag the first 5 cells.
-    import cellquorum.qc.doublets as doublets_mod
+    import cellquorum.stages.qc.doublets as doublets_mod
 
     def _fake_detect(adata, cfg, backend, sample_key=None):
         flags = np.zeros(adata.n_obs, dtype=bool)
@@ -98,7 +98,7 @@ def test_doublets_kept_when_remove_false(tmp_path):
         }
     }
     ctx = _Ctx(a, config, _Paths(tmp_path))
-    import cellquorum.qc.doublets as doublets_mod
+    import cellquorum.stages.qc.doublets as doublets_mod
 
     def _fake_detect(adata, cfg, backend, sample_key=None):
         flags = np.zeros(adata.n_obs, dtype=bool)

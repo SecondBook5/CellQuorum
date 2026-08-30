@@ -285,7 +285,7 @@ def test_colored_scatter_keep_fail_variant():
 
 def test_threshold_lines_on_histograms():
     """Threshold cutoff lines are drawn on histograms when thresholds are provided."""
-    from cellquorum.qc.thresholds import QCThreshold, QCThresholdResult
+    from cellquorum.stages.qc.thresholds import QCThreshold, QCThresholdResult
 
     adata = make_test_adata_with_qc()
 

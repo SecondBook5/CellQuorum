@@ -5,7 +5,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
-from cellquorum.trajectory.save import write_pseudotime_h5ad
+from cellquorum.stages.trajectory.save import write_pseudotime_h5ad
 
 
 def _adata():

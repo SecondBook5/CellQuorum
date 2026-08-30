@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.annotation.reference_mapping.scarches import (
+from cellquorum.stages.annotation.reference_mapping.scarches import (
     ScArchesMethod,
     _load_seed_checkpoint,
     _mean_soft_probabilities,

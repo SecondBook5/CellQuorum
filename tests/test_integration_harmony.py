@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from cellquorum.core.contracts import CellQuorumContractError
-from cellquorum.integration.harmony import HarmonyMethod
+from cellquorum.stages.integration.harmony import HarmonyMethod
 
 
 def _adata_with_pca(n=120, n_pcs=10, seed=0):

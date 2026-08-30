@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from cellquorum.gene_regulation.grn import regulon_figures as rf
+from cellquorum.stages.gene_regulation.grn import regulon_figures as rf
 
 
 def _auc(n_cells: int = 60, n_reg: int = 8) -> pd.DataFrame:

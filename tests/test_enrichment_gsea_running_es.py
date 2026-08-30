@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.enrichment.gsea_method import running_es_walk
+from cellquorum.stages.comparative.enrichment.gsea_method import running_es_walk
 
 
 def test_running_es_walk_endpoint_returns_near_zero():

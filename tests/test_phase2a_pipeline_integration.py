@@ -9,8 +9,8 @@ from cellquorum.methods.registry import METHOD_REGISTRY
 
 def test_methods_self_registered():
     # Importing the packages must register their methods.
-    import cellquorum.clustering  # noqa: F401
-    import cellquorum.preprocessing.dimensionality  # noqa: F401
+    import cellquorum.stages.clustering  # noqa: F401
+    import cellquorum.stages.preprocessing.dimensionality  # noqa: F401
 
     assert METHOD_REGISTRY.get("dimensionality", "pca") is not None
     assert METHOD_REGISTRY.get("clustering", "leiden") is not None
@@ -41,7 +41,7 @@ def test_pca_consumes_normalized_layer_not_raw():
     import numpy as np
 
     from cellquorum.core.contracts import set_layer_tag
-    from cellquorum.preprocessing.dimensionality.pca import PCAMethod
+    from cellquorum.stages.preprocessing.dimensionality.pca import PCAMethod
 
     # Build a raw-counts AnnData (integer values).
     rng = np.random.default_rng(42)

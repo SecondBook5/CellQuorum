@@ -13,8 +13,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.qc.config import QCConfig
-from cellquorum.qc.metrics import calculate_qc_metrics
+from cellquorum.stages.qc.config import QCConfig
+from cellquorum.stages.qc.metrics import calculate_qc_metrics
 
 
 def _counts_adata(n=40):
@@ -55,7 +55,7 @@ def test_no_groupby_leaves_metrics_untouched():
 def test_missing_groupby_column_fails_loud():
     # A configured groupby column absent from obs must fail loud (not silently
     # collapse to a single global threshold). Input validation catches it first.
-    from cellquorum.qc.validation import QCInputValidationError
+    from cellquorum.stages.qc.validation import QCInputValidationError
 
     a = _counts_adata()
     del a.obs["sample_id"]

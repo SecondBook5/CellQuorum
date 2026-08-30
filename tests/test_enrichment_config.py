@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cellquorum.comparative.enrichment.config import EnrichmentConfig
+from cellquorum.stages.comparative.enrichment.config import EnrichmentConfig
 
 
 def test_defaults():

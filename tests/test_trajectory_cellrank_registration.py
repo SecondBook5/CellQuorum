@@ -5,12 +5,12 @@ from __future__ import annotations
 import types
 
 from cellquorum.methods.registry import METHOD_REGISTRY
-from cellquorum.trajectory.config import CellRankConfig, TrajectoryConfig
-from cellquorum.trajectory.stage import TrajectoryStage
+from cellquorum.stages.trajectory.config import CellRankConfig, TrajectoryConfig
+from cellquorum.stages.trajectory.stage import TrajectoryStage
 
 
 def test_cellrank_registered():
-    import cellquorum.trajectory  # noqa: F401 — trigger registration
+    import cellquorum.stages.trajectory  # noqa: F401 — trigger registration
 
     assert METHOD_REGISTRY.has("trajectory", "cellrank")
 
@@ -40,7 +40,7 @@ def test_stage_flattens_cellrank_keys():
 def test_cellrank_only_run_does_not_inherit_velocity_shared_keys():
     # A cellrank-only run must receive cellrank's OWN values for keys the two
     # method configs share (seed/n_neighbors/use_rep/...), not velocity's.
-    from cellquorum.trajectory.config import VelocityConfig
+    from cellquorum.stages.trajectory.config import VelocityConfig
 
     traj = TrajectoryConfig(
         methods=[{"method": "cellrank"}],

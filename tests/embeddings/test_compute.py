@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 import scanpy as sc
 
-from cellquorum.integration.embeddings import compute
+from cellquorum.stages.integration.embeddings import compute
 
 
 def _adata_with_neighbors(seed=0):

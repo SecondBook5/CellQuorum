@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import scipy.io
 
-from cellquorum.comparative.multicellular_programs._dialogue_io import (
+from cellquorum.stages.comparative.multicellular_programs._dialogue_io import (
     export_dialogue_inputs,
     read_dialogue_outputs,
 )

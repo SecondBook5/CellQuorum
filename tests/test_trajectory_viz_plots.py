@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import numpy as np
 from matplotlib.figure import Figure
 
-from cellquorum.trajectory.viz import plots
+from cellquorum.stages.trajectory.viz import plots
 
 
 def test_embedding_scatter_returns_figure():

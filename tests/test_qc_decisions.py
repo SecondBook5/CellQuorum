@@ -12,10 +12,10 @@ import pandas as pd
 import pytest
 
 # Import QC configuration used by decision construction.
-from cellquorum.qc.config import QCConfig
+from cellquorum.stages.qc.config import QCConfig
 
 # Import QC decision utilities under test.
-from cellquorum.qc.decisions import (
+from cellquorum.stages.qc.decisions import (
     QCDecisionError,
     QCDecisionResult,
     apply_threshold_to_decision_table,
@@ -36,7 +36,7 @@ from cellquorum.qc.decisions import (
 )
 
 # Import threshold records used by decision construction.
-from cellquorum.qc.thresholds import QCThreshold, QCThresholdResult
+from cellquorum.stages.qc.thresholds import QCThreshold, QCThresholdResult
 
 
 def make_cell_metrics() -> pd.DataFrame:

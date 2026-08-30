@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.annotation.marker_vote import MarkerVoteMethod
+from cellquorum.stages.annotation.marker_vote import MarkerVoteMethod
 from cellquorum.core.contracts import CellQuorumContractError, set_layer_tag
 
 

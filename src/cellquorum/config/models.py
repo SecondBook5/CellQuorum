@@ -12,55 +12,55 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 # Import the ambient-correction configuration model.
-from cellquorum.ambient_correction.config import AmbientCorrectionConfig
+from cellquorum.stages.ambient_correction.config import AmbientCorrectionConfig
 
 # Import the adjudication configuration model.
-from cellquorum.annotation.adjudication.config import AdjudicationConfig
+from cellquorum.stages.annotation.adjudication.config import AdjudicationConfig
 
 # Import the annotation configuration model.
-from cellquorum.annotation.config import AnnotationConfig
+from cellquorum.stages.annotation.config import AnnotationConfig
 
 # Import the annotation-consensus configuration model.
-from cellquorum.annotation.consensus.config import AnnotationConsensusConfig
+from cellquorum.stages.annotation.consensus.config import AnnotationConsensusConfig
 
 # Import the annotation-diagnostics configuration model.
-from cellquorum.annotation.diagnostics.config import AnnotationDiagnosticsConfig
+from cellquorum.stages.annotation.diagnostics.config import AnnotationDiagnosticsConfig
 
 # Import the population-identity configuration model.
-from cellquorum.annotation.population_identity.config import PopulationIdentityConfig
+from cellquorum.stages.annotation.population_identity.config import PopulationIdentityConfig
 
 # Import the reference-mapping configuration model.
-from cellquorum.annotation.reference_mapping.config import ReferenceMappingConfig
+from cellquorum.stages.annotation.reference_mapping.config import ReferenceMappingConfig
 
 # Import the cell-cell-communication configuration model.
-from cellquorum.cell_cell_communication.config import CellCellCommunicationConfig
+from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
 
 # Import the ccc-network (topology + curvature) configuration model.
-from cellquorum.cell_cell_communication.network.config import CCCNetworkConfig
+from cellquorum.stages.cell_cell_communication.network.config import CCCNetworkConfig
 
 # Import the CCC-visualization configuration model.
-from cellquorum.cell_cell_communication.viz.config import CccVizConfig
+from cellquorum.stages.cell_cell_communication.viz.config import CccVizConfig
 
 # Import the subclustering configuration model.
-from cellquorum.clustering.subclustering.config import SubclusteringConfig
+from cellquorum.stages.clustering.subclustering.config import SubclusteringConfig
 
 # Import the differential-abundance configuration model.
-from cellquorum.comparative.differential_abundance.config import DifferentialAbundanceConfig
+from cellquorum.stages.comparative.differential_abundance.config import DifferentialAbundanceConfig
 
 # Import the differential-expression configuration model.
-from cellquorum.comparative.differential_expression.config import DifferentialExpressionConfig
+from cellquorum.stages.comparative.differential_expression.config import DifferentialExpressionConfig
 
 # Import the differential-expression-visualization configuration model.
-from cellquorum.comparative.differential_expression.viz.config import DeVizConfig
+from cellquorum.stages.comparative.differential_expression.viz.config import DeVizConfig
 
 # Import the enrichment configuration model.
-from cellquorum.comparative.enrichment.config import EnrichmentConfig
+from cellquorum.stages.comparative.enrichment.config import EnrichmentConfig
 
 # Import the enrichment-visualization configuration model.
-from cellquorum.comparative.enrichment.viz.config import EnrichmentVizConfig
+from cellquorum.stages.comparative.enrichment.viz.config import EnrichmentVizConfig
 
 # Import the multicellular-programs configuration model.
-from cellquorum.comparative.multicellular_programs.config import MulticellularProgramsConfig
+from cellquorum.stages.comparative.multicellular_programs.config import MulticellularProgramsConfig
 
 # Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
@@ -73,43 +73,43 @@ from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
 
 # Import the discovery (consensus-NMF) configuration model.
-from cellquorum.discovery.config import DiscoveryConfig
+from cellquorum.stages.discovery.config import DiscoveryConfig
 
 # Import the coexpression configuration model.
-from cellquorum.gene_regulation.coexpression.config import CoexpressionConfig
+from cellquorum.stages.gene_regulation.coexpression.config import CoexpressionConfig
 
 # Import the GRN configuration model.
-from cellquorum.gene_regulation.grn.config import GrnConfig
+from cellquorum.stages.gene_regulation.grn.config import GrnConfig
 
 # Import the perturbation configuration model.
-from cellquorum.gene_regulation.perturbation.config import PerturbationConfig
+from cellquorum.stages.gene_regulation.perturbation.config import PerturbationConfig
 
 # Import the integration-benchmark configuration model.
-from cellquorum.integration.benchmark.config import IntegrationBenchmarkConfig
+from cellquorum.stages.integration.benchmark.config import IntegrationBenchmarkConfig
 
 # Import the integration configuration model.
-from cellquorum.integration.config import IntegrationConfig
+from cellquorum.stages.integration.config import IntegrationConfig
 
 # Import the embeddings configuration model.
-from cellquorum.integration.embeddings.config import EmbeddingsConfig
+from cellquorum.stages.integration.embeddings.config import EmbeddingsConfig
 
 # Import the preprocessing configuration model.
-from cellquorum.preprocessing.config import PreprocessingConfig
+from cellquorum.stages.preprocessing.config import PreprocessingConfig
 
 # Import the feature-selection configuration model.
-from cellquorum.preprocessing.feature_selection.config import FeatureSelectionConfig
+from cellquorum.stages.preprocessing.feature_selection.config import FeatureSelectionConfig
 
 # Import the QC configuration model.
-from cellquorum.qc.config import QCConfig
+from cellquorum.stages.qc.config import QCConfig
 
 # Import the state-scoring configuration model.
-from cellquorum.state_scoring.config import StateScoringConfig
+from cellquorum.stages.state_scoring.config import StateScoringConfig
 
 # Import the trajectory configuration model.
-from cellquorum.trajectory.config import TrajectoryConfig
+from cellquorum.stages.trajectory.config import TrajectoryConfig
 
 # Import the trajectory-visualization configuration model.
-from cellquorum.trajectory.viz.config import TrajectoryVizConfig
+from cellquorum.stages.trajectory.viz.config import TrajectoryVizConfig
 
 
 class ProjectConfig(StrictBaseModel):

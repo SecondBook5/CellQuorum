@@ -30,16 +30,16 @@ from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
 
 # Import QC artifact manifest for artifact conversion tests.
-from cellquorum.qc.artifacts import QCArtifactManifest
+from cellquorum.stages.qc.artifacts import QCArtifactManifest
 
 # Import QC configuration.
-from cellquorum.qc.config import QCConfig
+from cellquorum.stages.qc.config import QCConfig
 
 # Import QC decision result container.
-from cellquorum.qc.decisions import QCDecisionResult
+from cellquorum.stages.qc.decisions import QCDecisionResult
 
 # Import QC stage utilities under test.
-from cellquorum.qc.stage import (
+from cellquorum.stages.qc.stage import (
     QCStage,
     QCStageError,
     add_metric_columns_to_axis,
@@ -921,7 +921,7 @@ def test_annotate_adata_with_qc_metrics_warns_on_preserved_columns() -> None:
     Verify annotate_adata_with_qc_metrics returns warnings for preserved columns.
     """
 
-    from cellquorum.qc.metrics import QCMetricsResult
+    from cellquorum.stages.qc.metrics import QCMetricsResult
 
     # Build an adata whose obs already carries a metric-named column.
     adata = ad.AnnData(

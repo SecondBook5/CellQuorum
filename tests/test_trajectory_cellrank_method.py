@@ -11,8 +11,8 @@ import pytest
 import scanpy as sc
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory import _cellrank
-from cellquorum.trajectory.cellrank_method import CellRankMethod
+from cellquorum.stages.trajectory import _cellrank
+from cellquorum.stages.trajectory.cellrank_method import CellRankMethod
 
 cr = pytest.importorskip("cellrank")
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from cellquorum.gene_regulation.coexpression.module_umap_plot import (
+from cellquorum.stages.gene_regulation.coexpression.module_umap_plot import (
     plot_module_umap,
 )
 

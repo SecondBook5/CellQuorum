@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.core.stage import StageArtifact
-from cellquorum.trajectory.save import write_cellrank_h5ad
+from cellquorum.stages.trajectory.save import write_cellrank_h5ad
 
 
 def test_write_cellrank_h5ad(tmp_path):

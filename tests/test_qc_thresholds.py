@@ -12,10 +12,10 @@ import pandas as pd
 import pytest
 
 # Import QC configuration models used by threshold construction.
-from cellquorum.qc.config import QCConfig
+from cellquorum.stages.qc.config import QCConfig
 
 # Import QC threshold utilities under test.
-from cellquorum.qc.thresholds import (
+from cellquorum.stages.qc.thresholds import (
     MadBounds,
     QCThreshold,
     QCThresholdError,

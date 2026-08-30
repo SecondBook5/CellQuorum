@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_trajectory_defaults():
-    from cellquorum.trajectory.config import TrajectoryConfig
+    from cellquorum.stages.trajectory.config import TrajectoryConfig
 
     c = TrajectoryConfig()
     assert c.enabled is True
@@ -35,7 +35,7 @@ def test_trajectory_strict_rejects_unknown_field():
     import pytest
     from pydantic import ValidationError
 
-    from cellquorum.trajectory.config import TrajectoryConfig
+    from cellquorum.stages.trajectory.config import TrajectoryConfig
 
     with pytest.raises(ValidationError):
         TrajectoryConfig(not_a_field=1)
@@ -45,23 +45,23 @@ def test_velocity_config_strict_nested():
     import pytest
     from pydantic import ValidationError
 
-    from cellquorum.trajectory.config import VelocityConfig
+    from cellquorum.stages.trajectory.config import VelocityConfig
 
     with pytest.raises(ValidationError):
         VelocityConfig(nope=1)
 
 
 def test_velocity_whole_object_defaults_off():
-    from cellquorum.trajectory.config import VelocityConfig
-    from cellquorum.trajectory.stage import _VELOCITY_KEYS
+    from cellquorum.stages.trajectory.config import VelocityConfig
+    from cellquorum.stages.trajectory.stage import _VELOCITY_KEYS
 
     assert VelocityConfig().whole_object is False
     assert "whole_object" in _VELOCITY_KEYS
 
 
 def test_cellrank_new_kernel_fields_default_off():
-    from cellquorum.trajectory.config import CellRankConfig
-    from cellquorum.trajectory.stage import _CELLRANK_KEYS
+    from cellquorum.stages.trajectory.config import CellRankConfig
+    from cellquorum.stages.trajectory.stage import _CELLRANK_KEYS
 
     c = CellRankConfig()
     assert c.use_velocity is False

@@ -21,10 +21,10 @@ import pytest
 import scipy.sparse as sp
 
 # Import QC configuration models used by metric calculation.
-from cellquorum.qc.config import QCConfig
+from cellquorum.stages.qc.config import QCConfig
 
 # Import feature-mask column constants used in low-level metric tests.
-from cellquorum.qc.features import (
+from cellquorum.stages.qc.features import (
     CUSTOM_EXCLUDE_COLUMN,
     HEMOGLOBIN_COLUMN,
     MITO_COLUMN,
@@ -33,7 +33,7 @@ from cellquorum.qc.features import (
 )
 
 # Import QC metric utilities under test.
-from cellquorum.qc.metrics import (
+from cellquorum.stages.qc.metrics import (
     QCMetricsError,
     QCMetricsResult,
     build_feature_masks_for_names,

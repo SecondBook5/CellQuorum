@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from cellquorum.backends.compute import gpu_compute_available
-from cellquorum.clustering.neighbors_leiden import LeidenMethod
+from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
 
 pytestmark = pytest.mark.skipif(
     not gpu_compute_available(), reason="rapids-singlecell/cupy unavailable"

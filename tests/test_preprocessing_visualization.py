@@ -9,7 +9,7 @@ import anndata as ad
 import numpy as np
 import scipy.sparse as sp
 
-from cellquorum.preprocessing.visualization import write_normalization_figures
+from cellquorum.stages.preprocessing.visualization import write_normalization_figures
 
 
 def make_test_adata_with_normalization() -> ad.AnnData:

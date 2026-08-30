@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cellquorum.gene_regulation.perturbation.config import PerturbationConfig
+from cellquorum.stages.gene_regulation.perturbation.config import PerturbationConfig
 
 
 def test_defaults() -> None:

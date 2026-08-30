@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory import compute
-from cellquorum.trajectory.save import write_whole_object_velocity_h5ad
-from cellquorum.trajectory.velocity_method import VelocityMethod
+from cellquorum.stages.trajectory import compute
+from cellquorum.stages.trajectory.save import write_whole_object_velocity_h5ad
+from cellquorum.stages.trajectory.velocity_method import VelocityMethod
 
 
 def _adata(n=40, g=15):
@@ -97,7 +97,7 @@ def _stamp_velocity(sub, **kwargs):
 def _patch_looms(monkeypatch, layered: ad.AnnData):
     """Make reconcile_looms return a layered velo_adata without real looms."""
     monkeypatch.setattr(
-        "cellquorum.trajectory.velocity_method.reconcile_looms",
+        "cellquorum.stages.trajectory.velocity_method.reconcile_looms",
         lambda adata, manifest, **k: (layered, ["stubbed looms"]),
     )
 

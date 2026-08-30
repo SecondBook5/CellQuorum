@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cellquorum.trajectory.config import CellRankConfig, TrajectoryConfig
+from cellquorum.stages.trajectory.config import CellRankConfig, TrajectoryConfig
 
 
 def test_cellrank_config_defaults():

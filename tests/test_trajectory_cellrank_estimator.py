@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import scanpy as sc
 
-from cellquorum.trajectory import _cellrank
+from cellquorum.stages.trajectory import _cellrank
 
 cr = pytest.importorskip("cellrank")
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.differential_expression.pseudobulk import (
+from cellquorum.stages.comparative.differential_expression.pseudobulk import (
     PseudobulkResult,
     resolve_donor_pairing,
 )

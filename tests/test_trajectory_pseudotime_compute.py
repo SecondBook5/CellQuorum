@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import scanpy as sc
 
-from cellquorum.trajectory import _pseudotime as pt
+from cellquorum.stages.trajectory import _pseudotime as pt
 
 
 def _adata(n=120, d=10):

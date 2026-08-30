@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.contracts import set_layer_tag
-from cellquorum.discovery.nmf_method import NmfMethod
-from cellquorum.discovery.stage import DiscoveryStage
+from cellquorum.stages.discovery.nmf_method import NmfMethod
+from cellquorum.stages.discovery.stage import DiscoveryStage
 from cellquorum.methods.base import MethodSkip
 
 LAYER = "cellquorum_normalized"

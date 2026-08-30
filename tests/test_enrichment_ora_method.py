@@ -7,7 +7,7 @@ import pandas as pd
 from scipy.stats import hypergeom
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.comparative.enrichment.ora_method import OraMethod
+from cellquorum.stages.comparative.enrichment.ora_method import OraMethod
 from cellquorum.methods.base import MethodSkip
 
 # ORA is now a direct hypergeometric test (no decoupler dc.mt.ora call), so only
@@ -48,7 +48,7 @@ def _write_de(tmp, genes, up_genes, down_genes):
 
 def _patch_get_net(monkeypatch, net):
     monkeypatch.setattr(
-        "cellquorum.comparative.enrichment.ora_method.get_net",
+        "cellquorum.stages.comparative.enrichment.ora_method.get_net",
         lambda collection, **kw: net.copy(),
     )
 

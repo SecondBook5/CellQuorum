@@ -3,8 +3,8 @@ import numpy as np
 import scanpy as sc
 from matplotlib.figure import Figure
 
-from cellquorum.integration.embeddings import plots
-from cellquorum.integration.embeddings.plots import apply_theme, figure_artifacts, save_figure
+from cellquorum.stages.integration.embeddings import plots
+from cellquorum.stages.integration.embeddings.plots import apply_theme, figure_artifacts, save_figure
 
 
 def _adata_umap_paga():

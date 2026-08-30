@@ -7,7 +7,7 @@ import numpy as np
 
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
-from cellquorum.trajectory.viz.stage import TrajectoryVizStage
+from cellquorum.stages.trajectory.viz.stage import TrajectoryVizStage
 
 
 def test_config_exposes_trajectory_viz_defaults():

@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from cellquorum.preprocessing.config import NormalizationConfig
-from cellquorum.preprocessing.normalization import (
+from cellquorum.stages.preprocessing.config import NormalizationConfig
+from cellquorum.stages.preprocessing.normalization import (
     NormalizationResult,
     PreprocessingNormalizationError,
     normalize_adata,

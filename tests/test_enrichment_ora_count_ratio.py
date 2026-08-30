@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.enrichment.ora_method import OraMethod
+from cellquorum.stages.comparative.enrichment.ora_method import OraMethod
 
 
 class _Paths:
@@ -66,7 +66,7 @@ def _patch_get_net(monkeypatch, gmt_path):
         return pd.DataFrame(rows)
 
     monkeypatch.setattr(
-        "cellquorum.comparative.enrichment.ora_method.get_net",
+        "cellquorum.stages.comparative.enrichment.ora_method.get_net",
         mock_get_net,
     )
 

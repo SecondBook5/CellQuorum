@@ -9,8 +9,8 @@ import pandas as pd
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.stage import StageResult
-from cellquorum.preprocessing.config import NormalizationConfig, PreprocessingConfig
-from cellquorum.preprocessing.stage import (
+from cellquorum.stages.preprocessing.config import NormalizationConfig, PreprocessingConfig
+from cellquorum.stages.preprocessing.stage import (
     PreprocessingStage,
 )
 
@@ -217,7 +217,7 @@ def test_preprocessing_stage_output_adata_has_counts_layer(tmp_path):
 def test_preprocessing_stage_disabled_normalization_includes_shape_metrics(tmp_path):
     """Test that disabled normalization includes n_cells and n_genes in metrics."""
     # Build config with normalization disabled but preprocessing enabled.
-    from cellquorum.preprocessing.config import NormalizationConfig
+    from cellquorum.stages.preprocessing.config import NormalizationConfig
 
     config = CellQuorumConfig(
         preprocessing=PreprocessingConfig(

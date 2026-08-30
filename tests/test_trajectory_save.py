@@ -3,7 +3,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
-from cellquorum.trajectory.save import safe_name, write_velocity_h5ad
+from cellquorum.stages.trajectory.save import safe_name, write_velocity_h5ad
 
 
 def test_safe_name_sanitizes():

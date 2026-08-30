@@ -8,7 +8,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.enrichment.viz.viz_methods import ActivityVizMethod
+from cellquorum.stages.comparative.enrichment.viz.viz_methods import ActivityVizMethod
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.methods.base import MethodSkip
 

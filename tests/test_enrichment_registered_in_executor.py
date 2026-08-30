@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.comparative.enrichment.stage import EnrichmentStage
+from cellquorum.stages.comparative.enrichment.stage import EnrichmentStage
 from cellquorum.core.executor import build_default_stage_registry
 
 

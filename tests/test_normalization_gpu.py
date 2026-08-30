@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from cellquorum.preprocessing.config import NormalizationConfig
-from cellquorum.preprocessing.normalization import normalize_adata
+from cellquorum.stages.preprocessing.config import NormalizationConfig
+from cellquorum.stages.preprocessing.normalization import normalize_adata
 
 
 def _scclr_backend_or_skip():

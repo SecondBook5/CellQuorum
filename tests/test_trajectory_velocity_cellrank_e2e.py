@@ -25,9 +25,9 @@ pytest.importorskip("scvelo")
 pytest.importorskip("cellrank")
 
 from cellquorum.methods.base import MethodSkip  # noqa: E402
-from cellquorum.trajectory import compute  # noqa: E402
-from cellquorum.trajectory.cellrank_method import CellRankMethod  # noqa: E402
-from cellquorum.trajectory.velocity_method import VelocityMethod  # noqa: E402
+from cellquorum.stages.trajectory import compute  # noqa: E402
+from cellquorum.stages.trajectory.cellrank_method import CellRankMethod  # noqa: E402
+from cellquorum.stages.trajectory.velocity_method import VelocityMethod  # noqa: E402
 
 
 def _make_adata(n=120):
@@ -133,7 +133,7 @@ def test_velocity_to_cellrank_velocity_kernel_chain(tmp_path, monkeypatch):
     # Stub loom I/O + velocity compute so the whole_object.h5ad is real but cheap.
     velo_layered = a.copy()
     monkeypatch.setattr(
-        "cellquorum.trajectory.velocity_method.reconcile_looms",
+        "cellquorum.stages.trajectory.velocity_method.reconcile_looms",
         lambda adata, manifest, **k: (velo_layered, ["stubbed looms"]),
     )
     monkeypatch.setattr(compute, "compute_velocity", _stamp_velocity)

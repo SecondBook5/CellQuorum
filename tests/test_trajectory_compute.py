@@ -4,7 +4,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.trajectory import compute
+from cellquorum.stages.trajectory import compute
 
 
 def _adata_with_reps():

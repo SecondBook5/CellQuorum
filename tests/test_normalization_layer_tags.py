@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from cellquorum.core.contracts import DataContract, get_layer_tag
-from cellquorum.preprocessing.config import NormalizationConfig
-from cellquorum.preprocessing.normalization import normalize_adata
+from cellquorum.stages.preprocessing.config import NormalizationConfig
+from cellquorum.stages.preprocessing.normalization import normalize_adata
 
 
 def _counts_adata(seed=0):

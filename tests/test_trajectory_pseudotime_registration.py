@@ -5,19 +5,19 @@ from __future__ import annotations
 import types
 
 from cellquorum.methods.registry import METHOD_REGISTRY
-from cellquorum.trajectory.config import DptConfig, PalantirConfig, TrajectoryConfig
-from cellquorum.trajectory.stage import TrajectoryStage
+from cellquorum.stages.trajectory.config import DptConfig, PalantirConfig, TrajectoryConfig
+from cellquorum.stages.trajectory.stage import TrajectoryStage
 
 
 def test_dpt_and_palantir_registered():
-    import cellquorum.trajectory  # noqa: F401 — trigger registration
+    import cellquorum.stages.trajectory  # noqa: F401 — trigger registration
 
     assert METHOD_REGISTRY.has("trajectory", "dpt")
     assert METHOD_REGISTRY.has("trajectory", "palantir")
 
 
 def test_dpt_only_run_does_not_inherit_velocity_shared_keys():
-    from cellquorum.trajectory.config import VelocityConfig
+    from cellquorum.stages.trajectory.config import VelocityConfig
 
     traj = TrajectoryConfig(
         methods=[{"method": "dpt"}],

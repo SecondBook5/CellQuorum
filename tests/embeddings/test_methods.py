@@ -4,8 +4,8 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from cellquorum.integration.embeddings.config import MagicConfig, OverlayConfig
-from cellquorum.integration.embeddings.methods import (
+from cellquorum.stages.integration.embeddings.config import MagicConfig, OverlayConfig
+from cellquorum.stages.integration.embeddings.methods import (
     CategoricalEmbeddingMethod,
     ContinuousOverlayMethod,
     PagaMethod,

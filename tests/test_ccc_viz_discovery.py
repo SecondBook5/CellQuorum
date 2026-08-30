@@ -17,7 +17,7 @@ def _canon(sample="s1"):
 
 
 def test_load_canonical_prefers_uns_liana(tmp_path):
-    from cellquorum.cell_cell_communication.viz._io import load_canonical_lr_sources
+    from cellquorum.stages.cell_cell_communication.viz._io import load_canonical_lr_sources
 
     liana_res = pd.DataFrame(
         {
@@ -43,7 +43,7 @@ def test_load_canonical_prefers_uns_liana(tmp_path):
 
 
 def test_load_canonical_reads_csvs_in_order(tmp_path):
-    from cellquorum.cell_cell_communication.viz._io import load_canonical_lr_sources
+    from cellquorum.stages.cell_cell_communication.viz._io import load_canonical_lr_sources
 
     (tmp_path / "cell_cell_communication").mkdir()
     _canon().to_csv(tmp_path / "cell_cell_communication" / "liana_ranks.csv", index=False)
@@ -54,13 +54,13 @@ def test_load_canonical_reads_csvs_in_order(tmp_path):
 
 
 def test_load_canonical_empty_when_none(tmp_path):
-    from cellquorum.cell_cell_communication.viz._io import load_canonical_lr_sources
+    from cellquorum.stages.cell_cell_communication.viz._io import load_canonical_lr_sources
 
     assert load_canonical_lr_sources(tmp_path, None) == []
 
 
 def test_load_canonical_skips_unreadable(tmp_path):
-    from cellquorum.cell_cell_communication.viz._io import load_canonical_lr_sources
+    from cellquorum.stages.cell_cell_communication.viz._io import load_canonical_lr_sources
 
     (tmp_path / "mnn_canonical_lr.csv").write_bytes(b"\xff\xfe\x00\x01 not a csv \x00\x00")
     # unreadable/misparsed -> omitted, never raises
@@ -69,7 +69,7 @@ def test_load_canonical_skips_unreadable(tmp_path):
 
 
 def test_load_topology_and_curvature(tmp_path):
-    from cellquorum.cell_cell_communication.viz._io import load_curvature, load_topology
+    from cellquorum.stages.cell_cell_communication.viz._io import load_curvature, load_topology
 
     d = tmp_path / "ccc_network"
     d.mkdir()

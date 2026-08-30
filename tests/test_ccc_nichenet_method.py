@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
-from cellquorum.cell_cell_communication.nichenet_method import NicheNetMethod
+from cellquorum.stages.cell_cell_communication.nichenet_method import NicheNetMethod
 from cellquorum.methods.base import MethodSkip
 
 

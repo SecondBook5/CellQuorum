@@ -34,52 +34,52 @@ from cellquorum.core.stage_catalog import (
 
 # --- Implemented stages (import fires @register_stage) ---
 # Backbone: QC → preprocessing → dim-reduction → integration.
-import cellquorum.ambient_correction.stage  # noqa: F401
-import cellquorum.qc.stage  # noqa: F401
-import cellquorum.preprocessing.stage  # noqa: F401
-import cellquorum.preprocessing.feature_selection.stage  # noqa: F401
-import cellquorum.preprocessing.dimensionality.stage  # noqa: F401
-import cellquorum.integration.stage  # noqa: F401
+import cellquorum.stages.ambient_correction.stage  # noqa: F401
+import cellquorum.stages.qc.stage  # noqa: F401
+import cellquorum.stages.preprocessing.stage  # noqa: F401
+import cellquorum.stages.preprocessing.feature_selection.stage  # noqa: F401
+import cellquorum.stages.preprocessing.dimensionality.stage  # noqa: F401
+import cellquorum.stages.integration.stage  # noqa: F401
 
 # Clustering → annotation → sub-structure → label reconciliation.
-import cellquorum.clustering.stage  # noqa: F401
-import cellquorum.annotation.stage  # noqa: F401
-import cellquorum.clustering.subclustering.stage  # noqa: F401
-import cellquorum.annotation.adjudication.stage  # noqa: F401
-import cellquorum.annotation.reference_mapping.stage  # noqa: F401
-import cellquorum.annotation.consensus.stage  # noqa: F401
+import cellquorum.stages.clustering.stage  # noqa: F401
+import cellquorum.stages.annotation.stage  # noqa: F401
+import cellquorum.stages.clustering.subclustering.stage  # noqa: F401
+import cellquorum.stages.annotation.adjudication.stage  # noqa: F401
+import cellquorum.stages.annotation.reference_mapping.stage  # noqa: F401
+import cellquorum.stages.annotation.consensus.stage  # noqa: F401
 
 # Diagnostics run after reference mapping so transferred labels can be audited.
-import cellquorum.annotation.diagnostics.stage  # noqa: F401
+import cellquorum.stages.annotation.diagnostics.stage  # noqa: F401
 
 # Population identity is evidence-driven (reference > annotation > clusters).
-import cellquorum.annotation.population_identity.stage  # noqa: F401
-import cellquorum.integration.benchmark.stage  # noqa: F401
+import cellquorum.stages.annotation.population_identity.stage  # noqa: F401
+import cellquorum.stages.integration.benchmark.stage  # noqa: F401
 
 # State scoring and de-novo discovery run on the annotated object, before embeddings.
-import cellquorum.state_scoring.stage  # noqa: F401
-import cellquorum.discovery.stage  # noqa: F401
-import cellquorum.integration.embeddings.stage  # noqa: F401
+import cellquorum.stages.state_scoring.stage  # noqa: F401
+import cellquorum.stages.discovery.stage  # noqa: F401
+import cellquorum.stages.integration.embeddings.stage  # noqa: F401
 
 # Comparison + discovery-tail tracks.
-import cellquorum.comparative.differential_expression.stage  # noqa: F401
-import cellquorum.comparative.differential_abundance.stage  # noqa: F401
-import cellquorum.comparative.enrichment.stage  # noqa: F401
-import cellquorum.comparative.enrichment.viz.stage  # noqa: F401
-import cellquorum.comparative.differential_expression.viz.stage  # noqa: F401
-import cellquorum.gene_regulation.coexpression.stage  # noqa: F401
-import cellquorum.gene_regulation.grn.stage  # noqa: F401
-import cellquorum.gene_regulation.perturbation.stage  # noqa: F401
-import cellquorum.trajectory.stage  # noqa: F401
-import cellquorum.trajectory.viz.stage  # noqa: F401
+import cellquorum.stages.comparative.differential_expression.stage  # noqa: F401
+import cellquorum.stages.comparative.differential_abundance.stage  # noqa: F401
+import cellquorum.stages.comparative.enrichment.stage  # noqa: F401
+import cellquorum.stages.comparative.enrichment.viz.stage  # noqa: F401
+import cellquorum.stages.comparative.differential_expression.viz.stage  # noqa: F401
+import cellquorum.stages.gene_regulation.coexpression.stage  # noqa: F401
+import cellquorum.stages.gene_regulation.grn.stage  # noqa: F401
+import cellquorum.stages.gene_regulation.perturbation.stage  # noqa: F401
+import cellquorum.stages.trajectory.stage  # noqa: F401
+import cellquorum.stages.trajectory.viz.stage  # noqa: F401
 
 # CCC chain runs producer-before-consumer: communication writes the LR tables,
 # ccc_network derives topology/curvature, ccc_viz renders from both and MUST be
 # last. multicellular_programs sits alongside the CCC track.
-import cellquorum.cell_cell_communication.stage  # noqa: F401
-import cellquorum.comparative.multicellular_programs.stage  # noqa: F401
-import cellquorum.cell_cell_communication.network.stage  # noqa: F401
-import cellquorum.cell_cell_communication.viz.stage  # noqa: F401
+import cellquorum.stages.cell_cell_communication.stage  # noqa: F401
+import cellquorum.stages.comparative.multicellular_programs.stage  # noqa: F401
+import cellquorum.stages.cell_cell_communication.network.stage  # noqa: F401
+import cellquorum.stages.cell_cell_communication.viz.stage  # noqa: F401
 # isort: on
 
 # --- Planned-but-unimplemented stages (no class to decorate) ---

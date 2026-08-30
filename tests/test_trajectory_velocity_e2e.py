@@ -47,7 +47,7 @@ class _Ctx:
 
 
 def test_real_loom_velocity_pipeline(tmp_path):
-    from cellquorum.trajectory.velocity_method import VelocityMethod
+    from cellquorum.stages.trajectory.velocity_method import VelocityMethod
 
     adata = ad.read_h5ad(H5AD)
     grouping = "cell_type" if "cell_type" in adata.obs else adata.obs.columns[0]

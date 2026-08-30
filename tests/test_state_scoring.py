@@ -11,10 +11,10 @@ import pytest
 
 from cellquorum.core.contracts import set_layer_tag
 from cellquorum.methods.base import MethodSkip
-from cellquorum.state_scoring.aucell_method import AucellMethod
-from cellquorum.state_scoring.programs import STATE_PROGRAMS, read_gmt, resolve_programs
-from cellquorum.state_scoring.score_genes_method import ScoreGenesMethod
-from cellquorum.state_scoring.stage import StateScoringStage
+from cellquorum.stages.state_scoring.aucell_method import AucellMethod
+from cellquorum.stages.state_scoring.programs import STATE_PROGRAMS, read_gmt, resolve_programs
+from cellquorum.stages.state_scoring.score_genes_method import ScoreGenesMethod
+from cellquorum.stages.state_scoring.stage import StateScoringStage
 
 LAYER = "cellquorum_normalized"
 

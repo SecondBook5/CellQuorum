@@ -13,7 +13,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.enrichment.stage import EnrichmentStage
+from cellquorum.stages.comparative.enrichment.stage import EnrichmentStage
 from cellquorum.config.design import DesignConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.contracts.layer_tags import set_layer_tag

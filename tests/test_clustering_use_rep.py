@@ -6,7 +6,7 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.clustering.neighbors_leiden import LeidenMethod
+from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
 from cellquorum.core.contracts import CellQuorumContractError
 
 

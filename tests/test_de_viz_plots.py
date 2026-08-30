@@ -5,7 +5,7 @@ matplotlib.use("Agg")
 import numpy as np
 import pandas as pd
 
-from cellquorum.comparative.differential_expression.viz import plots
+from cellquorum.stages.comparative.differential_expression.viz import plots
 
 
 def _demo_df():

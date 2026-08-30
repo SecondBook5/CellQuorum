@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cellquorum.trajectory.config import DptConfig, PalantirConfig, TrajectoryConfig
+from cellquorum.stages.trajectory.config import DptConfig, PalantirConfig, TrajectoryConfig
 
 
 def test_dpt_config_defaults():

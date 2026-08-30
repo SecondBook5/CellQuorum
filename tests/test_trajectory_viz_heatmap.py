@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 import numpy as np
 
-from cellquorum.trajectory.viz import heatmap
+from cellquorum.stages.trajectory.viz import heatmap
 
 
 def test_bin_masks_sorts_and_bins():

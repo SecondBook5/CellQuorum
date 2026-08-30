@@ -11,10 +11,10 @@ import scanpy as sc
 
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory import _pseudotime
-from cellquorum.trajectory.config import CellRankConfig, DptConfig, TrajectoryConfig
-from cellquorum.trajectory.dpt_method import DptMethod
-from cellquorum.trajectory.stage import TrajectoryStage
+from cellquorum.stages.trajectory import _pseudotime
+from cellquorum.stages.trajectory.config import CellRankConfig, DptConfig, TrajectoryConfig
+from cellquorum.stages.trajectory.dpt_method import DptMethod
+from cellquorum.stages.trajectory.stage import TrajectoryStage
 
 
 def _adata(n=200):

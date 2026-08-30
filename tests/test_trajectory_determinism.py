@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("scvelo")
 pytest.importorskip("loompy")
 
-from cellquorum.trajectory.velocity_method import VelocityMethod  # noqa: E402
+from cellquorum.stages.trajectory.velocity_method import VelocityMethod  # noqa: E402
 
 
 class _Paths:

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.trajectory.velocity_method import VelocityMethod
+from cellquorum.stages.trajectory.velocity_method import VelocityMethod
 
 
 class _Paths:

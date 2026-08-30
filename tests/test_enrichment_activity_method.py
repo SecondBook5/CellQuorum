@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.comparative.enrichment.activity_method import ActivityMethod
+from cellquorum.stages.comparative.enrichment.activity_method import ActivityMethod
 from cellquorum.methods.base import MethodSkip
 
 # Exercises the REAL dc.mt.ulm, which drops all-zero observations (empty=True).
@@ -55,7 +55,7 @@ def _weighted_net():
 
 def _patch_get_net(monkeypatch, net):
     monkeypatch.setattr(
-        "cellquorum.comparative.enrichment.activity_method.get_net",
+        "cellquorum.stages.comparative.enrichment.activity_method.get_net",
         lambda collection, **kw: net.copy(),
     )
 

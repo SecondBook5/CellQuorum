@@ -4,8 +4,8 @@ import pytest
 
 from cellquorum.core.contracts.exceptions import CellQuorumContractError
 from cellquorum.core.contracts.magic_guard import assert_not_imputed
-from cellquorum.integration.embeddings import overlay
-from cellquorum.integration.embeddings.config import OverlayConfig
+from cellquorum.stages.integration.embeddings import overlay
+from cellquorum.stages.integration.embeddings.config import OverlayConfig
 
 
 def _adata():

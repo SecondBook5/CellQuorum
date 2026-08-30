@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
-from cellquorum.cell_cell_communication.multinichenet_method import MultiNicheNetMethod
+from cellquorum.stages.cell_cell_communication.multinichenet_method import MultiNicheNetMethod
 from cellquorum.methods.base import MethodSkip
 
 
@@ -93,7 +93,7 @@ def test_multinichenet_skips_without_prior_models(tmp_path, mock_context):
 
 def test_multinichenet_skips_without_r_package(tmp_path, mock_context, monkeypatch):
     monkeypatch.setattr(
-        "cellquorum.cell_cell_communication.multinichenet_method.shutil.which",
+        "cellquorum.stages.cell_cell_communication.multinichenet_method.shutil.which",
         lambda name: "/usr/bin/Rscript",
     )
     adata = _toy_adata()

@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from cellquorum.core.exceptions import CellQuorumStageError
-from cellquorum.integration.scanvi_methods import ScANVIMethod
+from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
 from cellquorum.methods.registry import METHOD_REGISTRY
 
 
@@ -49,7 +49,7 @@ class _Ctx:
 
 def test_scanvi_is_registered():
     """scANVI must be resolvable from the method registry (import triggers it)."""
-    import cellquorum.integration  # noqa: F401  (registration side effect)
+    import cellquorum.stages.integration  # noqa: F401  (registration side effect)
 
     method_cls = METHOD_REGISTRY.get("integration", "scanvi")
     assert method_cls is ScANVIMethod

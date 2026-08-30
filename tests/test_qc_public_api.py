@@ -12,31 +12,31 @@ import numpy as np
 import pandas as pd
 
 # Import the public QC package API.
-import cellquorum.qc as qc
+import cellquorum.stages.qc as qc
 
 # Import artifact objects for identity checks.
-from cellquorum.qc.artifacts import QCArtifactManifest, write_qc_artifacts
+from cellquorum.stages.qc.artifacts import QCArtifactManifest, write_qc_artifacts
 
 # Import config objects for identity checks.
-from cellquorum.qc.config import QCConfig, validate_qc_config_dict
+from cellquorum.stages.qc.config import QCConfig, validate_qc_config_dict
 
 # Import decision objects for identity checks.
-from cellquorum.qc.decisions import QCDecisionResult, build_qc_decisions
+from cellquorum.stages.qc.decisions import QCDecisionResult, build_qc_decisions
 
 # Import feature objects for identity checks.
-from cellquorum.qc.features import MITO_COLUMN, build_feature_masks
+from cellquorum.stages.qc.features import MITO_COLUMN, build_feature_masks
 
 # Import metric objects for identity checks.
-from cellquorum.qc.metrics import QCMetricsResult, calculate_qc_metrics
+from cellquorum.stages.qc.metrics import QCMetricsResult, calculate_qc_metrics
 
 # Import stage objects for identity checks.
-from cellquorum.qc.stage import QCStage
+from cellquorum.stages.qc.stage import QCStage
 
 # Import threshold objects for identity checks.
-from cellquorum.qc.thresholds import QCThresholdResult, build_qc_thresholds
+from cellquorum.stages.qc.thresholds import QCThresholdResult, build_qc_thresholds
 
 # Import validation objects for identity checks.
-from cellquorum.qc.validation import QCInputValidationSummary, validate_qc_input_adata
+from cellquorum.stages.qc.validation import QCInputValidationSummary, validate_qc_input_adata
 
 
 def make_public_api_adata() -> ad.AnnData:
@@ -234,7 +234,7 @@ def test_qc_public_api_stage_can_be_instantiated() -> None:
     Verify QCStage can be instantiated from the public API.
 
     This confirms downstream code can access the pipeline stage as
-    cellquorum.qc.QCStage.
+    cellquorum.stages.qc.QCStage.
     """
 
     # Build a QC stage through the public API.

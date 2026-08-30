@@ -13,8 +13,8 @@ pytest.importorskip("palantir")
 
 from cellquorum.core.stage import StageResult  # noqa: E402
 from cellquorum.methods.base import MethodSkip  # noqa: E402
-from cellquorum.trajectory import _pseudotime  # noqa: E402
-from cellquorum.trajectory.palantir_method import PalantirMethod  # noqa: E402
+from cellquorum.stages.trajectory import _pseudotime  # noqa: E402
+from cellquorum.stages.trajectory.palantir_method import PalantirMethod  # noqa: E402
 
 
 def _adata(n=200):

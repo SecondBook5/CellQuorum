@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from cellquorum.qc.config_validators import (
+from cellquorum.stages.qc.config_validators import (
     coerce_float_in_range,
     coerce_non_negative_int,
     coerce_percent_top,

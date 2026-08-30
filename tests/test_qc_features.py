@@ -15,10 +15,10 @@ import pandas as pd
 import pytest
 
 # Import QC feature-pattern configuration.
-from cellquorum.qc.config import QCFeaturePatternConfig
+from cellquorum.stages.qc.config import QCFeaturePatternConfig
 
 # Import feature annotation utilities under test.
-from cellquorum.qc.features import (
+from cellquorum.stages.qc.features import (
     CUSTOM_EXCLUDE_COLUMN,
     HEMOGLOBIN_COLUMN,
     MITO_COLUMN,
