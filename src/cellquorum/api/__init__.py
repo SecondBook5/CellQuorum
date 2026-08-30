@@ -9,8 +9,8 @@ and ``cq.evidence`` remain the canonical access paths.
 
 The former top-level modules (``cellquorum.tl``, ``cellquorum.pp``,
 ``cellquorum.diag``, ``cellquorum.evidence``, ``cellquorum._notebook``, and
-the ``cellquorum.api`` *module*) now live here; thin re-export shims at those
-old paths keep every prior import working unchanged.
+the ``cellquorum.api`` *module*) now live here. The old top-level shim paths
+have been removed — there is exactly one canonical import path per public thing.
 """
 
 from __future__ import annotations

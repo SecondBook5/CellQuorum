@@ -70,19 +70,6 @@ def test_utils_accessible_as_top_level_attribute():
     assert "utils" in cellquorum.__all__
 
 
-def test_old_deep_import_paths_still_resolve_to_same_objects():
-    # Zero downstream breakage: the pre-consolidation deep paths the 14 analysis
-    # scripts use keep working and point at the very same objects utils exposes.
-    from cellquorum import utils
-    from cellquorum.differential_expression.pseudobulk import (
-        aggregate_pseudobulk as old_pb,
-    )
-    from cellquorum.enrichment.ranking import de_table_to_ranking as old_rank
-
-    assert old_rank is utils.de_table_to_ranking
-    assert old_pb is utils.aggregate_pseudobulk
-
-
 def test_importing_utils_does_not_eagerly_import_decoupler():
     # get_net lazy-imports decoupler inside the call; merely exposing it publicly
     # must not drag a heavy optional dependency in at import time.

@@ -20,9 +20,9 @@ reach back into the internal modules to type-annotate or handle results.
 
 These names are **re-exports of the canonical implementations** in
 :mod:`cellquorum.comparative`, not copies: a fix to the engine is a fix here. The
-pre-consolidation deep-import paths (``cellquorum.enrichment.ranking`` etc.) also
-still resolve to the same objects via their own compatibility shims, so existing
-scripts keep working unchanged. Importing this module pulls in no heavy optional
+pre-consolidation deep-import paths (``cellquorum.enrichment.ranking`` etc.) have
+been removed — import from :mod:`cellquorum.utils` or :mod:`cellquorum.comparative`
+instead. Importing this module pulls in no heavy optional
 dependency — ``get_net`` lazy-imports ``decoupler`` only when called — preserving
 the engine-wide skip-not-crash invariant.
 """
