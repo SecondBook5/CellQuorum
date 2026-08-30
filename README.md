@@ -17,6 +17,22 @@
 
 ---
 
+## START HERE
+
+**New to the codebase?** Begin with these files:
+
+1. **Entry point:** The CLI lives in `cli/app.py` — look for the `main()` function that launches the `cellquorum` / `cq` command. The programmatic API lives in `api/pipeline.py` — `run_pipeline` is the main Python entry point.
+
+2. **Run flow:** Read `docs/how-it-works.md` for a complete file-by-file walkthrough of one run: config validation → backend detection → planning → data loading → stage execution → provenance. It names every file on the control-flow spine.
+
+3. **Configuration:** The `config/models.py` file defines the entire configuration schema as Pydantic models — `CellQuorumConfig` is the top-level contract. See `docs/configuration.md` for a section-by-section reference.
+
+4. **Architecture:** `docs/architecture.md` explains the design principles, the execution model, and how the pieces fit together.
+
+**One-line run trace:** `cli/app.py:main` → validate config (`config/models.py`) → build plan (`core/planner.py` reads `core/stage_catalog.py`) → load data (`io/manifest.py`) → execute stages (`core/executor.py` dispatches to `stages/<stage>/stage.py`, writes via `core/stage_artifact_writer.py`) → final context with annotated `adata`.
+
+---
+
 ## Overview
 
 CellQuorum turns an advanced single-cell RNA-seq analysis into a **single validated
