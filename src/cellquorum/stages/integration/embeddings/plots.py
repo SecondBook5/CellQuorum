@@ -19,10 +19,9 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from cellquorum.core.stage import StageArtifact
-from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE as _PALETTE
 from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
-from cellquorum.visualization.figstyle import apply_cellquorum_theme
+from cellquorum.visualization.figstyle import apply_cellquorum_theme, distinct_palette
 
 # Single source of truth: tag -> obsm key + axis labels.
 EMBEDDING_REGISTRY: dict[str, dict] = {
@@ -48,6 +47,47 @@ def _style_axes(ax: Axes, axis_labels: tuple[str, str]) -> None:
     ax.annotate("", xy=(x0, y0 + dy), xytext=(x0, y0), arrowprops=arrow)
     ax.text(x0 + dx * 1.1, y0, axis_labels[0], fontsize=7, va="center")
     ax.text(x0, y0 + dy * 1.1, axis_labels[1], fontsize=7, ha="center", rotation=90)
+
+
+# PAGA edge color: a mid grey so the connectivity graph reads as a recessive
+# scaffold under the named nodes, never a black hairball on top of the points.
+_PAGA_EDGE = "#5a5a5a"
+
+
+def _figsize_for(n_groups: int) -> tuple[float, float]:
+    """Grow the canvas with group count so many named labels have room to repel."""
+    if n_groups <= 12:
+        return (5.2, 5.0)
+    if n_groups <= 25:
+        return (7.2, 6.8)
+    return (9.2, 8.6)
+
+
+def _repel_labels(ax: Axes, texts: list) -> None:
+    """De-collide per-group text labels with leader lines (best-effort).
+
+    Uses adjustText when importable; on any failure (package absent, no
+    renderer) the labels simply stay at their centroids — the figure still
+    renders, it is only less tidy. Never raises into the caller.
+    """
+    if len(texts) < 2:
+        return
+    try:
+        from adjustText import adjust_text
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+        fig = ax.get_figure()
+        # A bare Figure() has no renderer; adjustText needs one to measure
+        # text extents. Attaching an Agg canvas provides it without pyplot.
+        if not hasattr(fig.canvas, "get_renderer"):
+            FigureCanvasAgg(fig)
+        adjust_text(
+            texts,
+            ax=ax,
+            arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
+        )
+    except Exception:  # noqa: BLE001 — cosmetic; degrade to un-repelled labels
+        pass
 
 
 def categorical_embedding(
@@ -79,9 +119,21 @@ def categorical_embedding(
         cats = sorted(orig_col.astype(str).unique())
     # Compare against the stringified column so int/categorical dtypes still match.
     groups = orig_col.astype(str)
-    palette = {c: _PALETTE[i % len(_PALETTE)] for i, c in enumerate(cats)}
+    # One distinct jewel/vivid color per category (a generator, not a cycled
+    # fixed list): N categories get N distinct colors, so no two clusters share
+    # a hue the way cycling a short list would.
+    colors = distinct_palette(len(cats))
+    palette = {c: colors[i] for i, c in enumerate(cats)}
+    # Per-group centroid (per-axis median: robust to trailing arcs/stragglers and
+    # always sits inside the point cloud). Computed once and reused for BOTH the
+    # text label and the PAGA node, so every node sits exactly under its label.
+    centroids: dict[str, np.ndarray] = {}
+    for _cat in cats:
+        _m = (groups == _cat).to_numpy()
+        if _m.any():
+            centroids[_cat] = np.array([np.median(xy[_m, 0]), np.median(xy[_m, 1])])
 
-    fig = Figure(figsize=(5.2, 5.0))
+    fig = Figure(figsize=_figsize_for(len(cats)))
     ax = fig.add_subplot(111)
     for cat in cats:
         mask = (groups == cat).to_numpy()
@@ -97,22 +149,12 @@ def categorical_embedding(
             rasterized=True,
             label=cat,
         )
-    # Per-group median labels.
-    for cat in cats:
-        mask = (groups == cat).to_numpy()
-        if not mask.any():
-            continue
-        cx, cy = np.median(xy[mask, 0]), np.median(xy[mask, 1])
-        ax.annotate(
-            cat,
-            (cx, cy),
-            fontsize=7,
-            ha="center",
-            va="center",
-            bbox={"boxstyle": "round,pad=0.18", "fc": "white", "ec": "none", "alpha": 0.75},
-        )
 
-    # PAGA overlay (nodes at centroids, thresholded connectivity edges).
+    # PAGA overlay (nodes at centroids, thresholded connectivity edges). Edges
+    # are a recessive grey scaffold: width AND opacity both scale with the
+    # normalized connectivity, so weak links fade toward invisible instead of
+    # crowding the plot into a black hairball when there are many groups.
+    node_size = 90.0 if len(cats) <= 15 else 55.0
     paga = adata.uns.get("paga")
     if paga is not None and "connectivities" in paga:
         conn = paga["connectivities"]
@@ -123,22 +165,23 @@ def categorical_embedding(
         # are skipped rather than drawn at a bogus position.
         pos = np.full((n, 2), np.nan)
         for i in range(min(n, len(cats))):
-            mask = (groups == cats[i]).to_numpy()
-            if mask.any():
-                pos[i] = xy[mask].mean(axis=0)
+            centroid = centroids.get(cats[i])
+            if centroid is not None:
+                pos[i] = centroid
         mx = conn.max() or 1.0
         for i in range(n):
             for j in range(i + 1, n):
                 w = conn[i, j]
                 if w > paga_threshold and not np.isnan(pos[i]).any() and not np.isnan(pos[j]).any():
+                    wn = w / mx
                     ax.plot(
                         [pos[i, 0], pos[j, 0]],
                         [pos[i, 1], pos[j, 1]],
-                        color=_TEXT,
-                        lw=0.4 + 3.0 * (w / mx),
-                        alpha=0.7,
+                        color=_PAGA_EDGE,
+                        lw=0.2 + 1.8 * wn**1.5,
+                        alpha=0.12 + 0.5 * wn**1.5,
                         solid_capstyle="round",
-                        zorder=5,
+                        zorder=2,
                     )
         for i in range(min(n, len(cats))):
             if np.isnan(pos[i]).any():
@@ -146,14 +189,38 @@ def categorical_embedding(
             ax.scatter(
                 [pos[i, 0]],
                 [pos[i, 1]],
-                s=90,
+                s=node_size,
                 c=palette[cats[i]],
                 edgecolors="white",
                 linewidths=1.2,
                 zorder=6,
             )
 
+    # Pad the view so repelled labels have somewhere to go, then finalize the
+    # axis frame before placing labels (adjustText measures against final lims).
+    ax.margins(0.10)
     _style_axes(ax, axis_labels)
+
+    # Per-group NAMED labels on top, then de-collided with leader lines.
+    texts = []
+    for cat in cats:
+        centroid = centroids.get(cat)
+        if centroid is None:
+            continue
+        texts.append(
+            ax.text(
+                centroid[0],
+                centroid[1],
+                cat,
+                fontsize=7,
+                ha="center",
+                va="center",
+                zorder=10,
+                clip_on=False,
+                bbox={"boxstyle": "round,pad=0.18", "fc": "white", "ec": "none", "alpha": 0.8},
+            )
+        )
+    _repel_labels(ax, texts)
     return fig
 
 

@@ -9,7 +9,9 @@ from cellquorum.visualization import figstyle
 
 
 def test_palette_is_shared_with_figstyle():
-    assert plots._PALETTE == figstyle.CATEGORICAL_PALETTE
+    # Categorical colors come from figstyle's shared generator, not a private
+    # hardcoded list in the plotter — one source of truth for the house look.
+    assert plots.distinct_palette is figstyle.distinct_palette
 
 
 def test_continuous_overlay_respects_explicit_vmin_vmax():

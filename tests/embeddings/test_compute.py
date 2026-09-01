@@ -148,3 +148,62 @@ def test_resolve_paga_groupby_precedence():
         compute.resolve_paga_groupby(a, None, cell_type_key="cell_type", cluster_key="leiden")
         is None
     )
+
+
+def test_resolve_paga_groupby_prefers_named_granular_over_numeric_leiden():
+    # A per-lineage object: every cell is one lineage, so the coarse cell_type
+    # column is single-valued (degenerate). Without a granular step the resolver
+    # would tumble to numeric leiden ("0"/"1"/"2") — the exact "I need names not
+    # numbers" fault. The named granular subtype column must win instead.
+    a = _adata_with_neighbors()
+    a.obs["cell_type"] = "Fibroblast"  # single-valued -> degenerate
+    a.obs["cell_type"] = a.obs["cell_type"].astype("category")
+    a.obs["cell_type_granular"] = ["CCL19+ Fibro"] * 30 + ["POSTN+ Fibro"] * 30
+    a.obs["cell_type_granular"] = a.obs["cell_type_granular"].astype("category")
+    assert (
+        compute.resolve_paga_groupby(
+            a,
+            None,
+            cell_type_key="cell_type",
+            granular_key="cell_type_granular",
+            cluster_key="leiden",
+        )
+        == "cell_type_granular"
+    )
+
+
+def test_resolve_paga_groupby_coarse_named_beats_granular_on_atlas():
+    # A multi-lineage atlas: the coarse cell_type column is populated with >=2
+    # named lineages, so it wins first for a clean lineage-level topology. The
+    # granular column is only reached when coarse is degenerate.
+    a = _adata_with_neighbors()  # cell_type already has A/B
+    a.obs["cell_type_granular"] = ["A1"] * 15 + ["A2"] * 15 + ["B1"] * 15 + ["B2"] * 15
+    a.obs["cell_type_granular"] = a.obs["cell_type_granular"].astype("category")
+    assert (
+        compute.resolve_paga_groupby(
+            a,
+            None,
+            cell_type_key="cell_type",
+            granular_key="cell_type_granular",
+            cluster_key="leiden",
+        )
+        == "cell_type"
+    )
+
+
+def test_resolve_paga_groupby_granular_absent_falls_through_to_leiden():
+    # No named columns at all (coarse degenerate, granular missing): the numeric
+    # cluster column is the documented last resort.
+    a = _adata_with_neighbors()
+    a.obs["cell_type"] = "Fibroblast"  # single-valued -> degenerate
+    a.obs["cell_type"] = a.obs["cell_type"].astype("category")
+    assert (
+        compute.resolve_paga_groupby(
+            a,
+            None,
+            cell_type_key="cell_type",
+            granular_key="cell_type_granular",  # absent from obs
+            cluster_key="leiden",
+        )
+        == "leiden"
+    )

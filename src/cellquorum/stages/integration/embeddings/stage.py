@@ -68,6 +68,12 @@ class EmbeddingsStage(MethodDispatchStage):
         if "cluster_key" not in augmented:
             clustering = getattr(config, "clustering", None)
             augmented["cluster_key"] = getattr(clustering, "key_added", "leiden")
+        # Named granular subtype column: sits between the coarse cell-type column
+        # and numeric leiden in PAGA grouping precedence, so a per-lineage object
+        # is labelled by its named subtypes instead of "0"/"1"/"2". The consensus
+        # annotation stage writes this fixed column; overridable via config.
+        if "granular_key" not in augmented:
+            augmented["granular_key"] = "cell_type_granular"
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [dict(m) for m in _DEFAULT_METHODS]
         return augmented

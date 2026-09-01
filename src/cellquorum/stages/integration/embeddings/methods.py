@@ -9,10 +9,14 @@ import anndata as ad
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.integration.embeddings import compute, overlay, plots
 from cellquorum.stages.integration.embeddings.config import MagicConfig, OverlayConfig
-from cellquorum.stages.integration.embeddings.plots import apply_theme, figure_artifacts, save_figure
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.integration.embeddings.plots import (
+    apply_theme,
+    figure_artifacts,
+    save_figure,
+)
 
 
 def _seed(config: dict, context: object) -> int:
@@ -93,6 +97,7 @@ class PagaMethod(AnalysisMethod):
             adata,
             config.get("paga_groupby"),
             cell_type_key=config.get("cell_type_key", "cell_type"),
+            granular_key=config.get("granular_key", "cell_type_granular"),
             cluster_key=config.get("cluster_key", "leiden"),
         )
         if groupby is None:
@@ -129,6 +134,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
             adata,
             config.get("paga_groupby"),
             cell_type_key=config.get("cell_type_key", "cell_type"),
+            granular_key=config.get("granular_key", "cell_type_granular"),
             cluster_key=config.get("cluster_key", "leiden"),
         )
         if groupby is None:

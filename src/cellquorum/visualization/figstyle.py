@@ -12,6 +12,7 @@ function argument, never a module constant.
 
 from __future__ import annotations
 
+import colorsys
 import math
 from collections.abc import Sequence
 from pathlib import Path
@@ -154,6 +155,40 @@ CATEGORICAL_PALETTE: list[str] = [
     "#ef476f",  # overflow: rose
     "#d05ce3",  # overflow: orchid
 ]
+
+
+def distinct_palette(n: int) -> list[str]:
+    """Return ``n`` maximally-distinct hex colors spanning jewel + vivid-bright tones.
+
+    Two things make the ``n`` colors stay apart far past where a fixed list would
+    blur: (1) hue advances by the golden angle rather than an even step, which
+    spreads hues without clustering for *any* ``n``; (2) each successive color
+    also steps through a small set of ``(saturation, value)`` shade tiers — deep
+    jewel through bright vivid — so neighbours differ in depth as well as hue.
+    Unlike cycling a fixed list, this never repeats a color when categories
+    outnumber it (the cycling failure mode — several clusters sharing one hue —
+    is what makes a many-group embedding look muddy). Deterministic in ``n``;
+    biology-free (no fixed category meaning).
+
+    Even so, no palette can make (say) 40 groups *easily* separable — that many
+    distinct colors is a signal to reduce the cluster count (principled
+    clustering) rather than a palette defect.
+    """
+    if n <= 0:
+        return []
+    # (saturation, value) shade tiers: deep jewel → bright vivid → soft-bright →
+    # deep-vivid. Cycling tiers as hue advances means adjacent colors differ in
+    # depth, not just hue — the extra separation "vivid bright" buys us.
+    shades = ((0.70, 0.58), (0.88, 0.90), (0.58, 0.80), (0.95, 0.68))
+    golden = 0.6180339887498949  # golden-angle hue step: even hue spread for any n
+    start = 0.60  # begin at a sapphire blue and travel the wheel
+    hexes: list[str] = []
+    for i in range(n):
+        hue = (start + i * golden) % 1.0
+        sat, val = shades[i % len(shades)]
+        r, g, b = colorsys.hsv_to_rgb(hue, sat, val)
+        hexes.append(f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}")
+    return hexes
 
 
 def set_style() -> None:
@@ -1067,6 +1102,7 @@ __all__ = [
     "NORMAL_BLUE",
     "LE_RED",
     "CATEGORICAL_PALETTE",
+    "distinct_palette",
     "set_style",
     "condition_palette",
     "diverging_norm",

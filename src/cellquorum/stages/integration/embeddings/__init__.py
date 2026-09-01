@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from cellquorum.stages.integration.embeddings.config import EmbeddingsConfig, MagicConfig, OverlayConfig
+from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.stages.integration.embeddings.config import (
+    EmbeddingsConfig,
+    MagicConfig,
+    OverlayConfig,
+)
 from cellquorum.stages.integration.embeddings.methods import (
     CategoricalEmbeddingMethod,
     ContinuousOverlayMethod,
@@ -10,7 +15,6 @@ from cellquorum.stages.integration.embeddings.methods import (
     PhateMethod,
     UmapMethod,
 )
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 for _method in (
     UmapMethod,

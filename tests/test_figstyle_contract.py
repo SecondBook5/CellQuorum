@@ -46,6 +46,27 @@ def test_categorical_palette_hues_are_distinct():
     assert len(set(palette)) == len(palette)
 
 
+def test_distinct_palette_returns_n_valid_hex_colors():
+    for n in (1, 5, 18, 41):
+        colors = figstyle.distinct_palette(n)
+        assert len(colors) == n
+        assert all(c.startswith("#") and len(c) == 7 for c in colors)
+
+
+def test_distinct_palette_never_repeats_even_past_fixed_list_length():
+    # The generator must yield N distinct colors for any N — including counts
+    # far past the 18-slot fixed CATEGORICAL_PALETTE — so a 41-subtype figure
+    # never collapses two clusters onto one hue (the "coloring is atrocious"
+    # fault came from cycling a short fixed list).
+    colors = figstyle.distinct_palette(41)
+    assert len(set(colors)) == 41
+
+
+def test_distinct_palette_empty_for_nonpositive():
+    assert figstyle.distinct_palette(0) == []
+    assert figstyle.distinct_palette(-3) == []
+
+
 def test_condition_palette_maps_case_red_control_blue():
     pal = figstyle.condition_palette("LE", "Normal")
     assert pal["LE"] == figstyle.LE_RED
