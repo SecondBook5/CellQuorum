@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 import shutil
 from pathlib import Path
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import pytest
 
-from cellquorum.stages.comparative.differential_abundance.milo_method import MiloMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.comparative.differential_abundance.milo_method import MiloMethod
 
 
 @pytest.fixture
@@ -51,6 +56,7 @@ def mock_context():
         def __init__(self, tmp_path: Path):
             self.scratch = tmp_path / "scratch"
             self.results = tmp_path / "results"
+            self.figures = tmp_path / "figures"
             self.scratch.mkdir(parents=True, exist_ok=True)
             self.results.mkdir(parents=True, exist_ok=True)
 
@@ -141,16 +147,14 @@ def test_milo_happy_path(tmp_path, mock_context):
     if isinstance(result, MethodSkip):
         pytest.skip("miloR not available in test environment")
 
-    # Assert artifact exists
-    assert len(result.artifacts) == 1
+    # Assert the DA table is present and remains the primary artifact.
+    assert len(result.artifacts) >= 1
     artifact = result.artifacts[0]
     assert artifact.name == "da_results"
     assert artifact.kind == "csv"
     assert Path(artifact.path).exists()
 
     # Read and validate output CSV
-    import pandas as pd
-
     df = pd.read_csv(artifact.path)
     expected_cols = [
         "nhood",
@@ -185,7 +189,7 @@ def test_milo_missing_rep_skip(tmp_path, mock_context):
         X=np.zeros((100, 10)),
         obs={
             "condition": ["control"] * 50 + ["case"] * 50,
-            "donor": [f"D{i%3}" for i in range(100)],
+            "donor": [f"D{i % 3}" for i in range(100)],
         },
     )
 
@@ -214,7 +218,7 @@ def test_milo_missing_case_control_skip(tmp_path, mock_context):
         X=np.zeros((100, 10)),
         obs={
             "condition": ["control"] * 50 + ["case"] * 50,
-            "donor": [f"D{i%3}" for i in range(100)],
+            "donor": [f"D{i % 3}" for i in range(100)],
         },
         obsm={"X_pca": np.random.randn(100, 5)},
     )
@@ -246,3 +250,74 @@ def test_milo_registration():
         or isinstance(method_class, type)
         and issubclass(method_class, MiloMethod)
     )
+
+
+def _annotated_milo_df() -> pd.DataFrame:
+    """A Milo DA table with majority cell types (renderable as a beeswarm)."""
+    return pd.DataFrame(
+        {
+            "nhood": [1, 2, 3, 4],
+            "logFC": [2.0, 1.5, -2.0, 0.1],
+            "PValue": [0.001, 0.01, 0.001, 0.5],
+            "SpatialFDR": [0.02, 0.20, 0.03, 0.60],
+            "nhood_size": [50, 40, 45, 30],
+            "majority_celltype": ["TypeA", "TypeA", "TypeB", "TypeB"],
+            "celltype_fraction": [0.9, 0.8, 0.95, 0.7],
+        }
+    )
+
+
+def test_milo_beeswarm_helper_emits_figure(tmp_path, mock_context):
+    """The beeswarm helper renders a figure artifact to disk (no R needed)."""
+
+    context = mock_context(tmp_path)
+    artifacts = MiloMethod()._beeswarm_artifacts(
+        _annotated_milo_df(),
+        case="case",
+        control="control",
+        spatial_fdr=0.1,
+        config={},
+        context=context,
+    )
+
+    assert artifacts, "expected a beeswarm figure artifact"
+    assert all(a.kind == "figure" and a.name == "da_milo_beeswarm" for a in artifacts)
+    suffixes = set()
+    for a in artifacts:
+        assert Path(a.path).exists()
+        suffixes.add(Path(a.path).suffix)
+    # save_figure writes dual PDF + PNG.
+    assert suffixes == {".pdf", ".png"}
+
+
+def test_milo_beeswarm_helper_respects_disable_flag(tmp_path, mock_context):
+    """Setting write_da_figure=False suppresses the beeswarm figure."""
+
+    context = mock_context(tmp_path)
+    artifacts = MiloMethod()._beeswarm_artifacts(
+        _annotated_milo_df(),
+        case="case",
+        control="control",
+        spatial_fdr=0.1,
+        config={"write_da_figure": False},
+        context=context,
+    )
+    assert artifacts == []
+
+
+def test_milo_beeswarm_helper_skips_when_unannotated(tmp_path, mock_context):
+    """No majority cell type → nothing to place on the axis → no figure."""
+
+    df = _annotated_milo_df()
+    df["majority_celltype"] = np.nan
+
+    context = mock_context(tmp_path)
+    artifacts = MiloMethod()._beeswarm_artifacts(
+        df,
+        case="case",
+        control="control",
+        spatial_fdr=0.1,
+        config={},
+        context=context,
+    )
+    assert artifacts == []

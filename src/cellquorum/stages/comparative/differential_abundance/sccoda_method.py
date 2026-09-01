@@ -9,10 +9,12 @@ import anndata as ad
 import pandas as pd
 
 from cellquorum.backends.sccoda_backend import SCCODA_HELPER
-from cellquorum.stages.comparative.differential_abundance.aggregation import aggregate_celltype_counts
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.comparative.differential_abundance.aggregation import (
+    aggregate_celltype_counts,
+)
 
 
 class SccodaMethod(AnalysisMethod):
@@ -135,13 +137,26 @@ class SccodaMethod(AnalysisMethod):
         if proc.returncode != 0:
             return self._skip("sccoda helper failed", stderr=proc.stderr.strip()[:500])
 
-        # Read output CSV to compute metrics (skip-not-crash).
+        # Read output CSV to compute metrics + back the composition figure (skip-not-crash).
+        df = None
         n_credible = None
         try:
             df = pd.read_csv(out_csv)
             n_credible = int(df["credible_effect"].sum())
         except Exception:
             pass  # CSV should exist but don't crash if reading fails
+
+        # Auto-emit the compositional DA figure (gated, skip-not-crash).
+        figure_artifacts = self._composition_artifacts(
+            df,
+            cc,
+            condition_col=condition_col,
+            donor_col=donor_col,
+            case=case,
+            control=control,
+            config=config,
+            context=context,
+        )
 
         # Return the DA table as an artifact plus provenance metrics.
         return StageResult(
@@ -156,7 +171,8 @@ class SccodaMethod(AnalysisMethod):
                         f"reference={reference_celltype or 'auto'}, "
                         f"iterations={num_iterations}."
                     ),
-                )
+                ),
+                *figure_artifacts,
             ],
             notes=[
                 f"scCODA DA: {case} vs {control}, "
@@ -175,6 +191,76 @@ class SccodaMethod(AnalysisMethod):
             },
             backend="sccoda",
         )
+
+    def _composition_artifacts(
+        self,
+        effects: pd.DataFrame | None,
+        cc: object,
+        *,
+        condition_col: str,
+        donor_col: str,
+        case: str,
+        control: str,
+        config: dict,
+        context: object,
+    ) -> list[StageArtifact]:
+        """Build the two-panel scCODA composition figure (gated, default on).
+
+        Pairs a per-condition proportion dumbbell with each cell type's posterior
+        inclusion probability, driven by the scCODA effects table and the
+        aggregated sample × cell-type counts. Study-agnostic: condition
+        labels/colors come from config, no biology hardcoded. Emits nothing when
+        disabled, when the effects table is unreadable/empty, or when the counts
+        yield no proportions. Never raises — a plotting failure skips the figure.
+        """
+
+        if not config.get("write_da_figure", True):
+            return []
+        if effects is None or effects.empty:
+            return []
+
+        # Local imports keep matplotlib off the pure-method import path.
+        from cellquorum.stages.comparative.differential_abundance.aggregation import (
+            build_composition_proportions,
+        )
+        from cellquorum.stages.comparative.differential_abundance.da_figures import (
+            plot_sccoda_composition,
+        )
+        from cellquorum.visualization.figstyle import save_figure
+
+        try:
+            proportions = build_composition_proportions(
+                cc.counts,
+                cc.sample_meta[condition_col],
+                cc.sample_meta[donor_col],
+                case=case,
+                control=control,
+            )
+            if proportions.empty:
+                return []
+            fig = plot_sccoda_composition(effects, proportions, case=case, control=control)
+        except Exception:
+            return []
+
+        figures_dir = Path(getattr(context.paths, "figures", context.paths.results))
+        figures_dir = figures_dir / "differential_abundance"
+        artifacts: list[StageArtifact] = []
+        try:
+            for path in save_figure(fig, figures_dir, "da_sccoda_composition"):
+                artifacts.append(
+                    StageArtifact(
+                        name="da_sccoda_composition",
+                        path=path,
+                        kind="figure",
+                        description=(
+                            f"scCODA compositional DA ({case} vs {control}): per-condition "
+                            "proportion dumbbell + posterior inclusion probability."
+                        ),
+                    )
+                )
+        except Exception:
+            return []
+        return artifacts
 
 
 __all__ = ["SccodaMethod"]

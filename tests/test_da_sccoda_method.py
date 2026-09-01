@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import matplotlib
+
+matplotlib.use("Agg")
+
+from pathlib import Path
+
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -9,8 +15,11 @@ import pytest
 
 from cellquorum.backends.registry import build_default_backend_registry
 from cellquorum.backends.sccoda_backend import build_sccoda_backend
-from cellquorum.stages.comparative.differential_abundance.sccoda_method import SccodaMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.comparative.differential_abundance.aggregation import (
+    aggregate_celltype_counts,
+)
+from cellquorum.stages.comparative.differential_abundance.sccoda_method import SccodaMethod
 
 # Check sccoda_env availability once.
 _SCCODA_AVAILABLE = build_sccoda_backend().status().available
@@ -99,6 +108,7 @@ def mock_context(tmp_path):
     class Paths:
         scratch = tmp_path / "scratch"
         results = tmp_path / "results"
+        figures = tmp_path / "figures"
 
     class Context:
         paths = Paths()
@@ -127,8 +137,8 @@ def test_sccoda_happy_path_auto_only(synthetic_adata, mock_context):
     # Should not be a skip
     assert not isinstance(result, MethodSkip)
 
-    # Check artifacts
-    assert len(result.artifacts) == 1
+    # The DA table is present and remains the primary artifact.
+    assert len(result.artifacts) >= 1
     artifact = result.artifacts[0]
     assert artifact.name == "da_results"
     assert artifact.path.name == "da_sccoda.csv"
@@ -213,6 +223,7 @@ def test_sccoda_determinism(synthetic_adata, mock_context, tmp_path):
     class Paths:
         scratch = tmp_path / "run2_scratch"
         results = tmp_path / "run2_results"
+        figures = tmp_path / "run2_figures"
 
     class Context:
         paths = Paths()
@@ -260,3 +271,68 @@ def test_sccoda_skip_missing_case_control(synthetic_adata, mock_context):
 
     assert isinstance(result, MethodSkip)
     assert "case" in result.reason or "control" in result.reason
+
+
+def _sccoda_effects_auto() -> pd.DataFrame:
+    """A single-reference (auto) scCODA effects table over the synthetic cell types."""
+    return pd.DataFrame(
+        {
+            "cell_type": ["Type0", "Type1", "Type2"],
+            "log2_fold_change": [-0.8, 1.1, 0.05],
+            "inclusion_probability": [0.82, 0.9, 0.2],
+            "credible_effect": [True, True, False],
+            "reference": ["auto", "auto", "auto"],
+        }
+    )
+
+
+def test_sccoda_composition_helper_emits_figure(synthetic_adata, mock_context):
+    """The composition helper renders the two-panel figure to disk (no sccoda_env)."""
+
+    cc = aggregate_celltype_counts(
+        synthetic_adata,
+        donor_col="donor",
+        condition_col="condition",
+        cell_type_col="cell_type",
+    )
+    artifacts = SccodaMethod()._composition_artifacts(
+        _sccoda_effects_auto(),
+        cc,
+        condition_col="condition",
+        donor_col="donor",
+        case="Disease",
+        control="Normal",
+        config={},
+        context=mock_context,
+    )
+
+    assert artifacts, "expected an scCODA composition figure artifact"
+    assert all(a.kind == "figure" and a.name == "da_sccoda_composition" for a in artifacts)
+    suffixes = set()
+    for a in artifacts:
+        assert Path(a.path).exists()
+        suffixes.add(Path(a.path).suffix)
+    # save_figure writes dual PDF + PNG.
+    assert suffixes == {".pdf", ".png"}
+
+
+def test_sccoda_composition_helper_respects_disable_flag(synthetic_adata, mock_context):
+    """Setting write_da_figure=False suppresses the composition figure."""
+
+    cc = aggregate_celltype_counts(
+        synthetic_adata,
+        donor_col="donor",
+        condition_col="condition",
+        cell_type_col="cell_type",
+    )
+    artifacts = SccodaMethod()._composition_artifacts(
+        _sccoda_effects_auto(),
+        cc,
+        condition_col="condition",
+        donor_col="donor",
+        case="Disease",
+        control="Normal",
+        config={"write_da_figure": False},
+        context=mock_context,
+    )
+    assert artifacts == []

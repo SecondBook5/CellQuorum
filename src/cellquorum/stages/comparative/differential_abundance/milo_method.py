@@ -153,7 +153,8 @@ class MiloMethod(RAnalysisMethod):
         if proc.returncode != 0:
             return self._skip("milo script failed", stderr=proc.stderr.strip()[:500])
 
-        # Read output CSV to compute metrics (skip-not-crash).
+        # Read output CSV to compute metrics + back the beeswarm figure (skip-not-crash).
+        df = None
         n_nhoods = None
         n_da = None
         try:
@@ -162,6 +163,16 @@ class MiloMethod(RAnalysisMethod):
             n_da = int((df["SpatialFDR"] < spatial_fdr).sum())
         except Exception:
             pass  # CSV should exist but don't crash if reading fails
+
+        # Auto-emit the neighborhood beeswarm figure (gated, skip-not-crash).
+        figure_artifacts = self._beeswarm_artifacts(
+            df,
+            case=case,
+            control=control,
+            spatial_fdr=spatial_fdr,
+            config=config,
+            context=context,
+        )
 
         # Return the DA table as an artifact plus provenance metrics.
         return StageResult(
@@ -172,9 +183,10 @@ class MiloMethod(RAnalysisMethod):
                     path=out_csv,
                     kind="csv",
                     description=(
-                        f"Milo DA ({case} vs {control}), " f"k={k} prop={prop} paired={paired}."
+                        f"Milo DA ({case} vs {control}), k={k} prop={prop} paired={paired}."
                     ),
-                )
+                ),
+                *figure_artifacts,
             ],
             notes=[f"Milo DA: {case} vs {control}, k={k}, prop={prop}, paired={paired}."],
             metrics={
@@ -189,6 +201,67 @@ class MiloMethod(RAnalysisMethod):
             },
             backend="rscript",
         )
+
+    def _beeswarm_artifacts(
+        self,
+        da: pd.DataFrame | None,
+        *,
+        case: str,
+        control: str,
+        spatial_fdr: float,
+        config: dict,
+        context: object,
+    ) -> list[StageArtifact]:
+        """Build the Milo neighborhood beeswarm figure (gated, default on).
+
+        Renders the neighborhood-level log-fold-change swarm from the Milo DA
+        table, colored by direction and SpatialFDR significance. Study-agnostic:
+        condition labels/colors come from config, no biology hardcoded. Emits
+        nothing when disabled, when the table is unreadable, or when no
+        neighborhood carries a majority cell type (nothing to place on the
+        categorical axis). Never raises — a plotting failure skips the figure.
+        """
+
+        if not config.get("write_da_figure", True):
+            return []
+        if da is None or da.empty:
+            return []
+
+        # Local imports keep matplotlib off the pure-method import path.
+        from cellquorum.stages.comparative.differential_abundance.da_figures import (
+            plot_milo_beeswarm,
+            prepare_milo_beeswarm,
+        )
+        from cellquorum.visualization.figstyle import save_figure
+
+        try:
+            prepared = prepare_milo_beeswarm(da, spatial_fdr=spatial_fdr)
+            if prepared.empty:
+                return []
+            fig = plot_milo_beeswarm(da, case=case, control=control, spatial_fdr=spatial_fdr)
+        except Exception:
+            return []
+
+        figures_dir = Path(getattr(context.paths, "figures", context.paths.results))
+        figures_dir = figures_dir / "differential_abundance"
+        artifacts: list[StageArtifact] = []
+        try:
+            for path in save_figure(fig, figures_dir, "da_milo_beeswarm"):
+                artifacts.append(
+                    StageArtifact(
+                        name="da_milo_beeswarm",
+                        path=path,
+                        kind="figure",
+                        description=(
+                            f"Milo neighborhood beeswarm ({case} vs {control}): "
+                            f"log-fold-change swarmed by majority cell type, "
+                            f"SpatialFDR < {spatial_fdr:.2f}."
+                        ),
+                    )
+                )
+        except Exception:
+            return []
+        return artifacts
 
 
 __all__ = ["MiloMethod"]
