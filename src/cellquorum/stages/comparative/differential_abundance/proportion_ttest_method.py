@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -9,12 +11,13 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageResult
+from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.differential_abundance.aggregation import (
     aggregate_celltype_counts,
     build_cell_distribution_summary,
+    build_composition_proportions,
 )
 
 
@@ -214,6 +217,16 @@ class ProportionTTestMethod(AnalysisMethod):
                 config=config,
                 writer=writer,
             )
+            composition_artifacts = self._composition_artifacts(
+                cc,
+                condition_col=condition_col,
+                donor_col=donor_col,
+                case=case,
+                control=control,
+                config=config,
+                writer=writer,
+                context=context,
+            )
             return StageResult(
                 adata=adata,
                 artifacts=[
@@ -225,6 +238,7 @@ class ProportionTTestMethod(AnalysisMethod):
                         index=False,
                     ),
                     *summary_artifacts,
+                    *composition_artifacts,
                 ],
                 notes=[f"Proportion t-test DA (paired): {case} vs {control}."],
                 metrics={
@@ -317,6 +331,16 @@ class ProportionTTestMethod(AnalysisMethod):
                 config=config,
                 writer=writer,
             )
+            composition_artifacts = self._composition_artifacts(
+                cc,
+                condition_col=condition_col,
+                donor_col=donor_col,
+                case=case,
+                control=control,
+                config=config,
+                writer=writer,
+                context=context,
+            )
             return StageResult(
                 adata=adata,
                 artifacts=[
@@ -328,6 +352,7 @@ class ProportionTTestMethod(AnalysisMethod):
                         index=False,
                     ),
                     *summary_artifacts,
+                    *composition_artifacts,
                 ],
                 notes=[f"Proportion t-test DA (unpaired): {case} vs {control}."],
                 metrics={
@@ -385,6 +410,76 @@ class ProportionTTestMethod(AnalysisMethod):
                 index=False,
             )
         ]
+
+    def _composition_artifacts(
+        self,
+        cc: object,
+        *,
+        condition_col: str,
+        donor_col: str,
+        case: str,
+        control: str,
+        config: dict,
+        writer: StageArtifactWriter,
+        context: object,
+    ) -> list:
+        """Build the composition proportions table + stacked-bar figures (gated).
+
+        Emits the tidy ``composition_proportions.csv`` backing table plus two
+        study-agnostic stacked-bar figures (condition-level and per-patient),
+        gated by ``write_composition_figure`` (default on). Uses the full
+        case/control sample set, independent of any paired-donor restriction.
+        """
+
+        if not config.get("write_composition_figure", True):
+            return []
+
+        # Local imports keep matplotlib off the pure-stats import path.
+        from cellquorum.stages.comparative.differential_abundance.composition_figure import (
+            plot_condition_composition,
+            plot_per_patient_composition,
+        )
+        from cellquorum.visualization.figstyle import save_figure
+
+        proportions = build_composition_proportions(
+            cc.counts,
+            cc.sample_meta[condition_col],
+            cc.sample_meta[donor_col],
+            case=case,
+            control=control,
+        )
+        if proportions.empty:
+            return []
+
+        artifacts: list[StageArtifact] = [
+            writer.table(
+                proportions,
+                "composition_proportions.csv",
+                name="composition_proportions",
+                description=(
+                    f"Per-sample cell-type composition ({case} vs {control}): tidy "
+                    "counts + within-sample proportion (backs the composition figures)."
+                ),
+                index=False,
+            )
+        ]
+
+        figures_dir = Path(context.paths.figures) / "differential_abundance"
+        for stem, builder, what in (
+            ("composition_condition_stacked", plot_condition_composition, "by condition"),
+            ("composition_per_patient_stacked", plot_per_patient_composition, "per patient"),
+        ):
+            fig = builder(proportions, case=case, control=control)
+            for path in save_figure(fig, figures_dir, stem):
+                artifacts.append(
+                    StageArtifact(
+                        name=stem,
+                        path=path,
+                        kind="figure",
+                        description=f"Stacked cell-type composition {what} ({case} vs {control}).",
+                    )
+                )
+        return artifacts
 
 
 def _bootstrap_ci(values: np.ndarray, seed: int, n_bootstrap: int) -> tuple[float, float]:

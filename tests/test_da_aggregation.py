@@ -7,6 +7,7 @@ import pandas as pd
 from cellquorum.stages.comparative.differential_abundance.aggregation import (
     aggregate_celltype_counts,
     build_cell_distribution_summary,
+    build_composition_proportions,
 )
 
 
@@ -159,3 +160,89 @@ def test_build_cell_distribution_summary_relative_sums_to_100():
 
     assert round(summary["case_relative_pct"].sum(), 6) == 100.0
     assert round(summary["control_relative_pct"].sum(), 6) == 100.0
+
+
+def _composition_inputs():
+    """Per-sample counts + condition/donor series for composition proportions.
+
+    Two case (LE) samples and two control (N) samples, each of total 8 cells:
+      d1_LE/d2_LE -> TypeA 6, TypeB 2  (A 0.75, B 0.25)
+      d1_N /d2_N  -> TypeA 2, TypeB 6  (A 0.25, B 0.75)
+    An extra 'Other' condition sample (huge counts) must be dropped entirely.
+    """
+    counts = pd.DataFrame(
+        {
+            "TypeB": [2, 2, 6, 6, 99],
+            "TypeA": [6, 6, 2, 2, 99],
+        },
+        index=["d1_LE", "d2_LE", "d1_N", "d2_N", "d3_Other"],
+    )
+    conditions = pd.Series(
+        ["LE", "LE", "N", "N", "Other"],
+        index=["d1_LE", "d2_LE", "d1_N", "d2_N", "d3_Other"],
+    )
+    donors = pd.Series(
+        ["d1", "d2", "d1", "d2", "d3"],
+        index=["d1_LE", "d2_LE", "d1_N", "d2_N", "d3_Other"],
+    )
+    return counts, conditions, donors
+
+
+def test_build_composition_proportions_schema_and_rows():
+    """Tidy long format: one row per (in-scope sample, cell type) with expected columns."""
+    counts, conditions, donors = _composition_inputs()
+
+    comp = build_composition_proportions(counts, conditions, donors, case="LE", control="N")
+
+    assert list(comp.columns) == [
+        "sample",
+        "donor",
+        "condition",
+        "cell_type",
+        "count",
+        "proportion",
+    ]
+    # 4 in-scope samples x 2 cell types = 8 rows; the 'Other' sample is dropped.
+    assert len(comp) == 8
+    assert set(comp["condition"]) == {"LE", "N"}
+    assert "d3_Other" not in set(comp["sample"])
+
+
+def test_build_composition_proportions_within_sample_values():
+    """Proportion is within-sample count/total and matches counts exactly."""
+    counts, conditions, donors = _composition_inputs()
+
+    comp = build_composition_proportions(counts, conditions, donors, case="LE", control="N")
+
+    row = comp[(comp["sample"] == "d1_LE") & (comp["cell_type"] == "TypeA")].iloc[0]
+    assert row["count"] == 6
+    assert row["proportion"] == 0.75
+    assert row["donor"] == "d1"
+
+    row_n = comp[(comp["sample"] == "d1_N") & (comp["cell_type"] == "TypeA")].iloc[0]
+    assert row_n["proportion"] == 0.25
+
+
+def test_build_composition_proportions_sums_to_one_per_sample():
+    """Within every sample, cell-type proportions sum to 1."""
+    counts, conditions, donors = _composition_inputs()
+
+    comp = build_composition_proportions(counts, conditions, donors, case="LE", control="N")
+
+    per_sample = comp.groupby("sample")["proportion"].sum()
+    assert np.allclose(per_sample.to_numpy(), 1.0)
+
+
+def test_build_composition_proportions_control_first_ordering():
+    """Rows are ordered control arm first, then case, then donor, then cell type."""
+    counts, conditions, donors = _composition_inputs()
+
+    comp = build_composition_proportions(counts, conditions, donors, case="LE", control="N")
+
+    # The control ('N') block precedes the case ('LE') block.
+    first_case_pos = comp.index[comp["condition"] == "LE"][0]
+    last_control_pos = comp.index[comp["condition"] == "N"][-1]
+    assert last_control_pos < first_case_pos
+    # Cell types are alphabetical within a sample.
+    d1_n = comp[comp["sample"] == "d1_N"]
+    assert list(d1_n["cell_type"]) == ["TypeA", "TypeB"]

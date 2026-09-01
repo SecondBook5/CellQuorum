@@ -124,6 +124,7 @@ def mock_context(tmp_path):
         root = tmp_path
         scratch = tmp_path / "scratch"
         results = tmp_path / "results"
+        figures = tmp_path / "figures"
 
     class Context:
         paths = Paths()
@@ -151,9 +152,9 @@ def test_paired_happy_path(paired_cohort_adata, mock_context):
     # Should not be a skip
     assert not isinstance(result, MethodSkip)
 
-    # Check artifacts (da_results + auto-emitted cell_distribution_summary)
-    assert len(result.artifacts) == 2
-    assert {a.name for a in result.artifacts} == {"da_results", "cell_distribution_summary"}
+    # da_results plus the auto-emitted composition/distribution outputs.
+    names = {a.name for a in result.artifacts}
+    assert {"da_results", "cell_distribution_summary", "composition_proportions"} <= names
     artifact = next(a for a in result.artifacts if a.name == "da_results")
     assert artifact.path.name == "da_proportion_ttest.csv"
     assert artifact.kind == "csv"
@@ -236,7 +237,7 @@ def test_paired_emits_cell_distribution_summary(paired_cohort_adata, mock_contex
 
 
 def test_distribution_summary_can_be_disabled(paired_cohort_adata, mock_context):
-    """Setting write_distribution_summary=False suppresses the summary artifact."""
+    """Disabling both optional outputs leaves only the DA results table."""
 
     method = ProportionTTestMethod()
     config = {
@@ -248,6 +249,7 @@ def test_distribution_summary_can_be_disabled(paired_cohort_adata, mock_context)
         "paired": True,
         "seed": 42,
         "write_distribution_summary": False,
+        "write_composition_figure": False,
     }
 
     result = method.run(paired_cohort_adata, config, mock_context)
@@ -259,6 +261,69 @@ def test_distribution_summary_can_be_disabled(paired_cohort_adata, mock_context)
     assert result.metrics["control"] == "control"
     assert result.metrics["paired"] is True
     assert result.metrics["n_donors_paired"] == 4
+
+
+def test_paired_emits_composition_figure_and_backing_table(paired_cohort_adata, mock_context):
+    """The method auto-emits composition_proportions.csv + both stacked-bar figures."""
+
+    method = ProportionTTestMethod()
+    config = {
+        "cell_type_col": "cell_type",
+        "condition_col": "condition",
+        "donor_col": "donor",
+        "case": "case",
+        "control": "control",
+        "paired": True,
+        "seed": 42,
+    }
+
+    result = method.run(paired_cohort_adata, config, mock_context)
+    assert not isinstance(result, MethodSkip)
+
+    # Backing tidy table exists and sums to 1 within each sample.
+    table = next(a for a in result.artifacts if a.name == "composition_proportions")
+    assert table.path.name == "composition_proportions.csv"
+    comp = pd.read_csv(table.path)
+    assert set(comp.columns) == {
+        "sample",
+        "donor",
+        "condition",
+        "cell_type",
+        "count",
+        "proportion",
+    }
+    per_sample = comp.groupby("sample")["proportion"].sum()
+    assert np.allclose(per_sample.to_numpy(), 1.0)
+
+    # Both figures render to disk (PDF + PNG each).
+    figure_names = {a.name for a in result.artifacts if a.kind == "figure"}
+    assert figure_names == {"composition_condition_stacked", "composition_per_patient_stacked"}
+    for artifact in (a for a in result.artifacts if a.kind == "figure"):
+        assert artifact.path.exists()
+        assert artifact.path.suffix in {".pdf", ".png"}
+
+
+def test_composition_figure_can_be_disabled(paired_cohort_adata, mock_context):
+    """Setting write_composition_figure=False suppresses composition outputs."""
+
+    method = ProportionTTestMethod()
+    config = {
+        "cell_type_col": "cell_type",
+        "condition_col": "condition",
+        "donor_col": "donor",
+        "case": "case",
+        "control": "control",
+        "paired": True,
+        "seed": 42,
+        "write_composition_figure": False,
+    }
+
+    result = method.run(paired_cohort_adata, config, mock_context)
+    assert not isinstance(result, MethodSkip)
+
+    names = {a.name for a in result.artifacts}
+    assert "composition_proportions" not in names
+    assert not any(a.kind == "figure" for a in result.artifacts)
 
 
 def test_unpaired_path(unpaired_cohort_adata, mock_context):
@@ -341,6 +406,7 @@ def test_determinism(paired_cohort_adata, mock_context, tmp_path):
         root = run2_root
         scratch = run2_root / "scratch"
         results = run2_root / "results"
+        figures = run2_root / "figures"
 
     class Context:
         paths = Paths()

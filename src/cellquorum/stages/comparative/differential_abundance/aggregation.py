@@ -203,4 +203,87 @@ def build_cell_distribution_summary(
     )
 
 
-__all__ = ["CelltypeCounts", "aggregate_celltype_counts", "build_cell_distribution_summary"]
+def build_composition_proportions(
+    counts: pd.DataFrame,
+    conditions: pd.Series,
+    donors: pd.Series,
+    *,
+    case: str,
+    control: str,
+) -> pd.DataFrame:
+    """
+    Build tidy per-sample cell-type composition proportions.
+
+    Produces the long-format backing table for the composition figure: one row
+    per (sample, cell type) for every sample in the case or control arm, with
+    the within-sample proportion (a sample's cell-type count divided by that
+    sample's total). Proportions sum to 1 within each sample, so the same table
+    drives both the per-patient stacked bar and any condition-level summary the
+    plotting layer derives from it.
+
+    Nothing here is study-specific: the arms come from ``case``/``control`` and
+    the sample/donor identities come from the aligned metadata; samples in any
+    other condition are dropped.
+
+    Args:
+        counts: Samples (rows) × cell types (columns) integer count matrix, as
+            produced by :func:`aggregate_celltype_counts`.
+        conditions: Per-sample condition labels, indexed by the same sample ids
+            as ``counts`` (e.g. ``CelltypeCounts.sample_meta[condition_col]``).
+        donors: Per-sample donor labels, indexed by the same sample ids as
+            ``counts`` (e.g. ``CelltypeCounts.sample_meta[donor_col]``).
+        case: Condition label treated as the case/disease arm.
+        control: Condition label treated as the control/normal arm.
+
+    Returns:
+        A tidy DataFrame with columns ``[sample, donor, condition, cell_type,
+        count, proportion]``, ordered control arm first then case arm, then by
+        donor, then alphabetically by cell type.
+    """
+
+    # Align condition / donor labels to the count matrix's sample index.
+    aligned_conditions = conditions.reindex(counts.index)
+    aligned_donors = donors.reindex(counts.index)
+
+    # Cell types presented in a stable alphabetical order.
+    cell_types = sorted(str(col) for col in counts.columns)
+
+    # Within-sample totals guard against an all-zero sample.
+    sample_totals = counts.sum(axis=1)
+
+    # Control arm first, then case arm — matches the left→right reading of the
+    # Normal-vs-Disease figure. Samples in any other condition are excluded.
+    ordered_samples: list[str] = []
+    for arm in (control, case):
+        arm_samples = [s for s in counts.index if aligned_conditions.get(s) == arm]
+        arm_samples.sort(key=lambda s: str(aligned_donors.get(s)))
+        ordered_samples.extend(arm_samples)
+
+    rows = []
+    for sample in ordered_samples:
+        total = float(sample_totals.get(sample, 0))
+        for ct in cell_types:
+            count = int(counts.at[sample, ct])
+            rows.append(
+                {
+                    "sample": str(sample),
+                    "donor": str(aligned_donors.get(sample)),
+                    "condition": str(aligned_conditions.get(sample)),
+                    "cell_type": ct,
+                    "count": count,
+                    "proportion": (count / total) if total > 0 else 0.0,
+                }
+            )
+
+    return pd.DataFrame(
+        rows,
+        columns=["sample", "donor", "condition", "cell_type", "count", "proportion"],
+    )
+
+
+__all__ = [
+    "CelltypeCounts",
+    "aggregate_celltype_counts",
+    "build_cell_distribution_summary",
+    "build_composition_proportions",
+]
