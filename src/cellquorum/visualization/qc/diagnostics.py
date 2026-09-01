@@ -705,13 +705,18 @@ def _plot_qc_violin(
                     v1 = v1[np.isfinite(v1)]
                     if v0.size and v1.size:
                         _, p_val = mannwhitneyu(v0, v1, alternative="two-sided")
-                        y_top = float(np.nanmax(metric_values))
+                        # get_xaxis_transform is BLENDED: x is data (0.5 = midway
+                        # between the two categories), y is axes fraction. Passing a
+                        # data-space y here puts the text thousands of axes-heights
+                        # up, and bbox_inches="tight" then grows the canvas to reach
+                        # it — which rasterises for hours instead of failing. Kept
+                        # inside the axes so it cannot collide with the title.
                         ax.text(
                             0.5,
-                            y_top * 1.02 if y_top > 0 else y_top,
+                            0.98,
                             f"Mann–Whitney p = {p_val:.2e}",
                             ha="center",
-                            va="bottom",
+                            va="top",
                             fontsize=8,
                             transform=ax.get_xaxis_transform(),
                         )

@@ -273,6 +273,47 @@ def test_high_cardinality_group_keeps_figure_size_bounded():
         assert bounded, f"QC violin figure is unbounded: {width}x{height}px"
 
 
+def test_two_group_violin_annotation_keeps_figure_size_bounded():
+    """A two-group violin adds a Mann-Whitney annotation; it must stay on-canvas.
+
+    That annotation is drawn with ``ax.get_xaxis_transform()``, which is BLENDED —
+    x in data coords, y in AXES FRACTION. It was passed a data-space y (the metric's
+    max), so with counts in the tens of thousands the text landed ~20000 axes-heights
+    above the plot and ``bbox_inches="tight"`` grew the canvas to reach it: a
+    56-million-pixel PNG that rasterised for hours and hung the whole QC stage.
+
+    Large metric magnitudes are the point of this fixture — the bug is invisible when
+    total_counts is single digits.
+    """
+    n = 40
+    rng = np.random.default_rng(0)
+    matrix = rng.poisson(3, size=(n, 6)).astype(np.float32)
+    obs = pd.DataFrame(
+        {
+            # Tens of thousands, as in real count data, so a data-space y is absurd
+            # as an axes fraction.
+            "total_counts": rng.integers(5_000, 60_000, size=n).astype(float),
+            "n_genes_by_counts": (matrix > 0).sum(axis=1),
+            "pct_counts_mito": np.linspace(1.0, 20.0, n),
+            "condition": ["Case" if i % 2 else "Control" for i in range(n)],
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    var = pd.DataFrame(index=[f"gene_{i}" for i in range(6)])
+    adata = ad.AnnData(X=matrix, obs=obs, var=var)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        result = write_qc_figures(adata, out, dpi=100, group_key="condition")
+        violins = [
+            p for p in result.figure_paths if "violin" in p.name and "total_counts" in p.name
+        ]
+        assert violins, "No total_counts violin produced for a two-group grouping"
+        width, height = _png_pixel_dimensions(violins[0])
+        assert (
+            width <= 2000 and height <= 2000
+        ), f"QC violin figure is unbounded: {width}x{height}px"
+
+
 def test_colored_scatter_keep_fail_variant():
     """Counts-vs-genes scatter colored by keep/fail is created."""
     adata = _adata_with_group_and_doublet()
