@@ -92,3 +92,15 @@ register_planned_stage(name="molecular_inference", order=290, config_flag="molec
 def all_stage_specs() -> tuple[StageSpec, ...]:
     """All registered stage specs (implemented + planned), sorted by order."""
     return iter_stage_specs()
+
+
+def stage_order_map() -> dict[str, int]:
+    """Stage name to canonical pipeline order.
+
+    The one place to ask "which stage comes first?". ``PlannedStage`` deliberately
+    does NOT carry an order — it only records enablement — so anything needing the
+    order must read it from the catalog here. Reading it from two places is how a
+    resume silently starts from the wrong stage: the checkpoint writer records one
+    order and the resolver compares against another.
+    """
+    return {spec.name: spec.order for spec in iter_stage_specs()}

@@ -1007,6 +1007,28 @@ def bootstrap_pipeline_run(
     )
 
 
+def _restrict_plan_from_stage(plan: object, from_stage: str) -> object:
+    """Return `plan` with stages before `from_stage` removed.
+
+    Their results already live in the checkpoint being loaded, so re-running them
+    would both waste time and risk producing a different object than the one the
+    checkpoint recorded.
+    """
+    import dataclasses
+
+    from cellquorum.core.stages import stage_order_map
+
+    order_of = stage_order_map()
+    start = order_of.get(from_stage)
+    if start is None:
+        return plan
+    # PlannedStage records enablement, not order, so the cut point comes from the
+    # catalog. Stages missing from the catalog are kept rather than dropped: losing
+    # a stage silently is worse than running one extra.
+    kept = [s for s in plan.stages if order_of.get(s.name, start) >= start]
+    return dataclasses.replace(plan, stages=kept)
+
+
 def execute_pipeline_run(
     config: CellQuorumConfig,
     *,
@@ -1014,6 +1036,8 @@ def execute_pipeline_run(
     backend_registry: BackendRegistry | None = None,
     executor: PipelineExecutor | None = None,
     load_input: bool = True,
+    from_stage: str | None = None,
+    until_stage: str | None = None,
 ) -> PipelineRunResult:
     """
     Execute registered CellQuorum stages from a validated configuration.
@@ -1077,8 +1101,41 @@ def execute_pipeline_run(
     # unattended canary attempts every stage instead of halting on the first
     # failure (a caller-supplied executor keeps its own policy).
     resolved_executor = executor or PipelineExecutor(
-        stop_on_failure=not config.run.continue_on_stage_failure
+        stop_on_failure=not config.run.continue_on_stage_failure,
+        until_stage=until_stage,
     )
+
+    # Resume from a checkpoint when asked to start mid-pipeline. Done here, after
+    # the plan exists, because the plan is what gets restricted — and it must fail
+    # loudly rather than silently starting from raw input, which would look like a
+    # resume while producing different numbers.
+    if from_stage:
+        from cellquorum.core.checkpoint import (
+            load_checkpoint,
+            resolve_start_checkpoint,
+        )
+        from cellquorum.core.fingerprint import compute_upstream_fingerprint
+        from cellquorum.core.stages import stage_order_map
+
+        stage_order = stage_order_map()
+        start_record = resolve_start_checkpoint(
+            context.paths, from_stage=from_stage, stage_order=stage_order
+        )
+        # Refuse a checkpoint written under settings this run is not using. Without
+        # this the run would resume happily and report success while its numbers came
+        # from a config nobody chose, and resolved_config.json would disagree with the
+        # object on disk.
+        context = context.with_adata(
+            load_checkpoint(
+                start_record,
+                expected_upstream_fingerprint=compute_upstream_fingerprint(
+                    config=config.model_dump(),
+                    stage_order=stage_order,
+                    through_stage=start_record.stage,
+                ),
+            )
+        )
+        plan = _restrict_plan_from_stage(plan, from_stage)
 
     # Build the run reporter from config verbosity settings.
     reporter = RunReporter(verbose=config.run.verbose, level=config.run.log_level)
@@ -1225,6 +1282,8 @@ def execute_pipeline_run_from_config_file(
     backend_registry: BackendRegistry | None = None,
     executor: PipelineExecutor | None = None,
     load_input: bool = True,
+    from_stage: str | None = None,
+    until_stage: str | None = None,
 ) -> PipelineRunResult:
     """
     Load a config file and execute registered CellQuorum stages.
@@ -1235,6 +1294,8 @@ def execute_pipeline_run_from_config_file(
         backend_registry: Optional backend registry for tests or custom execution.
         executor: Optional PipelineExecutor override.
         load_input: Whether to load config.input.h5ad into context.adata.
+        from_stage: Optional stage to start at, resuming from a checkpoint.
+        until_stage: Optional stage to stop after.
 
     Returns:
         PipelineRunResult containing config, plan, final context, provenance
@@ -1244,11 +1305,15 @@ def execute_pipeline_run_from_config_file(
     # Load and validate the configuration file.
     config = load_config(config_path)
 
-    # Execute the pipeline run from the validated config.
+    # Execute the pipeline run from the validated config. from_stage/until_stage
+    # must be forwarded: silently dropping them would run every stage while the
+    # caller believed the run had been restricted to one.
     return execute_pipeline_run(
         config,
         output_dir=output_dir,
         backend_registry=backend_registry,
         executor=executor,
         load_input=load_input,
+        from_stage=from_stage,
+        until_stage=until_stage,
     )

@@ -24,6 +24,17 @@ from cellquorum.core.pipeline import (
 )
 
 
+def _quieted(config: CellQuorumConfig) -> CellQuorumConfig:
+    """Return ``config`` with ``run.verbose`` off, keeping every other run setting.
+
+    ``model_copy(update={"run": {...}})`` does NOT merge into the nested model — it
+    REPLACES ``run`` with the literal dict, so every other run field disappears and
+    the next ``config.run.run_id`` raises AttributeError on a dict. The update has
+    to be applied to the nested model itself.
+    """
+    return config.model_copy(update={"run": config.run.model_copy(update={"verbose": False})})
+
+
 def run_pipeline(
     config: str | Path | CellQuorumConfig | dict,
     *,
@@ -32,6 +43,8 @@ def run_pipeline(
     execute: bool = True,
     load_input: bool = True,
     quiet: bool = False,
+    from_stage: str | None = None,
+    until_stage: str | None = None,
 ) -> PipelineRunResult:
     """
     Run the CellQuorum pipeline through the public Python API.
@@ -58,6 +71,10 @@ def run_pipeline(
         load_input: Whether executed runs should load config.input.h5ad into
             context.adata before stage execution.
         quiet: Whether to suppress progress output by overriding config.run.verbose.
+        from_stage: Optional stage to START at, loading the newest checkpoint
+            written before it. Requires a prior run with run.checkpoint enabled.
+        until_stage: Optional stage to STOP AFTER, so a pipeline can be advanced
+            one stage at a time and inspected between steps.
 
     Returns:
         PipelineRunResult containing the validated config, pipeline plan,
@@ -73,7 +90,7 @@ def run_pipeline(
         # Override verbosity when quiet is requested.
         if quiet:
             # Create a copy with verbose=False (config is immutable/frozen).
-            config = config.model_copy(update={"run": {"verbose": False}})
+            config = _quieted(config)
 
         # Execute registered stages when requested.
         if execute:
@@ -82,6 +99,8 @@ def run_pipeline(
                 output_dir=output_dir,
                 backend_registry=backend_registry,
                 load_input=load_input,
+                from_stage=from_stage,
+                until_stage=until_stage,
             )
 
         # Preserve bootstrap-only behavior when execution is disabled.
@@ -98,7 +117,7 @@ def run_pipeline(
 
         # Override verbosity when quiet is requested.
         if quiet:
-            validated_config = validated_config.model_copy(update={"run": {"verbose": False}})
+            validated_config = _quieted(validated_config)
 
         # Execute registered stages when requested.
         if execute:
@@ -107,6 +126,8 @@ def run_pipeline(
                 output_dir=output_dir,
                 backend_registry=backend_registry,
                 load_input=load_input,
+                from_stage=from_stage,
+                until_stage=until_stage,
             )
 
         # Preserve bootstrap-only behavior when execution is disabled.
@@ -124,7 +145,7 @@ def run_pipeline(
             from cellquorum.config.loader import load_config
 
             loaded_config = load_config(config)
-            loaded_config = loaded_config.model_copy(update={"run": {"verbose": False}})
+            loaded_config = _quieted(loaded_config)
 
             # Execute registered stages when requested.
             if execute:
@@ -133,6 +154,8 @@ def run_pipeline(
                     output_dir=output_dir,
                     backend_registry=backend_registry,
                     load_input=load_input,
+                    from_stage=from_stage,
+                    until_stage=until_stage,
                 )
             # Bootstrap-only when execution disabled.
             return bootstrap_pipeline_run(
@@ -148,6 +171,8 @@ def run_pipeline(
                 output_dir=output_dir,
                 backend_registry=backend_registry,
                 load_input=load_input,
+                from_stage=from_stage,
+                until_stage=until_stage,
             )
 
         # Preserve bootstrap-only behavior from the config file.

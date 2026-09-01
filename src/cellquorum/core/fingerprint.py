@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -94,4 +95,90 @@ def compute_input_fingerprint(
     return _hash_str(_stable_json(payload))
 
 
-__all__ = ["FINGERPRINT_SCHEMA_VERSION", "compute_input_fingerprint"]
+def compute_upstream_fingerprint(
+    *,
+    config: dict,
+    stage_order: dict[str, int],
+    through_stage: str,
+) -> str:
+    """Hash everything that could have shaped the object a stage handed downstream.
+
+    Why this exists separately from :func:`compute_input_fingerprint`
+    ----------------------------------------------------------------
+    The input fingerprint includes a signature of the stage's *input AnnData*, so it
+    can only be computed while the pipeline is standing at that stage. On resume that
+    object no longer exists — not having to rebuild it is the whole point of a
+    checkpoint — so the input fingerprint is unrecomputable by construction and
+    cannot be used to validate a checkpoint you are about to load.
+
+    This one is deliberately config-only, which makes it computable at BOTH ends:
+    when the checkpoint is written, and again when a later run resumes on it. It
+    covers the random seed, the input spec, and the settings of every stage at or
+    before ``through_stage`` — precisely the things that could have changed what the
+    checkpoint contains.
+
+    Scoped to upstream stages on purpose. Hashing the whole config would invalidate
+    an early checkpoint whenever a late stage's parameter changed, which would make
+    the stage-by-stage loop recompute constantly for no safety gain: a cell-cell
+    communication setting cannot retroactively alter what QC produced.
+
+    Conservative and cheap, in the same spirit as the input fingerprint: the input is
+    identified by path and byte size, not by content hash, so replacing a file with
+    different contents at exactly the same path and size is not detected.
+    """
+    through_order = stage_order.get(through_stage)
+    if through_order is None:
+        raise KeyError(f"unknown stage '{through_stage}'; cannot scope an upstream fingerprint")
+
+    upstream = sorted(name for name, order in stage_order.items() if order <= through_order)
+
+    # Enablement flags matter even for stages with no config block of their own:
+    # turning ambient correction on or off changes what QC received.
+    stages_block = config.get("stages") or {}
+    enablement = {name: stages_block.get(name) for name in upstream if name in stages_block}
+
+    # Only the seed is taken from the run block. The rest of it — output paths,
+    # verbosity, the checkpoint flags themselves — cannot change any result, and
+    # including them would refuse resumes for cosmetic reasons.
+    run_block = config.get("run") or {}
+
+    return _hash_str(
+        _stable_json(
+            {
+                "schema_version": FINGERPRINT_SCHEMA_VERSION,
+                "through_stage": through_stage,
+                "through_order": through_order,
+                "random_seed": run_block.get("random_seed"),
+                "input": _input_signature(config.get("input")),
+                "stage_enablement": enablement,
+                "stage_config": {n: config.get(n) for n in upstream if n in config},
+            }
+        )
+    )
+
+
+def _input_signature(input_block: object) -> dict[str, object]:
+    """Identify the run's input by its spec plus each referenced file's byte size."""
+    if not isinstance(input_block, dict):
+        return {"present": False}
+
+    sizes: dict[str, int | None] = {}
+    for key, value in sorted(input_block.items()):
+        if not isinstance(value, str) or not value:
+            continue
+        try:
+            path = Path(value)
+            sizes[key] = path.stat().st_size if path.is_file() else None
+        except OSError:
+            # An unreadable path is still part of the spec; record it as unsized
+            # rather than failing a fingerprint over a stat error.
+            sizes[key] = None
+
+    return {"present": True, "spec": input_block, "sizes": sizes}
+
+
+__all__ = [
+    "FINGERPRINT_SCHEMA_VERSION",
+    "compute_input_fingerprint",
+    "compute_upstream_fingerprint",
+]

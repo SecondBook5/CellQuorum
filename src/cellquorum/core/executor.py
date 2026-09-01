@@ -206,6 +206,9 @@ class PipelineExecutor:
         registry: Executable stage registry.
         stop_on_failure: Whether execution should stop after the first failed stage.
         backend_used: Backend label to record for Python-native stages.
+        until_stage: Optional stage name to stop AFTER, so a pipeline can be
+            advanced one stage at a time and inspected between steps. Pairs with
+            run.checkpoint, which persists the object at the stopping point.
     """
 
     # Store executable stage implementations.
@@ -216,6 +219,9 @@ class PipelineExecutor:
 
     # Store the backend label for Python-native stage execution.
     backend_used: str = "python"
+
+    # Store the stage to stop after (None runs the whole plan).
+    until_stage: str | None = None
 
     def run(
         self,
@@ -297,12 +303,96 @@ class PipelineExecutor:
                 # Propagate the updated AnnData object to downstream stages.
                 current_context = current_context.with_adata(stage_result.adata)
 
+                # Checkpoint the object this stage produced, when enabled. Written
+                # AFTER the context advances so the checkpoint holds exactly what
+                # the next stage would receive — the whole point is that resuming
+                # at stage N+1 is indistinguishable from having run stage N.
+                self._maybe_write_checkpoint(
+                    context=current_context,
+                    planned_stage=planned_stage,
+                    stage_result=stage_result,
+                    reporter=reporter,
+                )
+
+                # Stop after the requested stage, so a pipeline can be advanced one
+                # stage at a time and inspected between steps.
+                if self.until_stage and planned_stage.name == self.until_stage:
+                    if hasattr(reporter, "stage_note"):
+                        reporter.stage_note(
+                            planned_stage.name,
+                            f"stopping after '{planned_stage.name}' (until_stage)",
+                        )
+                    break
+
         # Return the complete execution result.
         return PipelineExecutionResult(
             context=current_context,
             stage_results=stage_results,
             stage_execution_records=stage_execution_records,
         )
+
+    def _maybe_write_checkpoint(
+        self,
+        *,
+        context: object,
+        planned_stage: object,
+        stage_result: object,
+        reporter: object,
+    ) -> None:
+        """Write this stage's checkpoint when configured. Never fails the run.
+
+        A checkpoint is a convenience for the NEXT run, so a write problem must
+        not destroy the current one — it is surfaced as a warning on the record
+        instead. The exception is that it is reported loudly, never swallowed,
+        because a silently missing checkpoint sends a later run back to the start.
+        """
+        from cellquorum.core.checkpoint import (
+            CheckpointError,
+            should_checkpoint,
+            write_checkpoint,
+        )
+
+        run_config = getattr(getattr(context, "config", None), "run", None)
+        stage_name = getattr(planned_stage, "name", "")
+        if run_config is None or not should_checkpoint(run_config, stage_name):
+            return
+        # The order comes from the stage catalog, not from planned_stage, which has
+        # no order field. Recording -1 here would make every checkpoint compare
+        # equal and send a resume to an arbitrary start point.
+        from cellquorum.core.fingerprint import compute_upstream_fingerprint
+        from cellquorum.core.stages import stage_order_map
+
+        order_of = stage_order_map()
+        # Recorded so a later resume can tell whether the settings that produced this
+        # object still match its own. The input fingerprint above cannot serve that
+        # purpose — it describes an AnnData a resume no longer has.
+        upstream_fingerprint: str | None = None
+        config = getattr(context, "config", None)
+        if config is not None and stage_name in order_of:
+            upstream_fingerprint = compute_upstream_fingerprint(
+                config=config.model_dump(),
+                stage_order=order_of,
+                through_stage=stage_name,
+            )
+
+        try:
+            record = write_checkpoint(
+                getattr(context, "adata", None),
+                getattr(context, "paths", None),
+                stage=stage_name,
+                order=order_of.get(stage_name, -1),
+                input_fingerprint=getattr(stage_result, "input_fingerprint", None),
+                upstream_fingerprint=upstream_fingerprint,
+            )
+        except CheckpointError as exc:
+            if hasattr(reporter, "stage_note"):
+                reporter.stage_note(stage_name, f"checkpoint failed: {exc}")
+            return
+        if record is not None and hasattr(reporter, "stage_note"):
+            reporter.stage_note(
+                stage_name,
+                f"checkpoint written ({record.n_obs} x {record.n_vars})",
+            )
 
     def execute_planned_stage(
         self,

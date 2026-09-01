@@ -327,6 +327,26 @@ def run_command(
             help="Suppress progress output and run silently.",
         ),
     ] = False,
+    from_stage: Annotated[
+        str | None,
+        typer.Option(
+            "--from-stage",
+            help=(
+                "Start at this stage, loading the newest checkpoint written before "
+                "it. Requires a prior run with run.checkpoint enabled."
+            ),
+        ),
+    ] = None,
+    until_stage: Annotated[
+        str | None,
+        typer.Option(
+            "--until-stage",
+            help=(
+                "Stop after this stage, so the pipeline can be advanced one stage "
+                "at a time and inspected between steps."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """
     Execute a CellQuorum pipeline run.
@@ -352,6 +372,8 @@ def run_command(
             output_dir=output_dir,
             execute=not bootstrap_only,
             quiet=quiet,
+            from_stage=from_stage,
+            until_stage=until_stage,
         )
 
     # Convert configuration failures into CLI-friendly errors.
