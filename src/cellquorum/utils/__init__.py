@@ -18,6 +18,11 @@ The companion types each function returns or raises — :class:`PseudobulkResult
 and :class:`PriorFetchError` — are exported alongside them so a caller never has to
 reach back into the internal modules to type-annotate or handle results.
 
+Study-agnostic *statistical* primitives that sit on top of stage outputs (donor-aware
+LMM effect sizes, PERMANOVA-by-group, signature-argmax subtyping, the signed
+program-contrast index, leading-edge concordance, program correlations) live in their
+own shallow surface, :mod:`cellquorum.stats` — import them from there.
+
 These names are **re-exports of the canonical implementations** in
 :mod:`cellquorum.stages.comparative`, not copies: a fix to the engine is a fix here. The
 pre-consolidation deep-import paths (``cellquorum.enrichment.ranking`` etc.) have
