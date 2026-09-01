@@ -658,6 +658,7 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
         "thresholds",
         "cell_decisions",
         "gene_decisions",
+        "report",
         "qc_h5ad",
         "summary",
         "figures",
@@ -754,6 +755,7 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
             "write_metrics_table": False,
             "write_filter_table": False,
             "write_threshold_table": False,
+            "write_report_table": False,
             "write_summary_json": True,
             "write_h5ad": False,
             "write_figures": False,
@@ -781,6 +783,7 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
         "thresholds",
         "cell_decisions",
         "gene_decisions",
+        "report",
         "qc_h5ad",
         "figures",
     ]
@@ -820,6 +823,81 @@ def test_write_qc_artifacts_can_skip_summary_json(tmp_path: Path) -> None:
 
     # Confirm summary was not written.
     assert "summary" not in manifest.artifacts
+
+
+def test_write_qc_artifacts_writes_qc_report_table_with_groups(tmp_path: Path) -> None:
+    """
+    Verify the writer emits a per-group QC report table when groups are supplied.
+
+    With cell-type labels for each input cell, qc_report.csv should carry one row
+    per cell type plus a cohort-wide TOTAL row, using the supplied group column
+    name as the leading column.
+    """
+
+    # Map each input cell to a cell type; cell_2 is the removed cell.
+    report_groups = pd.Series({"cell_1": "LEC", "cell_2": "BEC"})
+
+    # Write QC artifacts with a grouped report table.
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        threshold_result=make_threshold_result(),
+        decision_result=make_decision_result(),
+        config=QCConfig(outputs={"write_figures": False, "write_h5ad": False}),
+        adata=None,
+        report_groups=report_groups,
+    )
+
+    # Confirm the report artifact was written.
+    assert "report" in manifest.artifacts
+
+    # Read the report table back, indexed by cell type.
+    report = pd.read_csv(manifest.get_path("report")).set_index("cell_type")
+
+    # Confirm per-group and TOTAL rows are present.
+    assert set(report.index) == {"BEC", "LEC", "TOTAL"}
+
+    # Confirm the kept LEC cell reports zero removed.
+    assert int(report.loc["LEC", "cells_before_qc"]) == 1
+    assert int(report.loc["LEC", "cells_removed"]) == 0
+
+    # Confirm the removed BEC cell reports one removed at 100%.
+    assert int(report.loc["BEC", "cells_removed"]) == 1
+    assert report.loc["BEC", "pct_removed"] == pytest.approx(100.0)
+
+    # Confirm the TOTAL row aggregates both groups.
+    assert int(report.loc["TOTAL", "cells_before_qc"]) == 2
+    assert int(report.loc["TOTAL", "cells_removed"]) == 1
+    assert int(report.loc["TOTAL", "cells_after_qc"]) == 1
+
+
+def test_write_qc_artifacts_qc_report_defaults_to_total_only_without_groups(
+    tmp_path: Path,
+) -> None:
+    """
+    Verify the report table collapses to a single TOTAL row without groups.
+
+    When no per-cell grouping is supplied (e.g. QC before annotation), the report
+    still summarizes the whole cohort in one row.
+    """
+
+    # Write QC artifacts with no group labels.
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        threshold_result=make_threshold_result(),
+        decision_result=make_decision_result(),
+        config=QCConfig(outputs={"write_figures": False, "write_h5ad": False}),
+        adata=None,
+    )
+
+    # Read the report table back.
+    report = pd.read_csv(manifest.get_path("report"))
+
+    # Confirm a single TOTAL row summarizing the cohort.
+    assert list(report["cell_type"]) == ["TOTAL"]
+    assert int(report.loc[0, "cells_before_qc"]) == 2
+    assert int(report.loc[0, "cells_removed"]) == 1
 
 
 def test_write_qc_artifacts_rejects_invalid_output_dir(tmp_path: Path) -> None:

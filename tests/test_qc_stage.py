@@ -732,6 +732,7 @@ def test_qc_stage_run_flag_no_drop_writes_artifacts_and_preserves_shape(tmp_path
         "qc_thresholds",
         "qc_cell_decisions",
         "qc_gene_decisions",
+        "qc_report",
         "qc_summary",
     }
 
@@ -768,7 +769,7 @@ def test_qc_stage_run_filter_mode_returns_filtered_anndata(tmp_path: Path) -> No
 
     # Confirm filtering note was emitted.
     assert result.notes[-1] == (
-        "QC filtering changed AnnData shape from 3 cells x 4 genes to " "2 cells x 2 genes."
+        "QC filtering changed AnnData shape from 3 cells x 4 genes to 2 cells x 2 genes."
     )
 
     # Confirm stage metrics include filtered output shape.

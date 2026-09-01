@@ -26,8 +26,8 @@ from cellquorum.core.exceptions import CellQuorumDataError
 # Import QC configuration.
 from cellquorum.stages.qc.config import QCConfig
 
-# Import QC decision result container.
-from cellquorum.stages.qc.decisions import QCDecisionResult
+# Import QC decision result container and the report-table builder.
+from cellquorum.stages.qc.decisions import QCDecisionResult, build_qc_report_table
 
 # Import QC metric result container.
 from cellquorum.stages.qc.metrics import QCMetricsResult
@@ -129,6 +129,8 @@ def write_qc_artifacts(
     adata: ad.AnnData | None = None,
     summary_extra: dict[str, object] | None = None,
     group_key: str | None = None,
+    report_groups: pd.Series | None = None,
+    report_group_name: str = "cell_type",
 ) -> QCArtifactManifest:
     """
     Write QC module artifacts to disk.
@@ -149,6 +151,12 @@ def write_qc_artifacts(
             summary artifact.
         group_key: Optional obs column name for grouping QC figures by
             condition, donor, or sample.
+        report_groups: Optional per-cell group labels (typically cell type)
+            aligned to ``decision_result.cell_decisions.index``, used to resolve
+            the per-group QC report table. When None the report collapses to a
+            single TOTAL row.
+        report_group_name: Name of the leading group column in the QC report
+            table (defaults to ``cell_type``).
 
     Returns:
         QCArtifactManifest describing written, skipped, and warned artifacts.
@@ -243,6 +251,27 @@ def write_qc_artifacts(
     else:
         # Store decision table skips.
         skipped.extend(["cell_decisions", "gene_decisions"])
+
+    # Write the per-group QC report table when enabled.
+    if qc_config.outputs.write_report_table:
+        # Build the report table from the (unfiltered) cell decisions.
+        report_table = build_qc_report_table(
+            decision_result.cell_decisions,
+            groups=report_groups,
+            group_name=report_group_name,
+        )
+
+        # Write the QC report table.
+        artifacts["report"] = write_dataframe_artifact(
+            report_table,
+            output_path / "qc_report.csv",
+            index=False,
+        )
+
+    # Record skipped report table.
+    else:
+        # Store report table skip.
+        skipped.append("report")
 
     # Write optional QC AnnData object when enabled.
     if qc_config.outputs.write_h5ad:

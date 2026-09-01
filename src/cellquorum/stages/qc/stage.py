@@ -238,6 +238,24 @@ class QCStage:
                 group_key = candidate
                 break
 
+        # Resolve per-cell group labels for the QC report table from the INPUT
+        # object, not output_adata: the decision table is indexed by every input
+        # cell (before filtering), so removed-cell counts must be attributed
+        # using cell-type labels from the unfiltered obs. Prefer the design
+        # cell_type_col, then a plain cell_type column; absent both, the report
+        # collapses to a single TOTAL row.
+        report_groups = None
+        report_group_name = "cell_type"
+        cell_type_candidates = [
+            getattr(design, "cell_type_col", None),
+            "cell_type",
+        ]
+        for candidate in cell_type_candidates:
+            if candidate and candidate in adata.obs.columns:
+                report_groups = adata.obs[candidate]
+                report_group_name = candidate
+                break
+
         # Write all configured QC artifacts.
         artifact_manifest = write_qc_artifacts(
             output_dir=output_dir,
@@ -252,6 +270,8 @@ class QCStage:
                 stage_name=self.name,
             ),
             group_key=group_key,
+            report_groups=report_groups,
+            report_group_name=report_group_name,
         )
 
         # Convert artifact manifest paths into StageArtifact records.
@@ -402,8 +422,7 @@ def coerce_qc_config(value: object) -> QCConfig:
 
     # Reject unsupported values.
     raise QCStageError(
-        "QC configuration must be a QCConfig object or mapping. "
-        f"Received: {type(value).__name__}."
+        f"QC configuration must be a QCConfig object or mapping. Received: {type(value).__name__}."
     )
 
 
@@ -553,8 +572,7 @@ def build_qc_output_adata(
     # Validate input AnnData.
     if not isinstance(adata, ad.AnnData):
         raise QCStageError(
-            "build_qc_output_adata expected an AnnData object. "
-            f"Received: {type(adata).__name__}."
+            f"build_qc_output_adata expected an AnnData object. Received: {type(adata).__name__}."
         )
 
     # Validate decision result type.
@@ -566,7 +584,7 @@ def build_qc_output_adata(
 
     # Validate QC config type.
     if not isinstance(config, QCConfig):
-        raise QCStageError("config must be a QCConfig. " f"Received: {type(config).__name__}.")
+        raise QCStageError(f"config must be a QCConfig. Received: {type(config).__name__}.")
 
     # Copy and annotate the AnnData object with QC decisions.
     output_adata = annotate_adata_with_qc_decisions(adata, decision_result)
@@ -668,8 +686,7 @@ def annotate_adata_with_qc_metrics(
         )
     if not isinstance(metrics_result, QCMetricsResult):
         raise QCStageError(
-            "metrics_result must be a QCMetricsResult. "
-            f"Received: {type(metrics_result).__name__}."
+            f"metrics_result must be a QCMetricsResult. Received: {type(metrics_result).__name__}."
         )
 
     # Align and add cell-level metrics.
@@ -948,7 +965,7 @@ def build_stage_artifacts_from_manifest(
     # Validate manifest type.
     if not isinstance(manifest, QCArtifactManifest):
         raise QCStageError(
-            "manifest must be a QCArtifactManifest. " f"Received: {type(manifest).__name__}."
+            f"manifest must be a QCArtifactManifest. Received: {type(manifest).__name__}."
         )
 
     # Initialize stage artifacts.
@@ -1032,6 +1049,7 @@ def describe_qc_artifact(artifact_name: str) -> str:
         "thresholds": "QC threshold table.",
         "cell_decisions": "Cell-level QC keep/fail decision table.",
         "gene_decisions": "Gene-level QC keep/fail decision table.",
+        "report": "Per-group QC report table (cells before/removed/%/after + TOTAL).",
         "qc_h5ad": "QC-annotated AnnData object.",
         "summary": "Structured QC summary JSON.",
     }

@@ -777,6 +777,10 @@ class QCOutputConfig(StrictBaseModel):
         write_metrics_table: Whether to write cell and gene QC metric tables.
         write_filter_table: Whether to write filtering decision tables.
         write_threshold_table: Whether to write threshold tables.
+        write_report_table: Whether to write the per-group QC report table
+            (cells before/removed/%/after per cell type + a TOTAL row). Enabled
+            by default; the grouping falls back to a single TOTAL row when no
+            cell-type labels are present on the input object.
         write_summary_json: Whether to write a JSON QC summary.
         write_h5ad: Whether to write a QC AnnData object.
         write_figures: Whether to write QC figures.
@@ -795,6 +799,9 @@ class QCOutputConfig(StrictBaseModel):
 
     # Store whether threshold tables should be written.
     write_threshold_table: bool = True
+
+    # Store whether the per-group QC report table should be written.
+    write_report_table: bool = True
 
     # Store whether QC summary JSON should be written.
     write_summary_json: bool = True
