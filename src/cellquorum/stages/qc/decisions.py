@@ -593,6 +593,133 @@ def count_failures_by_rule(decisions: pd.DataFrame) -> dict[str, int]:
     return {column: int(decisions[column].sum()) for column in rule_columns}
 
 
+def build_qc_report_table(
+    cell_decisions: pd.DataFrame,
+    *,
+    groups: pd.Series | None = None,
+    total_label: str = "TOTAL",
+    group_name: str = "cell_type",
+    unassigned_label: str = "unassigned",
+) -> pd.DataFrame:
+    """
+    Build a per-group QC report table of cells before/removed/after filtering.
+
+    This is the study-agnostic engine equivalent of the "QC Report" table in the
+    manuscript: how many cells entered QC, how many were removed, the percent
+    removed, and how many survived, resolved per group (typically cell type) with
+    a final cohort-wide TOTAL row.
+
+    The only required input is the ``keep`` column of a finalized cell decision
+    table (see :func:`finalize_decision_table`). Counts are taken over the FULL
+    input index, so ``cell_decisions`` must be indexed by every input cell
+    (before any filtering), never by the surviving subset.
+
+    Args:
+        cell_decisions: Finalized cell decision table indexed by cell; must
+            contain a boolean ``keep`` column.
+        groups: Optional per-cell group labels (e.g. cell type) aligned to
+            ``cell_decisions.index``. Reindexed to the decision table's index;
+            cells with a missing label are bucketed under ``unassigned_label`` so
+            the group rows always sum to the TOTAL row. When ``None`` the report
+            collapses to a single TOTAL row.
+        total_label: Label for the cohort-wide total row.
+        group_name: Name of the leading group column.
+        unassigned_label: Bucket label for cells whose group label is missing.
+
+    Returns:
+        Report table with columns ``[group_name, cells_before_qc, cells_removed,
+        pct_removed, cells_after_qc]``; one row per group in sorted order followed
+        by a single total row.
+
+    Raises:
+        QCDecisionError: If ``cell_decisions`` lacks the ``keep`` column.
+    """
+
+    # Require the keep column because it is the sole basis for the report.
+    if "keep" not in cell_decisions.columns:
+        raise QCDecisionError(
+            "cell_decisions must contain a 'keep' column to build a QC report table."
+        )
+
+    # Extract the keep decision as a boolean series over all input cells.
+    keep = cell_decisions["keep"].astype(bool)
+
+    # Resolve per-cell group labels, defaulting to a single cohort-wide bucket.
+    if groups is None:
+        # Assign every cell to the total bucket when no grouping is supplied.
+        group_labels = pd.Series(total_label, index=cell_decisions.index)
+    else:
+        # Align supplied labels to the decision-table index.
+        group_labels = groups.reindex(cell_decisions.index)
+
+        # Bucket cells with a missing label so group sums equal the total.
+        group_labels = group_labels.where(group_labels.notna(), unassigned_label)
+
+    # Build per-group before/removed counts from the keep decision.
+    grouped = keep.groupby(group_labels, observed=True)
+    before = grouped.size()
+    removed = (~keep).groupby(group_labels, observed=True).sum()
+
+    # Assemble the per-group rows in deterministic sorted order.
+    rows: list[dict[str, object]] = []
+    for group in sorted(before.index, key=str):
+        # Skip the total bucket here; it is appended once at the end.
+        if groups is None and group == total_label:
+            continue
+
+        # Record this group's before/removed/after counts and percent removed.
+        rows.append(_qc_report_row(group, int(before[group]), int(removed[group]), group_name))
+
+    # Append the cohort-wide total row last.
+    total_before = int(keep.shape[0])
+    total_removed = int((~keep).sum())
+    rows.append(_qc_report_row(total_label, total_before, total_removed, group_name))
+
+    # Return the assembled report table.
+    return pd.DataFrame(
+        rows,
+        columns=[
+            group_name,
+            "cells_before_qc",
+            "cells_removed",
+            "pct_removed",
+            "cells_after_qc",
+        ],
+    )
+
+
+def _qc_report_row(
+    group: object,
+    before: int,
+    removed: int,
+    group_name: str,
+) -> dict[str, object]:
+    """
+    Build one QC report row with a guarded percent-removed calculation.
+
+    Args:
+        group: Group label for this row.
+        before: Cells entering QC in this group.
+        removed: Cells removed by QC in this group.
+        group_name: Name of the leading group column.
+
+    Returns:
+        Report-row mapping with counts, percent removed, and cells after QC.
+    """
+
+    # Guard against a zero denominator so an empty group reports 0% removed.
+    pct_removed = 100.0 * removed / before if before > 0 else 0.0
+
+    # Return the report row.
+    return {
+        group_name: group,
+        "cells_before_qc": before,
+        "cells_removed": removed,
+        "pct_removed": pct_removed,
+        "cells_after_qc": before - removed,
+    }
+
+
 def validate_non_empty_filtered_result(
     *,
     cell_decisions: pd.DataFrame,
@@ -720,6 +847,7 @@ __all__ = [
     "build_decision_summary",
     "build_failed_rule_strings",
     "build_qc_decisions",
+    "build_qc_report_table",
     "build_threshold_row_selector",
     "count_failures_by_rule",
     "evaluate_threshold_failures",

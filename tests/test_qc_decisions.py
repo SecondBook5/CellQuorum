@@ -23,6 +23,7 @@ from cellquorum.stages.qc.decisions import (
     build_decision_summary,
     build_failed_rule_strings,
     build_qc_decisions,
+    build_qc_report_table,
     build_threshold_row_selector,
     count_failures_by_rule,
     evaluate_threshold_failures,
@@ -1196,3 +1197,135 @@ def test_require_decision_metric_columns_rejects_missing_columns() -> None:
     # Confirm missing columns fail clearly.
     with pytest.raises(QCDecisionError, match="missing required column"):
         require_decision_metric_columns(table, ["a", "b"], table_name="cell_metrics")
+
+
+def _keep_frame(keep: list[bool], index: list[str]) -> pd.DataFrame:
+    """
+    Build a minimal finalized decision table for QC report-table tests.
+
+    Only the ``keep`` column is required by the report-table builder, so the
+    fixture keeps just that column plus its complement to mirror the real
+    finalized decision table shape.
+    """
+
+    # Return a minimal decision table indexed by cell.
+    return pd.DataFrame(
+        {"keep": keep, "fail_any_qc": [not value for value in keep]},
+        index=index,
+    )
+
+
+def test_build_qc_report_table_grouped_counts_and_total() -> None:
+    """
+    Verify the QC report table reports per-group before/removed/%/after + TOTAL.
+
+    Group ``A`` loses one of two cells; group ``B`` keeps all three. The TOTAL
+    row must equal the column-wise sum of the group rows, and the group rows
+    must be deterministically ordered with TOTAL last.
+    """
+
+    # Build a five-cell decision table: A has 1 of 2 removed, B keeps all 3.
+    decisions = _keep_frame(
+        keep=[True, False, True, True, True],
+        index=["c1", "c2", "c3", "c4", "c5"],
+    )
+    groups = pd.Series(
+        ["A", "A", "B", "B", "B"],
+        index=["c1", "c2", "c3", "c4", "c5"],
+    )
+
+    # Build the report table.
+    report = build_qc_report_table(decisions, groups=groups)
+
+    # Confirm rows are ordered A, B, TOTAL.
+    assert list(report["cell_type"]) == ["A", "B", "TOTAL"]
+
+    # Confirm per-group counts.
+    row_a = report.loc[report["cell_type"] == "A"].iloc[0]
+    assert int(row_a["cells_before_qc"]) == 2
+    assert int(row_a["cells_removed"]) == 1
+    assert row_a["pct_removed"] == pytest.approx(50.0)
+    assert int(row_a["cells_after_qc"]) == 1
+
+    row_b = report.loc[report["cell_type"] == "B"].iloc[0]
+    assert int(row_b["cells_before_qc"]) == 3
+    assert int(row_b["cells_removed"]) == 0
+    assert row_b["pct_removed"] == pytest.approx(0.0)
+    assert int(row_b["cells_after_qc"]) == 3
+
+    # Confirm the TOTAL row equals the group-wise sums.
+    total = report.loc[report["cell_type"] == "TOTAL"].iloc[0]
+    assert int(total["cells_before_qc"]) == 5
+    assert int(total["cells_removed"]) == 1
+    assert total["pct_removed"] == pytest.approx(20.0)
+    assert int(total["cells_after_qc"]) == 4
+
+
+def test_build_qc_report_table_without_groups_is_single_total() -> None:
+    """
+    Verify the report table collapses to a single TOTAL row without groups.
+
+    When no per-cell grouping is available (e.g. QC runs before annotation),
+    the report should still summarize the whole cohort in one TOTAL row.
+    """
+
+    # Build a decision table with two of four cells removed.
+    decisions = _keep_frame(
+        keep=[True, False, True, False],
+        index=["c1", "c2", "c3", "c4"],
+    )
+
+    # Build the report table with no grouping.
+    report = build_qc_report_table(decisions, groups=None)
+
+    # Confirm a single TOTAL row with correct counts.
+    assert list(report["cell_type"]) == ["TOTAL"]
+    total = report.iloc[0]
+    assert int(total["cells_before_qc"]) == 4
+    assert int(total["cells_removed"]) == 2
+    assert total["pct_removed"] == pytest.approx(50.0)
+    assert int(total["cells_after_qc"]) == 2
+
+
+def test_build_qc_report_table_missing_group_labels_go_to_unassigned() -> None:
+    """
+    Verify cells with a missing group label are bucketed, preserving the sum.
+
+    A NaN group label must not silently drop a cell from the accounting: the
+    group rows must still sum to the TOTAL row.
+    """
+
+    # Build a decision table where one cell has no group label.
+    decisions = _keep_frame(
+        keep=[True, False, True],
+        index=["c1", "c2", "c3"],
+    )
+    groups = pd.Series(["A", "A", np.nan], index=["c1", "c2", "c3"])
+
+    # Build the report table.
+    report = build_qc_report_table(decisions, groups=groups)
+
+    # Confirm the NaN-labeled cell is bucketed under 'unassigned'.
+    assert "unassigned" in set(report["cell_type"])
+
+    # Confirm the group rows still sum to the TOTAL row.
+    total = report.loc[report["cell_type"] == "TOTAL"].iloc[0]
+    non_total = report.loc[report["cell_type"] != "TOTAL"]
+    assert int(non_total["cells_before_qc"].sum()) == int(total["cells_before_qc"])
+    assert int(non_total["cells_removed"].sum()) == int(total["cells_removed"])
+
+
+def test_build_qc_report_table_requires_keep_column() -> None:
+    """
+    Verify the report-table builder rejects a decision table without ``keep``.
+
+    The ``keep`` column is the sole required input; its absence is a caller
+    error, not something to guess around.
+    """
+
+    # Build a decision table missing the keep column.
+    decisions = pd.DataFrame({"fail_any_qc": [True, False]}, index=["c1", "c2"])
+
+    # Confirm the missing keep column fails clearly.
+    with pytest.raises(QCDecisionError, match="keep"):
+        build_qc_report_table(decisions)
