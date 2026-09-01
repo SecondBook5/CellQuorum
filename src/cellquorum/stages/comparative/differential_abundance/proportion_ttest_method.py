@@ -8,11 +8,14 @@ import pandas as pd
 from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.stages.comparative.differential_abundance.aggregation import aggregate_celltype_counts
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.comparative.differential_abundance.aggregation import (
+    aggregate_celltype_counts,
+    build_cell_distribution_summary,
+)
 
 
 class ProportionTTestMethod(AnalysisMethod):
@@ -202,6 +205,15 @@ class ProportionTTestMethod(AnalysisMethod):
             n_significant = int((results_df["fdr"] < 0.05).sum())
 
             # Return result
+            summary_artifacts = self._distribution_summary_artifacts(
+                cc.counts,
+                cc.sample_meta[condition_col],
+                case=case,
+                control=control,
+                results_df=results_df,
+                config=config,
+                writer=writer,
+            )
             return StageResult(
                 adata=adata,
                 artifacts=[
@@ -211,7 +223,8 @@ class ProportionTTestMethod(AnalysisMethod):
                         name="da_results",
                         description=f"Proportion t-test DA (paired, {case} vs {control}).",
                         index=False,
-                    )
+                    ),
+                    *summary_artifacts,
                 ],
                 notes=[f"Proportion t-test DA (paired): {case} vs {control}."],
                 metrics={
@@ -295,6 +308,15 @@ class ProportionTTestMethod(AnalysisMethod):
             n_significant = int((results_df["fdr"] < 0.05).sum())
 
             # Return result
+            summary_artifacts = self._distribution_summary_artifacts(
+                cc.counts,
+                cc.sample_meta[condition_col],
+                case=case,
+                control=control,
+                results_df=results_df,
+                config=config,
+                writer=writer,
+            )
             return StageResult(
                 adata=adata,
                 artifacts=[
@@ -304,7 +326,8 @@ class ProportionTTestMethod(AnalysisMethod):
                         name="da_results",
                         description=f"Proportion t-test DA (unpaired, {case} vs {control}).",
                         index=False,
-                    )
+                    ),
+                    *summary_artifacts,
                 ],
                 notes=[f"Proportion t-test DA (unpaired): {case} vs {control}."],
                 metrics={
@@ -320,6 +343,48 @@ class ProportionTTestMethod(AnalysisMethod):
                 },
                 backend="python",
             )
+
+    def _distribution_summary_artifacts(
+        self,
+        counts: pd.DataFrame,
+        conditions: pd.Series,
+        *,
+        case: str,
+        control: str,
+        results_df: pd.DataFrame,
+        config: dict,
+        writer: StageArtifactWriter,
+    ) -> list:
+        """Build the Cell Distribution Summary artifact (gated, default on).
+
+        Emits a pooled per-cell-type composition table (absolute counts +
+        within-condition relative %, with case-arm p/FDR) alongside the DA
+        result. Uses the full case/control sample set for the descriptive
+        counts, independent of any paired-donor restriction the test applies.
+        """
+
+        if not config.get("write_distribution_summary", True):
+            return []
+
+        summary = build_cell_distribution_summary(
+            counts,
+            conditions,
+            case=case,
+            control=control,
+            test_results=results_df,
+        )
+        return [
+            writer.table(
+                summary,
+                "cell_distribution_summary.csv",
+                name="cell_distribution_summary",
+                description=(
+                    f"Pooled cell-type composition ({case} vs {control}): absolute "
+                    "counts + within-condition relative %, with case-arm p/FDR."
+                ),
+                index=False,
+            )
+        ]
 
 
 def _bootstrap_ci(values: np.ndarray, seed: int, n_bootstrap: int) -> tuple[float, float]:

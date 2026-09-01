@@ -4,7 +4,10 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.comparative.differential_abundance.aggregation import aggregate_celltype_counts
+from cellquorum.stages.comparative.differential_abundance.aggregation import (
+    aggregate_celltype_counts,
+    build_cell_distribution_summary,
+)
 
 
 def _adata():
@@ -72,3 +75,87 @@ def test_aggregate_celltype_counts_meta_alignment():
     # sample_meta should have donor_col and condition_col
     assert "patient_id" in res.sample_meta.columns
     assert "condition" in res.sample_meta.columns
+
+
+def _summary_inputs():
+    """Sample x cell-type counts + condition series with a clean pooled composition.
+
+    LE (case) pools to A=12, B=4 (total 16) -> A 75%, B 25%.
+    N  (control) pools to A=4, B=12 (total 16) -> A 25%, B 75%.
+    An extra 'Other' condition sample must be ignored entirely.
+    """
+    counts = pd.DataFrame(
+        {
+            "TypeB": [2, 2, 6, 6, 99],
+            "TypeA": [6, 6, 2, 2, 99],
+        },
+        index=["d1_LE", "d2_LE", "d1_N", "d2_N", "d3_Other"],
+    )
+    conditions = pd.Series(
+        ["LE", "LE", "N", "N", "Other"],
+        index=["d1_LE", "d2_LE", "d1_N", "d2_N", "d3_Other"],
+    )
+    return counts, conditions
+
+
+def test_build_cell_distribution_summary_pooled_counts_and_relative():
+    """Absolute = pooled counts per condition; relative = within-condition percent."""
+    counts, conditions = _summary_inputs()
+    test_results = pd.DataFrame(
+        {"cell_type": ["TypeA", "TypeB"], "pvalue": [0.01, 0.03], "fdr": [0.02, 0.04]}
+    )
+
+    summary = build_cell_distribution_summary(
+        counts, conditions, case="LE", control="N", test_results=test_results
+    )
+
+    # Rows are alphabetical by cell type; TypeC is absent.
+    assert list(summary["cell_type"]) == ["TypeA", "TypeB"]
+
+    row_a = summary.set_index("cell_type").loc["TypeA"]
+    assert row_a["case_absolute"] == 12
+    assert row_a["control_absolute"] == 4
+    assert row_a["case_relative_pct"] == 75.0
+    assert row_a["control_relative_pct"] == 25.0
+    # p / FDR are attached to the case group only.
+    assert row_a["case_pvalue"] == 0.01
+    assert row_a["case_adj_pvalue"] == 0.02
+
+    row_b = summary.set_index("cell_type").loc["TypeB"]
+    assert row_b["case_absolute"] == 4
+    assert row_b["control_absolute"] == 12
+    assert row_b["case_relative_pct"] == 25.0
+    assert row_b["control_relative_pct"] == 75.0
+
+
+def test_build_cell_distribution_summary_ignores_other_conditions():
+    """Samples whose condition is neither case nor control never contribute."""
+    counts, conditions = _summary_inputs()
+
+    summary = build_cell_distribution_summary(counts, conditions, case="LE", control="N")
+
+    # The d3_Other sample's 99/99 counts must not leak into either arm.
+    total_absolute = summary["case_absolute"].sum() + summary["control_absolute"].sum()
+    assert total_absolute == 32  # 16 case + 16 control, Other excluded
+
+
+def test_build_cell_distribution_summary_without_test_is_nan():
+    """No test_results -> p/adjp columns exist but are NaN (stable schema)."""
+    counts, conditions = _summary_inputs()
+
+    summary = build_cell_distribution_summary(counts, conditions, case="LE", control="N")
+
+    assert "case_pvalue" in summary.columns
+    assert "case_adj_pvalue" in summary.columns
+    assert summary["case_pvalue"].isna().all()
+    assert summary["case_adj_pvalue"].isna().all()
+
+
+def test_build_cell_distribution_summary_relative_sums_to_100():
+    """Within each condition, relative percentages sum to 100."""
+    counts, conditions = _summary_inputs()
+
+    summary = build_cell_distribution_summary(counts, conditions, case="LE", control="N")
+
+    assert round(summary["case_relative_pct"].sum(), 6) == 100.0
+    assert round(summary["control_relative_pct"].sum(), 6) == 100.0

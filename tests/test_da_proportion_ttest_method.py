@@ -8,10 +8,10 @@ import pandas as pd
 import pytest
 
 from cellquorum.backends.registry import build_default_backend_registry
+from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.comparative.differential_abundance.proportion_ttest_method import (
     ProportionTTestMethod,
 )
-from cellquorum.methods.base import MethodSkip
 
 
 @pytest.fixture
@@ -151,10 +151,10 @@ def test_paired_happy_path(paired_cohort_adata, mock_context):
     # Should not be a skip
     assert not isinstance(result, MethodSkip)
 
-    # Check artifacts
-    assert len(result.artifacts) == 1
-    artifact = result.artifacts[0]
-    assert artifact.name == "da_results"
+    # Check artifacts (da_results + auto-emitted cell_distribution_summary)
+    assert len(result.artifacts) == 2
+    assert {a.name for a in result.artifacts} == {"da_results", "cell_distribution_summary"}
+    artifact = next(a for a in result.artifacts if a.name == "da_results")
     assert artifact.path.name == "da_proportion_ttest.csv"
     assert artifact.kind == "csv"
 
@@ -186,6 +186,73 @@ def test_paired_happy_path(paired_cohort_adata, mock_context):
 
     # FDR should be present and finite
     assert pd.notna(type_b["fdr"])
+
+
+def test_paired_emits_cell_distribution_summary(paired_cohort_adata, mock_context):
+    """The method auto-emits a pooled Cell Distribution Summary alongside the DA table."""
+
+    method = ProportionTTestMethod()
+    config = {
+        "cell_type_col": "cell_type",
+        "condition_col": "condition",
+        "donor_col": "donor",
+        "case": "case",
+        "control": "control",
+        "paired": True,
+        "seed": 42,
+    }
+
+    result = method.run(paired_cohort_adata, config, mock_context)
+    assert not isinstance(result, MethodSkip)
+
+    summary_artifact = next(a for a in result.artifacts if a.name == "cell_distribution_summary")
+    assert summary_artifact.path.name == "cell_distribution_summary.csv"
+
+    df = pd.read_csv(summary_artifact.path)
+    assert set(df.columns) == {
+        "cell_type",
+        "case_absolute",
+        "case_relative_pct",
+        "case_pvalue",
+        "case_adj_pvalue",
+        "control_absolute",
+        "control_relative_pct",
+    }
+
+    # All three cell types are present, alphabetically ordered.
+    assert list(df["cell_type"]) == ["TypeA", "TypeB", "TypeC"]
+
+    # Relative percentages sum to 100 within each condition arm.
+    assert round(df["case_relative_pct"].sum(), 4) == 100.0
+    assert round(df["control_relative_pct"].sum(), 4) == 100.0
+
+    # TypeB is enriched in case: its case share exceeds its control share.
+    type_b = df[df["cell_type"] == "TypeB"].iloc[0]
+    assert type_b["case_relative_pct"] > type_b["control_relative_pct"]
+
+    # The case arm carries the DA p-value / FDR.
+    assert pd.notna(type_b["case_pvalue"])
+    assert pd.notna(type_b["case_adj_pvalue"])
+
+
+def test_distribution_summary_can_be_disabled(paired_cohort_adata, mock_context):
+    """Setting write_distribution_summary=False suppresses the summary artifact."""
+
+    method = ProportionTTestMethod()
+    config = {
+        "cell_type_col": "cell_type",
+        "condition_col": "condition",
+        "donor_col": "donor",
+        "case": "case",
+        "control": "control",
+        "paired": True,
+        "seed": 42,
+        "write_distribution_summary": False,
+    }
+
+    result = method.run(paired_cohort_adata, config, mock_context)
+    assert not isinstance(result, MethodSkip)
+    assert {a.name for a in result.artifacts} == {"da_results"}
 
     # Metrics
     assert result.metrics["case"] == "case"
