@@ -17,6 +17,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Import the process-level probe cache (see _probe.py for why this exists).
+from cellquorum.backends._probe import env_python_module_available
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the pyscenic environment.
@@ -182,25 +184,15 @@ class PyscenicBackend(BaseBackend):
                 f"underscores starting with a letter. Received: {module_name}"
             )
 
-        try:
-            result = subprocess.run(
-                [
-                    self.launcher,
-                    "run",
-                    "-n",
-                    self.env_name,
-                    "python",
-                    "-c",
-                    f"import {module_name}",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-        return result.returncode == 0
+        # Delegate to the process-level cache; see celloracle_backend for the cost
+        # measurements motivating it. Validation stays above so an invalid name still
+        # raises before anything is cached.
+        return env_python_module_available(
+            self.launcher,
+            self.env_name,
+            module_name,
+            self.timeout_seconds,
+        )
 
     @staticmethod
     def _valid_module_name(module_name: str) -> bool:
