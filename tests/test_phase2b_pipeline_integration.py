@@ -87,12 +87,12 @@ def test_annotation_does_not_skip_when_clustering_runs_first() -> None:
     import numpy as np
     import pandas as pd
 
+    from cellquorum.core.contracts import set_layer_tag
+    from cellquorum.methods.registry import MethodRegistry
     from cellquorum.stages.annotation.marker_vote import MarkerVoteMethod
     from cellquorum.stages.annotation.stage import AnnotationStage
     from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
     from cellquorum.stages.clustering.stage import ClusteringStage
-    from cellquorum.core.contracts import set_layer_tag
-    from cellquorum.methods.registry import MethodRegistry
 
     # Build a minimal AnnData with an embedding for clustering.
     rng = np.random.default_rng(42)
@@ -173,10 +173,10 @@ def test_clustering_auto_couples_use_rep_when_integration_enabled() -> None:
     import anndata as ad
     import numpy as np
 
-    from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
-    from cellquorum.stages.clustering.stage import ClusteringStage
     from cellquorum.config.models import CellQuorumConfig
     from cellquorum.methods.registry import MethodRegistry
+    from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
+    from cellquorum.stages.clustering.stage import ClusteringStage
 
     # Build a minimal AnnData with both X_pca and X_pca_harmony.
     rng = np.random.default_rng(42)

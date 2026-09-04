@@ -1,0 +1,66 @@
+name: Feature or method request
+description: Propose a new stage, a new method for an existing stage, or an engine capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        CellQuorum's config surface is already large, and every new option is one more
+        thing a wet-lab user has to understand. The most useful requests explain the
+        analysis question first — sometimes the engine can infer what a new knob would
+        have configured.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of request is this?
+      options:
+        - A new method for an existing stage
+        - A new stage
+        - An engine/CLI capability (resume, reporting, provenance, …)
+        - A visualization or figure
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What biological or analytical question does this answer?
+      description: >
+        Describe the science, not the implementation. This is the part that determines
+        whether the feature belongs here and how it should be shaped.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like it to do?
+      description: If you have a config shape in mind, sketch it.
+      render: yaml
+
+  - type: input
+    id: reference
+    attributes:
+      label: Reference
+      description: Paper, preprint, or upstream package implementing the method.
+      placeholder: "https://doi.org/… or https://github.com/…"
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What are you doing instead today?
+      description: >
+        A workaround that already works is useful context — it tells us how much this
+        would save, and sometimes it belongs in the docs rather than the engine.
+
+  - type: checkboxes
+    id: backend
+    attributes:
+      label: Implementation notes
+      options:
+        - label: This would need an R/Bioconductor backend.
+        - label: This would need a GPU.
+        - label: This would need a new isolated conda environment (its deps conflict with the core env).
+        - label: I would be willing to work on this.

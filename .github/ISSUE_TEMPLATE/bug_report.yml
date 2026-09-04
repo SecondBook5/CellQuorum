@@ -1,0 +1,86 @@
+name: Bug report
+description: A run failed, produced a wrong result, or behaved differently than documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing this. CellQuorum writes a `provenance/` directory on every
+        run that records the resolved config, the plan, backend availability, and the
+        environment stamp — attaching those files usually turns a multi-day
+        back-and-forth into a single reply.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: interface
+    attributes:
+      label: How were you running it?
+      options:
+        - CLI (cellquorum run / cq run)
+        - Python API (run_pipeline)
+        - Notebook namespaces (cq.pp / cq.tl / cq.diag)
+        - Snakemake workflow
+        - Docker image
+    validations:
+      required: true
+
+  - type: input
+    id: stage
+    attributes:
+      label: Which stage?
+      description: The stage name from the plan table, if the failure is stage-specific.
+      placeholder: "qc, integration, trajectory, ccc_network, …"
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Config and command
+      description: >
+        The command you ran, plus the relevant part of your YAML config. Please redact
+        any file paths you consider sensitive.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Full error output
+      description: The complete traceback or error message, not just the last line.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance
+      description: >
+        Paste the contents of `provenance/run_metadata.json` and
+        `provenance/backend_status.json` from the failing run, or attach the whole
+        `provenance/` directory. If the run never started, say so.
+      render: json
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "Output of: `cellquorum --version && python -VV && pip list | grep -Ei 'scanpy|anndata|numpy|scipy|pandas|torch|scvi'`"
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I ran `cellquorum plan --config <my-config>` and included any planner warnings above.
+        - label: I checked whether the stage was reported as *skipped* with a recorded reason (a skip is often correct behavior, not a bug).

@@ -22,6 +22,12 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.contracts import DataContract
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
+from cellquorum.methods.base import MethodSkip
+from cellquorum.methods.r_method import RAnalysisMethod
 from cellquorum.stages.comparative.multicellular_programs._dialogue_io import (
     export_dialogue_inputs,
     read_dialogue_outputs,
@@ -32,13 +38,9 @@ from cellquorum.stages.comparative.multicellular_programs.diagnostics import (
     program_stability,
 )
 from cellquorum.stages.comparative.multicellular_programs.mcp_figures import plot_mcp_summary
-from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.core.stage_artifact_writer import StageArtifactWriter
-from cellquorum.methods.base import MethodSkip
-from cellquorum.methods.r_method import RAnalysisMethod
+from cellquorum.visualization.figstyle import render_figure
 
-_DIALOGUE_R = Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "dialogue.R"
+_DIALOGUE_R = r_script_path("dialogue.R")
 
 
 class MulticellularProgramsMethod(RAnalysisMethod):
@@ -201,6 +203,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                 dialogue_version = None
 
         notes: list[str] = []
+        warnings: list[str] = []
 
         # ---- Donor-support diagnostic (always emitted). ----
         donor_support_df = pd.DataFrame(
@@ -224,7 +227,10 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                 )
             }
         elif not donor_col or donor_col not in adata.obs.columns:
-            notes.append("donor support skipped (no donor_col resolved)")
+            # A warning, because donor support is the check that says whether a
+            # program is real or one donor's idiosyncrasy. Without it the programs
+            # ship with nothing to distinguish those two cases.
+            warnings.append("donor support skipped (no donor_col resolved)")
 
         # ---- Program-stability diagnostic (guarded resample orchestration). ----
         per_program_stability: dict[str, float] = {}
@@ -252,6 +258,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                     stability_resamples=stability_resamples,
                     seed=seed,
                     timeout=timeout,
+                    warnings=warnings,
                 )
             )
             notes.extend(stability_notes)
@@ -313,25 +320,29 @@ class MulticellularProgramsMethod(RAnalysisMethod):
 
         # Summary figure (skip-not-crash: plotting failure must not crash method).
         if not programs.empty:
-            try:
-                fig_path = plot_mcp_summary(
+            figs: list[Path] = []
+            render_figure(
+                "MCP summary",
+                lambda: plot_mcp_summary(
                     programs,
                     scores,
                     donor_support_df,
                     cell_type_col_values=cell_types_used,
                     out_dir=results_dir,
                     name="mcp_summary",
+                ),
+                figures=figs,
+                warnings=warnings,
+            )
+            artifacts.extend(
+                StageArtifact(
+                    name="mcp_summary",
+                    path=fig_path,
+                    kind="figure",
+                    description="MCP summary: participation heatmap + score distributions.",
                 )
-                artifacts.append(
-                    StageArtifact(
-                        name="mcp_summary",
-                        path=fig_path,
-                        kind="figure",
-                        description="MCP summary: participation heatmap + score distributions.",
-                    )
-                )
-            except Exception as e:
-                notes.append(f"MCP summary figure skipped: {e}")
+                for fig_path in figs
+            )
 
         n_programs_recovered = int(programs["program"].nunique()) if not programs.empty else 0
         notes.insert(
@@ -361,6 +372,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics=metrics,
             backend="rscript",
         )
@@ -388,13 +400,19 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         stability_resamples: int,
         seed: int,
         timeout: int,
+        warnings: list[str],
     ) -> tuple[dict[str, float], pd.DataFrame | None, list[str]]:
         """Run guarded subsample re-runs and score program stability.
 
         Each round drops ~1/min(6, n_samples) of the samples (deterministically
         seeded by ``seed + round``), re-exports, re-runs DIALOGUE, and matches the
-        round's programs back to the full run. Any per-round failure is recorded
-        as a note and skipped -- stability never raises.
+        round's programs back to the full run. Stability never raises: a round that
+        fails is skipped.
+
+        A skipped round goes to ``warnings`` and not to the returned notes, because
+        stability is averaged over the rounds that survived -- so a run reporting
+        0.9 over two of ten rounds and one reporting 0.9 over all ten look
+        identical in the metrics, and only the warning distinguishes them.
         """
         notes: list[str] = []
         all_samples = adata.obs[sample_col].astype(str).unique().tolist()
@@ -441,16 +459,16 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                 ]
                 rproc = backend.run_script(_DIALOGUE_R, round_args, timeout=timeout)
                 if rproc.returncode != 0:
-                    notes.append(f"stability resample {r} failed (nonzero R exit)")
+                    warnings.append(f"stability resample {r} failed (nonzero R exit)")
                     continue
                 round_programs = read_dialogue_outputs(round_out)["programs"]
                 match_dicts.append(match_program_loadings(full_programs, round_programs))
             except Exception as exc:  # never let a resample crash the stage
-                notes.append(f"stability resample {r} failed: {str(exc)[:200]}")
+                warnings.append(f"stability resample {r} failed: {str(exc)[:200]}")
                 continue
 
         if not match_dicts:
-            notes.append("program stability: all resamples failed")
+            warnings.append("program stability: all resamples failed")
             return {}, None, notes
 
         stability_df = program_stability(match_dicts)

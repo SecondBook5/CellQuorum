@@ -8,11 +8,11 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
+from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.comparative.differential_expression.pseudobulk_edger_method import (
     PseudobulkEdgeRMethod,
 )
-from cellquorum.core.contracts.layer_tags import set_layer_tag
-from cellquorum.methods.base import MethodSkip
 
 
 def _edger_available() -> bool:

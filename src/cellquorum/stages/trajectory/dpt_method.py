@@ -12,7 +12,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory import _pseudotime
-from cellquorum.stages.trajectory.save import write_pseudotime_h5ad
+from cellquorum.stages.trajectory.save import record_write, write_pseudotime_h5ad
 
 
 class DptMethod(AnalysisMethod):
@@ -27,6 +27,7 @@ class DptMethod(AnalysisMethod):
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         notes: list[str] = []
+        warnings: list[str] = []
 
         rep = _pseudotime.resolve_rep(
             adata, config.get("use_rep"), config.get("use_rep_fallback", ["X_pca"])
@@ -50,16 +51,19 @@ class DptMethod(AnalysisMethod):
                 # The slice carries the parent's neighbor graph, which no longer
                 # matches the reduced cell set. Drop it so compute_dpt rebuilds a
                 # clean graph on the outlier-free subset (skip-not-crash on IO).
+                # A failure to drop is a WARNING, not a note: compute_dpt would then
+                # reuse a graph built over cells this object no longer has, and the
+                # pseudotime it returns would be wrong rather than missing.
                 for key in ("neighbors",):
                     try:
                         work.uns.pop(key, None)
                     except Exception as exc:  # noqa: BLE001
-                        notes.append(f"could not drop stale uns['{key}']: {exc}")
+                        warnings.append(f"could not drop stale uns['{key}']: {exc}")
                 for key in ("connectivities", "distances"):
                     try:
                         work.obsp.pop(key, None)
                     except Exception as exc:  # noqa: BLE001
-                        notes.append(f"could not drop stale obsp['{key}']: {exc}")
+                        warnings.append(f"could not drop stale obsp['{key}']: {exc}")
                 notes.append(f"excluded {int(outlier_mask.sum())} outliers before dpt")
 
         # Resolve root on the working object.
@@ -93,9 +97,9 @@ class DptMethod(AnalysisMethod):
         oriented = False
         orient_key = config.get("orient_by_score_key")
         if orient_key and orient_key in work.obs:
-            oriented = self._maybe_reorient(work, res, orient_key, notes)
+            oriented = self._maybe_reorient(work, res, orient_key, notes, warnings)
 
-        self._writeback(adata, work, res, outlier_mask, notes)
+        self._writeback(adata, work, res, outlier_mask, warnings)
 
         uns = adata.uns.setdefault("trajectory", {}).setdefault("dpt", {})
         uns.update(
@@ -116,10 +120,13 @@ class DptMethod(AnalysisMethod):
         try:
             results_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"could not create results dir: {exc}")
+            warnings.append(f"could not create results dir: {exc}")
         subset = bool(exclude and outlier_mask is not None and outlier_mask.any())
-        artifact, write_note = write_pseudotime_h5ad(work, results_dir, "dpt", subset=subset)
-        notes.append(write_note)
+        artifact = record_write(
+            write_pseudotime_h5ad(work, results_dir, "dpt", subset=subset),
+            notes=notes,
+            warnings=warnings,
+        )
         if artifact is not None:
             artifacts.append(artifact)
 
@@ -127,6 +134,7 @@ class DptMethod(AnalysisMethod):
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics={
                 "method": self.name,
                 "root_index": int(iroot),
@@ -139,16 +147,27 @@ class DptMethod(AnalysisMethod):
         )
 
     def _maybe_reorient(
-        self, work: ad.AnnData, res: dict, orient_key: str, notes: list[str]
+        self,
+        work: ad.AnnData,
+        res: dict,
+        orient_key: str,
+        notes: list[str],
+        warnings: list[str],
     ) -> bool:
-        """Sign-check corr(dpt, score); re-root once at argmax(score) if reversed."""
+        """Sign-check corr(dpt, score); re-root once at argmax(score) if reversed.
+
+        Both collectors, because the two outcomes differ in kind: re-rooting is a
+        note (it worked), while failing to orient at all is a warning — the caller
+        asked for a direction check and did not get one, so the pseudotime may run
+        backwards with nothing in the report to say so.
+        """
         import scanpy as sc
 
         pt_vals = np.asarray(res["pseudotime"], dtype="float64")
         try:
             score = _pseudotime.numeric_obs(work, orient_key)
         except _pseudotime.PseudotimeComputeError as exc:
-            notes.append(f"orient skipped: {exc}")
+            warnings.append(f"orient skipped: {exc}")
             return False
         finite = np.isfinite(pt_vals) & np.isfinite(score)
         if finite.sum() < 3:
@@ -160,7 +179,9 @@ class DptMethod(AnalysisMethod):
             try:
                 sc.tl.dpt(work, n_dcs=int(res["n_dcs"]))
             except Exception as exc:  # noqa: BLE001
-                notes.append(f"re-root dpt failed: {exc}")
+                # The worst case in this method: the sign check said the pseudotime
+                # runs backwards and the fix failed, so what ships is known-reversed.
+                warnings.append(f"re-root dpt failed, pseudotime is reversed: {exc}")
                 return False
             res["pseudotime"] = np.asarray(work.obs["dpt_pseudotime"], dtype="float64")
             notes.append("re-rooted dpt for orientation")
@@ -173,9 +194,14 @@ class DptMethod(AnalysisMethod):
         work: ad.AnnData,
         res: dict,
         outlier_mask: np.ndarray | None,
-        notes: list[str],
+        warnings: list[str],
     ) -> None:
-        """Align dpt_pseudotime + X_diffmap back to the full object by obs_name."""
+        """Align dpt_pseudotime + X_diffmap back to the full object by obs_name.
+
+        Failures here are warnings: the stage still reports success with metrics,
+        but the object it hands on carries no pseudotime, so every consumer
+        downstream behaves as if dpt had never run.
+        """
         try:
             if outlier_mask is not None and outlier_mask.any():
                 ser = pd.Series(np.asarray(res["pseudotime"]), index=work.obs_names)
@@ -183,7 +209,7 @@ class DptMethod(AnalysisMethod):
             else:
                 adata.obs["dpt_pseudotime"] = np.asarray(res["pseudotime"])
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"dpt obs writeback failed: {exc}")
+            warnings.append(f"dpt obs writeback failed: {exc}")
 
         try:
             if "X_diffmap" in work.obsm:
@@ -197,7 +223,7 @@ class DptMethod(AnalysisMethod):
                 else:
                     adata.obsm["X_diffmap"] = dm
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"dpt obsm writeback failed: {exc}")
+            warnings.append(f"dpt obsm writeback failed: {exc}")
 
 
 __all__ = ["DptMethod"]

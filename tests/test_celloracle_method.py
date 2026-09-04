@@ -10,10 +10,10 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.gene_regulation.perturbation.celloracle_method import (
     CellOracleMethod,
 )
-from cellquorum.methods.base import MethodSkip
 
 
 def _adata(n: int = 300, g: int = 40, condition: bool = False) -> ad.AnnData:

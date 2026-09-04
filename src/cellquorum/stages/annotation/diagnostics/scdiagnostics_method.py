@@ -9,8 +9,10 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.backends.script_paths import r_script_path
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumBackendError
+from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
@@ -19,9 +21,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 # Path to the bundled scDiagnostics R script.
-_SCDIAGNOSTICS_R = (
-    Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "scdiagnostics.R"
-)
+_SCDIAGNOSTICS_R = r_script_path("scdiagnostics.R")
 
 
 class ScdiagnosticsMethod(RAnalysisMethod):
@@ -274,7 +274,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         query.var_names = adata.var_names
         query.obs[cell_type_col] = adata.obs[cell_type_col].values
         query.obsm["X_pca"] = adata.obsm["X_pca"].copy()
-        query.write_h5ad(path)
+        write_h5ad(query, path)
 
     def _write_soft_scores(
         self,

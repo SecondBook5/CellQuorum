@@ -7,16 +7,15 @@ not the stale input — the defect this test suite exists to prevent recurring.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-from pathlib import Path
+import os
 
 import pandas as pd
 import pytest
+from _external_data import ENV_CELLRANGER_ROOT, require_cellranger_library, require_r_package
 
+from cellquorum.core.stage import StageResult
 from cellquorum.stages.ambient_correction.config import AmbientCorrectionConfig
 from cellquorum.stages.ambient_correction.stage import AmbientCorrectionStage
-from cellquorum.core.stage import StageResult
 
 
 class _Ctx:
@@ -35,21 +34,12 @@ def test_stage_skips_when_disabled():
     assert result.metrics.get("skipped") is True
 
 
-# ---- Real-data wiring test (skips when Cell Ranger data or R+SoupX absent) ---- #
-
-_CR_ROOT = Path("/mnt/e/lymphedema_cellranger")
-_LIB = _CR_ROOT / "Set1_norm_LE" / "LE1_v8" / "outs"
-
-
-def _soupx_available() -> bool:
-    if shutil.which("Rscript") is None:
-        return False
-    r = subprocess.run(
-        ["Rscript", "--vanilla", "-e", 'quit(status=!requireNamespace("SoupX", quietly=TRUE))'],
-        capture_output=True,
-        text=True,
-    )
-    return r.returncode == 0
+# ---- Real-data wiring test ---- #
+#
+# Needs real Cell Ranger matrices, located via the CELLQUORUM_TEST_CELLRANGER_ROOT
+# environment variable rather than a hardcoded maintainer path, so anyone with the data
+# can run it. See tests/_external_data.py. It skips with an actionable message when the
+# variable is unset.
 
 
 class _RegistryStub:
@@ -77,13 +67,26 @@ class _WiringCtx:
         raise AssertionError("ambient_correction must not require adata")
 
 
-@pytest.mark.skipif(
-    not (_LIB.is_file() if _LIB.is_file() else (_LIB / "raw_feature_bc_matrix.h5").is_file())
-    or not _soupx_available(),
-    reason="Cell Ranger data or Rscript+SoupX unavailable",
-)
+@pytest.mark.integration
+@pytest.mark.r
+@pytest.mark.slow
 def test_stage_returns_corrected_counts_on_result_adata(tmp_path):
     """The stage must return SoupX-corrected counts as result.adata, not the input."""
+
+    # Resolve the real library, skipping cleanly when the data or R package is absent.
+    # Both checks happen here rather than in a module-scope skipif so the filesystem
+    # stat and the Rscript subprocess stay off the collection path.
+    require_cellranger_library(
+        "Set1_norm_LE",
+        "LE1_v8",
+        "outs",
+        needs=("raw_feature_bc_matrix.h5", "filtered_feature_bc_matrix.h5"),
+    )
+    require_r_package("SoupX")
+
+    # The stage resolves libraries relative to the configured Cell Ranger root, so pass
+    # the root itself rather than the individual library directory.
+    cellranger_root = os.environ[ENV_CELLRANGER_ROOT]
 
     # A one-row manifest pointing at a real library.
     manifest = pd.DataFrame(
@@ -100,7 +103,7 @@ def test_stage_returns_corrected_counts_on_result_adata(tmp_path):
             "ambient_correction": AmbientCorrectionConfig(
                 enabled=True,
                 method="soupx",
-                cellranger_root=str(_CR_ROOT),
+                cellranger_root=cellranger_root,
                 cluster_resolution=0.5,
                 round_to_int=True,
                 timeout_seconds=1800,

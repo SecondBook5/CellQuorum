@@ -13,8 +13,10 @@ function argument, never a module constant.
 from __future__ import annotations
 
 import colorsys
+import contextlib
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -68,7 +70,16 @@ CELLQUORUM_FIGSIZE_WIDE = (10, 4)  # Wide single row
 CELLQUORUM_FIGSIZE_SQUARE = (6, 6)  # Square plots (UMAP, etc)
 CELLQUORUM_FIGSIZE_LARGE = (12, 8)  # Multi-panel figure
 
-# Cluster colors (distinct, harmonious palette for cluster/group diagnostics).
+# LEGACY. Kept only because it is part of the exported surface; nothing in the
+# engine draws from it any more. Do not use it for a new figure — use
+# `palette_colors(n)` / `distinct_palette(n)`, which are the validated paths.
+#
+# Two reasons this one is not fit for categorical use: every entry is a Material
+# 300-level pastel, so the set fails the chroma floor the validated palette is
+# held to; and it contains an outright DUPLICATE — "#FFB74D" appears as both
+# "Orange" and "Amber" — plus the near-duplicate pair #9575CD/#CE93D8. A group
+# palette built by cycling this list therefore drew two different clusters in one
+# identical hex on any figure with 12+ groups.
 CELLQUORUM_CLUSTER_COLORS = [
     "#E57373",  # Coral red
     "#FFB74D",  # Orange
@@ -118,23 +129,36 @@ FONTSIZE = {
     "annotation": 6.5,
 }
 
-# 18-hue colorblind-safe ordered categorical palette.
+# 18-hue ordered categorical palette. What it guarantees, MEASURED, is narrower than
+# what this comment used to claim; the numbers below come from
+# `cellquorum.visualization.palette_audit` and are pinned by tests/test_palette_audit.py,
+# so they fail loudly if a hue changes. CAM02-UCS distance, worst of normal vision plus
+# full-severity deuteranomaly / protanomaly / tritanomaly, on the light chart surface
+# `#fcfcfb` (cellquorum renders light-mode only, so that is the only surface audited).
 #
-# Slots 1-8 are the validated dataviz reference categorical theme, in its
-# CVD-safe order (each adjacent pair clears the colorblind-separation and
-# normal-vision gates on the light chart surface `#fcfcfb`). Slots 9-18 are an
-# overflow tier for high-cardinality categorical use (e.g. many cell types /
-# trajectory states); they are ordered so no two look-alike hues sit adjacent
-# and the whole 18 clears the hard gates (lightness band, chroma floor, CVD
-# separation, normal-vision floor) on the light surface.
+#   Slots 1-8   the validated dataviz reference categorical theme. ALL PAIRS separated
+#               (worst 6.97, orange vs red under tritanomaly). Up to 8 categories can
+#               be told apart by colour in any pairing.
+#   Slots 9-18  overflow tier for high-cardinality use (many cell types / trajectory
+#               states). ADJACENT pairs separated (worst 8.2), so an ordered legend or
+#               a stacked bar reads correctly -- but NOT all-pairs: slots 3 and 11
+#               (aqua/emerald) are 3.5 apart in NORMAL vision, and slots 6 and 12
+#               (green/crimson) are 0.7 apart under deuteranomaly.
 #
-# The ordering is NOT cosmetic: it was chosen by running the dataviz palette
-# validator (`skills/dataviz/scripts/validate_palette.py`) over candidate
-# orders and keeping one that passes. Do NOT reorder or add hues without
-# re-running that validator — categorical identity beyond ~8 series relies on
-# secondary encoding (direct labels / legend / position), which every figure in
-# this engine provides. cellquorum renders only on the light (white) surface,
-# so the palette is validated light-mode only.
+# That is not a bug to be fixed by picking nicer hues: perceptual space does not hold
+# 18 mutually distinct colours at usable lightness. Past ~8 categories, identity has to
+# come from direct labels or position, which every categorical figure in this engine
+# provides. A repaired overflow tier reaching 6.97 all-pairs (i.e. bounded only by the
+# reference theme itself) has been demonstrated and is available -- it is not applied
+# because changing these hues repaints every figure already in a manuscript, which is a
+# deliberate decision rather than a silent one.
+#
+# Do NOT reorder or add hues without re-running the audit:
+#   from cellquorum.visualization.palette_audit import audit_palette, format_audit
+#   print(format_audit(audit_palette(CATEGORICAL_PALETTE)))
+# (The `skills/dataviz/scripts/validate_palette.py` this list was originally ordered by
+# lives outside the repo and is not on this machine, which is exactly why the claim
+# above went unchecked long enough to be wrong.)
 CATEGORICAL_PALETTE: list[str] = [
     "#2a78d6",  # blue      (dataviz core 1)
     "#eb6834",  # orange    (dataviz core 2)
@@ -268,6 +292,55 @@ def significance_stars(p: float) -> str:
     return "ns"
 
 
+#: Raster suffixes that get a vector companion written alongside them, so a figure
+#: saved by full path is still submittable. Kept here rather than at each call site
+#: because "which formats a publication figure needs" is one decision, not nineteen.
+_RASTER_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".tif", ".tiff"})
+
+#: The vector format written next to a raster target.
+_VECTOR_COMPANION = ".pdf"
+
+
+def _savefig_format_for(path: Path) -> str:
+    """The format matplotlib would have inferred from ``path``, resolved eagerly.
+
+    A suffixless path falls back to the rcParam, which is exactly what matplotlib
+    does for one; resolving it here rather than leaving it to ``savefig`` is what
+    lets the write go to a ``.tmp`` file without changing the output format.
+    """
+    suffix = path.suffix.lstrip(".").lower()
+    return suffix or str(mpl.rcParams["savefig.format"])
+
+
+def atomic_savefig(fig: Figure, path: Path, **savefig_kwargs: Any) -> None:
+    """``fig.savefig(path)`` that leaves no partial file behind on failure.
+
+    The write goes to a dotfile in the same directory and is moved into place only
+    once ``savefig`` returns. Same directory means the move is a rename on one
+    filesystem and therefore atomic, so a reader sees either the previous file or
+    the complete new one — never the 38 KB truncated ``velocity_stream.pdf`` that a
+    mid-write "Can only output finite numbers in PDF" left in a real run.
+
+    The format is resolved from ``path`` and passed explicitly, because matplotlib
+    otherwise infers it from the filename it is handed — and the filename it is
+    handed here ends in ``.tmp``, which is not a format. Callers that already pass
+    ``format=`` keep theirs.
+
+    Raises whatever ``savefig`` raises, after cleaning up the temp file. Callers that
+    write several formats decide for themselves whether one failure is fatal.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    savefig_kwargs.setdefault("format", _savefig_format_for(path))
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        fig.savefig(tmp, **savefig_kwargs)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(path)
+
+
 def save_figure(
     fig: Figure,
     out_dir: Path | str,
@@ -276,29 +349,67 @@ def save_figure(
     formats: tuple[str, ...] = ("pdf", "png"),
     dpi: int = 300,
 ) -> list[Path]:
-    """Write ``fig`` to ``out_dir/stem.<fmt>`` for each format, then close it."""
+    """Write ``fig`` to ``out_dir/stem.<fmt>`` for each format, then close it.
+
+    Two properties beyond a bare loop of ``savefig``, both learned from a real
+    run. The velocity stream figure raised "Can only output finite numbers in
+    PDF" partway through writing, and the loop left behind a 38 KB truncated
+    ``velocity_stream.pdf`` — a file that looks like a rendered figure in the
+    figures directory and fails to open — and then never attempted the PNG at
+    all, because the exception propagated out of the first iteration.
+
+    So: each format is written to a temp file in the same directory and moved
+    into place only once ``savefig`` returns, and every requested format is
+    attempted. A format that fails contributes no path and leaves no partial
+    file; if ALL of them fail the first exception is re-raised, because a caller
+    that asked for a figure and got an empty list needs to hear why. The figure
+    is closed either way — leaking it would grow memory across a long run.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
-    for fmt in formats:
-        path = out_dir / f"{stem}.{fmt}"
-        fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
-        paths.append(path)
-    plt.close(fig)
+    first_error: BaseException | None = None
+    try:
+        for fmt in formats:
+            path = out_dir / f"{stem}.{fmt}"
+            try:
+                atomic_savefig(
+                    fig, path, dpi=dpi, bbox_inches="tight", facecolor="white", format=fmt
+                )
+                paths.append(path)
+            except BaseException as exc:  # noqa: BLE001 — re-raised below if total
+                if first_error is None:
+                    first_error = exc
+    finally:
+        plt.close(fig)
+    if not paths and first_error is not None:
+        raise first_error
     return paths
 
 
-def panel_letter(ax: Axes, letter: str, *, size: int = 15) -> None:
-    """Bold publication panel letter at the axes' upper-left corner."""
+def panel_letter(
+    ax: Axes,
+    letter: str,
+    *,
+    size: float | None = None,
+    x: float = -0.08,
+    y: float = 0.98,
+) -> None:
+    """Bold panel letter just outside the axes' upper-left corner.
+
+    The one panel-letter helper. ``x``/``y`` are axes fractions and only need
+    overriding when a tight panel would otherwise clip the letter.
+    """
     ax.text(
-        -0.08,
-        0.98,
+        x,
+        y,
         letter,
         transform=ax.transAxes,
-        fontsize=size,
+        fontsize=size if size is not None else FONTSIZE["panel_label"],
         fontweight="bold",
         va="top",
         ha="right",
+        color=TEXT,
     )
 
 
@@ -434,12 +545,32 @@ def get_cellquorum_colors(n: int | None = None) -> list[str]:
     return [CELLQUORUM_CLUSTER_COLORS[i % len(CELLQUORUM_CLUSTER_COLORS)] for i in range(n)]
 
 
+def palette_colors(n: int) -> list[str]:
+    """``n`` distinct colors: the validated fixed palette first, then the generator.
+
+    The one place that answers "what colors for n categories". Two rules, in
+    order: while the validated 18-slot :data:`CATEGORICAL_PALETTE` covers ``n``,
+    use it, because its ordering was chosen by running the dataviz palette
+    validator; past 18 hand off to :func:`distinct_palette`, which never repeats.
+
+    What it must never do is CYCLE a fixed list. Doing that assigns one hex to
+    two categories, and no amount of legend or labelling recovers the difference
+    — on a real 16-cluster velocity figure two clusters came out the same orange
+    because the list this replaced had ``#FFB74D`` in two slots.
+    """
+    if n <= 0:
+        return []
+    if n <= len(CATEGORICAL_PALETTE):
+        return CATEGORICAL_PALETTE[:n]
+    return distinct_palette(n)
+
+
 def get_group_palette(groups: list[str]) -> dict[str, str]:
     """Map group values to house-palette colors, deterministically by sorted order."""
 
     # Sort for determinism so the same groups always map to the same colors.
     ordered = sorted({str(g) for g in groups})
-    colors = get_cellquorum_colors(len(ordered))
+    colors = palette_colors(len(ordered))
     return {group: colors[i] for i, group in enumerate(ordered)}
 
 
@@ -448,20 +579,37 @@ def save_cellquorum_figure(
     path: str | Path,
     dpi: int = 300,
     tight: bool = True,
+    vector_companion: bool = True,
     **kwargs: Any,
 ) -> Path:
     """
     Save a CellQuorum figure with consistent quality settings.
+
+    The by-full-path counterpart to :func:`save_figure`, which takes a directory and
+    a stem. Both now share one write mechanic (:func:`atomic_savefig`), so neither
+    can leave a half-written file behind. Unlike ``save_figure`` this does NOT close
+    the figure — nineteen call sites are written against that.
+
+    When ``path`` names a raster format, a ``.pdf`` alongside it is written too.
+    Every caller of this function passed a ``.png``, so figures written this way —
+    the QC diagnostics, the preprocessing panels, the subclustering donor-QC and
+    group-recovery panels — had no vector version at all, while figures written
+    through ``save_figure`` got PDF and PNG both. A manuscript needs the vector one,
+    and which formats a publication figure needs is one decision, not nineteen.
 
     Args:
         fig: Matplotlib figure to save.
         path: Output file path (a full path, distinct from ``save_figure``).
         dpi: Resolution in dots per inch (default: 300 for publication).
         tight: Whether to use tight_layout and bbox_inches='tight'.
+        vector_companion: Write a ``.pdf`` beside a raster ``path``. Off for the rare
+            figure whose vector form is pathological (a dense hexbin, a 100k-point
+            scatter) rather than merely large.
         **kwargs: Additional arguments passed to fig.savefig().
 
     Returns:
-        Path to saved figure.
+        Path to the figure at ``path`` — the requested format, not the companion, so
+        callers building a StageArtifact from the return value are unaffected.
     """
     path = Path(path)
 
@@ -478,8 +626,18 @@ def save_cellquorum_figure(
     }
     save_kwargs.update(kwargs)
 
-    # Save figure
-    fig.savefig(path, **save_kwargs)
+    # The requested format is the contract: a failure here propagates, as it always did.
+    atomic_savefig(fig, path, **save_kwargs)
+
+    # The companion is additive. A vector renderer can refuse a figure the raster one
+    # accepted — that is exactly how the velocity stream figure failed — and losing
+    # the extra format must not cost the caller the figure it asked for and got.
+    if vector_companion and path.suffix.lower() in _RASTER_SUFFIXES:
+        # Drop any caller-supplied ``format``: it describes the raster target, and
+        # honouring it here would write PNG bytes into a file named ``.pdf``.
+        companion_kwargs = {k: v for k, v in save_kwargs.items() if k != "format"}
+        with contextlib.suppress(Exception):
+            atomic_savefig(fig, path.with_suffix(_VECTOR_COMPANION), **companion_kwargs)
 
     return path
 
@@ -647,22 +805,6 @@ def add_statistical_annotation_box(
     )
 
 
-def add_panel_letter(ax: Axes, letter: str, *, size: int = 22) -> None:
-    """Draw a bold publication panel letter at the axes' upper-left corner (size 22)."""
-
-    # Match the lekc house placement: axes-fraction (-0.08, 0.98), bold, top-left.
-    ax.text(
-        -0.08,
-        0.98,
-        letter,
-        transform=ax.transAxes,
-        fontsize=size,
-        fontweight="bold",
-        va="top",
-        ha="right",
-    )
-
-
 # ===========================================================================
 # Publication primitives (ported biology-free from the legacy publication
 # module). Palettes draw from CATEGORICAL_PALETTE; no disease constants.
@@ -725,12 +867,15 @@ def set_publication_style(*, dpi: int = 300, small: bool = False) -> None:
 
 
 def categorical_palette(values: Sequence[str]) -> dict[str, str]:
-    """Return a stable categorical palette for observed labels."""
+    """Return a stable categorical palette for observed labels, in observed order.
 
-    return {
-        str(value): CATEGORICAL_PALETTE[index % len(CATEGORICAL_PALETTE)]
-        for index, value in enumerate(values)
-    }
+    Through :func:`palette_colors`, so a 19th label gets its own color instead of
+    wrapping back onto the 1st. Duplicates in ``values`` collapse to one entry
+    (they are one label) rather than consuming two palette slots.
+    """
+    ordered = list(dict.fromkeys(str(value) for value in values))
+    colors = palette_colors(len(ordered))
+    return {value: colors[index] for index, value in enumerate(ordered)}
 
 
 def cell_type_palette(cell_types: Sequence[str] | None = None) -> dict[str, str]:
@@ -745,22 +890,6 @@ def cell_type_palette(cell_types: Sequence[str] | None = None) -> dict[str, str]
     return categorical_palette(cell_types)
 
 
-def add_panel_label(ax: Axes, label: str, *, x: float = -0.15, y: float = 1.06) -> None:
-    """Add a bold uppercase panel label to an axis."""
-
-    ax.text(
-        x,
-        y,
-        label,
-        transform=ax.transAxes,
-        fontsize=FONTSIZE["panel_label"],
-        fontweight="bold",
-        va="top",
-        ha="left",
-        color="#1A1A1A",
-    )
-
-
 def pvalue_to_stars(pvalue: float) -> str:
     """Convert a p-value to common asterisk notation."""
 
@@ -773,6 +902,127 @@ def pvalue_to_stars(pvalue: float) -> str:
     if pvalue < 0.05:
         return "*"
     return "ns"
+
+
+@dataclass(frozen=True)
+class TwoGroupTest:
+    """A two-group comparison whose unit of analysis is explicit.
+
+    Attributes:
+        p_value: Two-sided p-value.
+        test: Test performed, ``"wilcoxon_signed_rank"`` (paired donors) or
+            ``"mann_whitney"`` (independent donors).
+        n_group1: Number of DONORS in the first group (never cells).
+        n_group2: Number of donors in the second group; equals ``n_group1``
+            for the paired test.
+        label: Ready-to-draw annotation naming the test and the donor n.
+    """
+
+    p_value: float
+    test: str
+    n_group1: int
+    n_group2: int
+    label: str
+
+
+def two_group_test_on_donor_medians(
+    frame: pd.DataFrame,
+    *,
+    value_col: str,
+    group_col: str,
+    donor_col: str,
+    group1: str,
+    group2: str,
+    min_donors: int = 3,
+) -> TwoGroupTest | None:
+    """Compare two groups of a per-cell metric at the DONOR level.
+
+    A rank test run over cells is pseudoreplicated: cells from one donor are
+    not independent draws, so cell-level n inflates the test and returns a
+    p-value of order 1e-40 for a difference that may hold in three donors out
+    of nine. The unit of analysis for a cohort question is the donor, so each
+    donor is collapsed to its median first and the test is run on those
+    medians. When the same donors appear in both groups the design is paired
+    and a Wilcoxon signed-rank test is used; otherwise Mann-Whitney.
+
+    Args:
+        frame: Per-cell table holding the metric, group, and donor columns.
+        value_col: Per-cell metric column.
+        group_col: Two-level grouping column (e.g. condition).
+        donor_col: Donor/subject column defining the unit of analysis.
+        group1: First group level.
+        group2: Second group level.
+        min_donors: Minimum donors per group; below this the comparison is
+            not reportable.
+
+    Returns:
+        A TwoGroupTest, or None when the columns are absent, a group is
+        empty, or either group has fewer than ``min_donors`` donors. None
+        means "do not annotate" — an underpowered p-value is worse than no
+        p-value on a publication figure.
+    """
+
+    from scipy import stats
+
+    required = {value_col, group_col, donor_col}
+    if not required.issubset(frame.columns):
+        return None
+
+    table = frame.loc[:, [value_col, group_col, donor_col]].copy()
+    table[value_col] = pd.to_numeric(table[value_col], errors="coerce")
+    table[group_col] = table[group_col].astype(str)
+    table[donor_col] = table[donor_col].astype(str)
+    table = table.replace([np.inf, -np.inf], np.nan).dropna()
+    table = table[table[group_col].isin({str(group1), str(group2)})]
+    if table.empty:
+        return None
+
+    # One value per donor per group: the donor is the unit of analysis.
+    medians = table.groupby([group_col, donor_col], observed=True)[value_col].median()
+    try:
+        first = medians.loc[str(group1)]
+        second = medians.loc[str(group2)]
+    except KeyError:
+        return None
+    if len(first) < min_donors or len(second) < min_donors:
+        return None
+
+    shared = sorted(set(first.index) & set(second.index))
+    paired = len(shared) >= min_donors and len(shared) == len(first) == len(second)
+    if paired:
+        # A matched design must block on donor; ignoring the pairing is the
+        # same error that turned 695 significant LEC genes into 1382.
+        result = stats.wilcoxon(
+            first.loc[shared].to_numpy(dtype=float),
+            second.loc[shared].to_numpy(dtype=float),
+            alternative="two-sided",
+        )
+        return TwoGroupTest(
+            p_value=float(result.pvalue),
+            test="wilcoxon_signed_rank",
+            n_group1=len(shared),
+            n_group2=len(shared),
+            label=(
+                f"Wilcoxon signed-rank p = {float(result.pvalue):.2g}\n"
+                f"donor medians, n = {len(shared)} paired"
+            ),
+        )
+
+    result = stats.mannwhitneyu(
+        first.to_numpy(dtype=float),
+        second.to_numpy(dtype=float),
+        alternative="two-sided",
+    )
+    return TwoGroupTest(
+        p_value=float(result.pvalue),
+        test="mann_whitney",
+        n_group1=len(first),
+        n_group2=len(second),
+        label=(
+            f"Mann–Whitney p = {float(result.pvalue):.2g}\n"
+            f"donor medians, n = {len(first)} vs {len(second)}"
+        ),
+    )
 
 
 def add_stat_bracket(
@@ -992,7 +1242,7 @@ def categorical_embedding(
     legend: bool = False,
     axis_labels: tuple[str, str] = ("UMAP1", "UMAP2"),
     clip_pct: float | None = None,
-    panel_letter: str = "",
+    letter: str = "",
     figsize: tuple[float, float] = (5.2, 5.0),
     ax: Axes | None = None,
 ) -> Figure:
@@ -1066,8 +1316,8 @@ def categorical_embedding(
             markerscale=3,
             handletextpad=0.2,
         )
-    if panel_letter:
-        add_panel_label(ax, panel_letter, x=-0.02, y=1.04)
+    if letter:
+        panel_letter(ax, letter, x=-0.02, y=1.04)
     if own_fig:
         fig.tight_layout()
     return fig
@@ -1082,23 +1332,62 @@ def save_publication_figure(
     facecolor: str = "white",
     **kwargs: Any,
 ) -> Path:
-    """Save a publication figure with consistent editable-vector defaults."""
+    """Save a publication figure with consistent editable-vector defaults.
 
-    out = Path(path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if tight:
-        fig.tight_layout()
-    save_kwargs: dict[str, Any] = {"dpi": dpi, "facecolor": facecolor}
-    if tight:
-        save_kwargs["bbox_inches"] = "tight"
-    save_kwargs.update(kwargs)
-    fig.savefig(out, **save_kwargs)
-    return out
+    A thin alias for :func:`save_cellquorum_figure` with a caller-settable
+    ``facecolor``. It used to be a third independent ``fig.savefig`` — same
+    tight-layout, same directory creation, same white background, written out a
+    third time — which meant a hardening applied to one writer reached only that
+    one. Its single caller loops over ``("png", "pdf")`` itself, so the vector
+    companion is off here: it would write the PDF twice.
+    """
+
+    return save_cellquorum_figure(
+        fig,
+        path,
+        dpi=dpi,
+        tight=tight,
+        vector_companion=False,
+        facecolor=facecolor,
+        **kwargs,
+    )
+
+
+def render_figure(
+    name: str,
+    render: Callable[[], Any],
+    *,
+    figures: list[Path],
+    warnings: list[str],
+) -> None:
+    """Render one figure; on failure warn and carry on, never sink the stage.
+
+    Every stage that draws figures already wrote this by hand, four to five times
+    each, and all of them recorded the failure as a *note*. Notes are not printed
+    and not counted, while warnings are both — so the visible outcome of a figure
+    that failed to draw was a report with a panel quietly missing from it. That is
+    the one failure a figure stage most needs to announce.
+
+    Args:
+        name: What was being drawn, for the warning text (e.g. ``"shift-field"``).
+        render: Zero-argument callable that draws and returns the paths written
+            (or None, for renderers that only save).
+        figures: Collector extended with whatever ``render`` returned.
+        warnings: Collector appended to when ``render`` raises.
+    """
+    try:
+        produced = render()
+    except Exception as exc:  # noqa: BLE001 — one figure must not fail a stage
+        warnings.append(f"{name} figure failed: {str(exc)[:150]}")
+        return
+    if produced:
+        figures.extend(produced if isinstance(produced, list | tuple) else [produced])
 
 
 __all__ = [
     # Core contract (pinned).
     "TEXT",
+    "render_figure",
     "NORMAL_BLUE",
     "LE_RED",
     "CATEGORICAL_PALETTE",
@@ -1108,6 +1397,7 @@ __all__ = [
     "diverging_norm",
     "significance_stars",
     "save_figure",
+    "atomic_savefig",
     "panel_letter",
     # Directional colors.
     "CELLQUORUM_BLUE",
@@ -1134,15 +1424,14 @@ __all__ = [
     "apply_cellquorum_axis_style",
     "get_cellquorum_colors",
     "get_group_palette",
+    "palette_colors",
     "save_cellquorum_figure",
     # Volcano / annotation helpers.
     "add_volcano_background_panels",
     "add_dashed_reference_lines",
     "add_directional_arrows",
     "add_statistical_annotation_box",
-    "add_panel_letter",
     # Publication primitives.
-    "add_panel_label",
     "pvalue_to_stars",
     "add_stat_bracket",
     "violin_with_stats",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.comparative.differential_abundance.config import DifferentialAbundanceConfig
 from cellquorum.stages.comparative.differential_abundance.milo_method import MiloMethod
 from cellquorum.stages.comparative.differential_abundance.propeller_method import PropellerMethod
@@ -9,7 +10,6 @@ from cellquorum.stages.comparative.differential_abundance.proportion_ttest_metho
     ProportionTTestMethod,
 )
 from cellquorum.stages.comparative.differential_abundance.sccoda_method import SccodaMethod
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 # Register the propeller method as an import side effect (mirrors differential_expression).
 if not METHOD_REGISTRY.has("differential_abundance", "propeller"):

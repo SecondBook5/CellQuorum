@@ -268,19 +268,31 @@ def test_complete_volcano_plot_styling() -> None:
         plt.close(fig)
 
 
-def test_add_panel_letter_draws_text():
+def test_panel_letter_draws_text():
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from cellquorum.visualization.figstyle import add_panel_letter
+    from cellquorum.visualization.figstyle import panel_letter
 
     fig, ax = plt.subplots()
-    add_panel_letter(ax, "A")
+    panel_letter(ax, "A")
     texts = [t.get_text() for t in ax.texts]
     assert "A" in texts
     plt.close(fig)
+
+
+def test_only_one_panel_letter_helper_exists():
+    """Three near-identical panel-letter helpers existed; keep it at one.
+
+    They differed only in default size and offsets, so callers picked whichever
+    they happened to import and panel letters drifted out of alignment between
+    figures. Re-adding a variant is the regression this guards.
+    """
+    from cellquorum.visualization import figstyle
+
+    assert [n for n in dir(figstyle) if n in {"add_panel_letter", "add_panel_label"}] == []
 
 
 def test_get_group_palette_stable_and_covers_groups():

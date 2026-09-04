@@ -1,4 +1,4 @@
-# Pipeline step (order=320): cell_cell_communication — infer cell-cell communication (LIANA then Tensor-cell2cell).
+# Pipeline step (order=320): cell_cell_communication — infer signalling (LIANA, tensor).
 """Cell-cell communication stage: dispatches LIANA then Tensor-cell2cell."""
 
 from __future__ import annotations

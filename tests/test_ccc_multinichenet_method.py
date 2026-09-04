@@ -6,8 +6,8 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
-from cellquorum.stages.cell_cell_communication.multinichenet_method import MultiNicheNetMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.cell_cell_communication.multinichenet_method import MultiNicheNetMethod
 
 
 @pytest.fixture

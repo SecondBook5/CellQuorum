@@ -150,6 +150,11 @@ To take this to a real dataset, you typically only touch the config:
   [Backends & environments](backends.md)).
 - **Restrict to a lineage** with `input.subset` (e.g. run the whole pipeline on
   fibroblasts only) without splitting your object by hand.
+- **Drop a cluster** with `input.exclude` (e.g. an ambient-RNA artifact cluster
+  found by `cellquorum.stats.cluster_artifact_audit`) — the direction a subset
+  cannot express, since a subset names what to keep. Both rules compose, and
+  both record what they removed in provenance. See
+  [Configuration](configuration.md#the-input-section).
 
 ## Next steps
 

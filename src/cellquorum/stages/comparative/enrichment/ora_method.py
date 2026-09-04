@@ -21,11 +21,11 @@ import pandas as pd
 from scipy.stats import hypergeom
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 
 
 def _bh(pvalues: np.ndarray, method: str) -> np.ndarray:

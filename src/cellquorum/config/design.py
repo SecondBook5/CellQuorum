@@ -45,8 +45,16 @@ class Contrast(StrictBaseModel):
     case: str
     control: str
 
-    # Whether this comparison is donor-paired.
-    paired: bool = False
+    # Whether this comparison is donor-paired. None means INHERIT `design.paired`,
+    # and is the default on purpose: a contrast is a refinement of the design, not a
+    # replacement for it, so a field the author never wrote must not decide a
+    # statistical question. With a plain `False` default, adding a named contrast to a
+    # matched cohort silently turned pairing OFF -- donor baseline variance stayed in
+    # the residual and real effects came back as nulls. Only an explicit `paired: false`
+    # overrides a paired design, which is a visible act a reviewer can see in the
+    # config. Set it explicitly when a contrast genuinely is unpaired (e.g. a
+    # cross-cohort comparison inside an otherwise within-donor study).
+    paired: bool | None = None
 
     # Minimum distinct donors required for this comparison (power guard).
     min_donors: int = 0
@@ -176,7 +184,10 @@ def validate_design_against_obs(
     # Resolve the active comparison.
     case = contrast.case if contrast is not None else design.case
     control = contrast.control if contrast is not None else design.control
-    paired = contrast.paired if contrast is not None else design.paired
+    # Resolve pairing by INHERITANCE, not by override. `Contrast.paired` defaults to
+    # None ("as the design says") so a contrast that never mentions pairing cannot
+    # downgrade a matched design to an unpaired fit; see Contrast.paired.
+    paired = design.paired if contrast is None or contrast.paired is None else contrast.paired
     declared_min_donors = contrast.min_donors if contrast is not None else 0
     if not case or not control:
         raise CellQuorumConfigError(
@@ -389,9 +400,7 @@ def build_design_matrix(
     interactions = list(interactions or [])
 
     # Every referenced column (main effects + interaction members) must exist.
-    referenced = list(
-        dict.fromkeys([*factors, *(m for pair in interactions for m in pair)])
-    )
+    referenced = list(dict.fromkeys([*factors, *(m for pair in interactions for m in pair)]))
     missing = [c for c in referenced if c not in sample_meta.columns]
     if missing:
         raise CellQuorumConfigError(
@@ -411,9 +420,7 @@ def build_design_matrix(
         coded.index = index
         dummies[column] = coded
 
-    blocks: list[pd.DataFrame] = [
-        pd.DataFrame({"Intercept": np.ones(n, dtype=float)}, index=index)
-    ]
+    blocks: list[pd.DataFrame] = [pd.DataFrame({"Intercept": np.ones(n, dtype=float)}, index=index)]
 
     # Main-effect blocks (a single-level factor contributes no columns).
     for column in factors:
@@ -518,9 +525,7 @@ def analyze_design(
 
     warnings: list[str] = []
     if not full_rank:
-        warnings.append(
-            f"Design matrix is rank-deficient: {n_columns} columns but rank {rank}."
-        )
+        warnings.append(f"Design matrix is rank-deficient: {n_columns} columns but rank {rank}.")
     if confounded:
         warnings.append(
             "Confounded (aliased) factor pair(s): "
@@ -586,8 +591,7 @@ def validate_design_matrix(
             detail += f" Empty factorial cell(s): {report.empty_cells}."
         raise CellQuorumConfigError(
             "Design is not estimable: the model matrix is rank-deficient "
-            f"({report.n_columns} columns, rank {report.rank})."
-            + detail
+            f"({report.n_columns} columns, rank {report.rank})." + detail
         )
     return report
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -188,12 +189,9 @@ class RscriptBackend(BaseBackend):
                 f"Rscript executable '{self.rscript_path}' was not found on PATH."
             )
 
-        # Execute Rscript with captured text output.
-        return subprocess.run(
+        # Execute Rscript with captured text output, from a throwaway directory.
+        return self._run(
             [self.rscript_path, "--vanilla", "-e", expression],
-            check=False,
-            capture_output=True,
-            text=True,
             timeout=self.timeout_seconds,
         )
 
@@ -239,13 +237,36 @@ class RscriptBackend(BaseBackend):
 
         # Build the argument list and run with a long (script) timeout.
         cmd = [self.rscript_path, "--vanilla", str(script), *(args or [])]
-        return subprocess.run(
+        return self._run(
             cmd,
-            check=False,
-            capture_output=True,
-            text=True,
             timeout=timeout if timeout is not None else self.script_timeout_seconds,
         )
+
+    def _run(self, cmd: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+        """Run an Rscript command from a throwaway working directory.
+
+        R opens a default graphics device the first time anything draws, and in a
+        non-interactive session that device is ``pdf()`` writing ``Rplots.pdf``
+        relative to the working directory. Several of the packages we call draw as
+        a side effect, so inheriting this process's directory means R litters
+        wherever CellQuorum was launched from — an 18 KB ``Rplots.pdf`` appeared in
+        the repository root during a test run, and in a real run it would appear in
+        the hypothesis repo beside the manifests.
+
+        A per-call temporary directory absorbs that and takes it away again. It is
+        safe because every R script here receives absolute paths as arguments: none
+        of them calls ``setwd``, reads ``getwd``, or names a relative file.
+        """
+
+        with tempfile.TemporaryDirectory(prefix="cellquorum-rscript-") as scratch:
+            return subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=scratch,
+            )
 
     def _rscript_available(self) -> bool:
         """

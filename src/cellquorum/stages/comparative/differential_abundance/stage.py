@@ -1,4 +1,4 @@
-# Pipeline step (order=220): differential_abundance — test differential abundance via the configured DA method.
+# Pipeline step (order=220): differential_abundance — test abundance shifts (DA methods).
 """Differential-abundance stage: dispatches to the configured DA method."""
 
 from __future__ import annotations
@@ -33,12 +33,21 @@ class DifferentialAbundanceStage(MethodDispatchStage):
 
         The biological question (donor/condition columns, case/control tokens,
         pairing) is declared once in ``config.design``; the DA method reads it
-        from its own config dict. This resolves each key with the established
-        precedence — an explicit stage value wins, then the central cohort key
+        from its own config dict. This fills each key from the central cohort key
         (structural columns only), then the design block, then the method's own
-        default — so nothing here is study-specific. When no design is present
-        the case/control keys stay unset and the method records a clean skip
-        rather than crashing.
+        default, so nothing here is study-specific. When no design is present the
+        case/control keys stay unset and the method records a clean skip rather
+        than crashing.
+
+        The ``augmented.get(...)`` guards do NOT implement a stage-level override:
+        :class:`DifferentialAbundanceConfig` is ``extra="forbid"`` and declares none
+        of these five keys, so at this point they are always absent and every guard
+        is always taken. They are kept because the same dict is reused across a
+        ``methods`` list. A **per-method** override does win, and does so downstream
+        rather than here — ``MethodDispatchStage._run_methods_list`` merges each
+        entry over the shared config after this function has run, so
+        ``{"method": "proportion_ttest", "paired": false}`` reaches the method
+        as written.
 
         Additionally, if the config has neither a ``methods`` list nor a scalar
         ``method`` key, this injects the default 4-method list so a bare DA

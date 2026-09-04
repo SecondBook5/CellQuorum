@@ -88,7 +88,7 @@ It also initializes the artifact manifest CSV, which stages append to as they pr
 
 **`io/manifest.py`** handles manifest loading if `paths.manifest` is set (for multi-sample runs), validating required columns (`sample_id`, `path`, optional `donor_id`/`condition`/`batch`) and resolving paths relative to `paths.data_root`.
 
-For single-object runs, `input.h5ad` is loaded directly into `context.adata` via `anndata.read_h5ad` (in backed mode if `input.subset` is specified, so large global objects are sliced before full materialization).
+For single-object runs, `input.h5ad` is loaded directly into `context.adata` via `anndata.read_h5ad` (in backed mode if `input.subset` or `input.exclude` is specified, so large global objects are sliced before full materialization). The two rules are applied in one masking pass — `subset` keeps cells, `exclude` drops them — and `uns['cellquorum_input_subset']` records each rule's own contribution (`n_selected`, `n_discordant`, `n_excluded`) so the cell counts in a figure caption stay attributable to the rule that caused them.
 
 The loaded data, validated config, pipeline plan, run paths, and backend registry are bundled into a `PipelineContext` object, which threads through every stage.
 

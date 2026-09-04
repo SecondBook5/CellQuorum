@@ -13,8 +13,8 @@ import pandas as pd
 import pytest
 
 from cellquorum.core.exceptions import CellQuorumStageError
-from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
 from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
 
 
 def _counts_adata(n=60, g=40, seed=0):

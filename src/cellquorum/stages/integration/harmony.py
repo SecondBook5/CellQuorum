@@ -18,9 +18,15 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
+from cellquorum.backends.harmonypy_backend import (
+    DEFAULT_MAX_ITER_HARMONY,
+    HarmonyDiagnostics,
+    harmony_correct,
+)
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.qc.eligibility import fitting_cells
 
 
 class HarmonyMethod(AnalysisMethod):
@@ -93,44 +99,31 @@ class HarmonyMethod(AnalysisMethod):
         embedding: np.ndarray,
         batch_key: str,
         random_state: int,
-    ) -> np.ndarray:
+        max_iter_harmony: int = DEFAULT_MAX_ITER_HARMONY,
+    ) -> tuple[np.ndarray, HarmonyDiagnostics]:
         """
-        Run harmonypy on the embedding and return Z_corr, orientation not yet fixed.
+        Run harmonypy on the embedding and return it corrected, plus diagnostics.
+
+        Thin wrapper over :func:`cellquorum.backends.harmonypy_backend.harmony_correct`
+        so this stage and ``subclustering`` cannot drift on how harmonypy is called.
 
         Args:
             adata: Input AnnData, for the obs table Harmony conditions on.
             embedding: The (n_cells, n_pcs) embedding to correct.
             batch_key: obs column identifying the batches.
             random_state: Seed passed through to run_harmony.
+            max_iter_harmony: Iteration cap.
 
         Returns:
-            Z_corr as a numpy array, in whichever orientation harmonypy produced.
+            ``(corrected, diagnostics)``, corrected already oriented (n_cells, n_pcs).
         """
-
-        # Import harmonypy lazily so importing the package doesn't require it.
-        import logging
-
-        import harmonypy
-
-        # Run Harmony directly (NOT via scanpy's wrapper). Silence harmonypy's
-        # INFO logs only for the duration of the call, then restore the prior
-        # level so we never mutate process-wide logging state permanently.
-        harmony_logger = logging.getLogger("harmonypy")
-        original_level = harmony_logger.level
-        harmony_logger.setLevel(logging.WARNING)
-        try:
-            harmony_obj = harmonypy.run_harmony(
-                embedding,
-                adata.obs,
-                [batch_key],
-                random_state=random_state,
-            )
-        finally:
-            harmony_logger.setLevel(original_level)
-
-        # Z_corr may be a torch tensor (PyTorch build) or ndarray; normalize.
-        z = harmony_obj.Z_corr
-        return z.cpu().numpy() if hasattr(z, "cpu") else np.asarray(z)
+        return harmony_correct(
+            embedding,
+            adata.obs[batch_key],
+            batch_key,
+            random_state=random_state,
+            max_iter_harmony=max_iter_harmony,
+        )
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
         """
@@ -153,6 +146,7 @@ class HarmonyMethod(AnalysisMethod):
         output_rep = config.get("output_rep", "X_pca_harmony")
         batch_key = config.get("batch_key", "patient_id")
         random_state = int(config.get("random_state", 0))
+        max_iter_harmony = int(config.get("max_iter_harmony", DEFAULT_MAX_ITER_HARMONY))
 
         # The input embedding and its expected corrected shape.
         embedding = np.ascontiguousarray(adata.obsm[input_rep])
@@ -177,8 +171,11 @@ class HarmonyMethod(AnalysisMethod):
                     f"GPU Harmony failed ({type(exc).__name__}: {str(exc)[:80]}); "
                     "fell back to CPU."
                 )
+        diagnostics: HarmonyDiagnostics | None = None
         if z is None:
-            z = self._harmony_cpu(adata, embedding, batch_key, random_state)
+            z, diagnostics = self._harmony_cpu(
+                adata, embedding, batch_key, random_state, max_iter_harmony
+            )
 
         # run_harmony may return (n_pcs, n_cells) or (n_cells, n_pcs) depending on
         # the build; orient to (n_cells, n_pcs) by matching the input shape.
@@ -218,16 +215,51 @@ class HarmonyMethod(AnalysisMethod):
         if gpu_fallback_note:
             notes.append(gpu_fallback_note)
 
+        # The integration stage declares fit_scope=CORE, and Harmony is the one method that
+        # cannot honour it. Harmony returns corrected coordinates directly rather than a
+        # reusable correction: harmonypy exposes no way to apply a fitted correction to cells
+        # that were not in the optimisation, so there is no out-of-sample transform to
+        # project the excluded cells through. Fitting on core and stopping there would leave
+        # them without an integrated embedding at all, which is worse.
+        #
+        # Recorded rather than ignored, because the alternative is a declaration that reads
+        # as compliant while nothing enforces it — the precise failure the cell_scope contract
+        # was added to prevent. scVI and scANVI have real encoders and do honour the scope.
+        if fitting_cells(adata.obs) is not None:
+            notes.append(
+                "Harmony fitted on all cells: it has no out-of-sample transform, so the QC "
+                "fit population could not be honoured. The corrected embedding is influenced "
+                "by non-core cells. Use method='scvi' or 'scanvi' for a core-only "
+                "integration, and note that PCA and clustering are still core-fitted."
+            )
+
+        # Non-convergence is a WARNING, not a note: every stage downstream reads
+        # obsm[output_rep], so a Harmony that stopped early propagates a partially
+        # corrected embedding into clustering, UMAP, PAGA and velocity alike, and a
+        # note would be printed only at --verbose and counted in no report.
+        stage_warnings = [gpu_fallback_note] if gpu_fallback_note else []
+        if diagnostics is not None and diagnostics.message:
+            stage_warnings.append(
+                f"{diagnostics.message} obsm['{output_rep}'] is affected; raise "
+                f"integration.max_iter_harmony."
+            )
+
+        metrics = {
+            "n_cells": int(adata.n_obs),
+            "output_rep": output_rep,
+            "method": "harmony",
+            "compute": compute_used,
+        }
+        if diagnostics is not None:
+            metrics["harmony_n_iter"] = diagnostics.n_iter
+            metrics["harmony_converged"] = diagnostics.converged
+            metrics["max_iter_harmony"] = diagnostics.max_iter
+
         return StageResult(
             adata=adata,
-            metrics={
-                "n_cells": int(adata.n_obs),
-                "output_rep": output_rep,
-                "method": "harmony",
-                "compute": compute_used,
-            },
+            metrics=metrics,
             notes=notes,
-            warnings=[gpu_fallback_note] if gpu_fallback_note else [],
+            warnings=stage_warnings,
         )
 
 

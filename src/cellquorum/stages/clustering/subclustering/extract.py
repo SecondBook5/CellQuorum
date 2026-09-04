@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import anndata as ad
+    import numpy as np
+    import pandas as pd
 
+    from cellquorum.backends.harmonypy_backend import HarmonyDiagnostics
     from cellquorum.stages.clustering.subclustering.config import FocusConfig, ReembedConfig
 
 
@@ -193,8 +196,148 @@ def ensure_focus_embedding(
     return True
 
 
+def reembed_focus_batch_aware(
+    adata: ad.AnnData,
+    *,
+    counts_layer: str,
+    batch_key: str | None,
+    embedding_key: str = "X_pca_harmony",
+    n_top_genes: int = 2000,
+    n_comps: int = 30,
+    scale_max: float = 10.0,
+    random_state: int = 0,
+    max_iter_harmony: int | None = None,
+    diagnostics: list[str] | None = None,
+) -> str | None:
+    """Re-embed the focus subset batch-aware; return the obsm key written, or None.
+
+    Writes ``obsm[embedding_key]`` (batch-corrected when ``batch_key`` names a
+    multi-valued column, plain PCA otherwise) and the boolean
+    ``var['highly_variable']`` flag. Both are required by CHOIR's user-supplied
+    ``reduction`` path.
+
+    Why this exists rather than reusing :func:`ensure_focus_embedding`: that helper
+    produces an UNCORRECTED PCA, and CHOIR's own documentation notes that batch
+    correction is what "ensures that clusters do not originate from a single
+    batch". Clustering a multi-donor subset on an uncorrected embedding yields
+    donor-specific clusters that the permutation test then certifies as real — on
+    the LEC subset that produced a cluster 98% composed of one donor. A
+    significance-tested cluster count is only meaningful on a corrected space.
+
+    ``diagnostics`` is an optional sink for messages the caller should surface as
+    warnings — the function's return type is a single obsm key, which leaves it no
+    other way to report that Harmony stopped before convergence.
+
+    Never mutates the caller's ``X``/layers: normalization and scaling happen on
+    scratch copies.
+    """
+    # Imported inside the function: the module only imports anndata/scanpy under
+    # TYPE_CHECKING, matching `ensure_focus_embedding` above.
+    import anndata as ad
+    import numpy as np
+    import scanpy as sc
+
+    if adata.n_obs < 3 or adata.n_vars < 3:
+        return None
+
+    # Work from raw counts on a scratch copy, so the caller's matrices are safe.
+    counts = adata.layers[counts_layer] if counts_layer in adata.layers else adata.X
+    dense = counts.copy() if hasattr(counts, "toarray") else np.asarray(counts).copy()
+    scratch = ad.AnnData(X=dense)
+    scratch.var_names = adata.var_names
+    sc.pp.normalize_total(scratch, target_sum=1e4)
+    sc.pp.log1p(scratch)
+
+    n_batches = 0
+    if batch_key and batch_key in adata.obs:
+        scratch.obs[batch_key] = adata.obs[batch_key].astype(str).to_numpy()
+        n_batches = int(scratch.obs[batch_key].nunique())
+
+    # HVG selection needs >1 batch to use batch_key at all.
+    n_genes = int(min(n_top_genes, adata.n_vars))
+    sc.pp.highly_variable_genes(
+        scratch,
+        n_top_genes=n_genes,
+        flavor="seurat",
+        batch_key=batch_key if n_batches > 1 else None,
+    )
+    highly_variable = scratch.var["highly_variable"].to_numpy().astype(bool)
+    if highly_variable.sum() < 2:
+        return None
+    adata.var["highly_variable"] = highly_variable
+
+    # Scale on a further copy restricted to HVGs, then PCA.
+    hvg_subset = scratch[:, highly_variable].copy()
+    sc.pp.scale(hvg_subset, max_value=scale_max)
+    comps = int(min(n_comps, adata.n_obs - 1, int(highly_variable.sum()) - 1))
+    if comps < 2:
+        return None
+    sc.tl.pca(hvg_subset, n_comps=comps, svd_solver="arpack", random_state=random_state)
+    embedding = hvg_subset.obsm["X_pca"]
+
+    if n_batches > 1:
+        result = _harmony_embedding(
+            embedding,
+            scratch.obs[batch_key],
+            batch_key,
+            random_state=random_state,
+            max_iter_harmony=max_iter_harmony,
+        )
+        if result is None:
+            # Harmony unavailable: fall back to the uncorrected PCA under its own
+            # key, so a caller can tell corrected from uncorrected by key alone.
+            adata.obsm["X_pca"] = embedding
+            return "X_pca"
+        corrected, harmony_diagnostics = result
+        # CHOIR partitions on THIS embedding and its cluster count is a permutation
+        # test against it, so a Harmony that stopped early is not a cosmetic detail:
+        # it is the space in which the subclusters were declared significant.
+        if diagnostics is not None and harmony_diagnostics.message:
+            diagnostics.append(harmony_diagnostics.message)
+        adata.obsm[embedding_key] = corrected
+        return embedding_key
+
+    adata.obsm["X_pca"] = embedding
+    return "X_pca"
+
+
+def _harmony_embedding(
+    pcs: np.ndarray,
+    batch: pd.Series,
+    batch_key: str,
+    *,
+    random_state: int = 0,
+    max_iter_harmony: int | None = None,
+) -> tuple[np.ndarray, HarmonyDiagnostics] | None:
+    """Harmony-correct ``pcs``, or None when harmonypy is unavailable.
+
+    Delegates to :func:`cellquorum.backends.harmonypy_backend.harmony_correct` so
+    this stage and ``integration`` call harmonypy the same way; the ``None`` return
+    is this call site's own policy, because subclustering can fall back to an
+    uncorrected PCA under a different obsm key whereas integration cannot.
+    """
+    from cellquorum.backends.harmonypy_backend import (
+        DEFAULT_MAX_ITER_HARMONY,
+        harmony_correct,
+    )
+
+    try:
+        return harmony_correct(
+            pcs,
+            batch,
+            batch_key,
+            random_state=random_state,
+            max_iter_harmony=(
+                DEFAULT_MAX_ITER_HARMONY if max_iter_harmony is None else max_iter_harmony
+            ),
+        )
+    except ImportError:
+        return None
+
+
 __all__ = [
     "extract_focus",
     "apply_group_filter",
     "ensure_focus_embedding",
+    "reembed_focus_batch_aware",
 ]

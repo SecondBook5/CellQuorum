@@ -25,13 +25,51 @@ import numpy as np
 import pandas as pd
 
 
+def _restore_python_sigpipe() -> None:
+    """Take SIGPIPE back from PETSc.
+
+    ``PetscInitialize`` installs its own signal handlers and the SIGPIPE one calls
+    ``MPI_Abort``. Python ignores SIGPIPE by default precisely so that a closed
+    downstream reader surfaces as a catchable ``BrokenPipeError``; under PETSc's
+    handler the same benign event kills the process from C, past every ``except``.
+    Seen twice here: ``cellquorum run | head`` died as an MPI abort mid-pipeline,
+    and the test suite aborted at teardown before pytest could print its summary
+    or its exit code.
+
+    ONLY SIGPIPE is restored. PETSc's SIGSEGV/SIGFPE handlers print a native
+    traceback that is genuinely useful when a solver crashes, so the blunter
+    ``-no_signal_handler`` (which drops all of them) is the wrong instrument.
+    """
+    import signal
+
+    try:
+        signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+    except (AttributeError, ValueError, OSError):
+        # No SIGPIPE on this platform, or not the main thread — ``signal.signal``
+        # is main-thread-only. Nothing to undo; the sparse path still runs.
+        pass
+
+
 def _slepc_available() -> bool:
-    """True when the SLEPc/PETSc sparse Schur backend is importable."""
+    """True when the SLEPc/PETSc sparse Schur backend is importable.
+
+    Importing the ``PETSc`` submodule (not just ``petsc4py``) is what runs
+    ``PetscInitialize``, which makes it both the honest availability test — the
+    package can import while its extension fails to initialize — and the moment
+    the process acquires PETSc's signal handlers. Doing it HERE is deliberate: the
+    alternative is letting whichever CellRank call touches the solver first
+    initialize PETSc with defaults, and then there is no point at which the engine
+    can undo the SIGPIPE handler (see :func:`_restore_python_sigpipe`). Both
+    callers use the sparse path immediately after this returns True, so nothing is
+    initialized earlier than it would have been anyway.
+    """
     try:
         import petsc4py  # noqa: F401
         import slepc4py  # noqa: F401
+        from petsc4py import PETSc  # noqa: F401 — triggers PetscInitialize
     except Exception:  # noqa: BLE001 — any import failure → sparse path off
         return False
+    _restore_python_sigpipe()
     return True
 
 
@@ -92,24 +130,24 @@ def _build_realtime_kernel(
     use_rep: str | None,
     use_rep_fallback: list[str],
     realtime_epsilon: float,
-    notes: list[str],
+    warnings: list[str],
 ) -> object | None:
-    """Build a moscot-backed RealTimeKernel; return it or None (with a note).
+    """Build a moscot-backed RealTimeKernel; return it or None (with a warning).
 
     Solves a moscot ``TemporalProblem`` over the numeric ``time_key`` axis using
     a resolved representation as the joint attribute, then wraps the solution
     with ``RealTimeKernel.from_moscot``. Never raises: import failure or a solve
-    error is recorded as a note and returns None (skip-not-crash).
+    error is recorded as a warning and returns None (skip-not-crash).
     """
     rep = _resolve_use_rep(adata, use_rep, use_rep_fallback)
     if rep is None:
-        notes.append("realtime kernel skipped: no usable representation for moscot joint_attr")
+        warnings.append("realtime kernel skipped: no usable representation for moscot joint_attr")
         return None
     try:
         from cellrank.kernels import RealTimeKernel
         from moscot.problems.time import TemporalProblem
     except ImportError as exc:
-        notes.append(f"realtime kernel skipped: moscot/RealTimeKernel unavailable ({exc})")
+        warnings.append(f"realtime kernel skipped: moscot/RealTimeKernel unavailable ({exc})")
         return None
 
     try:
@@ -130,8 +168,85 @@ def _build_realtime_kernel(
         rtk = rtk.compute_transition_matrix()
         return rtk
     except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
-        notes.append(f"realtime kernel failed: {exc}")
+        warnings.append(f"realtime kernel failed: {exc}")
         return None
+
+
+def _build_cytotrace_kernel(
+    adata: ad.AnnData,
+    cytotrace_key: str,
+    notes: list[str],
+    warnings: list[str],
+) -> object | None:
+    """Build a CytoTRACE-directed kernel; return it or None (with a warning).
+
+    Prefers a CytoTRACE score already in ``obs``. CellRank's ``CytoTRACEKernel``
+    re-implements CytoTRACE 1 and, as of cellrank 2.2.0, reads a layer named
+    ``imputed`` that exists only after scVelo moments — so on an object carrying a
+    CytoTRACE 2 score from the cytotrace stage the kernel raised on the missing
+    layer and got dropped, and the run inferred fates from pseudotime plus velocity
+    with the plasticity axis silently absent.
+
+    Reading the score instead is not a workaround: ``CytoTRACEKernel`` IS a
+    ``PseudotimeKernel`` over ``1 - minmax(score)`` (its own ``compute_cytotrace``
+    writes exactly that into ``ct_pseudotime``), so building that pseudotime from
+    the score in obs is the same construction on a better score — CytoTRACE 2, the
+    successor model fit natively over all genes, rather than a 200-gene
+    re-derivation of its predecessor.
+
+    Falls back to CellRank's own computation when no score is present but an
+    imputed layer is, and returns None otherwise. Never raises.
+    """
+    from cellrank.kernels import PseudotimeKernel
+
+    if cytotrace_key in adata.obs:
+        score = pd.to_numeric(adata.obs[cytotrace_key], errors="coerce").to_numpy(dtype="float64")
+        n_missing = int(np.isnan(score).sum())
+        if n_missing:
+            # Filling would fabricate a potency for cells the scorer could not
+            # score, and dropping them would desynchronise obs from the kernel the
+            # other directional kernels were built on.
+            warnings.append(
+                f"cytotrace kernel skipped: '{cytotrace_key}' is missing for "
+                f"{n_missing}/{len(score)} cells"
+            )
+            return None
+        spread = float(np.nanmax(score) - np.nanmin(score))
+        if not np.isfinite(spread) or spread == 0.0:
+            warnings.append(f"cytotrace kernel skipped: '{cytotrace_key}' is constant")
+            return None
+        # 1 - minmax(score): high plasticity = early, exactly as CytoTRACEKernel
+        # defines ct_pseudotime. Written under CellRank's own key so the artifact
+        # names it the way CellRank's plots expect.
+        adata.obs["ct_pseudotime"] = 1.0 - (score - float(np.nanmin(score))) / spread
+        try:
+            kernel = PseudotimeKernel(adata, time_key="ct_pseudotime").compute_transition_matrix()
+        except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
+            warnings.append(f"cytotrace kernel failed on '{cytotrace_key}': {exc}")
+            return None
+        notes.append(f"cytotrace kernel built from obs['{cytotrace_key}']")
+        return kernel
+
+    # No score in obs: let CellRank compute one, but only from a layer that is
+    # actually imputed. Its default ('imputed') is absent unless scVelo moments
+    # ran; 'Ms' is that same quantity under scVelo's name.
+    layer = next((k for k in ("imputed", "Ms") if k in adata.layers), None)
+    if layer is None:
+        warnings.append(
+            f"cytotrace kernel skipped: no '{cytotrace_key}' in obs and no imputed "
+            "layer ('imputed'/'Ms') to compute one from"
+        )
+        return None
+    try:
+        from cellrank.kernels import CytoTRACEKernel
+
+        ctk = CytoTRACEKernel(adata).compute_cytotrace(layer=layer)
+        kernel = ctk.compute_transition_matrix()
+    except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
+        warnings.append(f"cytotrace kernel failed: {exc}")
+        return None
+    notes.append(f"cytotrace kernel computed by cellrank from layers['{layer}']")
+    return kernel
 
 
 def build_kernel(
@@ -154,7 +269,11 @@ def build_kernel(
     Combines a ConnectivityKernel with every resolvable directional kernel:
     PseudotimeKernel, CytoTRACEKernel, VelocityKernel (from ``velocity_adata``),
     and a moscot RealTimeKernel (gated on ``time_key``). Any directional kernel
-    that cannot be built is dropped with a note — never a crash.
+    that cannot be built is dropped — never a crash — and reported in
+    ``kernel_info['warnings']`` rather than its notes, because a kernel the
+    caller configured and did not get changes what the result MEANS. One run
+    inferred fates from connectivity alone, its velocity and CytoTRACE kernels
+    both silently absent, and reported success.
 
     Returns ``(kernel, kernel_info)``. Raises ``CellRankUnavailable`` if cellrank
     is not importable, or ``NoKernelInput`` if neither connectivities nor a
@@ -167,6 +286,7 @@ def build_kernel(
         raise CellRankUnavailable("cellrank/scanpy not installed") from exc
 
     notes: list[str] = []
+    warnings: list[str] = []
 
     # 1. Ensure a neighbor graph exists (needed for ConnectivityKernel).
     if "connectivities" not in adata.obsp:
@@ -203,32 +323,24 @@ def build_kernel(
                     )
                 )
             except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
-                notes.append(f"pseudotime kernel failed: {exc}")
+                warnings.append(f"pseudotime kernel failed: {exc}")
         else:
-            notes.append(f"pseudotime '{pseudotime_key}' all-NaN; connectivity-only")
+            warnings.append(f"pseudotime '{pseudotime_key}' all-NaN; connectivity-only")
     elif pseudotime_key:
-        notes.append(f"pseudotime '{pseudotime_key}' absent; connectivity-only")
+        warnings.append(f"pseudotime '{pseudotime_key}' absent; connectivity-only")
 
     if cytotrace_key:
-        try:
-            from cellrank.kernels import CytoTRACEKernel
-
-            if cytotrace_key in adata.obs or "Ms" in adata.layers:
-                ctk = CytoTRACEKernel(adata)
-                ctk = ctk.compute_cytotrace() if hasattr(ctk, "compute_cytotrace") else ctk
-                directionals.append(("cytotrace", ctk.compute_transition_matrix()))
-            else:
-                notes.append(f"cytotrace '{cytotrace_key}' absent; connectivity-only")
-        except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
-            notes.append(f"cytotrace kernel failed: {exc}")
+        ctk = _build_cytotrace_kernel(adata, cytotrace_key, notes, warnings)
+        if ctk is not None:
+            directionals.append(("cytotrace", ctk))
 
     # 3b. VelocityKernel from a whole-object velocity h5ad (opt-in upstream).
     # Requires Ms + velocity layers and 1:1 obs alignment with the working atlas.
     if velocity_adata is not None:
         if "Ms" not in velocity_adata.layers or "velocity" not in velocity_adata.layers:
-            notes.append("velocity kernel skipped: velocity_adata lacks Ms/velocity layers")
+            warnings.append("velocity kernel skipped: velocity_adata lacks Ms/velocity layers")
         elif list(velocity_adata.obs_names) != list(adata.obs_names):
-            notes.append("velocity kernel skipped: obs_names mismatch with working atlas")
+            warnings.append("velocity kernel skipped: obs_names mismatch with working atlas")
         else:
             try:
                 from cellrank.kernels import VelocityKernel
@@ -238,7 +350,7 @@ def build_kernel(
                 )
                 directionals.append(("velocity", vk))
             except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
-                notes.append(f"velocity kernel failed: {exc}")
+                warnings.append(f"velocity kernel failed: {exc}")
 
     # 3c. RealTimeKernel via a moscot TemporalProblem (gated on time_key). Common
     # case/control lymphedema data has no experimental time axis, so this is
@@ -248,18 +360,18 @@ def build_kernel(
     # kernel (shape mismatch) nor corresponds to it cell-for-cell.
     if time_key:
         if time_key not in adata.obs:
-            notes.append(f"realtime kernel skipped: time_key '{time_key}' absent")
+            warnings.append(f"realtime kernel skipped: time_key '{time_key}' absent")
         else:
             time_numeric = pd.to_numeric(adata.obs[time_key], errors="coerce")
             n_levels = int(time_numeric.dropna().nunique())
             if time_numeric.isna().any():
                 n_missing = int(time_numeric.isna().sum())
-                notes.append(
+                warnings.append(
                     f"realtime kernel skipped: time_key '{time_key}' has "
                     f"{n_missing} cell(s) with non-numeric/missing time"
                 )
             elif n_levels < 2:
-                notes.append(
+                warnings.append(
                     f"realtime kernel skipped: time_key '{time_key}' has "
                     f"{n_levels} distinct numeric level(s)"
                 )
@@ -271,7 +383,7 @@ def build_kernel(
                     use_rep,
                     use_rep_fallback,
                     realtime_epsilon,
-                    notes,
+                    warnings,
                 )
                 if rtk is not None:
                     directionals.append(("realtime", rtk))
@@ -304,6 +416,7 @@ def build_kernel(
         "weight_connectivities": w_conn,
         "weights": weights,
         "notes": notes,
+        "warnings": warnings,
     }
     return kernel, info
 
@@ -330,6 +443,10 @@ def run_gpcca(
     import cellrank as cr
 
     notes: list[str] = []
+    # Every step below the Schur decomposition degrades gracefully, and each
+    # degradation removes part of the answer (no terminal states, no fate
+    # probabilities, no drivers). That belongs in warnings, not notes.
+    warnings: list[str] = []
 
     # cluster_key MUST be categorical (compute_macrostates uses the .cat accessor).
     if not isinstance(adata.obs[cluster_key].dtype, pd.CategoricalDtype):
@@ -384,20 +501,21 @@ def run_gpcca(
         "fate_names": [],
         "drivers": None,
         "notes": notes,
+        "warnings": warnings,
     }
 
     # Terminal states: stability, with a top_n fallback.
     try:
         g.predict_terminal_states(method=terminal_method, n_states=n_terminal_states)
     except ValueError as exc:
-        notes.append(f"predict_terminal_states('{terminal_method}') failed: {exc}; trying top_n")
+        warnings.append(f"predict_terminal_states('{terminal_method}') failed: {exc}; trying top_n")
         try:
             g.predict_terminal_states(method="top_n", n_states=n_terminal_states or 2)
         except Exception as exc2:  # noqa: BLE001 — keep macrostates, skip fate probs
-            notes.append(f"terminal-state prediction failed: {exc2}")
+            warnings.append(f"terminal-state prediction failed: {exc2}")
             return result
     except Exception as exc:  # noqa: BLE001
-        notes.append(f"terminal-state prediction failed: {exc}")
+        warnings.append(f"terminal-state prediction failed: {exc}")
         return result
 
     result["terminal_states"] = [str(x) for x in g.terminal_states.cat.categories]
@@ -407,7 +525,7 @@ def run_gpcca(
         try:
             g.predict_initial_states(n_states=int(n_initial_states))
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"predict_initial_states failed: {exc}")
+            warnings.append(f"predict_initial_states failed: {exc}")
 
     # Fate probabilities. Solver choice MUST match the Schur backend: when the
     # sparse SLEPc 'krylov' Schur ran, PETSc/SLEPc is initialized in this process
@@ -427,14 +545,45 @@ def run_gpcca(
         result["fate_prob"] = np.asarray(fp)
         result["fate_names"] = [str(x) for x in fp.names]
     except Exception as exc:  # noqa: BLE001 — keep macrostates + terminal states
-        notes.append(f"compute_fate_probabilities failed: {exc}")
+        warnings.append(f"compute_fate_probabilities failed: {exc}")
         return result
+
+    # One terminal state is a RESULT, not an error, and it needs saying out loud:
+    # every cell's fate probability is then 1.0, so the fate-probability figure
+    # carries no information and cannot be read as "these cells are committed".
+    # It happens on genuinely non-branching lineages — the LEC arm produced one
+    # terminal state out of eight macrostates.
+    #
+    # CellRank handles it by correlating genes against the stationary
+    # distribution instead of against fate probabilities, but that path needs
+    # ``eigendecomposition['stationary_dist']``, which the GPCCA Schur route never
+    # populates; without it, drivers fail with "No stationary distribution found
+    # in .eigendecomposition['stationary_dist']" — a message that names the
+    # missing intermediate rather than the actual cause. So compute it here,
+    # which both enables the documented fallback and keeps the warning honest.
+    single_lineage = len(result["fate_names"]) == 1
+    if single_lineage:
+        warnings.append(
+            f"only 1 terminal state ({result['fate_names'][0]}) out of "
+            f"{len(macro_names)} macrostates: fate probabilities are 1.0 for every "
+            "cell and convey no lineage information; drivers fall back to "
+            "correlation against the stationary distribution"
+        )
+        needs_stationary = (g.eigendecomposition or {}).get("stationary_dist") is None
+        if needs_stationary:
+            try:
+                # ARPACK on the transition matrix; k below the component count the
+                # Schur step already succeeded with, so this asks for strictly less
+                # than what converged there.
+                g.compute_eigendecomposition(k=min(20, max(2, n_comp)), only_evals=False)
+            except Exception as exc:  # noqa: BLE001 — drivers stay best-effort
+                warnings.append(f"compute_eigendecomposition (for driver fallback) failed: {exc}")
 
     # Lineage drivers (best-effort).
     try:
         result["drivers"] = g.compute_lineage_drivers(cluster_key=cluster_key, seed=seed)
     except Exception as exc:  # noqa: BLE001
-        notes.append(f"compute_lineage_drivers failed: {exc}")
+        warnings.append(f"compute_lineage_drivers failed: {exc}")
 
     result["estimator"] = g
     return result

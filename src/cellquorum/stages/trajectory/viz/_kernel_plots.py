@@ -37,42 +37,96 @@ class VelocityVizMethod(AnalysisMethod):
         return DataContract()
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
-        try:
-            import scvelo as scv
-        except Exception as exc:  # noqa: BLE001
-            return self._skip(f"scvelo unavailable ({exc})")
-        vel_dir = _helpers.results_file(context, "velocity")
-        files = sorted(Path(vel_dir).glob("*.h5ad")) if Path(vel_dir).exists() else []
-        if not files:
-            return self._skip("no velocity h5ads")
+        """Render ONE velocity figure for the whole object, plus diagnostics.
 
-        import matplotlib.pyplot as plt
+        Rewritten twice over. It used to call
+        ``scv.pl.velocity_embedding_stream(sub, show=False)`` — no group colouring,
+        no labels, no legend, no axes, no title — once per per-cluster h5ad, so it
+        emitted a dozen grey unlabelled fragments instead of one readable figure.
+        Now it renders the whole object once, coloured by a resolved group key,
+        through cellquorum.visualization.velocity.
+        """
+        from cellquorum.visualization import velocity as velocity_viz
+
+        vel_dir = _helpers.results_file(context, "velocity")
+        whole = Path(vel_dir) / "whole_object.h5ad"
+        if not whole.exists():
+            return self._skip("no whole_object.h5ad velocity object")
 
         figures_dir = Path(context.paths.figures) / "trajectory"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
-        _helpers.apply_theme()
+        velocity_viz.apply_theme()
+
+        try:
+            sub = ad.read_h5ad(whole)
+        except Exception as exc:  # noqa: BLE001 — skip-not-crash
+            return self._skip(f"could not read velocity object: {exc}")
+
+        # Colour by the most specific NAMED grouping available. A velocity figure
+        # with no grouping is the grey-blob failure this rewrite exists to fix, so
+        # having no usable key is a skip, not a silently ugly figure.
+        group_key = velocity_viz.resolve_group_key(
+            sub,
+            config.get("group_key"),
+            ("cell_type_granular", "cell_type", "state", "leiden"),
+        )
+        if group_key is None:
+            return self._skip("no categorical obs column with 2+ levels to colour velocity by")
+
+        basis = str(config.get("basis", "umap"))
         artifacts, warnings, n = [], [], 0
-        for f in files:
-            try:
-                sub = ad.read_h5ad(f)
-                scv.pl.velocity_embedding_stream(sub, show=False)
+        try:
+            fig = velocity_viz.velocity_stream_figure(
+                sub,
+                group_key=group_key,
+                basis=basis,
+                title=config.get("title") or f"RNA velocity ({sub.n_obs:,} cells)",
+            )
+            paths = _helpers.save_figure(
+                fig, figures_dir, "velocity_stream", formats=formats, dpi=dpi
+            )
+            artifacts += _helpers.figure_artifacts(
+                paths,
+                name="trajectory_figure",
+                description=f"RNA velocity stream over '{group_key}'.",
+            )
+            n += 1
+        except velocity_viz.VelocityRenderError as exc:
+            warnings.append(f"velocity_viz: stream skipped: {exc}")
+        except Exception as exc:  # noqa: BLE001 — skip-not-crash
+            warnings.append(f"velocity_viz: stream failed: {str(exc)[:200]}")
+
+        try:
+            diagnostics = velocity_viz.velocity_diagnostics_figure(
+                sub,
+                group_key=group_key,
+                basis=basis,
+                title="velocity diagnostics (read before trusting arrow directions)",
+            )
+            if diagnostics is not None:
                 paths = _helpers.save_figure(
-                    plt.gcf(), figures_dir, f"velocity_stream_{f.stem}", formats=formats, dpi=dpi
+                    diagnostics,
+                    figures_dir,
+                    "velocity_diagnostics",
+                    formats=formats,
+                    dpi=dpi,
                 )
                 artifacts += _helpers.figure_artifacts(
-                    paths, name="trajectory_figure", description=f"Velocity stream for {f.stem}."
+                    paths,
+                    name="trajectory_figure",
+                    description="Velocity speed and coherence, per cell and per group.",
                 )
                 n += 1
-            except Exception as exc:  # noqa: BLE001
-                warnings.append(f"velocity_viz: {f.stem} failed: {str(exc)[:200]}")
+        except Exception as exc:  # noqa: BLE001 — skip-not-crash
+            warnings.append(f"velocity_viz: diagnostics failed: {str(exc)[:200]}")
 
         if n == 0:
             return self._skip("nothing rendered", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=[f"velocity_viz rendered {n} figures."],
+            notes=[f"velocity_viz rendered {n} figures (grouped by {group_key})."],
             warnings=warnings,
             metrics={"method": self.name, "n_figures": n},
             backend="python",

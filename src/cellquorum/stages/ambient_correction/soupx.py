@@ -15,10 +15,11 @@ import anndata as ad
 import scipy.io as sio
 import scipy.sparse as sp
 
+from cellquorum.backends.script_paths import r_script_path
 from cellquorum.core.exceptions import CellQuorumBackendError, CellQuorumDataError
 
 # Path to the bundled SoupX R script.
-_SOUPX_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "soupx_per_library.R"
+_SOUPX_R = r_script_path("soupx_per_library.R")
 
 
 class SoupXError(CellQuorumDataError):

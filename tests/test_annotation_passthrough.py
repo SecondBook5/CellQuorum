@@ -13,9 +13,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.annotation.passthrough import PassthroughAnnotationMethod
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.annotation.passthrough import PassthroughAnnotationMethod
 
 
 def _labeled_adata(seed=0):

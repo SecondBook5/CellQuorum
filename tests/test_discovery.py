@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.contracts import set_layer_tag
+from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.discovery.nmf_method import NmfMethod
 from cellquorum.stages.discovery.stage import DiscoveryStage
-from cellquorum.methods.base import MethodSkip
 
 LAYER = "cellquorum_normalized"
 
@@ -151,3 +151,52 @@ def test_stage_disabled_returns_recorded_skip(tmp_path):
     result = DiscoveryStage().run(ctx)
     assert result.status == "skipped"
     assert "X_cnmf" not in a.obsm
+
+
+def test_nmf_warns_when_replicate_fits_hit_the_iteration_cap(tmp_path):
+    """A solver that stopped at its cap did not find the programs it reports.
+
+    On the real LEC arm sklearn emitted ``ConvergenceWarning: Maximum number of
+    iterations 200 reached`` for replicate after replicate, and the stage recorded
+    success with no mention of it — so the consensus spectra, the stability scores
+    computed from them, and every downstream program interpretation rested on
+    factorizations that had not settled. ``max_iter`` is already a config knob; the
+    missing half was telling the reader when it was too low.
+    """
+    a = _adata()
+    cfg = _config(max_iter=1)
+    out = NmfMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
+
+    assert not isinstance(out, MethodSkip)
+    joined = " ".join(out.warnings)
+    assert "did not converge" in joined
+    assert "max_iter=1" in joined
+    # Every replicate is reported, not just "some": 5 of 5 at n_runs=5.
+    assert "5/5" in joined
+    assert out.metrics["n_nonconverged_fits"] == 5
+
+
+def test_nmf_warns_when_the_usage_projection_hits_the_cap(tmp_path):
+    """The projection's own iteration count was being discarded.
+
+    ``non_negative_factorization`` returns ``(W, H, n_iter)`` and the call site
+    unpacked it as ``usage, _, _`` — so the one number that says whether the
+    cell x program usage matrix converged was thrown away at the point of use.
+    """
+    a = _adata()
+    cfg = _config(max_iter=1)
+    out = NmfMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
+
+    assert out.metrics["usage_projection_converged"] is False
+    assert "usage projection" in " ".join(out.warnings)
+
+
+def test_nmf_is_silent_about_convergence_when_it_converges(tmp_path):
+    """The warning must mean something, so it cannot fire on a healthy fit."""
+    a = _adata()
+    cfg = _config(max_iter=5000)
+    out = NmfMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
+
+    assert not any("converge" in w for w in out.warnings), out.warnings
+    assert out.metrics["n_nonconverged_fits"] == 0
+    assert out.metrics["usage_projection_converged"] is True

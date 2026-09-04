@@ -166,10 +166,10 @@ def test_scdiagnostics_method_real_r_run(
     tmp_path: Path,
 ) -> None:
     """Real R integration test (skippable when Rscript/scDiagnostics absent)."""
+    from cellquorum.backends.rscript import build_rscript_backend
     from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
-    from cellquorum.backends.rscript import build_rscript_backend
 
     # Try to import scDiagnostics via a quick R check.
     backend = build_rscript_backend(r_packages=["scDiagnostics"])

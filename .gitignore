@@ -19,8 +19,9 @@ site/
 .coverage
 htmlcov/
 
-# R writes this to the CWD when a plotting call runs without an explicit
-# device; the R-backed real-data tests drop it into the repo root.
+# R writes this to the CWD when a plotting call runs without an explicit device.
+# RscriptBackend now runs every R script from a throwaway directory, so nothing
+# CellQuorum invokes produces it any more; kept only for hand-run R in a checkout.
 Rplots.pdf
 
 # Notebook noise
@@ -82,3 +83,12 @@ docs/superpowers/
 # Study-specific run scripts and configs (le_global lymphedema project)
 scripts/le_*.py
 configs/le_global_granular.yaml
+
+# Lymphedema-specific validation: proves the engine on one real dataset, but the
+# study scripts and their outputs are not part of the reusable engine.
+lymphedema/
+
+# Test/tutorial datasets. The DATA is never tracked — GSE140819 alone is 1.2 GB — but the
+# recipe is: scripts/prepare_gse140819.py plus configs/gse140819.yaml reproduce this directory
+# from GEO. A reusable package ships the downloader, not the bytes.
+data/

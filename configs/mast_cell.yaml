@@ -4,8 +4,16 @@ project:
   species_id: 9606
 
 paths:
-  data_root: /mnt/e/lymphedema_cellranger
+  # The Cell Ranger output root. Supplied from the environment rather than hardcoded to
+  # an external drive, so this config describes the ANALYSIS and the machine describes
+  # where its data lives:
+  #
+  #   export CELLQUORUM_CELLRANGER_ROOT=/path/to/cellranger_output
+  #
+  # Unset fails at config-load time naming both the variable and this key.
+  data_root: ${oc.env:CELLQUORUM_CELLRANGER_ROOT}
   manifest: configs/manifests/mast_cell_5patient.csv
+  # null derives the output directory from paths.run_root and project.name.
   output_dir: null
 
 run:
@@ -35,7 +43,8 @@ stages:
 ambient_correction:
   enabled: true
   method: soupx
-  cellranger_root: /mnt/e/lymphedema_cellranger
+  # Same Cell Ranger root as paths.data_root; from the environment, not hardcoded.
+  cellranger_root: ${oc.env:CELLQUORUM_CELLRANGER_ROOT}
   output_dir: soupx
   round_to_int: true
   cluster_resolution: 0.5

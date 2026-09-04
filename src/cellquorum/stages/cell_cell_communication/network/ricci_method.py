@@ -6,16 +6,16 @@ import anndata as ad
 import networkx as nx
 import pandas as pd
 
+from cellquorum.core.contracts import DataContract
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.cell_cell_communication.network._networks import (
     build_cci_network,
     build_gci_network,
     liana_to_canonical,
     resolve_condition_arms,
 )
-from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.core.stage_artifact_writer import StageArtifactWriter
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 _EDGE_COLS = ["source", "target", "ricci_curvature", "weight"]
 _NODE_COLS = ["node", "ricci_curvature"]
@@ -126,6 +126,7 @@ class RicciMethod(AnalysisMethod):
         if liana_res is None or len(liana_res) == 0:
             return self._skip(f"uns['{source_key}'] absent or empty", source_key=source_key)
         canon, notes = liana_to_canonical(liana_res)
+        warnings: list[str] = []
         if canon.empty:
             return self._skip("no canonical edges", notes=notes)
 
@@ -138,6 +139,7 @@ class RicciMethod(AnalysisMethod):
             config.get("case"),
             config.get("control"),
             notes,
+            warnings,
         )
 
         levels = ["cci"] + (["gci"] if build_gci else [])
@@ -146,7 +148,7 @@ class RicciMethod(AnalysisMethod):
         store_curv: dict[str, dict[str, pd.DataFrame]] = {}
 
         for level in levels:
-            G = self._build(canon, level, gci_max_edges, min_edges, notes)
+            G = self._build(canon, level, gci_max_edges, min_edges, warnings)
             if G is None:
                 continue
             edge_df, node_df = compute_ricci_curvature(G, alpha)
@@ -155,7 +157,7 @@ class RicciMethod(AnalysisMethod):
                 writer,
                 f"curvature_{level}_edges.csv",
                 edge_df,
-                notes,
+                warnings,
                 name=f"ccc_curvature_{level}_edges",
                 desc=f"{level.upper()} edge Ricci curvature.",
             )
@@ -163,7 +165,7 @@ class RicciMethod(AnalysisMethod):
                 writer,
                 f"curvature_{level}_nodes.csv",
                 node_df,
-                notes,
+                warnings,
                 name=f"ccc_curvature_{level}_nodes",
                 desc=f"{level.upper()} node Ricci curvature.",
             )
@@ -175,8 +177,8 @@ class RicciMethod(AnalysisMethod):
                 and not case_lr.empty
                 and not ctrl_lr.empty
             ):
-                G_case = self._build(case_lr, level, gci_max_edges, min_edges, notes)
-                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, notes)
+                G_case = self._build(case_lr, level, gci_max_edges, min_edges, warnings)
+                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, warnings)
                 if G_case is not None and G_ctrl is not None:
                     diff = compute_differential_curvature(G_ctrl, G_case, alpha)
                     store_curv[level]["differential"] = diff
@@ -184,7 +186,7 @@ class RicciMethod(AnalysisMethod):
                         writer,
                         f"differential_curvature_{level}.csv",
                         diff,
-                        notes,
+                        warnings,
                         name=f"ccc_diff_curvature_{level}",
                         desc=f"{level.upper()} differential curvature (case-control).",
                     )
@@ -196,29 +198,37 @@ class RicciMethod(AnalysisMethod):
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics={"method": self.name, "levels": list(store_curv.keys())},
             backend="python",
         )
 
     def _build(
-        self, lr: pd.DataFrame, level: str, gci_max_edges: int, min_edges: int, notes: list[str]
+        self, lr: pd.DataFrame, level: str, gci_max_edges: int, min_edges: int, warnings: list[str]
     ) -> nx.DiGraph | None:
+        """Build one network level; skip if over GCI cap or below min_edges.
+
+        Warnings rather than notes, for the reason spelled out on
+        ``TopologyMethod._build``: the gene-channel curvature is an asked-for output
+        and the default cap sits below every real cohort we have run.
+        """
         if level == "cci":
             G = build_cci_network(lr)
         else:
             if len(lr) > gci_max_edges:
-                notes.append(
-                    f"ricci: GCI skipped ({len(lr)} rows > gci_max_edges={gci_max_edges});"
-                    " CCI computed."
+                warnings.append(
+                    f"ricci: GCI (gene-channel) curvature NOT computed: {len(lr)} LR rows "
+                    f"> gci_max_edges={gci_max_edges}. Cell-type-level CCI curvature was "
+                    "computed. Raise ccc_network.gci_max_edges to include gene channels."
                 )
                 return None
             G = build_gci_network(lr)
 
         # min_edges gate: skip if below threshold.
         if G.number_of_edges() < min_edges:
-            notes.append(
-                f"ricci: {level.upper()} skipped ({G.number_of_edges()} edges < "
-                f"min_edges={min_edges})."
+            warnings.append(
+                f"ricci: {level.upper()} curvature NOT computed: {G.number_of_edges()} edges "
+                f"< min_edges={min_edges}."
             )
             return None
         return G
@@ -228,15 +238,21 @@ class RicciMethod(AnalysisMethod):
         writer: StageArtifactWriter,
         filename: str,
         df: pd.DataFrame,
-        notes: list[str],
+        warnings: list[str],
         *,
         name: str,
         desc: str,
     ) -> list[StageArtifact]:
+        """Write one CSV; skip-not-crash on failure.
+
+        A write failure is a WARNING, not a note: the stage returns success with a
+        metrics block, so a missing CSV is the only trace, and nothing in the report
+        would otherwise say the table it names was never written.
+        """
         try:
             return [writer.table(df, filename, name=name, description=desc, index=False)]
         except Exception as exc:  # pragma: no cover - filesystem dependent
-            notes.append(f"ricci: failed to write {filename}: {str(exc)[:200]}")
+            warnings.append(f"ricci: failed to write {filename}: {str(exc)[:200]}")
             return []
 
 

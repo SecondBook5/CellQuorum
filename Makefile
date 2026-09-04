@@ -3,7 +3,67 @@ IMAGE := cellquorum:$(VERSION)
 IMAGE_GPU := cellquorum:$(VERSION)-gpu
 REQUIRED_ENVS := cellquorum-core celloracle_env pyscenic_env hdwgcna_env scclr sccoda_env cellquorum-r
 
-.PHONY: image image-gpu lock smoke matrix docs docs-serve
+.PHONY: image image-gpu lock smoke matrix docs docs-serve \
+        help lint format typecheck test test-fast test-cov check
+
+# Default target: list what is available rather than doing something surprising.
+.DEFAULT_GOAL := help
+
+help:
+	@echo "Development:"
+	@echo "  make check      - lint + typecheck + test-fast (run before opening a PR)"
+	@echo "  make lint       - ruff check + ruff format --check"
+	@echo "  make format     - ruff format + ruff check --fix (rewrites files)"
+	@echo "  make typecheck  - mypy on the engine spine"
+	@echo "  make test-fast  - fast tier only; the loop to use while coding"
+	@echo "  make test       - everything this machine can run, sharded across cores"
+	@echo "  make test-cov   - everything, with a coverage report"
+	@echo "  make docs       - build the docs site (strict)"
+	@echo "  make docs-serve - serve the docs with live reload"
+	@echo ""
+	@echo "Packaging and environments:"
+	@echo "  make image      - build the CPU Docker image"
+	@echo "  make image-gpu  - build the GPU Docker image"
+	@echo "  make lock       - regenerate conda-lock files for envs/"
+	@echo "  make smoke      - smoke-test the built image"
+	@echo "  make matrix     - run the Snakemake matrix inside the image"
+
+# Mirror the CI lint job exactly, so a green `make lint` means a green CI lint.
+lint:
+	ruff check src tests
+	ruff format --check src tests
+
+# The write side of `make lint`. Separate target because a formatter that runs
+# implicitly during a check is how unreviewed diffs appear in a PR.
+format:
+	ruff format src tests
+	ruff check --fix src tests
+
+# Mirror the CI typecheck job: the engine spine only. The mypy backlog lives in
+# pyproject.toml under [[tool.mypy.overrides]]; shrinking it widens this gate.
+typecheck:
+	mypy src/cellquorum/core src/cellquorum/config src/cellquorum/io \
+	     src/cellquorum/methods src/cellquorum/cli
+
+# The tight development loop. Deselects the slow, GPU, R, and integration tiers so
+# the run is dominated by actual assertions rather than backend startup.
+test-fast:
+	pytest -m "not slow and not gpu and not r and not integration"
+
+# Everything this machine can run. Tests needing an absent backend self-skip.
+# -n auto shards across cores: the suite spends most of its time importing the
+# single-cell stack, so sharding trades memory for a large wall-clock win.
+test:
+	pytest -n auto
+
+# Full suite plus coverage. Coverage is not in the default addopts because the
+# tracer slows every local run; ask for it explicitly or let CI do it.
+test-cov:
+	pytest -n auto --cov --cov-report=term-missing --cov-report=html
+	@echo "HTML report: htmlcov/index.html"
+
+# What CI will check, minus the slow tiers. Run this before opening a PR.
+check: lint typecheck test-fast
 
 # Build the documentation site (strict: warnings — broken links, unresolved
 # API references — fail the build, matching the CI docs job).

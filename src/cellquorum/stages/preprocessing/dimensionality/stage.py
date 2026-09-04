@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.core.stage_catalog import register_stage
+from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
@@ -20,6 +20,9 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_flag="dimensionality",
     config_field="dimensionality",
     category="dimensionality",
+    # Fits PCA loadings and the scaling centre across cells, so damaged cells could
+    # otherwise shape the biological reference every later stage is measured against.
+    cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
 class DimensionalityStage(MethodDispatchStage):
     """Config-driven dimensionality-reduction stage."""

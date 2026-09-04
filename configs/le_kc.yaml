@@ -4,11 +4,19 @@ project:
   species_id: 9606
 
 paths:
-  output_dir: /home/ajbook/projects/cellquorum/runs/kc_production
+  # Repo-relative: resolves against the directory you run from, and runs/ is gitignored.
+  output_dir: runs/kc_production
 
 input:
-  # The SoupX-corrected keratinocyte object (10,012 cells, has a counts layer)
-  h5ad: /mnt/c/Users/ajboo/BookAbraham/le_kc_signaling_hubs/data/processed/internal/cohort_objects/le_kc_keratinocytes_SOUPX.h5ad
+  # The SoupX-corrected keratinocyte object (10,012 cells, has a counts layer).
+  # Supplied from the environment rather than hardcoded to one machine's user
+  # directory, so this config describes the ANALYSIS and the machine says where the
+  # object lives:
+  #
+  #   export CELLQUORUM_KC_H5AD=/path/to/le_kc_keratinocytes_SOUPX.h5ad
+  #
+  # Unset fails at config-load time naming both the variable and this key.
+  h5ad: ${oc.env:CELLQUORUM_KC_H5AD}
   counts_layer: counts
 
 run:
@@ -80,7 +88,10 @@ reference_mapping:
   method: scarches
   compute_backend: gpu        # do not silently run multi-hour/day CPU ScArches
   resume: true                # reuse completed per-seed checkpoints on rerun
-  atlas_h5ad: /mnt/e/atopic_dermatitis_singlecell_atlas/data/fiskin_KC_reference.h5ad
+  # Fiskin keratinocyte reference. Downloaded per install and named by the
+  # environment, since it is a large external download:
+  #   export CELLQUORUM_KC_ATLAS_H5AD=/path/to/fiskin_KC_reference.h5ad
+  atlas_h5ad: ${oc.env:CELLQUORUM_KC_ATLAS_H5AD}
   label_key: celltype_granular          # KC 1..5, cycling, Cornified 1/2
   atlas_batch_key: study_ID
   counts_layer: counts

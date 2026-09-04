@@ -17,9 +17,9 @@ import pandas as pd
 
 from cellquorum.backends.registry import build_default_backend_registry
 from cellquorum.backends.sccoda_backend import build_sccoda_backend
-from cellquorum.stages.comparative.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.config.design import DesignConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
+from cellquorum.stages.comparative.differential_abundance.stage import DifferentialAbundanceStage
 
 
 def _miloR_available() -> bool:
@@ -219,7 +219,28 @@ def test_stage_runs_through_context(tmp_path):
         ),
         "propeller": (
             _speckle_available(),
-            ["cell_type", "PropRatio", "Tstatistic", "PValue", "FDR"],
+            [
+                "cell_type",
+                # The arm means the fit already produced, so the table states the
+                # magnitudes it ranks instead of only a ratio and a t.
+                "control_mean_prop",
+                "case_mean_prop",
+                "effect_pp",
+                "PropRatio",
+                "Tstatistic",
+                "PValue",
+                "FDR",
+                # Which design was fitted. This cohort's donors are disjoint, so the
+                # requested donor block is declined and `paired` reads False -- the
+                # point being that a reader can tell, rather than having to assume.
+                "paired",
+                "n_donors_blocked",
+                "design_floor_p",
+                "p_below_design_floor",
+                "family_size",
+                "family_min_concordant",
+                "family_floor_reachable",
+            ],
         ),
         "proportion_ttest": (
             True,  # Always available (pure Python)
@@ -227,6 +248,7 @@ def test_stage_runs_through_context(tmp_path):
                 "cell_type",
                 "n_case",
                 "n_control",
+                "n_donors_concordant",
                 "control_mean_pct",
                 "case_mean_pct",
                 "effect_pp",
@@ -234,8 +256,15 @@ def test_stage_runs_through_context(tmp_path):
                 "bootstrap_ci_high_pp",
                 "statistic",
                 "pvalue",
-                "fdr",
                 "paired",
+                "fdr",
+                # The design floor and the family's reachability, so a null FDR is
+                # distinguishable from a family that could not have called anything.
+                "design_floor_p",
+                "p_below_design_floor",
+                "family_size",
+                "family_min_concordant",
+                "family_floor_reachable",
             ],
         ),
     }
@@ -291,9 +320,16 @@ def test_stage_runs_through_context(tmp_path):
                 # Read and verify columns.
                 df = pd.read_csv(artifact_path)
                 assert not df.empty, f"{method_name} artifact is empty"
+                # Required columns, in this relative order. Not an exact match: some
+                # columns are conditional on the data (scCODA emits ``is_primary`` only
+                # when a sensitivity fit was worth running), so pinning the full list
+                # makes the test fail on a legitimate second fit.
+                missing = [c for c in expected_cols if c not in df.columns]
+                assert not missing, f"{method_name} missing columns: {missing}"
+                present_order = [c for c in df.columns if c in expected_cols]
                 assert (
-                    list(df.columns) == expected_cols
-                ), f"{method_name} columns mismatch: {list(df.columns)} vs {expected_cols}"
+                    present_order == expected_cols
+                ), f"{method_name} column order changed: {present_order} vs {expected_cols}"
                 # Verify case/control made it through (design bridge worked)
                 assert method_entry.get("case") == "Disease"
                 assert method_entry.get("control") == "Normal"

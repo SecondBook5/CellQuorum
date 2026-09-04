@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from _external_data import stub_config_env
+
 from cellquorum.config.cohort import (
     CohortConfig,
     resolve_cohort_key,
     validate_cohort_against_obs,
 )
+from cellquorum.config.loader import load_config
 from cellquorum.config.models import CellQuorumConfig
 
 
@@ -71,15 +75,20 @@ def test_cohort_overlay_reaches_dispatch_stage_config() -> None:
     assert "donor_key" not in _apply_cohort_overlay(context, {"method": "harmony"})
 
 
-def test_le_kc_config_still_validates() -> None:
+def test_le_kc_config_still_validates(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The existing le_kc.yaml must still validate with the cohort field added."""
-
-    import yaml
 
     le_kc_path = Path("configs/le_kc.yaml")
     if not le_kc_path.exists():
         return  # Config not present in this checkout; nothing to assert.
 
-    raw = yaml.safe_load(le_kc_path.read_text(encoding="utf-8"))
-    cfg = CellQuorumConfig.model_validate(raw)
+    # Load through load_config rather than yaml.safe_load + model_validate. The config
+    # names its external inputs with ${oc.env:...} instead of hardcoding one machine's
+    # paths, and only load_config resolves those interpolations — a raw safe_load leaves
+    # the literal "${oc.env:...}" string, which then fails the .h5ad suffix validator for
+    # a reason that has nothing to do with this test. Going through the real loader also
+    # means this exercises the path a user actually takes.
+    stub_config_env(monkeypatch, tmp_path)
+
+    cfg = load_config(le_kc_path)
     assert cfg.project.name

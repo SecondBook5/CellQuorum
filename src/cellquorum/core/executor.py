@@ -209,6 +209,7 @@ class PipelineExecutor:
         until_stage: Optional stage name to stop AFTER, so a pipeline can be
             advanced one stage at a time and inspected between steps. Pairs with
             run.checkpoint, which persists the object at the stopping point.
+            Stops on the named stage whatever its OUTCOME — see ``run``.
     """
 
     # Store executable stage implementations.
@@ -278,9 +279,19 @@ class PipelineExecutor:
                 # Advance the progress bar.
                 bar.advance()
 
+                # Whether this is the stage the caller asked to stop after. Checked in
+                # every outcome branch below, because "run only this stage" has to hold
+                # when the stage FAILS or is skipped too. It used to be tested only on
+                # the success path, so a one-stage debug run whose stage raised fell
+                # through to `continue` and executed the entire rest of the pipeline —
+                # on an object that never received the stage being debugged.
+                reached_until = bool(self.until_stage) and planned_stage.name == self.until_stage
+
                 # Stop after failures when configured.
                 if stage_record.status == "failed":
-                    if self.stop_on_failure:
+                    if self.stop_on_failure or reached_until:
+                        if reached_until:
+                            self._note_until_stop(reporter, planned_stage.name)
                         break
 
                     # Continue to the next planned stage when failure stopping is disabled.
@@ -288,6 +299,9 @@ class PipelineExecutor:
 
                 # Keep context unchanged for skipped stages.
                 if stage_record.status == "skipped":
+                    if reached_until:
+                        self._note_until_stop(reporter, planned_stage.name)
+                        break
                     continue
 
                 # Successful records must have a StageResult.
@@ -316,12 +330,8 @@ class PipelineExecutor:
 
                 # Stop after the requested stage, so a pipeline can be advanced one
                 # stage at a time and inspected between steps.
-                if self.until_stage and planned_stage.name == self.until_stage:
-                    if hasattr(reporter, "stage_note"):
-                        reporter.stage_note(
-                            planned_stage.name,
-                            f"stopping after '{planned_stage.name}' (until_stage)",
-                        )
+                if reached_until:
+                    self._note_until_stop(reporter, planned_stage.name)
                     break
 
         # Return the complete execution result.
@@ -330,6 +340,13 @@ class PipelineExecutor:
             stage_results=stage_results,
             stage_execution_records=stage_execution_records,
         )
+
+    @staticmethod
+    def _note_until_stop(reporter: object, stage_name: str) -> None:
+        """Record that the run stopped here because ``until_stage`` said so."""
+
+        if hasattr(reporter, "stage_note"):
+            reporter.stage_note(stage_name, f"stopping after '{stage_name}' (until_stage)")
 
     def _maybe_write_checkpoint(
         self,

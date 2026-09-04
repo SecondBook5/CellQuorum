@@ -21,8 +21,6 @@ from cellquorum.stages.qc.artifacts import QCArtifactManifest, write_qc_artifact
 from cellquorum.stages.qc.config import QCConfig, validate_qc_config_dict
 
 # Import decision objects for identity checks.
-from cellquorum.stages.qc.decisions import QCDecisionResult, build_qc_decisions
-
 # Import feature objects for identity checks.
 from cellquorum.stages.qc.features import MITO_COLUMN, build_feature_masks
 
@@ -33,8 +31,6 @@ from cellquorum.stages.qc.metrics import QCMetricsResult, calculate_qc_metrics
 from cellquorum.stages.qc.stage import QCStage
 
 # Import threshold objects for identity checks.
-from cellquorum.stages.qc.thresholds import QCThresholdResult, build_qc_thresholds
-
 # Import validation objects for identity checks.
 from cellquorum.stages.qc.validation import QCInputValidationSummary, validate_qc_input_adata
 
@@ -117,12 +113,8 @@ def test_qc_public_api_exports_expected_core_objects() -> None:
     assert qc.calculate_qc_metrics is calculate_qc_metrics
 
     # Confirm threshold exports.
-    assert qc.QCThresholdResult is QCThresholdResult
-    assert qc.build_qc_thresholds is build_qc_thresholds
 
     # Confirm decision exports.
-    assert qc.QCDecisionResult is QCDecisionResult
-    assert qc.build_qc_decisions is build_qc_decisions
 
     # Confirm artifact exports.
     assert qc.QCArtifactManifest is QCArtifactManifest
@@ -179,54 +171,36 @@ def test_qc_public_api_can_validate_config_mapping() -> None:
     assert config.threshold_strategy == "fixed"
 
 
-def test_qc_public_api_can_run_metrics_thresholds_and_decisions() -> None:
+def test_qc_public_api_can_run_metrics_and_floors() -> None:
+    """The package surface must be enough to measure a cohort and apply the floors.
+
+    Replaces an exercise of ``build_qc_thresholds`` + ``build_qc_decisions``. Those produced a
+    keep/fail verdict from configurable bounds; the floors produce only the exclusions that are
+    not judgements, and every judgement now belongs to graded adjudication.
     """
-    Verify the public API supports the core QC workflow.
+    import numpy as np
 
-    This smoke test exercises the intended user-facing sequence:
-    validate input, calculate metrics, build thresholds, and build decisions.
-    """
+    import cellquorum.stages.qc as qc
 
-    # Build test data and config.
-    adata = make_public_api_adata()
-    config = make_public_api_qc_config()
-
-    # Validate QC input through the public API.
-    validation_summary = qc.validate_qc_input_adata(adata, config)
-
-    # Calculate QC metrics through the public API.
-    metrics_result = qc.calculate_qc_metrics(adata, config)
-
-    # Build QC thresholds through the public API.
-    threshold_result = qc.build_qc_thresholds(
-        cell_metrics=metrics_result.cell_metrics,
-        gene_metrics=metrics_result.gene_metrics,
-        config=config,
+    rng = np.random.default_rng(0)
+    counts = rng.poisson(6.0, size=(80, 40)).astype("float32")
+    counts[:5] = 0.0
+    adata = ad.AnnData(
+        X=counts,
+        obs=pd.DataFrame(index=[f"cell_{i}" for i in range(80)]),
+        var=pd.DataFrame(index=[f"gene_{i}" for i in range(40)]),
     )
 
-    # Build QC decisions through the public API.
-    decision_result = qc.build_qc_decisions(
-        cell_metrics=metrics_result.cell_metrics,
-        gene_metrics=metrics_result.gene_metrics,
-        thresholds=threshold_result,
-        config=config,
-    )
+    metrics = qc.calculate_qc_metrics(adata, qc.QCConfig())
+    assert isinstance(metrics, qc.QCMetricsResult)
 
-    # Confirm validation returned a structured summary.
-    assert isinstance(validation_summary, qc.QCInputValidationSummary)
+    floors = qc.apply_floors(adata.X, adata.obs_names, adata.var_names, min_genes_per_cell=10)
+    assert isinstance(floors, qc.FloorResult)
+    assert floors.n_cells_removed() == 5
 
-    # Confirm metrics returned a structured result.
-    assert isinstance(metrics_result, qc.QCMetricsResult)
-
-    # Confirm thresholds returned a structured result.
-    assert isinstance(threshold_result, qc.QCThresholdResult)
-
-    # Confirm decisions returned a structured result.
-    assert isinstance(decision_result, qc.QCDecisionResult)
-
-    # Confirm the expected fixed-threshold decision behavior.
-    assert decision_result.cell_decisions["keep"].tolist() == [True, False, True]
-    assert decision_result.gene_decisions["keep"].tolist() == [True, True, False]
+    report = qc.build_qc_report_table(floors.cell_table())
+    assert report["cells_before_qc"].iloc[-1] == 80
+    assert report["cells_removed"].iloc[-1] == 5
 
 
 def test_qc_public_api_stage_can_be_instantiated() -> None:

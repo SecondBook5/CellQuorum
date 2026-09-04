@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.cell_cell_communication.stage import CellCellCommunicationStage
 from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.stages.cell_cell_communication.stage import CellCellCommunicationStage
 
 pytest.importorskip("liana")
 

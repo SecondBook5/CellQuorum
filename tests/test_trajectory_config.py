@@ -21,7 +21,10 @@ def test_trajectory_defaults():
     assert c.velocity.n_pcs == 30
     assert c.velocity.n_neighbors == 30
     assert c.velocity.min_cells == 30
-    assert c.velocity.n_jobs == 1
+    # None, not 1: unset means inherit compute.n_jobs, so a config that asks for
+    # 8 workers gets 8 on the slowest step in the pipeline (recover_dynamics:
+    # 151s serial vs 20s on 8 workers) without having to name it twice.
+    assert c.velocity.n_jobs is None
     assert c.velocity.seed == 1337
     assert c.velocity.generation.generate_missing is False
     assert c.velocity.generation.bam_dir is None

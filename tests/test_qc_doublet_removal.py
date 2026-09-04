@@ -59,7 +59,7 @@ def test_doublets_removed_when_remove_true(tmp_path):
     # detector result by monkeypatching detect_doublets to flag the first 5 cells.
     import cellquorum.stages.qc.doublets as doublets_mod
 
-    def _fake_detect(adata, cfg, backend, sample_key=None):
+    def _fake_detect(adata, cfg, backend, sample_key=None, n_jobs=1):
         flags = np.zeros(adata.n_obs, dtype=bool)
         flags[:5] = True
         adata.obs["predicted_doublet"] = flags
@@ -100,7 +100,7 @@ def test_doublets_kept_when_remove_false(tmp_path):
     ctx = _Ctx(a, config, _Paths(tmp_path))
     import cellquorum.stages.qc.doublets as doublets_mod
 
-    def _fake_detect(adata, cfg, backend, sample_key=None):
+    def _fake_detect(adata, cfg, backend, sample_key=None, n_jobs=1):
         flags = np.zeros(adata.n_obs, dtype=bool)
         flags[:5] = True
         adata.obs["predicted_doublet"] = flags

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.gene_regulation.grn.config import GrnConfig
 from cellquorum.stages.gene_regulation.grn.pyscenic_method import PyscenicMethod
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 if not METHOD_REGISTRY.has("grn", "pyscenic"):
     METHOD_REGISTRY.register(PyscenicMethod)

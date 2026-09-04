@@ -191,6 +191,47 @@ def _as_overlay(value: object) -> OverlayConfig:
     return OverlayConfig()
 
 
+def _overlay_with_declared_panels(
+    overlay_cfg: OverlayConfig, context: object
+) -> tuple[OverlayConfig, list[str]]:
+    """Let ``config.markers.panels`` supply the overlay programs when it can.
+
+    Both blocks score a program with ``score_genes`` and write ``obs[name]``, so a
+    manifest that declares the same panel in each has two gene lists competing for
+    one column and the object ends up carrying a score whose definition is not
+    recoverable from it. This resolves that two ways: an overlay block that names no
+    programs inherits the declared panels (declare-once, as the cohort keys and the
+    focus lineage already do), and a name declared in both with *different* genes is
+    reported rather than silently resolved in favour of whichever ran last.
+
+    Returns the config to use and any warnings.
+    """
+    panels = getattr(getattr(context, "config", None), "markers", None)
+    declared = dict(getattr(panels, "panels", {}) or {})
+    if not declared:
+        return overlay_cfg, []
+
+    if not overlay_cfg.programs:
+        return overlay_cfg.model_copy(update={"programs": declared}), [
+            f"continuous_overlay: overlay declared no programs; scoring the "
+            f"{len(declared)} panel(s) from config.markers.panels"
+        ]
+
+    disagree = sorted(
+        name
+        for name, genes in overlay_cfg.programs.items()
+        if name in declared and list(genes) != list(declared[name])
+    )
+    if disagree:
+        return overlay_cfg, [
+            "continuous_overlay: program(s) "
+            f"{', '.join(disagree)} are declared in BOTH embeddings.overlay.programs and "
+            "config.markers.panels with different gene lists; the overlay's list is used "
+            "and obs holds that score. Declare each panel once."
+        ]
+    return overlay_cfg, []
+
+
 def _as_magic(value: object) -> MagicConfig:
     """Coerce the magic config (model or dict) into a MagicConfig."""
     if isinstance(value, MagicConfig):
@@ -220,6 +261,8 @@ class ContinuousOverlayMethod(AnalysisMethod):
         seed = _seed(config, context)
 
         warnings: list[str] = []
+        overlay_cfg, panel_warnings = _overlay_with_declared_panels(overlay_cfg, context)
+        warnings += panel_warnings
 
         # Opt-in MAGIC: impute only the overlay genes, then read from that layer.
         gene_layer = None
@@ -231,6 +274,7 @@ class ContinuousOverlayMethod(AnalysisMethod):
                     knn=magic_cfg.knn,
                     solver=magic_cfg.solver,
                     random_state=magic_cfg.random_state,
+                    layer_in=overlay_cfg.layer,
                 )
                 if imputed:
                     gene_layer = "magic"

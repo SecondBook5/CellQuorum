@@ -20,11 +20,12 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
-from cellquorum.stages.comparative.differential_abundance.stage import DifferentialAbundanceStage
 from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import DesignConfig
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.core.context import PipelinePaths
 from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.stages.comparative.differential_abundance.stage import DifferentialAbundanceStage
 
 
 def _adata():
@@ -50,9 +51,11 @@ class _Ctx:
         self._adata = _adata()
         self.config = config
         self.backend_registry = None
-        # Mock paths for methods that write artifacts
-        root = Path("/tmp/da_test")
-        self.paths = type("obj", (object,), {"root": root, "results": root / "results"})
+        # Use the real path contract rather than a hand-rolled stand-in. A partial
+        # fake breaks as soon as a method writes to a directory it did not think
+        # to declare -- which is how this stub started failing once the
+        # composition figures landed.
+        self.paths = PipelinePaths.from_output_dir(Path("/tmp/da_test"))
 
     def require_adata(self):
         return self._adata

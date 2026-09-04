@@ -9,13 +9,15 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.backends.script_paths import r_script_path
 from cellquorum.core.contracts import DataContract
+from cellquorum.core.labels import as_label_strings
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
 
 # Path to the bundled milo script.
-_MILO_R = Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "milo.R"
+_MILO_R = r_script_path("milo.R")
 
 
 class MiloMethod(RAnalysisMethod):
@@ -99,10 +101,18 @@ class MiloMethod(RAnalysisMethod):
         # meta.csv: per-cell metadata, first column = cell id (row index).
         # MUST contain columns literally named by condition_col, donor_col, and
         # (if present) cell_type_col.
+        #
+        # Labels are canonicalized on the way out, with the same helper the
+        # count-based methods use. Without it a numeric state column reaches R as
+        # 1.0 and comes back named "1", while this run's scCODA table names the same
+        # state "1.0" — one state, two names, in two CSVs a reader is meant to read
+        # side by side.
         meta_cols = [condition_col, donor_col]
         if cell_type_col and cell_type_col in adata.obs.columns:
             meta_cols.append(cell_type_col)
         meta = adata.obs[meta_cols].copy()
+        for column in meta_cols:
+            meta[column] = as_label_strings(meta[column])
         meta.to_csv(meta_csv, index=True)
 
         # Prepare the output path in the run results directory.
@@ -131,8 +141,24 @@ class MiloMethod(RAnalysisMethod):
         # so paired lands at position 11.
         # If no celltype AND not paired, omit both trailing args.
         has_celltype = cell_type_col and cell_type_col in adata.obs.columns
+        label_notes: list[str] = []
         if has_celltype:
             args.append(cell_type_col)
+            # Milo tests NEIGHBOURHOODS, so a cell with no label still belongs in
+            # the graph and is kept -- unlike the count-based methods, which drop
+            # it because a missing label cannot be a category to count. The label
+            # is used only to annotate each neighbourhood, so the consequence here
+            # is an unlabelled neighbourhood rather than a phantom cell type. Say
+            # so, because the same run's scCODA/propeller tables will report a
+            # different cell total and that difference is a decision, not a bug.
+            n_missing = int(adata.obs[cell_type_col].isna().sum())
+            if n_missing:
+                label_notes.append(
+                    f"{n_missing} of {adata.n_obs} cells have no {cell_type_col} label; they "
+                    f"still enter the neighbourhood graph (a neighbourhood test does not need "
+                    f"labels) and only affect how neighbourhoods are annotated. The "
+                    f"count-based methods in this stage exclude them instead."
+                )
         elif paired:
             # No celltype but paired=true: pass empty string at position 10
             args.append("")
@@ -188,7 +214,10 @@ class MiloMethod(RAnalysisMethod):
                 ),
                 *figure_artifacts,
             ],
-            notes=[f"Milo DA: {case} vs {control}, k={k}, prop={prop}, paired={paired}."],
+            notes=[
+                f"Milo DA: {case} vs {control}, k={k}, prop={prop}, paired={paired}.",
+                *label_notes,
+            ],
             metrics={
                 "case": case,
                 "control": control,

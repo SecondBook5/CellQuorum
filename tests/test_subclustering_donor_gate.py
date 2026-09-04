@@ -287,3 +287,30 @@ def test_donor_reproducibility_min_groups_threshold() -> None:
     assert c1["qc_pass"] is False
     # C1 has BOTH violations; reason should mention at least one.
     assert "n_groups < min_groups" in c1["qc_reason"] or "one-donor-dominated" in c1["qc_reason"]
+
+
+def test_apply_qc_flags_matches_clusters_across_an_h5ad_round_trip() -> None:
+    """A gate_result read back from a checkpoint has STRING cluster keys.
+
+    h5py cannot name a group with a ``numpy.int64``, so the shared writer converts
+    those keys to strings. If the lookup here insisted on the original type, every
+    cell would miss and the whole object would come out flagged
+    "cluster not in gate_result" — a silent, total QC failure that looks like data.
+    """
+    adata = AnnData(
+        X=np.ones((4, 2), dtype="float32"),
+        obs=pd.DataFrame({"cluster": np.array([0, 0, 1, 1], dtype=np.int64)}),
+    )
+    # Exactly what the writer leaves behind: the ids as strings.
+    gate_result = {
+        "clusters": {
+            "0": {"qc_pass": True, "qc_reason": "ok"},
+            "1": {"qc_pass": False, "qc_reason": "too few donors"},
+        },
+        "summary": {"n_pass": 1, "n_fail": 1},
+    }
+
+    apply_qc_flags(adata, "cluster", gate_result, key_added="donor_qc")
+
+    assert adata.obs["donor_qc_qc_pass"].tolist() == [True, True, False, False]
+    assert "not in gate_result" not in set(adata.obs["donor_qc_qc_reason"])

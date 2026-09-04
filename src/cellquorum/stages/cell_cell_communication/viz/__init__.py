@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.cell_cell_communication.viz._viz_methods import (
     ChordVizMethod,
     DotplotVizMethod,
@@ -10,7 +11,6 @@ from cellquorum.stages.cell_cell_communication.viz._viz_methods import (
     SummaryVizMethod,
 )
 from cellquorum.stages.cell_cell_communication.viz.config import CccVizConfig
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 for _method in (
     DotplotVizMethod,

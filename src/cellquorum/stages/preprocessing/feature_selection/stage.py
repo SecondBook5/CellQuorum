@@ -1,11 +1,11 @@
-# Pipeline step (order=40): feature_selection — select highly variable genes via the configured HVG method.
+# Pipeline step (order=40): feature_selection — select highly variable genes.
 """Feature-selection stage: dispatch to the configured HVG method."""
 
 from __future__ import annotations
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
-from cellquorum.core.stage_catalog import register_stage
+from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
@@ -15,6 +15,9 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_flag="feature_selection",
     config_field="feature_selection",
     category="feature_selection",
+    # Fits HVG means, variances and dispersions across cells, so damaged cells could
+    # otherwise shape the biological reference every later stage is measured against.
+    cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
 class FeatureSelectionStage(MethodDispatchStage):
     """Config-driven highly-variable-gene selection stage."""

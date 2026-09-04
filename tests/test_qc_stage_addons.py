@@ -90,7 +90,9 @@ def test_qc_stage_exposes_feature_family_metrics_to_plots(tmp_path):
         metrics={"layer": "counts", "percent_top": [20]},
         doublets={"enabled": False},
         ambient={"enabled": False},
-        outputs={"figure_dpi": 40},
+        # The per-metric histograms asserted below are the diagnostic set, opt-in
+        # now that the overview panels answer "what did QC remove" instead.
+        outputs={"figure_dpi": 40, "diagnostic_figures": True},
     )
     ctx = _Ctx(a, tmp_path, qc)
 

@@ -25,6 +25,7 @@ from cellquorum.core.checkpoint import (
     should_checkpoint,
     write_checkpoint,
 )
+from cellquorum.core.fingerprint import FINGERPRINT_SCHEMA_VERSION
 
 STAGE_ORDER = {"qc": 20, "preprocessing": 30, "integration": 60, "clustering": 80}
 
@@ -271,6 +272,92 @@ def test_checkpoint_without_recorded_fingerprint_is_loadable(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# whose fault is it — an engine upgrade or a setting
+# --------------------------------------------------------------------------- #
+#
+# Both refuse the checkpoint, and both should. What differs is the message, and the
+# message is the whole value of the guard: told "a setting changed", someone goes
+# looking through a config for an edit they never made.
+
+
+def _age_the_fingerprint_schema(paths, stage: str) -> None:
+    """Rewrite a sidecar as if an older engine's fingerprint scheme had written it."""
+    import json
+
+    sidecar = checkpoint_root(paths) / stage / "checkpoint.json"
+    payload = json.loads(sidecar.read_text())
+    payload["fingerprint_schema_version"] = FINGERPRINT_SCHEMA_VERSION - 1
+    sidecar.write_text(json.dumps(payload))
+
+
+def test_an_older_fingerprint_schema_is_reported_as_an_upgrade_not_a_setting_change(tmp_path):
+    paths = _paths(tmp_path)
+    write_checkpoint(
+        _adata(), paths, stage="qc", order=20, input_fingerprint="fp", upstream_fingerprint="up"
+    )
+    _age_the_fingerprint_schema(paths, "qc")
+    record = read_checkpoint_record(paths, "qc")
+
+    with pytest.raises(CheckpointError) as excinfo:
+        load_checkpoint(record, expected_upstream_fingerprint="up")
+    message = str(excinfo.value)
+    assert "not comparable" in message
+    assert "engine upgrade" in message
+    assert "Delete the checkpoint" in message
+    # The old message would have been raised even on identical hashes, and would have
+    # accused a setting at or before the stage of changing.
+    assert "A setting" not in message
+
+
+def test_an_older_fingerprint_schema_is_refused_even_when_the_hashes_happen_to_match(tmp_path):
+    """Equal hashes from two different constructions prove nothing.
+
+    They can only coincide, so accepting them would load a checkpoint whose settings
+    were never actually checked — the silent mismatch the guard exists to prevent.
+    """
+    paths = _paths(tmp_path)
+    write_checkpoint(_adata(), paths, stage="qc", order=20, input_fingerprint="fp-identical")
+    _age_the_fingerprint_schema(paths, "qc")
+    record = read_checkpoint_record(paths, "qc")
+
+    with pytest.raises(CheckpointError, match="not comparable"):
+        load_checkpoint(record, expected_fingerprint="fp-identical")
+
+
+def test_an_older_fingerprint_schema_still_loads_when_nothing_is_being_compared(tmp_path):
+    # The object itself is fine; only the hashes are incomparable. A caller with no
+    # fingerprint to check was never relying on one, so refusing would break
+    # `--from-stage` for no safety gained.
+    paths = _paths(tmp_path)
+    write_checkpoint(_adata(), paths, stage="qc", order=20, input_fingerprint="fp")
+    _age_the_fingerprint_schema(paths, "qc")
+    record = read_checkpoint_record(paths, "qc")
+    assert load_checkpoint(record).n_obs == 12
+
+
+def test_a_sidecar_with_no_recorded_fingerprint_schema_is_read_as_the_first_one(tmp_path):
+    # Every sidecar written before the field existed came from schema v1. Defaulting
+    # to the current version would claim those are comparable when they are not.
+    import json
+
+    paths = _paths(tmp_path)
+    write_checkpoint(_adata(), paths, stage="qc", order=20, input_fingerprint="fp")
+    sidecar = checkpoint_root(paths) / "qc" / "checkpoint.json"
+    payload = json.loads(sidecar.read_text())
+    del payload["fingerprint_schema_version"]
+    sidecar.write_text(json.dumps(payload))
+
+    assert read_checkpoint_record(paths, "qc").fingerprint_schema_version == 1
+
+
+def test_the_fingerprint_schema_survives_the_sidecar_round_trip(tmp_path):
+    paths = _paths(tmp_path)
+    write_checkpoint(_adata(), paths, stage="qc", order=20, input_fingerprint="fp")
+    record = read_checkpoint_record(paths, "qc")
+    assert record.fingerprint_schema_version == FINGERPRINT_SCHEMA_VERSION
+
+
+# --------------------------------------------------------------------------- #
 # resolving a start point
 # --------------------------------------------------------------------------- #
 
@@ -326,3 +413,35 @@ def test_start_with_unknown_stage_name_raises(tmp_path):
 
 def test_available_checkpoints_on_a_fresh_run_is_empty(tmp_path):
     assert available_checkpoints(_paths(tmp_path)) == []
+
+
+def test_a_failed_checkpoint_write_leaves_no_half_checkpoint(tmp_path, monkeypatch):
+    """Discovery keys on the sidecar, so a sidecar without its object is a trap.
+
+    ``--from-stage`` would find the checkpoint, then fail on read. When a previous
+    run of the same stage left both behind, a failed write must clear both rather
+    than leave the old pair standing in for this run's resume point.
+    """
+    from cellquorum.core import h5ad_io
+    from cellquorum.core.checkpoint import checkpoint_dir
+
+    paths = _paths(tmp_path)
+    adata = _adata()
+
+    assert (
+        write_checkpoint(adata, paths, stage="clustering", order=80, input_fingerprint="fp1")
+        is not None
+    )
+    target = checkpoint_dir(paths, "clustering")
+    assert (target / "checkpoint.json").exists()
+    assert (target / "adata.h5ad").exists()
+
+    def _boom(_adata):
+        raise RuntimeError("sanitizer exploded")
+
+    monkeypatch.setattr(h5ad_io, "sanitize_for_h5ad", _boom)
+    with pytest.raises(CheckpointError):
+        write_checkpoint(adata, paths, stage="clustering", order=80, input_fingerprint="fp2")
+
+    assert not (target / "checkpoint.json").exists()
+    assert not (target / "adata.h5ad").exists()

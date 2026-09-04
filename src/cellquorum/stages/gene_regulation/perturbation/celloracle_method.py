@@ -11,9 +11,11 @@ import pandas as pd
 
 from cellquorum.backends.celloracle_backend import CELLORACLE_KO_PY
 from cellquorum.core.contracts import DataContract
+from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.stages.gene_regulation.perturbation import perturbation_figures as pfig
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.gene_regulation.perturbation import perturbation_figures as pfig
+from cellquorum.visualization.figstyle import render_figure
 
 
 class CellOracleMethod(AnalysisMethod):
@@ -105,9 +107,9 @@ class CellOracleMethod(AnalysisMethod):
         if layer and layer != "X" and layer in adata.layers:
             a2 = adata.copy()
             a2.X = a2.layers[layer]
-            a2.write_h5ad(h5ad)
+            write_h5ad(a2, h5ad)
         else:
-            adata.write_h5ad(h5ad)
+            write_h5ad(adata, h5ad)
 
         out_dir = Path(getattr(context.paths, "results", ".")) / "perturbation"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -172,30 +174,40 @@ class CellOracleMethod(AnalysisMethod):
 
         # 6. Figures (in cellquorum env) — never let one failure sink the stage
         notes: list[str] = []
+        warnings: list[str] = []
         figs: list[Path] = []
         if len(ranking) > 0:
-            try:
-                figs.extend(pfig.plot_target_ranking(ranking, out_dir, n_top=n_top_targets))
-            except Exception as exc:
-                notes.append(f"target-ranking figure failed: {str(exc)[:150]}")
+            render_figure(
+                "target-ranking",
+                lambda: pfig.plot_target_ranking(ranking, out_dir, n_top=n_top_targets),
+                figures=figs,
+                warnings=warnings,
+            )
             grn_summary = out_dir / "grn_summary.csv"
             if grn_summary.exists():
-                try:
-                    figs.extend(
-                        pfig.plot_grn_connectivity(
-                            pd.read_csv(grn_summary), out_dir, n_top=n_top_targets
-                        )
-                    )
-                except Exception as exc:
-                    notes.append(f"grn-connectivity figure failed: {str(exc)[:150]}")
+                render_figure(
+                    "grn-connectivity",
+                    lambda: pfig.plot_grn_connectivity(
+                        pd.read_csv(grn_summary), out_dir, n_top=n_top_targets
+                    ),
+                    figures=figs,
+                    warnings=warnings,
+                )
             # shift-field for the top TF, if its shift vectors + embedding are present
             if embedding_key in adata.obsm and len(ranking) > 0:
                 top_tf = str(ranking.sort_values("score", ascending=False).iloc[0]["tf"])
                 shift_pq = out_dir / f"shift_vectors_{top_tf}.parquet"
                 if shift_pq.exists():
+                    # Read outside render_figure: the parquet is also what the two
+                    # figures below gate on, so a read failure has to be
+                    # distinguishable from a draw failure.
                     shift_df = None
                     try:
                         shift_df = pd.read_parquet(shift_pq)
+                    except Exception as exc:  # noqa: BLE001 — skip-not-crash
+                        warnings.append(f"could not read {shift_pq.name}: {str(exc)[:150]}")
+
+                    def _shift_field() -> list[Path] | None:
                         emb = pd.DataFrame(
                             adata.obsm[embedding_key][:, :2],
                             index=adata.obs_names,
@@ -206,56 +218,56 @@ class CellOracleMethod(AnalysisMethod):
                             if cluster_key in adata.obs.columns
                             else None
                         )
-                        figs.extend(
-                            pfig.plot_ko_shift_field(
-                                shift_df, emb, out_dir, tf=top_tf, groups=groups
-                            )
+                        return pfig.plot_ko_shift_field(
+                            shift_df, emb, out_dir, tf=top_tf, groups=groups
                         )
-                    except Exception as exc:
-                        notes.append(f"shift-field figure failed: {str(exc)[:150]}")
-                    # Gridded vector field (CellOracle-style) — the publication view
+
                     if shift_df is not None:
-                        try:
-                            emb_grid = pd.DataFrame(
-                                adata.obsm[embedding_key][:, :2],
-                                index=adata.obs_names,
-                                columns=["DIM1", "DIM2"],
-                            )
-                            groups_grid = (
-                                adata.obs[cluster_key].astype(str)
-                                if cluster_key in adata.obs.columns
-                                else None
-                            )
-                            figs.extend(
-                                pfig.plot_ko_shift_grid(
-                                    shift_df, emb_grid, out_dir, tf=top_tf, groups=groups_grid
-                                )
-                            )
-                        except Exception as exc:
-                            notes.append(f"shift-grid figure failed: {str(exc)[:150]}")
+                        render_figure("shift-field", _shift_field, figures=figs, warnings=warnings)
+
+                    # Gridded vector field (CellOracle-style) — the publication view
+                    def _shift_grid() -> list[Path] | None:
+                        emb_grid = pd.DataFrame(
+                            adata.obsm[embedding_key][:, :2],
+                            index=adata.obs_names,
+                            columns=["DIM1", "DIM2"],
+                        )
+                        groups_grid = (
+                            adata.obs[cluster_key].astype(str)
+                            if cluster_key in adata.obs.columns
+                            else None
+                        )
+                        return pfig.plot_ko_shift_grid(
+                            shift_df, emb_grid, out_dir, tf=top_tf, groups=groups_grid
+                        )
+
+                    if shift_df is not None:
+                        render_figure("shift-grid", _shift_grid, figures=figs, warnings=warnings)
+
                     # Fate summary: per-cluster mean shift magnitude (direction-agnostic)
+                    def _fate_summary() -> list[Path] | None:
+                        common = shift_df.index.intersection(adata.obs_names)
+                        if len(common) == 0:
+                            return None
+                        mags = np.linalg.norm(shift_df.loc[common].iloc[:, :2].to_numpy(), axis=1)
+                        fate_df = (
+                            pd.DataFrame(
+                                {
+                                    "cluster": adata.obs.loc[common, cluster_key]
+                                    .astype(str)
+                                    .to_numpy(),
+                                    "delta": mags,
+                                }
+                            )
+                            .groupby("cluster", as_index=False)["delta"]
+                            .mean()
+                        )
+                        return pfig.plot_ko_fate_summary(fate_df, out_dir, tf=top_tf)
+
                     if shift_df is not None and cluster_key in adata.obs.columns:
-                        try:
-                            common = shift_df.index.intersection(adata.obs_names)
-                            if len(common) > 0:
-                                mags = np.linalg.norm(
-                                    shift_df.loc[common].iloc[:, :2].to_numpy(), axis=1
-                                )
-                                fate_df = (
-                                    pd.DataFrame(
-                                        {
-                                            "cluster": adata.obs.loc[common, cluster_key]
-                                            .astype(str)
-                                            .to_numpy(),
-                                            "delta": mags,
-                                        }
-                                    )
-                                    .groupby("cluster", as_index=False)["delta"]
-                                    .mean()
-                                )
-                                figs.extend(pfig.plot_ko_fate_summary(fate_df, out_dir, tf=top_tf))
-                        except Exception as exc:
-                            notes.append(f"fate-summary figure failed: {str(exc)[:150]}")
+                        render_figure(
+                            "fate-summary", _fate_summary, figures=figs, warnings=warnings
+                        )
 
         # 7. Artifacts
         artifacts: list[StageArtifact] = [
@@ -311,6 +323,7 @@ class CellOracleMethod(AnalysisMethod):
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics=metrics,
             backend="celloracle",
         )

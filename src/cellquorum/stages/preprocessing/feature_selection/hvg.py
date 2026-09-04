@@ -15,6 +15,7 @@ import scanpy as sc
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.qc.eligibility import fitting_cells
 
 # Flavors that require raw counts vs. the log-normalized layer.
 _COUNT_FLAVORS = {"seurat_v3", "pearson_residuals"}
@@ -63,12 +64,25 @@ class HVGMethod(AnalysisMethod):
         else:
             layer = config.get("lognorm_layer", "cellquorum_normalized")
 
+        # Fit on the cells QC permits, apply to every gene.
+        #
+        # HVG means, variances and dispersions are cohort statistics, so a damaged cell
+        # carrying stress, mitochondrial and immediate-early genes pulls the gene set toward
+        # its own signal. That happens HERE, upstream of PCA, so excluding those cells from
+        # PCA later does not undo it — the manifold is already defined on the wrong genes.
+        # This stage declares fit_scope=CORE at registration; honouring it is this block.
+        #
+        # Fitting on a cell subset and applying to all cells is exactly the fit/transform
+        # split, and it is safe because the result lands in `var`, which is gene-level.
+        fitting = fitting_cells(adata.obs)
+        fit_adata = adata if fitting is None else adata[fitting].copy()
+
         # scanpy writes var['highly_variable'] (+ ranks/means) in place.
         # pearson_residuals HVG lives ONLY in sc.experimental; all other flavors
         # (seurat, seurat_v3) are in sc.pp.
         if method == "pearson_residuals":
             sc.experimental.pp.highly_variable_genes(
-                adata,
+                fit_adata,
                 flavor="pearson_residuals",
                 n_top_genes=n_top,
                 layer=layer,
@@ -76,12 +90,19 @@ class HVGMethod(AnalysisMethod):
             )
         else:
             sc.pp.highly_variable_genes(
-                adata,
+                fit_adata,
                 flavor=method,
                 n_top_genes=n_top,
                 layer=layer,
                 batch_key=batch_key,
             )
+
+        # Copy the gene-level result back onto the full object when HVG was fitted on a
+        # subset. var is indexed by gene, so this is a straight transfer.
+        if fit_adata is not adata:
+            for column in fit_adata.var.columns:
+                if column not in adata.var.columns or column.startswith("highly_variable"):
+                    adata.var[column] = fit_adata.var[column].reindex(adata.var_names)
 
         # Exclude unwanted gene families from the HVG set (do not drop them).
         n_excluded = 0

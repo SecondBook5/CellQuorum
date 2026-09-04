@@ -19,7 +19,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory import _cytotrace
-from cellquorum.stages.trajectory.save import write_pseudotime_h5ad
+from cellquorum.stages.trajectory.save import record_write, write_pseudotime_h5ad
 
 
 class CytoTraceMethod(AnalysisMethod):
@@ -34,6 +34,7 @@ class CytoTraceMethod(AnalysisMethod):
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         notes: list[str] = []
+        warnings: list[str] = []
 
         try:
             counts = _cytotrace.resolve_counts(adata, config.get("counts_layer"))
@@ -56,7 +57,7 @@ class CytoTraceMethod(AnalysisMethod):
         except _cytotrace.CytoTraceComputeError as exc:
             return MethodSkip(reason=str(exc), details={"method": self.name, "notes": notes})
 
-        n_scored = self._writeback(adata, frame, notes)
+        n_scored = self._writeback(adata, frame, warnings)
         if n_scored == 0:
             return MethodSkip(
                 reason="cytotrace: no cells could be aligned to results",
@@ -78,9 +79,12 @@ class CytoTraceMethod(AnalysisMethod):
         try:
             results_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001 — skip-not-crash
-            notes.append(f"could not create results dir: {exc}")
-        artifact, write_note = write_pseudotime_h5ad(adata, results_dir, "cytotrace", subset=False)
-        notes.append(write_note)
+            warnings.append(f"could not create results dir: {exc}")
+        artifact = record_write(
+            write_pseudotime_h5ad(adata, results_dir, "cytotrace", subset=False),
+            notes=notes,
+            warnings=warnings,
+        )
         if artifact is not None:
             artifacts.append(artifact)
 
@@ -88,6 +92,7 @@ class CytoTraceMethod(AnalysisMethod):
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics={
                 "method": self.name,
                 "n_cells_scored": int(n_scored),
@@ -97,10 +102,14 @@ class CytoTraceMethod(AnalysisMethod):
             backend="python",
         )
 
-    def _writeback(self, adata: ad.AnnData, frame: pd.DataFrame, notes: list[str]) -> int:
+    def _writeback(self, adata: ad.AnnData, frame: pd.DataFrame, warnings: list[str]) -> int:
         """Align CytoTRACE 2 score/potency/relative back by obs_name (NaN outside).
 
         Returns the number of cells that matched a results row.
+
+        Failures are warnings, not notes: the stage still returns success with a
+        full metrics block, but the object it hands on carries none of these
+        columns, so every consumer downstream behaves as if the method never ran.
         """
         try:
             idx = adata.obs_names
@@ -119,7 +128,7 @@ class CytoTraceMethod(AnalysisMethod):
                 rel = pd.Series(np.asarray(frame[rel_col], dtype="float64"), index=frame.index)
                 adata.obs["cytotrace2_relative"] = rel.reindex(idx)
         except Exception as exc:  # noqa: BLE001 — skip-not-crash
-            notes.append(f"cytotrace obs writeback failed: {exc}")
+            warnings.append(f"cytotrace obs writeback failed: {exc}")
             return 0
         matched = int(adata.obs_names.isin(frame.index).sum())
         return matched

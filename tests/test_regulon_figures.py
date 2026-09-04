@@ -68,7 +68,7 @@ def test_plots_return_empty_on_empty_auc(tmp_path: Path) -> None:
 def test_no_theme_import() -> None:
     src = (
         Path(__file__).resolve().parents[1]
-        / "src/cellquorum/gene_regulation/grn/regulon_figures.py"
+        / "src/cellquorum/stages/gene_regulation/grn/regulon_figures.py"
     ).read_text()
     assert "crrt" not in src
     assert "get_stage_colors_for_cancer" not in src

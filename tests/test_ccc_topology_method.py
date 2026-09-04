@@ -4,8 +4,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.cell_cell_communication.network.topology_method import TopologyMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.cell_cell_communication.network.topology_method import TopologyMethod
 
 
 class _Paths:

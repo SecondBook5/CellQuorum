@@ -4,7 +4,9 @@ The report is a *consumer* of provenance, not a recomputation. It reads the
 stage execution records the executor already produced and renders three
 publication-oriented artifacts under ``reports/``:
 
-* ``report.md`` — a per-stage status table with skip reasons and warnings;
+* ``report.md`` — a per-stage status table (skip reason or error in the detail
+  column) followed by every warning, verbatim, grouped by the stage that emitted
+  it;
 * ``report.html`` — the same content as a standalone HTML page;
 * ``methods.txt`` — a short Methods paragraph naming the seed, backends, and the
   stages that ran, suitable as a starting point for a manuscript methods section.
@@ -24,15 +26,42 @@ if TYPE_CHECKING:
     from cellquorum.core.stage import StageExecutionRecord
 
 
+def _cell(text: str, *, limit: int = 140) -> str:
+    """Make ``text`` safe for one Markdown table cell.
+
+    A pipe or a newline inside a skip reason or an error message silently breaks
+    the table for every row after it, and skip reasons are free-form strings from
+    thirty-odd stages. Truncation keeps the table readable; the full text is in
+    the sections below it.
+    """
+    flat = " ".join(str(text).split())
+    flat = flat.replace("|", "\\|")
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
+def _detail(record: StageExecutionRecord) -> str:
+    """Why this stage did not simply succeed: skip reason, or the error.
+
+    A failed stage's ``StageExecutionError`` was previously never rendered
+    anywhere in the report — the row showed a blank detail and a warning count of
+    zero, so a failed run's report did not say what failed. ``StageExecutionError``
+    exists precisely so failures stay auditable, so it belongs here.
+    """
+    skip = getattr(record, "skip_reason", None)
+    if skip is not None:
+        return getattr(skip, "reason", str(skip))
+    error = getattr(record, "error", None)
+    if error is not None:
+        error_type = getattr(error, "error_type", "") or "error"
+        return f"{error_type}: {getattr(error, 'message', str(error))}"
+    return ""
+
+
 def _status_rows(records: list[StageExecutionRecord]) -> list[dict[str, str]]:
     """Flatten records into simple display rows (execution order preserved)."""
 
     rows: list[dict[str, str]] = []
     for record in records:
-        skip_reason = ""
-        skip = getattr(record, "skip_reason", None)
-        if skip is not None:
-            skip_reason = getattr(skip, "reason", str(skip))
         rows.append(
             {
                 "stage": record.stage_name,
@@ -41,11 +70,17 @@ def _status_rows(records: list[StageExecutionRecord]) -> list[dict[str, str]]:
                 "duration_s": (
                     "" if record.duration_seconds is None else f"{record.duration_seconds:.2f}"
                 ),
-                "detail": skip_reason,
+                "detail": _detail(record),
                 "n_warnings": str(len(record.warnings)),
             }
         )
     return rows
+
+
+def _warning_groups(records: list[StageExecutionRecord]) -> list[tuple[str, list[str]]]:
+    """(stage, warnings) for stages that emitted any, in execution order."""
+
+    return [(r.stage_name, list(r.warnings)) for r in records if r.warnings]
 
 
 def render_markdown(
@@ -74,8 +109,30 @@ def render_markdown(
     for r in rows:
         lines.append(
             f"| {r['stage']} | {r['status']} | {r['backend']} | "
-            f"{r['duration_s']} | {r['detail']} | {r['n_warnings']} |"
+            f"{r['duration_s']} | {_cell(r['detail'])} | {r['n_warnings']} |"
         )
+    lines.append("")
+
+    # The warnings themselves, not just the count. A real 36-stage run emitted 12
+    # warnings — a cluster that lost its velocity to an eigensolver, a kernel that
+    # never built, a figure that failed to write — and the report showed only the
+    # integer 12, so the reader had to go dig in provenance JSON to learn any of
+    # it. The warnings are the most decision-relevant thing the run produces.
+    groups = _warning_groups(records)
+    total = sum(len(w) for _, w in groups)
+    lines.append("## Warnings")
+    lines.append("")
+    if not groups:
+        lines.append("No warnings were emitted.")
+    else:
+        lines.append(f"{total} warning(s) across {len(groups)} stage(s).")
+        lines.append("")
+        for stage, warnings in groups:
+            lines.append(f"### {stage}")
+            lines.append("")
+            for warning in warnings:
+                lines.append(f"- {' '.join(str(warning).split())}")
+            lines.append("")
     lines.append("")
     lines.append("## Methods")
     lines.append("")
@@ -108,6 +165,20 @@ def render_html(
         )
         body.append(f"<tr>{cells}</tr>")
     body.append("</table>")
+
+    groups = _warning_groups(records)
+    body.append("<h2>Warnings</h2>")
+    if not groups:
+        body.append("<p>No warnings were emitted.</p>")
+    else:
+        total = sum(len(w) for _, w in groups)
+        body.append(f"<p>{total} warning(s) across {len(groups)} stage(s).</p>")
+        for stage, warnings in groups:
+            body.append(f"<h3>{html.escape(str(stage))}</h3><ul>")
+            for warning in warnings:
+                body.append(f"<li>{html.escape(' '.join(str(warning).split()))}</li>")
+            body.append("</ul>")
+
     body.append("<h2>Methods</h2>")
     body.append(f"<p>{html.escape(render_methods_text(config=config, records=records))}</p>")
 

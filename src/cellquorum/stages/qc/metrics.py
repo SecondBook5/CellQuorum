@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # Import dataclass helpers for structured QC metric results.
 from dataclasses import dataclass, field
+from typing import cast
 
 # Import AnnData for runtime input validation.
 import anndata as ad
@@ -17,8 +18,10 @@ import pandas as pd
 # Import sparse matrix utilities for large count matrices.
 import scipy.sparse as sp
 
-# Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
+
+# Import shared CellQuorum data exception.
+from cellquorum.stages.qc._types import ExpressionMatrix
 
 # Import QC configuration models.
 from cellquorum.stages.qc.config import QCConfig, QCFeaturePatternConfig
@@ -156,14 +159,15 @@ def calculate_qc_metrics(
         log1p=qc_config.metrics.log1p,
     )
 
-    # Attach any MAD groupby columns from obs onto the cell-metric table.
-    # Group-wise MAD thresholding reads its grouping column(s) from cell_metrics
-    # (not obs), so a configured groupby like [sample_id] must be carried over.
-    # cell_metrics is indexed by obs_names, so alignment is by the shared index.
+    # Attach every grouping column any group-wise rule needs, from obs onto the
+    # cell-metric table. Group-wise MAD thresholding and the mitochondrial mixture
+    # model both read their grouping column(s) from cell_metrics (not obs), so a
+    # configured groupby like [sample_id] must be carried over. cell_metrics is
+    # indexed by obs_names, so alignment is by the shared index.
     attach_groupby_columns_from_obs(
         cell_metrics=cell_metrics,
         adata=adata,
-        groupby_columns=qc_config.mad.groupby,
+        groupby_columns=collect_groupby_columns(qc_config),
     )
 
     # Calculate gene-level QC metrics.
@@ -191,6 +195,30 @@ def calculate_qc_metrics(
     )
 
 
+def collect_groupby_columns(config: QCConfig) -> list[str]:
+    """
+    Collect every obs column any group-wise QC rule needs, in a stable order.
+
+    Args:
+        config: QC configuration.
+
+    Returns:
+        Deduplicated grouping column names, ordered by first appearance.
+    """
+
+    # Gather the MAD grouping and, when the mixture model is enabled, its own
+    # grouping plus every fallback grouping it may descend through.
+    requested = list(config.mad.groupby)
+    if config.mito_mixture.enabled:
+        requested.extend(config.mito_mixture.groupby)
+        for grouping in config.mito_mixture.fallback_groupby:
+            requested.extend(grouping)
+
+    # Deduplicate while preserving order, so the failure message below lists
+    # columns in the order the config asked for them.
+    return list(dict.fromkeys(requested))
+
+
 def attach_groupby_columns_from_obs(
     *,
     cell_metrics: pd.DataFrame,
@@ -198,17 +226,18 @@ def attach_groupby_columns_from_obs(
     groupby_columns: list[str],
 ) -> None:
     """
-    Copy MAD groupby columns from ``adata.obs`` onto the cell-metric table.
+    Copy group-wise QC grouping columns from ``adata.obs`` onto the metric table.
 
-    Group-wise MAD thresholding groups cells by metadata columns (e.g.
-    ``sample_id``) that live on ``adata.obs``, but it reads them from the
-    cell-metric table. This helper carries the configured groupby columns over,
-    aligning by the shared observation index, so per-group thresholds work.
+    Group-wise rules -- MAD thresholding and the mitochondrial mixture model --
+    group cells by metadata columns (e.g. ``sample_id``, ``cell_type``) that live
+    on ``adata.obs``, but they read them from the cell-metric table. This helper
+    carries the configured columns over, aligning by the shared observation index,
+    so per-group thresholds work.
 
     Args:
         cell_metrics: Cell-level QC metric table, indexed by observation name.
         adata: Source AnnData whose ``obs`` holds the grouping columns.
-        groupby_columns: obs column names the MAD config groups by.
+        groupby_columns: obs column names any group-wise rule groups by.
 
     Raises:
         QCMetricsError: If a requested groupby column is absent from ``obs``.
@@ -223,7 +252,7 @@ def attach_groupby_columns_from_obs(
     missing = [column for column in groupby_columns if column not in adata.obs.columns]
     if missing:
         raise QCMetricsError(
-            "QC MAD groupby column(s) not found in AnnData.obs: "
+            "QC groupby column(s) not found in AnnData.obs: "
             f"{', '.join(missing)}. Available obs columns include: "
             f"{', '.join(map(str, adata.obs.columns[:20]))}."
         )
@@ -301,7 +330,7 @@ def build_feature_masks_for_names(
 
 
 def calculate_cell_qc_metrics(
-    matrix: object,
+    matrix: ExpressionMatrix,
     *,
     obs_names: pd.Index,
     feature_masks: pd.DataFrame,
@@ -404,7 +433,7 @@ def calculate_cell_qc_metrics(
 
 
 def calculate_gene_qc_metrics(
-    matrix: object,
+    matrix: ExpressionMatrix,
     *,
     var_names: pd.Index,
     log1p: bool,
@@ -476,7 +505,7 @@ def calculate_gene_qc_metrics(
 
 def add_feature_family_cell_metrics(
     metrics: pd.DataFrame,
-    matrix: object,
+    matrix: ExpressionMatrix,
     *,
     total_counts: np.ndarray,
     mask: np.ndarray,
@@ -510,7 +539,7 @@ def add_feature_family_cell_metrics(
     metrics[f"pct_counts_{family_name}"] = safe_percent(family_counts, total_counts)
 
 
-def validate_matrix_mask_alignment(matrix: object, feature_masks: pd.DataFrame) -> None:
+def validate_matrix_mask_alignment(matrix: ExpressionMatrix, feature_masks: pd.DataFrame) -> None:
     """
     Validate that feature masks align with matrix columns.
 
@@ -534,7 +563,7 @@ def validate_matrix_mask_alignment(matrix: object, feature_masks: pd.DataFrame) 
         )
 
 
-def sum_axis(matrix: object, *, axis: int) -> np.ndarray:
+def sum_axis(matrix: ExpressionMatrix, *, axis: int) -> np.ndarray:
     """
     Sum a dense or sparse matrix over one axis.
 
@@ -553,7 +582,7 @@ def sum_axis(matrix: object, *, axis: int) -> np.ndarray:
     return np.asarray(summed, dtype=float).ravel()
 
 
-def count_positive_axis(matrix: object, *, axis: int) -> np.ndarray:
+def count_positive_axis(matrix: ExpressionMatrix, *, axis: int) -> np.ndarray:
     """
     Count positive values along one matrix axis.
 
@@ -580,7 +609,7 @@ def count_positive_axis(matrix: object, *, axis: int) -> np.ndarray:
     return np.asarray((dense_matrix > 0).sum(axis=axis), dtype=int).ravel()
 
 
-def sum_columns_by_mask(matrix: object, mask: np.ndarray) -> np.ndarray:
+def sum_columns_by_mask(matrix: ExpressionMatrix, mask: np.ndarray) -> np.ndarray:
     """
     Sum selected matrix columns for each observation.
 
@@ -639,7 +668,7 @@ def safe_percent(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
 
 
 def calculate_percent_top(
-    matrix: object,
+    matrix: ExpressionMatrix,
     total_counts: np.ndarray,
     top_n: int,
 ) -> np.ndarray:
@@ -667,8 +696,9 @@ def calculate_percent_top(
 
     # Use sparse row iteration for sparse matrices.
     if sp.issparse(matrix):
-        # Convert the sparse matrix to CSR for efficient row access.
-        csr_matrix = matrix.tocsr()
+        # `issparse` is a runtime check that no type checker propagates into the branch, so the
+        # cast states what the branch has already established.
+        csr_matrix = cast("sp.csr_matrix", matrix).tocsr()
 
         # Iterate over rows.
         for row_index in range(csr_matrix.shape[0]):

@@ -1,0 +1,233 @@
+# le_global_clean — the ONE clean atlas every lymphedema manuscript reads.
+#
+# Why this config exists. The original `le_global` run filtered nothing: it ran QC
+# in `flag_no_drop` mode, so every failing cell was marked and kept, and the atlas
+# embedding, clustering and annotation were all computed WITH them. Each hypothesis
+# repo then re-ran QC on its own lineage slice in `filter` mode. The result was two
+# QC verdicts in the same project that disagree on ~6% of endothelial cells (LEC:
+# 163 agreed drops, 31 atlas-only, 98 lineage-only; VEC: 196 / 51 / 197), and a
+# ~7,600-cell low-complexity cluster sitting in the middle of the atlas UMAP that
+# exists only because filtering happened after clustering.
+#
+# So: QC runs ONCE, here, globally, and it DELETES. No downstream repo filters
+# again.
+#
+# ---------------------------------------------------------------------------
+# Why these thresholds and not a fitted model
+# ---------------------------------------------------------------------------
+#
+# The thresholds match the reference atlas this project maps onto with scArches
+# (atopic dermatitis skin atlas, 280,518 cells): minimum 200 genes per cell and a
+# mitochondrial ceiling of 10-20%, with its retained maximum at exactly 20%.
+# Matching it is not deference to convention — scArches projects our query into
+# THEIR latent space, so filtering our cells harder than the reference was filtered
+# makes the two populations incomparable and biases label transfer.
+#
+# A two-component mitochondrial mixture (miQC) was fitted on all 201,923 barcodes
+# and REJECTED for the atlas pass. It converges on a single 8.35% boundary and
+# removes 10.4% of the atlas, but the model is misspecified at atlas scale: two
+# components pooled over 13 lineages fit cell-type heterogeneity as damage (the
+# intact component's slope is only -0.000587 per gene, ~1.8 points across the whole
+# complexity range). Measuring where that cut lands WITHIN each lineage shows it:
+# for endothelium, T/NK, fibroblasts and DC it removes the bottom ~10% by
+# complexity — real damage — but for mast cells it removes cells at the 33rd
+# percentile of their own lineage, and 32% of the population. Mast cells are
+# globally both low-complexity (median 737 genes) and high-mitochondrial (6.2%), so
+# NO lineage-blind rule can spare them. Since deletion is irreversible across every
+# manuscript in the portfolio while retention stays reversible inside any one of
+# them, the atlas errs permissive and each paper reports its own sensitivity.
+#
+# The mixture remains the right tool for a single-lineage object, where its one
+# intact component is a defensible model. It is wrong here, on this object.
+#
+# No adaptive (MAD) thresholds at all. Per-sample MAD on the mitochondrial metric
+# is what the original run used, and it is backwards: it estimates the spread of
+# each sample's healthy mode, so it set a 2.0% ceiling on the CLEANEST sample and
+# 11.2% on the dirtiest. Fixed bounds also make it impossible for the filter to
+# absorb the disease effect, which an adaptive per-sample bound cannot promise.
+#
+# ---------------------------------------------------------------------------
+# What is recomputed and what is inherited
+# ---------------------------------------------------------------------------
+#
+# Input is the annotated atlas, so the scArches labels (`ref_state`, `cell_type`)
+# travel with the cells and are NOT recomputed: label transfer is per-cell, and a
+# retained cell's label does not change because its damaged neighbours left. What
+# MUST be recomputed is everything built on a neighbour graph — PCA, integration,
+# UMAP, clustering — because that is where damaged cells manufacture structure.
+#
+# Doublets are inherited too: the original run already removed them
+# (195,347 cells here vs 201,923 barcodes entering QC), so re-running two doublet
+# callers would spend GPU hours reproducing a decision already made.
+#
+# Caveat recorded rather than hidden: the scArches surgery was trained with the
+# damaged cells present in the query batch, a second-order effect on the latent
+# space. Re-run reference_mapping on this object if that has to be airtight.
+
+project:
+  name: le_global_clean
+  organism: human
+  species_id: 9606
+
+paths:
+  output_dir: /home/ajbook/projects/cellquorum/runs/le_global_clean
+  data_root: /mnt/e/lymphedema_cellranger
+
+input:
+  # The annotated atlas: all 195,347 doublet-free barcodes, labels in obs, counts
+  # in a layer. The original run's own output, read not written.
+  h5ad: /home/ajbook/projects/cellquorum/runs/le_global/objects/le_global_annotated.h5ad
+  counts_layer: counts
+
+run:
+  random_seed: 1337
+  verbose: true
+  # Checkpoint after every stage. This run is long (scVI on 195k cells), and
+  # checkpointing is what makes `--from-stage` a genuine resume instead of a rerun:
+  # a failure in integration or embeddings must not cost the QC and PCA passes again.
+  # `run.resume` is deliberately left false — it re-executes rather than resumes.
+  checkpoint: true
+  # Name the object for what it is, so no downstream repo has to guess.
+  final_object_name: le_global_clean.h5ad
+
+compute:
+  backend: gpu
+
+cohort:
+  sample_key: sample_id
+  donor_key: donor_id
+  condition_key: condition
+  batch_key: batch
+
+stages:
+  # Ambient correction already applied upstream; re-running it would correct twice.
+  ambient_correction: false
+  qc: true
+  preprocessing: true
+  feature_selection: false
+  # The neighbour-graph half of the pipeline, recomputed on clean cells. This is
+  # the whole reason the run exists: PCA, batch integration, clustering and UMAP
+  # are all functions of which cells are present, so they are the stages that
+  # inherited the damage.
+  dimensionality: true
+  integration: true
+  clustering: true
+  embeddings: true
+  # Labels are inherited from obs. Nothing here re-annotates.
+  annotation: false
+  reference_mapping: false
+  annotation_consensus: false
+  annotation_diagnostics: false
+  adjudication: false
+  population_identity: false
+  integration_benchmark: false
+  subclustering: false
+  state_scoring: false
+  discovery: false
+  composition: false
+  differential_expression: false
+  molecular_inference: false
+  cell_cell_communication: false
+  network_analysis: false
+  # Every downstream analysis stage stays OFF. This run produces ONE thing: a clean
+  # atlas object with a trustworthy embedding. Each of these defaults to true in the
+  # schema, so each has to be switched off by name — leaving any of them on spends
+  # GPU hours running trajectory/GRN/enrichment over 195k cells for output no paper
+  # reads (every manuscript runs its own analysis on its own lineage slice).
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  trajectory: false
+  trajectory_viz: false
+  multicellular_programs: false
+  module_remodeling: false
+
+qc:
+  enabled: true
+  # DELETE. This is the whole point of the run.
+  mode: filter
+  # Fixed only. No adaptive bound anywhere, so no per-sample estimate can tighten
+  # on the cleanest replicate and no grouping can absorb the condition effect.
+  threshold_strategy: fixed
+  metrics:
+    layer: counts
+  mad:
+    enabled: false
+  basic:
+    min_genes_per_cell: 200
+    min_cells_per_gene: 3
+    max_mito_percent: 20.0
+  doublets:
+    # Inherited: the upstream run already removed consensus doublets.
+    enabled: false
+  cell_cycle:
+    enabled: false
+  ambient:
+    enabled: false
+  outputs:
+    overview_figures: true
+    write_summary_json: true
+
+preprocessing:
+  normalization:
+    output_layer: cellquorum_normalized
+    # The input already carries a `cellquorum_normalized` layer from the original
+    # run, and it MUST be replaced rather than reused: `min_cells_per_gene: 3` drops
+    # genes on the filtered object, and this recipe is proportional-fitting, so every
+    # cell's scale factor is a function of which genes survive.
+    overwrite: true
+
+# Deliberately NO highly-variable-gene selection, matching the original atlas run.
+# Two reasons. First, the only thing that differs between `le_global` and
+# `le_global_clean` is which cells are present, which makes the pair a controlled
+# test of the QC fix rather than a confounded one. Second, the scArches labels being
+# inherited here were transferred on a full-gene-set representation; keeping the same
+# feature space keeps those labels coherent with the new embedding. scVI's
+# negative-binomial likelihood does not require an HVG subset — that is a tractability
+# heuristic, and this cohort is tractable on GPU.
+feature_selection:
+  enabled: false
+
+dimensionality:
+  enabled: true
+  input_layer: cellquorum_normalized
+  # Fixed, not `auto`: the kneedle estimator selected 5 components on this cohort,
+  # which is far too few and broke downstream velocity.
+  n_pcs: 50
+
+integration:
+  enabled: true
+  batch_key: batch
+  methods:
+    - method: harmony
+      output_rep: X_pca_harmony
+    - method: scvi
+      output_rep: X_scvi
+      n_latent: 30
+
+clustering:
+  enabled: true
+  method: leiden
+  use_rep: X_scvi
+
+embeddings:
+  enabled: true
+  # Same representation the clustering uses, so clusters and the map they are drawn
+  # on cannot disagree.
+  use_rep: X_scvi
+  # UMAP only. PHATE is quadratic-ish in practice and buys nothing here — this
+  # embedding exists to show that the low-complexity centre cluster is gone.
+  embeddings: [umap]
+  paga_groupby: cell_type
+  overlay:
+    # The two diagnostic overlays, and the reason the run exists: if the clean atlas
+    # still has a mitochondrial/low-complexity island in the middle of the map, the
+    # filter did not work. Only continuous metrics belong here — the stage paints
+    # obs_columns on a continuous colormap, so categorical labels (cell_type,
+    # condition) are handled by its own categorical figures, not by this list.
+    obs_columns: [pct_counts_mito, n_genes_by_counts]

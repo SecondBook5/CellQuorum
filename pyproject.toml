@@ -60,12 +60,36 @@ r = [
 gpu = [
   "scvi-tools>=1.2",
 ]
+# Development tooling is pinned to EXACT versions, unlike the runtime
+# dependencies above, which stay as lower bounds. The asymmetry is deliberate:
+#
+#   * Runtime deps are floors because a library must co-exist with whatever a
+#     user already has installed. Pinning them would make cellquorum
+#     un-installable alongside other single-cell packages.
+#   * Dev tools are exact because a linter or type checker that disagrees between
+#     a laptop and CI is worse than no linter. With `ruff>=0.6`, CI pinned 0.8.6
+#     while a fresh `pip install -e .[dev]` resolved to 0.15.5 — which reported
+#     169 findings and wanted to reformat 71 files that CI considered clean. The
+#     rules silently differed by machine.
+#
+# Bumping any pin here is its own commit, so the reformat/re-lint churn is
+# reviewable in isolation instead of landing inside an unrelated feature diff.
 dev = [
-  "pytest>=8.0",
-  "ruff>=0.6",
-  "mypy>=1.10",
-  "mkdocs-material>=9.5",
-  "mkdocstrings[python]>=0.25",
+  # Test runner and the plugins the test tiers rely on.
+  "pytest==9.0.2",
+  "pytest-cov==7.1.0",
+  "pytest-xdist==3.8.0",
+  # Lint + format. Must match the ruff-pre-commit rev in .pre-commit-config.yaml
+  # and the pinned install in .github/workflows/ci.yml — all three move together.
+  "ruff==0.8.6",
+  # Type checking, plus stubs for the untyped third-party libraries we import.
+  "mypy==1.18.2",
+  "types-PyYAML==6.0.12.20250915",
+  # Git hook runner, so `pre-commit install` needs no separate global install.
+  "pre-commit==4.3.0",
+  # Documentation site.
+  "mkdocs-material==9.7.7",
+  "mkdocstrings[python]==1.0.6",
 ]
 
 [project.urls]
@@ -91,16 +115,97 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "cellquorum.backends" = ["r_scripts/*.R"]
+# Ship the PEP 561 marker so type checkers in *downstream* projects actually read
+# our annotations. Without py.typed, mypy/pyright treat every cellquorum import as
+# `Any` — the codebase pays the cost of full annotations (ruff's ANN rules are on)
+# and users get none of the benefit.
+"cellquorum" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+# --strict-config makes a typo in THIS table an error instead of a silent default.
+addopts = "-q --strict-markers --strict-config"
+# Markers are for DESELECTION ("don't run these now"); `skipif` is for AVAILABILITY
+# ("this dep is absent"). They are orthogonal and the suite needs both: skipif
+# already handles a missing Rscript, but without markers there is no way to ask for
+# a fast subset, so `make test-fast` has nothing to select on.
 markers = [
   "gpu: tests requiring a CUDA GPU / rapids-singlecell / scvi backends",
   "slow: long-running tests excluded from the fast core tier",
   "r: tests requiring an R/Rscript + Bioconductor backend",
   "integration: end-to-end tests exercising real external tools or data",
 ]
+
+[tool.coverage.run]
+# Measure the installed package by import name, not by path, so coverage follows
+# the same code an end user would run rather than only the editable checkout.
+source_pkgs = ["cellquorum"]
+branch = true
+parallel = true
+omit = [
+  # Backend helper scripts run inside isolated conda envs via subprocess, so the
+  # in-process coverage tracer cannot see them and would report a false 0%.
+  "*/cellquorum/backends/celloracle_scripts/*",
+  "*/cellquorum/backends/pyscenic_scripts/*",
+  "*/cellquorum/backends/sccoda_scripts/*",
+  "*/cellquorum/backends/scclr_scripts/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+  # Type-checking-only blocks never execute at runtime by design.
+  "if TYPE_CHECKING:",
+  # Defensive re-raises and abstract stubs are not meaningful coverage targets.
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "@(abc\\.)?abstractmethod",
+]
+
+[tool.mypy]
+python_version = "3.12"
+# Third-party scientific packages (scanpy, anndata, matplotlib, rpy2, …) ship
+# incomplete or absent stubs. Without this, mypy reports hundreds of errors about
+# other people's libraries and buries the ones in our own code.
+ignore_missing_imports = true
+# Report an unused `# type: ignore`, so suppressions cannot outlive the problem
+# they were added for.
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Point mypy at the src layout without needing the package installed.
+mypy_path = "src"
+explicit_package_bases = true
+
+# --- Type-checking ratchet -------------------------------------------------
+# CI gates mypy on the engine SPINE only (core, config, io, methods, cli). A
+# baseline run found 436 errors across 102 modules: 391 of them in stages/,
+# visualization/, and backends/ (mostly untyped-third-party fallout), and only 45
+# on the spine. Gating the whole package at once would mean a permanently red job
+# that everyone learns to ignore.
+#
+# The overrides below are therefore a BACKLOG, not a policy: each listed module
+# still has errors, and deleting a line here (after fixing that module) is a small
+# self-contained PR. When this list is empty, widen the CI command to
+# `mypy src/cellquorum` and start the same ratchet on stages/.
+[[tool.mypy.overrides]]
+module = [
+  "cellquorum.cli.app",
+  "cellquorum.cli.workflow.gen_configs_cli",
+  "cellquorum.config.design",
+  "cellquorum.config.loader",
+  "cellquorum.core.contracts.data_contract",
+  "cellquorum.core.contracts.labels",
+  "cellquorum.core.contracts.statistical",
+  "cellquorum.core.executor",
+  "cellquorum.core.pipeline",
+  "cellquorum.core.registry",
+  "cellquorum.core.reports",
+  "cellquorum.core.stage_catalog",
+  "cellquorum.io.manifest",
+  "cellquorum.methods.stage_base",
+]
+ignore_errors = true
 
 [tool.ruff]
 line-length = 100

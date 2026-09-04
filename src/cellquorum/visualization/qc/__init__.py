@@ -1,7 +1,12 @@
-"""QC diagnostic and publication figure builders (moved from the ``qc/`` package, Move 2).
+"""QC figure and table builders.
 
-Import the specific module you need — ``cellquorum.visualization.qc.diagnostics`` for the
-standard audit plots, or ``cellquorum.visualization.qc.publication`` for the journal-style
-panels. Importing those modules (not this package) is what pulls in matplotlib/seaborn,
-so a caller loads the plotting stack only when it actually renders a figure.
+Import the specific module you need — ``graded`` for the figures that describe the graded
+adjudication (evidence families, states, eligibility), ``panels`` for the cohort overview set, or
+``publication_table`` for the typeset sample-level tables. Importing those modules (not this
+package) is what pulls in matplotlib/seaborn, so a caller loads the plotting stack only when it
+actually renders a figure.
+
+``diagnostics`` and ``publication`` were removed with the v1 threshold path. Both keyed on the
+``cellquorum_qc_keep`` verdict, which graded adjudication does not produce, so neither could
+render a graded run at all; ``graded`` replaces them.
 """

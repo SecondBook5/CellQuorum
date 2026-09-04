@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from cellquorum.stages.comparative.enrichment.stage import EnrichmentStage
 from cellquorum.config.design import DesignConfig
+from cellquorum.stages.comparative.enrichment.stage import EnrichmentStage
 
 
 class _Cfg:

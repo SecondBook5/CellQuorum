@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.core.stage_catalog import register_stage
+from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
 from cellquorum.methods.registry import MethodRegistry
 from cellquorum.methods.stage_base import MethodDispatchStage
 
@@ -21,6 +21,9 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_flag="clustering",
     config_field="clustering",
     category="clustering",
+    # Fits the neighbour graph and cluster structure, so damaged cells could
+    # otherwise shape the biological reference every later stage is measured against.
+    cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
 class ClusteringStage(MethodDispatchStage):
     """Config-driven clustering stage."""

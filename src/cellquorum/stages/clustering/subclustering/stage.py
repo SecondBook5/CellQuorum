@@ -5,20 +5,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cellquorum.core.exceptions import CellQuorumConfigError
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_catalog import register_stage
+from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.clustering.subclustering.diagnostics import (
     plot_group_recovery,
     plot_subcluster_qc_panel,
 )
-from cellquorum.stages.clustering.subclustering.donor_gate import apply_qc_flags, donor_reproducibility
+from cellquorum.stages.clustering.subclustering.donor_gate import (
+    apply_qc_flags,
+    donor_reproducibility,
+)
 from cellquorum.stages.clustering.subclustering.extract import (
     apply_group_filter,
     ensure_focus_embedding,
     extract_focus,
+    reembed_focus_batch_aware,
 )
 from cellquorum.stages.clustering.subclustering.partition import run_choir, run_scshc_test
-from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.base import MethodSkip
+
+
+class SubclusteringFocusError(CellQuorumConfigError):
+    """The configured focus selects no cells, so there is nothing to subcluster."""
 
 
 @register_stage(
@@ -114,21 +123,21 @@ class SubclusteringStage:
         # Guard: a focus that matches zero cells must NOT propagate an empty
         # object as the pipeline's working adata. Doing so previously poisoned
         # every downstream stage (population_identity/embeddings/DE/CCC all ran
-        # on 0 cells). Skip cleanly, returning the parent object untouched.
+        # on 0 cells).
+        #
+        # Fail rather than skip. The label column is known to exist (extract_focus
+        # would have raised otherwise), so zero matches means the configured labels
+        # are simply not in it — a config mistake with no valid interpretation. This
+        # was previously a warning, and a run whose subclustering block was copied
+        # from another lineage completed "successfully" with no subtypes at all;
+        # the mistake surfaced a day later while reading provenance.
         if focused.n_obs == 0:
-            return StageResult(
-                adata=adata,
-                notes=notes,
-                warnings=[
-                    "subclustering skipped: focus "
-                    f"'{focus_config.label_key} in {focus_config.labels}' matched 0 cells; "
-                    "returning the parent object unchanged."
-                ],
-                metrics={
-                    **metrics,
-                    "skipped": True,
-                    "reason": "focus matched 0 cells",
-                },
+            available = sorted({str(v) for v in adata.obs[focus_config.label_key].unique()})
+            raise SubclusteringFocusError(
+                f"subclustering focus '{focus_config.label_key} in {focus_config.labels}' "
+                f"matched 0 of {adata.n_obs} cells. Present in "
+                f"'{focus_config.label_key}': {available}. Fix the focus labels, or set "
+                "stages.subclustering false if this lineage should not be subclustered."
             )
 
         # Apply group filter (if configured).
@@ -190,13 +199,57 @@ class SubclusteringStage:
         backend = self._resolve_rscript_backend(context)
         scratch = Path(getattr(getattr(context, "paths", None), "scratch", "."))
 
+        # The nuisance variable CHOIR corrects for and sc-SHC conditions on.
+        nuisance_key = self._resolve_nuisance_key(config, sc_config)
+        if nuisance_key is None:
+            warnings.append(
+                "Subclustering has no batch/donor key to correct for: declare "
+                "cohort.batch_key or cohort.donor_key. CHOIR will partition an "
+                "uncorrected embedding, so its cluster count may be donor-driven."
+            )
+        else:
+            notes.append(f"Batch correction / conditioning key: {nuisance_key}")
+            metrics["nuisance_key"] = nuisance_key
+
         # Run partition (CHOIR or fallback).
         if sc_config.partition.method == "choir":
-            partition_result = run_choir(filtered, sc_config, backend, scratch)
+            # Batch-aware re-embedding must happen BEFORE partitioning: CHOIR
+            # needs it to cluster on a corrected space, and the donor-gate
+            # embedding below is computed too late (and uncorrected) to serve.
+            choir_reduction_key = reembed_focus_batch_aware(
+                filtered,
+                counts_layer=sc_config.counts_layer,
+                batch_key=nuisance_key,
+                random_state=(sc_config.partition.seeds[0] if sc_config.partition.seeds else 0),
+                max_iter_harmony=sc_config.reembed.max_iter_harmony,
+                diagnostics=warnings,
+            )
+            if choir_reduction_key:
+                notes.append(f"CHOIR reduction: {choir_reduction_key}")
+                metrics["choir_reduction"] = choir_reduction_key
+            else:
+                # A warning, not a note. CHOIR declares its cluster count
+                # significant *in the space it was given*, so an uncorrected
+                # space means the count can be a donor effect wearing a
+                # subtype's name — and one LEC partition was exactly that.
+                warnings.append(
+                    "CHOIR reduction unavailable: CHOIR will compute its own "
+                    "UNCORRECTED reduction, so the cluster count may be donor-driven."
+                )
+            partition_result = run_choir(
+                filtered,
+                sc_config,
+                backend,
+                scratch,
+                reduction_key=choir_reduction_key,
+            )
 
             if isinstance(partition_result, MethodSkip):
-                # CHOIR unavailable: record skip and continue without labels.
-                notes.append(f"CHOIR partition skipped: {partition_result.reason}")
+                # CHOIR unavailable: record skip and continue without labels. A
+                # warning, because the config named CHOIR as the partition method
+                # and the object comes out of this stage with no subcluster labels
+                # at all — the same shape as a run that never asked for any.
+                warnings.append(f"CHOIR partition skipped: {partition_result.reason}")
                 metrics["partition_skipped"] = True
                 metrics["partition_skip_reason"] = partition_result.reason
             else:
@@ -218,11 +271,13 @@ class SubclusteringStage:
                         sc_config,
                         backend,
                         scratch,
+                        batch_key=nuisance_key,
                     )
 
                     if isinstance(test_result, MethodSkip):
-                        # sc-SHC unavailable: record skip.
-                        notes.append(f"sc-SHC test skipped: {test_result.reason}")
+                        # A warning: sc-SHC is the test that says which splits are
+                        # real, so without it the subclusters ship unvalidated.
+                        warnings.append(f"sc-SHC test skipped: {test_result.reason}")
                         metrics["formal_test_skipped"] = True
                     else:
                         # sc-SHC succeeded: record significance in metrics + uns.
@@ -234,6 +289,40 @@ class SubclusteringStage:
                         )
                         metrics["formal_test_n_significant"] = n_sig
                         metrics["formal_test_n_splits"] = n_tested
+
+                        # The reconciled partition, when the R script produced one.
+                        surviving = test_result.get("n_labels_surviving")
+                        if surviving is not None:
+                            notes.append(
+                                f"sc-SHC reconciled partition: {surviving} of "
+                                f"{n_subclusters} CHOIR clusters survive as distinct "
+                                f"(labels in obs['{test_result['labels_key']}'])"
+                            )
+                            metrics["formal_test_n_labels_surviving"] = surviving
+
+                        # A warning when the test does not uphold the partition.
+                        # This has to be loud: every downstream per-subcluster
+                        # result — abundance swaps, per-subtype effect sizes — is
+                        # keyed on labels the engine's own significance test has
+                        # just declined to defend, and "0/1 splits significant"
+                        # in the notes is not a sentence anyone reads. A run whose
+                        # eight LEC subclusters all collapsed to one shipped a
+                        # headline per-subtype table without this warning.
+                        if test_result.get("merged_to_one"):
+                            warnings.append(
+                                f"sc-SHC merged all {n_subclusters} subclusters into ONE: "
+                                f"the partition is NOT statistically supported at "
+                                f"alpha={test_result['alpha']} (conditioned on "
+                                f"{test_result['batch_key']}). Whole-lineage results are "
+                                "unaffected; every per-subcluster result is exploratory "
+                                "and must be reported as such."
+                            )
+                        elif n_sig == 0 and n_tested > 0:
+                            warnings.append(
+                                f"sc-SHC found 0 of {n_tested} tested splits significant at "
+                                f"alpha={test_result['alpha']}: the CHOIR partition is not "
+                                "upheld by the formal test."
+                            )
 
                         # Store full test results in uns.
                         if "subclustering" not in filtered.uns:
@@ -388,6 +477,31 @@ class SubclusteringStage:
             metrics=metrics,
         )
 
+    @staticmethod
+    def _resolve_nuisance_key(config: object, sc_config: object) -> str | None:
+        """
+        Resolve the one column CHOIR corrects for and sc-SHC conditions on.
+
+        Both need the same thing: the technical grouping that must not be reported
+        as biological structure. Precedence is ``cohort.batch_key``, then
+        ``cohort.donor_key``, then the subclustering block's own
+        ``donor_gate.group_key``.
+
+        Reading it straight off ``donor_gate.group_key``, as this stage used to,
+        broke the declare-once contract at two of three call sites: a config that
+        set ``cohort.donor_key`` and left the donor-gate key unset — the pattern
+        the donor gate itself documents — got a *correctly* donor-gated run whose
+        CHOIR embedding was never corrected and whose sc-SHC was never
+        conditioned. Nothing in the output said so.
+        """
+        from cellquorum.config.cohort import resolve_cohort_key
+
+        stage_value = getattr(getattr(sc_config, "donor_gate", None), "group_key", None)
+        batch = resolve_cohort_key(config, attr="batch_key", stage_value=None)
+        if batch is not None:
+            return batch
+        return resolve_cohort_key(config, attr="donor_key", stage_value=stage_value)
+
     def _project_onto_parent(
         self,
         parent: object,
@@ -413,12 +527,19 @@ class SubclusteringStage:
         # receive NaN — they were not part of the subclustering analysis.
         key = sc_config.key_added
         if key in filtered.obs.columns:
-            parent.obs[key] = filtered.obs[key].reindex(parent.obs_names)
+            parent.obs[key] = self._project_labels(filtered.obs[key], parent.obs_names)
+
+        # Project the sc-SHC reconciled labels the same way. They are the partition
+        # the formal test upholds, so a downstream stage that wants a defensible
+        # grouping needs them on the object it actually receives.
+        scshc_key = f"{key}_scshc"
+        if scshc_key in filtered.obs.columns:
+            parent.obs[scshc_key] = self._project_labels(filtered.obs[scshc_key], parent.obs_names)
 
         # Project donor-QC flags the same way when the gate produced them.
         for col in ("donor_qc_qc_pass", "donor_qc_qc_reason"):
             if col in filtered.obs.columns:
-                parent.obs[col] = filtered.obs[col].reindex(parent.obs_names)
+                parent.obs[col] = self._project_labels(filtered.obs[col], parent.obs_names)
 
         # Carry provenance forward on the parent's uns.
         if "subcluster_extraction" in focused.uns:
@@ -434,6 +555,34 @@ class SubclusteringStage:
             return parent[keep].copy()
 
         return parent
+
+    @staticmethod
+    def _project_labels(series: object, index: object) -> object:
+        """Reindex a per-cell column onto a larger axis, keeping it writable.
+
+        Widening a column has to put something in the gap, and pandas puts float
+        NaN there whatever the column held. For a BOOLEAN column that silently
+        produces ``object`` holding ``{True, False, nan}``, which h5py cannot
+        encode: ``obs['donor_qc_qc_pass']`` in exactly that state made every h5ad
+        write of one LEC run raise ``TypeError: Can't implicitly convert non-string
+        objects to strings``, costing that run its final object, its checkpoints
+        and its velocity h5ads — and with them CellRank's velocity kernel and the
+        CytoTRACE kernel, which read files that were never written.
+
+        Nullable ``boolean`` is the honest destination: the widened column really
+        is three-valued (passed / failed / never assessed), and filling the gap
+        with False would assert that cells outside the analysis passed a gate they
+        never entered. Label columns become categoricals for the same reason —
+        missing stays missing rather than becoming the string ``"nan"``.
+        """
+        import pandas as pd
+
+        widened = series.reindex(index)
+        if series.dtype == bool or pd.api.types.is_bool_dtype(series.dtype):
+            return pd.array([None if pd.isna(v) else bool(v) for v in widened], dtype="boolean")
+        if isinstance(series.dtype, pd.CategoricalDtype) or series.dtype != object:
+            return widened
+        return pd.Categorical(widened)
 
     def _resolve_rscript_backend(self, context: object) -> object | None:
         """Return the Rscript backend from context registry, or None."""

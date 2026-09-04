@@ -6,7 +6,10 @@ from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.trajectory.viz import (
     _helpers as inputs,  # re-export as 'inputs' for backward compat
 )
-from cellquorum.stages.trajectory.viz import _helpers as plots  # re-export as 'plots' for backward compat
+from cellquorum.stages.trajectory.viz import (
+    _helpers as plots,  # re-export as 'plots' for backward compat
+)
+from cellquorum.stages.trajectory.viz._activity_cascade import ActivityCascadeVizMethod
 from cellquorum.stages.trajectory.viz._kernel_plots import (
     DriverVizMethod,
     FateVizMethod,
@@ -29,6 +32,7 @@ _METHODS: tuple = (
     MacrostateVizMethod,
     VelocityVizMethod,
     PseudotimeHeatmapVizMethod,
+    ActivityCascadeVizMethod,
 )
 
 for _method in _METHODS:
@@ -44,6 +48,7 @@ __all__ = [
     "MacrostateVizMethod",
     "VelocityVizMethod",
     "PseudotimeHeatmapVizMethod",
+    "ActivityCascadeVizMethod",
     "inputs",  # backward compat alias for _helpers
     "plots",  # backward compat alias for _helpers
 ]

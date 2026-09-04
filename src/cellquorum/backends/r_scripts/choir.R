@@ -1,5 +1,12 @@
 # CHOIR permutation-tested clustering with significance pruning.
-# Usage: Rscript choir.R <in.h5ad> <out.csv> <key> <alpha> <n_iterations> <n_trees> <batch_key_or_NONE> <seed>
+# Usage: Rscript choir.R <in.h5ad> <out.csv> <key> <alpha> <n_iterations> <n_trees> \
+#            <batch_key_or_NONE> <seed> [reduction_obsm_or_NONE]
+#
+# The optional 9th argument names an obsm/reducedDim key holding a PRECOMPUTED
+# cell embedding (e.g. "X_pca_harmony"). Supplying it is the supported way to get
+# batch-corrected CHOIR clustering when CHOIR's own Harmony path is unavailable:
+# the correction is already baked into the embedding, so CHOIR clusters on it
+# directly and never calls harmony itself. See the harmony-compat note below.
 suppressPackageStartupMessages({
   library(zellkonverter)
   library(CHOIR)
@@ -17,6 +24,7 @@ n_iterations <- as.integer(args[5])
 n_trees <- as.integer(args[6])
 batch_arg <- args[7]
 seed <- as.integer(args[8])
+reduction_arg <- if (length(args) >= 9) args[9] else "NONE"
 
 # Wrap everything in tryCatch for fail-loud behavior.
 tryCatch(
@@ -54,8 +62,74 @@ tryCatch(
       batch_correction_method <- "Harmony"
     }
 
+    # CHOIR (<= 0.3.0) calls harmony::HarmonyMatrix(), which harmony removed in
+    # 1.0 (RunHarmony() replaced it). With a modern harmony installed, requesting
+    # Harmony correction aborts the whole run. Degrade to uncorrected clustering
+    # instead of failing: an uncorrected run is still interpretable, because
+    # residual batch structure can only ADD splits, so a low surviving cluster
+    # count remains a conservative result. Announced on stderr so the caller can
+    # record that correction did not happen.
+    if (batch_correction_method == "Harmony" &&
+        !("HarmonyMatrix" %in% getNamespaceExports("harmony"))) {
+      cat(paste0(
+        "WARNING: harmony ", as.character(utils::packageVersion("harmony")),
+        " does not export HarmonyMatrix(), which CHOIR ",
+        as.character(utils::packageVersion("CHOIR")),
+        " requires; falling back to batch_correction_method='none'.\n"
+      ), file = stderr())
+      batch_correction_method <- "none"
+      batch_labels <- NULL
+    }
+
+    # Resolve an optional user-supplied embedding. Passing one means CHOIR skips
+    # its own dimensionality reduction, so `subtree_reductions` must be FALSE:
+    # regenerating a reduction per subtree is what would re-enter the broken
+    # harmony path. The documented cost is possible UNDERclustering, which is the
+    # conservative direction — a surviving split is still a supported split.
+    reduction <- NULL
+    var_features <- NULL
+    subtree_reductions <- TRUE
+    if (reduction_arg != "NONE") {
+      if (!(reduction_arg %in% reducedDimNames(sce))) {
+        stop(paste0(
+          "reduction '", reduction_arg, "' not found in reducedDims; available: ",
+          paste(reducedDimNames(sce), collapse = ", ")
+        ))
+      }
+      reduction <- as.matrix(reducedDim(sce, reduction_arg))
+      rownames(reduction) <- colnames(sce)
+      subtree_reductions <- FALSE
+      # CHOIR requires var_features alongside a user-supplied reduction: the
+      # embedding alone does not tell it which genes the space was built from,
+      # and it needs them for the per-split feature comparisons. Read them from
+      # the boolean rowData column that scanpy's HVG step writes.
+      if (!("highly_variable" %in% colnames(rowData(sce)))) {
+        stop(paste(
+          "a user-supplied reduction also requires var_features, expected as a",
+          "boolean 'highly_variable' column in rowData; found:",
+          paste(colnames(rowData(sce)), collapse = ", ")
+        ))
+      }
+      hv <- as.logical(rowData(sce)$highly_variable)
+      hv[is.na(hv)] <- FALSE
+      var_features <- rownames(sce)[hv]
+      if (length(var_features) < 2) {
+        stop("rowData$highly_variable selected fewer than 2 features")
+      }
+      cat(paste0("Using ", length(var_features), " variable features.\n"),
+          file = stderr())
+      # The embedding already carries the correction; asking CHOIR to correct
+      # again would double-correct and re-enter harmony.
+      batch_correction_method <- "none"
+      batch_labels <- NULL
+      cat(paste0(
+        "Using precomputed reduction '", reduction_arg, "' (",
+        nrow(reduction), " cells x ", ncol(reduction),
+        " dims); subtree_reductions=FALSE.\n"
+      ), file = stderr())
+    }
+
     # Run CHOIR (permutation-tested hierarchical clustering with pruning).
-    # CHOIR does its own normalization + dim-reduction + batch correction.
     # verbose=FALSE to suppress progress messages.
     sce_choir <- CHOIR::CHOIR(
       object = sce,
@@ -65,6 +139,9 @@ tryCatch(
       n_trees = n_trees,
       batch_correction_method = batch_correction_method,
       batch_labels = batch_labels,
+      reduction = reduction,
+      var_features = var_features,
+      subtree_reductions = subtree_reductions,
       random_seed = seed,
       verbose = FALSE
     )

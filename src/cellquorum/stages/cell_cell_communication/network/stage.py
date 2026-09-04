@@ -42,6 +42,20 @@ class CCCNetworkStage(MethodDispatchStage):
             if not augmented.get("control"):
                 augmented["control"] = getattr(design, "control", None)
 
+        # sample_col has to be bridged too, and it was the one that was missing.
+        # The methods default it to "sample" while the rest of the engine — the CCC
+        # stage that produced the LR table this stage reads, the velocity stage, the
+        # cohort block — uses "sample_id". So on a run declaring
+        # cohort.sample_key: sample_id, resolve_condition_arms found no "sample"
+        # column, returned no arms, and the comparative Lymphedema-vs-Normal
+        # topology and curvature were skipped for a column-name mismatch. The
+        # condition side was bridged and the sample side was not, so nothing else
+        # in the run looked wrong.
+        if not augmented.get("sample_col"):
+            sample_col = resolve_cohort_key(config, attr="sample_key", stage_value=None)
+            if sample_col:
+                augmented["sample_col"] = sample_col
+
         # Default to both methods when nothing was specified.
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [{"method": "topology"}, {"method": "ricci"}]

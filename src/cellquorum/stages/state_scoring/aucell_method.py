@@ -23,6 +23,14 @@ class AucellMethod(AnalysisMethod):
     ``adata.uns["state_aucell"]``), and a per-cell-type mean-AUC table is written
     to the results directory. Cells decoupler drops (all-zero over the net) are
     backfilled with 0.0 so the obsm matrix stays cell-aligned.
+
+    ``uns["state_aucell"]["genes"]`` records the genes each program was *actually*
+    scored on — the manifest's list intersected with ``var_names``. Two downstream
+    questions cannot be answered without it. Whether two program scores are
+    independent readouts or the same genes read twice is a property of the gene
+    lists, and every stage downstream of here sees only the score matrix; and a
+    module that lost half its genes to the detection filter is not the module the
+    manifest names, which is invisible from the AUC alone.
     """
 
     name = "aucell"
@@ -56,6 +64,7 @@ class AucellMethod(AnalysisMethod):
         rows: list[tuple[str, str]] = []
         eligible: list[dict] = []
         skipped: list[dict] = []
+        scored_genes: dict[str, list[str]] = {}
         for program, genes in programs.items():
             present = [g for g in genes if g in adata.var_names]
             if len(present) < min_genes:
@@ -65,6 +74,7 @@ class AucellMethod(AnalysisMethod):
                 continue
             rows.extend((program, gene) for gene in present)
             eligible.append({"program": program, "n_present": len(present), "n_genes": len(genes)})
+            scored_genes[str(program)] = [str(gene) for gene in present]
 
         if not eligible:
             return self._skip(
@@ -103,7 +113,18 @@ class AucellMethod(AnalysisMethod):
         aligned = aligned.fillna(0.0)
 
         adata.obsm["X_state_aucell"] = aligned.to_numpy(dtype=float)
-        adata.uns["state_aucell"] = {"programs": list(aligned.columns)}
+        adata.uns["state_aucell"] = {
+            "programs": list(aligned.columns),
+            # Keyed on the surviving columns, not on ``scored_genes`` wholesale: AUCell
+            # can drop a program of its own accord, and a gene list for a column that
+            # is not in the matrix would let a downstream overlap check describe a
+            # program nothing was scored for.
+            "genes": {
+                str(name): scored_genes[str(name)]
+                for name in aligned.columns
+                if str(name) in scored_genes
+            },
+        }
 
         # Per-cell-type mean AUC (when a label column exists).
         artifacts = []

@@ -15,7 +15,7 @@ instance (see the [Python API](api.md)).
 |---|---|---|
 | `project` | project metadata | `name`, `organism`, `species_id` |
 | `paths` | filesystem roots | `data_root`, `run_root`, `scratch_root`, `manifest`, `output_dir` |
-| `input` | the dataset | input `.h5ad` path, counts layer, optional subset |
+| `input` | the dataset | input `.h5ad` path, counts layer, optional `subset`/`exclude` |
 | `run` | run behavior | `profile`, `run_id`, `random_seed`, `resume`, `overwrite`, `log_level`, `write_final_object`, `continue_on_stage_failure` |
 | `compute` | CPU/GPU routing | `backend` (`auto`/`cpu`/`gpu`), `prefer_gpu`, `fallback_to_cpu`, `n_jobs` |
 | `r` | R backend | `enabled`, `preferred_backend`, `fallback_to_rscript`, `rscript_path`, `timeout_seconds` |
@@ -38,13 +38,49 @@ For a **single-object run**, `input` points the engine at one AnnData file:
 input:
   h5ad: /path/to/your_data.h5ad   # the AnnData to analyze
   counts_layer: counts            # the layer holding raw (un-normalized) counts
-  subset: null                    # optional: restrict to a lineage/obs filter first
+  subset: null                    # optional: keep only these cells
+  exclude: null                   # optional: drop these cells
 ```
 
 `counts_layer` names the layer treated as raw counts; it is validated at load time,
 so a mislabeled layer fails loud instead of silently producing wrong results.
 `input.subset` optionally restricts the object to a subset of cells (for example, a
 single lineage) before the pipeline runs, without splitting the file by hand.
+
+`input.exclude` is the other direction, and it is not redundant: a subset names what
+to **keep**, so dropping one artifact cluster from a 39-cluster partition by subset
+would mean listing the other 38 — unreadable, and silently incomplete the next time
+the object is re-clustered. The two rules compose (a lineage slice that also drops an
+artifact cluster needs both) and are applied in one backed-mode pass, with the count
+each one removed recorded separately in `uns['cellquorum_input_subset']`.
+
+```yaml
+input:
+  h5ad: /path/to/atlas.h5ad
+  counts_layer: counts
+  subset:
+    column: cell_type
+    values: [LEC]
+    require_agreement: ref_state  # optional second annotation that must concur
+  exclude:
+    column: leiden
+    values: ["22"]                # an artifact cluster, identified by audit
+```
+
+The loader **refuses** excluded values that are not in the column's vocabulary,
+rather than removing nothing. That guard exists because the common mistake is
+carrying a debris mask from an earlier clustering: Leiden ids belong to one
+clustering run and not to the cells, so a stale mask deletes whichever cells
+inherited the number and leaves the real artifact in — while the config reads as
+though the artifact had been handled. Identify the clusters on the object in hand
+with `cellquorum.stats.cluster_artifact_audit` (see
+[`api.md`](api.md#are-all-of-these-clusters-cells)), which reports the criteria each
+cluster met rather than only a verdict.
+
+In a hypothesis manifest, the same two rules are `subset_on` / `require_agreement`
+and `exclude_on` / `exclude_values`, declared once per hypothesis so that every cell
+type it generates is filtered identically — cell types filtered unevenly inside one
+manifest are not comparable, and comparing them is what the manifest is for.
 
 For a **multi-sample run**, set `paths.manifest` instead and list the per-sample
 `.h5ad` files in the manifest CSV; the loader concatenates them. Supply one or the

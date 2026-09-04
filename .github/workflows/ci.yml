@@ -4,6 +4,15 @@ on:
   push:
   pull_request:
 
+# Cancel superseded runs on the same ref. Pushing three times to a PR should not
+# leave three full matrices running.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
@@ -14,14 +23,70 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # The ruff version is declared in three places that must agree: this workflow,
+      # the [dev] extra in pyproject.toml, and the ruff-pre-commit rev in
+      # .pre-commit-config.yaml. When they drift, local and CI enforce different
+      # rules and nobody notices until a "clean" branch fails CI. Derive the version
+      # from pyproject and assert the other two match, so the pin can only be
+      # changed in lockstep.
+      - name: Resolve and cross-check the pinned ruff version
+        id: ruff
+        run: |
+          version=$(python -c "
+          import re, pathlib
+          text = pathlib.Path('pyproject.toml').read_text()
+          print(re.search(r'\"ruff==([0-9.]+)\"', text).group(1))
+          ")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "pyproject [dev] pins ruff==$version"
+
+          if ! grep -q "rev: v$version" .pre-commit-config.yaml; then
+            echo "::error::.pre-commit-config.yaml ruff rev does not match pyproject's ruff==$version"
+            grep -n -A1 'ruff-pre-commit' .pre-commit-config.yaml
+            exit 1
+          fi
+          echo "pre-commit rev matches"
+
       - name: Install ruff
-        # Pinned to match the ruff-pre-commit rev in .pre-commit-config.yaml so CI
-        # and the local pre-commit hook enforce identical lint/format rules.
-        run: pip install ruff==0.8.6
+        run: pip install "ruff==${{ steps.ruff.outputs.version }}"
+
       - name: Ruff check
         run: ruff check src tests
+
       - name: Ruff format check
         run: ruff format --check src tests
+
+  typecheck:
+    name: Typecheck (engine spine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package (dev)
+        run: pip install -e .[dev]
+
+      # Gated on the engine spine, not the whole package. A baseline run found 436
+      # errors across 102 modules, 391 of them in stages/, visualization/, and
+      # backends/ (largely untyped-third-party fallout). Gating everything at once
+      # would mean a permanently red job that everyone learns to ignore.
+      #
+      # pyproject.toml carries a [[tool.mypy.overrides]] list of spine modules with
+      # ignore_errors = true. That list is a BACKLOG: fixing a module and deleting
+      # its line is a good small PR. When it is empty, change this command to
+      # `mypy src/cellquorum` and start the same ratchet on stages/.
+      - name: mypy
+        run: >
+          mypy
+          src/cellquorum/core
+          src/cellquorum/config
+          src/cellquorum/io
+          src/cellquorum/methods
+          src/cellquorum/cli
 
   test:
     name: Test (Python ${{ matrix.python-version }})
@@ -36,12 +101,33 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
       - name: Install package (dev)
         run: pip install -e .[dev]
-      - name: Run core test tier
-        # Heavy GPU/R/external-backend tests self-skip via importorskip when their
-        # deps are absent, so this plain runner naturally runs the core-only tier.
-        run: pytest -q
+
+      # Run the fast tier first as a cheap tripwire. Most regressions surface here in
+      # well under a minute, so a broken branch fails fast instead of after the full
+      # suite. `-m` deselects the slow/gpu/r/integration tiers.
+      - name: Fast tier
+        run: pytest -m "not slow and not gpu and not r and not integration"
+
+      # Then the whole suite. Heavy GPU/R/external-backend tests self-skip via
+      # importorskip and availability probes when their deps are absent, so this
+      # plain runner naturally runs the core-only tier.
+      #
+      # -n auto shards across the runner's cores. The suite spends most of its time
+      # importing the single-cell stack per worker, so sharding trades some memory
+      # for a large wall-clock win.
+      - name: Full suite with coverage
+        run: pytest -n auto --cov --cov-report=xml --cov-report=term
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: warn
 
   docs:
     name: Docs build (strict)
@@ -70,8 +156,8 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install build
-        run: pip install build
+      - name: Install build tooling
+        run: pip install build twine
       - name: Build distributions
         run: python -m build
       - name: Verify wheel bundles every R script
@@ -94,3 +180,25 @@ jobs:
             exit 1
           fi
           echo "LICENSE in wheel: $license_line"
+      - name: Verify wheel bundles the py.typed marker
+        # Without py.typed, type checkers in downstream projects silently treat the
+        # whole package as untyped. An editable dev install hides a missing
+        # package-data entry, so only the built wheel can prove this.
+        run: |
+          if ! unzip -l dist/*.whl | grep -q 'cellquorum/py.typed'; then
+            echo "::error::Wheel is missing cellquorum/py.typed (PEP 561 marker)"
+            exit 1
+          fi
+          echo "py.typed present in wheel"
+      - name: Check distribution metadata renders
+        # Catches a malformed README or bad metadata that PyPI would reject on
+        # upload — cheaper to learn here than at release time.
+        run: twine check --strict dist/*
+      - name: Smoke-test the built wheel in a clean venv
+        # An editable install resolves imports from the source tree, so it cannot
+        # catch a packaging mistake. Installing the real wheel can.
+        run: |
+          python -m venv /tmp/wheelcheck
+          /tmp/wheelcheck/bin/pip install --quiet dist/*.whl
+          /tmp/wheelcheck/bin/cellquorum --version
+          /tmp/wheelcheck/bin/python -c "import cellquorum; print('import OK', cellquorum.__version__)"

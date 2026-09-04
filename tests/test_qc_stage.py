@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 # Import JSON helpers for reading stage-written summary artifacts.
-import json
-
 # Import Path for pytest tmp_path fixture annotations.
 from pathlib import Path
 
@@ -29,35 +27,37 @@ from cellquorum.config.models import CellQuorumConfig
 # Import pipeline context and path contracts.
 from cellquorum.core.context import PipelineContext, PipelinePaths
 
+# Import QC stage utilities under test.
+from cellquorum.stages.qc._annotate import (
+    add_metric_columns_to_axis,
+    annotate_adata_with_qc_metrics,
+)
+from cellquorum.stages.qc._context import (
+    coerce_qc_config,
+    get_context_adata,
+    get_qc_output_dir,
+    is_qc_stage_enabled,
+    resolve_qc_config,
+)
+from cellquorum.stages.qc._report import (
+    build_disabled_qc_stage_result,
+    build_qc_stage_summary_extra,
+    build_stage_artifacts_from_manifest,
+    describe_qc_artifact,
+    infer_artifact_kind,
+)
+
 # Import QC artifact manifest for artifact conversion tests.
 from cellquorum.stages.qc.artifacts import QCArtifactManifest
-
-# Import QC configuration.
 from cellquorum.stages.qc.config import QCConfig
 
-# Import QC decision result container.
-from cellquorum.stages.qc.decisions import QCDecisionResult
+# Import QC configuration.
+from cellquorum.stages.qc.floors import FloorResult
 
-# Import QC stage utilities under test.
+# Import QC decision result container.
 from cellquorum.stages.qc.stage import (
     QCStage,
     QCStageError,
-    add_metric_columns_to_axis,
-    annotate_adata_with_qc_decisions,
-    annotate_adata_with_qc_metrics,
-    build_disabled_qc_stage_result,
-    build_qc_output_adata,
-    build_qc_stage_summary_extra,
-    build_stage_artifacts_from_manifest,
-    coerce_qc_config,
-    describe_qc_artifact,
-    filter_adata_by_qc_decisions,
-    get_context_adata,
-    get_qc_output_dir,
-    infer_artifact_kind,
-    is_qc_stage_enabled,
-    resolve_qc_config,
-    validate_decision_index_alignment,
 )
 
 
@@ -154,49 +154,29 @@ def make_context(
     )
 
 
-def make_decision_result() -> QCDecisionResult:
+def make_decision_result() -> FloorResult:
+    """A small floor result for artifact/stage tests.
+
+    Replaces a ``QCDecisionResult`` fixture. The shape is deliberately simpler: floors produce a
+    keep mask and a reason, not a boolean column per threshold rule, because a barcode either
+    cleared the detection limit or it did not — there is nothing to attribute.
     """
-    Build a deterministic decision result for direct stage helper tests.
-
-    Returns:
-        QCDecisionResult aligned to make_stage_test_adata().
-    """
-
-    # Build cell decisions.
-    cell_decisions = pd.DataFrame(
-        {
-            "keep": [True, False, True],
-            "fail_any_qc": [False, True, False],
-            "failed_rules": ["", "fixed_min_genes_per_cell", ""],
-            "fixed_min_genes_per_cell": [False, True, False],
-        },
-        index=["cell_1", "cell_2", "cell_3"],
-    )
-
-    # Build gene decisions.
-    gene_decisions = pd.DataFrame(
-        {
-            "keep": [True, True, False, False],
-            "fail_any_qc": [False, False, True, True],
-            "failed_rules": ["", "", "fixed_min_cells_per_gene", "fixed_min_cells_per_gene"],
-            "fixed_min_cells_per_gene": [False, False, True, True],
-        },
-        index=["MT-ND1", "ACTB", "RPS3", "MALAT1"],
-    )
-
-    # Return the structured decision result.
-    return QCDecisionResult(
-        cell_decisions=cell_decisions,
-        gene_decisions=gene_decisions,
+    cells = pd.Index(["cell_0", "cell_1", "cell_2"])
+    genes = pd.Index(["gene_0", "gene_1", "gene_2", "gene_3"])
+    cell_keep = pd.Series([True] * 2 + [False] * 1, index=cells)
+    reason = pd.Series([""] * 2 + ["fewer_than_100_genes"] * 1, index=cells)
+    gene_keep = pd.Series([True] * 2 + [False] * 2, index=genes)
+    return FloorResult(
+        cell_keep=cell_keep,
+        gene_keep=gene_keep,
+        reason=reason,
         summary={
             "n_cells": 3,
-            "n_cells_kept": 2,
-            "n_cells_failed": 1,
+            "n_cells_below_floor": 1,
             "n_genes": 4,
-            "n_genes_kept": 2,
-            "n_genes_failed": 2,
+            "n_genes_below_floor": 2,
         },
-        warnings=[],
+        warnings=["floor warning"],
     )
 
 
@@ -255,32 +235,6 @@ def test_resolve_qc_config_accepts_context_qc_config(tmp_path: Path) -> None:
 
     # Confirm the context QCConfig was used.
     assert resolved is qc_config
-
-
-def test_resolve_qc_config_accepts_mapping_qc_field(tmp_path: Path) -> None:
-    """
-    Verify context.config['qc'] can be resolved into QCConfig.
-
-    Dictionary-like contexts are useful for lightweight adapters.
-    """
-
-    # Build a context with dictionary-style QC config.
-    context = make_context(
-        tmp_path,
-        config={
-            "qc": {
-                "enabled": False,
-                "mode": "flag_no_drop",
-            }
-        },
-    )
-
-    # Resolve the QC config.
-    resolved = resolve_qc_config(context)
-
-    # Confirm mapping config was validated.
-    assert isinstance(resolved, QCConfig)
-    assert resolved.enabled is False
 
 
 def test_resolve_qc_config_accepts_object_qc_field(tmp_path: Path) -> None:
@@ -431,139 +385,6 @@ def test_get_qc_output_dir_rejects_missing_paths() -> None:
         get_qc_output_dir(context, "qc")
 
 
-def test_validate_decision_index_alignment_accepts_exact_match() -> None:
-    """
-    Verify decision index alignment accepts exact ordered matches.
-
-    Annotation and filtering rely on positionally aligned decision tables.
-    """
-
-    # Confirm exact matching indices do not raise.
-    validate_decision_index_alignment(
-        expected=["a", "b"],
-        observed=["a", "b"],
-        label="cell_decisions",
-    )
-
-
-def test_validate_decision_index_alignment_rejects_mismatch() -> None:
-    """
-    Verify decision index alignment rejects mismatched names.
-
-    Mismatched decisions could filter the wrong cells or genes.
-    """
-
-    # Confirm mismatched indices fail clearly.
-    with pytest.raises(QCStageError, match="index does not match"):
-        validate_decision_index_alignment(
-            expected=["a", "b"],
-            observed=["b", "a"],
-            label="cell_decisions",
-        )
-
-
-def test_annotate_adata_with_qc_decisions_adds_obs_and_var_columns() -> None:
-    """
-    Verify QC decisions are added to AnnData.obs and AnnData.var.
-
-    The stage should retain audit columns even in report-only mode.
-    """
-
-    # Build AnnData and decisions.
-    adata = make_stage_test_adata()
-    decisions = make_decision_result()
-
-    # Annotate AnnData.
-    annotated = annotate_adata_with_qc_decisions(adata, decisions)
-
-    # Confirm input AnnData was not mutated.
-    assert "cellquorum_qc_keep" not in adata.obs.columns
-
-    # Confirm cell-level QC annotations were added.
-    assert annotated.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
-    assert annotated.obs["cellquorum_qc_fail_any_qc"].tolist() == [False, True, False]
-
-    # Confirm gene-level QC annotations were added.
-    assert annotated.var["cellquorum_qc_keep"].tolist() == [True, True, False, False]
-    assert annotated.var["cellquorum_qc_fail_any_qc"].tolist() == [False, False, True, True]
-
-
-def test_filter_adata_by_qc_decisions_subsets_cells_and_genes() -> None:
-    """
-    Verify QC filtering subsets AnnData by decision keep masks.
-
-    The filter step should remove failed cells and failed genes together.
-    """
-
-    # Build AnnData and decisions.
-    adata = make_stage_test_adata()
-    decisions = make_decision_result()
-
-    # Filter AnnData.
-    filtered = filter_adata_by_qc_decisions(adata, decisions)
-
-    # Confirm the expected cells were kept.
-    assert list(filtered.obs_names) == ["cell_1", "cell_3"]
-
-    # Confirm the expected genes were kept.
-    assert list(filtered.var_names) == ["MT-ND1", "ACTB"]
-
-    # Confirm the filtered shape.
-    assert filtered.shape == (2, 2)
-
-
-def test_build_qc_output_adata_flag_no_drop_preserves_shape() -> None:
-    """
-    Verify report-only QC annotates but does not filter AnnData.
-
-    Report-only mode should be non-mutating with respect to the data matrix.
-    """
-
-    # Build AnnData and decisions.
-    adata = make_stage_test_adata()
-    decisions = make_decision_result()
-
-    # Build report-only output AnnData.
-    output = build_qc_output_adata(
-        adata=adata,
-        decision_result=decisions,
-        config=make_stage_qc_config(mode="flag_no_drop"),
-    )
-
-    # Confirm shape was preserved.
-    assert output.shape == adata.shape
-
-    # Confirm annotations were added.
-    assert "cellquorum_qc_keep" in output.obs.columns
-    assert "cellquorum_qc_keep" in output.var.columns
-
-
-def test_build_qc_output_adata_filter_mode_filters_shape() -> None:
-    """
-    Verify filter-mode QC annotates and filters AnnData.
-
-    Filter mode should return only cells and genes marked keep=True.
-    """
-
-    # Build AnnData and decisions.
-    adata = make_stage_test_adata()
-    decisions = make_decision_result()
-
-    # Build filtered output AnnData.
-    output = build_qc_output_adata(
-        adata=adata,
-        decision_result=decisions,
-        config=make_stage_qc_config(mode="filter"),
-    )
-
-    # Confirm cells and genes were filtered.
-    assert output.shape == (2, 2)
-
-    # Confirm annotations remain after filtering.
-    assert output.obs["cellquorum_qc_keep"].tolist() == [True, True]
-    assert output.var["cellquorum_qc_keep"].tolist() == [True, True]
-
-
 def test_build_disabled_qc_stage_result_returns_noop_result() -> None:
     """
     Verify disabled QC produces an explicit no-op StageResult.
@@ -657,150 +478,6 @@ def test_describe_qc_artifact_returns_known_and_fallback_descriptions() -> None:
     assert describe_qc_artifact("unknown") == "QC artifact: unknown."
 
 
-def test_build_qc_stage_summary_extra_uses_context_metadata(tmp_path: Path) -> None:
-    """
-    Verify stage summary extras include run metadata and QC mode.
-
-    These values are written into qc_summary.json through the artifact writer.
-    """
-
-    # Build a context.
-    context = make_context(tmp_path)
-
-    # Build QC config.
-    config = make_stage_qc_config(mode="both")
-
-    # Build summary extra payload.
-    payload = build_qc_stage_summary_extra(
-        context=context,
-        qc_config=config,
-        stage_name="qc",
-    )
-
-    # Confirm context metadata is present.
-    assert payload["stage_name"] == "qc"
-    assert payload["run_id"] == "stage-test-run"
-    assert payload["random_seed"] == 123
-    assert payload["mode"] == "both"
-    assert payload["threshold_strategy"] == "fixed"
-    assert payload["enabled_metric_families"] == ["basic", "doublets", "ambient_rna"]
-
-
-def test_qc_stage_run_flag_no_drop_writes_artifacts_and_preserves_shape(tmp_path: Path) -> None:
-    """
-    Verify the full QC stage runs in report-only mode.
-
-    Report-only mode should write QC artifacts, annotate AnnData, preserve the
-    input shape, and return structured stage metrics.
-    """
-
-    # Build context and stage.
-    context = make_context(tmp_path)
-    stage = QCStage(config=make_stage_qc_config(mode="flag_no_drop"))
-
-    # Run the QC stage.
-    result = stage.run(context)
-
-    # Confirm report-only mode preserved shape.
-    assert result.adata.shape == (3, 4)
-
-    # Confirm QC annotations exist.
-    assert "cellquorum_qc_keep" in result.adata.obs.columns
-    assert "cellquorum_qc_keep" in result.adata.var.columns
-
-    # Confirm expected cells and genes were marked keep/fail.
-    assert result.adata.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
-    assert result.adata.var["cellquorum_qc_keep"].tolist() == [True, True, False, False]
-
-    # Confirm the no-drop mode warns LOUDLY that it flagged cells it did not
-    # remove (no-silent-decisions): cell_2 fails QC but stays in the object.
-    assert any("did NOT remove them" in warning for warning in result.warnings)
-
-    # Confirm stage notes summarize QC.
-    assert result.notes[0] == "QC completed in flag_no_drop mode."
-
-    # Confirm stage metrics include input and output shapes.
-    assert result.metrics["input_shape"] == {"n_obs": 3, "n_vars": 4}
-    assert result.metrics["output_shape"] == {"n_obs": 3, "n_vars": 4}
-
-    # Confirm expected artifacts were reported.
-    artifact_names = {artifact.name for artifact in result.artifacts}
-    assert artifact_names == {
-        "qc_cell_metrics",
-        "qc_gene_metrics",
-        "qc_feature_masks",
-        "qc_thresholds",
-        "qc_cell_decisions",
-        "qc_gene_decisions",
-        "qc_report",
-        "qc_summary",
-    }
-
-    # Confirm the summary artifact exists and contains stage extra metadata.
-    summary_artifact = next(
-        artifact for artifact in result.artifacts if artifact.name == "qc_summary"
-    )
-    summary = json.loads(summary_artifact.path.read_text(encoding="utf-8"))
-    assert summary["extra"]["stage_name"] == "qc"
-    assert summary["extra"]["run_id"] == "stage-test-run"
-
-
-def test_qc_stage_run_filter_mode_returns_filtered_anndata(tmp_path: Path) -> None:
-    """
-    Verify the full QC stage filters AnnData in filter mode.
-
-    Filter mode should remove failed cells and failed genes according to explicit
-    QC decision tables.
-    """
-
-    # Build context and stage.
-    context = make_context(tmp_path)
-    stage = QCStage(config=make_stage_qc_config(mode="filter"))
-
-    # Run the QC stage.
-    result = stage.run(context)
-
-    # Confirm AnnData was filtered.
-    assert result.adata.shape == (2, 2)
-
-    # Confirm expected cells and genes remain.
-    assert list(result.adata.obs_names) == ["cell_1", "cell_3"]
-    assert list(result.adata.var_names) == ["MT-ND1", "ACTB"]
-
-    # Confirm filtering note was emitted.
-    assert result.notes[-1] == (
-        "QC filtering changed AnnData shape from 3 cells x 4 genes to 2 cells x 2 genes."
-    )
-
-    # Confirm stage metrics include filtered output shape.
-    assert result.metrics["output_shape"] == {"n_obs": 2, "n_vars": 2}
-
-    # Filter mode drops flagged cells, so the no-drop warning must NOT fire.
-    assert not any("did NOT remove them" in warning for warning in result.warnings)
-
-
-def test_qc_stage_run_flag_no_drop_keeps_all_cells_and_warns(tmp_path: Path) -> None:
-    """`flag_no_drop` mode preserves failing cells and warns loudly.
-
-    It must preserve shape (no cells dropped) and still emit the loud no-drop
-    warning that flagged cells were kept.
-    """
-
-    # Build context and stage using the no-drop mode.
-    context = make_context(tmp_path)
-    stage = QCStage(config=make_stage_qc_config(mode="flag_no_drop"))
-
-    # Run the QC stage.
-    result = stage.run(context)
-
-    # Confirm no-drop behavior preserved shape (cell_2 flagged but kept).
-    assert result.adata.shape == (3, 4)
-    assert result.adata.obs["cellquorum_qc_keep"].tolist() == [True, False, True]
-
-    # Confirm the loud no-drop warning fired.
-    assert any("did NOT remove them" in warning for warning in result.warnings)
-
-
 def test_qc_stage_run_disabled_returns_no_artifacts(tmp_path: Path) -> None:
     """
     Verify disabled QC stage returns an explicit no-op result.
@@ -887,13 +564,20 @@ def test_qc_stage_run_rejects_missing_paths() -> None:
         stage.run(context)
 
 
-def test_add_metric_columns_to_axis_preserves_existing_columns() -> None:
-    """
-    Verify metric annotation never overwrites a pre-existing obs/var column.
+# ---------------------------------------------------------------------------
+# Metric annotation used to be flag-not-clobber, and these two tests asserted
+# that. It was reversed deliberately, because on a per-lineage arm carved out of
+# an atlas the inherited columns are not a competing opinion but a description of
+# a different object: gene-level metrics are aggregates OVER cells, so the clean
+# LEC input (2,125 cells) carries var['n_cells_by_counts'] up to 200,072. QC
+# recomputed them correctly from this object's own matrix and then discarded them,
+# so the final h5ad shipped whole-atlas gene metrics to anything reading var.
+# The fresh value now wins; a value that already agrees is left alone and silent.
+# ---------------------------------------------------------------------------
 
-    An upstream tool may have populated ``total_counts`` with authoritative
-    values; QC metric annotation must preserve them and report the conflict.
-    """
+
+def test_add_metric_columns_to_axis_replaces_a_disagreeing_column() -> None:
+    """A pre-existing metric column that disagrees is stale, and QC overrules it."""
 
     # Build an axis frame that already carries a QC-metric-named column.
     axis_frame = pd.DataFrame(
@@ -907,43 +591,131 @@ def test_add_metric_columns_to_axis_preserves_existing_columns() -> None:
         index=["cell_1", "cell_2"],
     )
 
-    conflicts = add_metric_columns_to_axis(axis_frame=axis_frame, metrics=metrics)
+    replaced = add_metric_columns_to_axis(axis_frame=axis_frame, metrics=metrics)
 
-    # The pre-existing column is preserved, not overwritten.
-    assert list(axis_frame["total_counts"]) == [111.0, 222.0]
-    # The non-conflicting metric column is added.
+    # The freshly computed value wins.
+    assert list(axis_frame["total_counts"]) == [5.0, 6.0]
+    # The non-conflicting metric column is added, and unrelated columns are untouched.
     assert list(axis_frame["pct_counts_mito"]) == [10.0, 20.0]
-    # The conflict is reported for the caller to surface as a warning.
-    assert conflicts == ["total_counts"]
+    assert list(axis_frame["existing_only"]) == [1, 2]
+    # The replacement is reported, and names both magnitudes so it is auditable.
+    assert len(replaced) == 1
+    assert replaced[0].startswith("total_counts")
+    assert "222" in replaced[0] and "6" in replaced[0]
 
 
-def test_annotate_adata_with_qc_metrics_warns_on_preserved_columns() -> None:
+def test_add_metric_columns_to_axis_is_silent_when_values_already_agree() -> None:
+    """Per-cell metrics are invariant under cell subsetting, so they match exactly.
+
+    Reporting those was noise on every clean-input run, and it made the genuinely
+    stale gene-level columns look equally harmless.
     """
-    Verify annotate_adata_with_qc_metrics returns warnings for preserved columns.
+
+    axis_frame = pd.DataFrame({"total_counts": [5.0, 6.0]}, index=["cell_1", "cell_2"])
+    metrics = pd.DataFrame({"total_counts": [5.0, 6.0]}, index=["cell_1", "cell_2"])
+
+    assert add_metric_columns_to_axis(axis_frame=axis_frame, metrics=metrics) == []
+    assert list(axis_frame["total_counts"]) == [5.0, 6.0]
+
+
+def test_add_metric_columns_to_axis_treats_nan_as_agreeing() -> None:
+    """A metric that is NaN in both places has not changed; NaN != NaN must not fool it."""
+
+    axis_frame = pd.DataFrame({"pct_counts_mito": [np.nan, 1.0]}, index=["c1", "c2"])
+    metrics = pd.DataFrame({"pct_counts_mito": [np.nan, 1.0]}, index=["c1", "c2"])
+
+    assert add_metric_columns_to_axis(axis_frame=axis_frame, metrics=metrics) == []
+
+
+def test_annotate_adata_with_qc_metrics_reports_a_stale_gene_level_column() -> None:
+    """The real failure, at real scale: 2 cells cannot have a gene seen in 200,072.
+
+    The var message must say WHY, since 'gene-level metrics are aggregates over
+    cells' is the fact that makes an inherited value wrong rather than merely old.
     """
 
     from cellquorum.stages.qc.metrics import QCMetricsResult
 
-    # Build an adata whose obs already carries a metric-named column.
     adata = ad.AnnData(
         X=np.ones((2, 2)),
-        obs=pd.DataFrame({"total_counts": [111.0, 222.0]}, index=["cell_1", "cell_2"]),
-        var=pd.DataFrame(index=["gene_1", "gene_2"]),
+        obs=pd.DataFrame({"total_counts": [5.0, 6.0]}, index=["cell_1", "cell_2"]),
+        var=pd.DataFrame({"n_cells_by_counts": [200072, 150000]}, index=["gene_1", "gene_2"]),
     )
 
     metrics_result = QCMetricsResult(
         cell_metrics=pd.DataFrame(
+            # obs total_counts AGREES, so it must not be reported.
             {"total_counts": [5.0, 6.0], "pct_counts_mito": [10.0, 20.0]},
             index=["cell_1", "cell_2"],
         ),
-        gene_metrics=pd.DataFrame(index=["gene_1", "gene_2"]),
+        gene_metrics=pd.DataFrame({"n_cells_by_counts": [2, 1]}, index=["gene_1", "gene_2"]),
         feature_masks=pd.DataFrame(index=["gene_1", "gene_2"]),
         summary={},
     )
 
     warnings = annotate_adata_with_qc_metrics(adata=adata, metrics_result=metrics_result)
 
-    # Pre-existing obs values preserved; new metric added; conflict warned.
-    assert list(adata.obs["total_counts"]) == [111.0, 222.0]
+    # The stale gene-level column is corrected to this object's own counts.
+    assert list(adata.var["n_cells_by_counts"]) == [2, 1]
     assert list(adata.obs["pct_counts_mito"]) == [10.0, 20.0]
-    assert any("total_counts" in w for w in warnings)
+
+    joined = " ".join(warnings)
+    assert "n_cells_by_counts" in joined
+    assert "200072" in joined
+    assert "aggregates over cells" in joined
+    # The agreeing obs column produced no warning at all.
+    assert not any("obs metric" in w for w in warnings)
+
+
+def test_resolve_qc_config_accepts_mapping_qc_field(tmp_path: Path) -> None:
+    """
+    Verify context.config['qc'] can be resolved into QCConfig.
+
+    Dictionary-like contexts are useful for lightweight adapters.
+    """
+
+    # Build a context with dictionary-style QC config.
+    context = make_context(
+        tmp_path,
+        config={
+            "qc": {
+                "enabled": False,
+            }
+        },
+    )
+
+    # Resolve the QC config.
+    resolved = resolve_qc_config(context)
+
+    # Confirm mapping config was validated.
+    assert isinstance(resolved, QCConfig)
+    assert resolved.enabled is False
+
+
+def test_build_qc_stage_summary_extra_uses_context_metadata(tmp_path: Path) -> None:
+    """
+    Verify stage summary extras include run metadata and QC mode.
+
+    These values are written into qc_summary.json through the artifact writer.
+    """
+
+    # Build a context.
+    context = make_context(tmp_path)
+
+    # Build QC config.
+    config = make_stage_qc_config(mode="both")
+
+    # Build summary extra payload.
+    payload = build_qc_stage_summary_extra(
+        context=context,
+        qc_config=config,
+        stage_name="qc",
+    )
+
+    # Confirm context metadata is present.
+    assert payload["stage_name"] == "qc"
+    assert payload["run_id"] == "stage-test-run"
+    assert payload["random_seed"] == 123
+    assert payload["mode"] == "both"
+    assert payload["threshold_strategy"] == "fixed"
+    assert payload["enabled_metric_families"] == ["basic", "doublets", "ambient_rna"]

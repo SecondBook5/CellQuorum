@@ -1,0 +1,172 @@
+# le_global_clean_da — whole-atlas differential abundance on the clean atlas.
+#
+# Why this config exists. The atlas-level abundance figure in the manuscript was
+# computed on the SUPERSEDED atlas: a Milo table of 16,130 neighbourhoods built
+# from `le_global`, the run whose QC flagged and kept every failing cell, so its
+# embedding — and therefore its neighbourhoods, which ARE the test's unit — were
+# built with the damaged cells in. That object is no longer what any other figure
+# in the paper is computed on. This run recomputes it on `le_global_clean`.
+#
+# It is a separate run directory on purpose. Reusing `runs/le_global_clean` would
+# mix a new analysis into a completed run's outputs, where nothing downstream can
+# tell which config produced which table.
+#
+# ---------------------------------------------------------------------------
+# Why this supersedes runs/le_global_clean_da
+# ---------------------------------------------------------------------------
+#
+# Same input, same design, same four methods. The difference is in the engine:
+# propeller was being fitted with an arms-only design (~ arm) even though the
+# design block declares the cohort matched, so the between-donor baseline stayed
+# in the residual and the moderated t divided the arm difference by the wrong
+# spread. On this cohort that was the whole table -- nothing below FDR 0.39 --
+# while the same proportions tested within donor put two lineages at 0.031. It
+# also reported speckle's PropRatio column, which under a treatment-contrast
+# design is arithmetically a difference rather than a ratio.
+#
+# The previous run directory is kept, not replaced: it is the record of what the
+# earlier figures were drawn from.
+
+# ---------------------------------------------------------------------------
+# The artifact cluster, and why it is excluded here rather than upstream
+# ---------------------------------------------------------------------------
+#
+# The clean atlas still contains one ambient-debris cluster: leiden 22, 7,175
+# cells, shallow (0.34x the atlas median gene count), unassignable (mean label
+# confidence 0.57), drawn from all 13 lineages at once, and 77% from a single
+# library (P2_LE — 42.8% of that library's cells). That conjunction is what
+# identifies debris; no one mark does, since low complexity alone is neutrophils
+# and cornified keratinocytes, both real. The audit that establishes it is
+# `cellquorum.stats.cluster_artifact_audit`, run on THIS object.
+#
+# It is excluded at load, not deleted upstream, because deletion is irreversible
+# across every manuscript that reads the shared atlas while an exclusion is a
+# declared, per-analysis decision a reviewer can see and undo.
+#
+# The exclusion is an `input.exclude` rule and not an `input.subset` one because
+# an inclusion list cannot express "everything except": naming the 38 real
+# clusters would be unreadable, and silently incomplete the next time the atlas is
+# re-clustered. The loader also refuses cluster ids this object's partition does
+# not have — leiden numbers belong to one clustering run, not to the cells, so a
+# mask carried across partitions deletes whichever cells inherited the number and
+# leaves the real artifact in.
+
+project:
+  name: le_global_clean_da_paired
+  organism: human
+  species_id: 9606
+
+paths:
+  output_dir: /home/ajbook/projects/cellquorum/runs/le_global_clean_da_paired
+  data_root: /mnt/e/lymphedema_cellranger
+
+input:
+  # The clean atlas: QC applied once, globally, deleting; embedding/clustering
+  # recomputed on the surviving cells; scArches labels inherited.
+  h5ad: /home/ajbook/projects/cellquorum/runs/le_global_clean/objects/le_global_clean.h5ad
+  counts_layer: counts
+  exclude:
+    column: leiden
+    values: ["22"]
+
+run:
+  random_seed: 1337
+  verbose: true
+  checkpoint: true
+
+compute:
+  # No GPU stage runs here: Milo/propeller are R, scCODA and the paired t-test are
+  # CPU. Nothing in this run touches a neighbour-graph recomputation.
+  backend: cpu
+  prefer_gpu: false
+
+cohort:
+  sample_key: sample_id
+  donor_key: donor_id
+  condition_key: condition
+  batch_key: batch
+
+# All nine donors contributed both a lymphedematous and an unaffected sample, so
+# the design is matched and `paired: true` is a property of the cohort rather than
+# a preference. Running it unpaired leaves donor baseline variance in the residual,
+# which on this project has already turned real effects into nulls once.
+design:
+  donor_col: donor_id
+  condition_col: condition
+  case: Lymphedema
+  control: Normal
+  paired: true
+
+stages:
+  # Nothing is recomputed. The input already carries QC-filtered cells, a
+  # normalized layer, PCA, Harmony/scVI integration, clustering, UMAP and labels;
+  # re-running any of it here would produce a second version of the atlas that
+  # disagrees with the one every other figure is drawn from.
+  ambient_correction: false
+  qc: false
+  preprocessing: false
+  feature_selection: false
+  dimensionality: false
+  integration: false
+  clustering: false
+  embeddings: false
+  annotation: false
+  reference_mapping: false
+  annotation_consensus: false
+  annotation_diagnostics: false
+  adjudication: false
+  population_identity: false
+  integration_benchmark: false
+  subclustering: false
+  state_scoring: false
+  discovery: false
+  composition: false
+  differential_expression: false
+  molecular_inference: false
+  cell_cell_communication: false
+  network_analysis: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  # The one thing this run produces.
+  differential_abundance: true
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  trajectory: false
+  trajectory_viz: false
+  multicellular_programs: false
+  module_remodeling: false
+
+differential_abundance:
+  enabled: true
+  # All four methods, deliberately. They disagree by construction and the
+  # disagreement is the result: Milo tests neighbourhoods (sub-cell-type
+  # resolution, no dependence on the annotation), scCODA tests compositions
+  # against a chosen reference, propeller and the paired t-test test per-lineage
+  # proportions with the donor pairing. A shift that only one of them sees is a
+  # claim about that method's unit, not about the tissue.
+  methods:
+    - method: milo
+    - method: sccoda
+    - method: propeller
+    - method: proportion_ttest
+  cell_type_col: cell_type
+  # Harmony, not scVI: Milo's neighbourhoods are Euclidean balls in this space,
+  # and Harmony's output is a corrected PCA where that geometry is the same one
+  # the atlas figures are drawn in. (The stage falls back to X_pca if absent.)
+  use_rep: X_pca_harmony
+  k: 30
+  prop: 0.1
+  spatial_fdr: 0.1
+  # Let the engine pick the compositional reference on centred-log-ratio variance
+  # rather than scCODA's own criterion, which ranks cell types largely by rarity —
+  # and the reference is the denominator of every effect it reports.
+  select_reference: true
+  min_reference_abundance: 0.05
+  pair_by_donor: always
+  seed: 1337
+  # 185k cells is a bigger graph than the default budget assumes; miloR's
+  # buildGraph/makeNhoods pass over it is the long step.
+  timeout_seconds: 10800

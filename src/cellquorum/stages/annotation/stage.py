@@ -1,4 +1,4 @@
-# Pipeline step (order=90): annotation — assign cell-type labels via the configured annotation method.
+# Pipeline step (order=90): annotation — assign cell-type labels via the configured method.
 """Annotation stage: dispatch to the configured annotation method."""
 
 from __future__ import annotations

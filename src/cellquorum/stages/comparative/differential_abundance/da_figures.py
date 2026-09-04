@@ -78,14 +78,22 @@ def sccoda_single_reference(da: pd.DataFrame, *, reference: str = "auto") -> pd.
     Returns:
         The rows for a single reference (or the whole frame if there is no
         ``reference`` column), with a fresh integer index.
+
+    Notes:
+        Delegates to :func:`~cellquorum.stages.comparative.differential_abundance
+        .reference_selection.split_reference_fits`, which is the one place that
+        decides which stacked fit is the reported one. The figure and the reported
+        metrics must not be able to disagree about that.
     """
 
-    if "reference" not in da.columns:
-        return da.reset_index(drop=True)
+    # Local import: reference_selection is pure pandas, but this module is the
+    # matplotlib one and the method imports the rule directly from there.
+    from cellquorum.stages.comparative.differential_abundance.reference_selection import (
+        split_reference_fits,
+    )
 
-    available = list(dict.fromkeys(da["reference"].astype(str)))
-    chosen = reference if reference in available else available[0]
-    return da[da["reference"].astype(str) == chosen].reset_index(drop=True)
+    primary, _ = split_reference_fits(da, reference)
+    return primary
 
 
 def milo_beeswarm_order(prepared: pd.DataFrame) -> list[str]:

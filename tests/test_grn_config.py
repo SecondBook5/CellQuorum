@@ -18,7 +18,9 @@ def test_grn_config_defaults() -> None:
     assert cfg.tfs_path is None
     assert cfg.motifs_path is None
     assert cfg.rankings_glob is None
-    assert cfg.num_workers == 8
+    # None, not 8: unset inherits compute.n_jobs, so the longest step in the
+    # engine scales with the run's own worker count instead of a fixed 8.
+    assert cfg.num_workers is None
     assert cfg.max_cells == 20000
     assert cfg.min_cells_total == 200
     assert cfg.top_n == 5

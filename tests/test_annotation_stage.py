@@ -6,10 +6,10 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.annotation.marker_vote import MarkerVoteMethod
-from cellquorum.stages.annotation.stage import AnnotationStage
 from cellquorum.core.contracts import set_layer_tag
 from cellquorum.methods.registry import MethodRegistry
+from cellquorum.stages.annotation.marker_vote import MarkerVoteMethod
+from cellquorum.stages.annotation.stage import AnnotationStage
 
 
 def _clustered_adata(seed=0):

@@ -19,7 +19,12 @@ class VelocityGenerationConfig(StrictBaseModel):
         bam_dir: Root holding per-sample CellRanger ``outs`` directories.
         gtf_path: ``genes.gtf`` passed to ``velocyto run10x``.
         repeat_mask: Optional repeat-mask GTF (``-m``).
-        threads: ``-@`` thread count for samtools + velocyto.
+        threads: ``-@`` thread count for samtools + velocyto. Deliberately NOT
+            inherited from ``compute.n_jobs`` like the other worker counts are:
+            these threads sort a BAM, so they are bound by disk rather than by
+            CPU, and each one claims ``samtools_memory`` MB. Inheriting a CPU
+            worker count would silently change how much memory a sort takes,
+            which is the paired knob below, not this one.
         samtools_memory: Per-thread sort memory in MB.
     """
 
@@ -53,7 +58,17 @@ class VelocityConfig(StrictBaseModel):
         n_pcs: ``scv.pp.moments`` PCs.
         n_neighbors: ``scv.pp.moments`` neighbors.
         min_cells: Minimum cells per group to attempt velocity.
-        n_jobs: Worker count (1 = reproducible).
+        n_jobs: Worker count for ``recover_dynamics`` / ``velocity_graph``.
+            ``None`` inherits ``compute.n_jobs``. Worker count does not affect the
+            result: at 1, 4 and 8 workers the ``velocity`` layer, every ``fit_*``
+            parameter and ``velocity_graph`` come out bit-identical, and the one
+            output that does move — ``velocity_pseudotime``, by ~1e-5 — moves just
+            as much between two runs at the SAME worker count and is not fixed by
+            re-seeding numpy or pinning root/end cells (the wobble is inside the
+            eigensolver, out of reach of any seed we control). So pinning this to
+            1 buys no reproducibility; it only costs time, and this is the most
+            expensive step in the pipeline: 151s serial vs 20s on 8 workers for
+            1200 cells x 2000 genes.
         seed: Random seed threaded into ``recover_dynamics``.
         whole_object: Also run velocity once on the WHOLE object (writes
             ``whole_object.h5ad`` with Ms + velocity layers) so CellRank's
@@ -74,7 +89,7 @@ class VelocityConfig(StrictBaseModel):
     n_pcs: int = 30
     n_neighbors: int = 30
     min_cells: int = 30
-    n_jobs: int = 1
+    n_jobs: int | None = None
     seed: int = 1337
     whole_object: bool = False
     generation: VelocityGenerationConfig = VelocityGenerationConfig()

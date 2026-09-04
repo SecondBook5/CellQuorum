@@ -66,3 +66,44 @@ def test_fingerprint_handles_missing_adata() -> None:
 
     fp = compute_input_fingerprint(stage_name="qc", stage_config={}, adata=None, random_seed=1337)
     assert isinstance(fp, str) and len(fp) == 64
+
+
+def test_an_unset_config_field_does_not_flip_the_fingerprint() -> None:
+    """Adding an optional setting must not invalidate every prior run's resume.
+
+    The fingerprint sees the resolved config, which carries every field a model
+    declares — so a new optional setting arrives as None in runs that never mention
+    it. Treating that as a change would make an engine upgrade look like a config
+    edit, which is the mistake the checkpoint guard then reports to the user.
+    """
+
+    a = _adata()
+    before = compute_input_fingerprint(
+        stage_name="qc", stage_config={"mode": "filter"}, adata=a, random_seed=1337
+    )
+    after = compute_input_fingerprint(
+        stage_name="qc",
+        stage_config={"mode": "filter", "max_mito_quantile": None},
+        adata=a,
+        random_seed=1337,
+    )
+    assert after == before
+
+
+def test_a_set_config_field_still_flips_the_fingerprint() -> None:
+    """The None rule must not weaken into ignoring the setting itself."""
+
+    a = _adata()
+    unset = compute_input_fingerprint(
+        stage_name="qc",
+        stage_config={"mode": "filter", "max_mito_quantile": None},
+        adata=a,
+        random_seed=1337,
+    )
+    valued = compute_input_fingerprint(
+        stage_name="qc",
+        stage_config={"mode": "filter", "max_mito_quantile": 0.98},
+        adata=a,
+        random_seed=1337,
+    )
+    assert valued != unset

@@ -24,12 +24,6 @@ from cellquorum.stages.qc.config import (
 )
 
 # Import QC decision public objects.
-from cellquorum.stages.qc.decisions import (
-    QCDecisionError,
-    QCDecisionResult,
-    build_qc_decisions,
-)
-
 # Import QC feature annotation public objects.
 from cellquorum.stages.qc.features import (
     CUSTOM_EXCLUDE_COLUMN,
@@ -41,6 +35,14 @@ from cellquorum.stages.qc.features import (
     annotate_qc_feature_masks,
     build_feature_masks,
     summarize_feature_masks,
+)
+
+# Import the floor path that replaced fixed-and-MAD thresholds.
+from cellquorum.stages.qc.floors import (
+    FloorResult,
+    QCFloorError,
+    apply_floors,
+    build_qc_report_table,
 )
 
 # Import QC metric calculation public objects.
@@ -57,13 +59,6 @@ from cellquorum.stages.qc.stage import (
 )
 
 # Import QC threshold public objects.
-from cellquorum.stages.qc.thresholds import (
-    QCThreshold,
-    QCThresholdError,
-    QCThresholdResult,
-    build_qc_thresholds,
-)
-
 # Import QC input validation public objects.
 from cellquorum.stages.qc.validation import (
     QCInputValidationError,
@@ -78,6 +73,10 @@ from cellquorum.stages.qc.validation import (
 )
 
 __all__ = [
+    "FloorResult",
+    "QCFloorError",
+    "apply_floors",
+    "build_qc_report_table",
     "CUSTOM_EXCLUDE_COLUMN",
     "HEMOGLOBIN_COLUMN",
     "MITO_COLUMN",
@@ -86,8 +85,6 @@ __all__ = [
     "QCArtifactManifest",
     "QCBasicThresholdConfig",
     "QCConfig",
-    "QCDecisionError",
-    "QCDecisionResult",
     "QCDoubletConfig",
     "QCDuplicateNameConfig",
     "QCFeatureAnnotationError",
@@ -102,14 +99,9 @@ __all__ = [
     "QCOutputConfig",
     "QCStage",
     "QCStageError",
-    "QCThreshold",
-    "QCThresholdError",
-    "QCThresholdResult",
     "RIBO_COLUMN",
     "annotate_qc_feature_masks",
     "build_feature_masks",
-    "build_qc_decisions",
-    "build_qc_thresholds",
     "calculate_qc_metrics",
     "get_qc_matrix",
     "require_obs_columns",

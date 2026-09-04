@@ -7,9 +7,9 @@ added in Task 6.
 
 from __future__ import annotations
 
+from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.gene_regulation.coexpression.config import CoexpressionConfig
 from cellquorum.stages.gene_regulation.coexpression.hdwgcna_method import HdwgcnaMethod
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 if not METHOD_REGISTRY.has("coexpression", "hdwgcna"):
     METHOD_REGISTRY.register(HdwgcnaMethod)

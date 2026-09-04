@@ -6,10 +6,10 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.stages.annotation.celltypist_method import CellTypistMethod
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.annotation.celltypist_method import CellTypistMethod
 
 
 def _counts_adata(n=120, g=40, seed=0):

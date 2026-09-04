@@ -12,10 +12,37 @@ project:
   species_id: 9606
 
 paths:
-  data_root: /mnt/e/CellQuorumData
-  run_root: /mnt/e/CellQuorumRuns
-  scratch_root: /mnt/e/CellQuorumScratch
+  # These defaults are deliberately portable: this file is the config the CLI loads
+  # when no --config is given, so it must work on a machine that is not the author's.
+  # It previously pointed at one machine's external drive, which meant a new user's
+  # first `cellquorum run` tried to write to a path that did not exist on their system.
+  #
+  # Every field here is optional. Relative paths resolve against the directory you run
+  # from, and `runs/` is gitignored, so the default writes to ./runs/<project.name>.
+  #
+  # To point at data elsewhere, either edit these values or keep the file generic and
+  # supply them from the environment — the loader resolves OmegaConf interpolations, so
+  # `${oc.env:VAR}` works, and `${oc.env:VAR,fallback}` supplies a default:
+  #
+  #   data_root: ${oc.env:CELLQUORUM_DATA_ROOT}
+  #   run_root: ${oc.env:CELLQUORUM_RUN_ROOT,runs}
+  #
+  # An unset variable with no fallback fails at config-load time with a message naming
+  # the variable and the key, which is the right moment to find out.
+
+  # Root directory holding input datasets. null means paths are given in full.
+  data_root: null
+
+  # Root under which each run gets its own <project.name> directory.
+  run_root: runs
+
+  # Scratch space for intermediates. null lets the system temp directory be used.
+  scratch_root: null
+
+  # Sample manifest (CSV). null for single-object runs that set input.h5ad instead.
   manifest: null
+
+  # Explicit output directory. null derives it from run_root and project.name.
   output_dir: null
 
 run:
@@ -28,7 +55,10 @@ compute:
   backend: auto
   prefer_gpu: true
   fallback_to_cpu: true
-  n_jobs: 1
+  # Workers for the parallel steps (scDblFinder, scVelo, GRNBoost2/AUCell).
+  # auto = derived from this machine's usable CPUs, capped at 8; an explicit
+  # int always wins, and 1 pins every one of them to serial.
+  n_jobs: auto
 
 r:
   enabled: true

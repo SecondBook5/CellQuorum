@@ -157,3 +157,73 @@ def test_velocity_to_cellrank_velocity_kernel_chain(tmp_path, monkeypatch):
     weights = cr_result.adata.uns["trajectory"]["cellrank"]["kernel"]["weights"]
     assert weights["velocity"] == pytest.approx(0.8)
     assert weights["connectivity"] == pytest.approx(0.2)
+
+
+def _single_lineage_adata(n: int = 300, g: int = 80) -> ad.AnnData:
+    """A connected 1-D continuum: one graded axis, so there is one endpoint.
+
+    The kNN graph must be CONNECTED. A reducible transition matrix makes the
+    iterative fate-probability solve fail its row-sum check before the driver
+    step is ever reached, which would make this test pass for the wrong reason.
+    """
+    rng = np.random.default_rng(0)
+    t = np.linspace(0.0, 1.0, n)
+    X = rng.poisson(1.5, size=(n, g)).astype("float32")
+    X[:, :20] += t[:, None] * 10  # ramps up along the continuum
+    X[:, 20:40] += (1 - t)[:, None] * 10  # and its mirror ramps down
+    a = ad.AnnData(X.astype("float32"))
+    a.var_names = [f"g{j}" for j in range(g)]
+    a.obs["leiden"] = pd.Categorical(pd.cut(t, 3, labels=["a", "b", "c"]).astype(str))
+    sc.pp.normalize_total(a)
+    sc.pp.log1p(a)
+    sc.pp.pca(a, n_comps=15)
+    sc.pp.neighbors(a, use_rep="X_pca", n_neighbors=20)
+    return a
+
+
+def test_single_terminal_state_still_yields_lineage_drivers():
+    """One terminal state must not silently cost the driver table.
+
+    Found on the real LEC arm: 8 macrostates collapsed to ``n_terminal: 1``, so
+    every cell's fate probability was 1.0. CellRank handles that by correlating
+    genes against the stationary distribution instead — but that path reads
+    ``eigendecomposition['stationary_dist']``, which the GPCCA Schur route never
+    populates, so drivers died with "No stationary distribution found in
+    `.eigendecomposition['stationary_dist']`" and the driver figure was skipped.
+
+    Verified this test fails without the fix, with that exact message.
+    """
+    import cellrank as cr
+    import scipy.sparse as sp
+
+    from cellquorum.stages.trajectory._cellrank import run_gpcca
+
+    a = _single_lineage_adata()
+    assert sp.csgraph.connected_components(a.obsp["connectivities"], directed=False)[0] == 1
+
+    kernel = cr.kernels.ConnectivityKernel(a).compute_transition_matrix()
+    res = run_gpcca(
+        a,
+        kernel,
+        cluster_key="leiden",
+        n_components=6,
+        n_states=4,
+        n_terminal_states=1,
+        terminal_method="top_n",
+        predict_initial_states=False,
+        n_initial_states=1,
+        seed=0,
+    )
+
+    # Guard the guard: this only tests the single-lineage path if there IS one.
+    assert len(res["fate_names"]) == 1, res["fate_names"]
+
+    assert res["drivers"] is not None, f"drivers not computed; warnings={res['warnings']}"
+    assert res["drivers"].shape[0] == a.n_vars
+
+    # And the warning names the real cause (one terminal state ⇒ uninformative
+    # fate probabilities), not the missing intermediate it used to name.
+    joined = " ".join(res["warnings"])
+    assert "only 1 terminal state" in joined
+    assert "convey no lineage information" in joined
+    assert "No stationary distribution found" not in joined

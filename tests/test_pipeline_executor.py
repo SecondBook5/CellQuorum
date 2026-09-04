@@ -322,6 +322,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "grn",
         "integration",
         "integration_benchmark",
+        "module_remodeling",
         "multicellular_programs",
         "perturbation",
         "population_identity",
@@ -580,3 +581,68 @@ def test_executor_can_continue_after_failure_when_configured(tmp_path: Path) -> 
     assert execution_result.failed_stage_names() == ["qc"]
     assert execution_result.skipped_stage_names() == ["preprocessing"]
     assert len(execution_result.stage_execution_records) == 2
+
+
+def test_until_stage_stops_the_run_even_when_that_stage_failed(tmp_path: Path) -> None:
+    """``--until-stage X`` must mean only X, whatever X's outcome.
+
+    With stop_on_failure disabled — which is how an unattended run is configured —
+    a failing target stage used to fall through to the next planned stage, so a
+    one-stage debug run silently executed the rest of the pipeline on an object
+    that never received the stage being debugged.
+    """
+
+    context = build_test_context(tmp_path)
+    registry = StageRegistry(stages={"qc": FailingStage()})
+    plan = make_plan(
+        make_enabled_stage("qc"),
+        make_enabled_stage("preprocessing"),
+    )
+
+    execution_result = PipelineExecutor(
+        registry=registry,
+        stop_on_failure=False,
+        until_stage="qc",
+    ).run(context=context, plan=plan)
+
+    assert execution_result.failed_stage_names() == ["qc"]
+    assert execution_result.skipped_stage_names() == []
+    assert len(execution_result.stage_execution_records) == 1
+
+
+def test_until_stage_stops_the_run_even_when_that_stage_was_skipped(tmp_path: Path) -> None:
+    """A skipped target stage is still the stage the caller asked to stop after."""
+
+    context = build_test_context(tmp_path)
+    plan = make_plan(
+        make_disabled_stage("qc"),
+        make_enabled_stage("preprocessing"),
+    )
+
+    execution_result = PipelineExecutor(until_stage="qc").run(context=context, plan=plan)
+
+    assert execution_result.skipped_stage_names() == ["qc"]
+    assert len(execution_result.stage_execution_records) == 1
+
+
+def test_a_failed_stage_record_carries_the_traceback(tmp_path: Path) -> None:
+    """The message alone does not say where; most stage failures are in a library call."""
+
+    context = build_test_context(tmp_path)
+    registry = StageRegistry(stages={"qc": FailingStage()})
+
+    execution_result = PipelineExecutor(registry=registry).run(
+        context=context,
+        plan=make_plan(make_enabled_stage("qc")),
+    )
+
+    record = execution_result.stage_execution_records[0]
+    assert record.status == "failed"
+    assert record.error is not None
+    assert record.error.traceback is not None
+    assert "Intentional executor test failure." in record.error.traceback
+    assert "FailingStage" in record.error.traceback or "test_pipeline_executor" in (
+        record.error.traceback
+    )
+    # And it survives the trip into provenance.
+    assert "traceback" in record.error.to_dict()

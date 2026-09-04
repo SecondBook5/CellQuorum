@@ -22,13 +22,63 @@ if TYPE_CHECKING:
 
 # Bump when the fingerprint construction changes so stale fingerprints from an
 # older CellQuorum version never compare equal to freshly-computed ones.
-FINGERPRINT_SCHEMA_VERSION = 1
+#
+# v2 stopped hashing config keys whose value is None (see ``_without_unset``).
+# Checkpoints written under v1 therefore cannot be compared against v2
+# fingerprints; the version is recorded in each checkpoint sidecar so a resume can
+# say *that* rather than blaming a setting nobody changed.
+FINGERPRINT_SCHEMA_VERSION = 2
 
 
 def _stable_json(payload: object) -> str:
     """Return a deterministic JSON string for hashing (sorted keys, no NaN)."""
 
     return json.dumps(payload, sort_keys=True, default=str, ensure_ascii=True)
+
+
+def _without_unset(value: object) -> object:
+    """Drop dict keys whose value is None, recursively.
+
+    Why a fingerprint must not see them
+    -----------------------------------
+    What gets hashed is the *resolved* config, and resolution fills in every field
+    a config model declares — including the ones nobody set, which arrive as None.
+    So adding one new optional setting to any model changes the resolved config of
+    every run that never mentions it, and every checkpoint on disk becomes stale on
+    upgrade. That happened: adding ``input.subset.require_agreement`` invalidated a
+    finished run's checkpoints, and the guard reported "a setting changed" for a
+    setting that did not exist when the checkpoint was written.
+
+    Collapsing None to absent is not a leniency. For a resolved config the two say
+    the same thing — this was not specified — so a fingerprint that distinguishes
+    them is reporting a difference that has no effect on any result. A value that
+    genuinely changes, including one explicitly cleared back to the default, still
+    changes the hash: ``{"max_mito": 10}`` and ``{}`` do not collide.
+
+    A sub-block left holding nothing goes too, for the same reason and one step out: a
+    whole new optional *block* resolves to a dict of Nones, not to a single None, so
+    pruning its fields is only half the job. ``{"subset": {"obs_key": None}}`` has to
+    reach the same hash as no subset block at all, because it says the same thing.
+
+    Notes:
+        None *elements* of a list are kept, and an empty list is kept. There, position
+        is meaning: dropping an element would shift every later one and silently equate
+        two different lists, and an empty list is a value the config actually stated
+        rather than something pruning produced.
+    """
+
+    if isinstance(value, dict):
+        pruned = {key: _without_unset(item) for key, item in value.items()}
+        # Typed emptiness, not truthiness: `if not item` would also drop 0, False and
+        # "" — settings that were deliberately chosen and change what a stage does.
+        return {
+            key: item
+            for key, item in pruned.items()
+            if item is not None and not (isinstance(item, dict) and len(item) == 0)
+        }
+    if isinstance(value, list | tuple):
+        return [_without_unset(item) for item in value]
+    return value
 
 
 def _hash_str(text: str) -> str:
@@ -89,7 +139,7 @@ def compute_input_fingerprint(
         "schema_version": FINGERPRINT_SCHEMA_VERSION,
         "stage_name": stage_name,
         "random_seed": random_seed,
-        "config": stage_config or {},
+        "config": _without_unset(stage_config or {}),
         "adata": _adata_signature(adata),
     }
     return _hash_str(_stable_json(payload))
@@ -150,8 +200,8 @@ def compute_upstream_fingerprint(
                 "through_order": through_order,
                 "random_seed": run_block.get("random_seed"),
                 "input": _input_signature(config.get("input")),
-                "stage_enablement": enablement,
-                "stage_config": {n: config.get(n) for n in upstream if n in config},
+                "stage_enablement": _without_unset(enablement),
+                "stage_config": _without_unset({n: config.get(n) for n in upstream if n in config}),
             }
         )
     )
@@ -174,7 +224,10 @@ def _input_signature(input_block: object) -> dict[str, object]:
             # rather than failing a fingerprint over a stat error.
             sizes[key] = None
 
-    return {"present": True, "spec": input_block, "sizes": sizes}
+    # The spec is pruned for the same reason every other config block is: the input
+    # block is a resolved model too, so a new optional field on it (a subset rule, a
+    # sample-sheet column) would otherwise invalidate every checkpoint ever written.
+    return {"present": True, "spec": _without_unset(input_block), "sizes": sizes}
 
 
 __all__ = [

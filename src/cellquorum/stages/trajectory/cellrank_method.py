@@ -12,7 +12,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory import _cellrank
-from cellquorum.stages.trajectory.save import write_cellrank_h5ad
+from cellquorum.stages.trajectory.save import record_write, write_cellrank_h5ad
 
 
 class CellRankMethod(AnalysisMethod):
@@ -31,6 +31,7 @@ class CellRankMethod(AnalysisMethod):
         cluster_key = config.get("cluster_key", "cell_type")
         seed = int(config.get("seed", 1337))
         notes: list[str] = []
+        warnings: list[str] = []
 
         if cluster_key not in adata.obs:
             return MethodSkip(
@@ -51,7 +52,7 @@ class CellRankMethod(AnalysisMethod):
             work = adata.copy()
 
         # Optionally load the whole-object velocity h5ad for a VelocityKernel.
-        velocity_adata = self._load_velocity_adata(config, context, work, notes)
+        velocity_adata = self._load_velocity_adata(config, context, work, warnings)
 
         # Build the kernel.
         try:
@@ -91,10 +92,15 @@ class CellRankMethod(AnalysisMethod):
 
         notes.extend(kernel_info.get("notes", []))
         notes.extend(res.get("notes", []))
+        # A kernel the config asked for and did not get, or a chain step that
+        # degraded, changes what the fate probabilities MEAN. Keep those out of the
+        # notes so they reach the run report.
+        warnings.extend(kernel_info.get("warnings", []))
+        warnings.extend(res.get("warnings", []))
 
         # Writeback onto the WORKING object aligned by obs_name.
         artifacts: list[StageArtifact] = []
-        self._writeback(adata, work, res, notes)
+        self._writeback(adata, work, res, warnings)
 
         uns = adata.uns.setdefault("trajectory", {}).setdefault("cellrank", {})
         uns.update(
@@ -116,9 +122,12 @@ class CellRankMethod(AnalysisMethod):
         try:
             results_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"could not create results dir: {exc}")
-        artifact, write_note = write_cellrank_h5ad(work, results_dir, subsampled=subsampled)
-        notes.append(write_note)
+            warnings.append(f"could not create results dir: {exc}")
+        artifact = record_write(
+            write_cellrank_h5ad(work, results_dir, subsampled=subsampled),
+            notes=notes,
+            warnings=warnings,
+        )
         if artifact is not None:
             artifacts.append(artifact)
 
@@ -137,12 +146,15 @@ class CellRankMethod(AnalysisMethod):
                 )
                 uns["estimator_pickle"] = pkl_path.name
             except Exception as exc:  # noqa: BLE001
-                notes.append(f"could not write GPCCA estimator pickle: {exc}")
+                # Without the pickle, trajectory-viz cannot draw CellRank's native
+                # macrostate/fate plots, so the visible cost is missing figures.
+                warnings.append(f"could not write GPCCA estimator pickle: {exc}")
 
         return StageResult(
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics={
                 "method": self.name,
                 "n_cells_used": int(work.n_obs),
@@ -159,13 +171,19 @@ class CellRankMethod(AnalysisMethod):
         )
 
     def _load_velocity_adata(
-        self, config: dict, context: object, work: ad.AnnData, notes: list[str]
+        self,
+        config: dict,
+        context: object,
+        work: ad.AnnData,
+        warnings: list[str],
     ) -> ad.AnnData | None:
         """Load the whole-object velocity h5ad and align it to ``work`` by obs.
 
-        Returns None (with a note) when ``use_velocity`` is off, the h5ad is
-        absent, it fails to load, or it cannot be aligned 1:1 to ``work``. Never
-        raises (skip-not-crash). Alignment to ``work.obs_names`` is required
+        Returns None when ``use_velocity`` is off, and None WITH A WARNING when it
+        is on but the h5ad is absent, unreadable, or cannot be aligned 1:1 to
+        ``work``: the run was configured for a velocity-informed transition matrix
+        and would compute a connectivity-only one instead. Never raises
+        (skip-not-crash). Alignment to ``work.obs_names`` is required
         because ``work`` may be a seeded subsample; build_kernel demands an exact
         obs match before it will construct the VelocityKernel.
         """
@@ -174,7 +192,7 @@ class CellRankMethod(AnalysisMethod):
 
         velo_path = Path(context.paths.results) / "trajectory" / "velocity" / "whole_object.h5ad"
         if not velo_path.exists():
-            notes.append(
+            warnings.append(
                 f"use_velocity set but {velo_path.name} not found; velocity kernel skipped"
             )
             return None
@@ -182,7 +200,7 @@ class CellRankMethod(AnalysisMethod):
         try:
             velo = ad.read_h5ad(velo_path)
         except Exception as exc:  # noqa: BLE001 — skip-not-crash
-            notes.append(f"could not read whole-object velocity h5ad: {exc}")
+            warnings.append(f"could not read whole-object velocity h5ad: {exc}")
             return None
 
         # Align to work's cells. If velocity covers a superset, subset+reorder;
@@ -193,13 +211,21 @@ class CellRankMethod(AnalysisMethod):
             try:
                 return velo[work.obs_names].copy()
             except Exception as exc:  # noqa: BLE001
-                notes.append(f"velocity h5ad subset/reorder failed: {exc}")
+                warnings.append(f"velocity h5ad subset/reorder failed: {exc}")
                 return None
-        notes.append("velocity h5ad does not cover all working cells; velocity kernel skipped")
+        warnings.append("velocity h5ad does not cover all working cells; velocity kernel skipped")
         return None
 
-    def _writeback(self, adata: ad.AnnData, work: ad.AnnData, res: dict, notes: list[str]) -> None:
-        """Align estimator outputs back onto the full working object by obs_name."""
+    def _writeback(
+        self, adata: ad.AnnData, work: ad.AnnData, res: dict, warnings: list[str]
+    ) -> None:
+        """Align estimator outputs back onto the full working object by obs_name.
+
+        Failures are warnings, not notes: the stage still returns success with a
+        full metrics block, but the object it hands on carries no macrostates, no
+        fate probabilities or no drivers, and every consumer of those — the fate
+        figures included — then silently has nothing to plot.
+        """
         try:
             # obs categorical/label columns.
             for src_key, dst_key in (
@@ -211,7 +237,7 @@ class CellRankMethod(AnalysisMethod):
                     ser = pd.Series(work.obs[src_key].values, index=work.obs_names)
                     adata.obs[dst_key] = ser.reindex(adata.obs_names)
         except Exception as exc:  # noqa: BLE001 — skip-not-crash
-            notes.append(f"obs writeback failed: {exc}")
+            warnings.append(f"obs writeback failed: {exc}")
 
         try:
             # Dense fate-probability matrix aligned to full obs (NaN outside sample).
@@ -224,7 +250,7 @@ class CellRankMethod(AnalysisMethod):
                 full[np.array(rows), :] = res["fate_prob"][np.array(src_rows), :]
                 adata.obsm["cellrank_fate_probabilities"] = full
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"obsm writeback failed: {exc}")
+            warnings.append(f"obsm writeback failed: {exc}")
 
         try:
             # Lineage drivers into varm (aligned by var_name; NaN for absent genes).
@@ -236,7 +262,7 @@ class CellRankMethod(AnalysisMethod):
                     "driver_columns"
                 ] = [str(c) for c in drivers.columns]
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"varm writeback failed: {exc}")
+            warnings.append(f"varm writeback failed: {exc}")
 
 
 __all__ = ["CellRankMethod"]

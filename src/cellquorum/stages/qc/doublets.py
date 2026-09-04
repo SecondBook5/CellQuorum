@@ -18,6 +18,7 @@ import pandas as pd
 import scipy.io as sio
 import scipy.sparse as sp
 
+from cellquorum.backends.script_paths import r_script_path
 from cellquorum.stages.qc.config import QCDoubletConfig
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Path to the bundled scDblFinder R script.
-_SCDBLFINDER_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "scdblfinder.R"
+_SCDBLFINDER_R = r_script_path("scdblfinder.R")
 
 
 def run_scrublet(
@@ -62,13 +63,19 @@ def run_scrublet(
         return np.full(adata.n_obs, np.nan, dtype=float), None
 
     # Use counts if present, else .X.
+    #
+    # Hand Scrublet the matrix in whatever form it already has. Its own signature
+    # takes "scipy sparse matrix or ndarray" and immediately converts to CSC, so
+    # densifying here only allocated a full n_cells x n_genes array for Scrublet to
+    # compress straight back — and on a large sample that allocation is the thing
+    # that fails, not the doublet detection.
     counts = adata.layers["counts"] if "counts" in adata.layers else adata.X
-    dense = counts.toarray() if sp.issparse(counts) else np.asarray(counts)
+    matrix = counts if sp.issparse(counts) else np.asarray(counts)
 
     # Run Scrublet and return scores + its own calls (suppress internal RuntimeWarning).
     import warnings
 
-    scrub = scr.Scrublet(dense, expected_doublet_rate=expected_rate, random_state=random_state)
+    scrub = scr.Scrublet(matrix, expected_doublet_rate=expected_rate, random_state=random_state)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=RuntimeWarning, module="scrublet")
         scores, predicted = scrub.scrub_doublets(verbose=False)
@@ -78,7 +85,12 @@ def run_scrublet(
 
 
 def run_scdblfinder(
-    adata: AnnData, backend: RscriptBackend | None, *, random_state: int
+    adata: AnnData,
+    backend: RscriptBackend | None,
+    *,
+    random_state: int,
+    sample_key: str | None = None,
+    n_jobs: int = 1,
 ) -> tuple[np.ndarray, np.ndarray | None]:
     """
     Return per-cell scDblFinder scores AND scDblFinder's own doublet class calls.
@@ -92,6 +104,16 @@ def run_scdblfinder(
         adata: AnnData with counts.
         backend: RscriptBackend (or None to skip).
         random_state: Seed passed to the R script.
+        sample_key: obs column naming each cell's capture. When given, it is
+            handed to scDblFinder's own ``samples=`` argument, which searches for
+            doublets independently within each capture — the same treatment as
+            calling this function once per sample, in one R session instead of
+            one per sample. See the note on wall time in ``scdblfinder.R``.
+        n_jobs: Workers R may use to score the captures concurrently. Only has an
+            effect alongside ``sample_key``, since the per-capture split is the
+            only thing there is to parallelize, and is capped at the number of
+            captures. The R side seeds the worker RNG streams, so the calls do not
+            depend on the core count.
 
     Returns:
         ``(scores, calls)`` where ``scores`` is the 1-D per-cell score array
@@ -112,7 +134,19 @@ def run_scdblfinder(
         mtx = tmp_path / "counts.mtx"
         out = tmp_path / "scores.csv"
         sio.mmwrite(str(mtx), mat)
-        result = backend.run_script(_SCDBLFINDER_R, [str(mtx), str(out), str(random_state)])
+        argv = [str(mtx), str(out), str(random_state)]
+        if sample_key is not None:
+            samples = tmp_path / "samples.csv"
+            # Written as strings: sample labels are often numeric-looking codes,
+            # and R would otherwise read "1" and "01" as the same capture.
+            labels = adata.obs[sample_key].astype(str).to_numpy()
+            pd.DataFrame({"sample": labels}).to_csv(samples, index=False)
+            argv.append(str(samples))
+            # Capped at the capture count: extra workers would sit idle holding a
+            # fork of the session.
+            threads = max(1, min(int(n_jobs), int(pd.unique(labels).size)))
+            argv.append(str(threads))
+        result = backend.run_script(_SCDBLFINDER_R, argv)
         if result.returncode != 0 or not out.is_file():
             # R failed — skip with NaN (caller records the note).
             return np.full(adata.n_obs, np.nan, dtype=float), None
@@ -148,12 +182,22 @@ def combine_consensus(calls: pd.DataFrame, rule: str) -> pd.Series:
     raise ValueError(f"Unknown consensus rule '{rule}'. Use any|all|majority.")
 
 
+#: Detectors that split by capture themselves, given the sample column. For these
+#: the stage hands the whole object over once instead of driving the split from
+#: Python -- same per-sample statistics, one process launch instead of one per
+#: sample. Anything not listed here gets the generic loop in
+#: ``_score_method_per_sample``.
+_NATIVE_PER_SAMPLE = frozenset({"scdblfinder"})
+
+
 def _score_method(
     adata: AnnData,
     method: str,
     backend: RscriptBackend | None,
     *,
     expected_rate: float,
+    sample_key: str | None = None,
+    n_jobs: int = 1,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     """Run one detector and return ``(scores, native_calls)`` (None if unknown method).
 
@@ -162,12 +206,19 @@ def _score_method(
     (1.0 doublet / 0.0 singlet) from its calibrated threshold, with NaN where the
     detector provides no native call — the caller then falls back to the score
     threshold for those cells.
+
+    ``sample_key`` and ``n_jobs`` are forwarded to detectors in
+    ``_NATIVE_PER_SAMPLE`` so they can do the per-capture split internally, and
+    parallelize it; they are ignored by the others, which the caller splits for
+    them one at a time.
     """
 
     if method == "scrublet":
         scores, native = run_scrublet(adata, expected_rate=expected_rate, random_state=0)
     elif method == "scdblfinder":
-        scores, native = run_scdblfinder(adata, backend, random_state=0)
+        scores, native = run_scdblfinder(
+            adata, backend, random_state=0, sample_key=sample_key, n_jobs=n_jobs
+        )
     else:
         return None
 
@@ -184,7 +235,7 @@ def _score_method_per_sample(
     backend: RscriptBackend | None,
     *,
     expected_rate: float,
-    sample_key: str,
+    sample_key: str | None,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Run a detector independently per sample and scatter results back to cell order.
 
@@ -199,7 +250,10 @@ def _score_method_per_sample(
     native = np.full(adata.n_obs, np.nan, dtype=float)
     positions = np.arange(adata.n_obs)
     sample_values = adata.obs[sample_key].to_numpy()
-    notes: list[str] = []
+    # Warnings, not notes: every message this loop can emit means a detector the
+    # config named produced no scores for some or all captures, and the consensus
+    # call is then built from fewer methods than the config asked for.
+    warnings: list[str] = []
 
     for sample in pd.unique(sample_values):
         mask = sample_values == sample
@@ -207,16 +261,16 @@ def _score_method_per_sample(
         sub = adata[mask]
         result = _score_method(sub, method, backend, expected_rate=expected_rate)
         if result is None:
-            notes.append(f"doublet method '{method}' is unknown (skipped)")
+            warnings.append(f"doublet method '{method}' is unknown (skipped)")
             continue
         sub_scores, sub_native = result
         if np.all(np.isnan(sub_scores)):
-            notes.append(f"doublet method '{method}' unavailable for sample '{sample}'")
+            warnings.append(f"doublet method '{method}' unavailable for sample '{sample}'")
             continue
         scores[positions[mask]] = sub_scores
         native[positions[mask]] = sub_native
 
-    return scores, native, notes
+    return scores, native, warnings
 
 
 def detect_doublets(
@@ -225,6 +279,7 @@ def detect_doublets(
     backend: RscriptBackend | None,
     *,
     sample_key: str | None = None,
+    n_jobs: int = 1,
 ) -> dict:
     """
     Run configured doublet detectors and write flags/scores to obs.
@@ -240,9 +295,16 @@ def detect_doublets(
         backend: RscriptBackend for scDblFinder (or None).
         sample_key: obs column identifying the sample/library for per-sample
             detection. None disables per-sample detection.
+        n_jobs: Worker count for detectors that split by capture themselves
+            (``_NATIVE_PER_SAMPLE``). The Python-side loop stays serial.
 
     Returns:
-        Metrics dict (methods run, predicted-doublet count, consensus rule).
+        Metrics dict (methods run, predicted-doublet count, consensus rule), plus
+        a ``notes`` list and a ``warnings`` list. The caller is expected to lift
+        both onto its StageResult: left in the metrics dict they reach provenance
+        JSON only, and the one message here that most needs a reader — a detector
+        that scored cells and flagged zero doublets — would never appear in the
+        run report at all.
     """
 
     # Resolve which detectors to run (prefer the list; fall back to single method).
@@ -257,21 +319,43 @@ def detect_doublets(
     call_cols: dict[str, pd.Series] = {}
     methods_run: list[str] = []
     used_native: dict[str, bool] = {}
+    # Two channels, deliberately. A note records HOW a detector ran; a warning
+    # records a detector the config asked for whose scores are missing or whose
+    # calls are suspect. The QC stage lifts the second into StageResult.warnings,
+    # which the run report prints and counts — the first it does not.
     notes: list[str] = []
+    warnings: list[str] = []
     for method in methods:
-        if per_sample:
-            scores, native, sample_notes = _score_method_per_sample(
+        if per_sample and method not in _NATIVE_PER_SAMPLE:
+            scores, native, sample_warnings = _score_method_per_sample(
                 adata,
                 method,
                 backend,
                 expected_rate=config.expected_doublet_rate,
                 sample_key=sample_key,
             )
-            notes.extend(sample_notes)
+            warnings.extend(sample_warnings)
         else:
             result = _score_method(
-                adata, method, backend, expected_rate=config.expected_doublet_rate
+                adata,
+                method,
+                backend,
+                expected_rate=config.expected_doublet_rate,
+                # None when pooled, so the detector sees one capture -- which is
+                # what "pooled" means -- and the same call site serves both modes.
+                sample_key=sample_key if per_sample else None,
+                n_jobs=n_jobs,
             )
+            if per_sample and method in _NATIVE_PER_SAMPLE:
+                # Provenance, not a warning: "per_sample" is true of both the
+                # Python-side loop and this path, and a reader comparing two runs
+                # across the change should be able to tell which one produced the
+                # numbers. Agreement between the two on the LEC arm was r=0.978
+                # per cell and r=0.998 on per-capture mean scores.
+                notes.append(
+                    f"doublet method '{method}' split by capture itself "
+                    f"({sample_key}), in one process"
+                )
             # Unknown method name: skip.
             if result is None:
                 continue
@@ -281,7 +365,7 @@ def detect_doublets(
         # A method that scored no cells (all-NaN) was unavailable; skip it.
         scored_mask = ~np.isnan(scores)
         if not scored_mask.any():
-            notes.append(f"doublet method '{method}' unavailable (skipped)")
+            warnings.append(f"doublet method '{method}' unavailable (skipped)")
             continue
 
         # Build the per-cell call: use the detector's OWN call where it gave one
@@ -307,7 +391,7 @@ def detect_doublets(
                 f"score threshold: {threshold}). Check the detector/threshold."
             )
             logger.warning(msg)
-            notes.append(msg)
+            warnings.append(msg)
 
         call_cols[method] = pd.Series(calls, index=adata.obs_names)
         methods_run.append(method)
@@ -334,6 +418,7 @@ def detect_doublets(
         "used_native_calls": used_native,
         "n_predicted_doublets": int(np.nansum(adata.obs["predicted_doublet"].to_numpy())),
         "notes": notes,
+        "warnings": warnings,
     }
 
 

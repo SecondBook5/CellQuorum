@@ -1,4 +1,4 @@
-# Pipeline step (order=210): differential_expression — test differential expression via the configured DE method.
+# Pipeline step (order=210): differential_expression — test expression shifts (DE methods).
 """Differential-expression stage: dispatches to the configured DE method."""
 
 from __future__ import annotations

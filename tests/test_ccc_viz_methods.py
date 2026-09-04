@@ -30,8 +30,8 @@ def _write_canonical(results_dir, name="mnn_canonical_lr.csv"):
 
 
 def test_dotplot_method_skips_without_input(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import DotplotVizMethod
     from cellquorum.methods.base import MethodSkip
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import DotplotVizMethod
 
     adata, ctx = _ctx(tmp_path)
     out = DotplotVizMethod().run(adata, {}, ctx)
@@ -39,8 +39,8 @@ def test_dotplot_method_skips_without_input(tmp_path):
 
 
 def test_dotplot_method_renders(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import DotplotVizMethod
     from cellquorum.core.stage import StageResult
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import DotplotVizMethod
 
     adata, ctx = _ctx(tmp_path)
     _write_canonical(ctx.paths.results)
@@ -50,8 +50,8 @@ def test_dotplot_method_renders(tmp_path):
 
 
 def test_chord_method_renders(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import ChordVizMethod
     from cellquorum.core.stage import StageResult
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import ChordVizMethod
 
     adata, ctx = _ctx(tmp_path)
     _write_canonical(ctx.paths.results)
@@ -100,8 +100,8 @@ def _write_topology(results_dir):
 
 
 def test_sankey_method_renders(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SankeyVizMethod
     from cellquorum.core.stage import StageResult
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SankeyVizMethod
 
     adata, ctx = _ctx(tmp_path)
     _write_canonical(ctx.paths.results)
@@ -111,16 +111,16 @@ def test_sankey_method_renders(tmp_path):
 
 
 def test_network_method_skips_without_curvature(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import NetworkVizMethod
     from cellquorum.methods.base import MethodSkip
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import NetworkVizMethod
 
     adata, ctx = _ctx(tmp_path)
     assert isinstance(NetworkVizMethod().run(adata, {}, ctx), MethodSkip)
 
 
 def test_network_method_renders(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import NetworkVizMethod
     from cellquorum.core.stage import StageResult
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import NetworkVizMethod
 
     adata, ctx = _ctx(tmp_path)
     _write_curvature(ctx.paths.results)
@@ -130,8 +130,8 @@ def test_network_method_renders(tmp_path):
 
 
 def test_summary_method_renders_with_topology(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SummaryVizMethod
     from cellquorum.core.stage import StageResult
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SummaryVizMethod
 
     adata, ctx = _ctx(tmp_path)
     _write_canonical(ctx.paths.results)
@@ -142,16 +142,16 @@ def test_summary_method_renders_with_topology(tmp_path):
 
 
 def test_summary_method_skips_when_nothing(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SummaryVizMethod
     from cellquorum.methods.base import MethodSkip
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SummaryVizMethod
 
     adata, ctx = _ctx(tmp_path)
     assert isinstance(SummaryVizMethod().run(adata, {}, ctx), MethodSkip)
 
 
 def test_summary_method_honors_sources_filter(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SummaryVizMethod
     from cellquorum.methods.base import MethodSkip
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import SummaryVizMethod
 
     adata, ctx = _ctx(tmp_path)
     _write_canonical(ctx.paths.results, name="mnn_canonical_lr.csv")
@@ -163,8 +163,8 @@ def test_summary_method_honors_sources_filter(tmp_path):
 
 
 def test_network_method_honors_levels_filter(tmp_path):
-    from cellquorum.stages.cell_cell_communication.viz._viz_methods import NetworkVizMethod
     from cellquorum.methods.base import MethodSkip
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import NetworkVizMethod
 
     adata, ctx = _ctx(tmp_path)
     _write_curvature(ctx.paths.results)  # writes only cci curvature

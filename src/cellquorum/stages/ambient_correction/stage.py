@@ -1,4 +1,4 @@
-# Pipeline step (order=10): ambient_correction — SoupX ambient-RNA correction per library, run before QC.
+# Pipeline step (order=10): ambient_correction — SoupX ambient-RNA correction per library.
 """Ambient-correction stage: run SoupX per library before QC.
 
 Unlike downstream stages, this does NOT consume context.adata — it operates on
@@ -16,15 +16,15 @@ from pathlib import Path
 
 import anndata as ad
 
+from cellquorum.core.contracts import CellQuorumContractError
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.stages.ambient_correction.soupx import (
     corrected_output_exists,
     import_corrected_matrix,
     read_rho_sidecar,
     run_soupx_library,
 )
-from cellquorum.core.contracts import CellQuorumContractError
-from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.core.stage_catalog import register_stage
 
 
 @register_stage(
@@ -162,6 +162,14 @@ class AmbientCorrectionStage:
                     description="Per-library SoupX contamination fractions (rho).",
                 )
             )
+            # And the figure. rho is the one number that says whether the
+            # correction mattered and which library is an outlier; leaving it in a
+            # CSV means nobody looks at it.
+            figure_note = _write_contamination_figure(
+                context, fractions, corrected_adata, artifacts, ac
+            )
+            if figure_note:
+                notes.append(figure_note)
 
         # Output guard (fail-loud): if we corrected at least one library, the
         # returned object MUST be the concatenated corrected AnnData carrying the
@@ -260,6 +268,77 @@ def _resolve_output_base(context: object, output_dir: str) -> Path:
     out = base / output_dir
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def _write_contamination_figure(
+    context: object,
+    fractions: dict[str, float],
+    adata: ad.AnnData,
+    artifacts: list[StageArtifact],
+    config: dict | object,
+) -> str | None:
+    """Render the per-library rho figure; append its artifacts. Never raises.
+
+    Cosmetic relative to the correction itself, so any failure here is a note —
+    it must not fail a stage that has already corrected the counts successfully.
+    """
+    try:
+        from cellquorum.visualization import ambient as ambient_viz
+        from cellquorum.visualization.figstyle import (
+            LE_RED,
+            NORMAL_BLUE,
+            save_figure,
+        )
+
+        # Colour by condition when the object knows it: contamination tracking the
+        # ARM rather than the library is a batch problem, not a biology one, and
+        # that is only visible if the arms are coloured.
+        condition_of: dict[str, str] = {}
+        obs = getattr(adata, "obs", None)
+        if obs is not None and {"sample_id", "condition"}.issubset(obs.columns):
+            condition_of = (
+                obs.drop_duplicates("sample_id")
+                .set_index("sample_id")["condition"]
+                .astype(str)
+                .to_dict()
+            )
+        levels = sorted(set(condition_of.values()))
+        condition_colors = {levels[0]: NORMAL_BLUE, levels[1]: LE_RED} if len(levels) == 2 else None
+
+        ambient_viz.apply_theme()
+        figure = ambient_viz.contamination_figure(
+            fractions,
+            condition_of=condition_of or None,
+            condition_colors=condition_colors,
+            title="Ambient RNA correction per library (SoupX)",
+        )
+        if figure is None:
+            return None
+
+        figures_dir = Path(getattr(getattr(context, "paths", None), "figures", "."))
+        out_dir = figures_dir / "ambient_correction"
+        formats = tuple(_config_get(config, "figure_formats", ["pdf", "png"]))
+        dpi = int(_config_get(config, "dpi", 300))
+        paths = save_figure(figure, out_dir, "ambient_contamination", formats=formats, dpi=dpi)
+        artifacts.extend(
+            StageArtifact(
+                name="ambient_contamination",
+                path=path,
+                kind="figure",
+                description="Per-library ambient RNA fraction removed (SoupX rho).",
+            )
+            for path in paths
+        )
+        return f"wrote ambient contamination figure for {len(fractions)} libraries"
+    except Exception as exc:  # noqa: BLE001 — cosmetic; never fail a good correction
+        return f"ambient contamination figure skipped: {str(exc)[:160]}"
+
+
+def _config_get(config: dict | object, key: str, default: object) -> object:
+    """Read a key from either a dict-like or attribute-style config."""
+    if isinstance(config, dict):
+        return config.get(key, default)
+    return getattr(config, key, default)
 
 
 def _write_fraction_csv(path: Path, fractions: dict[str, float]) -> None:

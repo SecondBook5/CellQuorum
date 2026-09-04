@@ -24,7 +24,11 @@ class GrnConfig(StrictBaseModel):
         motifs_path: Path to the cisTarget motif annotation table (motifs-*.tbl).
         rankings_glob: cisTarget ranking DB(s): a file, a space-joined list, or a
             glob (*.genes_vs_motifs.rankings.feather).
-        num_workers: Worker processes for GRNBoost2 / cisTarget / AUCell.
+        num_workers: Worker processes for GRNBoost2 / cisTarget / AUCell. ``None``
+            inherits ``compute.n_jobs``, which is the point: GRNBoost2 is the
+            longest single step in the engine, and a hard-coded default meant a
+            run configured for 2 workers still spawned 8 dask workers — each
+            holding its own partition of the expression matrix.
         max_cells: Deterministic downsample cap before loom export.
         min_cells_total: Minimum total cells required to attempt inference.
         top_n: Top-RSS regulons per group selected for figures.
@@ -58,8 +62,8 @@ class GrnConfig(StrictBaseModel):
     # cisTarget ranking DB(s): file, space-joined list, or glob.
     rankings_glob: str | None = None
 
-    # Worker processes for GRNBoost2 / cisTarget / AUCell.
-    num_workers: int = 8
+    # Worker processes for GRNBoost2 / cisTarget / AUCell; None inherits compute.n_jobs.
+    num_workers: int | None = None
 
     # Deterministic downsample cap before loom export.
     max_cells: int = 20000

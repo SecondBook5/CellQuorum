@@ -114,6 +114,8 @@ def build_test_config(
     *,
     h5ad_path: Path | None = None,
     counts_layer: str | None = None,
+    subset: dict[str, object] | None = None,
+    exclude: dict[str, object] | None = None,
 ) -> CellQuorumConfig:
     """
     Build a deterministic CellQuorum config for input-loading tests.
@@ -121,6 +123,8 @@ def build_test_config(
     Args:
         h5ad_path: Optional AnnData h5ad path.
         counts_layer: Optional raw-counts layer name.
+        subset: Optional ``input.subset`` block (inclusion rule).
+        exclude: Optional ``input.exclude`` block (exclusion rule).
 
     Returns:
         Validated CellQuorumConfig.
@@ -136,6 +140,12 @@ def build_test_config(
     # Store the counts layer when provided.
     if counts_layer is not None:
         input_block["counts_layer"] = counts_layer
+
+    # Store the row-selection rules when provided.
+    if subset is not None:
+        input_block["subset"] = subset
+    if exclude is not None:
+        input_block["exclude"] = exclude
 
     # Return a deterministic config.
     return CellQuorumConfig(
@@ -199,6 +209,104 @@ def test_load_input_adata_from_config_loads_h5ad(tmp_path: Path) -> None:
 
     # Confirm the counts layer round-tripped.
     assert "counts" in loaded.layers
+
+
+def write_clustered_h5ad(tmp_path: Path, *, filename: str = "clustered.h5ad") -> Path:
+    """
+    Write an h5ad carrying a lineage label and a clustering, one cluster artifactual.
+
+    Args:
+        tmp_path: Temporary directory.
+        filename: h5ad filename.
+
+    Returns:
+        Path to the written h5ad file.
+    """
+
+    matrix = np.arange(15, dtype=float).reshape(5, 3)
+    obs = pd.DataFrame(
+        {
+            "cell_type": ["LEC", "LEC", "LEC", "Fibroblasts", "Fibroblasts"],
+            "leiden": ["3", "3", "22", "7", "22"],
+        },
+        index=["cell_1", "cell_2", "cell_3", "cell_4", "cell_5"],
+    )
+    var = pd.DataFrame(index=["gene_1", "gene_2", "gene_3"])
+    path = tmp_path / filename
+    ad.AnnData(X=matrix, obs=obs, var=var).write_h5ad(path)
+    return path
+
+
+def test_load_input_adata_from_config_applies_exclusion_alone(tmp_path: Path) -> None:
+    """
+    Verify input.exclude is applied on a config with no input.subset.
+
+    An exclusion-only run is the normal case for a whole-atlas analysis that has
+    to drop an audited artifact cluster: there is no lineage to subset to, only a
+    cluster to leave out. Ignoring the rule whenever subset is absent would run
+    the analysis on the debris while the config said otherwise.
+    """
+
+    h5ad_path = write_clustered_h5ad(tmp_path)
+    config = build_test_config(
+        h5ad_path=h5ad_path,
+        exclude={"column": "leiden", "values": ["22"]},
+    )
+
+    loaded = load_input_adata_from_config(config)
+
+    assert loaded is not None
+    assert list(loaded.obs_names) == ["cell_1", "cell_2", "cell_4"]
+    prov = loaded.uns["cellquorum_input_subset"]
+    assert prov["column"] is None
+    assert prov["exclude_column"] == "leiden"
+    assert prov["n_excluded"] == 2
+
+
+def test_load_input_adata_from_config_applies_subset_and_exclusion(tmp_path: Path) -> None:
+    """
+    Verify both row rules reach the loader from one config.
+
+    A per-lineage run on a clustered atlas needs both: the artifact cluster
+    contains cells labelled with the lineage being analysed, so the subset alone
+    still admits them.
+    """
+
+    h5ad_path = write_clustered_h5ad(tmp_path)
+    config = build_test_config(
+        h5ad_path=h5ad_path,
+        subset={"column": "cell_type", "values": ["LEC"]},
+        exclude={"column": "leiden", "values": ["22"]},
+    )
+
+    loaded = load_input_adata_from_config(config)
+
+    assert loaded is not None
+    assert list(loaded.obs_names) == ["cell_1", "cell_2"]
+    prov = loaded.uns["cellquorum_input_subset"]
+    assert prov["n_selected"] == 3
+    assert prov["n_excluded"] == 1
+    assert prov["n_after"] == 2
+
+
+def test_load_input_adata_from_config_rejects_stale_cluster_ids(tmp_path: Path) -> None:
+    """
+    Verify a debris mask naming clusters this object lacks fails at load time.
+
+    Leiden ids belong to one clustering run, not to the cells. A mask carried from
+    an earlier partition names clusters this object does not have, so it removes
+    nothing while the config reads as though the artifact was handled. Failing at
+    load is the only place that mistake is still cheap.
+    """
+
+    h5ad_path = write_clustered_h5ad(tmp_path)
+    config = build_test_config(
+        h5ad_path=h5ad_path,
+        exclude={"column": "leiden", "values": ["18", "22"]},
+    )
+
+    with pytest.raises(AnnDataLoadError, match="are not values of"):
+        load_input_adata_from_config(config)
 
 
 def test_load_input_adata_from_config_rejects_wrong_config_type() -> None:
@@ -292,6 +400,72 @@ def test_build_pipeline_context_loads_input_when_requested(tmp_path: Path) -> No
     assert context.metadata["input_h5ad"] == str(h5ad_path)
     assert context.metadata["input_counts_layer"] == "counts"
     assert context.metadata["input_loaded"] is True
+
+
+def test_build_pipeline_context_records_the_analysed_matrix_size(tmp_path: Path) -> None:
+    """The run's own JSON provenance must state how many cells it analysed.
+
+    ``input_subset`` is None whenever no filter applied, so without an
+    unconditional size record the cell count of an unfiltered run exists nowhere in
+    the run directory except inside the final ``.h5ad`` -- which a run that produces
+    a table rather than an object has no reason to write. Every figure caption
+    downstream needs that number, and the alternative is each plotting script
+    carrying its own hardcoded copy that goes stale the next time QC changes.
+    """
+
+    h5ad_path = write_test_h5ad(tmp_path)
+    config = build_test_config(h5ad_path=h5ad_path, counts_layer="counts")
+
+    context = build_pipeline_context(
+        config,
+        output_dir=tmp_path / "run_sizes",
+        backend_registry=build_test_backend_registry(),
+        load_input=True,
+    )
+
+    # No subset or exclusion was declared, so the filter record is empty ...
+    assert context.metadata["input_subset"] is None
+    # ... and the size is recorded anyway.
+    assert context.metadata["input_n_obs"] == 2
+    assert context.metadata["input_n_vars"] == 3
+
+
+def test_build_pipeline_context_size_reflects_the_exclusion(tmp_path: Path) -> None:
+    """The recorded size is post-filter: what was analysed, not what was on disk."""
+
+    h5ad_path = write_clustered_h5ad(tmp_path)
+    config = build_test_config(
+        h5ad_path=h5ad_path,
+        counts_layer="counts",
+        exclude={"column": "leiden", "values": ["22"]},
+    )
+
+    context = build_pipeline_context(
+        config,
+        output_dir=tmp_path / "run_sizes_excluded",
+        backend_registry=build_test_backend_registry(),
+        load_input=True,
+    )
+
+    # 5 cells on disk, 2 of them in the excluded cluster.
+    assert context.metadata["input_n_obs"] == 3
+    assert context.metadata["input_subset"]["n_excluded"] == 2
+
+
+def test_build_pipeline_context_records_no_size_when_nothing_was_loaded(tmp_path: Path) -> None:
+    """A no-input run must record None, not 0 -- 0 cells is a different claim."""
+
+    config = build_test_config()
+
+    context = build_pipeline_context(
+        config,
+        output_dir=tmp_path / "run_no_input_sizes",
+        backend_registry=build_test_backend_registry(),
+        load_input=True,
+    )
+
+    assert context.metadata["input_n_obs"] is None
+    assert context.metadata["input_n_vars"] is None
 
 
 def test_build_pipeline_context_load_input_true_without_h5ad_keeps_adata_none(

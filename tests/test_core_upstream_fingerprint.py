@@ -117,6 +117,85 @@ def test_cosmetic_run_settings_do_not_change_the_fingerprint():
 
 
 # --------------------------------------------------------------------------- #
+# unset settings: the upgrade path
+# --------------------------------------------------------------------------- #
+#
+# What is hashed is the RESOLVED config, and resolution emits every field a model
+# declares — so adding one optional setting adds a None to every run that never
+# mentions it. If that changed the fingerprint, every checkpoint on disk would go
+# stale on upgrade and the guard would report a setting change nobody made. It did:
+# adding `input.subset.require_agreement` invalidated a finished run's checkpoints.
+
+
+def test_a_newly_added_optional_stage_setting_does_not_invalidate_a_checkpoint():
+    before = _config()
+    after = _config(qc={"mode": "filter", "min_genes": 200, "max_mito_quantile": None})
+    assert _fp(after) == _fp(before)
+
+
+def test_a_newly_added_optional_input_field_does_not_invalidate_a_checkpoint():
+    # The exact shape of the real regression: a nested optional block resolving to
+    # None inside the input spec.
+    before = _config()
+    after = _config(input={"h5ad": "/nonexistent/input.h5ad", "subset": None})
+    assert _fp(after) == _fp(before)
+
+    nested = _config(
+        input={
+            "h5ad": "/nonexistent/input.h5ad",
+            "subset": {"obs_key": None, "require_agreement": None},
+        }
+    )
+    assert _fp(nested) == _fp(before)
+
+
+def test_setting_that_optional_field_to_a_value_does_change_the_fingerprint():
+    # Ignoring None must not become ignoring the setting. Once it holds a value it
+    # shaped the run, and a checkpoint written without it is genuinely stale.
+    before = _config()
+    after = _config(qc={"mode": "filter", "min_genes": 200, "max_mito_quantile": 0.98})
+    assert _fp(after) != _fp(before)
+
+
+def test_clearing_a_setting_back_to_its_default_still_changes_the_fingerprint():
+    # None collapses to absent, and absent is not the same as the old value: going
+    # from min_genes 200 to unset changed what QC did.
+    assert _fp(_config(qc={"mode": "filter", "min_genes": None})) != _fp(_config())
+
+
+def test_an_unset_enablement_flag_is_the_same_as_not_listing_the_stage():
+    before = _config(stages={"qc": True, "preprocessing": True})
+    after = _config(stages={"ambient_correction": None, "qc": True, "preprocessing": True})
+    assert _fp(after) == _fp(before)
+
+
+def test_a_falsy_setting_is_not_treated_as_unset():
+    # The rule is None, not falsiness. `min_genes: 0`, `enabled: false` and `""` are
+    # all deliberate choices that change what a stage does, and a checkpoint written
+    # under a different one of them IS stale.
+    assert _fp(_config(qc={"mode": "filter", "min_genes": 0})) != _fp(
+        _config(qc={"mode": "filter"})
+    )
+    assert _fp(_config(ambient_correction={"enabled": False})) != _fp(
+        _config(ambient_correction={})
+    )
+    assert _fp(_config(qc={"mode": ""})) != _fp(_config(qc={}))
+
+
+def test_a_stage_block_that_specifies_nothing_matches_having_no_block():
+    # Enablement is hashed separately, so an empty config block adds no information.
+    assert _fp(_config(qc={})) == _fp({k: v for k, v in _config().items() if k != "qc"})
+
+
+def test_a_none_inside_a_list_is_kept_because_position_is_meaning():
+    # Dropping it would shift every later element and silently equate two different
+    # lists — e.g. per-batch overrides given positionally.
+    with_hole = _config(qc={"mode": "filter", "per_batch": [1, None, 3]})
+    compacted = _config(qc={"mode": "filter", "per_batch": [1, 3]})
+    assert _fp(with_hole) != _fp(compacted)
+
+
+# --------------------------------------------------------------------------- #
 # scoping and errors
 # --------------------------------------------------------------------------- #
 

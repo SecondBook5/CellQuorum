@@ -9,10 +9,15 @@ project:
   species_id: 9606
 
 paths:
-  output_dir: /home/ajbook/projects/cellquorum/runs/le_smoke
+  # Repo-relative: resolves against the directory you run from, and runs/ is gitignored.
+  output_dir: runs/le_smoke
 
 input:
-  h5ad: /tmp/le_smoke/cohort_small.h5ad
+  # The subsampled cohort this smoke test runs on. The default is a scratch location
+  # any machine can write to; override it if you keep the fixture elsewhere:
+  #
+  #   export CELLQUORUM_SMOKE_H5AD=/path/to/cohort_small.h5ad
+  h5ad: ${oc.env:CELLQUORUM_SMOKE_H5AD,/tmp/le_smoke/cohort_small.h5ad}
   counts_layer: counts
 
 run:

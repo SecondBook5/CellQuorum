@@ -6,10 +6,10 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
-from cellquorum.stages.clustering.stage import ClusteringStage
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.methods.registry import MethodRegistry
+from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
+from cellquorum.stages.clustering.stage import ClusteringStage
 
 
 def _adata_with_pca(n_cells=200, n_pcs=10, seed=0):

@@ -55,8 +55,7 @@ def resolve_factorization_runs(
     """
     if tf_optimization not in ("robust", "regular", "auto"):
         raise CellQuorumConfigError(
-            "tf_optimization must be 'robust', 'regular', or 'auto'; "
-            f"got {tf_optimization!r}"
+            "tf_optimization must be 'robust', 'regular', or 'auto'; " f"got {tf_optimization!r}"
         )
 
     base_runs = _REGULAR_RUNS if tf_optimization == "regular" else _ROBUST_RUNS

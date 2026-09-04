@@ -19,6 +19,7 @@ from cellquorum.stages.comparative.differential_abundance.aggregation import (
     build_cell_distribution_summary,
     build_composition_proportions,
 )
+from cellquorum.stats.claim_support import annotate_fdr_reachability, group_resolution
 
 
 class ProportionTTestMethod(AnalysisMethod):
@@ -177,11 +178,22 @@ class ProportionTTestMethod(AnalysisMethod):
                 case_mean_pct = 100 * case_props.mean()
                 effect_pp = case_mean_pct - control_mean_pct
 
+                # How many donors moved in the EFFECT's own direction. At single-digit n a
+                # cohort mean can be produced by two donors, so this is evidence the p-value
+                # does not carry — and the direction has to be the effect's, not "increased":
+                # a "0/9" beside a strong depletion reads as no support for it. A donor whose
+                # delta is exactly zero corroborates nothing and is counted against.
+                delta = case_props - control_props
+                n_donors_concordant = int((np.sign(delta) == np.sign(delta.mean())).sum())
+
                 results.append(
                     {
                         "cell_type": ct,
-                        "n_case": len(paired_donors),
-                        "n_control": len(paired_donors),
+                        # The donors this ROW was tested on, which is not always the paired
+                        # set: a donor missing an arm for this cell type is dropped above.
+                        "n_case": len(pivot),
+                        "n_control": len(pivot),
+                        "n_donors_concordant": n_donors_concordant,
                         "control_mean_pct": control_mean_pct,
                         "case_mean_pct": case_mean_pct,
                         "effect_pp": effect_pp,
@@ -204,10 +216,31 @@ class ProportionTTestMethod(AnalysisMethod):
                 fdr_values[finite_mask] = multipletests(pvalues[finite_mask], method=fdr_method)[1]
             results_df["fdr"] = fdr_values
 
+            # The design floor beside the FDR. A paired arcsine t is parametric and so is NOT
+            # bounded by the floor -- that is what the distributional assumption buys -- but a
+            # reader comparing this table against a distribution-free one needs the scale, and
+            # a null FDR from a family that could not have produced a lone significant row is
+            # uninformative rather than negative.
+            results_df = annotate_fdr_reachability(
+                results_df,
+                donors=[*sorted(paired_donors), *sorted(paired_donors)],
+                is_case=[False] * len(paired_donors) + [True] * len(paired_donors),
+                p_col="pvalue",
+                alpha=float(config.get("fdr", 0.05)),
+            )
+
             # Count significant results (fdr < 0.05, ignoring NaN)
             n_significant = int((results_df["fdr"] < 0.05).sum())
 
             # Return result
+            resolution_artifacts = self._resolution_artifacts(
+                cc,
+                condition_col=condition_col,
+                case=case,
+                control=control,
+                config=config,
+                writer=writer,
+            )
             summary_artifacts = self._distribution_summary_artifacts(
                 cc.counts,
                 cc.sample_meta[condition_col],
@@ -237,17 +270,28 @@ class ProportionTTestMethod(AnalysisMethod):
                         description=f"Proportion t-test DA (paired, {case} vs {control}).",
                         index=False,
                     ),
+                    *resolution_artifacts,
                     *summary_artifacts,
                     *composition_artifacts,
                 ],
-                notes=[f"Proportion t-test DA (paired): {case} vs {control}."],
+                notes=[f"Proportion t-test DA (paired): {case} vs {control}.", *cc.notes],
                 metrics={
                     "case": case,
                     "control": control,
                     "paired": True,
                     "n_celltypes": len(cell_types),
+                    "n_unlabeled_cells": cc.n_unlabeled,
                     "n_donors_paired": len(paired_donors),
                     "n_significant": n_significant,
+                    "design_floor_p": float(results_df["design_floor_p"].iloc[0])
+                    if len(results_df)
+                    else float("nan"),
+                    "family_min_concordant": int(results_df["family_min_concordant"].iloc[0])
+                    if len(results_df)
+                    else 0,
+                    "family_floor_reachable": bool(results_df["family_floor_reachable"].iloc[0])
+                    if len(results_df)
+                    else False,
                     "seed": seed,
                     "n_bootstrap": n_bootstrap,
                 },
@@ -318,10 +362,32 @@ class ProportionTTestMethod(AnalysisMethod):
                 fdr_values[finite_mask] = multipletests(pvalues[finite_mask], method=fdr_method)[1]
             results_df["fdr"] = fdr_values
 
+            # Same floor, computed from the unpaired design: with no donor spanning both
+            # arms the randomization set is C(n, n_case) rather than 2**k, which is far
+            # larger, so the floor is correspondingly lower. Reported for the same reason.
+            results_df = annotate_fdr_reachability(
+                results_df,
+                donors=[
+                    *(f"case:{i}" for i in range(len(case_samples))),
+                    *(f"control:{i}" for i in range(len(control_samples))),
+                ],
+                is_case=[True] * len(case_samples) + [False] * len(control_samples),
+                p_col="pvalue",
+                alpha=float(config.get("fdr", 0.05)),
+            )
+
             # Count significant results
             n_significant = int((results_df["fdr"] < 0.05).sum())
 
             # Return result
+            resolution_artifacts = self._resolution_artifacts(
+                cc,
+                condition_col=condition_col,
+                case=case,
+                control=control,
+                config=config,
+                writer=writer,
+            )
             summary_artifacts = self._distribution_summary_artifacts(
                 cc.counts,
                 cc.sample_meta[condition_col],
@@ -351,23 +417,78 @@ class ProportionTTestMethod(AnalysisMethod):
                         description=f"Proportion t-test DA (unpaired, {case} vs {control}).",
                         index=False,
                     ),
+                    *resolution_artifacts,
                     *summary_artifacts,
                     *composition_artifacts,
                 ],
-                notes=[f"Proportion t-test DA (unpaired): {case} vs {control}."],
+                notes=[f"Proportion t-test DA (unpaired): {case} vs {control}.", *cc.notes],
                 metrics={
                     "case": case,
                     "control": control,
                     "paired": False,
                     "n_celltypes": len(cell_types),
+                    "n_unlabeled_cells": cc.n_unlabeled,
                     "n_case": len(case_samples),
                     "n_control": len(control_samples),
                     "n_significant": n_significant,
+                    "design_floor_p": float(results_df["design_floor_p"].iloc[0])
+                    if len(results_df)
+                    else float("nan"),
+                    "family_min_concordant": int(results_df["family_min_concordant"].iloc[0])
+                    if len(results_df)
+                    else 0,
+                    "family_floor_reachable": bool(results_df["family_floor_reachable"].iloc[0])
+                    if len(results_df)
+                    else False,
                     "seed": seed,
                     "n_bootstrap": n_bootstrap,
                 },
                 backend="python",
             )
+
+    def _resolution_artifacts(
+        self,
+        cc: object,
+        *,
+        condition_col: str,
+        case: str,
+        control: str,
+        config: dict,
+        writer: StageArtifactWriter,
+    ) -> list:
+        """Emit the per-cell-type resolution table (gated, default on).
+
+        Every row of the DA table gets equal visual weight, and a fold-change axis then
+        hands the top of the ranking to whichever cell type is rarest. This says how many
+        cells per sample each row's ratio was computed from, so a figure can mark the rows
+        below the floor rather than either ranking them as if they were comparable or
+        silently dropping them.
+        """
+
+        if not config.get("write_group_resolution", True):
+            return []
+
+        resolution = group_resolution(
+            cc.counts,
+            cc.sample_meta[condition_col],
+            case=case,
+            control=control,
+            min_cells_per_sample=int(config.get("min_cells_per_sample", 10)),
+        )
+        if resolution.empty:
+            return []
+        return [
+            writer.table(
+                resolution,
+                "da_group_resolution.csv",
+                name="da_group_resolution",
+                description=(
+                    "Per-cell-type per-sample cell counts and whether the ratio is rankable "
+                    f"({case} vs {control}); the resolution floor behind every fold-change."
+                ),
+                index=False,
+            )
+        ]
 
     def _distribution_summary_artifacts(
         self,

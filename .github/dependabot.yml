@@ -1,0 +1,47 @@
+# Dependabot keeps the pinned dev toolchain and the CI actions current.
+#
+# Scope note: this watches the DEV toolchain and GitHub Actions, not the runtime
+# scientific stack. Runtime dependencies in pyproject.toml are declared as lower
+# bounds on purpose (a library must co-exist with whatever a user already has), so
+# there is nothing for Dependabot to bump there. The conda environment recipes in
+# envs/ are solved by conda-lock via `make lock`, which Dependabot cannot drive.
+version: 2
+
+updates:
+  # The pinned dev tools (ruff, mypy, pytest, mkdocs) in the [dev] extra.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # One PR for the lint/format/type toolchain. A ruff bump often reformats many
+      # files; keeping it grouped and separate from test tooling makes the churn
+      # reviewable in isolation.
+      lint-and-types:
+        patterns:
+          - ruff
+          - mypy
+          - types-*
+          - pre-commit
+      # One PR for test tooling.
+      test-tooling:
+        patterns:
+          - pytest
+          - pytest-*
+      # One PR for the docs site.
+      docs:
+        patterns:
+          - mkdocs*
+          - mkdocstrings*
+
+  # GitHub Actions used by the CI and release workflows. Pinned action versions go
+  # stale silently and are a supply-chain surface, so these get watched too.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"

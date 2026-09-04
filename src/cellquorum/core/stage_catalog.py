@@ -18,12 +18,87 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 
 from cellquorum.core.stage import PipelineStage
 
 
 class StageCatalogError(RuntimeError):
     """Raised on duplicate stage name or duplicate stage order registration."""
+
+
+@dataclass(frozen=True)
+class CellScope(StrEnum):
+    """Whose cells a stage may use for a given permission.
+
+    Exists because of a specific failure: QC wrote one boolean verdict and three places in
+    the whole codebase read it, two of them figure code. Nothing in the engine prevented a
+    stage from calling ``model.fit(adata)`` on every cell, so a careful verdict controlled
+    nothing. Declaring scope at registration makes that choice visible and testable instead
+    of implicit.
+    """
+
+    #: Only cells QC deemed eligible to define the biological reference.
+    CORE = "core"
+
+    #: Every cell. Legitimate for a per-cell independent transform, but it must be stated
+    #: with a reason rather than reached by default.
+    ALL = "all"
+
+    #: The stage fits nothing across cells.
+    NONE = "none"
+
+
+@dataclass(frozen=True)
+class CellScopePolicy:
+    """A stage's declaration of whose cells it may fit, transform, and infer from.
+
+    ## What a declaration obliges a stage to do
+
+    The scope is declared per *stage*, but a stage dispatches to several *methods*, and their
+    algorithms differ in what they can promise. So ``fit_scope=CORE`` means:
+
+    1. Estimate the cohort quantity on :func:`cellquorum.stages.qc.eligibility.fitting_cells`.
+    2. Apply it to every cell, so nobody is silently dropped.
+    3. If the method has no out-of-sample transform and (2) is impossible, fit on everything
+       and **say so in the stage's notes**.
+
+    Point 3 is not a loophole; it is the only honest option for a method whose output cannot
+    be applied to held-out cells. Harmony is the live example: it returns corrected
+    coordinates rather than a reusable correction, so it discloses that it fitted on all
+    cells, while scVI and scANVI train on core and encode everyone through the trained
+    encoder. The same split appears inside the PCA stage, where the standard path fits on core
+    and projects and the scclr implicit-centered path discloses that it cannot.
+
+    An undisclosed inability is the failure this whole contract exists to prevent: a
+    declaration that reads as compliant while nothing enforces it is exactly the QC verdict
+    that three places read, one level up.
+
+    Args:
+        fit_scope: Cells allowed to determine parameters or cohort statistics. This covers
+            more than models: normalization targets, gene prevalence filters, HVG
+            dispersions, scaling means, PCA loadings, neighbour graphs, cluster centroids.
+        transform_scope: Cells allowed to receive the stage's output.
+        inference_scope: Cells allowed to contribute to a scientific conclusion.
+        reason: Required when ``fit_scope`` is ``ALL`` — the justification for fitting on
+            questionable cells, so the choice is auditable.
+
+    Raises:
+        ValueError: If ``fit_scope`` is ``ALL`` without a reason.
+    """
+
+    fit_scope: CellScope
+    transform_scope: CellScope = CellScope.ALL
+    inference_scope: CellScope = CellScope.CORE
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.fit_scope is CellScope.ALL and not self.reason:
+            raise ValueError(
+                "fit_scope=ALL requires a reason. Fitting on every cell lets questionable "
+                "cells define the biological reference, so it must be justified explicitly "
+                "rather than chosen by default."
+            )
 
 
 @dataclass(frozen=True)
@@ -44,6 +119,10 @@ class StageSpec:
             ``stage_category``; ``None`` for stages that do not declare one.
         factory: Zero-argument callable returning a ``PipelineStage`` (the
             decorated class); ``None`` for planned-only stages.
+        cell_scope: Declaration of whose cells the stage may fit, transform, and infer
+            from. ``None`` means undeclared, which
+            ``tests/test_stage_cell_scope.py`` rejects for any stage that fits a model
+            across cells.
     """
 
     name: str
@@ -52,6 +131,7 @@ class StageSpec:
     config_field: str | None
     category: str | None
     factory: Callable[[], PipelineStage] | None
+    cell_scope: CellScopePolicy | None = None
 
     @property
     def is_implemented(self) -> bool:
@@ -106,6 +186,7 @@ def register_stage(
     config_flag: str,
     config_field: str,
     category: str | None = None,
+    cell_scope: CellScopePolicy | None = None,
     catalog: StageCatalog | None = None,
 ) -> Callable[[type], type]:
     """Class decorator: register an implemented stage into the catalog.
@@ -127,6 +208,7 @@ def register_stage(
                 config_field=config_field,
                 category=category,
                 factory=cls,
+                cell_scope=cell_scope,
             )
         )
         return cls

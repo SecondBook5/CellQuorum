@@ -11,10 +11,12 @@ from pathlib import Path
 import pandas as pd
 
 from cellquorum.backends.pyscenic_backend import PYSCENIC_AUCELL_PY, PYSCENIC_GRN_PY
+from cellquorum.core.context import resolve_n_jobs
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.stages.gene_regulation.grn import regulon_figures as rf
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.gene_regulation.grn import regulon_figures as rf
+from cellquorum.visualization.figstyle import render_figure
 
 
 class PyscenicMethod(AnalysisMethod):
@@ -45,7 +47,10 @@ class PyscenicMethod(AnalysisMethod):
         # 1. Resolve config
         layer = config.get("layer", "counts")
         group_by_cfg = config.get("group_by")
-        num_workers = int(config.get("num_workers", 8))
+        # Unset inherits compute.n_jobs (see GrnConfig.num_workers): this count
+        # goes to a dask LocalCluster inside the pySCENIC env, so asking for more
+        # workers than the run was configured for costs memory, not just cores.
+        num_workers = resolve_n_jobs(context, config.get("num_workers"))
         max_cells = int(config.get("max_cells", 20000))
         min_cells_total = int(config.get("min_cells_total", 200))
         top_n = int(config.get("top_n", 5))
@@ -111,12 +116,17 @@ class PyscenicMethod(AnalysisMethod):
         scratch = Path(getattr(context.paths, "scratch", "."))
         scratch.mkdir(parents=True, exist_ok=True)
         h5ad = scratch / "grn_input.h5ad"
+        # Through the shared writer: this hands the working object to another
+        # process, so a column h5py cannot encode would fail the stage here rather
+        # than in pySCENIC. See cellquorum.core.h5ad_io.
+        from cellquorum.core.h5ad_io import write_h5ad
+
         if layer and layer != "X" and layer in adata.layers:
             a2 = adata.copy()
             a2.X = a2.layers[layer]
-            a2.write_h5ad(h5ad)
+            write_h5ad(a2, h5ad)
         else:
-            adata.write_h5ad(h5ad)
+            write_h5ad(adata, h5ad)
 
         out_dir = Path(getattr(context.paths, "results", ".")) / "grn"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -180,7 +190,7 @@ class PyscenicMethod(AnalysisMethod):
             "--num-workers",
             str(num_workers),
         ]
-        notes: list[str] = []
+        warnings: list[str] = []
         auc = None
         try:
             aproc = backend.run_script(PYSCENIC_AUCELL_PY, aucell_args, timeout=timeout_seconds)
@@ -189,7 +199,10 @@ class PyscenicMethod(AnalysisMethod):
                 if auc.empty:
                     auc = None
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-            notes.append(f"AUCell skipped: {str(exc)[:200]}")
+            # A warning, not a note: without AUC there are no regulon activities,
+            # so every figure below is skipped too and the stage's real output is
+            # the regulon table alone.
+            warnings.append(f"AUCell skipped: {str(exc)[:200]}")
 
         # 7. Figures (in cellquorum env) when AUC available
         figs: list[Path] = []
@@ -204,25 +217,33 @@ class PyscenicMethod(AnalysisMethod):
                     (rf.plot_rss_panels, {"group_label": group_by, "top_n": top_n}),
                     (rf.plot_regulon_clustermap, {"group_label": group_by, "top_n": top_n}),
                 ):
-                    try:
-                        figs.extend(fn(auc, groups, out_dir, **kwargs))
-                    except Exception as exc:
-                        notes.append(f"{fn.__name__} failed: {str(exc)[:150]}")
-                try:
-                    ann = groups.to_frame(group_by)
-                    figs.extend(rf.plot_regulon_cell_clustermap(auc, ann, out_dir, top_n=top_n))
-                except Exception as exc:
-                    notes.append(f"cell clustermap failed: {str(exc)[:150]}")
+                    # Bound as defaults: the lambda outlives this iteration, and
+                    # closing over the loop variables would draw the last pair twice.
+                    render_figure(
+                        fn.__name__,
+                        lambda fn=fn, kwargs=kwargs: fn(auc, groups, out_dir, **kwargs),
+                        figures=figs,
+                        warnings=warnings,
+                    )
+                render_figure(
+                    "cell clustermap",
+                    lambda: rf.plot_regulon_cell_clustermap(
+                        auc, groups.to_frame(group_by), out_dir, top_n=top_n
+                    ),
+                    figures=figs,
+                    warnings=warnings,
+                )
             if "X_umap" in adata.obsm and len(common) > 0:
-                try:
+
+                def _regulon_umap() -> list[Path]:
                     umap = pd.DataFrame(
                         adata.obsm["X_umap"][:, :2],
                         index=adata.obs_names,
                         columns=["UMAP1", "UMAP2"],
                     )
-                    figs.extend(rf.plot_regulon_umap(auc, umap, out_dir, groups=groups, top_n=12))
-                except Exception as exc:
-                    notes.append(f"regulon-UMAP failed: {str(exc)[:150]}")
+                    return rf.plot_regulon_umap(auc, umap, out_dir, groups=groups, top_n=12)
+
+                render_figure("regulon-UMAP", _regulon_umap, figures=figs, warnings=warnings)
 
         # 8. Artifacts
         artifacts: list[StageArtifact] = [
@@ -274,7 +295,7 @@ class PyscenicMethod(AnalysisMethod):
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=notes,
+            warnings=warnings,
             metrics=metrics,
             backend="pyscenic",
         )

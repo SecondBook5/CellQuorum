@@ -161,6 +161,32 @@ def test_aucell_writes_obsm_matrix(tmp_path):
     assert list(df.columns) == ["cell_type", "program", "mean_auc"]
 
 
+def test_aucell_records_the_genes_each_program_was_actually_scored_on(tmp_path):
+    """The manifest's list is a request; ``uns`` has to record what was granted.
+
+    Two downstream questions need it. Whether two program scores are independent
+    readouts or the same genes read twice is a property of the gene lists, and every
+    stage after this one sees only the score matrix — so the correlation table cannot
+    disclose a shared-gene count without this. And a module that lost half its genes
+    to the detection filter is not the module the manifest names, which is invisible
+    from the AUC alone.
+    """
+    pytest.importorskip("decoupler")
+    a = _adata()
+    # prog_a asks for two genes that are not in var_names; prog_b is fully present.
+    cfg = _config(programs={"prog_a": [*PROG_A, "GHOST1", "GHOST2"], "prog_b": PROG_B})
+    out = AucellMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
+    assert not isinstance(out, MethodSkip)
+
+    genes = a.uns["state_aucell"]["genes"]
+    # Requested-and-present, not requested: a name recorded here that was never
+    # scored would let a downstream overlap check describe genes nothing read.
+    assert genes["prog_a"] == PROG_A
+    assert genes["prog_b"] == PROG_B
+    # Keyed on the surviving score columns, so the lists and the matrix agree.
+    assert set(genes) == set(a.uns["state_aucell"]["programs"])
+
+
 def test_aucell_skips_when_decoupler_absent(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "decoupler", None)
     a = _adata()

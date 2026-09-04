@@ -40,16 +40,42 @@ def export_sce_inputs(adata: ad.AnnData, obs_cols: list[str], scratch: Path) -> 
     return {"counts": counts, "genes": genes, "barcodes": barcodes, "obs": obs}
 
 
-def de_to_geneset(de_df: pd.DataFrame, fdr: float, top_n: int) -> tuple[list[str], list[str]]:
+def de_to_geneset(
+    de_df: pd.DataFrame, fdr: float, top_n: int, direction: str = "up"
+) -> tuple[list[str], list[str]]:
     """Build (receiver geneset, background) from a pseudobulk DE table.
 
-    Background = all tested genes (sorted, deduped). Geneset = genes passing
-    FDR < ``fdr``, capped to top-``top_n`` by absolute logFC. Returned sorted
-    for deterministic downstream ordering.
+    Background = all tested genes (sorted, deduped). Geneset = genes passing FDR < ``fdr``
+    in the requested ``direction``, capped to top-``top_n`` by absolute logFC. Returned
+    sorted for deterministic downstream ordering.
+
+    ``direction`` defaults to ``"up"`` because NicheNet's ligand-target matrix holds
+    *positive* regulatory potential: it scores how well a ligand's predicted targets explain
+    the gene set. A set that mixes induced and repressed genes asks the model a question it
+    cannot answer, and the resulting AUPR is not interpretable in either direction. ``"both"``
+    remains available for callers whose model is direction-agnostic.
+
+    Parameters
+    ----------
+    de_df
+        Table with ``gene``, ``logFC`` and ``FDR`` columns.
+    fdr
+        Significance threshold, applied to ``FDR``.
+    top_n
+        Cap on the geneset size, taken by ``|logFC|``.
+    direction
+        ``"up"``, ``"down"`` or ``"both"``.
     """
+    if direction not in {"up", "down", "both"}:
+        raise ValueError(f"direction must be 'up', 'down' or 'both', got {direction!r}")
+
     background = sorted(pd.unique(de_df["gene"].astype(str)).tolist())
 
     sig = de_df[de_df["FDR"] < fdr].copy()
+    if direction == "up":
+        sig = sig[sig["logFC"] > 0]
+    elif direction == "down":
+        sig = sig[sig["logFC"] < 0]
     if sig.empty:
         return [], background
 
@@ -92,6 +118,74 @@ def mnn_prioritization_to_canonical(df: pd.DataFrame) -> pd.DataFrame:
             "condition": sub["group"].astype(str).to_numpy(),
         }
     )
+    return out[CANONICAL_COLUMNS].reset_index(drop=True)
+
+
+def attribute_senders(
+    canonical: pd.DataFrame,
+    expression: pd.DataFrame,
+    *,
+    sender_label: str,
+    min_fraction: float | None = None,
+) -> pd.DataFrame:
+    """Replace a pooled sender label with one row per sender that expresses the ligand.
+
+    A multi-sender NicheNet run ranks ligands once against the union of what all senders
+    express, so the ranking has no single source. Writing the joined label ("Fibro, Mac, T")
+    into a ``source`` column would be a value no downstream consumer can detect as a group,
+    and ``ccc_network`` would draw it as a cell type that does not exist. Attribution is an
+    expression question, answered here from the per-sender expression table.
+
+    Rows whose ``source`` is not ``sender_label`` pass through untouched. Ligands no sender
+    expresses are dropped: a network edge needs a source, and there is none. Callers that care
+    how many were dropped should compare lengths.
+
+    Parameters
+    ----------
+    canonical
+        Canonical LR table, as returned by :func:`ligand_activity_to_canonical`.
+    expression
+        Per-sender expression table with ``sender``, ``ligand`` and either ``expressed`` or
+        ``fraction_expressing``.
+    sender_label
+        The pooled label to expand.
+    min_fraction
+        Threshold on ``fraction_expressing``, used when ``expressed`` is absent.
+    """
+    if canonical is None or canonical.empty:
+        return _empty_canonical()
+    if expression is None or not {"sender", "ligand"}.issubset(expression.columns):
+        return canonical.reset_index(drop=True)
+
+    expressing = expression
+    if "expressed" in expression.columns:
+        flag = expression["expressed"]
+        # R writes booleans as the strings "TRUE"/"FALSE", and bool("FALSE") is True.
+        if flag.dtype == object:
+            flag = flag.astype(str).str.upper().isin({"TRUE", "T", "1"})
+        expressing = expression[flag.astype(bool)]
+    elif min_fraction is not None and "fraction_expressing" in expression.columns:
+        expressing = expression[expression["fraction_expressing"].astype(float) >= min_fraction]
+
+    per_ligand: dict[str, list[str]] = {}
+    for ligand, sender in zip(
+        expressing["ligand"].astype(str), expressing["sender"].astype(str), strict=False
+    ):
+        per_ligand.setdefault(ligand, []).append(sender)
+
+    pooled = canonical["source"].astype(str) == str(sender_label)
+    kept = [canonical.loc[~pooled]]
+    for _, row in canonical.loc[pooled].iterrows():
+        senders = per_ligand.get(str(row["ligand"]), [])
+        if not senders:
+            continue
+        block = pd.DataFrame([row] * len(senders)).reset_index(drop=True)
+        block["source"] = senders
+        kept.append(block)
+
+    out = pd.concat(kept, ignore_index=True) if kept else _empty_canonical()
+    if out.empty:
+        return _empty_canonical()
     return out[CANONICAL_COLUMNS].reset_index(drop=True)
 
 

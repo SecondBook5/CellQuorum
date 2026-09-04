@@ -12,7 +12,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory import _pseudotime
-from cellquorum.stages.trajectory.save import write_pseudotime_h5ad
+from cellquorum.stages.trajectory.save import record_write, write_pseudotime_h5ad
 
 
 class PalantirMethod(AnalysisMethod):
@@ -28,6 +28,7 @@ class PalantirMethod(AnalysisMethod):
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         seed = int(config.get("seed", 1337))
         notes: list[str] = []
+        warnings: list[str] = []
 
         rep = _pseudotime.resolve_rep(
             adata, config.get("use_rep"), config.get("use_rep_fallback", ["X_pca"])
@@ -84,7 +85,7 @@ class PalantirMethod(AnalysisMethod):
             return MethodSkip(reason=str(exc), details={"method": self.name, "notes": notes})
         notes.extend(res.get("notes", []))
 
-        self._writeback(adata, work, res, notes)
+        self._writeback(adata, work, res, warnings)
 
         uns = adata.uns.setdefault("trajectory", {}).setdefault("palantir", {})
         uns.update(
@@ -103,11 +104,12 @@ class PalantirMethod(AnalysisMethod):
         try:
             results_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"could not create results dir: {exc}")
-        artifact, write_note = write_pseudotime_h5ad(
-            work, results_dir, "palantir", subset=subsampled
+            warnings.append(f"could not create results dir: {exc}")
+        artifact = record_write(
+            write_pseudotime_h5ad(work, results_dir, "palantir", subset=subsampled),
+            notes=notes,
+            warnings=warnings,
         )
-        notes.append(write_note)
         if artifact is not None:
             artifacts.append(artifact)
 
@@ -115,6 +117,7 @@ class PalantirMethod(AnalysisMethod):
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics={
                 "method": self.name,
                 "root_index": int(iroot),
@@ -127,15 +130,22 @@ class PalantirMethod(AnalysisMethod):
             backend="python",
         )
 
-    def _writeback(self, adata: ad.AnnData, work: ad.AnnData, res: dict, notes: list[str]) -> None:
-        """Align palantir pseudotime/entropy/fate-probs back by obs_name (NaN outside)."""
+    def _writeback(
+        self, adata: ad.AnnData, work: ad.AnnData, res: dict, warnings: list[str]
+    ) -> None:
+        """Align palantir pseudotime/entropy/fate-probs back by obs_name (NaN outside).
+
+        Failures are warnings, not notes: the stage still returns success with a
+        full metrics block, but the object it hands on carries none of these
+        columns, so every consumer downstream behaves as if the method never ran.
+        """
         try:
             pt_ser = pd.Series(np.asarray(res["pseudotime"]), index=list(res["pseudotime"].index))
             adata.obs["palantir_pseudotime"] = pt_ser.reindex(adata.obs_names)
             ent_ser = pd.Series(np.asarray(res["entropy"]), index=list(res["entropy"].index))
             adata.obs["palantir_entropy"] = ent_ser.reindex(adata.obs_names)
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"palantir obs writeback failed: {exc}")
+            warnings.append(f"palantir obs writeback failed: {exc}")
 
         try:
             if res["fate_prob"] is not None and res["fate_names"]:
@@ -147,7 +157,7 @@ class PalantirMethod(AnalysisMethod):
                 full[np.array(rows), :] = np.asarray(res["fate_prob"])[np.array(src_rows), :]
                 adata.obsm["palantir_fate_probabilities"] = full
         except Exception as exc:  # noqa: BLE001
-            notes.append(f"palantir obsm writeback failed: {exc}")
+            warnings.append(f"palantir obsm writeback failed: {exc}")
 
 
 __all__ = ["PalantirMethod"]

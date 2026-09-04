@@ -2,8 +2,8 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from cellquorum.stages.integration.embeddings.stage import EmbeddingsStage
 from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.stages.integration.embeddings.stage import EmbeddingsStage
 
 
 def test_all_methods_registered():

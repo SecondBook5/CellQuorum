@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.gene_regulation.coexpression.hdwgcna_method import HdwgcnaMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.gene_regulation.coexpression.hdwgcna_method import HdwgcnaMethod
 
 
 def _adata(n: int = 200) -> ad.AnnData:

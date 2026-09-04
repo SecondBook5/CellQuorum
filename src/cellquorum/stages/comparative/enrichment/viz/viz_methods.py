@@ -8,6 +8,9 @@ from pathlib import Path
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.contracts import DataContract
+from cellquorum.core.stage import StageResult
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.viz import plots
 from cellquorum.stages.comparative.enrichment.viz.io import (
     apply_theme,
@@ -15,9 +18,6 @@ from cellquorum.stages.comparative.enrichment.viz.io import (
     figure_artifacts,
     save_figure,
 )
-from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageResult
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.visualization.figstyle import get_group_palette
 
 # Cap on how many running-ES per-source curves to render per collection.

@@ -12,6 +12,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.labels import as_label_strings
+
 
 @dataclass(frozen=True)
 class CelltypeCounts:
@@ -22,10 +24,17 @@ class CelltypeCounts:
             Index is the sample identifier (donor_condition).
         sample_meta: Per-sample metadata aligned to counts.index, containing
             donor_col, condition_col, and any extra_obs columns.
+        n_unlabeled: Cells excluded because one of the grouping columns was
+            missing for them. Zero on a fully labelled object.
+        notes: Human-readable account of any exclusion, for the calling method to
+            put in its stage notes. Authored here so all three count-based DA
+            methods report the same thing in the same words.
     """
 
     counts: pd.DataFrame
     sample_meta: pd.DataFrame
+    n_unlabeled: int = 0
+    notes: tuple[str, ...] = ()
 
 
 def aggregate_celltype_counts(
@@ -58,20 +67,69 @@ def aggregate_celltype_counts(
     Notes:
         Sample identifier is constructed as f"{donor}_{condition}".
         Both .counts and .sample_meta share the same sample index for alignment.
+
+        Cells with a missing value in any grouping column are excluded, and the
+        exclusion is reported rather than absorbed. See the inline note for why a
+        missing label must not become a cell type.
     """
 
     # Confirm required obs columns exist.
-    for column in (donor_col, condition_col, cell_type_col, *extra_obs):
+    group_cols = (donor_col, condition_col, cell_type_col, *extra_obs)
+    for column in group_cols:
         if column not in adata.obs.columns:
             raise KeyError(f"obs column '{column}' not found for cell-type count aggregation.")
 
-    # Build the sample key per cell as donor_condition.
-    donor = adata.obs[donor_col].astype(str)
-    condition = adata.obs[condition_col].astype(str)
-    sample_key = donor.to_numpy() + "_" + condition.to_numpy()
+    # Drop cells with a missing grouping value BEFORE anything is counted.
+    #
+    # ``.astype(str)`` renders a missing label as the literal string "nan", and
+    # ``crosstab`` then reports that as a cell type. Cell-state columns routinely
+    # carry missing values by design: subclustering leaves NaN for every cell
+    # outside the analysed focus -- outside the focus labels, below the per-sample
+    # cell floor, or failed by the donor gate -- so a within-lineage abundance test
+    # on a subcluster column would acquire a pseudo-type made entirely of
+    # technically-excluded cells. That pseudo-type competes for the compositional
+    # reference, gets its own effect row, and sits in the denominator of every
+    # other type's proportion. Its size is a property of the FILTER rather than of
+    # the biology, and filters are rarely balanced across arms, so leaving it in
+    # tests the exclusion rule as though it were a cell state.
+    obs = adata.obs
+    labeled = obs[list(group_cols)].notna().all(axis=1).to_numpy()
+    n_unlabeled = int(labeled.size - labeled.sum())
+    notes: tuple[str, ...] = ()
+    if n_unlabeled:
+        per_column = ", ".join(
+            f"{column} ({int(obs[column].isna().sum())})"
+            for column in dict.fromkeys(group_cols)
+            if int(obs[column].isna().sum())
+        )
+        notes = (
+            f"Excluded {n_unlabeled} of {labeled.size} cells "
+            f"({n_unlabeled / labeled.size:.1%}) from the abundance counts for a missing "
+            f"grouping value: {per_column}. A missing label is an absence of measurement, "
+            f"not a cell type; counting it as one would put the exclusion rule itself into "
+            f"the composition being tested.",
+        )
+        obs = obs.loc[labeled]
 
-    # Get cell types as strings.
-    cell_types = adata.obs[cell_type_col].astype(str)
+    # Build the sample key per cell as donor_condition. Canonical label strings,
+    # not ``astype(str)``: see :mod:`cellquorum.core.labels` for what "1.0" costs.
+    donor = as_label_strings(obs[donor_col])
+    condition = as_label_strings(obs[condition_col])
+    sample_key = donor.to_numpy().astype(str) + "_" + condition.to_numpy().astype(str)
+
+    # Get cell types as canonical label strings.
+    cell_types = as_label_strings(obs[cell_type_col])
+
+    # Nothing survived the label check. Return the empty shape with the note
+    # attached: crosstab has no group keys to work with, and a caller that skips
+    # still needs to be able to say why.
+    if obs.shape[0] == 0:
+        return CelltypeCounts(
+            counts=pd.DataFrame(),
+            sample_meta=pd.DataFrame(columns=[donor_col, condition_col, *extra_obs]),
+            n_unlabeled=n_unlabeled,
+            notes=notes,
+        )
 
     # Stable ordered list of unique samples.
     samples = pd.Index(pd.unique(sample_key))
@@ -89,13 +147,23 @@ def aggregate_celltype_counts(
     counts_df = counts_df.reindex(samples, fill_value=0).astype(np.int64)
     counts_df.index.name = None
 
-    # Assemble aligned per-sample metadata (first value per group).
-    meta_source = adata.obs.assign(_sample=sample_key)
+    # Assemble aligned per-sample metadata (first value per group). Donor and
+    # condition carry their canonical form so the metadata agrees with the sample
+    # key built from them -- a method that matches sample_meta[condition_col]
+    # against the config's `case` string cannot do it against a float. extra_obs is
+    # deliberately left as-is: those are covariates, and a numeric covariate has to
+    # stay numeric for the model that consumes it.
+    meta_source = obs.assign(_sample=sample_key, **{donor_col: donor, condition_col: condition})
     meta_cols = [donor_col, condition_col, *extra_obs]
     sample_meta = meta_source.groupby("_sample")[meta_cols].first().reindex(samples)
     sample_meta.index.name = None
 
-    return CelltypeCounts(counts=counts_df, sample_meta=sample_meta)
+    return CelltypeCounts(
+        counts=counts_df,
+        sample_meta=sample_meta,
+        n_unlabeled=n_unlabeled,
+        notes=notes,
+    )
 
 
 def build_cell_distribution_summary(

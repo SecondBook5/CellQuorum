@@ -14,6 +14,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.integration._fit_population import resolve_training_set
 
 
 class ScVIMethod(AnalysisMethod):
@@ -83,10 +84,24 @@ class ScVIMethod(AnalysisMethod):
         scvi.settings.seed = random_state
         work = adata.copy()
         work.X = work.layers["counts"]
-        scvi.model.SCVI.setup_anndata(work, batch_key=batch_key)
-        model = scvi.model.SCVI(work, n_latent=n_latent)
+
+        # A trained encoder is a function, so scVI can honour fit_scope=CORE where Harmony
+        # cannot: train on the cells QC permits, then encode every cell through the trained
+        # model. The excluded cells get a real latent coordinate without having shaped the
+        # latent space.
+        train, scope_note = resolve_training_set(work, conditioning_keys=[batch_key])
+
+        scvi.model.SCVI.setup_anndata(train, batch_key=batch_key)
+        model = scvi.model.SCVI(train, n_latent=n_latent)
         model.train(max_epochs=max_epochs)
-        adata.obsm[output_rep] = model.get_latent_representation()
+
+        # Passing `work` explicitly is the out-of-sample step. When training used every cell
+        # the default argument is equivalent, and left alone so the common path is untouched.
+        adata.obsm[output_rep] = (
+            model.get_latent_representation()
+            if train is work
+            else model.get_latent_representation(work)
+        )
 
         cq = adata.uns.setdefault("cellquorum", {})
         # Single-method provenance (backward-compatible path, last-wins).
@@ -103,10 +118,13 @@ class ScVIMethod(AnalysisMethod):
             "output_rep": output_rep,
             "n_latent": n_latent,
         }
+        notes = [f"scVI latent ({n_latent}d) over '{batch_key}' -> {output_rep}."]
+        if scope_note:
+            notes.append(scope_note)
         return StageResult(
             adata=adata,
             metrics={"method": "scvi", "n_latent": n_latent, "output_rep": output_rep},
-            notes=[f"scVI latent ({n_latent}d) over '{batch_key}' -> {output_rep}."],
+            notes=notes,
         )
 
 

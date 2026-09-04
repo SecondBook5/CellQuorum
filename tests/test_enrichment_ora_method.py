@@ -7,8 +7,8 @@ import pandas as pd
 from scipy.stats import hypergeom
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.stages.comparative.enrichment.ora_method import OraMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.comparative.enrichment.ora_method import OraMethod
 
 # ORA is now a direct hypergeometric test (no decoupler dc.mt.ora call), so only
 # the network fetch is stubbed via get_net. The stub returns a REAL long-format

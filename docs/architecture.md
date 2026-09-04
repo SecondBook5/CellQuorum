@@ -182,6 +182,34 @@ recorded artifacts still exist — is skipped as "resumed". Resume is best-effor
 failure in fingerprinting or the resume decision degrades to normal execution, never
 to a broken run.
 
+### Checkpoints and `--from-stage`
+
+`run.resume` cannot skip a stage that *transforms* the object, because a completion
+marker records artifact paths, not object state. `run.checkpoint: true` writes the
+`AnnData` after each stage (opt-in — it costs one object per stage), and
+`--from-stage` / `--until-stage` then genuinely resume from one.
+
+A checkpoint records an **upstream fingerprint**: the seed, the input spec, and the
+settings of every stage at or before it. That one is config-only, so it can be
+recomputed on resume — the input fingerprint cannot be, since it includes a signature
+of an object the resume is specifically avoiding rebuilding. Scoping it upstream means
+editing a late-stage parameter does not invalidate an early checkpoint.
+
+Two things are deliberately invisible to a fingerprint, because reacting to them would
+refuse resumes for no safety gained:
+
+- Cosmetic run settings — output paths, verbosity, the checkpoint flags themselves.
+- Config fields resolving to `None`. What gets hashed is the *resolved* config, which
+  carries every field a model declares, so adding one optional setting would otherwise
+  make every checkpoint on disk stale on upgrade. `None` is treated as absent; a field
+  holding an actual value — including `0` or `false` — still invalidates.
+
+A mismatch refuses the load rather than warning, and the message distinguishes the two
+causes: a settings change ("stale: written with upstream fingerprint … but this run
+computes …") from an engine upgrade ("fingerprint schema v*N* … not comparable"). Each
+sidecar records the fingerprint schema that produced its hashes so the second case
+cannot be misreported as the first.
+
 ## Source layout
 
 The package is organized into **10** top-level packages under `src/cellquorum/`.

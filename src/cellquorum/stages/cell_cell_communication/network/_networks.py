@@ -184,19 +184,29 @@ def resolve_condition_arms(
     case: object,
     control: object,
     notes: list[str],
+    warnings: list[str] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Split the canonical table into case/control arms via an obs sample->condition map.
 
     Returns an empty dict if design is absent or obs lacks required columns;
     otherwise returns {"case": case_df, "control": control_df}.
+
+    A design that is configured but cannot be resolved goes to ``warnings``, not
+    ``notes``. On the LEC arm it was a note, and so the run reported success while
+    the comparative Lymphedema-vs-Normal topology and curvature — the reason the
+    stage is in the pipeline — had silently not been computed. ``notes`` is still
+    accepted (and used when no warnings list is passed) so callers need not change
+    at once.
     """
     arms: dict[str, pd.DataFrame] = {}
     if not (condition_col and case and control):
         return arms
-    if condition_col not in adata.obs.columns or sample_col not in adata.obs.columns:
-        notes.append(
-            f"resolve_condition_arms: design present but obs lacks '{sample_col}'/'"
-            f"'{condition_col}'; comparative skipped."
+    missing = [c for c in (sample_col, condition_col) if c not in adata.obs.columns]
+    if missing:
+        (warnings if warnings is not None else notes).append(
+            f"comparative CCC skipped: design declares {case} vs {control} but obs "
+            f"lacks {missing} (have sample_col='{sample_col}', "
+            f"condition_col='{condition_col}')"
         )
         return arms
     mapping = (

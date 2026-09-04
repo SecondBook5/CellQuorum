@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.integration.benchmark.scib_benchmark import ScibBenchmarkMethod
 from cellquorum.stages.integration.benchmark.stage import IntegrationBenchmarkStage
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 # Register the scib-metrics benchmark method.
 if not METHOD_REGISTRY.has("integration_benchmark", "scib_benchmark"):

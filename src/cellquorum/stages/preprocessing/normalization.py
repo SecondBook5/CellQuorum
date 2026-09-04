@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 # Import dataclass and field for structured result objects.
+import logging
 from dataclasses import dataclass, field
 
 # Import Path for backend scratch-file exchange.
@@ -13,6 +14,7 @@ import anndata as ad
 
 # Import numpy for count matrix transformations.
 import numpy as np
+import pandas as pd
 
 # Import scipy sparse for sparse matrix support.
 import scipy.sparse as sp
@@ -25,6 +27,9 @@ from cellquorum.core.exceptions import CellQuorumDataError
 
 # Import normalization configuration.
 from cellquorum.stages.preprocessing.config import NormalizationConfig
+from cellquorum.stages.qc.eligibility import fitting_cells
+
+logger = logging.getLogger(__name__)
 
 
 class PreprocessingNormalizationError(CellQuorumDataError):
@@ -247,24 +252,30 @@ def validate_count_matrix(matrix: np.ndarray | sp.spmatrix) -> None:
         PreprocessingNormalizationError: If the matrix is invalid.
     """
 
-    # Check for dense or sparse matrix types.
-    is_sparse = sp.issparse(matrix)
-
     # Validate that the matrix is numeric.
     if not np.issubdtype(matrix.dtype, np.number):
         raise PreprocessingNormalizationError("Count matrix must be numeric.")
 
-    # Convert to dense for validation when sparse.
-    check_matrix = matrix.toarray() if is_sparse else matrix
+    # Check the STORED values only, never a densified copy.
+    #
+    # Both properties below are properties of the stored values alone: a sparse
+    # matrix's implicit zeros are finite and non-negative by construction, so
+    # densifying to inspect them adds nothing except the allocation. And the
+    # allocation is what breaks: an atlas-scale object here is 195,347 x 33,343,
+    # which is 52 GB dense against 3 GB sparse, so this validation was the single
+    # thing standing between the pipeline and any object above roughly 50,000
+    # cells. `.data` is a view, so the check now costs one pass over the nonzeros
+    # and allocates nothing.
+    values = matrix.data if sp.issparse(matrix) else matrix
 
     # Reject matrices with non-finite values.
-    if not np.isfinite(check_matrix).all():
+    if not np.isfinite(values).all():
         raise PreprocessingNormalizationError(
             "Count matrix contains non-finite values (NaN or Inf)."
         )
 
     # Reject matrices with negative values.
-    if (check_matrix < 0).any():
+    if (values < 0).any():
         raise PreprocessingNormalizationError("Count matrix contains negative values.")
 
 
@@ -574,10 +585,9 @@ def run_scclr_pflog(
             only PFlog1pPF path).
     """
 
-    import json
     import tempfile
 
-    from cellquorum.backends.scclr_backend import PFLOG_HELPER, ScclrBackend
+    from cellquorum.backends.scclr_backend import ScclrBackend
 
     # Require an available scclr backend — fail loud, no silent fallback.
     if backend is None or not isinstance(backend, ScclrBackend):
@@ -602,16 +612,137 @@ def run_scclr_pflog(
     # scclr expects a CSR counts matrix.
     counts = matrix.tocsr() if sp.issparse(matrix) else sp.csr_matrix(np.asarray(matrix))
 
-    target = str(getattr(config, "scclr_target", "auto"))
+    requested_target = str(getattr(config, "scclr_target", "auto"))
+
+    # The proportional-fitting target is the cohort-derived quantity in this recipe, and it
+    # is easy to miss because it does not look like a fitted model. `auto` estimates the NB
+    # overdispersion alpha across cells; `mean`/`median` take a cohort depth. Either way a
+    # damaged cell moves the target and therefore every cell's normalized values. A fixed
+    # numeric K is already independent of the cohort and needs no fit pass.
+    #
+    # So K is fitted on the cells QC permits, then passed to the full pass as a fixed number,
+    # which makes the second pass purely per-cell. This is what honours the stage's declared
+    # fit_scope=CORE.
+    target, fit_note = _fit_scclr_target(
+        counts,
+        fitting=fitting_cells(adata.obs),
+        requested_target=requested_target,
+        backend=backend,
+        scratch=scratch,
+    )
+
+    normalized, meta = _run_scclr_normalize(counts, target=target, backend=backend, scratch=scratch)
+
+    row_center = np.asarray(meta.get("row_center", []), dtype=float)
+
+    diagnostics: dict[str, object] = {
+        "recipe_impl": "scclr",
+        "scclr_target": requested_target,
+        "scclr_effective_target": target,
+        "scclr_k": meta.get("k"),
+        "scclr_alpha": meta.get("alpha"),
+        "scclr_row_center": row_center,
+        "output_is_sparse": True,
+    }
+    return normalized, diagnostics, [fit_note] if fit_note else []
+
+
+def _target_is_fixed(target: str) -> bool:
+    """True when the target is a literal K, so nothing is estimated from the cohort."""
+    try:
+        float(target)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _fit_scclr_target(
+    counts: sp.spmatrix,
+    *,
+    fitting: pd.Series | None,
+    requested_target: str,
+    backend: object,
+    scratch: Path,
+) -> tuple[str, str | None]:
+    """Resolve the proportional-fitting target from the permitted cells only.
+
+    Args:
+        counts: Full CSR counts matrix, rows aligned to ``adata.obs``.
+        fitting: Cells permitted to fit, or None to fit on everything.
+        requested_target: The configured ``scclr_target``.
+        backend: The scclr subprocess backend.
+        scratch: Scratch directory for file exchange.
+
+    Returns:
+        ``(target, note)`` where ``target`` is what the full pass should use — a fixed K when
+        one was fitted — and ``note`` reports the decision, or None when there was nothing to
+        report.
+    """
+    if fitting is None or _target_is_fixed(requested_target):
+        return requested_target, None
+
+    # Row slicing a CSR matrix is cheap and, unlike column fancy-indexing, safe at cohort
+    # scale: selecting 36k columns out of a 202k x 36.6k CSR once overflowed int32 and
+    # segfaulted the interpreter.
+    rows = fitting.to_numpy(dtype=bool)
+    _, fit_meta = _run_scclr_normalize(
+        counts[rows], target=requested_target, backend=backend, scratch=scratch
+    )
+
+    fitted_k = fit_meta.get("k")
+    if fitted_k is None:
+        # No K to carry over, so the full pass has to resolve the target itself and the
+        # excluded cells inevitably contribute. Reported rather than passed over in silence.
+        note = (
+            f"scclr returned no k for target '{requested_target}', so the PFlog1pPF target "
+            f"was resolved on all cells and non-core cells influenced normalization."
+        )
+        logger.warning(note)
+        return requested_target, note
+
+    note = (
+        f"PFlog1pPF target fitted on {int(rows.sum())} QC-permitted cells "
+        f"(k={float(fitted_k):.6g}) and applied to all {counts.shape[0]} cells as a fixed K."
+    )
+    logger.info(note)
+    return repr(float(fitted_k)), note
+
+
+def _run_scclr_normalize(
+    counts: sp.spmatrix,
+    *,
+    target: str,
+    backend: object,
+    scratch: Path,
+) -> tuple[sp.spmatrix, dict[str, object]]:
+    """One PFlog1pPF pass through the isolated scclr environment.
+
+    Args:
+        counts: CSR counts to normalize.
+        target: ``auto``, ``mean``, ``median``, or a numeric K as a string.
+        backend: The scclr subprocess backend.
+        scratch: Scratch directory for file exchange.
+
+    Returns:
+        ``(normalized, meta)`` — the sparse PFlog matrix and the helper's meta dict.
+
+    Raises:
+        PreprocessingNormalizationError: If the helper fails. There is no fallback; the real
+            transform is the only PFlog1pPF path.
+    """
+    import json
+    import tempfile
+
+    from cellquorum.backends.scclr_backend import PFLOG_HELPER
 
     with tempfile.TemporaryDirectory(dir=scratch) as tmp:
         tmp_path = Path(tmp)
         counts_path = tmp_path / "counts.npz"
         matrix_out = tmp_path / "pflog.npz"
         meta_out = tmp_path / "meta.json"
-        sp.save_npz(counts_path, counts)
+        sp.save_npz(counts_path, counts.tocsr())
 
-        result = backend.run_helper(
+        result = backend.run_helper(  # type: ignore[attr-defined]
             PFLOG_HELPER,
             [
                 "normalize",
@@ -628,20 +759,7 @@ def run_scclr_pflog(
                 f"{result.stderr.strip()[:500] or 'no stderr'}"
             )
 
-        normalized = sp.load_npz(matrix_out)
-        meta = json.loads(meta_out.read_text())
-
-    row_center = np.asarray(meta.get("row_center", []), dtype=float)
-
-    diagnostics: dict[str, object] = {
-        "recipe_impl": "scclr",
-        "scclr_target": target,
-        "scclr_k": meta.get("k"),
-        "scclr_alpha": meta.get("alpha"),
-        "scclr_row_center": row_center,
-        "output_is_sparse": True,
-    }
-    return normalized, diagnostics, []
+        return sp.load_npz(matrix_out), json.loads(meta_out.read_text())
 
 
 def write_normalized_layer(
@@ -669,8 +787,39 @@ def write_normalized_layer(
             f"Output layer '{output_layer}' already exists. " "Set overwrite=True to replace it."
         )
 
-    # Write normalized matrix to output layer.
-    adata.layers[output_layer] = normalized_matrix
+    # Store the layer in single precision.
+    #
+    # The recipes return float64 because that is what NumPy promotes integer
+    # counts to, not because the extra digits mean anything: these are
+    # log-normalized expression values, and every consumer downstream -- PCA,
+    # Harmony, scVI, UMAP -- works in float32 internally and casts on the way in.
+    # Carrying float64 to that cast doubles the footprint of the largest object in
+    # the pipeline for the entire run. On the 192,489 x 33,343 skin atlas that is
+    # 3.1 GB of layer instead of 1.6 GB, held in memory alongside the counts and
+    # written to every checkpoint.
+    adata.layers[output_layer] = downcast_to_float32(normalized_matrix)
+
+
+def downcast_to_float32(matrix: np.ndarray | sp.spmatrix) -> np.ndarray | sp.spmatrix:
+    """
+    Return ``matrix`` in single precision, without densifying a sparse input.
+
+    Args:
+        matrix: Dense or sparse matrix of any floating dtype.
+
+    Returns:
+        The matrix as float32. Returned unchanged when it already is float32, so
+        the common path costs nothing. A sparse input keeps its sparse format;
+        ``scipy``'s own ``astype`` recasts the value array and never densifies.
+    """
+
+    # Leave an already-single-precision matrix alone rather than copying it.
+    if matrix.dtype == np.float32:
+        return matrix
+
+    # Recast in place of a densifying round-trip. Both scipy's sparse astype and
+    # NumPy's preserve the container, so this is the whole conversion.
+    return matrix.astype(np.float32)
 
 
 def write_normalization_provenance(
@@ -758,6 +907,7 @@ __all__ = [
     "run_scclr_pflog",
     "apply_recipe_pf_v1",
     "build_normalization_diagnostics",
+    "downcast_to_float32",
     "get_input_matrix",
     "normalize_adata",
     "preserve_raw_counts",

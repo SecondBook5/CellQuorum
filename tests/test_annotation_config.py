@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cellquorum.stages.annotation.config import AnnotationConfig
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.stages.annotation.config import AnnotationConfig
 
 
 def test_annotation_defaults():

@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import pytest
 
+from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
 from cellquorum.stages.cell_cell_communication.tensor_c2c_method import (
     resolve_factorization_runs,
 )
-from cellquorum.core.exceptions import CellQuorumConfigError
 
 # --------------------------------------------------------------------------- #
 # No budget set -> byte-identical to the pre-guardrail behavior                #
@@ -112,9 +112,7 @@ def test_explicit_robust_under_budget_is_quiet():
 
 def test_unknown_tf_optimization_raises():
     with pytest.raises(CellQuorumConfigError, match="tf_optimization"):
-        resolve_factorization_runs(
-            tf_optimization="turbo", tensor_elements=100, max_cost=None
-        )
+        resolve_factorization_runs(tf_optimization="turbo", tensor_elements=100, max_cost=None)
 
 
 # --------------------------------------------------------------------------- #
@@ -123,9 +121,7 @@ def test_unknown_tf_optimization_raises():
 
 
 def test_config_accepts_auto_and_budget():
-    cfg = CellCellCommunicationConfig(
-        tf_optimization="auto", max_decomposition_cost=5_000_000
-    )
+    cfg = CellCellCommunicationConfig(tf_optimization="auto", max_decomposition_cost=5_000_000)
     assert cfg.tf_optimization == "auto"
     assert cfg.max_decomposition_cost == 5_000_000
 

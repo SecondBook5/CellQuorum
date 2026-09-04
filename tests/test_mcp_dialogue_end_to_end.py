@@ -16,10 +16,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from cellquorum.core.stage import StageResult
 from cellquorum.stages.comparative.multicellular_programs.dialogue_method import (
     MulticellularProgramsMethod,
 )
-from cellquorum.core.stage import StageResult
 
 
 def _dialogue_available() -> bool:

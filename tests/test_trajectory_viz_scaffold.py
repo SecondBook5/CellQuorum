@@ -42,5 +42,6 @@ def test_stage_default_method_list_and_noop_validate():
         "macrostate_viz",
         "velocity_viz",
         "pseudotime_heatmap",
+        "activity_cascade",
     ]
     stage._validate_output(None)  # no raise

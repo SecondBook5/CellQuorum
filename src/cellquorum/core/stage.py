@@ -71,11 +71,36 @@ class StageResult:
     return the updated data object plus all artifacts, notes, warnings, and
     structured metrics needed to audit what happened.
 
+    Choosing between notes and warnings
+    -----------------------------------
+    These two are NOT "less important" and "more important" versions of the same
+    thing; they have different audiences, and only one of them is read by default:
+
+    - ``warnings`` are printed on every run (``core.run_reporter``) and counted in
+      the ``n_warnings`` column of ``report.md`` (``core.reports``).
+    - ``notes`` are printed only at ``--verbose`` and appear in NO report. They
+      reach a reader through provenance JSON or not at all.
+
+    So the test is not severity, it is: *would a reader who never opens the
+    provenance JSON be misled by not seeing this?*
+
+    - A gate doing its configured job is a NOTE: "GCI skipped (rows > cap)",
+      "subsampled to 20000 cells", "excluded 12 outliers".
+    - Something the caller ASKED FOR that did not happen is a WARNING: a kernel
+      the config named and did not get, a figure that failed to draw, a writeback
+      that failed so the object carries no results, a detector that scored cells
+      and flagged nothing. These all leave a run that reports success while its
+      output means something different from what the config describes.
+
+    Getting this backwards is how a stage ends up reporting success with a panel
+    quietly missing from its report, so prefer warnings when unsure.
+
     Args:
         adata: Updated AnnData object after stage execution.
         artifacts: Files or directories produced by the stage.
-        notes: Non-critical observations that should appear in reports.
-        warnings: Important caveats that should appear in reports and provenance.
+        notes: How the stage ran. Verbose console output and provenance only.
+        warnings: Anything asked for that did not happen. Always printed, and
+            counted in the report.
         metrics: JSON-serializable structured metrics for summaries and reports.
     """
 
@@ -85,10 +110,12 @@ class StageResult:
     # Store files or directories produced by the stage.
     artifacts: list[StageArtifact] = field(default_factory=list)
 
-    # Store non-critical observations that should appear in reports.
+    # Store how the stage ran (verbose console + provenance only; see the class
+    # docstring for why this is not the channel for a failure).
     notes: list[str] = field(default_factory=list)
 
-    # Store important caveats that should appear in reports and provenance.
+    # Store anything the caller asked for that did not happen (always printed,
+    # and counted in report.md's n_warnings).
     warnings: list[str] = field(default_factory=list)
 
     # Store JSON-serializable structured metrics for summaries and reports.
@@ -271,11 +298,20 @@ class StageExecutionError:
     object captures the stage name, error type, message, and optional structured
     details so failed runs remain auditable.
 
+    The traceback is kept as well, in a field of its own rather than in the
+    message. Most stage failures happen inside a third-party call — a pandas
+    merge, an R bridge, a solver — and those libraries raise messages that name
+    a symptom but no location ("You are trying to merge on float64 and object
+    columns for key 'cell_type'"). With the message alone, finding which of a
+    stage's four methods raised means bisecting a 2-minute run by hand; with the
+    traceback in provenance, it is one file lookup.
+
     Args:
         stage_name: Stable stage name.
         error_type: Exception type or error category.
         message: Human-readable error message.
         details: Optional structured details for provenance and reports.
+        traceback: Formatted traceback of the raising exception, when available.
     """
 
     # Store the failed stage name.
@@ -289,6 +325,9 @@ class StageExecutionError:
 
     # Store optional structured error details.
     details: dict[str, object] = field(default_factory=dict)
+
+    # Store the formatted traceback, so a failure names its own location.
+    traceback: str | None = None
 
     @classmethod
     def from_exception(
@@ -310,12 +349,21 @@ class StageExecutionError:
             StageExecutionError containing the exception type and message.
         """
 
-        # Return a structured error from the exception.
+        # Return a structured error from the exception. The traceback is formatted
+        # here, while the exception object still carries __traceback__; anything
+        # downstream that only receives this record could not recover it.
+        import traceback as _traceback
+
+        formatted = "".join(
+            _traceback.format_exception(type(error), error, error.__traceback__)
+        ).strip()
+
         return cls(
             stage_name=stage_name,
             error_type=type(error).__name__,
             message=str(error),
             details={} if details is None else dict(details),
+            traceback=formatted or None,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -332,6 +380,7 @@ class StageExecutionError:
             "error_type": self.error_type,
             "message": self.message,
             "details": dict(self.details),
+            "traceback": self.traceback,
         }
 
 

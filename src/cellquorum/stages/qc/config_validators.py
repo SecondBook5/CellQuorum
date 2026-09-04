@@ -18,6 +18,8 @@ cycle (``qc.thresholds`` already imports ``qc.config``).
 
 from __future__ import annotations
 
+from typing import Literal, overload
+
 
 def _type_name(value: object) -> str:
     """Return the runtime type name used in "Received: ..." error suffixes."""
@@ -80,6 +82,26 @@ def coerce_percent_top(value: object) -> list[int]:
 
     # Return the sorted unique values for deterministic metric names.
     return sorted(set(cleaned_values))
+
+
+@overload
+def coerce_stripped_string(
+    value: object,
+    *,
+    optional: Literal[False],
+    type_message: str,
+    empty_message: str,
+) -> str: ...
+
+
+@overload
+def coerce_stripped_string(
+    value: object,
+    *,
+    optional: bool,
+    type_message: str,
+    empty_message: str,
+) -> str | None: ...
 
 
 def coerce_stripped_string(
@@ -186,6 +208,28 @@ def coerce_string_list(
 
     # Return the cleaned values.
     return cleaned_values
+
+
+@overload
+def coerce_non_negative_int(
+    value: object,
+    *,
+    optional: Literal[False],
+    bool_message: str,
+    type_message: str,
+    negative_message: str,
+) -> int: ...
+
+
+@overload
+def coerce_non_negative_int(
+    value: object,
+    *,
+    optional: bool,
+    bool_message: str,
+    type_message: str,
+    negative_message: str,
+) -> int | None: ...
 
 
 def coerce_non_negative_int(

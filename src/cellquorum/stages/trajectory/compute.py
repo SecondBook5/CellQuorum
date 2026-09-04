@@ -7,6 +7,10 @@ no recompute.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable, Iterator
+from typing import Any
+
 import anndata as ad
 import numpy as np
 
@@ -45,6 +49,97 @@ def embedding_bases(adata: ad.AnnData) -> list[str]:
     return sorted(bases)
 
 
+# ARPACK's iteration ceiling defaults to ``10 * n``, which makes it a function of
+# CELL COUNT — so the smallest clusters are the ones most likely to run out of
+# iterations, exactly backwards from what the numerics need. On the LEC arm,
+# leiden cluster 5 (62 cells) died with "ARPACK error -1: No convergence (621
+# iterations, 8/10 eigenvectors converged)": 621 is 10*62+1, the default ceiling
+# to the digit. Neighbouring clusters of 41, 44 and 49 cells converged, so this is
+# a ceiling that happens to bind, not a size threshold.
+_ARPACK_RETRY_MIN_ITER = 5000
+_ARPACK_RETRY_TOL = 1e-8
+
+
+@contextlib.contextmanager
+def _relaxed_arpack(n_obs: int) -> Iterator[None]:
+    """Raise ARPACK's iteration ceiling for the duration of the block.
+
+    scVelo reaches ARPACK twice inside ``velocity_pseudotime`` — ``eigs`` in
+    ``terminal_states`` (root/end cells) and ``eigsh`` in ``VPT.compute_eigen`` —
+    and passes neither ``maxiter`` nor ``tol`` to either, so both inherit the
+    defaults. Neither is reachable through scVelo's own arguments (``n_dcs``
+    reaches only the second, and ``terminal_states`` hard-codes ``k=10``), so the
+    ceiling is raised at the scipy entry points instead. ``setdefault`` means an
+    explicit caller value still wins.
+
+    Both scvelo modules do ``from scipy.sparse import linalg`` and call
+    ``linalg.eigs``/``linalg.eigsh`` as attributes, so patching the module's
+    attributes is what they see. This is process-global for the duration of the
+    block and therefore NOT thread-safe; it is used only around the (sequential,
+    main-thread) pseudotime retry, never around scVelo's parallel steps.
+    """
+    import scipy.sparse.linalg as sla
+
+    maxiter = max(_ARPACK_RETRY_MIN_ITER, 100 * int(n_obs))
+    real_eigs, real_eigsh = sla.eigs, sla.eigsh
+
+    def _relaxed(fn: Callable[..., Any]) -> Callable[..., Any]:
+        def inner(*args: Any, **kwargs: Any) -> Any:
+            kwargs.setdefault("maxiter", maxiter)
+            kwargs.setdefault("tol", _ARPACK_RETRY_TOL)
+            return fn(*args, **kwargs)
+
+        return inner
+
+    sla.eigs, sla.eigsh = _relaxed(real_eigs), _relaxed(real_eigsh)
+    try:
+        yield
+    finally:
+        sla.eigs, sla.eigsh = real_eigs, real_eigsh
+
+
+def _velocity_pseudotime_best_effort(
+    adata: ad.AnnData, scv: Any, warnings: list[str] | None
+) -> str | None:
+    """Velocity pseudotime + root/end cells, retried and then degraded.
+
+    Deliberately does NOT raise, which is the fix rather than a convenience. This
+    is the LAST step of the velocity chain and the only iterative eigensolve in
+    it: moments, the velocity fit, the velocity graph and the confidence score
+    have all already succeeded by the time it runs. Letting it raise meant an
+    ARPACK non-convergence discarded a whole cluster's velocity — on the LEC arm,
+    every one of leiden 5's 62 cells lost its velocity, graph and confidence
+    because a downstream pseudotime eigensolve hit its iteration ceiling.
+
+    Returns a status string for the caller's notes, or None on success.
+    """
+    try:
+        scv.tl.velocity_pseudotime(adata)
+        return None
+    except Exception as exc:  # noqa: BLE001 — retried below, then degraded
+        # Bound to an outer name because `except ... as` unbinds at block exit,
+        # and the retry warning has to report what the first attempt said.
+        first_failure = exc
+
+    try:
+        with _relaxed_arpack(adata.n_obs):
+            scv.tl.velocity_pseudotime(adata)
+    except Exception as exc:  # noqa: BLE001 — degrade: keep the velocity
+        if warnings is not None:
+            warnings.append(
+                f"velocity_pseudotime failed ({exc}); velocity, velocity_graph and "
+                "velocity_confidence are kept, so this group has velocity but no "
+                "pseudotime or root/end cells"
+            )
+        return "pseudotime failed"
+
+    if warnings is not None:
+        warnings.append(
+            f"velocity_pseudotime needed a relaxed-ARPACK retry; first attempt: {first_failure}"
+        )
+    return "pseudotime via relaxed ARPACK"
+
+
 def compute_velocity(
     adata: ad.AnnData,
     *,
@@ -56,8 +151,16 @@ def compute_velocity(
     n_neighbors: int,
     n_jobs: int,
     seed: int,
+    warnings: list[str] | None = None,
 ) -> None:
-    """Run the scVelo pipeline in place. Raises typed errors (skip-not-crash)."""
+    """Run the scVelo pipeline in place. Raises typed errors (skip-not-crash).
+
+    Args:
+        warnings: Appended to when a step DEGRADES rather than fails outright —
+            currently only the pseudotime tail (see
+            :func:`_velocity_pseudotime_best_effort`). Optional so duck-typed
+            callers and tests need not thread a list through.
+    """
     try:
         import scanpy as sc
         import scvelo as scv
@@ -92,9 +195,12 @@ def compute_velocity(
         scv.tl.velocity(adata, mode=mode)
         scv.tl.velocity_graph(adata, n_jobs=n_jobs, show_progress_bar=False)
         scv.tl.velocity_confidence(adata)
-        scv.tl.velocity_pseudotime(adata)
     except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
         raise VelocityComputeFailed(f"velocity computation failed: {exc}") from exc
+
+    # Outside the raising block on purpose: everything above is the velocity
+    # itself, everything here is a derived ordering along it.
+    _velocity_pseudotime_best_effort(adata, scv, warnings)
 
 
 def reproject_velocity(adata: ad.AnnData, *, bases: list[str]) -> list[str]:

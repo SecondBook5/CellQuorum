@@ -9,17 +9,19 @@ from pathlib import Path
 import anndata as ad
 import pandas as pd
 
-from cellquorum.stages.cell_cell_communication._nichenet_io import (
-    export_sce_inputs,
-    mnn_prioritization_to_canonical,
-)
+from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.context import resolve_n_jobs
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
+from cellquorum.stages.cell_cell_communication._nichenet_io import (
+    export_sce_inputs,
+    mnn_prioritization_to_canonical,
+)
 
-_MNN_R = Path(__file__).parent.parent / "backends" / "r_scripts" / "multinichenet.R"
+_MNN_R = r_script_path("multinichenet.R")
 
 
 class MultiNicheNetMethod(RAnalysisMethod):
@@ -102,7 +104,9 @@ class MultiNicheNetMethod(RAnalysisMethod):
             "TRUE" if config.get("mnn_p_val_adj", False) else "FALSE",
             str(config.get("mnn_top_n_target", 250)),
             str(config.get("mnn_scenario", "regular")),
-            str(config.get("nichenet_n_cores", 4)),
+            # Unset inherits compute.n_jobs, so one knob governs both this and the
+            # Python-side parallel steps instead of the R side keeping its own 4.
+            str(resolve_n_jobs(context, config.get("nichenet_n_cores"))),
             str(seed),
         ]
 

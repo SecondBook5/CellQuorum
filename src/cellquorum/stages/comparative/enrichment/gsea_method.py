@@ -10,12 +10,12 @@ import numpy as np
 import pandas as pd
 from statsmodels.stats.multitest import multipletests
 
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
-from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 
 
 def _bh(pvalues: np.ndarray, method: str) -> np.ndarray:
@@ -66,6 +66,121 @@ def running_es_walk(metric: pd.Series, members: set[str]) -> pd.DataFrame | None
             "metric": vals,
         }
     )
+
+
+def leading_edge(metric: pd.Series, members: set[str]) -> tuple[float, list[str]] | None:
+    """The enrichment score and the genes that account for it.
+
+    The leading edge is the subset of the gene set that appears before (for a positive score)
+    or after (for a negative one) the peak of the running walk — the genes that actually
+    carry the enrichment, as opposed to the set's other members. Without it a GSEA table
+    says only that a pathway moved; a reader cannot ask *which genes*, and no downstream
+    membership analysis is reproducible from the output.
+
+    Uses the same p = 1 Subramanian weighting as :func:`running_es_walk`, but in closed form
+    over the hit positions rather than walking every gene, because this runs for every source
+    in a collection rather than the twenty that get a persisted walk. The two agreeing on the
+    score is pinned by a test, so the table and the plotted walk cannot drift apart.
+
+    Args:
+        metric: Gene → signed ranking metric (indexed by gene).
+        members: Gene-set membership, already intersected with the ranked universe.
+
+    Returns:
+        ``(score, genes)`` with ``genes`` in ranked order, or ``None`` for a degenerate set
+        (no hits, every gene a hit, or hits carrying zero total weight).
+    """
+    ranked = metric.sort_values(ascending=False, kind="mergesort")
+    genes = ranked.index.to_numpy()
+    values = np.abs(ranked.to_numpy(dtype=float))
+    n = len(genes)
+    hit_positions = np.flatnonzero(np.isin(genes, list(members)))
+    n_hits = hit_positions.size
+    if n_hits == 0 or n_hits == n:
+        return None
+
+    weights = values[hit_positions]
+    total_weight = float(weights.sum())
+    if total_weight == 0.0:
+        return None
+
+    hit_index = np.arange(n_hits)
+    misses_before = hit_positions - hit_index
+    cumulative = np.cumsum(weights) / total_weight
+    miss_penalty = misses_before / (n - n_hits)
+
+    # The walk only falls between hits, so its maximum is at a hit and its minimum is
+    # immediately before one. Both are compared against 0, which the walk reaches at the
+    # end of the list — a set with no deviation in either direction scores 0, not the
+    # least-bad of two deviations.
+    running_at_hits = cumulative - miss_penalty
+    running_before_hits = np.concatenate(([0.0], cumulative[:-1])) - miss_penalty
+    peak = int(np.argmax(running_at_hits))
+    trough = int(np.argmin(running_before_hits))
+    high = max(float(running_at_hits[peak]), 0.0)
+    low = min(float(running_before_hits[trough]), 0.0)
+
+    if high >= -low:
+        # Positive score: the genes from the top of the list down to the peak.
+        return high, [str(gene) for gene in genes[hit_positions[: peak + 1]]]
+    # Negative score: the genes from the trough down to the bottom of the list.
+    return low, [str(gene) for gene in genes[hit_positions[trough:]]]
+
+
+def _add_leading_edge(
+    out: pd.DataFrame,
+    metric: pd.Series,
+    net: pd.DataFrame,
+    skipped: list[dict],
+    collection: str,
+) -> pd.DataFrame:
+    """Attach set size, the unnormalized ES, and the leading edge to a GSEA result table.
+
+    ``es`` is here because ``score`` is decoupler's *normalized* enrichment score — divided
+    by the mean of the same-sign permutation scores, so it is unbounded and its magnitude
+    depends on how the null came out. The raw ES is bounded in [-1, 1], is the quantity the
+    persisted running walk peaks at, and is the one that can be checked by hand against the
+    leading-edge genes in the same row. Reporting only the normalized score leaves nothing
+    in the table that the figure beside it can be reconciled with.
+
+    The columns are always added, even when the computation fails: a downstream reader that
+    checks ``if "leading_edge" in table`` would otherwise silently take its no-leading-edge
+    branch on a table where the walk merely errored, which is the difference between "this
+    run cannot answer that" and "this pathway has no leading edge".
+    """
+    out = out.copy()
+    out.insert(out.columns.get_loc("score") + 1, "es", pd.NA)
+    out["set_size"] = pd.NA
+    out["leading_edge_size"] = pd.NA
+    out["leading_edge"] = pd.NA
+    try:
+        universe = set(map(str, metric.index))
+        by_source = net.groupby("source")["target"].agg(lambda targets: set(map(str, targets)))
+        sizes, raw_scores, edge_sizes, edges = [], [], [], []
+        for source in out["source"]:
+            members = by_source.get(source, set()) & universe
+            found = leading_edge(metric, members) if members else None
+            sizes.append(len(members))
+            if found is None:
+                raw_scores.append(pd.NA)
+                edge_sizes.append(pd.NA)
+                edges.append(pd.NA)
+                continue
+            score, genes = found
+            raw_scores.append(score)
+            edge_sizes.append(len(genes))
+            # Semicolon-joined: a gene symbol never contains one, and a comma would need
+            # quoting in the CSV this is written to.
+            edges.append(";".join(genes))
+        out["set_size"] = sizes
+        out["es"] = raw_scores
+        out["leading_edge_size"] = edge_sizes
+        out["leading_edge"] = edges
+    except Exception as exc:  # noqa: BLE001 - degrade to a note, never lose the collection
+        skipped.append(
+            {"collection": collection, "reason": f"leading edge skipped: {str(exc)[:200]}"}
+        )
+    return out
 
 
 class GseaMethod(AnalysisMethod):
@@ -148,23 +263,40 @@ class GseaMethod(AnalysisMethod):
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
 
-            padj = _bh(pvalue.values.astype(float), fdr_method)
+            # A permutation p-value cannot be smaller than one permutation. When no shuffle
+            # beats the observed score the estimator returns 0, and reporting 0 claims a
+            # certainty the test cannot deliver — it is also the first thing a reviewer
+            # circles. The floor is the resolution of the test that was actually run, and the
+            # frame records both the floor and which rows are sitting on it, so "p is at the
+            # limit" stays distinguishable from "p was measured this small".
+            resolution = 1.0 / (permutations + 1)
+            raw = pvalue.to_numpy(dtype=float)
+            at_limit = np.isfinite(raw) & (raw < resolution)
+            floored = np.where(at_limit, resolution, raw)
+            padj = _bh(floored, fdr_method)
             out = pd.DataFrame(
                 {
                     "source": score.index,
                     "score": score.values,
-                    "pvalue": pvalue.values,
+                    "pvalue": floored,
                     "padj": padj,
                     "significant": padj < fdr,
+                    "p_at_resolution_limit": at_limit,
+                    "p_resolution_limit": resolution,
+                    "permutations": permutations,
                     "collection": collection,
                 }
             )
+            out = _add_leading_edge(out, ranking.iloc[0], net, skipped, collection)
             artifacts.append(
                 writer.table(
                     out,
                     f"enrichment_gsea_{collection}.csv",
                     name="enrichment_results",
-                    description=f"GSEA ({collection}), signed -log10p ranking.",
+                    description=(
+                        f"GSEA ({collection}), signed -log10p ranking. `score` is the "
+                        "normalized ES, `es` the raw ES the walk peaks at."
+                    ),
                     index=False,
                 )
             )
@@ -218,10 +350,21 @@ class GseaMethod(AnalysisMethod):
         if not done:
             return self._skip("no collection produced results", skipped=skipped)
 
+        # A configured collection that produced nothing is reported in the notes, not only
+        # in the metrics. A run configured for [hallmark, reactome] that silently writes one
+        # table looks complete on the filesystem, and the only trace of the missing half was
+        # a dict a reader has to know to go looking for.
+        missing = [name for name in collections if name not in done]
+        notes = [f"GSEA over {done}."]
+        if missing:
+            reasons = {str(entry["collection"]): str(entry["reason"]) for entry in skipped}
+            named = (f"{name} ({reasons.get(name, 'no reason recorded')})" for name in missing)
+            notes.append("GSEA produced no table for " + "; ".join(named))
+
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=[f"GSEA over {done}."],
+            notes=notes,
             metrics={
                 "method": self.name,
                 "n_collections": len(done),

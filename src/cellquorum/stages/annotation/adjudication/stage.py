@@ -7,15 +7,15 @@ from collections.abc import Mapping
 
 import pandas as pd
 
+from cellquorum.core.artifacts import ArtifactManager
+from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
 from cellquorum.stages.annotation.adjudication.adjudicate import adjudicate_cluster
 from cellquorum.stages.annotation.adjudication.config import AdjudicationConfig
 from cellquorum.stages.annotation.adjudication.evidence import (
     build_cluster_evidence_table,
     cluster_evidence_to_dataframe,
 )
-from cellquorum.core.artifacts import ArtifactManager
-from cellquorum.core.stage import StageResult
-from cellquorum.core.stage_catalog import register_stage
 
 
 @register_stage(

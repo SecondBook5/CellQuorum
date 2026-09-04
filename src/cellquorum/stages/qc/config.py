@@ -356,16 +356,34 @@ class QCMadThresholdConfig(StrictBaseModel):
     n_mads: float = 5.0
 
     # Store the default general outlier metrics.
+    #
+    # `pct_counts_in_top_20_genes` is deliberately NOT here, even though the
+    # metric is still computed and reported. It measures transcriptome
+    # complexity, and for terminally differentiated cells low complexity IS the
+    # phenotype: a plasma cell's counts are mostly immunoglobulin and a mast
+    # cell's mostly protease granules, so a cohort-wide threshold reads their
+    # identity as damage. On the skin atlas it removed 383 plasma cells whose
+    # median depth (19,259 UMI, 1.0% mito) was three times the depth of the
+    # cells it kept, with IGKC alone at 38.7% of their counts -- an inverted
+    # filter that discarded the best cells of that lineage. Add it back only for
+    # a homogeneous population where complexity really is a quality signal.
     metrics: list[str] = Field(
         default_factory=lambda: [
             "log1p_total_counts",
             "log1p_n_genes_by_counts",
-            "pct_counts_in_top_20_genes",
         ]
     )
 
     # Store the mitochondrial metric evaluated separately.
-    mito_metric: str = "pct_counts_mito"
+    #
+    # Set to None to switch mitochondrial MAD filtering off and rely on the
+    # fixed `basic.max_mito_percent` ceiling instead. That is the right choice
+    # whenever the retained population has to be comparable across samples: a
+    # per-sample MAD ceiling tightens on the CLEANEST samples, because MAD
+    # shrinks as the distribution tightens. On the skin atlas that produced
+    # ceilings from 2.0% to 11.2% across 18 samples, so the same 6%-mito cell
+    # was kept in one sample and dropped in another.
+    mito_metric: str | None = "pct_counts_mito"
 
     # Store the mitochondrial MAD multiplier.
     mito_n_mads: float = 3.0
@@ -430,27 +448,385 @@ class QCMadThresholdConfig(StrictBaseModel):
 
     @field_validator("mito_metric", mode="before")
     @classmethod
-    def validate_mito_metric(cls, value: object) -> str:
+    def validate_mito_metric(cls, value: object) -> str | None:
         """
         Validate the mitochondrial metric name.
 
         Args:
-            value: Candidate mitochondrial metric name.
+            value: Candidate mitochondrial metric name, or None to disable
+                adaptive mitochondrial filtering.
 
         Returns:
-            Cleaned mitochondrial metric name.
+            Cleaned mitochondrial metric name, or None when disabled.
 
         Raises:
-            ValueError: If the metric name is not a non-empty string.
+            ValueError: If the metric name is neither None nor a non-empty string.
         """
 
-        # Delegate to the shared required stripped-string coercion helper.
+        # Delegate to the shared optional stripped-string coercion helper, which
+        # passes None through as an explicit request to disable the mito MAD.
+        return coerce_stripped_string(
+            value,
+            optional=True,
+            type_message="mito_metric must be a string or None.",
+            empty_message="mito_metric cannot be empty.",
+        )
+
+
+class QCMitoMixtureConfig(StrictBaseModel):
+    """
+    Store mixture-model (miQC) mitochondrial QC settings.
+
+    This is the principled alternative to the other two mitochondrial policies in
+    this config, both of which answer the wrong question. `basic.max_mito_percent`
+    asks "what percentage is too high?", which has no data-driven answer.
+    `mad.mito_metric` asks "how far from the median is unusual?", which assumes one
+    healthy mode and therefore tightens as a sample gets cleaner. This model asks
+    "is this cell better explained by the intact population or the damaged one?"
+    and derives the boundary per sample from the joint structure of mitochondrial
+    fraction and library complexity. See `cellquorum.stages.qc.mixture` for the
+    model and Hippen et al., PLoS Comput Biol 2021 for the method.
+
+    Enabling this requires setting `mad.mito_metric: null`, because two adaptive
+    mitochondrial rules at once is not a policy -- whichever is stricter silently
+    wins. Keep `basic.max_mito_percent` as a loose hard backstop rather than a
+    filter; if it is set tight it will override the model on exactly the cells the
+    model was brought in to judge, and the stage warns when that happens.
+
+    Args:
+        enabled: Whether mixture-model mitochondrial filtering is enabled.
+        mito_metric: Mitochondrial percentage metric, the regression response.
+        complexity_metric: Library complexity metric, the regression predictor.
+        posterior_cutoff: Compromised probability above which a cell is removed.
+        monotone_mito_projection: Whether to reduce the fitted model to one
+            mitochondrial ceiling per group and filter on that instead of on the
+            posterior directly. Strongly recommended. The posterior depends on
+            both mitochondrial fraction and complexity, so on a lineage with
+            little mitochondrial spread the mixture separates on COMPLEXITY and
+            the rule stops being a mitochondrial rule at all: on the skin atlas
+            it removed plasma cells from 1.71% mitochondrial content upward while
+            keeping others at 2.49%, and removed the deepest neutrophils (2,088
+            genes) while keeping the shallowest (509). Projecting onto the
+            mitochondrial axis makes "higher mitochondrial fraction is worse" true
+            by construction, and turns the model into a per-lineage ceiling that
+            can be stated in a methods section.
+        keep_all_below_boundary: Whether to keep every cell below the intact
+            component's own fitted line regardless of its posterior.
+        enforce_left_cutoff: Whether to also remove cells that are both no more
+            complex and no less mitochondrial than the least-mitochondrial cell
+            already being removed.
+        groupby: Metadata columns defining the fitting groups. Grouping is the
+            entire point, and it should carry cell IDENTITY and NOTHING ELSE --
+            in particular not sample. Two findings on the skin atlas fix this:
+
+            Identity must be in the grouping, because mitochondrial baseline is
+            lineage-specific and a fit spanning lineages splits on identity
+            rather than viability. A per-sample-only fit removed 63% of one
+            sample's keratinocytes at a median of 2,506 detected genes, because
+            keratinocyte mitochondrial content is 4.6x the fibroblast median in
+            the same sample.
+
+            Sample must NOT be in the grouping, because a two-component mixture
+            splits whatever it is given, including a group with no damaged cells
+            in it. Adding ``sample_id`` made the cleanest sample's fibroblasts
+            lose 21.1% of cells at a median of 0.67% mitochondrial content, and
+            reproduced the pathology of per-sample MAD: the cleanest sample gets
+            the harshest boundary. Damage is an absolute biophysical state, so
+            what varies between samples is the PROPORTION of damaged cells, not
+            the mitochondrial fraction at which damage begins. Pooling samples
+            and grouping on identity lets the proportion vary and holds the
+            boundary fixed, and per-sample attrition then tracks sample quality
+            monotonically (1.7% on the cleanest sample, 23.5% on the dirtiest).
+
+            So: ``[cell_type]`` on mixed populations, and an empty list on a
+            single-lineage subset, which is already identity-grouped. Note that
+            annotation must therefore precede this rule; on an unannotated object
+            an empty list pools everything into one model, which is a learned
+            global ceiling rather than a per-lineage one.
+        fallback_groupby: Progressively coarser groupings tried when a group is
+            too small to fit. Each fallback model is estimated on all of that
+            coarser group's cells but applied only to the cells still awaiting a
+            model, so a rare cell type borrows strength across samples instead of
+            going unfiltered. ``[[]]`` -- one pooled model -- is the fallback that
+            always resolves, because a pooled level has exactly one group and so
+            either works for every cell or for none.
+        level_policy: How the grouping hierarchy is resolved.
+
+            ``uniform`` (default) resolves ONE level for the whole dataset: the
+            finest level at which every group can be fit, or the next one down.
+            ``per_group`` resolves it per group, so a group that cannot be fit
+            borrows a coarser model while its fittable neighbours keep their own.
+
+            ``per_group`` filters more cells and models each lineage more
+            faithfully, and it is the right choice when the groups are a large
+            atlas's cell types. It also has a failure mode that no amount of care
+            in the config prevents: group SIZE correlates with study arm in most
+            real cohorts (rarer condition, fewer donors, fewer cells), so WHICH
+            cells got a fine model correlates with the factor under test, and a
+            threshold that varies with the design factor is a covariate rather
+            than a filter. ``uniform`` removes that by construction. Either way
+            the stage audits the attrition it produced -- see
+            ``cellquorum.stages.qc.attrition``.
+        min_cells: Smallest group that will be fit rather than deferred.
+        max_iterations: Expectation-maximisation iteration cap.
+        tolerance: Relative log-likelihood improvement treated as converged.
+        n_restarts: Restarts used to escape local optima. Restart 0 is
+            deterministic, so the usual case does not depend on the seed.
+        random_state: Seed for the randomized restarts.
+        min_component_weight: Smallest share of cells a component may hold before
+            the fit is treated as collapsed to one component.
+    """
+
+    # Store whether mixture-model mitochondrial filtering is enabled.
+    enabled: bool = False
+
+    # Store the mitochondrial metric used as the regression response.
+    mito_metric: str = "pct_counts_mito"
+
+    # Store the library complexity metric used as the regression predictor.
+    #
+    # Raw detected genes rather than a log transform, matching miQC: the model
+    # wants the linear relationship between complexity and mitochondrial fraction
+    # that RNA leakage produces.
+    complexity_metric: str = "n_genes_by_counts"
+
+    # Store the posterior probability above which a cell is called compromised.
+    posterior_cutoff: float = 0.75
+
+    # Store whether the fitted model is reduced to one mitochondrial ceiling per
+    # group before filtering.
+    #
+    # On by default because the unprojected posterior is a function of two
+    # variables and can therefore discard a cleaner cell than one it keeps, which
+    # is indefensible in a mitochondrial QC rule. Projection also produces the
+    # number a methods section actually needs: a per-group ceiling in percent.
+    monotone_mito_projection: bool = True
+
+    # Store whether cells below the intact component's line are always kept.
+    keep_all_below_boundary: bool = True
+
+    # Store whether the discard region is extended leftwards for monotonicity.
+    enforce_left_cutoff: bool = True
+
+    # Store the fitting groups. Empty by default because the safe default is a
+    # single-lineage object, where identity grouping is already implicit.
+    groupby: list[str] = Field(default_factory=list)
+
+    # Store progressively coarser groupings for groups too small to fit.
+    fallback_groupby: list[list[str]] = Field(default_factory=list)
+
+    # Store how the grouping hierarchy is resolved.
+    #
+    # Uniform by default: one level for the whole dataset. The alternative lets
+    # the level vary between groups, which is a better model of each lineage and a
+    # worse guarantee about the design, because group size and study arm are
+    # correlated in most cohorts.
+    level_policy: Literal["uniform", "per_group"] = "uniform"
+
+    # Store the smallest group that will be fit.
+    min_cells: int = 100
+
+    # Store the expectation-maximisation iteration cap.
+    max_iterations: int = 500
+
+    # Store the relative convergence tolerance.
+    tolerance: float = 1e-6
+
+    # Store the number of restarts.
+    n_restarts: int = 5
+
+    # Store the seed for randomized restarts.
+    random_state: int = 0
+
+    # Store the minimum share of cells a component may hold.
+    min_component_weight: float = 0.01
+
+    @field_validator("mito_metric", "complexity_metric", mode="before")
+    @classmethod
+    def validate_metric_name(cls, value: object) -> str:
+        """
+        Validate a modelled metric column name.
+
+        Args:
+            value: Candidate metric name.
+
+        Returns:
+            Cleaned metric name.
+
+        Raises:
+            ValueError: If the name is not a non-empty string.
+        """
+
+        # Delegate to the shared stripped-string coercion helper.
         return coerce_stripped_string(
             value,
             optional=False,
-            type_message="mito_metric must be a string.",
-            empty_message="mito_metric cannot be empty.",
+            type_message="Mixture metric names must be strings.",
+            empty_message="Mixture metric names cannot be empty.",
         )
+
+    @field_validator("groupby", mode="before")
+    @classmethod
+    def validate_groupby(cls, value: object) -> list[str]:
+        """
+        Validate the fitting group columns.
+
+        Args:
+            value: Candidate groupby list.
+
+        Returns:
+            Cleaned list of column names.
+
+        Raises:
+            ValueError: If the value is not a list of non-empty strings.
+        """
+
+        # Delegate to the shared string-list coercion helper.
+        return coerce_string_list(
+            value,
+            not_a_list_message="mito_mixture.groupby must be a list, not a string.",
+            wrong_container_message="mito_mixture.groupby must be a list of strings.",
+            item_type_message="mito_mixture.groupby entries must be strings.",
+            empty_item_message="mito_mixture.groupby entries cannot be empty.",
+        )
+
+    @field_validator("fallback_groupby", mode="before")
+    @classmethod
+    def validate_fallback_groupby(cls, value: object) -> list[list[str]]:
+        """
+        Validate the coarser fallback groupings.
+
+        Args:
+            value: Candidate list of groupings.
+
+        Returns:
+            Cleaned list of column-name lists.
+
+        Raises:
+            ValueError: If the value is not a list of lists of non-empty strings.
+        """
+
+        # Treat an absent value as no fallback.
+        if value is None:
+            return []
+
+        # Reject anything that is not a list of groupings.
+        if not isinstance(value, list):
+            raise ValueError(
+                "mito_mixture.fallback_groupby must be a list of groupings, each "
+                "itself a list of column names."
+            )
+
+        # Validate each grouping with the shared string-list helper, allowing the
+        # empty grouping as an explicit request for a final pooled fit.
+        return [
+            coerce_string_list(
+                grouping,
+                not_a_list_message=(
+                    "Each mito_mixture.fallback_groupby entry must be a list of "
+                    "column names, not a string."
+                ),
+                wrong_container_message=(
+                    "Each mito_mixture.fallback_groupby entry must be a list of strings."
+                ),
+                item_type_message="mito_mixture.fallback_groupby names must be strings.",
+                empty_item_message="mito_mixture.fallback_groupby names cannot be empty.",
+            )
+            for grouping in value
+        ]
+
+    @field_validator("posterior_cutoff", "min_component_weight", mode="before")
+    @classmethod
+    def validate_probability(cls, value: object) -> float:
+        """
+        Validate a probability strictly inside the open unit interval.
+
+        Args:
+            value: Candidate probability.
+
+        Returns:
+            Validated probability.
+
+        Raises:
+            ValueError: If the value is boolean, non-numeric, or not in (0, 1).
+        """
+
+        # Reject values outside the unit interval first, for a clear message.
+        probability = coerce_float_in_range(
+            value,
+            optional=False,
+            low=0.0,
+            high=1.0,
+            bool_message="Mixture probabilities cannot be boolean values.",
+            type_message="Mixture probabilities must be numeric.",
+            range_message="Mixture probabilities must lie between 0 and 1.",
+        )
+
+        # Reject the endpoints, which would make the rule fire on every cell or
+        # on none of them regardless of the model.
+        if probability is None or probability in {0.0, 1.0}:
+            raise ValueError(
+                "Mixture probabilities must be strictly between 0 and 1, " f"not {probability}."
+            )
+
+        # Return the validated probability.
+        return float(probability)
+
+    @field_validator("tolerance", mode="before")
+    @classmethod
+    def validate_tolerance(cls, value: object) -> float:
+        """
+        Validate the convergence tolerance.
+
+        Args:
+            value: Candidate tolerance.
+
+        Returns:
+            Validated positive tolerance.
+
+        Raises:
+            ValueError: If the value is boolean, non-numeric, or non-positive.
+        """
+
+        # Delegate to the shared strictly-positive-float coercion helper.
+        return coerce_positive_float(
+            value,
+            bool_message="mito_mixture.tolerance cannot be a boolean value.",
+            type_message="mito_mixture.tolerance must be numeric.",
+            nonpositive_message="mito_mixture.tolerance must be > 0.",
+        )
+
+    @field_validator("min_cells", "max_iterations", "n_restarts", mode="before")
+    @classmethod
+    def validate_positive_int(cls, value: object) -> int:
+        """
+        Validate a strictly positive integer setting.
+
+        Args:
+            value: Candidate integer value.
+
+        Returns:
+            Validated positive integer.
+
+        Raises:
+            ValueError: If the value is boolean, non-integer, or below one.
+        """
+
+        # Reject negatives and non-integers with the shared helper.
+        count = coerce_non_negative_int(
+            value,
+            optional=False,
+            bool_message="Mixture counts cannot be boolean values.",
+            type_message="Mixture counts must be integers.",
+            negative_message="Mixture counts cannot be negative.",
+        )
+
+        # Reject zero, which would disable fitting rather than configure it.
+        if count < 1:
+            raise ValueError("Mixture counts must be >= 1.")
+
+        # Return the validated count.
+        return count
 
 
 class QCDoubletConfig(StrictBaseModel):
@@ -776,19 +1152,52 @@ class QCOutputConfig(StrictBaseModel):
     Args:
         write_metrics_table: Whether to write cell and gene QC metric tables.
         write_filter_table: Whether to write filtering decision tables.
-        write_threshold_table: Whether to write threshold tables.
+        write_mixture_table: Whether to write threshold tables.
         write_report_table: Whether to write the per-group QC report table
             (cells before/removed/%/after per cell type + a TOTAL row). Enabled
             by default; the grouping falls back to a single TOTAL row when no
             cell-type labels are present on the input object.
+        cell_labels: Whether to write ``cell_labels.csv`` — the sample, donor,
+            condition and cell-type labels of every cell that ENTERED QC. Under
+            ``mode="filter"`` the written h5ad has lost the removed cells, so
+            without this table a later re-render can only guess at their labels,
+            and a by-cell-type attrition figure built on the guess reports every
+            cell type as losing nothing. With it, the run directory can re-render
+            every QC figure and table exactly, off the tables alone.
+        attrition_audit: Whether to write ``qc_attrition.csv`` -- the per-factor
+            differential-attrition tests. One row per (factor, unit of analysis),
+            including the tests that were skipped and why, so the table answers
+            "was this checked" and not only "was anything found".
         write_summary_json: Whether to write a JSON QC summary.
         write_h5ad: Whether to write a QC AnnData object.
-        write_figures: Whether to write QC figures.
+        write_figures: Master switch for every QC figure. False writes no
+            figures at all, whatever the per-writer flags below say.
         figure_format: File format used for QC figures.
-        publication_figures: Whether to also write publication-style QC panels
-            (mito/ribo/hb boxes, doublet ECDF, scree, MAD panel, etc.). Enabled
-            by default per the QC output contract; set False for fast/no-frills
-            runs that only need the standard audit plots.
+        diagnostic_figures: Whether to write the per-metric audit plots (one
+            histogram, violin and scatter per metric). Off by default: they show
+            each metric's distribution but cannot show what QC removed, which is
+            the question the overview panels answer in six figures instead of
+            sixteen. Turn on to inspect a single metric in isolation.
+        publication_figures: Whether to write the legacy publication panel set
+            (mito/ribo/hb boxes, doublet ECDF, scree, MAD panel, A–M plus a
+            visual-QA contact sheet). Off by default: superseded by
+            ``overview_figures`` and ``publication_tables``, kept for runs that
+            need to reproduce an earlier figure exactly.
+        html_report: Whether to write the single-file HTML QC report
+            (``qc_report.html``): cohort funnel, per-sample attrition, rule
+            attribution, applied thresholds. The CSVs stay canonical; this is the
+            human-readable view of them, and it is what makes a large per-sample
+            drop legible without joining four tables by hand.
+        overview_figures: Whether to write the figure-ready QC panel set
+            (``qc_overview`` plus its standalone panels). These answer "what did
+            QC do to this cohort" — funnel, rule attribution, donor-paired
+            contrast, joint scatter with the exclusion regions drawn, per-sample
+            attrition and a per-sample metric matrix — as opposed to the
+            per-metric audit distributions the other two writers produce.
+        publication_tables: Whether to write the typeset QC tables — the Table 1
+            a manuscript needs — as one HTML page plus a ``booktabs`` ``.tex``
+            and a raster of each. Same numbers as the CSVs, set rather than
+            dumped, so the QC paragraph of a paper can be written from them.
     """
 
     # Store whether QC metric tables should be written.
@@ -798,10 +1207,16 @@ class QCOutputConfig(StrictBaseModel):
     write_filter_table: bool = True
 
     # Store whether threshold tables should be written.
-    write_threshold_table: bool = True
+    write_mixture_table: bool = True
 
     # Store whether the per-group QC report table should be written.
     write_report_table: bool = True
+
+    # Store whether the pre-filter grouping-label table should be written.
+    cell_labels: bool = True
+
+    # Store whether the differential-attrition audit table should be written.
+    attrition_audit: bool = True
 
     # Store whether QC summary JSON should be written.
     write_summary_json: bool = True
@@ -809,17 +1224,262 @@ class QCOutputConfig(StrictBaseModel):
     # Store whether a QC AnnData object should be written.
     write_h5ad: bool = True
 
-    # Store whether QC figures should be written.
+    # Store whether any QC figures should be written.
     write_figures: bool = True
 
     # Store the QC figure format.
     figure_format: QCFigureFormat = "png"
 
-    # Store whether publication-style QC panels are also written.
-    publication_figures: bool = True
+    # Store whether the per-metric audit plots are written.
+    diagnostic_figures: bool = False
+
+    # Store whether the legacy publication QC panel set is written.
+    publication_figures: bool = False
+
+    # Store whether the single-file HTML QC report is written.
+    html_report: bool = True
+
+    # Store whether the figure-ready QC panel set is written.
+    overview_figures: bool = True
+
+    # Store whether the typeset publication QC tables are written.
+    publication_tables: bool = True
 
     # Store the QC figure DPI resolution.
     figure_dpi: int = 300
+
+
+class QCAttritionAuditConfig(StrictBaseModel):
+    """
+    Store settings for the differential-attrition audit.
+
+    Every threshold in this module is chosen to be defensible on its own terms.
+    None of that guarantees the property downstream statistics depend on, which
+    is that QC removed cells at the same RATE in every arm of the design. When it
+    did not, QC has stopped being a filter and become a covariate: whatever the
+    diseased arm looks like afterwards is partly a statement about which of its
+    cells survived. Adaptive thresholds make this MORE likely, not less, because
+    they are estimated from data that differ between arms.
+
+    So the engine tests for it on every run rather than leaving it to whoever
+    happens to look at the attrition figures. See
+    :mod:`cellquorum.stages.qc.attrition` for the three tests and why the unit of
+    analysis matters.
+
+    Args:
+        enabled: Whether the audit runs. On by default -- it is a handful of
+            contingency tests on a table the stage already built, and the failure
+            it detects is invisible in every downstream result.
+        factors: Extra ``obs`` columns to audit, beyond the condition and batch
+            keys resolved from the cohort and design blocks. Name whatever enters
+            a downstream model: treatment, timepoint, site.
+        block: ``obs`` column to stratify and pair on, or None to resolve the
+            cohort/design donor key. Donor quality varies far more than QC
+            thresholds do and donors are rarely balanced across arms, so the
+            pooled test can report an association that no donor exhibits.
+        audit_batch: Whether the batch key is audited alongside condition.
+            Attrition tracking batch is the same defect as attrition tracking
+            condition, and integration will not repair it.
+        audit_subsets: Whether every test is repeated within each subset of the
+            object. A cohort removal rate is an average and the analyses that
+            follow QC are not: a half-point cohort gap can be four points inside
+            one lineage and zero everywhere else, and it is the per-lineage
+            contrast that reaches a figure. Subset p-values are
+            Benjamini-Hochberg adjusted, so switching this on does not cost the
+            cohort test any power.
+        subset: ``obs`` column to stratify the audit by, or None to resolve the
+            engine's cell-type annotation convention. Named explicitly, a column
+            the object does not carry simply produces no subset pass.
+        alpha: Significance level for the warning.
+        min_rate_difference: Smallest removal-rate gap, as a fraction, that may
+            raise a warning. Significance alone is worthless here: above a few
+            tens of thousands of cells a half-point gap is significant at any
+            alpha, and an engine that warns about it trains its users to ignore
+            the warning. Measured gaps are always recorded whatever this is set
+            to; the flag only controls what gets shouted about.
+    """
+
+    # Store whether the audit runs.
+    enabled: bool = True
+
+    # Store extra factors to audit beyond the resolved condition and batch keys.
+    factors: list[str] = Field(default_factory=list)
+
+    # Store the blocking column, or None to resolve the donor key.
+    block: str | None = None
+
+    # Store whether the batch key is audited.
+    audit_batch: bool = True
+
+    # Store whether the per-subset pass runs.
+    audit_subsets: bool = True
+
+    # Store the subset column, or None to resolve the cell-type annotation.
+    subset: str | None = None
+
+    # Store the significance level for the warning.
+    alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
+
+    # Store the smallest removal-rate gap that may raise a warning.
+    min_rate_difference: float = Field(default=0.02, ge=0.0, le=1.0)
+
+
+class QCGradedConfig(StrictBaseModel):
+    """Graded adjudication: technical evidence -> core / borderline / quarantine.
+
+    Replaces "fail any threshold -> removed" with a verdict that no single statistical
+    model can force. There are exactly two routes to quarantine: an uninformative barcode
+    (capture so poor there is nothing to adjudicate), or concordant severe evidence across
+    independent evidence *families*. Correlated metrics inside one family count once.
+
+    Every bar is a property of an assay and a tissue, to be read off calibration figures.
+    The defaults below are the permissive end on purpose: they exist so the stage runs, and
+    they are deliberately not tuned for any dataset.
+
+    Args:
+        enabled: Whether graded adjudication runs alongside the threshold rules.
+        concern_severity: Family severity at or above which a family is concerning, making
+            the cell at least borderline.
+        severe_severity: Family severity at or above which a family is severe. Only severe
+            families feed the concordance route to quarantine.
+        min_concordant_families: Independent damage families that must be severe before
+            quarantine is justified. Must be at least 2 — one would let a single model
+            condemn a cell, which is the failure this design prevents.
+        uninformative_capture_severity: Capture severity at or above which the barcode
+            carries no usable information, justifying quarantine on its own.
+        min_coverage_for_quarantine: Evidence coverage below which quarantine is withheld
+            in favour of borderline. Less evidence must make the system more conservative.
+        multiplet_severity: Multiplet severity at or above which a cell is flagged a
+            probable multiplet. Recorded separately from damage; never quarantines.
+        nuclear_axis_applicable: False for single-nucleus assays, where high
+            nuclear-retained signal is expected rather than evidence of leakage.
+    """
+
+    # Whether graded adjudication runs.
+    enabled: bool = False
+
+    # Bars on family severity. Severity is `z / (z + half_severity_z)` where z is a robust
+    # deviation from the healthy mode, so every bar converts to a number of deviations:
+    #
+    #     bar    0.50   0.60   0.667   0.75   0.80   0.90
+    #     z       3.0    4.5    6.0     9.0   12.0   27.0
+    #
+    # Getting that wrong is not a small error. These bars were first carried over from a
+    # relative severity scale, where 0.80 sat near the top of the observed range; on the
+    # absolute scale it means 12 deviations, which capture, nuclear and multiplet severity
+    # never reach. Quarantine then required two severe families when only one could ever
+    # qualify, and a 201,923-cell cohort produced 12 quarantined cells.
+    #
+    # Calibrated against that cohort, the share of real cells each bar flags per family:
+    #
+    #     bar      capture   metabolic   multiplet   nuclear
+    #     0.50       1.93%     10.77%       4.24%     4.71%
+    #     0.667      0.03%      9.69%       1.54%     0.56%
+    #     0.80       0.00%      8.90%       0.00%     0.02%
+
+    # 3 deviations — "unusual". Above this a cell is at least borderline.
+    concern_severity: float = 0.50
+
+    # 6 deviations — genuinely severe, and low enough that capture, nuclear and multiplet
+    # can still participate in concordance rather than metabolic deciding alone.
+    severe_severity: float = 0.667
+
+    min_concordant_families: int = 2
+
+    # ~27 deviations. Correctly extreme: this route claims the barcode carries no usable
+    # information at all, not that the cell is damaged.
+    uninformative_capture_severity: float = 0.90
+
+    min_coverage_for_quarantine: float = 0.50
+
+    # 4.5 deviations, ~2.7% of real cells — a plausible 10x doublet rate at these loadings.
+    multiplet_severity: float = 0.60
+
+    # Assay context: nuclear-retained signal means something different in snRNA.
+    nuclear_axis_applicable: bool = True
+
+    # ── Lineage-conditional severity ──────────────────────────────────────────────── #
+    #
+    # Judge a cell against cells of its own kind, not against the whole library. This is not
+    # a refinement; without it the system deletes rare cell types outright.
+    #
+    # Measured: a synthetic cohort of 950 ordinary cells plus 50 perfectly healthy cells whose
+    # constitutive biology is low-complexity and high-mitochondrial (the neutrophil /
+    # erythrocyte / plasma-cell profile) quarantined 50 of 50 rare cells and 0 of 950 ordinary
+    # ones. Two independent routes fired: concordance (capture 0.946 + metabolic 0.974 = two
+    # severe families) and the uninformative-barcode route (capture >= 0.90 alone). Against a
+    # sample-wide null a rare cell type and a dying cell are geometrically identical, so no
+    # threshold separates them. On the 201,923-cell validation cohort 2,091 cells carry that
+    # signature and every one is barred from fitting.
+    #
+    # On by default because the failure it prevents is silent and destroys the discovery.
+    lineage_conditional: bool = True
+
+    # Coarse on purpose. Splitting one lineage in two costs almost nothing; merging two
+    # weakens their nulls slightly. Both are far better than one null per library.
+    lineage_resolution: float = 0.5
+
+    # Smallest group that can support its own null. Below this a cell borrows a coarser
+    # level — lineage across libraries, then library, then pooled — which widens the null and
+    # so lowers severity. Falling back is the conservative direction.
+    lineage_min_cells: int = 25
+
+    # Absolute gene floor for taking part in the provisional grouping. Not a cohort
+    # statistic: a barcode with almost no genes cannot be a rare cell type, and letting it
+    # in would allow true empties to anchor a group.
+    lineage_min_genes: int = 50
+
+    # Bars for the per-lineage audit, which catches what per-cell conditioning cannot: a
+    # lineage that is uniformly damaged is exonerated by its own uniformity, because every
+    # cell looks ordinary next to neighbours that are also debris.
+    lineage_suspect_severity: float = 0.667
+    lineage_vulnerable_fraction: float = 0.50
+
+    # ── Archetype audit (optional) ─────────────────────────────────────────────────── #
+    #
+    # Asks the one question the automated verdict cannot ask about itself: is there a
+    # coherent population being removed? Archetypes are polytope vertices rather than dense
+    # blobs, so unlike Leiden they do not need a population to be numerous to find it.
+    #
+    # Runs through an isolated environment because partipy is GPL-3 and CellQuorum is
+    # BSD-3. Without that environment the audit reports itself unavailable and the run is
+    # unaffected, so leaving this on by default costs nothing.
+    archetype_audit: bool = True
+    archetype_max: int = 10
+    archetype_bootstrap: int = 0
+
+    # Cells entering the archetype fit. Capped because archetypal analysis solves a
+    # nonnegative least-squares problem per cell per iteration: uncapped on the
+    # 201,923-cell cohort it sat at 0% CPU for 27 minutes and blocked the run. A uniform
+    # subsample keeps exclusion rates unbiased and still holds ~2,000 cells of a population
+    # at 10% frequency.
+    archetype_max_cells: int = 10_000
+
+    # Restarts per candidate count. The selection sweep is one fit per candidate, so this
+    # multiplies the entire sweep.
+    archetype_restarts: int = 1
+
+    # Hard subprocess cap. An audit must never be able to hang a run; exceeding this
+    # degrades to "audit unavailable" and the run continues.
+    archetype_timeout_seconds: int = 900
+
+    # ── Self-check ────────────────────────────────────────────────────────────────── #
+    #
+    # Compare the verdict against the evidence it rests on, and stop rather than emit a
+    # plausible wrong answer. On by default because every defect in this area was found by a
+    # human asking a question rather than by a test — a rescaled posterior that moved 22,541
+    # cells, a fallback null that dropped damage detection from 100% to 10%, an audit that
+    # called a doublet cluster a lost population. All shipped with a green suite.
+    self_check: bool = True
+
+    # Whether a failed check stops the run. False downgrades to warnings, which is the right
+    # setting for deliberately degraded input and the wrong one for anything else.
+    self_check_fails_run: bool = True
+
+    # Core fraction below which the run is questioned. Graded QC assigns permissions rather
+    # than deleting, so a cohort whose manifold is defined by a minority may be correct — but
+    # never silently.
+    self_check_minimum_core: float = 0.50
 
 
 class QCConfig(StrictBaseModel):
@@ -840,11 +1500,14 @@ class QCConfig(StrictBaseModel):
         metrics: QC metric calculation settings.
         basic: Fixed QC threshold settings.
         mad: Adaptive MAD QC settings.
+        mito_mixture: Mixture-model (miQC) mitochondrial QC settings.
         features: Feature family pattern settings.
         doublets: Doublet detection settings.
         cell_cycle: Cell-cycle scoring settings.
         ambient: Ambient RNA assessment settings.
         duplicate_names: Duplicate name handling settings.
+        attrition_audit: Differential-attrition audit settings -- whether QC
+            removed cells at the same rate in every arm of the design.
         outputs: QC output settings.
         fail_on_empty_result: Whether filtering to zero cells or genes is fatal.
     """
@@ -864,8 +1527,14 @@ class QCConfig(StrictBaseModel):
     # Store fixed QC threshold settings.
     basic: QCBasicThresholdConfig = Field(default_factory=QCBasicThresholdConfig)
 
+    # Store graded-adjudication settings (evidence -> core/borderline/quarantine).
+    graded: QCGradedConfig = Field(default_factory=QCGradedConfig)
+
     # Store adaptive MAD threshold settings.
     mad: QCMadThresholdConfig = Field(default_factory=QCMadThresholdConfig)
+
+    # Store mixture-model mitochondrial threshold settings.
+    mito_mixture: QCMitoMixtureConfig = Field(default_factory=QCMitoMixtureConfig)
 
     # Store feature pattern settings.
     features: QCFeaturePatternConfig = Field(default_factory=QCFeaturePatternConfig)
@@ -881,6 +1550,9 @@ class QCConfig(StrictBaseModel):
 
     # Store duplicate name policy settings.
     duplicate_names: QCDuplicateNameConfig = Field(default_factory=QCDuplicateNameConfig)
+
+    # Store differential-attrition audit settings.
+    attrition_audit: QCAttritionAuditConfig = Field(default_factory=QCAttritionAuditConfig)
 
     # Store output settings.
     outputs: QCOutputConfig = Field(default_factory=QCOutputConfig)
@@ -912,27 +1584,12 @@ class QCConfig(StrictBaseModel):
             )
         return value
 
-    @model_validator(mode="after")
-    def validate_strategy_consistency(self) -> QCConfig:
-        """
-        Validate consistency among QC strategy settings.
-
-        Returns:
-            Validated QC configuration.
-
-        Raises:
-            ValueError: If threshold strategy settings are inconsistent.
-        """
-
-        # Reject MAD strategies when MAD thresholding is disabled.
-        if self.threshold_strategy in {"mad", "fixed_and_mad"} and not self.mad.enabled:
-            raise ValueError(
-                "MAD threshold strategy requires mad.enabled=true. "
-                "Use threshold_strategy='fixed' or enable MAD thresholds."
-            )
-
-        # Return the validated model.
-        return self
+    # The two cross-field validators that used to live here both guarded the threshold path:
+    # one required `mad.enabled` for a MAD strategy, the other refused `mito_mixture` and
+    # `mad.mito_metric` together because whichever rule was stricter would silently decide.
+    # That conflict cannot arise now — no code applies a MAD rule, so the mixture is the only
+    # mitochondrial policy there is, and the guard did nothing but reject valid configs.
+    # `mad` and `threshold_strategy` themselves are removed next.
 
     def should_filter(self) -> bool:
         """
@@ -1037,6 +1694,7 @@ __all__ = [
     "DoubletMethod",
     "DuplicateNamePolicy",
     "QCAmbientRNAConfig",
+    "QCAttritionAuditConfig",
     "QCBasicThresholdConfig",
     "QCCellCycleConfig",
     "QCConfig",

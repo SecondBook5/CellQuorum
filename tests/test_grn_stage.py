@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cellquorum.stages.gene_regulation.grn.stage import GrnStage
 from cellquorum.methods.registry import METHOD_REGISTRY
+from cellquorum.stages.gene_regulation.grn.stage import GrnStage
 
 
 def test_stage_identity() -> None:

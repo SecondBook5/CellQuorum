@@ -7,10 +7,10 @@ from pathlib import Path
 import anndata as ad
 import pandas as pd
 
-from cellquorum.stages.comparative.differential_expression.viz import plots
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.comparative.differential_expression.viz import plots
 from cellquorum.visualization import figstyle
 
 _CSV_NAME = "de_pseudobulk_edger.csv"

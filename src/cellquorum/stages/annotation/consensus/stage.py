@@ -1,4 +1,4 @@
-# Pipeline step (order=130): annotation_consensus — reconcile per-method label columns into one consensus label.
+# Pipeline step (order=130): annotation_consensus — reconcile per-method labels into one.
 """Pipeline stage that reconciles per-method label columns into one label."""
 
 from __future__ import annotations
@@ -7,12 +7,12 @@ from collections.abc import Mapping
 
 import pandas as pd
 
-from cellquorum.stages.annotation.consensus.config import AnnotationConsensusConfig
-from cellquorum.stages.annotation.consensus.consensus import normalize_label, reconcile_votes
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
+from cellquorum.stages.annotation.consensus.config import AnnotationConsensusConfig
+from cellquorum.stages.annotation.consensus.consensus import normalize_label, reconcile_votes
 
 
 @register_stage(

@@ -9,13 +9,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ENVS_DIR = REPO_ROOT / "envs"
 BACKENDS_DIR = REPO_ROOT / "src" / "cellquorum" / "backends"
 
-# The five isolated backend envs the image must bake, keyed to their yml file.
+# The isolated backend envs the image must bake, keyed to their yml file.
 BACKEND_ENV_FILES = {
     "celloracle_env": "celloracle_env.yml",
     "pyscenic_env": "pyscenic_env.yml",
     "hdwgcna_env": "hdwgcna_env.yml",
     "scclr": "scclr.yml",
     "sccoda_env": "sccoda_env.yml",
+    # Optional: the QC archetype audit. Kept isolated because partipy is GPL-3 and
+    # CellQuorum is BSD-3, so linking it would make the distribution copyleft.
+    "partipy": "partipy.yml",
 }
 
 

@@ -8,8 +8,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.comparative.enrichment.viz.stage import EnrichmentVizStage
 from cellquorum.core.context import PipelineContext, PipelinePaths
+from cellquorum.stages.comparative.enrichment.viz.stage import EnrichmentVizStage
 
 
 def _ctx(tmp_path, config=None):

@@ -38,10 +38,13 @@ early checkpoint.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from cellquorum.core.fingerprint import FINGERPRINT_SCHEMA_VERSION
 
 if TYPE_CHECKING:
     import anndata as ad
@@ -53,6 +56,14 @@ if TYPE_CHECKING:
 CHECKPOINT_SCHEMA_VERSION = 2
 _SIDECAR_NAME = "checkpoint.json"
 _OBJECT_NAME = "adata.h5ad"
+
+# What a sidecar that predates the recorded fingerprint schema was written under.
+#
+# The field was added while FINGERPRINT_SCHEMA_VERSION was 1, so every sidecar on
+# disk without it is a v1 fingerprint. Defaulting to 1 states that fact rather than
+# guessing; defaulting to the current version would claim old checkpoints are
+# comparable when they are not.
+_UNRECORDED_FINGERPRINT_SCHEMA = 1
 
 
 class CheckpointError(RuntimeError):
@@ -72,6 +83,10 @@ class CheckpointRecord:
     # The one a resume can actually check. See the module docstring for why the
     # input fingerprint above cannot serve this purpose.
     upstream_fingerprint: str | None = None
+    # Which fingerprint construction produced the two hashes above. Without it, a
+    # checkpoint written by an older engine is indistinguishable from one whose
+    # settings genuinely changed, and the staleness message accuses the wrong thing.
+    fingerprint_schema_version: int = FINGERPRINT_SCHEMA_VERSION
 
     @property
     def object_path(self) -> Path:
@@ -125,14 +140,22 @@ def write_checkpoint(
     target = checkpoint_dir(paths, stage)
     target.mkdir(parents=True, exist_ok=True)
     object_path = target / _OBJECT_NAME
-    try:
-        import anndata
+    # Through the shared writer, which knows the several ways a real object fails
+    # to serialize and writes atomically. Both matter here: a checkpoint of an
+    # object with one mixed-type obs column used to leave a multi-gigabyte file
+    # holding X and obs and nothing else, which is unusable as a resume point but
+    # looks like a checkpoint on disk.
+    from cellquorum.core.h5ad_io import H5adWriteError, write_h5ad
 
-        # Real objects carry nullable string obs columns; without this opt-in the
-        # write fails on exactly the objects most worth checkpointing.
-        anndata.settings.allow_write_nullable_strings = True
-        adata.write_h5ad(object_path)
-    except Exception as exc:  # noqa: BLE001 — re-raised as a typed error below
+    try:
+        write_h5ad(adata, object_path)
+    except H5adWriteError as exc:
+        # The writer has already removed any object left at that path, so drop the
+        # sidecar too: discovery keys on the sidecar, and one without its object is
+        # a checkpoint that exists as far as `--from-stage` is concerned and then
+        # fails on read. Half a checkpoint is worse than none.
+        with contextlib.suppress(OSError):
+            (target / _SIDECAR_NAME).unlink(missing_ok=True)
         raise CheckpointError(f"could not write checkpoint for '{stage}': {exc}") from exc
 
     record = CheckpointRecord(
@@ -148,6 +171,7 @@ def write_checkpoint(
         json.dumps(
             {
                 "schema_version": CHECKPOINT_SCHEMA_VERSION,
+                "fingerprint_schema_version": record.fingerprint_schema_version,
                 "stage": record.stage,
                 "order": record.order,
                 "input_fingerprint": record.input_fingerprint,
@@ -183,6 +207,9 @@ def read_checkpoint_record(paths: object, stage: str) -> CheckpointRecord | None
         n_vars=int(payload.get("n_vars", -1)),
         path=target,
         upstream_fingerprint=payload.get("upstream_fingerprint"),
+        fingerprint_schema_version=int(
+            payload.get("fingerprint_schema_version", _UNRECORDED_FINGERPRINT_SCHEMA)
+        ),
     )
 
 
@@ -250,7 +277,24 @@ def load_checkpoint(
     ``expected_fingerprint`` compares the stage's recorded *input* fingerprint. Either
     check is skipped when its expected value is None, for callers that genuinely
     cannot compute one.
+
+    A checkpoint written under a different fingerprint schema is refused before either
+    comparison, with a message that says so. The refusal is the same — the checkpoint
+    cannot be validated, so it is not loaded — but the *reason* matters: comparing
+    hashes from two constructions and reporting "a setting changed" sends someone
+    hunting for an edit they never made.
     """
+    if (
+        expected_upstream_fingerprint is not None or expected_fingerprint is not None
+    ) and record.fingerprint_schema_version != FINGERPRINT_SCHEMA_VERSION:
+        raise CheckpointError(
+            f"checkpoint for '{record.stage}' cannot be validated: its fingerprints were "
+            f"computed by CellQuorum's fingerprint schema v"
+            f"{record.fingerprint_schema_version}, and this version computes v"
+            f"{FINGERPRINT_SCHEMA_VERSION}, so the two are not comparable. This is an "
+            "engine upgrade, not a change to your settings. Delete the checkpoint to "
+            "recompute the stage under this version."
+        )
     if expected_upstream_fingerprint is not None:
         if record.upstream_fingerprint is None:
             raise CheckpointError(

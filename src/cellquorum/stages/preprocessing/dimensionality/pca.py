@@ -3,6 +3,10 @@
 PCAMethod is an AnalysisMethod strategy: it computes PCA on the active matrix,
 selects the component count (fixed or via the variance-ratio knee), truncates the
 embedding, and emits a house-style scree/elbow figure so the choice is auditable.
+
+PCA loadings are a cohort-derived quantity, so the basis is fitted on the cells QC
+permits to fit and every cell is then projected onto it. See
+:func:`project_onto_fitted_basis` for why that is exact rather than an approximation.
 """
 
 from __future__ import annotations
@@ -12,19 +16,63 @@ from pathlib import Path
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scanpy as sc
+import scipy.sparse as sp
 from kneed import KneeLocator
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.qc.eligibility import fitting_cells
 
 logger = logging.getLogger(__name__)
 
 
+def project_onto_fitted_basis(
+    matrix: np.ndarray | sp.spmatrix,
+    loadings: np.ndarray,
+    fit_gene_means: np.ndarray,
+) -> np.ndarray:
+    """Project cells onto a PCA basis fitted on a different set of cells.
+
+    PCA has an exact out-of-sample transform, which is what makes the core-fit /
+    project-everyone split honest here: a borderline cell receives a real coordinate in the
+    core cells' manifold without having influenced where that manifold is.
+
+    The arithmetic is the textbook ``(X - mean) @ PCs``, rearranged:
+
+        (X - 1·meanᵀ) @ PCs  ==  X @ PCs - (meanᵀ @ PCs)
+
+    Algebraically identical, but the left form densifies a sparse matrix to subtract the
+    mean, and the right form does not. That is not a micro-optimisation: on the validation
+    cohort the matrix is 201,923 x 36,601, where densifying is tens of gigabytes.
+
+    Two details make this exact rather than approximate:
+
+    * ``scanpy`` writes ``varm["PCs"]`` at full gene length, zero-filled outside
+      ``mask_var``, so passing the whole matrix is correct — non-HVG genes contribute
+      ``(x - mean) * 0``. Their means are therefore irrelevant too.
+    * ``sc.pp.pca`` centres by default, so the mean must be the **fit population's** gene
+      means. Using every cell's means would leak the excluded cells straight back into the
+      embedding, which is the whole thing being prevented.
+
+    Args:
+        matrix: Cells x genes expression for the cells being projected.
+        loadings: ``varm["PCs"]``, genes x components.
+        fit_gene_means: Per-gene means over the fit population only.
+
+    Returns:
+        A dense cells x components embedding.
+    """
+    projected = matrix @ loadings
+    projected = np.asarray(projected.todense() if sp.issparse(projected) else projected)
+    return projected - (fit_gene_means @ loadings)
+
+
 def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Path) -> None:
     """
-    Render a house-style scree/elbow plot to ``output_path`` (PNG).
+    Render a house-style scree/elbow plot to ``output_path``, plus a vector twin.
 
     Bars show per-PC variance %; a red line shows cumulative variance % on a
     secondary axis; an 80% dashed reference line and a vertical marker at the
@@ -33,7 +81,9 @@ def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Pat
     Args:
         variance_ratio: Per-PC explained-variance ratios (descending).
         chosen_n: Selected component count (for the vertical marker).
-        output_path: Destination PNG path.
+        output_path: Destination PNG path. A ``.pdf`` is written beside it, because
+            this used to be a bare ``fig.savefig`` and the scree plot was one of only
+            three figures in a run that had no vector form.
     """
 
     # Use a non-interactive backend so this is safe in headless runs.
@@ -65,10 +115,11 @@ def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Pat
     ax.axvline(chosen_n, linewidth=0.8, linestyle=":", color="#6B7280")
     ax.set_title("PCA scree")
 
-    # Persist and close.
-    fig.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150)
+    # Persist and close. The shared writer supplies the atomic rename and the
+    # vector twin; closing stays here, since save_cellquorum_figure does not close.
+    from cellquorum.visualization.figstyle import save_cellquorum_figure
+
+    save_cellquorum_figure(fig, output_path, dpi=150)
     plt.close(fig)
 
 
@@ -158,8 +209,19 @@ class PCAMethod(AnalysisMethod):
         # Compute the full (capped) PCA once so we have the variance-ratio curve.
         # scanpy >=1.10 deprecated use_highly_variable in favor of mask_var:
         # "highly_variable" restricts PCA to the HVG var column; None uses all genes.
-        n_comps = int(min(max_pcs, adata.n_obs - 1, adata.n_vars - 1))
+        # PCA loadings are a cohort-derived quantity used to transform biological data, so
+        # the basis is fitted only on the cells QC permits to fit and everyone else is
+        # projected onto it. This stage declares fit_scope=CORE at registration; the branch
+        # below is what honours it.
+        #
+        # Component count comes from the FIT population, not the full object: asking for
+        # more components than there are fitting cells is what turns a small core into an
+        # error deep inside the SVD.
+        fitting = fitting_cells(adata.obs)
+        n_fit_cells = adata.n_obs if fitting is None else int(fitting.sum())
+        n_comps = int(min(max_pcs, n_fit_cells - 1, adata.n_vars - 1))
         mask_var = "highly_variable" if use_hvg else None
+        scope_notes: list[str] = []
 
         # Route by normalization method: a scclr-normalized layer carries a
         # per-cell row_center, so PCA runs through scclr's implicit-centered
@@ -176,7 +238,17 @@ class PCAMethod(AnalysisMethod):
             )
             compute_used = "scclr"
             gpu_fallback_note = None
-        else:
+            if fitting is not None:
+                # The scclr path centres implicitly per cell and exposes no separable
+                # basis, so there is nothing to project onto. Stated rather than silently
+                # ignored: a reader must be able to see that this route fitted on
+                # everything.
+                scope_notes.append(
+                    "scclr PCA fitted on all cells: its implicit per-cell centering has no "
+                    "out-of-sample transform, so the QC fit population could not be honoured. "
+                    "Use a standard lognorm layer for a core-only manifold."
+                )
+        elif fitting is None:
             compute_used, gpu_fallback_note = self._run_scanpy_pca(
                 adata,
                 input_layer=input_layer,
@@ -185,6 +257,17 @@ class PCAMethod(AnalysisMethod):
                 random_state=random_state,
                 context=context,
             )
+        else:
+            compute_used, gpu_fallback_note, scope_note = self._fit_on_core_then_project(
+                adata,
+                fitting,
+                input_layer=input_layer,
+                n_comps=n_comps,
+                mask_var=mask_var,
+                random_state=random_state,
+                context=context,
+            )
+            scope_notes.append(scope_note)
 
         variance_ratio = np.asarray(adata.uns["pca"]["variance_ratio"], dtype=float)
 
@@ -236,6 +319,7 @@ class PCAMethod(AnalysisMethod):
 
         if gpu_fallback_note is not None:
             notes.append(gpu_fallback_note)
+        notes.extend(scope_notes)
 
         return StageResult(
             adata=adata,
@@ -256,6 +340,89 @@ class PCAMethod(AnalysisMethod):
             },
             notes=notes,
         )
+
+    def _fit_on_core_then_project(
+        self,
+        adata: ad.AnnData,
+        fitting: pd.Series,
+        *,
+        input_layer: str,
+        n_comps: int,
+        mask_var: str | None,
+        random_state: int,
+        context: object,
+    ) -> tuple[str, str | None, str]:
+        """Fit the PCA basis on the QC fit population, then project every cell onto it.
+
+        The distinction this preserves is the one the eligibility masks exist for: a
+        borderline cell is *projected into* the manifold, never *joined to* the fit that
+        defined it. It still receives a usable coordinate, so it can be clustered,
+        annotated, inspected in a UMAP and considered for rescue — it simply had no say in
+        where the axes point.
+
+        Args:
+            adata: The full object. Mutated in place with the basis and the embedding.
+            fitting: Boolean per-cell mask of the cells permitted to fit.
+            input_layer: Expression layer PCA runs on.
+            n_comps: Components to compute, already capped by the fit population size.
+            mask_var: ``var`` column restricting PCA to a gene subset, or None.
+            random_state: Seed.
+            context: Pipeline context, for GPU routing.
+
+        Returns:
+            ``(compute_used, gpu_fallback_note, scope_note)``.
+        """
+        fit_adata = adata[fitting].copy()
+        compute_used, gpu_fallback_note = self._run_scanpy_pca(
+            fit_adata,
+            input_layer=input_layer,
+            n_comps=n_comps,
+            mask_var=mask_var,
+            random_state=random_state,
+            context=context,
+        )
+
+        # No basis means nothing to project onto. Only reachable if a backend stops writing
+        # varm["PCs"], and a wrong embedding would be far worse than a slower correct one,
+        # so fall back to fitting on everything and say so.
+        if "PCs" not in fit_adata.varm:
+            compute_used, gpu_fallback_note = self._run_scanpy_pca(
+                adata,
+                input_layer=input_layer,
+                n_comps=n_comps,
+                mask_var=mask_var,
+                random_state=random_state,
+                context=context,
+            )
+            return (
+                compute_used,
+                gpu_fallback_note,
+                "PCA fitted on all cells: the backend wrote no varm['PCs'], so the core-only "
+                "basis could not be projected. The embedding includes non-core cells.",
+            )
+
+        # The basis and its variance spectrum describe the fit population and are what
+        # later stages read, so they transfer to the full object unchanged.
+        loadings = np.asarray(fit_adata.varm["PCs"], dtype=np.float64)
+        adata.varm["PCs"] = loadings
+        adata.uns["pca"] = dict(fit_adata.uns["pca"])
+
+        # The matrix PCA actually ran on, layer or X, for each object.
+        fit_matrix = fit_adata.layers.get(input_layer, fit_adata.X)
+        full_matrix = adata.layers.get(input_layer, adata.X)
+
+        # Centering must use the fit population's means. Taking them over every cell would
+        # readmit the excluded cells into the embedding through the back door.
+        fit_gene_means = np.asarray(fit_matrix.mean(axis=0), dtype=np.float64).ravel()
+        adata.obsm["X_pca"] = project_onto_fitted_basis(full_matrix, loadings, fit_gene_means)
+
+        n_projected = int(adata.n_obs - len(fit_adata))
+        scope_note = (
+            f"PCA basis fitted on {len(fit_adata)} QC-permitted cells; {n_projected} further "
+            f"cells projected onto it without influencing it."
+        )
+        logger.info(scope_note)
+        return compute_used, gpu_fallback_note, scope_note
 
     def _run_scanpy_pca(
         self,

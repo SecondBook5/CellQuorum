@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from cellquorum.config.base import StrictBaseModel
 
 
@@ -20,8 +22,15 @@ class DifferentialAbundanceConfig(StrictBaseModel):
         k: Number of neighbors for compositional DA methods.
         prop: Proportion threshold for abundance filtering.
         spatial_fdr: FDR threshold for spatial DA tests.
-        reference_celltype: Reference cell type for compositional analysis (None for
-            dataset default).
+        reference_celltype: Reference cell type for compositional analysis (None to
+            let the engine choose it).
+        select_reference: Whether the engine picks the compositional reference on
+            centred-log-ratio variance. Disabling it hands the choice back to
+            scCODA's own criterion, which ranks cell types largely by rarity.
+        min_reference_abundance: Minimum mean relative abundance for a cell type to
+            serve as the compositional reference.
+        pair_by_donor: Whether donor enters the compositional model formula --
+            'auto' (paired when enough donors span both arms), 'always', or 'never'.
         seed: Random seed for reproducibility.
         num_iterations: Number of iterations for DA fitting algorithms.
         inclusion_prob_threshold: Threshold for including samples in DA analysis.
@@ -51,8 +60,24 @@ class DifferentialAbundanceConfig(StrictBaseModel):
     # FDR threshold for spatial DA tests.
     spatial_fdr: float = 0.1
 
-    # Reference cell type for compositional analysis (None for dataset default).
+    # Reference cell type for compositional analysis (None -> engine selection).
     reference_celltype: str | None = None
+
+    # Let the engine choose the compositional reference on centred-log-ratio
+    # variance. scCODA's own "automatic" criterion minimises var(p)/mean(p), which
+    # is cv**2 * mean and so scales with abundance: it ranks cell types largely by
+    # rarity, and the reference is the denominator of every reported effect.
+    select_reference: bool = True
+
+    # Minimum mean relative abundance for a compositional reference. Below a few
+    # percent the reference's own counting noise propagates into every effect.
+    min_reference_abundance: float = 0.05
+
+    # Whether donor enters the compositional model formula. 'auto' pairs when
+    # enough donors span both arms, which is a property of the cohort rather than a
+    # preference; 'never' reproduces an unpaired fit; 'always' forces pairing where
+    # the design permits it at all.
+    pair_by_donor: Literal["auto", "always", "never"] = "auto"
 
     # Random seed for reproducibility.
     seed: int = 0

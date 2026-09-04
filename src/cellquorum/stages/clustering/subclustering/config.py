@@ -44,11 +44,17 @@ class ReembedConfig(StrictBaseModel):
         representations: list of representations to compute.
         hvg: HVG selection parameters.
         integration: integration parameters.
+        max_iter_harmony: Harmony iteration cap for the batch-aware re-embedding.
+            harmonypy's own default is 10, and CHOIR declares its cluster count
+            significant *in this space* — so a Harmony that stopped at the cap makes
+            the partition a test against a partially corrected embedding. The stage
+            warns when that happens; this is the knob that fixes it.
     """
 
     representations: list[str] = ["batch_aware"]
     hvg: dict = {}
     integration: dict = {}
+    max_iter_harmony: int = 10
 
 
 class PartitionConfig(StrictBaseModel):

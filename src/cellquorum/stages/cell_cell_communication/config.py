@@ -73,7 +73,8 @@ class CellCellCommunicationConfig(StrictBaseModel):
     # Shared knobs
     nichenet_min_cells: int = 10
     nichenet_expr_prop: float = 0.10
-    nichenet_n_cores: int = 4
+    # BiocParallel workers inside multinichenet.R; None inherits compute.n_jobs.
+    nichenet_n_cores: int | None = None
     nichenet_timeout_seconds: int = 7200
     # MultiNicheNet-specific (AJ's validated defaults)
     mnn_fraction_cutoff: float = 0.05

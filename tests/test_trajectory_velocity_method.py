@@ -203,3 +203,69 @@ def test_velocity_writes_back_per_group_obs_columns(tmp_path):
     assert "velocity_confidence_T" in result.adata.obs.columns
     # In-group cells must have values; out-group cells would be NaN (but here all are group T).
     assert result.adata.obs["velocity_pseudotime_T"].notna().sum() == 40
+
+
+def test_compute_n_jobs_reaches_scvelo(tmp_path, monkeypatch):
+    """The whole point of `compute.n_jobs`: a run that asks for 8 workers gets them.
+
+    It did not. The velocity stage had its own ``n_jobs`` defaulting to 1, no
+    manifest set it, and nothing connected it to ``compute.n_jobs`` — so the most
+    expensive step in the pipeline (``recover_dynamics``: 151s serial vs 20s on 8
+    workers for 1200 cells x 2000 genes) ran single-threaded on a machine that had
+    been told to use eight cores.
+    """
+    import pytest
+
+    pytest.importorskip("scvelo")
+    pytest.importorskip("loompy")
+    import loompy
+
+    from cellquorum.stages.trajectory import compute as traj_compute
+
+    seen: list[int] = []
+    real = traj_compute.compute_velocity
+
+    def _spy(adata, **kwargs):
+        seen.append(kwargs["n_jobs"])
+        return real(adata, **kwargs)
+
+    monkeypatch.setattr(traj_compute, "compute_velocity", _spy)
+
+    genes = [f"GENE_{i}" for i in range(50)]
+    barcodes = [f"AAAA{i:04d}" for i in range(40)]
+    names = [f"s1_{bc}-1" for bc in barcodes]
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(
+        X=rng.random((40, 50)).astype("float32"),
+        obs=pd.DataFrame({"sample_id": ["s1"] * 40, "cell_type": ["T"] * 40}, index=names),
+    )
+    a.var_names = genes
+    a.obsm["X_pca"] = rng.random((40, 10))
+    loom = tmp_path / "s1.loom"
+    loompy.create(
+        str(loom),
+        layers={
+            "": rng.integers(0, 5, size=(50, 40)).astype("float32"),
+            "spliced": rng.integers(0, 5, size=(50, 40)).astype("float32"),
+            "unspliced": rng.integers(0, 3, size=(50, 40)).astype("float32"),
+        },
+        row_attrs={"Gene": np.array(genes, dtype=object)},
+        col_attrs={"CellID": np.array([f"s1:{bc}x" for bc in barcodes], dtype=object)},
+    )
+    manifest = pd.DataFrame({"sample_id": ["s1"], "loom_path": [str(loom)]})
+
+    class _Compute:
+        n_jobs = 3
+
+    class _Config:
+        compute = _Compute()
+
+    ctx = _Ctx(tmp_path, a, manifest=manifest)
+    ctx.config = _Config()
+
+    cfg = _cfg(n_top_genes=30, n_pcs=5, n_neighbors=5, min_cells=5)
+    cfg.pop("n_jobs")  # unset, as the generated configs leave it
+    VelocityMethod().run(a, cfg, ctx)
+
+    assert seen, "compute_velocity was never called"
+    assert set(seen) == {3}

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.integration.harmony import HarmonyMethod
 from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
 from cellquorum.stages.integration.scvi_methods import ScVIMethod
 from cellquorum.stages.integration.stage import IntegrationStage
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 # Self-register integration methods (guarded against double registration).
 if not METHOD_REGISTRY.has("integration", "harmony"):

@@ -263,3 +263,69 @@ input:
     # Confirm invalid YAML config fails.
     with pytest.raises(ConfigLoadError, match="Invalid CellQuorum configuration"):
         load_config(config_path)
+
+
+def test_input_config_accepts_an_exclusion_rule() -> None:
+    """
+    Verify InputConfig carries an exclusion rule alongside the inclusion one.
+
+    An inclusion list cannot express "everything except": dropping one artifact
+    cluster from a 39-cluster partition by subset means naming the other 38, which
+    is unreadable and silently incomplete the next time the object is re-clustered.
+    """
+
+    config = InputConfig(
+        h5ad="data/example.h5ad",
+        exclude={"column": "leiden", "values": ["22"]},
+    )
+
+    assert config.exclude is not None
+    assert config.exclude.column == "leiden"
+    assert config.exclude.values == ["22"]
+
+    # The two rules are independent: an exclusion does not imply a subset.
+    assert config.subset is None
+
+
+def test_input_config_rejects_an_empty_exclusion() -> None:
+    """
+    Verify an exclusion with no values is refused.
+
+    A rule that names a column and nothing to drop from it reads like a filter and
+    removes nothing, which is the failure mode the loader's vocabulary guard also
+    exists to prevent.
+    """
+
+    with pytest.raises(ValueError, match="values"):
+        InputConfig(h5ad="data/example.h5ad", exclude={"column": "leiden", "values": []})
+
+
+def test_load_config_accepts_a_yaml_exclusion_block(tmp_path: Path) -> None:
+    """
+    Verify input.exclude round-trips through YAML config loading.
+
+    The artifact-cluster mask has to be a declared, reviewable part of the run
+    config rather than a hand-edit in a driver script, or the next run silently
+    analyses the debris.
+    """
+
+    config_path = tmp_path / "exclude_config.yaml"
+    config_path.write_text(
+        """
+project:
+  name: yaml_exclude_project
+input:
+  h5ad: data/example.h5ad
+  exclude:
+    column: leiden
+    values:
+      - "22"
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.input.exclude is not None
+    assert config.input.exclude.column == "leiden"
+    assert config.input.exclude.values == ["22"]

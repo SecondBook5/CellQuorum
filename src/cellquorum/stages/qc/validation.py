@@ -17,8 +17,10 @@ import numpy as np
 # Import sparse matrix helpers for sparse AnnData.X validation.
 import scipy.sparse as sp
 
-# Import shared CellQuorum data exception base.
 from cellquorum.core.exceptions import CellQuorumDataError
+
+# Import shared CellQuorum data exception base.
+from cellquorum.stages.qc._types import ExpressionMatrix
 
 # Import QC configuration models.
 from cellquorum.stages.qc.config import QCConfig, QCDuplicateNameConfig
@@ -262,7 +264,7 @@ def get_qc_matrix(adata: ad.AnnData, config: QCConfig) -> tuple[object, str]:
 
 
 def validate_qc_matrix(
-    matrix: object,
+    matrix: ExpressionMatrix,
     *,
     expected_n_obs: int,
     matrix_source: str,

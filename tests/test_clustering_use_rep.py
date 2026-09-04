@@ -6,8 +6,8 @@ import anndata as ad
 import numpy as np
 import pytest
 
-from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
 from cellquorum.core.contracts import CellQuorumContractError
+from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
 
 
 def _adata_with_rep(rep, n=160, n_pcs=10, seed=0):

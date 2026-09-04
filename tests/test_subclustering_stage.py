@@ -7,6 +7,10 @@ matched zero cells — propagated a 0-cell object that poisoned population_ident
 embeddings, DE, and CCC. The stage computes on the focus internally but must
 return the ORIGINAL object (all cells, embeddings intact) with subcluster labels
 projected back onto it.
+
+A focus that matches zero cells is a separate case, and it now raises rather than
+skipping: the object must stay clean either way, but a run cannot be allowed to
+report success while silently delivering none of the subtypes it was configured for.
 """
 
 from __future__ import annotations
@@ -16,9 +20,13 @@ from types import SimpleNamespace
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 
 from cellquorum.stages.clustering.subclustering.config import SubclusteringConfig
-from cellquorum.stages.clustering.subclustering.stage import SubclusteringStage
+from cellquorum.stages.clustering.subclustering.stage import (
+    SubclusteringFocusError,
+    SubclusteringStage,
+)
 
 
 def _parent_adata(seed=0):
@@ -75,15 +83,71 @@ def test_subclustering_preserves_parent_cells_and_embeddings():
     assert result.adata.obsm["X_pca_harmony"].shape[0] == n_before
 
 
-def test_subclustering_zero_cell_focus_does_not_poison_object():
-    """Focus matches 0 cells: skip cleanly, return the parent unchanged."""
+def _resolve(cohort, donor_gate_key):
+    """The stage's nuisance-key resolution, exercised on its own."""
+    sc_config = SubclusteringConfig(
+        enabled=True, donor_gate={"group_key": donor_gate_key, "min_groups": 3}
+    )
+    config = SimpleNamespace(subclustering=sc_config, cohort=cohort)
+    return SubclusteringStage()._resolve_nuisance_key(config, sc_config)
+
+
+def test_the_declared_batch_key_is_what_choir_and_scshc_correct_for():
+    """Both need the technical grouping, and ``cohort.batch_key`` is where it is declared."""
+    cohort = SimpleNamespace(batch_key="batch", donor_key="donor_id")
+    assert _resolve(cohort, donor_gate_key="donor_id") == "batch"
+
+
+def test_a_cohort_donor_key_alone_still_corrects_the_partition():
+    """
+    Pin the bug: the declare-once contract was honoured at one call site of three.
+
+    A config that set ``cohort.donor_key`` and left ``donor_gate.group_key`` unset —
+    the pattern the donor gate documents — used to get a correctly donor-gated run
+    whose CHOIR embedding was uncorrected and whose sc-SHC was unconditioned, with
+    nothing in the output saying so.
+    """
+    cohort = SimpleNamespace(batch_key=None, donor_key="donor_id")
+    assert _resolve(cohort, donor_gate_key=None) == "donor_id"
+
+
+def test_the_subclustering_block_can_still_name_its_own_key():
+    assert _resolve(SimpleNamespace(), donor_gate_key="patient") == "patient"
+
+
+def test_a_run_with_nothing_to_correct_for_says_so_out_loud():
+    """No key at all means CHOIR partitions an uncorrected space; that is a warning."""
+    assert _resolve(SimpleNamespace(), donor_gate_key=None) is None
+
     parent = _parent_adata()
-    n_before = parent.n_obs
-    ctx = _context(parent, focus_labels=["NoSuchType"])
+    ctx = _context(parent, focus_labels=["Fibroblasts"])
+    ctx.config.subclustering = ctx.config.subclustering.model_copy(
+        update={
+            "donor_gate": ctx.config.subclustering.donor_gate.model_copy(update={"group_key": None})
+        }
+    )
+    ctx.config.cohort = SimpleNamespace(donor_key=None, sample_key="sample_id", focus=None)
 
     result = SubclusteringStage().run(ctx)
 
-    # Never propagate a 0-cell object; the parent passes through intact.
-    assert result.adata.n_obs == n_before
-    assert "X_pca_harmony" in result.adata.obsm
-    assert result.metrics.get("skipped") is True
+    assert any("no batch/donor key" in w for w in result.warnings)
+
+
+def test_subclustering_zero_cell_focus_is_refused():
+    """Focus matches 0 cells: fail, rather than pass the parent through.
+
+    This used to be a warning-and-skip. It let a run whose subclustering block was
+    copied from another lineage finish "successfully" with no subtypes at all — the
+    label column exists, so zero matches can only mean the labels are wrong, and
+    there is no reading of that config under which the run delivered what was asked.
+    """
+    ctx = _context(_parent_adata(), focus_labels=["NoSuchType"])
+
+    with pytest.raises(SubclusteringFocusError) as excinfo:
+        SubclusteringStage().run(ctx)
+
+    message = str(excinfo.value)
+    # Actionable: what was asked, that nothing matched, and what IS available.
+    assert "NoSuchType" in message
+    assert "cell_type" in message
+    assert "Fibroblasts" in message

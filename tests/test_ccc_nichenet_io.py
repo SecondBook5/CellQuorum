@@ -3,6 +3,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 import scipy.io
 import scipy.sparse as sp
 
@@ -56,10 +57,44 @@ def test_de_to_geneset_filters_and_caps():
             "FDR": [0.01, 0.02, 0.30, 0.005, 0.04],
         }
     )
-    geneset, background = de_to_geneset(de, fdr=0.05, top_n=2)
+    geneset, background = de_to_geneset(de, fdr=0.05, top_n=2, direction="both")
     # G3 fails FDR; among {G1,G2,G4,G5} top-2 by |logFC| = G4(5), G1(3)
     assert geneset == ["G1", "G4"]  # sorted alphabetically for determinism
     assert background == ["G1", "G2", "G3", "G4", "G5"]
+
+
+def test_de_to_geneset_is_up_only_by_default():
+    """NicheNet scores positive regulatory potential, so a mixed-sign set is not a question
+    the model can answer. The default has to be one direction, and the caller has to be able
+    to see which."""
+    de = pd.DataFrame(
+        {
+            "gene": ["UP", "DOWN"],
+            "logFC": [1.0, -9.0],
+            "logCPM": [1, 1],
+            "F": [1, 1],
+            "PValue": [0.001, 0.001],
+            "FDR": [0.01, 0.01],
+        }
+    )
+    assert de_to_geneset(de, fdr=0.05, top_n=10)[0] == ["UP"]
+    assert de_to_geneset(de, fdr=0.05, top_n=10, direction="down")[0] == ["DOWN"]
+    assert de_to_geneset(de, fdr=0.05, top_n=10, direction="both")[0] == ["DOWN", "UP"]
+
+
+def test_de_to_geneset_refuses_an_unknown_direction():
+    de = pd.DataFrame({"gene": ["G1"], "logFC": [1.0], "FDR": [0.01]})
+    with pytest.raises(ValueError, match="direction"):
+        de_to_geneset(de, fdr=0.05, top_n=10, direction="upwards")
+
+
+def test_de_to_geneset_empty_when_every_significant_gene_goes_the_other_way():
+    """A geneset empty *because of the direction filter* is a different state from no
+    significant genes, and a caller that cannot tell them apart reports the wrong reason."""
+    de = pd.DataFrame({"gene": ["G1", "G2"], "logFC": [-1.0, -2.0], "FDR": [0.01, 0.01]})
+    geneset, background = de_to_geneset(de, fdr=0.05, top_n=10)
+    assert geneset == []
+    assert background == ["G1", "G2"]
 
 
 def test_de_to_geneset_empty_when_none_significant():
@@ -131,7 +166,9 @@ def test_ligand_activity_to_canonical_clamps_negative():
 
 def test_canonical_output_feeds_ccc_network():
     """Cross-spec contract: a canonical frame from spec #2 builds a spec #3 network."""
-    from cellquorum.stages.cell_cell_communication._nichenet_io import mnn_prioritization_to_canonical
+    from cellquorum.stages.cell_cell_communication._nichenet_io import (
+        mnn_prioritization_to_canonical,
+    )
     from cellquorum.stages.cell_cell_communication.network._networks import build_cci_network
 
     native = pd.DataFrame(

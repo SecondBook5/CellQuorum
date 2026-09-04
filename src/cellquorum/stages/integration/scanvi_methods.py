@@ -16,6 +16,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.integration._fit_population import resolve_training_set
 
 
 class ScANVIMethod(AnalysisMethod):
@@ -104,9 +105,16 @@ class ScANVIMethod(AnalysisMethod):
         work.X = work.layers["counts"]
         work.obs["_scanvi_labels"] = work.obs[label_key].astype(str)
 
+        # As with scVI, the encoder is a function, so fit_scope=CORE is honourable: train on
+        # the cells QC permits, encode everyone. scANVI conditions on labels as well as batch,
+        # so both are checked for coverage before the split is taken.
+        train, scope_note = resolve_training_set(
+            work, conditioning_keys=[batch_key, "_scanvi_labels"]
+        )
+
         # Train the unsupervised scVI base model.
-        scvi.model.SCVI.setup_anndata(work, batch_key=batch_key)
-        vae = scvi.model.SCVI(work, n_latent=n_latent)
+        scvi.model.SCVI.setup_anndata(train, batch_key=batch_key)
+        vae = scvi.model.SCVI(train, n_latent=n_latent)
         vae.train(max_epochs=max_epochs)
 
         # Train scANVI from the scVI model using the partial labels.
@@ -117,7 +125,11 @@ class ScANVIMethod(AnalysisMethod):
         )
         scanvi.train(max_epochs=max_epochs)
 
-        adata.obsm[output_rep] = scanvi.get_latent_representation()
+        adata.obsm[output_rep] = (
+            scanvi.get_latent_representation()
+            if train is work
+            else scanvi.get_latent_representation(work)
+        )
 
         cq = adata.uns.setdefault("cellquorum", {})
         # Single-method provenance (backward-compatible path, last-wins).
@@ -146,7 +158,8 @@ class ScANVIMethod(AnalysisMethod):
             },
             notes=[
                 f"scANVI latent ({n_latent}d) over '{batch_key}' "
-                f"conditioned on '{label_key}' -> {output_rep}."
+                f"conditioned on '{label_key}' -> {output_rep}.",
+                *([scope_note] if scope_note else []),
             ],
         )
 

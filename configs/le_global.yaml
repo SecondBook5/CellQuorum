@@ -4,9 +4,19 @@ project:
   species_id: 9606
 
 paths:
-  output_dir: /home/ajbook/projects/cellquorum/runs/le_global
+  # Repo-relative: resolves against the directory you run from, and runs/ is gitignored.
+  # This was an absolute path into one checkout, which made the config unusable from
+  # any other clone.
+  output_dir: runs/le_global
   manifest: configs/manifests/le_global_cohort.csv
-  data_root: /mnt/e/lymphedema_cellranger
+  # The Cell Ranger output root. Supplied from the environment rather than hardcoded to
+  # an external drive, so this config describes the ANALYSIS and the machine describes
+  # where its data lives:
+  #
+  #   export CELLQUORUM_CELLRANGER_ROOT=/path/to/cellranger_output
+  #
+  # Unset fails at config-load time naming both the variable and this key.
+  data_root: ${oc.env:CELLQUORUM_CELLRANGER_ROOT}
 
 input:
   # No pre-built h5ad: the cohort is built by the ambient_correction (SoupX)
@@ -52,7 +62,8 @@ stages:
 
 ambient_correction:
   enabled: true
-  cellranger_root: /mnt/e/lymphedema_cellranger
+  # Same Cell Ranger root as paths.data_root; from the environment, not hardcoded.
+  cellranger_root: ${oc.env:CELLQUORUM_CELLRANGER_ROOT}
   round_to_int: true
   resume: true          # reuse already-corrected libraries; skip SoupX on re-run
 
@@ -149,7 +160,10 @@ reference_mapping:
   method: scarches
   compute_backend: gpu
   resume: true
-  atlas_h5ad: /mnt/e/atopic_dermatitis_singlecell_atlas/data/Broad/SCP2613/anndata/scp.h5ad
+  # Atopic-dermatitis reference atlas (Broad SCP2613). Downloaded per install and
+  # named by the environment, since it is a multi-GB external download:
+  #   export CELLQUORUM_AD_ATLAS_H5AD=/path/to/SCP2613/anndata/scp.h5ad
+  atlas_h5ad: ${oc.env:CELLQUORUM_AD_ATLAS_H5AD}
   label_key: Cell_type
   atlas_batch_key: biosample_id       # capture-level batch (39 libraries), verified
   counts_layer: counts

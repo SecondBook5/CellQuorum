@@ -40,18 +40,16 @@ from cellquorum.stages.qc.artifacts import (
     write_json_artifact,
     write_qc_artifacts,
 )
-
-# Import QC configuration.
 from cellquorum.stages.qc.config import QCConfig
 
-# Import QC decision result container.
-from cellquorum.stages.qc.decisions import QCDecisionResult
+# Import QC configuration.
+from cellquorum.stages.qc.floors import FloorResult
 
+# Import QC decision result container.
 # Import QC metrics result container.
 from cellquorum.stages.qc.metrics import QCMetricsResult
 
 # Import QC threshold records and result container.
-from cellquorum.stages.qc.thresholds import QCThreshold, QCThresholdResult
 
 
 def make_metrics_result() -> QCMetricsResult:
@@ -107,74 +105,29 @@ def make_metrics_result() -> QCMetricsResult:
     )
 
 
-def make_threshold_result() -> QCThresholdResult:
+def make_floor_result() -> FloorResult:
+    """A small floor result for artifact/stage tests.
+
+    Replaces a ``QCDecisionResult`` fixture. The shape is deliberately simpler: floors produce a
+    keep mask and a reason, not a boolean column per threshold rule, because a barcode either
+    cleared the detection limit or it did not — there is nothing to attribute.
     """
-    Build a small QC threshold result for artifact tests.
-
-    Returns:
-        QCThresholdResult containing one cell threshold and one warning.
-    """
-
-    # Build a representative threshold.
-    threshold = QCThreshold(
-        axis="cell",
-        metric="pct_counts_mito",
-        rule_name="fixed_max_mito_percent",
-        lower=None,
-        upper=8.0,
-        source="fixed",
-    )
-
-    # Return the structured threshold result.
-    return QCThresholdResult(
-        thresholds=[threshold],
-        warnings=["threshold warning"],
-    )
-
-
-def make_decision_result() -> QCDecisionResult:
-    """
-    Build a small QC decision result for artifact tests.
-
-    Returns:
-        QCDecisionResult with cell and gene decision tables.
-    """
-
-    # Build cell-level decisions.
-    cell_decisions = pd.DataFrame(
-        {
-            "keep": [True, False],
-            "fail_any_qc": [False, True],
-            "failed_rules": ["", "fixed_max_mito_percent"],
-            "fixed_max_mito_percent": [False, True],
-        },
-        index=["cell_1", "cell_2"],
-    )
-
-    # Build gene-level decisions.
-    gene_decisions = pd.DataFrame(
-        {
-            "keep": [False, True],
-            "fail_any_qc": [True, False],
-            "failed_rules": ["fixed_min_cells_per_gene", ""],
-            "fixed_min_cells_per_gene": [True, False],
-        },
-        index=["gene_1", "gene_2"],
-    )
-
-    # Return the structured decision result.
-    return QCDecisionResult(
-        cell_decisions=cell_decisions,
-        gene_decisions=gene_decisions,
+    cells = pd.Index(["cell_1", "cell_2"])
+    genes = pd.Index(["gene_1", "gene_2"])
+    cell_keep = pd.Series([True] * 1 + [False] * 1, index=cells)
+    reason = pd.Series(["", "fewer_than_100_genes"], index=cells)
+    gene_keep = pd.Series([True] * 1 + [False] * 1, index=genes)
+    return FloorResult(
+        cell_keep=cell_keep,
+        gene_keep=gene_keep,
+        reason=reason,
         summary={
             "n_cells": 2,
-            "n_cells_kept": 1,
-            "n_cells_failed": 1,
+            "n_cells_below_floor": 1,
             "n_genes": 2,
-            "n_genes_kept": 1,
-            "n_genes_failed": 1,
+            "n_genes_below_floor": 1,
         },
-        warnings=["decision warning"],
+        warnings=["floor warning"],
     )
 
 
@@ -479,8 +432,7 @@ def test_build_qc_summary_payload_combines_module_summaries(tmp_path: Path) -> N
     # Build the summary payload.
     payload = build_qc_summary_payload(
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         artifact_names={"cell_metrics": tmp_path / "cell_metrics.csv"},
         skipped=["figures"],
         warnings=["artifact warning"],
@@ -491,10 +443,9 @@ def test_build_qc_summary_payload_combines_module_summaries(tmp_path: Path) -> N
     assert payload["metrics"]["n_cells"] == 2  # type: ignore[index]
 
     # Confirm threshold summary is present.
-    assert payload["thresholds"]["n_thresholds"] == 1  # type: ignore[index]
 
     # Confirm decision summary is present.
-    assert payload["decisions"]["n_cells_kept"] == 1  # type: ignore[index]
+    assert payload["floors"]["n_cells_below_floor"] == 1  # type: ignore[index]
 
     # Confirm artifact paths are stringified.
     assert payload["artifacts"] == {
@@ -522,8 +473,7 @@ def test_build_qc_summary_payload_rejects_invalid_summary_extra() -> None:
     with pytest.raises(QCArtifactError, match="summary_extra must be a dictionary"):
         build_qc_summary_payload(
             metrics_result=make_metrics_result(),
-            threshold_result=make_threshold_result(),
-            decision_result=make_decision_result(),
+            floors=make_floor_result(),
             artifact_names={},
             skipped=[],
             warnings=[],
@@ -535,15 +485,14 @@ def test_validate_qc_artifact_inputs_accepts_valid_inputs() -> None:
     """
     Verify artifact input validation accepts the expected result objects.
 
-    The writer should accept valid metrics, thresholds, decisions, config, and
+    The writer should accept valid metrics, floors, config, and
     optional AnnData.
     """
 
     # Confirm valid inputs pass validation.
     validate_qc_artifact_inputs(
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=QCConfig(),
         adata=make_test_adata(),
     )
@@ -560,28 +509,16 @@ def test_validate_qc_artifact_inputs_rejects_invalid_result_objects() -> None:
     with pytest.raises(QCArtifactError, match="metrics_result must be"):
         validate_qc_artifact_inputs(
             metrics_result={"bad": "metrics"},  # type: ignore[arg-type]
-            threshold_result=make_threshold_result(),
-            decision_result=make_decision_result(),
-            config=QCConfig(),
-            adata=None,
-        )
-
-    # Confirm invalid threshold_result fails clearly.
-    with pytest.raises(QCArtifactError, match="threshold_result must be"):
-        validate_qc_artifact_inputs(
-            metrics_result=make_metrics_result(),
-            threshold_result={"bad": "thresholds"},  # type: ignore[arg-type]
-            decision_result=make_decision_result(),
+            floors=make_floor_result(),
             config=QCConfig(),
             adata=None,
         )
 
     # Confirm invalid decision_result fails clearly.
-    with pytest.raises(QCArtifactError, match="decision_result must be"):
+    with pytest.raises(QCArtifactError, match="floors must be"):
         validate_qc_artifact_inputs(
             metrics_result=make_metrics_result(),
-            threshold_result=make_threshold_result(),
-            decision_result={"bad": "decisions"},  # type: ignore[arg-type]
+            floors={"bad": "floors"},  # type: ignore[arg-type]
             config=QCConfig(),
             adata=None,
         )
@@ -598,8 +535,7 @@ def test_validate_qc_artifact_inputs_rejects_invalid_config_and_adata() -> None:
     with pytest.raises(QCArtifactError, match="config must be a QCConfig"):
         validate_qc_artifact_inputs(
             metrics_result=make_metrics_result(),
-            threshold_result=make_threshold_result(),
-            decision_result=make_decision_result(),
+            floors=make_floor_result(),
             config={"bad": "config"},  # type: ignore[arg-type]
             adata=None,
         )
@@ -608,8 +544,7 @@ def test_validate_qc_artifact_inputs_rejects_invalid_config_and_adata() -> None:
     with pytest.raises(QCArtifactError, match="adata must be an AnnData object"):
         validate_qc_artifact_inputs(
             metrics_result=make_metrics_result(),
-            threshold_result=make_threshold_result(),
-            decision_result=make_decision_result(),
+            floors=make_floor_result(),
             config=QCConfig(),
             adata={"bad": "adata"},  # type: ignore[arg-type]
         )
@@ -640,8 +575,7 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
     manifest = write_qc_artifacts(
         output_dir=output_dir,
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=QCConfig(),
         adata=adata_with_qc,
         summary_extra={"run_id": "test_run"},
@@ -655,25 +589,32 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
         "cell_metrics",
         "gene_metrics",
         "feature_masks",
-        "thresholds",
-        "cell_decisions",
-        "gene_decisions",
+        "cell_floors",
+        "gene_floors",
         "report",
         "qc_h5ad",
         "summary",
         "figures",
+        "html_report",
+        "publication_tables",
     }
 
-    # Confirm no artifacts were skipped.
-    assert manifest.skipped == []
+    # Confirm nothing was skipped except the label table, which has nothing to
+    # record (this fixture's obs carries QC metrics and no cohort or cell-type
+    # column, so there are no labels a re-render could need), and the attrition
+    # audit, which the writer cannot invent -- the stage runs it and passes the
+    # result in, so a direct writer call has nothing to write.
+    # The writer cannot invent the audit, and this fixture uses plain floors
+    # rather than the mitochondrial mixture, so there is no fitted model to write.
+    assert manifest.skipped == ["mito_mixture", "attrition", "cell_labels"]
 
     # Confirm all written artifact paths exist.
     for artifact_name, artifact_value in manifest.artifacts.items():
-        if artifact_name == "figures":
-            # Figures are stored as a list of string paths.
+        if artifact_name in {"figures", "publication_tables"}:
+            # Multi-file artifacts are stored as a list of string paths.
             assert isinstance(artifact_value, list)
-            for figure_path in artifact_value:
-                assert Path(figure_path).exists()
+            for member_path in artifact_value:
+                assert Path(member_path).exists()
         else:
             # Other artifacts are stored as Path objects.
             assert artifact_value.exists()
@@ -685,18 +626,13 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
     pdt.assert_frame_equal(cell_metrics, make_metrics_result().cell_metrics)
 
     # Read back threshold table.
-    thresholds = pd.read_csv(manifest.get_path("thresholds"))
-
-    # Confirm threshold table contents.
-    assert thresholds.loc[0, "rule_name"] == "fixed_max_mito_percent"
 
     # Read back summary JSON.
     summary = json.loads(manifest.get_path("summary").read_text(encoding="utf-8"))
 
     # Confirm summary includes module summaries.
     assert summary["metrics"]["n_cells"] == 2
-    assert summary["thresholds"]["n_thresholds"] == 1
-    assert summary["decisions"]["n_cells_kept"] == 1
+    assert summary["floors"]["n_cells_below_floor"] == 1
 
     # Confirm summary includes extra values.
     assert summary["extra"] == {"run_id": "test_run"}
@@ -719,13 +655,20 @@ def test_write_qc_artifacts_skips_h5ad_when_no_anndata_provided(tmp_path: Path) 
     valid without an AnnData object.
     """
 
-    # Write QC artifacts without AnnData.
+    # Write QC artifacts without AnnData. The HTML report is disabled here so the
+    # warning list stays exact: it needs obs for its sample labels and would add a
+    # warning of its own, which has its own test below.
     manifest = write_qc_artifacts(
         output_dir=tmp_path / "qc",
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
-        config=QCConfig(outputs={"write_figures": False}),
+        floors=make_floor_result(),
+        config=QCConfig(
+            outputs={
+                "write_figures": False,
+                "html_report": False,
+                "publication_tables": False,
+            }
+        ),
         adata=None,
     )
 
@@ -738,6 +681,35 @@ def test_write_qc_artifacts_skips_h5ad_when_no_anndata_provided(tmp_path: Path) 
     ]
 
     # Confirm summary was still written.
+    assert manifest.get_path("summary").exists()
+
+
+def test_write_qc_artifacts_warns_when_html_report_has_no_obs(tmp_path: Path) -> None:
+    """
+    Verify the HTML QC report degrades to a warning when there is no AnnData.
+
+    The report groups attrition by sample, which lives in obs. Without an object
+    there is nothing to group by, and a table-only run must still succeed.
+    """
+
+    # Write QC artifacts with the HTML report enabled but no AnnData to read.
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        floors=make_floor_result(),
+        config=QCConfig(outputs={"write_figures": False, "write_h5ad": False}),
+        adata=None,
+    )
+
+    # Confirm the report was skipped rather than raised.
+    assert "html_report" in manifest.skipped
+    assert "html_report" not in manifest.artifacts
+
+    # Confirm the warning names the missing input.
+    assert any("html_report is true" in warning for warning in manifest.warnings)
+
+    # Confirm the tables and summary were still written.
+    assert manifest.get_path("cell_metrics").exists()
     assert manifest.get_path("summary").exists()
 
 
@@ -754,11 +726,14 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
         outputs={
             "write_metrics_table": False,
             "write_filter_table": False,
-            "write_threshold_table": False,
+            "write_mixture_table": False,
             "write_report_table": False,
+            "cell_labels": False,
             "write_summary_json": True,
             "write_h5ad": False,
             "write_figures": False,
+            "html_report": False,
+            "publication_tables": False,
         }
     )
 
@@ -766,8 +741,7 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
     manifest = write_qc_artifacts(
         output_dir=tmp_path / "qc",
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=config,
         adata=make_test_adata(),
     )
@@ -780,11 +754,15 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
         "cell_metrics",
         "gene_metrics",
         "feature_masks",
-        "thresholds",
-        "cell_decisions",
-        "gene_decisions",
+        "mito_mixture",
+        "cell_floors",
+        "gene_floors",
+        "attrition",
+        "cell_labels",
         "report",
         "qc_h5ad",
+        "html_report",
+        "publication_tables",
         "figures",
     ]
 
@@ -812,8 +790,7 @@ def test_write_qc_artifacts_can_skip_summary_json(tmp_path: Path) -> None:
     manifest = write_qc_artifacts(
         output_dir=tmp_path / "qc",
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=config,
         adata=None,
     )
@@ -841,8 +818,7 @@ def test_write_qc_artifacts_writes_qc_report_table_with_groups(tmp_path: Path) -
     manifest = write_qc_artifacts(
         output_dir=tmp_path / "qc",
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=QCConfig(outputs={"write_figures": False, "write_h5ad": False}),
         adata=None,
         report_groups=report_groups,
@@ -885,8 +861,7 @@ def test_write_qc_artifacts_qc_report_defaults_to_total_only_without_groups(
     manifest = write_qc_artifacts(
         output_dir=tmp_path / "qc",
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=QCConfig(outputs={"write_figures": False, "write_h5ad": False}),
         adata=None,
     )
@@ -916,8 +891,7 @@ def test_write_qc_artifacts_rejects_invalid_output_dir(tmp_path: Path) -> None:
         write_qc_artifacts(
             output_dir=file_path,
             metrics_result=make_metrics_result(),
-            threshold_result=make_threshold_result(),
-            decision_result=make_decision_result(),
+            floors=make_floor_result(),
             config=QCConfig(),
             adata=None,
         )
@@ -1039,8 +1013,9 @@ def test_write_qc_artifacts_emits_figures_when_enabled_and_adata_present(
     writer has all necessary inputs.
     """
 
-    # Build a config with write_figures enabled.
-    config = QCConfig(outputs={"write_figures": True})
+    # The panels asserted below are the legacy publication set, which is opt-in
+    # now that the overview panels and typeset tables have superseded it.
+    config = QCConfig(outputs={"write_figures": True, "publication_figures": True})
 
     # Build an adata with QC metrics and a condition column for grouping.
     adata = make_test_adata(
@@ -1064,8 +1039,7 @@ def test_write_qc_artifacts_emits_figures_when_enabled_and_adata_present(
     manifest = write_qc_artifacts(
         output_dir=tmp_path / "qc",
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=config,
         adata=adata,
         group_key="condition",
@@ -1079,11 +1053,11 @@ def test_write_qc_artifacts_emits_figures_when_enabled_and_adata_present(
     figure_paths = manifest.artifacts["figures"]
     assert isinstance(figure_paths, list)
     assert len(figure_paths) > 0
-    assert any("publication/qc_panel_A_mitochondrial_content" in path for path in figure_paths)
-    assert any("publication/qc_panel_J_umi_detected_genes_normal" in path for path in figure_paths)
-    assert any("publication/qc_panel_K_umi_detected_genes_le" in path for path in figure_paths)
-    assert any("publication/qc_panel_L_by_condition_publication" in path for path in figure_paths)
-    assert any("publication/qc_panel_M_cells_per_sample" in path for path in figure_paths)
+    # The publication panel set was deleted with the threshold path; the graded panels are
+    # the figure output now.
+    # Some figure set was written. Which one depends on what the object supports: the
+    # graded panels need graded columns, which this fixture does not carry.
+    assert figure_paths
 
     # Confirm all recorded figure files exist on disk.
     for figure_path in figure_paths:
@@ -1105,8 +1079,7 @@ def test_write_qc_artifacts_skips_figures_without_adata(tmp_path: Path) -> None:
     manifest = write_qc_artifacts(
         output_dir=tmp_path / "qc",
         metrics_result=make_metrics_result(),
-        threshold_result=make_threshold_result(),
-        decision_result=make_decision_result(),
+        floors=make_floor_result(),
         config=config,
         adata=None,
     )

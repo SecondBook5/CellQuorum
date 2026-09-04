@@ -63,12 +63,14 @@ def test_qc_config_defaults_follow_single_cell_best_practices() -> None:
     # Confirm default general MAD threshold is permissive.
     assert config.mad.n_mads == 5.0
 
-    # Confirm default MAD metrics match the intended QC covariates.
+    # Confirm default MAD metrics match the intended QC covariates. Complexity
+    # (pct_counts_in_top_20_genes) is computed and reported but not filtered on,
+    # because for a plasma or mast cell low complexity is identity, not damage.
     assert config.mad.metrics == [
         "log1p_total_counts",
         "log1p_n_genes_by_counts",
-        "pct_counts_in_top_20_genes",
     ]
+    assert "pct_counts_in_top_20_genes" not in config.mad.metrics
 
     # Confirm mitochondrial MAD filtering is configured separately.
     assert config.mad.mito_metric == "pct_counts_mito"
@@ -444,11 +446,10 @@ def test_mad_threshold_config_defaults_match_best_practices() -> None:
     # Confirm the general MAD multiplier is permissive.
     assert config.n_mads == 5.0
 
-    # Confirm default general MAD metrics.
+    # Confirm default general MAD metrics, complexity deliberately excluded.
     assert config.metrics == [
         "log1p_total_counts",
         "log1p_n_genes_by_counts",
-        "pct_counts_in_top_20_genes",
     ]
 
     # Confirm mitochondrial MAD settings are separate.

@@ -56,7 +56,7 @@ and R-package availability checks:
 | scDiagnostics (`ScdiagnosticsMethod`) | `annotation_diagnostics` |
 
 Two further R usages sit outside that abstraction: **SoupX** (`ambient_correction`)
-runs a bundled R script (`cellquorum/backends/r_scripts/soupx_per_library.R`) through
+runs a bundled R script (`src/cellquorum/backends/r_scripts/soupx_per_library.R`) through
 the Rscript adapter, and **hdWGCNA** (`coexpression`) runs in the isolated
 `hdwgcna_env` rather than the shared Rscript backend.
 

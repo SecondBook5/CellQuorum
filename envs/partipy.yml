@@ -1,0 +1,24 @@
+# Isolated env for partipy (Pareto Task Inference, saezlab): archetypal analysis for the
+# QC rare-population audit.
+#
+# Isolated for TWO reasons, and the first is not negotiable:
+#   1. partipy is GPL-3 and CellQuorum is BSD-3. Importing it in-process would make the
+#      combined distribution copyleft and block PyPI/conda-forge release. Two programs
+#      exchanging files do not create a derived work.
+#   2. It brings its own dependency stack, which must not constrain CellQuorum's.
+#
+# Entirely optional: without this env the archetype audit reports itself unavailable and
+# every other part of a run is unaffected.
+name: partipy
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - scipy
+  - pandas
+  - anndata
+  - scikit-learn
+  - pip:
+      - partipy

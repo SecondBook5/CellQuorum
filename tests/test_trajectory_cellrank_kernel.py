@@ -271,7 +271,7 @@ def test_velocity_kernel_skipped_on_obs_mismatch():
         realtime_epsilon=0.1,
     )
     assert "velocity" not in info["kernels"]
-    assert any("velocity" in n.lower() for n in info["notes"])
+    assert any("velocity" in w.lower() for w in info["warnings"])
 
 
 # --- Task 5: RealTimeKernel (moscot) branch ---------------------------------
@@ -314,7 +314,7 @@ def test_realtime_kernel_skipped_single_level():
         realtime_epsilon=0.1,
     )
     assert "realtime" not in info["kernels"]
-    assert any(("realtime" in n.lower() or "time" in n.lower()) for n in info["notes"])
+    assert any(("realtime" in w.lower() or "time" in w.lower()) for w in info["warnings"])
 
 
 def test_realtime_kernel_skipped_when_time_has_nans():
@@ -343,7 +343,7 @@ def test_realtime_kernel_skipped_when_time_has_nans():
     # No crash, no realtime kernel, connectivity-only fallback with a note.
     assert kernel is not None
     assert "realtime" not in info["kernels"]
-    assert any(("realtime" in n.lower() or "time" in n.lower()) for n in info["notes"])
+    assert any(("realtime" in w.lower() or "time" in w.lower()) for w in info["warnings"])
 
 
 def test_realtime_kernel_skipped_non_numeric_time():
@@ -366,7 +366,7 @@ def test_realtime_kernel_skipped_non_numeric_time():
     )
     # Non-numeric levels coerce to NaN → 0 distinct numeric levels → skip w/ note.
     assert "realtime" not in info["kernels"]
-    assert any(("realtime" in n.lower() or "time" in n.lower()) for n in info["notes"])
+    assert any(("realtime" in w.lower() or "time" in w.lower()) for w in info["warnings"])
 
 
 def test_velocity_kernel_skipped_without_layers():
@@ -387,4 +387,75 @@ def test_velocity_kernel_skipped_without_layers():
         realtime_epsilon=0.1,
     )
     assert "velocity" not in info["kernels"]
-    assert any("velocity" in n.lower() for n in info["notes"])
+    assert any("velocity" in w.lower() for w in info["warnings"])
+
+
+def test_cytotrace_kernel_is_built_from_a_score_already_in_obs():
+    """A CytoTRACE 2 score in obs must give a cytotrace kernel, not a warning.
+
+    cellrank 2.2.0's CytoTRACEKernel.compute_cytotrace defaults to
+    layer='imputed', which exists only after scVelo moments. A real LEC run
+    carried cytotrace2_score in obs and no such layer, so the kernel raised
+    ("Unable to find `'imputed'` in `adata.layers`") and fates were inferred with
+    the plasticity axis absent while the run reported success.
+    """
+    a = _make_adata()
+    rng = np.random.default_rng(1)
+    a.obs["cytotrace2_score"] = rng.uniform(0.1, 0.9, a.n_obs)
+    assert "imputed" not in a.layers and "Ms" not in a.layers
+
+    kernel, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key="cytotrace2_score",
+        use_rep=None,
+        use_rep_fallback=["X_pca"],
+        n_neighbors=15,
+        weight_connectivities=0.2,
+        seed=0,
+    )
+    assert kernel is not None
+    assert "cytotrace" in info["kernels"]
+    assert not [w for w in info["warnings"] if "cytotrace" in w]
+    # 1 - minmax(score), which is exactly how CytoTRACEKernel defines its own
+    # ct_pseudotime, so the kernel is the same construction on a better score.
+    score = a.obs["cytotrace2_score"].to_numpy()
+    expected = 1.0 - (score - score.min()) / (score.max() - score.min())
+    np.testing.assert_allclose(a.obs["ct_pseudotime"].to_numpy(), expected)
+
+
+def test_cytotrace_kernel_skipped_when_the_score_has_missing_cells():
+    """Partial coverage is skipped, not filled: a fabricated potency is worse."""
+    a = _make_adata()
+    score = np.linspace(0.1, 0.9, a.n_obs)
+    score[:5] = np.nan
+    a.obs["cytotrace2_score"] = score
+
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key="cytotrace2_score",
+        use_rep=None,
+        use_rep_fallback=["X_pca"],
+        n_neighbors=15,
+        weight_connectivities=0.2,
+        seed=0,
+    )
+    assert "cytotrace" not in info["kernels"]
+    assert any("missing for 5/" in w for w in info["warnings"])
+
+
+def test_cytotrace_kernel_skipped_when_there_is_no_score_and_no_imputed_layer():
+    a = _make_adata()
+    _, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key=None,
+        cytotrace_key="cytotrace2_score",
+        use_rep=None,
+        use_rep_fallback=["X_pca"],
+        n_neighbors=15,
+        weight_connectivities=0.2,
+        seed=0,
+    )
+    assert "cytotrace" not in info["kernels"]
+    assert any("no imputed layer" in w for w in info["warnings"])

@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.comparative.enrichment.gsva_method import GsvaMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.comparative.enrichment.gsva_method import GsvaMethod
 
 # Exercises the REAL dc.mt.gsva. One pseudobulk sample has zero library size, so
 # without the fix it would be CPM-normalized into an all-zero row that decoupler

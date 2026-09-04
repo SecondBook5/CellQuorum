@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from unittest import mock
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.core.context import PipelineContext, PipelinePaths
+from cellquorum.core.context import PipelineContext, PipelinePaths, resolve_n_jobs
 
 
 def test_pipeline_paths_from_output_dir_builds_standard_layout(tmp_path: Path) -> None:
@@ -245,3 +247,120 @@ def test_pipeline_context_with_adata_preserves_runtime_state(tmp_path: Path) -> 
 
     # Confirm metadata was copied rather than aliased.
     assert updated_context.metadata is not context.metadata
+
+
+def test_resolve_n_jobs_inherits_compute_n_jobs():
+    """A config that asks for 8 workers gets 8 in any step that does not pin its own."""
+
+    class _Compute:
+        n_jobs = 8
+
+    class _Config:
+        compute = _Compute()
+
+    class _Ctx:
+        config = _Config()
+
+    assert resolve_n_jobs(_Ctx()) == 8
+    # An explicit stage value wins, including a deliberate pin back to serial.
+    assert resolve_n_jobs(_Ctx(), 1) == 1
+    assert resolve_n_jobs(_Ctx(), 4) == 4
+
+
+def test_resolve_n_jobs_defaults_to_serial_without_a_compute_block():
+    """Duck-typed contexts (tests, lightweight callers) must not raise here."""
+
+    class _Bare:
+        pass
+
+    assert resolve_n_jobs(_Bare()) == 1
+    assert resolve_n_jobs(None) == 1
+
+    # A config that carries a compute block with nothing useful in it.
+    class _Config:
+        compute = None
+
+    class _Ctx:
+        config = _Config()
+
+    assert resolve_n_jobs(_Ctx()) == 1
+
+
+def test_resolve_n_jobs_never_returns_less_than_one():
+    """0 or a negative would be passed straight to joblib, which reads it as 'all cores'."""
+
+    class _Compute:
+        n_jobs = 0
+
+    class _Config:
+        compute = _Compute()
+
+    class _Ctx:
+        config = _Config()
+
+    assert resolve_n_jobs(_Ctx()) == 1
+    assert resolve_n_jobs(_Ctx(), -4) == 1
+
+
+def test_resolve_n_jobs_auto_derives_from_the_machine():
+    """``n_jobs: auto`` is the shipped default, so this is the common path."""
+
+    class _Compute:
+        n_jobs = "auto"
+
+    class _Config:
+        compute = _Compute()
+
+    class _Ctx:
+        config = _Config()
+
+    resolved = resolve_n_jobs(_Ctx())
+    assert 1 <= resolved <= 8, resolved
+    # Capped, not free-running: a worker holds a copy of its slice of the object,
+    # so a 64-core node must not silently multiply peak memory by 64.
+    assert resolved == min(8, os.process_cpu_count() or os.cpu_count() or 1)
+
+    # A stage that pins its own count still wins over auto, in both directions.
+    assert resolve_n_jobs(_Ctx(), 1) == 1
+    assert resolve_n_jobs(_Ctx(), 32) == 32
+    # And a stage whose own value is itself "auto" means "not set, inherit".
+    assert resolve_n_jobs(_Ctx(), "auto") == resolved
+
+
+def test_resolve_n_jobs_auto_respects_cpu_affinity():
+    """A container pinned to 2 CPUs must not get the host's core count.
+
+    ``os.cpu_count()`` reports the host's cores regardless of affinity or cgroup
+    quota, so deriving from it inside a 2-CPU container oversubscribes by the
+    ratio between them. ``os.process_cpu_count()`` is the one that narrows.
+    """
+    from cellquorum.core import context as context_module
+
+    class _Compute:
+        n_jobs = "auto"
+
+    class _Config:
+        compute = _Compute()
+
+    class _Ctx:
+        config = _Config()
+
+    with (
+        mock.patch.object(os, "process_cpu_count", return_value=2, create=True),
+        mock.patch.object(os, "cpu_count", return_value=64),
+    ):
+        assert context_module.resolve_n_jobs(_Ctx()) == 2
+
+    # Absent (pre-3.13) or uninformative, it falls back to cpu_count — still capped.
+    with (
+        mock.patch.object(os, "process_cpu_count", None, create=True),
+        mock.patch.object(os, "cpu_count", return_value=64),
+    ):
+        assert context_module.resolve_n_jobs(_Ctx()) == 8
+
+    # Neither one knows: 1, never 0, which joblib and dask read as "all cores".
+    with (
+        mock.patch.object(os, "process_cpu_count", return_value=None, create=True),
+        mock.patch.object(os, "cpu_count", return_value=None),
+    ):
+        assert context_module.resolve_n_jobs(_Ctx()) == 1

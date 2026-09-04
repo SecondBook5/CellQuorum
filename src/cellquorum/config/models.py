@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+# Import Counter for detecting repeated contrast names.
+from collections import Counter
+
 # Import Path for filesystem-like configuration fields.
 from pathlib import Path
 
 # Import Literal for constrained string configuration options.
-from typing import Literal
+from typing import Annotated, Literal
 
 # Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator, model_validator
+
+# Import the shared strict base model used by CellQuorum configuration models.
+from cellquorum.config.base import StrictBaseModel
+
+# Import the central cohort schema (structural keys declared once).
+from cellquorum.config.cohort import CohortConfig
+
+# Import the markers, design, and contrasts configuration models.
+from cellquorum.config.design import ContrastsConfig, DesignConfig
+from cellquorum.config.markers import MarkersConfig
 
 # Import the ambient-correction configuration model.
 from cellquorum.stages.ambient_correction.config import AmbientCorrectionConfig
@@ -48,7 +61,9 @@ from cellquorum.stages.clustering.subclustering.config import SubclusteringConfi
 from cellquorum.stages.comparative.differential_abundance.config import DifferentialAbundanceConfig
 
 # Import the differential-expression configuration model.
-from cellquorum.stages.comparative.differential_expression.config import DifferentialExpressionConfig
+from cellquorum.stages.comparative.differential_expression.config import (
+    DifferentialExpressionConfig,
+)
 
 # Import the differential-expression-visualization configuration model.
 from cellquorum.stages.comparative.differential_expression.viz.config import DeVizConfig
@@ -59,18 +74,11 @@ from cellquorum.stages.comparative.enrichment.config import EnrichmentConfig
 # Import the enrichment-visualization configuration model.
 from cellquorum.stages.comparative.enrichment.viz.config import EnrichmentVizConfig
 
+# Import the module-remodeling configuration model.
+from cellquorum.stages.comparative.module_remodeling.config import ModuleRemodelingConfig
+
 # Import the multicellular-programs configuration model.
 from cellquorum.stages.comparative.multicellular_programs.config import MulticellularProgramsConfig
-
-# Import the shared strict base model used by CellQuorum configuration models.
-from cellquorum.config.base import StrictBaseModel
-
-# Import the central cohort schema (structural keys declared once).
-from cellquorum.config.cohort import CohortConfig
-
-# Import the markers, design, and contrasts configuration models.
-from cellquorum.config.design import ContrastsConfig, DesignConfig
-from cellquorum.config.markers import MarkersConfig
 
 # Import the discovery (consensus-NMF) configuration model.
 from cellquorum.stages.discovery.config import DiscoveryConfig
@@ -213,9 +221,22 @@ class InputSubsetConfig(StrictBaseModel):
     read into memory), and records n_before/n_after in run provenance so the cut
     is never a silent step.
 
+    Optionally also require a SECOND annotation column to agree. Most annotated
+    objects carry more than one label per cell -- a marker/clustering call and a
+    reference-mapped call -- and the cells they disagree about are the ones most
+    likely to be misassigned. Requiring concordance drops them, which matters most
+    when two lineages are being compared: a slice built by agreement and one built
+    by a single column are not filtered equally, so a difference between them can
+    be filtering rather than biology.
+
     Args:
         column: obs column to filter on (e.g. ``cell_type``).
         values: keep rows whose ``column`` value is one of these.
+        require_agreement: Optional second obs column that must carry the SAME
+            value as ``column`` for a row to be kept (e.g. ``ref_state``). The
+            loader refuses to apply it when a requested value is missing from that
+            column's vocabulary, because "no cell agrees" and "this column has no
+            word for this label" are different facts with the same cell count.
     """
 
     # Store the obs column to filter rows on.
@@ -224,15 +245,32 @@ class InputSubsetConfig(StrictBaseModel):
     # Store the accepted values; a row is kept when its column value is in here.
     values: list[str] = Field(min_length=1)
 
-    @field_validator("column")
+    # Store an optional second annotation column that must agree with `column`.
+    require_agreement: str | None = None
+
+    @field_validator("column", "require_agreement")
     @classmethod
-    def validate_column(cls, value: str) -> str:
+    def validate_column(cls, value: str | None) -> str | None:
         """Reject an empty subset column name."""
 
+        if value is None:
+            return None
         cleaned = value.strip()
         if not cleaned:
-            raise ValueError("input.subset.column cannot be empty.")
+            raise ValueError("input.subset column names cannot be empty.")
         return cleaned
+
+    @model_validator(mode="after")
+    def validate_agreement_is_a_second_opinion(self) -> InputSubsetConfig:
+        """Reject a column asked to agree with itself, which filters nothing."""
+
+        if self.require_agreement is not None and self.require_agreement == self.column:
+            raise ValueError(
+                "input.subset.require_agreement must name a DIFFERENT obs column "
+                f"than input.subset.column (both are {self.column!r}). A column "
+                "always agrees with itself, so this would silently filter nothing."
+            )
+        return self
 
     @field_validator("values")
     @classmethod
@@ -242,6 +280,58 @@ class InputSubsetConfig(StrictBaseModel):
         cleaned = [str(item).strip() for item in value]
         if any(not item for item in cleaned):
             raise ValueError("input.subset.values cannot contain empty strings.")
+        return cleaned
+
+
+class InputExcludeConfig(StrictBaseModel):
+    """
+    Drop the input's rows whose ``column`` value is in ``values``.
+
+    The counterpart to :class:`InputSubsetConfig`, and not expressible with it: an
+    inclusion list cannot say "everything except". Dropping one artifact cluster
+    from a 39-cluster partition by inclusion means naming the other 38, which is
+    unreadable and goes wrong in a specific way -- the list is silently incomplete
+    the next time the object gains a cluster.
+
+    The intended use is data artifacts rather than biology: an ambient/debris
+    cluster identified by criteria on THIS object, most directly with
+    :func:`cellquorum.stats.cluster_artifact_audit`. Because cluster ids belong to
+    one clustering run and not to the cells, the loader refuses values that are not
+    in the column's vocabulary instead of excluding zero rows -- a mask carried over
+    from a different partition names nothing here, and silently removing nothing
+    while the config claims a cluster was dropped is the failure this guard exists
+    for. The applied counts land in run provenance, so what the exclusion cost is a
+    recorded number rather than an assumption.
+
+    Args:
+        column: obs column to drop rows on (e.g. ``leiden``).
+        values: values of ``column`` whose rows are dropped.
+    """
+
+    # Store the obs column to drop rows on.
+    column: str
+
+    # Store the values whose rows are dropped.
+    values: list[str] = Field(min_length=1)
+
+    @field_validator("column")
+    @classmethod
+    def validate_column(cls, value: str) -> str:
+        """Reject an empty exclusion column name."""
+
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("input.exclude.column cannot be empty.")
+        return cleaned
+
+    @field_validator("values")
+    @classmethod
+    def validate_values(cls, value: list[str]) -> list[str]:
+        """Strip values and reject empty entries."""
+
+        cleaned = [str(item).strip() for item in value]
+        if any(not item for item in cleaned):
+            raise ValueError("input.exclude.values cannot contain empty strings.")
         return cleaned
 
 
@@ -257,6 +347,9 @@ class InputConfig(StrictBaseModel):
         h5ad: Optional path to an AnnData h5ad file.
         counts_layer: Optional AnnData layer containing raw counts.
         subset: Optional row restriction applied at load time (backed mode).
+        exclude: Optional row exclusion applied at load time, composable with
+            ``subset`` (a lineage slice that also drops an artifact cluster needs
+            both).
     """
 
     # Store an optional AnnData h5ad input path.
@@ -267,6 +360,9 @@ class InputConfig(StrictBaseModel):
 
     # Store an optional row restriction (e.g. cell_type == Fibroblasts).
     subset: InputSubsetConfig | None = None
+
+    # Store an optional row exclusion (e.g. leiden in the audited debris clusters).
+    exclude: InputExcludeConfig | None = None
 
     @field_validator("h5ad")
     @classmethod
@@ -368,6 +464,18 @@ class RunConfig(StrictBaseModel):
     # Store whether completed stages may be skipped on rerun (opt-in resume).
     resume: bool = False
 
+    # Write the AnnData after each stage so a later run can start mid-pipeline.
+    # OFF by default: a full object per stage is hundreds of GB on a large atlas,
+    # a cost production runs must not pay. Enable while developing or verifying a
+    # pipeline stage-by-stage. Reuse is guarded by the same input fingerprint the
+    # resume path uses, and a mismatch is refused rather than silently loaded.
+    checkpoint: bool = False
+
+    # Stages to checkpoint after. Empty/unset means EVERY stage, which is the
+    # useful default once checkpointing is on at all — the reason to enable it is
+    # to be able to stop anywhere. Narrow it to bound disk on large cohorts.
+    checkpoint_after: list[str] = Field(default_factory=list)
+
     # Store whether to produce runtime output.
     verbose: bool = True
 
@@ -425,7 +533,20 @@ class ComputeConfig(StrictBaseModel):
         backend: Preferred compute backend.
         prefer_gpu: Whether GPU acceleration should be preferred when available.
         fallback_to_cpu: Whether CPU fallback is allowed when GPU is unavailable.
-        n_jobs: Number of CPU workers for stages that support parallel execution.
+        n_jobs: Number of CPU workers for steps that support parallel execution,
+            or ``"auto"`` to derive one from the machine. Three steps read it, and
+            all three are among the slowest things in a run: scDblFinder (one job
+            per capture), scVelo's ``recover_dynamics`` / ``velocity_graph``, and
+            pySCENIC's GRNBoost2/AUCell. The first two are bit-identical
+            regardless of worker count, so for them this is a pure speed knob —
+            see ``VelocityConfig.n_jobs`` for the measurements.
+
+            ``"auto"`` is the default because the alternative defaults are both
+            wrong: a fixed 1 leaves most of the machine idle on the longest steps,
+            and a fixed 8 oversubscribes a 2-core laptop or a CPU-limited
+            container 4x. An explicit int always wins over auto, and a stage may
+            still pin its own worker count and override both; resolution goes
+            through ``core.context.resolve_n_jobs``.
     """
 
     # Store the preferred compute backend.
@@ -437,8 +558,10 @@ class ComputeConfig(StrictBaseModel):
     # Store whether CPU fallback is allowed when GPU is unavailable.
     fallback_to_cpu: bool = True
 
-    # Store the number of CPU workers.
-    n_jobs: int = Field(default=1, ge=1)
+    # Store the number of CPU workers, or "auto" to derive one from the machine.
+    # 0 and negatives are still rejected: joblib and dask both read them as "all
+    # cores", which is a different request from the one this field expresses.
+    n_jobs: Annotated[int, Field(ge=1)] | Literal["auto"] = "auto"
 
 
 class RConfig(StrictBaseModel):
@@ -622,8 +745,13 @@ class StageSelectionConfig(StrictBaseModel):
         network_analysis: Whether network analysis is enabled.
     """
 
-    # Store whether ambient correction is enabled.
-    ambient_correction: bool = False
+    # Store whether ambient correction is enabled. On by default: ambient mRNA is
+    # what puts keratin in a fibroblast and haemoglobin in everything, and every
+    # later stage inherits that error, so the correct default is to correct it. The
+    # stage skips itself with an explicit reason when its inputs are absent (no
+    # manifest, no CellRanger raw/filtered h5, no Rscript), so enabling it cannot
+    # break a run that has nothing to correct from.
+    ambient_correction: bool = True
 
     # Store whether quality control is enabled.
     qc: bool = True
@@ -726,6 +854,9 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether multicellular programs analysis is enabled as a gated capability.
     multicellular_programs: bool = True
+
+    # Store whether module remodeling analysis is enabled as a gated capability.
+    module_remodeling: bool = True
 
 
 class CellQuorumConfig(StrictBaseModel):
@@ -886,6 +1017,9 @@ class CellQuorumConfig(StrictBaseModel):
         default_factory=MulticellularProgramsConfig
     )
 
+    # Store module-remodeling settings.
+    module_remodeling: ModuleRemodelingConfig = Field(default_factory=ModuleRemodelingConfig)
+
     # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
 
@@ -918,4 +1052,81 @@ class CellQuorumConfig(StrictBaseModel):
             )
 
         # Return the validated config object.
+        return self
+
+    @model_validator(mode="after")
+    def validate_declared_contrasts_are_reachable(self) -> CellQuorumConfig:
+        """
+        Reject a declared contrast the engine will not actually run.
+
+        The comparison that runs comes from ``design.case``/``design.control`` alone:
+        the DE stage config declares no case/control/paired fields, so its stage
+        wrapper fills them from ``design``, and ``contrasts`` is nowhere in that
+        chain. Nothing in the engine reads ``contrasts`` -- multi-contrast DE is not
+        wired -- yet the block is serialized into ``provenance/resolved_config.json``,
+        where a named contrast with its own case/control reads as the authoritative
+        statement of what was compared.
+
+        A contrast that agrees with the design is therefore harmless documentation,
+        and one that disagrees is a config that describes a comparison the run never
+        performed. That is not a stylistic problem: the natural edit is to change the
+        *named* thing ("LE_vs_Normal") and leave ``design`` alone, which would leave
+        the run comparing the old levels while provenance advertised the new ones. So
+        a divergence halts at load, before any compute.
+
+        Returns:
+            Validated CellQuorumConfig.
+
+        Raises:
+            ValueError: If a declared contrast diverges from the design, sets a
+                ``paired`` value the engine cannot honour, or reuses a name.
+        """
+
+        declared = self.contrasts.contrasts
+        if not declared:
+            return self
+
+        # Duplicate names silently collapse: ContrastsConfig.get returns the first
+        # match, so a second contrast under a used name is unreachable by name too.
+        counts = Counter(contrast.name for contrast in declared)
+        duplicates = sorted(name for name, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(
+                f"contrasts declares duplicate name(s) {duplicates}. Names address a "
+                "contrast, so a repeat makes all but the first unreachable."
+            )
+
+        # Without a design comparison, the contrast is the ONLY statement of what to
+        # compare -- and it is the one thing not consulted. Fail rather than run nothing.
+        if self.design.case is None or self.design.control is None:
+            names = [c.name for c in declared]
+            raise ValueError(
+                f"contrasts declares {names} but design.case/design.control are unset. "
+                "The comparison is taken from `design`, never from `contrasts`, so this "
+                "config declares a comparison the run cannot perform. Set design.case "
+                "and design.control to the levels you mean to compare."
+            )
+
+        design_pair = (self.design.case, self.design.control)
+        for contrast in declared:
+            if (contrast.case, contrast.control) != design_pair:
+                raise ValueError(
+                    f"contrast '{contrast.name}' compares "
+                    f"{contrast.case!r} vs {contrast.control!r}, but the run compares "
+                    f"{design_pair[0]!r} vs {design_pair[1]!r} (from `design`). "
+                    "Multi-contrast DE is not wired: `contrasts` is recorded in "
+                    "provenance but never read, so this contrast would be described "
+                    "and not computed. Either make it match `design`, or change "
+                    "`design` to the comparison you want."
+                )
+            # An explicit `paired` on a contrast reads as an override and is not one.
+            if contrast.paired is not None and contrast.paired != self.design.paired:
+                raise ValueError(
+                    f"contrast '{contrast.name}' sets paired={contrast.paired} while "
+                    f"design.paired={self.design.paired}. Pairing is resolved from "
+                    "`design` (then auto-promoted per cell type when every donor "
+                    "contributes both arms); a contrast's `paired` is never read, so "
+                    "this would silently not take effect. Set design.paired instead."
+                )
+
         return self

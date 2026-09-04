@@ -11,11 +11,13 @@ import pandas as pd
 
 from cellquorum.backends.hdwgcna_backend import HDWGCNA_R
 from cellquorum.core.contracts import DataContract
+from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.gene_regulation.coexpression.module_umap_plot import (
     plot_module_umap,
 )
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.visualization.figstyle import render_figure
 
 
 class HdwgcnaMethod(AnalysisMethod):
@@ -120,9 +122,9 @@ class HdwgcnaMethod(AnalysisMethod):
         if layer and layer != "X" and layer in adata.layers:
             a2 = adata.copy()
             a2.X = a2.layers[layer]
-            a2.write_h5ad(h5ad)
+            write_h5ad(a2, h5ad)
         else:
-            adata.write_h5ad(h5ad)
+            write_h5ad(adata, h5ad)
 
         # 5. Create output directory
         out_dir = Path(getattr(context.paths, "results", ".")) / "coexpression"
@@ -174,15 +176,16 @@ class HdwgcnaMethod(AnalysisMethod):
             return self._skip("modules.csv missing 'module' column")
 
         # 9. Render module UMAP figure if data available
-        figs = []
-        notes = []
+        figs: list[Path] = []
+        warnings: list[str] = []
         module_umap_csv = out_dir / "module_umap.csv"
         if module_umap_csv.exists():
-            try:
-                figs = plot_module_umap(module_umap_csv, out_dir)
-            except Exception as exc:
-                notes.append(f"Module UMAP figure rendering failed: {str(exc)[:200]}")
-                figs = []
+            render_figure(
+                "module UMAP",
+                lambda: plot_module_umap(module_umap_csv, out_dir),
+                figures=figs,
+                warnings=warnings,
+            )
 
         # 10. Build artifacts list (only for files that exist)
         artifacts = []
@@ -260,7 +263,7 @@ class HdwgcnaMethod(AnalysisMethod):
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=notes,
+            warnings=warnings,
             metrics=metrics,
             backend="hdwgcna_r",
         )

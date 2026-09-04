@@ -1,4 +1,4 @@
-# Pipeline step (order=20): qc — per-cell QC metrics, thresholds, doublet flags, and optional cell-cycle scoring.
+# Pipeline step (order=20): qc — metrics, thresholds, doublets, optional cell-cycle scoring.
 """QC pipeline stage for CellQuorum."""
 
 from __future__ import annotations
@@ -7,54 +7,115 @@ from __future__ import annotations
 import logging
 
 # Import Mapping for dictionary-like config resolution.
-from collections.abc import Mapping
-
 # Import dataclass for the concrete stage object.
 from dataclasses import dataclass
+from typing import ClassVar
 
 # Import Path for stage output directory handling.
-from pathlib import Path
-
 # Import AnnData for stage input and output typing.
 import anndata as ad
+
+# Import numpy to compare a recomputed metric column against an inherited one.
+import numpy as np
 
 # Import pandas for AnnData obs/var decision annotation typing.
 import pandas as pd
 
 # Import shared CellQuorum data exception.
-from cellquorum.core.exceptions import CellQuorumDataError
+from cellquorum.core.context import resolve_n_jobs
 
 # Import pipeline stage artifact and result contracts.
-from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 
 # Import QC artifact writer utilities.
-from cellquorum.stages.qc.artifacts import QCArtifactManifest, write_qc_artifacts
+from cellquorum.stages.qc._annotate import (
+    annotate_adata_with_qc_metrics,
+    build_qc_figure_adata,
+    build_qc_output_adata,
+)
+from cellquorum.stages.qc._context import (
+    get_context_adata,
+    get_qc_output_dir,
+    is_qc_stage_enabled,
+    resolve_qc_config,
+)
+from cellquorum.stages.qc._errors import QCStageError
+from cellquorum.stages.qc._report import (
+    _audit_to_columns,
+    build_disabled_qc_stage_result,
+    build_qc_stage_metrics,
+    build_qc_stage_notes,
+    build_qc_stage_summary_extra,
+    build_stage_artifacts_from_manifest,
+    collect_qc_stage_warnings,
+    resolve_publication_qc_keys,
+)
+from cellquorum.stages.qc.artifacts import write_qc_artifacts
+
+# Import the differential-attrition audit.
+from cellquorum.stages.qc.attrition import audit_qc_design_leaks, audit_qc_stage_attrition
 
 # Import QC configuration.
-from cellquorum.stages.qc.config import QCConfig, validate_qc_config_dict
+from cellquorum.stages.qc.config import QCConfig
 
 # Import QC decision construction.
-from cellquorum.stages.qc.decisions import QCDecisionResult, build_qc_decisions
+from cellquorum.stages.qc.floors import apply_floors
 
 # Import QC metric calculation.
+from cellquorum.stages.qc.lineage import (
+    LINEAGE_COLUMN,
+    NULL_LEVEL_COLUMN,
+    PROVISIONAL_EMBEDDING,
+    audit_lineages,
+    provisional_lineages,
+    resolve_null_groups,
+)
 from cellquorum.stages.qc.metrics import QCMetricsResult, calculate_qc_metrics
+from cellquorum.stages.qc.mixture import MitoMixtureResult, fit_mito_mixture
+from cellquorum.stages.qc.selfcheck import run_self_check
 
 # Import QC threshold construction.
-from cellquorum.stages.qc.thresholds import QCThresholdResult, build_qc_thresholds
+from cellquorum.stages.qc.validation import get_qc_matrix
 
 logger = logging.getLogger(__name__)
 
 
-class QCStageError(CellQuorumDataError):
-    """
-    Report QC stage execution failures.
+def _condition_mixture_on_lineage(qc_config: QCConfig) -> QCConfig:
+    """Fit the mitochondrial mixture within cell identity, not just within library.
 
-    The QC stage is the first full analysis stage. Errors here should explain
-    whether the failure came from missing context state, invalid QC configuration,
-    metric calculation, thresholding, decision construction, filtering, or
-    artifact writing.
+    A constitutively high-mitochondrial cell type — mast cells, neutrophils, erythrocytes —
+    receives a high compromised-probability on biology alone when the mixture is fitted per
+    library, because the healthy component is defined by the library's ordinary cells. Fitting
+    within (library x lineage) makes the posterior mean "compromised *for a cell like this*",
+    which is the question QC intends and which needs no rescaling afterwards.
+
+    The fallback chain matters as much as the grouping. A lineage too small to support its own
+    mixture in one library must borrow a coarser model rather than go unmodelled, so the chain
+    walks library-and-lineage, then library, then pooled. ``per_group`` resolution is required
+    for this to mean anything: under ``uniform`` a single unfittable group would drag the entire
+    dataset back to the coarsest level, which is precisely the behaviour being fixed.
     """
+    mixture = qc_config.mito_mixture
+    if not mixture.enabled:
+        return qc_config
+
+    grouping = [*mixture.groupby, LINEAGE_COLUMN]
+    fallbacks = [list(mixture.groupby), *[list(level) for level in mixture.fallback_groupby]]
+    if [] not in fallbacks:
+        fallbacks.append([])
+
+    return qc_config.model_copy(
+        update={
+            "mito_mixture": mixture.model_copy(
+                update={
+                    "groupby": grouping,
+                    "fallback_groupby": fallbacks,
+                    "level_policy": "per_group",
+                }
+            )
+        }
+    )
 
 
 @register_stage(name="qc", order=20, config_flag="qc", config_field="qc")
@@ -79,6 +140,10 @@ class QCStage:
         output_subdir: Subdirectory under context.paths.results where QC
             artifacts should be written.
     """
+
+    #: Stage name, injected by ``@register_stage``. Declared so the contract is visible to a
+    #: reader and to a type checker rather than appearing by decorator magic.
+    name: ClassVar[str]
 
     # Store an optional explicit QC configuration override.
     config: QCConfig | None = None
@@ -123,27 +188,57 @@ class QCStage:
         # Calculate cell-level, gene-level, and feature-family QC metrics.
         metrics_result = calculate_qc_metrics(adata, qc_config)
 
-        # Build fixed and adaptive threshold records.
-        threshold_result = build_qc_thresholds(
-            cell_metrics=metrics_result.cell_metrics,
-            gene_metrics=metrics_result.gene_metrics,
-            config=qc_config,
+        # Group cells transcriptionally BEFORE anything is fitted, so every fitted quantity
+        # downstream can be conditioned on cell identity rather than on the library alone.
+        #
+        # Computed here and not inside the graded block because the mitochondrial mixture model
+        # needs it too, and it needs it more than the graded axes do: the posterior is a
+        # calibrated probability, so the only correct way to stop a constitutively
+        # high-mitochondrial cell type receiving a high posterior on biology alone is to FIT the
+        # mixture within that cell type. Rescaling the posterior afterwards was tried and
+        # corrupted it — see the metabolic axis in producers.py.
+        lineage = None
+        if qc_config.graded.enabled and qc_config.graded.lineage_conditional:
+            lineage = provisional_lineages(
+                adata,
+                layer=qc_config.metrics.layer,
+                resolution=qc_config.graded.lineage_resolution,
+                min_genes=qc_config.graded.lineage_min_genes,
+            )
+            # The mixture groups by columns of cell_metrics, so the lineage has to live there.
+            metrics_result.cell_metrics[LINEAGE_COLUMN] = lineage.reindex(
+                metrics_result.cell_metrics.index
+            ).to_numpy()
+            qc_config = _condition_mixture_on_lineage(qc_config)
+
+        # Fit the mitochondrial mixture once, here. It is a measurement rather than a
+        # judgement, the artifact writer needs its table, and the graded metabolic axis needs its
+        # posterior — routing it through the threshold machinery to reach either was the tie that
+        # kept two QC systems alive.
+        mixture = None
+        if qc_config.mito_mixture.enabled:
+            mixture = fit_mito_mixture(metrics_result.cell_metrics, qc_config.mito_mixture)
+
+        # Apply the absolute floors: barcodes that are not cells and genes that are not
+        # measurable. This is the whole of what the fixed-and-MAD threshold path did that graded
+        # adjudication cannot express. Everything that is a *judgement* — is this cell damaged,
+        # may it fit a model, may it inform a conclusion — belongs to grading, which never
+        # deletes. There is one QC system now, not two.
+        floors = apply_floors(
+            # The same matrix the metrics were computed from, so a floor cannot disagree with
+            # the numbers it is filtering on.
+            get_qc_matrix(adata, qc_config)[0],
+            adata.obs_names,
+            adata.var_names,
+            min_genes_per_cell=qc_config.basic.min_genes_per_cell,
+            min_counts_per_cell=qc_config.basic.min_counts_per_cell,
+            min_cells_per_gene=qc_config.basic.min_cells_per_gene,
         )
 
-        # Apply threshold records to produce explicit decision tables.
-        decision_result = build_qc_decisions(
-            cell_metrics=metrics_result.cell_metrics,
-            gene_metrics=metrics_result.gene_metrics,
-            thresholds=threshold_result,
-            config=qc_config,
-        )
-
-        # Build the output AnnData object, optionally filtered.
-        output_adata = build_qc_output_adata(
-            adata=adata,
-            decision_result=decision_result,
-            config=qc_config,
-        )
+        # Floors always filter, so there is no mode to configure. Under the old `flag_no_drop`
+        # default the stage computed a verdict, kept every cell, and left three places in the
+        # codebase reading a boolean that controlled nothing.
+        output_adata = build_qc_output_adata(adata=adata, floors=floors)
 
         # Carry calculated QC metrics onto the QC AnnData before figure/h5ad
         # artifact writing. The durable metric tables remain canonical, but
@@ -156,6 +251,238 @@ class QCStage:
         # Initialize addon metrics dictionary.
         addon_metrics: dict[str, dict] = {}
 
+        # Warnings raised inside the graded block. Collected separately because the stage's
+        # main warning list is assembled further down, after the artifact manifest exists.
+        graded_warnings: list[str] = []
+
+        # Optional scoring layers: cell cycle and doublet detection. See _run_addons.
+        output_adata = self._run_addons(
+            output_adata,
+            qc_config=qc_config,
+            addon_metrics=addon_metrics,
+            context=context,
+        )
+
+        # Graded adjudication (schema v2): technical evidence -> core / borderline /
+        # quarantine, then per-analysis eligibility. See _adjudicate_graded.
+        if qc_config.graded.enabled:
+            graded_metrics, graded_block_warnings = self._adjudicate_graded(
+                output_adata,
+                qc_config=qc_config,
+                metrics_result=metrics_result,
+                mixture=mixture,
+                lineage=lineage,
+                context=context,
+            )
+            addon_metrics["graded"] = graded_metrics
+            graded_warnings.extend(graded_block_warnings)
+
+        # Resolve group_key for QC figure grouping. Prefer the central cohort
+        # schema (condition, then donor, then sample), then fall back to the
+        # design block, then a plain sample_id column.
+        group_key = None
+        context_config = getattr(context, "config", None)
+        cohort = getattr(context_config, "cohort", None)
+        design = getattr(context_config, "design", None)
+        candidates = [
+            getattr(cohort, "condition_key", None),
+            getattr(cohort, "donor_key", None),
+            getattr(cohort, "sample_key", None),
+            getattr(design, "condition_col", None),
+            getattr(design, "donor_col", None),
+            "sample_id",
+        ]
+        for candidate in candidates:
+            if candidate and candidate in output_adata.obs.columns:
+                group_key = candidate
+                break
+
+        # Resolve per-cell group labels for the QC report table from the INPUT
+        # object, not output_adata: the decision table is indexed by every input
+        # cell (before filtering), so removed-cell counts must be attributed
+        # using cell-type labels from the unfiltered obs. Prefer the design
+        # cell_type_col, then a plain cell_type column; absent both, the report
+        # collapses to a single TOTAL row.
+        report_groups = None
+        report_group_name = "cell_type"
+        cell_type_candidates = [
+            getattr(design, "cell_type_col", None),
+            "cell_type",
+        ]
+        for candidate in cell_type_candidates:
+            if candidate and candidate in adata.obs.columns:
+                report_groups = adata.obs[candidate]
+                report_group_name = candidate
+                break
+
+        # Test whether QC removed cells at the same rate in every arm of the
+        # design. This runs on the UNFILTERED obs against the decision table:
+        # output_adata has already lost the removed cells under mode="filter", so
+        # measured against it every arm's attrition is zero. A filter whose rate
+        # tracks the condition is a covariate, and nothing downstream can tell the
+        # difference, so the engine checks rather than trusting the thresholds to
+        # have been fair.
+        attrition_audit = audit_qc_stage_attrition(
+            obs=adata.obs,
+            keep=floors.cell_keep,
+            config=qc_config,
+            cohort=cohort,
+            design=design,
+        )
+
+        # Read the configuration for the two groupings that produce differential
+        # attrition by construction rather than by accident, so the cause is named
+        # alongside the measurement instead of leaving a reader to find it.
+        design_leak_warnings = audit_qc_design_leaks(
+            config=qc_config,
+            cohort=cohort,
+            design=design,
+        )
+
+        # Build the object the FIGURES render from. Under mode="filter",
+        # output_adata has already lost the failing cells, so a keep/fail panel
+        # drawn from it reports "100% pass" however many cells were dropped —
+        # the 2026-09-01 VEC run dropped 503 of 3797 and its barplot read
+        # "0 Fail". The decision tables are indexed by every input cell, so the
+        # honest figure source is the pre-filter object carrying those decisions.
+        figure_adata = build_qc_figure_adata(
+            adata=adata,
+            output_adata=output_adata,
+            metrics_result=metrics_result,
+            floors=floors,
+        )
+
+        # Resolve the obs columns the publication QC panels need. Their defaults
+        # (patient_id/sample_id/condition) do not match any CellQuorum cohort
+        # schema, so leaving them unset raised QCPublicationFigureError and the
+        # entire publication suite was silently swallowed into a warning.
+        publication_keys = resolve_publication_qc_keys(
+            adata=figure_adata,
+            cohort=cohort,
+            design=design,
+        )
+
+        # Write all configured QC artifacts.
+        artifact_manifest = write_qc_artifacts(
+            output_dir=output_dir,
+            metrics_result=metrics_result,
+            floors=floors,
+            mixture=mixture,
+            config=qc_config,
+            adata=output_adata,
+            summary_extra=build_qc_stage_summary_extra(
+                context=context,
+                qc_config=qc_config,
+                stage_name=self.name,
+            ),
+            group_key=group_key,
+            report_groups=report_groups,
+            report_group_name=report_group_name,
+            figure_adata=figure_adata,
+            publication_keys=publication_keys,
+            attrition_audit=attrition_audit,
+        )
+
+        # Convert artifact manifest paths into StageArtifact records.
+        stage_artifacts = build_stage_artifacts_from_manifest(artifact_manifest)
+
+        # Combine warnings from all QC layers.
+        warnings = collect_qc_stage_warnings(
+            metrics_result=metrics_result,
+            floors=floors,
+            artifact_manifest=artifact_manifest,
+        )
+
+        # Surface any preserved-not-overwritten metric-column conflicts.
+        warnings.extend(metric_annotation_warnings)
+
+        # Surface the graded block's findings, notably an archetype whose cells are being
+        # removed wholesale — the rare-population loss that no per-cell verdict can see.
+        warnings.extend(graded_warnings)
+
+        # Surface the configuration check before the measurement, so a reader sees
+        # the guaranteed cause before the observed effect.
+        warnings.extend(design_leak_warnings)
+
+        # Surface differentially-filtered design factors. These belong in the
+        # stage warnings and not only in the audit table: a reader who never
+        # opens qc_attrition.csv is exactly the reader who needs to be told.
+        warnings.extend(attrition_audit.warnings)
+
+        # Lift the doublet layer's own channels out of the metrics dict. They were
+        # only ever stored there, so a detector that came back unavailable, or one
+        # that scored every cell and flagged zero doublets, was recorded in
+        # provenance JSON and printed nowhere a reader of the report would look.
+        doublet_addon = addon_metrics.get("doublets") or {}
+        warnings.extend(doublet_addon.get("warnings", []))
+
+        # The old no-drop guard lived here: it warned when a verdict flagged cells that were
+        # then kept. There is nothing to warn about now — floors remove what they judge, and
+        # grading assigns permissions rather than a verdict that something must act on.
+        # Build human-readable stage notes.
+        notes = build_qc_stage_notes(
+            qc_config=qc_config,
+            floors=floors,
+            input_adata=adata,
+            output_adata=output_adata,
+        )
+        notes.extend(doublet_addon.get("notes", []))
+
+        # Build structured stage metrics for provenance.
+        stage_metrics = build_qc_stage_metrics(
+            stage_name=self.name,
+            qc_config=qc_config,
+            metrics_result=metrics_result,
+            floors=floors,
+            artifact_manifest=artifact_manifest,
+            input_adata=adata,
+            output_adata=output_adata,
+        )
+
+        # Merge addon metrics (cell-cycle, doublets) into stage metrics.
+        if addon_metrics:
+            stage_metrics.update(addon_metrics)
+
+        # Record the attrition audit in provenance, including the tests that were
+        # skipped: "checked and clean" and "never checked" must be distinguishable
+        # from the run directory alone.
+        stage_metrics["attrition_audit"] = attrition_audit.to_summary_dict()
+
+        # Return the stage result.
+        return StageResult(
+            adata=output_adata,
+            artifacts=stage_artifacts,
+            notes=notes,
+            warnings=warnings,
+            metrics=stage_metrics,
+        )
+
+    def _run_addons(
+        self,
+        output_adata: ad.AnnData,
+        *,
+        qc_config: QCConfig,
+        addon_metrics: dict[str, dict],
+        context: object,
+    ) -> ad.AnnData:
+        """Optional per-cell scoring layers: cell cycle and doublet detection.
+
+        Both are opt-in, both write to ``obs``, and neither removes a cell unless its own
+        config says to. They live together because they share that shape and because keeping
+        them inline made the phase boundaries of ``run`` impossible to see.
+
+        Args:
+            output_adata: The QC object, mutated in place with scores and flags.
+            qc_config: Resolved QC configuration.
+            addon_metrics: Accumulator this method adds ``cell_cycle`` / ``doublets`` to.
+            context: Pipeline context, for the R backend and the cohort sample key.
+
+        Returns:
+            The object, which is a NEW one when ``doublets.remove`` dropped cells. Returned
+            rather than mutated for exactly that reason: subsetting rebinds, so a method that
+            only mutated in place would silently discard the removal — which it did, and
+            ``test_doublets_removed_when_remove_true`` caught it.
+        """
         # Cell-cycle scoring (opt-in): fill default Tirosh lists when empty.
         if qc_config.cell_cycle.enabled:
             from cellquorum.stages.qc.cell_cycle import (
@@ -198,11 +525,17 @@ class QCStage:
                     doublet_sample_key = candidate
                     break
 
+            # compute.n_jobs is what makes QC one of the "stages that support
+            # parallel execution" the field documents: scDblFinder scores each
+            # capture independently, so with a sample key there are exactly
+            # n_captures independent jobs to hand out. Defaults to 1, so a config
+            # that never set it keeps the serial, single-threaded behaviour.
             doublet_metrics = detect_doublets(
                 output_adata,
                 qc_config.doublets,
                 backend,
                 sample_key=doublet_sample_key,
+                n_jobs=resolve_n_jobs(context),
             )
             addon_metrics["doublets"] = doublet_metrics
 
@@ -218,992 +551,304 @@ class QCStage:
                 doublet_metrics = {**doublet_metrics, "n_removed": n_removed}
                 addon_metrics["doublets"] = doublet_metrics
 
-        # Resolve group_key for QC figure grouping. Prefer the central cohort
-        # schema (condition, then donor, then sample), then fall back to the
-        # design block, then a plain sample_id column.
-        group_key = None
-        context_config = getattr(context, "config", None)
-        cohort = getattr(context_config, "cohort", None)
-        design = getattr(context_config, "design", None)
-        candidates = [
-            getattr(cohort, "condition_key", None),
-            getattr(cohort, "donor_key", None),
-            getattr(cohort, "sample_key", None),
-            getattr(design, "condition_col", None),
-            getattr(design, "donor_col", None),
-            "sample_id",
-        ]
-        for candidate in candidates:
-            if candidate and candidate in output_adata.obs.columns:
-                group_key = candidate
-                break
-
-        # Resolve per-cell group labels for the QC report table from the INPUT
-        # object, not output_adata: the decision table is indexed by every input
-        # cell (before filtering), so removed-cell counts must be attributed
-        # using cell-type labels from the unfiltered obs. Prefer the design
-        # cell_type_col, then a plain cell_type column; absent both, the report
-        # collapses to a single TOTAL row.
-        report_groups = None
-        report_group_name = "cell_type"
-        cell_type_candidates = [
-            getattr(design, "cell_type_col", None),
-            "cell_type",
-        ]
-        for candidate in cell_type_candidates:
-            if candidate and candidate in adata.obs.columns:
-                report_groups = adata.obs[candidate]
-                report_group_name = candidate
-                break
-
-        # Write all configured QC artifacts.
-        artifact_manifest = write_qc_artifacts(
-            output_dir=output_dir,
-            metrics_result=metrics_result,
-            threshold_result=threshold_result,
-            decision_result=decision_result,
-            config=qc_config,
-            adata=output_adata,
-            summary_extra=build_qc_stage_summary_extra(
-                context=context,
-                qc_config=qc_config,
-                stage_name=self.name,
-            ),
-            group_key=group_key,
-            report_groups=report_groups,
-            report_group_name=report_group_name,
-        )
-
-        # Convert artifact manifest paths into StageArtifact records.
-        stage_artifacts = build_stage_artifacts_from_manifest(artifact_manifest)
-
-        # Combine warnings from all QC layers.
-        warnings = collect_qc_stage_warnings(
-            metrics_result=metrics_result,
-            threshold_result=threshold_result,
-            decision_result=decision_result,
-            artifact_manifest=artifact_manifest,
-        )
-
-        # Surface any preserved-not-overwritten metric-column conflicts.
-        warnings.extend(metric_annotation_warnings)
-
-        # No-silent-decisions guard: in a no-drop mode (flag_no_drop)
-        # flagged cells REMAIN in the object and flow into every downstream stage.
-        # Say so loudly — a resolved config's benign-looking mode must not hide the
-        # fact that N% of cells failed QC yet nothing was removed.
-        if not qc_config.should_filter():
-            n_failed = int(decision_result.summary.get("n_cells_failed", 0))
-            n_total = int(decision_result.summary.get("n_cells", 0))
-            if n_failed > 0:
-                pct = (100.0 * n_failed / n_total) if n_total else 0.0
-                no_drop_msg = (
-                    f"QC mode '{qc_config.mode}' flagged {n_failed} of {n_total} cells "
-                    f"({pct:.1f}%) as failing QC but did NOT remove them — they remain "
-                    "in the object and enter downstream analysis. Set qc.mode='filter' "
-                    "or 'both' to drop them."
-                )
-                logger.warning(no_drop_msg)
-                warnings.append(no_drop_msg)
-
-        # Build human-readable stage notes.
-        notes = build_qc_stage_notes(
-            qc_config=qc_config,
-            decision_result=decision_result,
-            input_adata=adata,
-            output_adata=output_adata,
-        )
-
-        # Build structured stage metrics for provenance.
-        stage_metrics = build_qc_stage_metrics(
-            stage_name=self.name,
-            qc_config=qc_config,
-            metrics_result=metrics_result,
-            threshold_result=threshold_result,
-            decision_result=decision_result,
-            artifact_manifest=artifact_manifest,
-            input_adata=adata,
-            output_adata=output_adata,
-        )
-
-        # Merge addon metrics (cell-cycle, doublets) into stage metrics.
-        if addon_metrics:
-            stage_metrics.update(addon_metrics)
-
-        # Return the stage result.
-        return StageResult(
-            adata=output_adata,
-            artifacts=stage_artifacts,
-            notes=notes,
-            warnings=warnings,
-            metrics=stage_metrics,
-        )
-
-
-def resolve_qc_config(
-    context: object,
-    *,
-    override: QCConfig | None = None,
-) -> QCConfig:
-    """
-    Resolve the effective QC configuration for a stage run.
-
-    Resolution order:
-
-    1. explicit QCStage(config=...) override
-    2. context.config when it is already a QCConfig
-    3. context.config.qc when present
-    4. context.config["qc"] when present
-    5. QCConfig() defaults
-
-    Args:
-        context: PipelineContext-like object.
-        override: Optional explicit QCConfig override.
-
-    Returns:
-        Resolved QCConfig.
-
-    Raises:
-        QCStageError: If the resolved QC config is invalid.
-    """
-
-    # Prefer the explicit stage-level override.
-    if override is not None:
-        # Validate override type.
-        if not isinstance(override, QCConfig):
-            raise QCStageError(
-                "QCStage config override must be a QCConfig object. "
-                f"Received: {type(override).__name__}."
-            )
-
-        # Return the override.
-        return override
-
-    # Read the context-level config if present.
-    context_config = getattr(context, "config", None)
-
-    # Accept context.config as a QCConfig directly.
-    if isinstance(context_config, QCConfig):
-        return context_config
-
-    # Resolve context.config["qc"] for dictionary-like configs.
-    if isinstance(context_config, Mapping) and "qc" in context_config:
-        return coerce_qc_config(context_config["qc"])
-
-    # Resolve context.config.qc for object-like configs.
-    if hasattr(context_config, "qc"):
-        return coerce_qc_config(context_config.qc)
-
-    # Fall back to default QC configuration.
-    return QCConfig()
-
-
-def coerce_qc_config(value: object) -> QCConfig:
-    """
-    Coerce a candidate QC config value into QCConfig.
-
-    Args:
-        value: Candidate QC configuration value.
-
-    Returns:
-        Validated QCConfig.
-
-    Raises:
-        QCStageError: If the candidate cannot become QCConfig.
-    """
-
-    # Preserve QCConfig objects.
-    if isinstance(value, QCConfig):
-        return value
-
-    # Validate dictionary-like QC configuration.
-    if isinstance(value, Mapping):
-        return validate_qc_config_dict(value)
-
-    # Reject unsupported values.
-    raise QCStageError(
-        f"QC configuration must be a QCConfig object or mapping. Received: {type(value).__name__}."
-    )
-
-
-def is_qc_stage_enabled(context: object, qc_config: QCConfig) -> bool:
-    """
-    Return whether the QC stage should execute.
-
-    The stage is enabled only when QCConfig.enabled is true and any top-level
-    context.config.stages.qc flag is also true.
-
-    Args:
-        context: PipelineContext-like object.
-        qc_config: Resolved QC configuration.
-
-    Returns:
-        True when QC should run, otherwise False.
-    """
-
-    # Respect the QC module-level enabled flag first.
-    if not qc_config.enabled:
-        return False
-
-    # Read the context-level config if present.
-    context_config = getattr(context, "config", None)
-
-    # Handle dictionary-style stage selection.
-    if isinstance(context_config, Mapping):
-        # Extract the stages mapping.
-        stages = context_config.get("stages")
-
-        # Respect a dictionary-style stages.qc flag when present.
-        if isinstance(stages, Mapping) and "qc" in stages:
-            return bool(stages["qc"])
-
-    # Handle object-style stage selection.
-    stages = getattr(context_config, "stages", None)
-
-    # Respect object-style stages.qc when present.
-    if stages is not None and hasattr(stages, "qc"):
-        return bool(stages.qc)
-
-    # Default to enabled when no top-level stage selection is present.
-    return True
-
-
-def get_context_adata(context: object) -> ad.AnnData:
-    """
-    Retrieve AnnData from a PipelineContext-like object.
-
-    Args:
-        context: PipelineContext-like object.
-
-    Returns:
-        Active AnnData object.
-
-    Raises:
-        QCStageError: If AnnData is missing or invalid.
-    """
-
-    # Prefer the formal PipelineContext helper when present.
-    require_adata = getattr(context, "require_adata", None)
-
-    # Use require_adata when callable.
-    if callable(require_adata):
-        try:
-            # Retrieve AnnData through the context helper.
-            adata = require_adata()
-
-        # Convert context errors into QC stage errors.
-        except Exception as error:
-            raise QCStageError("QC stage requires an AnnData object in context.") from error
-
-    # Fall back to a direct context.adata attribute.
-    else:
-        # Retrieve direct AnnData attribute.
-        adata = getattr(context, "adata", None)
-
-    # Validate AnnData type.
-    if not isinstance(adata, ad.AnnData):
-        raise QCStageError(
-            "QC stage requires context.adata to be an AnnData object. "
-            f"Received: {type(adata).__name__}."
-        )
-
-    # Return AnnData.
-    return adata
-
-
-def get_qc_output_dir(context: object, output_subdir: str) -> Path:
-    """
-    Resolve the QC stage output directory.
-
-    Args:
-        context: PipelineContext-like object with paths.results.
-        output_subdir: QC subdirectory under results.
-
-    Returns:
-        QC artifact output directory.
-
-    Raises:
-        QCStageError: If context paths are missing or invalid.
-    """
-
-    # Reject empty output subdirectories.
-    if not isinstance(output_subdir, str) or not output_subdir.strip():
-        raise QCStageError("QCStage output_subdir must be a non-empty string.")
-
-    # Retrieve the context paths object.
-    paths = getattr(context, "paths", None)
-
-    # Require context paths.
-    if paths is None:
-        raise QCStageError("QC stage requires context.paths with a results directory.")
-
-    # Require a results directory on the paths object.
-    if not hasattr(paths, "results"):
-        raise QCStageError("QC stage requires context.paths.results.")
-
-    # Resolve the results directory.
-    results_dir = Path(paths.results)
-
-    # Return the QC output directory.
-    return results_dir / output_subdir
-
-
-def build_qc_output_adata(
-    *,
-    adata: ad.AnnData,
-    decision_result: QCDecisionResult,
-    config: QCConfig,
-) -> ad.AnnData:
-    """
-    Build the QC-updated AnnData object.
-
-    The output AnnData is always annotated with QC decision columns. It is
-    filtered only when config.mode is filter or both.
-
-    Args:
-        adata: Input AnnData object.
-        decision_result: QC decision result.
-        config: QC configuration.
-
-    Returns:
-        Annotated and optionally filtered AnnData object.
-    """
-
-    # Validate input AnnData.
-    if not isinstance(adata, ad.AnnData):
-        raise QCStageError(
-            f"build_qc_output_adata expected an AnnData object. Received: {type(adata).__name__}."
-        )
-
-    # Validate decision result type.
-    if not isinstance(decision_result, QCDecisionResult):
-        raise QCStageError(
-            "decision_result must be a QCDecisionResult. "
-            f"Received: {type(decision_result).__name__}."
-        )
-
-    # Validate QC config type.
-    if not isinstance(config, QCConfig):
-        raise QCStageError(f"config must be a QCConfig. Received: {type(config).__name__}.")
-
-    # Copy and annotate the AnnData object with QC decisions.
-    output_adata = annotate_adata_with_qc_decisions(adata, decision_result)
-
-    # Return annotated, unfiltered AnnData in report-only mode.
-    if not config.should_filter():
         return output_adata
 
-    # Return annotated and filtered AnnData in filter or both mode.
-    return filter_adata_by_qc_decisions(output_adata, decision_result)
+    def _adjudicate_graded(
+        self,
+        output_adata: ad.AnnData,
+        *,
+        qc_config: QCConfig,
+        metrics_result: QCMetricsResult,
+        mixture: MitoMixtureResult | None,
+        lineage: pd.Series | None,
+        context: object,
+    ) -> tuple[dict[str, object], list[str]]:
+        """Score technical evidence, adjudicate, and write per-analysis eligibility.
 
+        Schema v2. Runs alongside the threshold rules rather than replacing them, so one
+        object carries both and the comparison is visible. The rules still decide ``keep``;
+        this decides downstream ELIGIBILITY, which is the thing ``cellquorum_qc_keep`` never
+        actually controlled.
 
-def annotate_adata_with_qc_decisions(
-    adata: ad.AnnData,
-    decision_result: QCDecisionResult,
-) -> ad.AnnData:
-    """
-    Add QC decision columns to AnnData.obs and AnnData.var.
+        Extracted from ``run`` because it was 204 lines of a 566-line method nested up to ten
+        levels deep. The evidence table, adjudication, eligibility masks, lineage audit and
+        archetype audit are all local to this phase — only the metrics and warnings escape —
+        so the seam is exact rather than a convenience.
 
-    Args:
-        adata: Input AnnData object.
-        decision_result: QC decision result.
+        Args:
+            output_adata: The QC object. Mutated in place with evidence, verdict, eligibility
+                masks, provisional lineage and archetype columns.
+            qc_config: Resolved QC configuration.
+            metrics_result: Computed cell/gene metrics.
+            mixture: Fitted mitochondrial mixture, or None when it did not run.
+            lineage: Provisional lineages computed before thresholding, or None.
+            context: Pipeline context, for the cohort sample key and scratch directory.
 
-    Returns:
-        Copy of AnnData with QC decision annotations.
+        Returns:
+            ``(graded_metrics, warnings)``.
+        """
+        graded_metrics: dict[str, object] = {}
+        graded_warnings: list[str] = []
 
-    Raises:
-        QCStageError: If decision table indices do not match AnnData names.
-    """
+        # The RAW posterior, never the adjusted probability: the adjusted one folds miQC's
+        # post-processing into hard 0.0/1.0 and gives unfittable cells 0.0 meaning keep. Correct
+        # for a threshold; under grading 0.0 reads as "measured, no concern", which is the
+        # absent-evidence-as-health failure.
+        mito_posterior = None
+        if mixture is not None:
+            posterior = mixture.posterior
+            mito_posterior = posterior if not posterior.empty else None
+            graded_warnings.extend(mixture.warnings)
 
-    # Validate cell decision alignment.
-    validate_decision_index_alignment(
-        expected=list(adata.obs_names),
-        observed=list(decision_result.cell_decisions.index),
-        label="cell_decisions",
-    )
-
-    # Validate gene decision alignment.
-    validate_decision_index_alignment(
-        expected=list(adata.var_names),
-        observed=list(decision_result.gene_decisions.index),
-        label="gene_decisions",
-    )
-
-    # Copy the AnnData object before mutation.
-    annotated = adata.copy()
-
-    # Add cell-level decision columns to obs.
-    add_decision_columns_to_axis(
-        axis_frame=annotated.obs,
-        decisions=decision_result.cell_decisions,
-        prefix="cellquorum_qc_",
-    )
-
-    # Add gene-level decision columns to var.
-    add_decision_columns_to_axis(
-        axis_frame=annotated.var,
-        decisions=decision_result.gene_decisions,
-        prefix="cellquorum_qc_",
-    )
-
-    # Return annotated AnnData.
-    return annotated
-
-
-def annotate_adata_with_qc_metrics(
-    *,
-    adata: ad.AnnData,
-    metrics_result: QCMetricsResult,
-) -> list[str]:
-    """
-    Add calculated QC metric columns to an AnnData object in place.
-
-    QC metrics are calculated as explicit tables first. Plotting and downstream
-    inspection, however, expect common cell-level metrics such as
-    ``pct_counts_mito`` to be available on ``adata.obs``. This helper aligns the
-    metric tables to the possibly filtered QC AnnData and stores non-conflicting
-    metric columns on ``obs`` and ``var``. Pre-existing columns are preserved,
-    never overwritten.
-
-    Args:
-        adata: QC AnnData to annotate.
-        metrics_result: Calculated QC metrics.
-
-    Returns:
-        Human-readable warnings for any metric columns skipped because they
-        already existed on ``obs``/``var``.
-
-    Raises:
-        QCStageError: If the QC AnnData axes cannot be aligned to the metric
-            tables.
-    """
-
-    # Validate input types.
-    if not isinstance(adata, ad.AnnData):
-        raise QCStageError(
-            "annotate_adata_with_qc_metrics expected an AnnData object. "
-            f"Received: {type(adata).__name__}."
+        from cellquorum.stages.qc.archetypes import ARCHETYPE_COLUMN, audit_archetypes
+        from cellquorum.stages.qc.eligibility import (
+            Analysis,
+            Permission,
+            build_eligibility_masks,
         )
-    if not isinstance(metrics_result, QCMetricsResult):
-        raise QCStageError(
-            f"metrics_result must be a QCMetricsResult. Received: {type(metrics_result).__name__}."
+        from cellquorum.stages.qc.evidence import (
+            AdjudicationPolicy,
+            adjudicate_initial,
         )
+        from cellquorum.stages.qc.producers import build_evidence_table
 
-    # Align and add cell-level metrics.
-    cell_metrics = align_metric_table_to_axis(
-        axis_names=adata.obs_names,
-        metric_table=metrics_result.cell_metrics,
-        axis_label="obs",
-    )
-    obs_conflicts = add_metric_columns_to_axis(axis_frame=adata.obs, metrics=cell_metrics)
+        graded_config = qc_config.graded
 
-    # Align and add gene-level metrics.
-    gene_metrics = align_metric_table_to_axis(
-        axis_names=adata.var_names,
-        metric_table=metrics_result.gene_metrics,
-        axis_label="var",
-    )
-    var_conflicts = add_metric_columns_to_axis(axis_frame=adata.var, metrics=gene_metrics)
+        # Scale severities within the cohort sample key so a shallow library is not
+        # judged against a deep one.
+        sample_key = getattr(getattr(context, "config", None), "cohort", None)
+        sample_key = getattr(sample_key, "sample_key", None) or "sample_id"
 
-    # Report preserved-not-overwritten columns so the QC stage can warn.
-    warnings: list[str] = []
-    if obs_conflicts:
-        warnings.append(
-            "QC metric columns already present in obs were preserved, not "
-            f"overwritten: {', '.join(obs_conflicts)}."
-        )
-    if var_conflicts:
-        warnings.append(
-            "QC metric columns already present in var were preserved, not "
-            f"overwritten: {', '.join(var_conflicts)}."
-        )
-    return warnings
-
-
-def align_metric_table_to_axis(
-    *,
-    axis_names: pd.Index,
-    metric_table: pd.DataFrame,
-    axis_label: str,
-) -> pd.DataFrame:
-    """
-    Align a QC metric table to AnnData obs/var names.
-
-    Args:
-        axis_names: AnnData axis names.
-        metric_table: QC metric table indexed by the original axis names.
-        axis_label: Human-readable axis label for errors.
-
-    Returns:
-        Metric table aligned to ``axis_names``.
-
-    Raises:
-        QCStageError: If axis names are not present in the metric table.
-    """
-
-    # Fast path: no filtering/reordering occurred.
-    if list(axis_names) == list(metric_table.index):
-        return metric_table
-
-    # Reindex supports filtered outputs while preserving the QC AnnData order.
-    missing = pd.Index(axis_names).difference(metric_table.index)
-    if len(missing) > 0:
-        preview = ", ".join(map(str, missing[:5]))
-        raise QCStageError(
-            f"Cannot annotate QC {axis_label} metrics: {len(missing)} axis name(s) "
-            f"are missing from the metric table. First missing: {preview}."
-        )
-
-    return metric_table.reindex(axis_names)
-
-
-def add_metric_columns_to_axis(
-    *,
-    axis_frame: pd.DataFrame,
-    metrics: pd.DataFrame,
-) -> list[str]:
-    """
-    Add metric-table columns to an AnnData axis frame by row order.
-
-    Pre-existing columns on ``axis_frame`` are never overwritten: an upstream
-    tool may have populated ``total_counts`` or ``pct_counts_mito`` with values
-    we must not silently clobber. Conflicting metric columns are skipped and
-    returned so the caller can surface them as warnings.
-
-    Args:
-        axis_frame: AnnData obs or var DataFrame.
-        metrics: Aligned metric table.
-
-    Returns:
-        Names of metric columns skipped because they already existed on
-        ``axis_frame``.
-    """
-
-    # Store unprefixed metric names so plotting code and users see standard
-    # Scanpy-style QC columns: total_counts, pct_counts_mito, etc. Skip any
-    # column already present rather than overwriting it (flag-not-clobber).
-    conflicts: list[str] = []
-    for column in metrics.columns:
-        if column in axis_frame.columns:
-            conflicts.append(str(column))
-            continue
-        axis_frame[column] = metrics[column].to_numpy()
-
-    return conflicts
-
-
-def add_decision_columns_to_axis(
-    *,
-    axis_frame: pd.DataFrame,
-    decisions: pd.DataFrame,
-    prefix: str,
-) -> None:
-    """
-    Add decision-table columns to AnnData obs or var.
-
-    Args:
-        axis_frame: AnnData obs or var DataFrame.
-        decisions: Decision table aligned to axis_frame by row order.
-        prefix: Prefix for stored QC decision columns.
-    """
-
-    # Iterate over decision columns.
-    for column in decisions.columns:
-        # Build the output column name.
-        output_column = f"{prefix}{column}"
-
-        # Store values by position to preserve duplicate-name compatibility.
-        axis_frame[output_column] = decisions[column].to_numpy()
-
-
-def filter_adata_by_qc_decisions(
-    adata: ad.AnnData,
-    decision_result: QCDecisionResult,
-) -> ad.AnnData:
-    """
-    Filter AnnData using QC decision tables.
-
-    Args:
-        adata: AnnData object already aligned to decision tables.
-        decision_result: QC decision result.
-
-    Returns:
-        Filtered AnnData object.
-
-    Raises:
-        QCStageError: If decision table indices are not aligned.
-    """
-
-    # Validate cell decision alignment.
-    validate_decision_index_alignment(
-        expected=list(adata.obs_names),
-        observed=list(decision_result.cell_decisions.index),
-        label="cell_decisions",
-    )
-
-    # Validate gene decision alignment.
-    validate_decision_index_alignment(
-        expected=list(adata.var_names),
-        observed=list(decision_result.gene_decisions.index),
-        label="gene_decisions",
-    )
-
-    # Build the cell keep mask.
-    keep_cells = decision_result.cell_decisions["keep"].to_numpy(dtype=bool)
-
-    # Build the gene keep mask.
-    keep_genes = decision_result.gene_decisions["keep"].to_numpy(dtype=bool)
-
-    # Return the filtered AnnData object.
-    return adata[keep_cells, keep_genes].copy()
-
-
-def validate_decision_index_alignment(
-    *,
-    expected: list[str],
-    observed: list[str],
-    label: str,
-) -> None:
-    """
-    Validate that a decision table index matches AnnData axis names exactly.
-
-    Args:
-        expected: AnnData axis names in order.
-        observed: Decision table index values in order.
-        label: Human-readable decision table label.
-
-    Raises:
-        QCStageError: If indices differ.
-    """
-
-    # Return silently when indices match exactly.
-    if expected == observed:
-        return
-
-    # Raise a clear alignment error.
-    raise QCStageError(
-        f"{label} index does not match the corresponding AnnData axis names. "
-        "QC decisions must be aligned before annotation or filtering."
-    )
-
-
-def build_disabled_qc_stage_result(
-    *,
-    adata: ad.AnnData,
-    stage_name: str,
-    qc_config: QCConfig,
-) -> StageResult:
-    """
-    Build a no-op StageResult for disabled QC.
-
-    Args:
-        adata: Active AnnData object.
-        stage_name: Stable stage name.
-        qc_config: Resolved QC configuration.
-
-    Returns:
-        StageResult representing a disabled QC no-op.
-    """
-
-    # Return a no-op stage result.
-    return StageResult(
-        adata=adata,
-        artifacts=[],
-        notes=["QC stage skipped because QC is disabled."],
-        warnings=[],
-        metrics={
-            "stage_name": stage_name,
-            "enabled": False,
-            "mode": qc_config.mode,
-            "reason": "qc_disabled",
-        },
-    )
-
-
-def build_qc_stage_summary_extra(
-    *,
-    context: object,
-    qc_config: QCConfig,
-    stage_name: str,
-) -> dict[str, object]:
-    """
-    Build extra summary values for qc_summary.json.
-
-    Args:
-        context: PipelineContext-like object.
-        qc_config: QC configuration.
-        stage_name: Stable stage name.
-
-    Returns:
-        Extra JSON-friendly QC summary fields.
-    """
-
-    # Return stage-level context metadata.
-    return {
-        "stage_name": stage_name,
-        "run_id": str(getattr(context, "run_id", "cellquorum-run")),
-        "random_seed": int(getattr(context, "random_seed", 1337)),
-        "mode": qc_config.mode,
-        "threshold_strategy": qc_config.threshold_strategy,
-        "enabled_metric_families": qc_config.enabled_metric_families(),
-    }
-
-
-def build_stage_artifacts_from_manifest(
-    manifest: QCArtifactManifest,
-) -> list[StageArtifact]:
-    """
-    Convert a QCArtifactManifest into stage artifact records.
-
-    Args:
-        manifest: QC artifact manifest.
-
-    Returns:
-        StageArtifact records.
-    """
-
-    # Validate manifest type.
-    if not isinstance(manifest, QCArtifactManifest):
-        raise QCStageError(
-            f"manifest must be a QCArtifactManifest. Received: {type(manifest).__name__}."
-        )
-
-    # Initialize stage artifacts.
-    artifacts: list[StageArtifact] = []
-
-    # Convert each written artifact into a stage artifact.
-    for artifact_name, artifact_value in manifest.artifacts.items():
-        # Figures are stored as a list of paths; create multiple artifacts.
-        if artifact_name == "figures" and isinstance(artifact_value, list):
-            for idx, figure_path_str in enumerate(artifact_value):
-                figure_path = Path(figure_path_str)
-                artifacts.append(
-                    StageArtifact(
-                        name=f"qc_figure_{idx}",
-                        path=figure_path,
-                        kind=infer_artifact_kind(figure_path),
-                        description=f"QC diagnostic figure {figure_path.name}",
-                    )
-                )
-        else:
-            # Other artifacts are single Path objects.
-            artifacts.append(
-                StageArtifact(
-                    name=f"qc_{artifact_name}",
-                    path=artifact_value,
-                    kind=infer_artifact_kind(artifact_value),
-                    description=describe_qc_artifact(artifact_name),
-                )
+        # Judge each cell against cells of its own kind. Without this, severity is
+        # measured against a sample-wide median, so a cell type whose *normal* biology is
+        # low-complexity and high-mitochondrial reads as damaged on two families at once
+        # and is quarantined for being itself. See lineage.py for the measurement.
+        # Reuse the grouping computed before thresholding; recomputing it would risk two
+        # different groupings deciding the mixture and the severity axes.
+        null_grouping = None
+        if lineage is not None:
+            lineage = lineage.reindex(output_adata.obs_names)
+            null_grouping = resolve_null_groups(
+                output_adata.obs,
+                sample_key=sample_key if sample_key in output_adata.obs.columns else None,
+                lineage=lineage,
+                min_cells=graded_config.lineage_min_cells,
             )
 
-    # Return stage artifacts.
-    return artifacts
-
-
-def infer_artifact_kind(path: Path) -> str:
-    """
-    Infer a StageArtifact kind from a path suffix.
-
-    Args:
-        path: Artifact path.
-
-    Returns:
-        Artifact kind label.
-    """
-
-    # Normalize the file suffix.
-    suffix = path.suffix.lower()
-
-    # Map CSV files.
-    if suffix == ".csv":
-        return "csv"
-
-    # Map JSON files.
-    if suffix == ".json":
-        return "json"
-
-    # Map AnnData h5ad files.
-    if suffix == ".h5ad":
-        return "h5ad"
-
-    # Return a generic file kind otherwise.
-    return "file"
-
-
-def describe_qc_artifact(artifact_name: str) -> str:
-    """
-    Return a human-readable description for a QC artifact.
-
-    Args:
-        artifact_name: Stable QC artifact label.
-
-    Returns:
-        Description string.
-    """
-
-    # Define artifact descriptions.
-    descriptions = {
-        "cell_metrics": "Cell-level QC metric table.",
-        "gene_metrics": "Gene-level QC metric table.",
-        "feature_masks": "Feature-family QC mask table.",
-        "thresholds": "QC threshold table.",
-        "cell_decisions": "Cell-level QC keep/fail decision table.",
-        "gene_decisions": "Gene-level QC keep/fail decision table.",
-        "report": "Per-group QC report table (cells before/removed/%/after + TOTAL).",
-        "qc_h5ad": "QC-annotated AnnData object.",
-        "summary": "Structured QC summary JSON.",
-    }
-
-    # Return a known description or a fallback.
-    return descriptions.get(artifact_name, f"QC artifact: {artifact_name}.")
-
-
-def collect_qc_stage_warnings(
-    *,
-    metrics_result: QCMetricsResult,
-    threshold_result: QCThresholdResult,
-    decision_result: QCDecisionResult,
-    artifact_manifest: QCArtifactManifest,
-) -> list[str]:
-    """
-    Collect warnings from all QC stage layers.
-
-    Args:
-        metrics_result: QC metrics result.
-        threshold_result: QC threshold result.
-        decision_result: QC decision result.
-        artifact_manifest: QC artifact manifest.
-
-    Returns:
-        Combined warning list.
-    """
-
-    # Return warnings in execution order.
-    return [
-        *metrics_result.warnings,
-        *threshold_result.warnings,
-        *decision_result.warnings,
-        *artifact_manifest.warnings,
-    ]
-
-
-def build_qc_stage_notes(
-    *,
-    qc_config: QCConfig,
-    decision_result: QCDecisionResult,
-    input_adata: ad.AnnData,
-    output_adata: ad.AnnData,
-) -> list[str]:
-    """
-    Build human-readable QC stage notes.
-
-    Args:
-        qc_config: QC configuration.
-        decision_result: QC decision result.
-        input_adata: Input AnnData object.
-        output_adata: Output AnnData object.
-
-    Returns:
-        Stage note strings.
-    """
-
-    # Retrieve decision summary.
-    summary = decision_result.summary
-
-    # Initialize notes.
-    notes = [
-        f"QC completed in {qc_config.mode} mode.",
-        (
-            "Cells kept: "
-            f"{summary['n_cells_kept']}/{summary['n_cells']}; "
-            "genes kept: "
-            f"{summary['n_genes_kept']}/{summary['n_genes']}."
-        ),
-    ]
-
-    # Add an explicit filtering note when filtering occurred.
-    if qc_config.should_filter():
-        notes.append(
-            "QC filtering changed AnnData shape from "
-            f"{input_adata.n_obs} cells x {input_adata.n_vars} genes to "
-            f"{output_adata.n_obs} cells x {output_adata.n_vars} genes."
+        evidence = build_evidence_table(
+            output_adata,
+            metrics_result.cell_metrics.reindex(output_adata.obs_names),
+            group_key=sample_key if sample_key in output_adata.obs.columns else None,
+            layer=qc_config.metrics.layer,
+            mito_posterior=mito_posterior,
+            nuclear_axis_applicable=graded_config.nuclear_axis_applicable,
+            grouping=null_grouping,
+            lineage_conditional=null_grouping is not None,
         )
 
-    # Return stage notes.
-    return notes
+        # The absolute-scale table, kept only for the per-lineage audit below. Per-cell
+        # verdicts come from the lineage-conditional table above; "this entire group looks
+        # like debris" is a statement the absolute scale alone can make.
+        absolute_evidence = (
+            build_evidence_table(
+                output_adata,
+                metrics_result.cell_metrics.reindex(output_adata.obs_names),
+                group_key=sample_key if sample_key in output_adata.obs.columns else None,
+                layer=qc_config.metrics.layer,
+                mito_posterior=mito_posterior,
+                nuclear_axis_applicable=graded_config.nuclear_axis_applicable,
+            )
+            if null_grouping is not None
+            else evidence
+        )
+        adjudication = adjudicate_initial(
+            evidence,
+            AdjudicationPolicy(
+                concern_severity=graded_config.concern_severity,
+                severe_severity=graded_config.severe_severity,
+                min_concordant_families=graded_config.min_concordant_families,
+                uninformative_capture_severity=graded_config.uninformative_capture_severity,
+                min_coverage_for_quarantine=graded_config.min_coverage_for_quarantine,
+                multiplet_severity=graded_config.multiplet_severity,
+            ),
+        )
+
+        # Turn the verdict into per-analysis eligibility. This is the step that makes
+        # QC load-bearing: the previous single `keep` boolean was read by three places
+        # in the codebase, two of them figure code, so a careful verdict controlled
+        # nothing. Stages declare their fit scope at registration and read these masks.
+        eligibility = build_eligibility_masks(
+            adjudication.state, probable_multiplet=adjudication.probable_multiplet
+        )
+
+        # Per-lineage audit. Two things per-cell verdicts cannot say: "this whole group
+        # looks like debris" (suspect) and "this whole group is being dropped, and if it is
+        # real biology that is the rare-population loss" (vulnerable).
+        lineage_audit = None
+        if lineage is not None:
+            lineage_audit = audit_lineages(
+                lineage,
+                absolute_evidence.damage_family_severity(),
+                ~eligibility.mask(Analysis.MANIFOLD, Permission.FIT),
+                adjudication.probable_multiplet,
+                suspect_severity=graded_config.lineage_suspect_severity,
+                vulnerable_fraction=graded_config.lineage_vulnerable_fraction,
+            )
+            output_adata.obs[LINEAGE_COLUMN] = lineage.to_numpy()
+            if null_grouping is not None:
+                # Narrowed on the value being used rather than on the correlated `lineage`,
+                # so the guard is checkable instead of merely true in practice.
+                output_adata.obs[NULL_LEVEL_COLUMN] = null_grouping.level.to_numpy()
+            # Stored column-wise, not as a list of records: anndata has no native
+            # representation for a list of dicts and silently writes it as one long string,
+            # which makes the audit unreadable to anything but a human squinting at repr.
+            output_adata.uns.setdefault("cellquorum", {})["qc_lineage_audit"] = _audit_to_columns(
+                lineage_audit, index_name="lineage"
+            )
+
+            # Archetype audit: vertices, not blobs, so a population too small for Leiden
+            # can still be seen. Optional and self-disabling — partipy is GPL-3 and lives
+            # in its own environment, so absence is the normal case.
+            if graded_config.archetype_audit and PROVISIONAL_EMBEDDING in output_adata.obsm:
+                embedding = np.asarray(output_adata.obsm[PROVISIONAL_EMBEDDING])
+                placed = np.isfinite(embedding).all(axis=1)
+                if int(placed.sum()) > 50:
+                    archetype = audit_archetypes(
+                        embedding[placed],
+                        output_adata.obs_names[placed],
+                        ~eligibility.mask(Analysis.MANIFOLD, Permission.FIT)[placed],
+                        (
+                            output_adata.layers[qc_config.metrics.layer][placed]
+                            if qc_config.metrics.layer in output_adata.layers
+                            else output_adata.X[placed]
+                        ),
+                        n_archetypes_max=graded_config.archetype_max,
+                        bootstrap=graded_config.archetype_bootstrap,
+                        max_cells=graded_config.archetype_max_cells,
+                        n_restarts=graded_config.archetype_restarts,
+                        timeout_seconds=graded_config.archetype_timeout_seconds,
+                        scratch_dir=getattr(getattr(context, "paths", None), "scratch", None),
+                    )
+                    if archetype.available and archetype.dominant is not None:
+                        output_adata.obs[ARCHETYPE_COLUMN] = (
+                            archetype.dominant.reindex(output_adata.obs_names)
+                            .fillna("unsampled")
+                            .to_numpy()
+                        )
+                        output_adata.uns["cellquorum"]["qc_archetype_audit"] = _audit_to_columns(
+                            archetype.table, index_name="archetype"
+                        )
+                        for label, row in archetype.flagged().iterrows():
+                            graded_warnings.append(
+                                f"Archetype {label} (n={int(row['n_supporting'])}) has "
+                                f"{100.0 * row['excluded_fraction']:.0f}% of its cells "
+                                f"excluded from fitting and is "
+                                + (
+                                    "transcriptionally coherent, so a real population may "
+                                    "be being removed — inspect before trusting the run."
+                                    if row["losing_a_population"]
+                                    else "incoherent, so it is most likely debris that QC "
+                                    "is correctly removing."
+                                )
+                            )
+                    else:
+                        logger.info("Archetype audit unavailable: %s", archetype.reason)
+
+        # Write evidence, verdict, and eligibility onto the object so every downstream
+        # stage and figure reads one source of truth.
+        for frame in (
+            evidence.to_obs_frame(),
+            adjudication.to_obs_frame(),
+            eligibility.to_obs_frame(),
+        ):
+            for column in frame.columns:
+                output_adata.obs[column] = frame[column].to_numpy()
+
+        # Self-check: compare the verdict against the evidence it claims to rest on, and fail
+        # rather than report a plausible wrong answer. Every defect in this area was found by a
+        # human asking a question; this is that question, asked by the run.
+        self_check = run_self_check(
+            adjudication.state,
+            # The mixture AXIS, not the metabolic family rollup. The family is a max over the
+            # posterior and the dissociation-stress fraction, so comparing the rollup against the
+            # posterior flags a legitimate difference — the check's own first false positive,
+            # caught by the check firing on a clean run.
+            metabolic_severity=next(
+                (axis.severity for axis in evidence.axes if axis.name == "mito_mixture_posterior"),
+                None,
+            ),
+            mito_posterior=mito_posterior,
+            null_level=None if null_grouping is None else null_grouping.level,
+            null_keys=None if null_grouping is None else null_grouping.keys,
+            lineage_audit=lineage_audit,
+            fit_mask=eligibility.mask(Analysis.MANIFOLD, Permission.FIT),
+            minimum_core=graded_config.self_check_minimum_core,
+        )
+        graded_warnings.extend(self_check.warnings())
+        if graded_config.self_check_fails_run and self_check.failures():
+            raise QCStageError(
+                "QC self-check failed, so the run stopped rather than emitting a verdict its own "
+                "evidence contradicts:\n"
+                + "\n".join(f"  - {check.name}: {check.detail}" for check in self_check.failures())
+                + "\n\nSet qc.graded.self_check_fails_run=false to downgrade these to warnings."
+            )
+
+        state_counts = adjudication.counts()
+        graded_metrics.update(
+            {
+                **state_counts,
+                "self_check": self_check.summary(),
+                "null_group_levels": ({} if null_grouping is None else null_grouping.summary()),
+                "n_lineages": (0 if lineage_audit is None else int(len(lineage_audit))),
+                "n_suspect_lineages": (
+                    0 if lineage_audit is None else int(lineage_audit["suspect"].sum())
+                ),
+                "n_vulnerable_lineages": (
+                    0 if lineage_audit is None else int(lineage_audit["vulnerable"].sum())
+                ),
+                "families": [str(family) for family in evidence.families_present()],
+                "median_evidence_coverage": float(adjudication.coverage.median()),
+                "n_probable_multiplet": int(adjudication.probable_multiplet.sum()),
+                "reasons": {
+                    str(reason): int(count)
+                    for reason, count in adjudication.reason.value_counts().items()
+                },
+                # Eligible counts per analysis, so provenance records what the verdict
+                # actually permitted rather than only what it decided.
+                "eligibility": eligibility.summary(),
+            }
+        )
+        logger.info(
+            "QC graded adjudication: core=%s borderline=%s quarantine=%s "
+            "(coverage median %.2f over %s families)",
+            state_counts.get("core"),
+            state_counts.get("borderline"),
+            state_counts.get("quarantine"),
+            float(adjudication.coverage.median()),
+            len(evidence.families_present()),
+        )
+
+        return graded_metrics, graded_warnings
 
 
-def build_qc_stage_metrics(
-    *,
-    stage_name: str,
-    qc_config: QCConfig,
-    metrics_result: QCMetricsResult,
-    threshold_result: QCThresholdResult,
-    decision_result: QCDecisionResult,
-    artifact_manifest: QCArtifactManifest,
-    input_adata: ad.AnnData,
-    output_adata: ad.AnnData,
-) -> dict[str, object]:
-    """
-    Build structured QC stage metrics for provenance.
-
-    Args:
-        stage_name: Stable stage name.
-        qc_config: QC configuration.
-        metrics_result: QC metrics result.
-        threshold_result: QC threshold result.
-        decision_result: QC decision result.
-        artifact_manifest: QC artifact manifest.
-        input_adata: Input AnnData object.
-        output_adata: Output AnnData object.
-
-    Returns:
-        JSON-friendly stage metrics.
-    """
-
-    # Return structured metrics.
-    return {
-        "stage_name": stage_name,
-        "enabled": True,
-        "mode": qc_config.mode,
-        "threshold_strategy": qc_config.threshold_strategy,
-        "input_shape": {
-            "n_obs": int(input_adata.n_obs),
-            "n_vars": int(input_adata.n_vars),
-        },
-        "output_shape": {
-            "n_obs": int(output_adata.n_obs),
-            "n_vars": int(output_adata.n_vars),
-        },
-        "metric_summary": metrics_result.to_summary_dict(),
-        "threshold_summary": threshold_result.to_summary_dict(),
-        "decision_summary": decision_result.to_summary_dict(),
-        "artifact_manifest": artifact_manifest.to_dict(),
-    }
-
-
+# Re-exported for the module's public surface. The helpers now live in _context/_annotate/
+# _report; these names stay importable from here because callers outside the package use
+# them, and a refactor should not be a breaking change.
 __all__ = [
     "QCStage",
     "QCStageError",
-    "add_decision_columns_to_axis",
-    "add_metric_columns_to_axis",
-    "annotate_adata_with_qc_decisions",
     "annotate_adata_with_qc_metrics",
-    "align_metric_table_to_axis",
     "build_disabled_qc_stage_result",
+    "build_qc_figure_adata",
     "build_qc_output_adata",
     "build_qc_stage_metrics",
     "build_qc_stage_notes",
     "build_qc_stage_summary_extra",
     "build_stage_artifacts_from_manifest",
-    "coerce_qc_config",
     "collect_qc_stage_warnings",
-    "describe_qc_artifact",
-    "filter_adata_by_qc_decisions",
     "get_context_adata",
     "get_qc_output_dir",
-    "infer_artifact_kind",
     "is_qc_stage_enabled",
+    "resolve_publication_qc_keys",
     "resolve_qc_config",
-    "validate_decision_index_alignment",
 ]

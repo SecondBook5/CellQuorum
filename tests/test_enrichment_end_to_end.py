@@ -13,10 +13,10 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.comparative.enrichment.stage import EnrichmentStage
 from cellquorum.config.design import DesignConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.stages.comparative.enrichment.stage import EnrichmentStage
 
 
 def _decoupler_net_available() -> bool:
@@ -183,12 +183,32 @@ def test_enrichment_stage_runs_through_context(tmp_path):
         gsea_csv = Path(paths.results) / "enrichment_gsea_hallmark.csv"
         assert gsea_csv.exists(), "GSEA hallmark CSV missing despite decoupler available"
 
-        # Verify expected columns from Task 4 output format.
+        # The columns a reader of this table needs, checked as a requirement rather than as
+        # an exact list: the precise order is pinned once, in the GSEA unit tests. Asserting
+        # equality here too makes every legitimate column addition fail in two places and
+        # says nothing extra about the stage having run.
         df = pd.read_csv(gsea_csv)
-        expected_cols = ["source", "score", "pvalue", "padj", "significant", "collection"]
-        assert (
-            list(df.columns) == expected_cols
-        ), f"GSEA columns mismatch: {list(df.columns)} vs {expected_cols}"
+        required = {
+            "source",
+            "score",
+            "pvalue",
+            "padj",
+            "significant",
+            "collection",
+            # The honesty columns: what the p-value floor was, the raw score the walk
+            # peaks at, and which genes carried it. A table without these is not
+            # interpretable downstream.
+            "p_at_resolution_limit",
+            "p_resolution_limit",
+            "permutations",
+            "es",
+            "set_size",
+            "leading_edge_size",
+            "leading_edge",
+        }
+        missing = required - set(df.columns)
+        assert not missing, f"GSEA table is missing {sorted(missing)}"
+        assert (df["pvalue"] > 0).all(), "a permutation p-value of exactly zero is not a p-value"
     else:
         # Offline: methods should skip for dependency/network reasons, NOT case/control-unset.
         # We already verified case/control-unset is not in any skip reason (Invariant 3),

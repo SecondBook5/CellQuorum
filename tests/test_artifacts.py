@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -430,3 +431,44 @@ def test_write_manifest_writes_artifact_manifest_csv(tmp_path: Path) -> None:
 
     # Confirm the manifest artifact itself is now tracked by the manager.
     assert manager.artifacts[-1].name == "artifact_manifest"
+
+
+def test_write_json_accepts_numpy_values(tmp_path: Path) -> None:
+    """
+    Verify that a numpy-typed payload can be written as JSON.
+
+    Every stage in the engine computes with numpy, so metrics and metadata arrive
+    numpy-typed by default. Provenance is written at the END of a run, which means a
+    stricter notion of JSON-safety here does not reject a bad payload early — it
+    destroys a finished run at its final write. A completed 22-stage run died exactly
+    that way, on an ndarray inside the recorded input subset.
+    """
+
+    # Create an artifact manager.
+    manager = ArtifactManager.from_root(tmp_path / "run")
+
+    # Write a payload holding the numpy types a stage's metrics actually contain.
+    artifact = manager.write_json(
+        {
+            "n_cells": np.int64(2144),
+            "fraction": np.float64(0.5),
+            "passed": np.bool_(True),
+            "values": np.array(["Normal", "Lymphedema"]),
+            "nested": {"counts": np.array([1, 2, 3])},
+        },
+        name="metrics",
+        relative_path="provenance/metrics.json",
+        description="Numpy-typed metrics.",
+    )
+
+    # Read the written payload back.
+    written = json.loads(artifact.path.read_text(encoding="utf-8"))
+
+    # Confirm numpy scalars became their Python equivalents.
+    assert written["n_cells"] == 2144
+    assert written["fraction"] == 0.5
+    assert written["passed"] is True
+
+    # Confirm arrays became lists, at any nesting depth.
+    assert written["values"] == ["Normal", "Lymphedema"]
+    assert written["nested"]["counts"] == [1, 2, 3]

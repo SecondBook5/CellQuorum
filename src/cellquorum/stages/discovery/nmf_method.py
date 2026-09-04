@@ -96,7 +96,11 @@ class NmfMethod(AnalysisMethod):
         x = np.clip(dense, 0.0, None)
 
         # Replicate factorizations; collect L2-normalized gene spectra (k x genes).
+        # sklearn reports a stopped-at-the-cap fit only as a ConvergenceWarning on
+        # stderr, which a run log buries and a report never counts. ``n_iter_`` is
+        # the same fact as a number, so the stage can say it itself.
         spectra: list[np.ndarray] = []
+        n_nonconverged = 0
         for r in range(n_runs):
             model = NMF(
                 n_components=k,
@@ -105,6 +109,8 @@ class NmfMethod(AnalysisMethod):
                 max_iter=max_iter,
             )
             model.fit(x)
+            if int(getattr(model, "n_iter_", 0)) >= max_iter:
+                n_nonconverged += 1
             h = model.components_  # (k, genes)
             norms = np.linalg.norm(h, axis=1, keepdims=True)
             norms[norms == 0] = 1.0
@@ -120,7 +126,10 @@ class NmfMethod(AnalysisMethod):
         stability = self._program_stability(stacked, km.labels_, consensus, k)
 
         # Project every cell onto the fixed consensus spectra → usage (cells x k).
-        usage, _, _ = non_negative_factorization(
+        # Third return value is the iteration count. It was unpacked as ``_``, which
+        # threw away the only evidence that the cell x program matrix every
+        # downstream stage reads had actually settled.
+        usage, _, usage_n_iter = non_negative_factorization(
             x,
             H=consensus,
             n_components=k,
@@ -129,6 +138,23 @@ class NmfMethod(AnalysisMethod):
             random_state=random_state,
             max_iter=max_iter,
         )
+        usage_converged = int(usage_n_iter) < max_iter
+
+        stage_warnings: list[str] = []
+        if n_nonconverged:
+            stage_warnings.append(
+                f"consensus NMF did not converge: {n_nonconverged}/{n_runs} replicate "
+                f"fit(s) stopped at max_iter={max_iter}. The consensus spectra, the "
+                f"per-program stability scores derived from them and every program "
+                f"interpretation downstream rest on unsettled factorizations — raise "
+                f"discovery.max_iter."
+            )
+        if not usage_converged:
+            stage_warnings.append(
+                f"NMF usage projection did not converge: it stopped at "
+                f"max_iter={max_iter}, so obsm['{key}'] is a partial projection onto "
+                f"the consensus spectra — raise discovery.max_iter."
+            )
 
         program_names = [f"program_{i + 1}" for i in range(k)]
         adata.obsm[key] = np.asarray(usage, dtype=float)
@@ -194,6 +220,7 @@ class NmfMethod(AnalysisMethod):
         return StageResult(
             adata=adata,
             artifacts=artifacts,
+            warnings=stage_warnings,
             notes=[
                 f"Consensus NMF discovered {k} program(s) over {n_runs} run(s) "
                 f"on {len(genes)} gene(s) → obsm['{key}']."
@@ -207,6 +234,8 @@ class NmfMethod(AnalysisMethod):
                 "programs": program_names,
                 "stability": [float(s) for s in stability],
                 "clipped_negative_fraction": clipped_frac,
+                "n_nonconverged_fits": n_nonconverged,
+                "usage_projection_converged": usage_converged,
             },
             backend="python",
         )

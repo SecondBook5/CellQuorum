@@ -53,5 +53,6 @@ def test_nichenet_config_defaults():
     assert cfg.nichenet_de_top_n == 200
     assert cfg.nichenet_sender is None
     assert cfg.nichenet_receiver is None
-    assert cfg.nichenet_n_cores == 4
+    # None, not 4: unset inherits compute.n_jobs (resolved in the method).
+    assert cfg.nichenet_n_cores is None
     assert cfg.nichenet_timeout_seconds == 7200

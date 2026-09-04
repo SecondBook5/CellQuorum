@@ -404,9 +404,15 @@ def apply_qc_flags(
 
     clusters = adata.obs[cluster_key].to_numpy()
 
-    # Map cluster ID → (qc_pass, qc_reason).
+    # Map cluster ID → (qc_pass, qc_reason), keyed by STRING. The ids come out of
+    # numpy as int64 here, but h5py cannot name a group with one, so writing this
+    # payload to h5ad turns the keys into strings — and a gate_result read back
+    # from a checkpoint would then miss on every single cell and mark the whole
+    # object "cluster not in gate_result", i.e. failed. Matching on str() costs
+    # nothing and makes the lookup indifferent to which side of a write we are on.
     cluster_verdicts = {
-        cid: (info["qc_pass"], info["qc_reason"]) for cid, info in gate_result["clusters"].items()
+        str(cid): (info["qc_pass"], info["qc_reason"])
+        for cid, info in gate_result["clusters"].items()
     }
 
     # Annotate each cell.
@@ -414,8 +420,8 @@ def apply_qc_flags(
     qc_reason = np.empty(len(clusters), dtype=object)
 
     for i, cluster_id in enumerate(clusters):
-        if cluster_id in cluster_verdicts:
-            qc_pass[i], qc_reason[i] = cluster_verdicts[cluster_id]
+        if str(cluster_id) in cluster_verdicts:
+            qc_pass[i], qc_reason[i] = cluster_verdicts[str(cluster_id)]
         else:
             # Cluster not in gate_result (should not happen).
             qc_pass[i] = False

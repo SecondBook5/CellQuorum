@@ -10,8 +10,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.gene_regulation.grn.pyscenic_method import PyscenicMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.gene_regulation.grn.pyscenic_method import PyscenicMethod
 
 
 def _adata(n: int = 300, g: int = 40) -> ad.AnnData:

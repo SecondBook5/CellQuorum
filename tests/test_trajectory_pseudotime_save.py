@@ -23,8 +23,11 @@ def test_write_pseudotime_h5ad_ok(tmp_path):
 
 
 def test_write_pseudotime_h5ad_failure_returns_note(tmp_path):
-    missing = tmp_path / "does_not_exist"
-    artifact, note = write_pseudotime_h5ad(_adata(), missing, "palantir")
+    # A missing output directory is created now, so provoke a real failure: put a
+    # regular file where the directory would have to be.
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory")
+    artifact, note = write_pseudotime_h5ad(_adata(), blocked, "palantir")
     assert artifact is None
     assert "failed" in note.lower()
 

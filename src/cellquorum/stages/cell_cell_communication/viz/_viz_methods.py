@@ -6,6 +6,9 @@ from pathlib import Path
 
 import anndata as ad
 
+from cellquorum.core.contracts import DataContract
+from cellquorum.core.stage import StageResult
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.cell_cell_communication.viz import _plots
 from cellquorum.stages.cell_cell_communication.viz._io import (
     apply_theme,
@@ -15,9 +18,6 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     load_topology,
     save_figure,
 )
-from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageResult
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 # ─── Dotplot ───────────────────────────────────────────────────────────────
 

@@ -49,6 +49,31 @@ def _gene_vector(adata: ad.AnnData, gene: str, layer: str | None) -> np.ndarray:
     return np.asarray(col).ravel().astype(float)
 
 
+def _expression_layer(
+    adata: ad.AnnData, overlay_cfg: OverlayConfig, layer: str | None
+) -> tuple[str | None, list[str]]:
+    """Which layer the values come from: the imputed one, else the declared one.
+
+    ``layer`` is MAGIC's output when imputation ran, and it wins because that is
+    what the caller asked to paint. Otherwise the declared expression layer is used,
+    and falling back to ``adata.X`` is a warning rather than a default: X is raw
+    counts in this engine, ``score_genes`` over counts is a library-depth readout,
+    and the resulting score is written to ``obs`` where nothing downstream can tell
+    which of the two it got.
+    """
+    if layer is not None:
+        return layer, []
+    declared = overlay_cfg.layer
+    if declared is None:
+        return None, []
+    if declared in adata.layers:
+        return declared, []
+    return None, [
+        f"overlay: layer '{declared}' absent, so genes and program scores are read "
+        "from adata.X — if X holds raw counts these values are depth-driven"
+    ]
+
+
 def resolve_features(
     adata: ad.AnnData,
     overlay_cfg: OverlayConfig,
@@ -58,11 +83,12 @@ def resolve_features(
 ) -> tuple[list[FeatureValues], list[str]]:
     """Expand an OverlayConfig into resolved per-cell feature vectors.
 
-    Unresolvable features are skipped with a collected warning. When `layer` is
-    given (e.g. the MAGIC layer), gene values are read from that layer.
+    Unresolvable features are skipped with a collected warning. Values are read
+    from ``layer`` when one is given (the MAGIC layer), else from the overlay's
+    declared expression layer.
     """
     features: list[FeatureValues] = []
-    warnings: list[str] = []
+    layer, warnings = _expression_layer(adata, overlay_cfg, layer)
 
     # Genes.
     for gene in overlay_cfg.genes:
@@ -71,13 +97,15 @@ def resolve_features(
         else:
             warnings.append(f"overlay: gene '{gene}' absent from var_names (skipped)")
 
-    # Programs -> score_genes -> obs column.
+    # Programs -> score_genes -> obs column. Scored on the same layer the gene
+    # panels are read from: a program whose members are drawn on the normalized
+    # layer but whose score comes off counts is not a summary of the panel beside it.
     for name, gene_list in overlay_cfg.programs.items():
         present = [g for g in gene_list if g in adata.var_names]
         if not present:
             warnings.append(f"overlay: program '{name}' has no genes present (skipped)")
             continue
-        sc.tl.score_genes(adata, present, score_name=name, random_state=random_state)
+        sc.tl.score_genes(adata, present, score_name=name, random_state=random_state, layer=layer)
         features.append(FeatureValues(name, adata.obs[name].to_numpy().astype(float), "program"))
 
     # Cell cycle.
@@ -86,7 +114,11 @@ def resolve_features(
         g2m_present = [g for g in overlay_cfg.g2m_genes if g in adata.var_names]
         if s_present and g2m_present:
             sc.tl.score_genes_cell_cycle(
-                adata, s_genes=s_present, g2m_genes=g2m_present, random_state=random_state
+                adata,
+                s_genes=s_present,
+                g2m_genes=g2m_present,
+                random_state=random_state,
+                layer=layer,
             )
             for col in ("S_score", "G2M_score"):
                 features.append(
@@ -118,12 +150,18 @@ def impute_magic_scoped(
     solver: str,
     random_state: int,
     layer_out: str = "magic",
+    layer_in: str | None = None,
 ) -> list[str]:
     """Impute ONLY `genes` (those present) into layers[layer_out]; tag imputed.
 
     The imputed layer is full-width (zeros for non-imputed genes) so it stays
     shape-compatible with X, and is tagged kind='imputed' so the statistics
     guard rejects it.
+
+    ``layer_in`` names the expression the imputation runs on, and it matters for the
+    same reason it matters to ``score_genes``: MAGIC expects library-size-normalized,
+    log-transformed input, and ``adata.X`` in this engine is raw counts. ``None``
+    keeps the historical behaviour of reading X.
     """
     try:
         import magic
@@ -134,7 +172,9 @@ def impute_magic_scoped(
     if not present:
         return []
 
-    dense_X = adata.X.toarray() if sp.issparse(adata.X) else np.asarray(adata.X)
+    use_layer = layer_in is not None and layer_in in adata.layers
+    source = adata.layers[layer_in] if use_layer else adata.X
+    dense_X = source.toarray() if sp.issparse(source) else np.asarray(source)
     operator = magic.MAGIC(knn=knn, solver=solver, random_state=random_state, verbose=0)
     imputed = operator.fit_transform(dense_X, genes="all_genes")
     imputed = np.asarray(imputed)

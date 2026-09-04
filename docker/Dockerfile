@@ -79,6 +79,16 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER envs/scclr.yml /tmp/scclr.yml
 RUN micromamba create -y -n scclr -f /tmp/scclr.yml && micromamba clean -a -y
 RUN if [ -n "$SCCLR_SRC" ]; then micromamba run -n scclr pip install "$SCCLR_SRC"; \
     else echo "SCCLR_SRC not set: scclr toolchain baked, package NOT installed"; fi
+# partipy: archetypal analysis for the QC rare-population audit. OPT-IN, and the opt-in is a
+# licensing decision rather than a size one. partipy is GPL-3 while CellQuorum is BSD-3;
+# shipping both in one image is mere aggregation (separate programs, subprocess boundary, no
+# linking), but that is the image publisher's call to make knowingly, so it is off by default.
+# Without this env the archetype audit reports itself unavailable and nothing else changes.
+ARG WITH_PARTIPY=""
+COPY --chown=$MAMBA_USER:$MAMBA_USER envs/partipy.yml /tmp/partipy.yml
+RUN if [ -n "$WITH_PARTIPY" ]; then \
+      micromamba create -y -n partipy -f /tmp/partipy.yml && micromamba clean -a -y; \
+    else echo "WITH_PARTIPY not set: GPL-3 partipy env NOT created (audit degrades cleanly)"; fi
 
 ########## celloracle: in-silico-KO backend, isolated off the cpu/gpu path ##########
 # Fragile to build: celloracle pulls gimmemotifs, whose native (C) wheel build

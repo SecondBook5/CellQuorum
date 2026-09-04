@@ -14,6 +14,10 @@ from datetime import UTC, datetime
 # Import Path for filesystem-safe provenance payload handling.
 from pathlib import Path
 
+# Import numpy because method outputs are numpy-typed by default: a p-value is an
+# np.float64, a cell count an np.int64, a neighbourhood size vector an ndarray.
+import numpy as np
+
 # Import shared provenance exception.
 from cellquorum.core.exceptions import CellQuorumProvenanceError
 
@@ -201,9 +205,17 @@ def to_json_safe(value: object) -> JsonValue:
     Convert common Python objects into JSON-safe values.
 
     This helper is intentionally conservative. It supports primitive JSON values,
-    dictionaries with string-like keys, sequences, sets, Paths, datetimes,
-    dataclasses, and objects exposing `to_dict()`. Unsupported objects raise a
-    provenance error instead of being silently stringified.
+    numpy scalars and arrays, dictionaries with string-like keys, sequences, sets,
+    Paths, datetimes, dataclasses, and objects exposing `to_dict()`. Unsupported
+    objects raise a provenance error instead of being silently stringified.
+
+    Numpy types are converted rather than rejected because they are what the
+    methods in this engine natively return, and provenance is written at the END
+    of a run: refusing an ``np.int64`` there does not protect anything, it throws
+    away the record of work that already happened. ``np.float64`` happens to
+    subclass ``float`` and would pass the primitive check anyway; ``np.int64``
+    and ``np.bool_`` do not subclass their Python counterparts, which is why the
+    conversion has to be explicit.
 
     Args:
         value: Value to convert into a JSON-safe representation.
@@ -218,6 +230,12 @@ def to_json_safe(value: object) -> JsonValue:
     # Return primitive JSON values directly.
     if value is None or isinstance(value, str | int | float | bool):
         return value
+
+    # Convert numpy scalars to their Python equivalents and arrays to nested lists.
+    if isinstance(value, np.generic):
+        return to_json_safe(value.item())
+    if isinstance(value, np.ndarray):
+        return to_json_safe(value.tolist())
 
     # Convert Path objects into strings.
     if isinstance(value, Path):

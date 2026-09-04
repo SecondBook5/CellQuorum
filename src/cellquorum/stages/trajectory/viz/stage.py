@@ -25,6 +25,11 @@ _VIZ_CONFIG_KEYS = (
     "heatmap_max_genes",
     "heatmap_corr_cut",
     "heatmap_expr_cmap",
+    "activity_resources",
+    "activity_methods",
+    "cascade_top",
+    "cascade_n_bins",
+    "cascade_xlab",
 )
 
 _DEFAULT_METHODS = [
@@ -35,6 +40,7 @@ _DEFAULT_METHODS = [
     {"method": "macrostate_viz"},
     {"method": "velocity_viz"},
     {"method": "pseudotime_heatmap"},
+    {"method": "activity_cascade"},
 ]
 
 

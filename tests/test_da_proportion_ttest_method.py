@@ -167,6 +167,7 @@ def test_paired_happy_path(paired_cohort_adata, mock_context):
         "cell_type",
         "n_case",
         "n_control",
+        "n_donors_concordant",
         "control_mean_pct",
         "case_mean_pct",
         "effect_pp",
@@ -176,6 +177,13 @@ def test_paired_happy_path(paired_cohort_adata, mock_context):
         "pvalue",
         "fdr",
         "paired",
+        # The design floor travels with the FDR so a null cannot be read off a family
+        # that could not have produced a significant row.
+        "design_floor_p",
+        "p_below_design_floor",
+        "family_size",
+        "family_min_concordant",
+        "family_floor_reachable",
     }
     assert set(df.columns) == expected_cols
 
@@ -237,7 +245,7 @@ def test_paired_emits_cell_distribution_summary(paired_cohort_adata, mock_contex
 
 
 def test_distribution_summary_can_be_disabled(paired_cohort_adata, mock_context):
-    """Disabling both optional outputs leaves only the DA results table."""
+    """Disabling every optional output leaves only the DA results table."""
 
     method = ProportionTTestMethod()
     config = {
@@ -250,6 +258,7 @@ def test_distribution_summary_can_be_disabled(paired_cohort_adata, mock_context)
         "seed": 42,
         "write_distribution_summary": False,
         "write_composition_figure": False,
+        "write_group_resolution": False,
     }
 
     result = method.run(paired_cohort_adata, config, mock_context)
@@ -357,6 +366,117 @@ def test_unpaired_path(unpaired_cohort_adata, mock_context):
     assert result.metrics["n_case"] == 3
     assert result.metrics["n_control"] == 3
     assert "n_donors_paired" not in result.metrics
+
+
+def test_the_design_floor_travels_with_the_fdr_on_both_paths(
+    paired_cohort_adata, unpaired_cohort_adata, mock_context
+):
+    """Every DA FDR carries the floor of the design that produced it.
+
+    A table of non-significant FDRs is not evidence of no effect when the family could not
+    have produced a significant row; this project read exactly that off a signed-rank test
+    and wrote "composition is a real null" into a manuscript note. The paired branch's
+    floor follows ``2**pairs`` and the unpaired branch's the far larger ``C(n, n_case)``,
+    so the two differ by orders of magnitude on the same number of samples.
+    """
+    method = ProportionTTestMethod()
+    shared = {
+        "cell_type_col": "cell_type",
+        "condition_col": "condition",
+        "donor_col": "donor",
+        "case": "case",
+        "control": "control",
+        "seed": 42,
+        "write_distribution_summary": False,
+        "write_composition_figure": False,
+        "write_group_resolution": False,
+    }
+
+    paired = pd.read_csv(
+        method.run(paired_cohort_adata, {**shared, "paired": True}, mock_context).artifacts[0].path
+    )
+    # Four donors spanning both arms: 2**4 = 16 assignments.
+    assert paired["design_floor_p"].iloc[0] == pytest.approx(2 / 16)
+    assert paired["family_size"].iloc[0] == 3
+
+    unpaired = pd.read_csv(
+        method.run(unpaired_cohort_adata, {**shared, "paired": False}, mock_context)
+        .artifacts[0]
+        .path
+    )
+    # Three vs three disjoint donors: C(6, 3) = 20 assignments.
+    assert unpaired["design_floor_p"].iloc[0] == pytest.approx(2 / 20)
+
+
+def test_paired_reports_how_many_donors_moved_in_the_effects_own_direction(
+    paired_cohort_adata, mock_context
+):
+    """``n_donors_concordant`` counts donors agreeing with the effect, not donors rising.
+
+    At single-digit n a cohort mean can be produced by two donors, so this is evidence the
+    p-value does not carry. It has to be relative to the effect: a depleted cell type with
+    "0/4 increased" beside a large negative effect reads as no support for it.
+    """
+    method = ProportionTTestMethod()
+    result = method.run(
+        paired_cohort_adata,
+        {
+            "cell_type_col": "cell_type",
+            "condition_col": "condition",
+            "donor_col": "donor",
+            "case": "case",
+            "control": "control",
+            "paired": True,
+            "seed": 42,
+            "write_distribution_summary": False,
+            "write_composition_figure": False,
+            "write_group_resolution": False,
+        },
+        mock_context,
+    )
+    df = pd.read_csv(result.artifacts[0].path).set_index("cell_type")
+
+    # TypeA is depleted and TypeB enriched in every donor of this fixture; both are 4/4
+    # concordant, which is the point -- a "donors increased" count would read 0/4 and 4/4.
+    assert df.loc["TypeA", "effect_pp"] < 0
+    assert df.loc["TypeA", "n_donors_concordant"] == 4
+    assert df.loc["TypeB", "effect_pp"] > 0
+    assert df.loc["TypeB", "n_donors_concordant"] == 4
+    assert (df["n_donors_concordant"] <= df["n_case"]).all()
+
+
+def test_group_resolution_table_names_the_rows_whose_ratio_is_too_thin(
+    paired_cohort_adata, mock_context
+):
+    """The fold-change resolution floor ships with the DA table, on cells per sample."""
+    method = ProportionTTestMethod()
+    result = method.run(
+        paired_cohort_adata,
+        {
+            "cell_type_col": "cell_type",
+            "condition_col": "condition",
+            "donor_col": "donor",
+            "case": "case",
+            "control": "control",
+            "paired": True,
+            "seed": 42,
+            "write_distribution_summary": False,
+            "write_composition_figure": False,
+        },
+        mock_context,
+    )
+    artifact = next(a for a in result.artifacts if a.name == "da_group_resolution")
+    assert artifact.path.name == "da_group_resolution.csv"
+
+    resolution = pd.read_csv(artifact.path).set_index("cell_type")
+    # TypeC sits at ~10 cells per sample and TypeA/TypeB in the tens, so all three clear a
+    # 10-cell floor; raising it past TypeC's median is what marks the row.
+    assert bool(resolution.loc["TypeA", "ratio_rankable"]) is True
+    assert (
+        resolution.loc["TypeC", "median_cells_per_sample"]
+        < resolution.loc["TypeA", "median_cells_per_sample"]
+    )
+    assert (resolution["n_samples"] == 8).all()
 
 
 def test_paired_no_overlap_skip(unpaired_cohort_adata, mock_context):

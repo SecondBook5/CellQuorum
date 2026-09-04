@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.discovery.config import DiscoveryConfig
 from cellquorum.stages.discovery.nmf_method import NmfMethod
-from cellquorum.methods.registry import METHOD_REGISTRY
 
 if not METHOD_REGISTRY.has("discovery", NmfMethod.name):
     METHOD_REGISTRY.register(NmfMethod)

@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from cellquorum.core.contracts import CellQuorumContractError, set_layer_tag
+from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.annotation.reference_mapping.scarches import (
     ScArchesMethod,
     _load_seed_checkpoint,
@@ -17,8 +19,6 @@ from cellquorum.stages.annotation.reference_mapping.scarches import (
     _save_seed_checkpoint,
     _scvi_gpu_available,
 )
-from cellquorum.core.contracts import CellQuorumContractError, set_layer_tag
-from cellquorum.methods.base import MethodSkip
 
 # scvi is an optional GPU backend, not installed in the core test tier. Every test
 # here exercises the scVI→scANVI surgery path, so skip the whole module cleanly when

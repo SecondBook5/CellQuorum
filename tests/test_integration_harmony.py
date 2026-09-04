@@ -116,3 +116,52 @@ def test_harmony_raises_when_embedding_absent():
             context=None,
             donor_col="patient_id",
         )
+
+
+def _harmony_run(adata, **overrides):
+    """Run the CPU Harmony path with the standard test config."""
+    config = {
+        "batch_key": "patient_id",
+        "input_rep": "X_pca",
+        "output_rep": "X_pca_harmony",
+        "random_state": 0,
+    }
+    config.update(overrides)
+    return HarmonyMethod().run(adata, config, context=None, donor_col="patient_id")
+
+
+def test_harmony_warns_when_it_stops_before_convergence():
+    """A Harmony that ran out of iterations produced a partially corrected embedding.
+
+    harmonypy logs exactly this as ``Stopped before convergence`` -- at INFO, and
+    this stage raises the harmonypy logger to WARNING for the duration of the call,
+    so the one signal that batch correction did not finish was being suppressed by
+    the very code that needed it. Every stage downstream (clustering, UMAP, PAGA,
+    velocity) reads the corrected embedding, so a silent non-convergence propagates
+    into every figure in the run.
+    """
+    a = _adata_with_pca(seed=3)
+    result = _harmony_run(a, max_iter_harmony=1)
+
+    joined = " ".join(result.warnings)
+    assert "converge" in joined, result.warnings
+    assert "max_iter_harmony=1" in joined
+    assert result.metrics["harmony_converged"] is False
+    assert result.metrics["harmony_n_iter"] == 1
+
+
+def test_harmony_is_silent_about_convergence_when_it_converges():
+    """The warning has to mean something, so a healthy integration stays quiet."""
+    a = _adata_with_pca(seed=4)
+    result = _harmony_run(a, max_iter_harmony=50)
+
+    assert not any("converge" in w for w in result.warnings), result.warnings
+    assert result.metrics["harmony_converged"] is True
+    assert 0 < result.metrics["harmony_n_iter"] <= 50
+
+
+def test_harmony_iteration_cap_is_a_config_knob():
+    """``max_iter_harmony`` must reach harmonypy, not sit unread in the config."""
+    a = _adata_with_pca(seed=5)
+    capped = _harmony_run(a, max_iter_harmony=2)
+    assert capped.metrics["harmony_n_iter"] <= 2

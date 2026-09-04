@@ -7,17 +7,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import anndata as ad
+import numpy as np
 import pandas as pd
 
+from cellquorum.backends.script_paths import r_script_path
 from cellquorum.core.exceptions import CellQuorumBackendError
+from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.methods.base import MethodSkip
 
 if TYPE_CHECKING:
-    from cellquorum.stages.clustering.subclustering.config import PartitionConfig, SubclusteringConfig
+    from cellquorum.stages.clustering.subclustering.config import (
+        PartitionConfig,
+        SubclusteringConfig,
+    )
 
 # Path to bundled R scripts.
-_CHOIR_R = Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "choir.R"
-_SCSHC_TEST_R = Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "scshc_test.R"
+_CHOIR_R = r_script_path("choir.R")
+_SCSHC_TEST_R = r_script_path("scshc_test.R")
 
 
 def run_choir(
@@ -25,6 +31,7 @@ def run_choir(
     config: SubclusteringConfig,
     backend: object | None,
     scratch_dir: Path,
+    reduction_key: str | None = None,
 ) -> ad.AnnData | MethodSkip:
     """
     Run CHOIR permutation-tested clustering on focus subset.
@@ -37,6 +44,9 @@ def run_choir(
         config: Subclustering configuration.
         backend: Rscript backend from context registry (or None).
         scratch_dir: Scratch directory for temp files.
+        reduction_key: obsm key of a precomputed (ideally batch-corrected)
+            embedding to cluster on. Requires var['highly_variable']; when either
+            is missing CHOIR computes its own uncorrected reduction instead.
 
     Returns:
         adata with obs[key_added] cluster labels, or MethodSkip if unavailable.
@@ -86,14 +96,37 @@ def run_choir(
 
     # Write adata with counts as X (zellkonverter reads X → first assay → counts).
     choir_adata = ad.AnnData(X=adata.layers[counts_layer].copy())
-    choir_adata.obs_names = adata.obs_names
-    choir_adata.var_names = adata.var_names
+    # Plain-object string indices: a pandas nullable StringArray index (which real
+    # objects carry) is refused by the h5ad writer, and zellkonverter reads it as
+    # a categorical group rather than as cell names.
+    choir_adata.obs_names = pd.Index([str(n) for n in adata.obs_names], dtype=object)
+    choir_adata.var_names = pd.Index([str(n) for n in adata.var_names], dtype=object)
 
     # Add batch column if batch correction requested.
     if batch_arg != "NONE":
-        choir_adata.obs[batch_key] = adata.obs[batch_key].values
+        choir_adata.obs[batch_key] = adata.obs[batch_key].astype(str).to_numpy()
 
-    choir_adata.write_h5ad(in_h5ad)
+    # Ship a precomputed batch-corrected embedding when one is available. This is
+    # what makes the cluster count trustworthy: CHOIR's internal Harmony path is
+    # unusable against harmony >= 1.0 (it calls the removed HarmonyMatrix()), so
+    # without an embedding CHOIR silently clusters uncorrected data and can certify
+    # single-donor clusters as significant. CHOIR also requires var_features
+    # whenever a reduction is supplied, hence the highly_variable flag.
+    reduction_arg = "NONE"
+    if (
+        reduction_key
+        and reduction_key in adata.obsm
+        and "highly_variable" in adata.var
+        and bool(np.asarray(adata.var["highly_variable"]).sum() >= 2)
+    ):
+        choir_adata.obsm[reduction_key] = np.asarray(adata.obsm[reduction_key])
+        choir_adata.var["highly_variable"] = np.asarray(adata.var["highly_variable"]).astype(bool)
+        reduction_arg = reduction_key
+
+    # Shared writer: it opts in to nullable strings and coerces the columns h5py
+    # refuses, so a poisoned column fails here with a clear error instead of
+    # reaching CHOIR as a half-written file. See cellquorum.core.h5ad_io.
+    write_h5ad(choir_adata, in_h5ad)
 
     # Build R script args.
     args = [
@@ -105,6 +138,7 @@ def run_choir(
         str(n_trees),
         batch_arg,
         str(seed),
+        reduction_arg,
     ]
 
     # Run choir.R.
@@ -134,6 +168,7 @@ def run_scshc_test(
     config: SubclusteringConfig,
     backend: object | None,
     scratch_dir: Path,
+    batch_key: str | None = None,
 ) -> dict | MethodSkip:
     """
     Run sc-SHC formal significance test on supplied cluster labels.
@@ -141,12 +176,26 @@ def run_scshc_test(
     sc-SHC tests whether each split in a hierarchical clustering is
     statistically significant (permutation test).
 
+    The interesting output is not the per-split p-values but the *reconciled*
+    labels: sc-SHC merges every pair of input clusters whose split it cannot
+    support, so the number of surviving labels is the partition the test is
+    willing to defend. Reporting only "0 of 1 splits significant" hides the
+    consequence — that a lineage came out of the test as one undivided
+    population — behind a fraction, and a downstream stage that keys a headline
+    table on the input labels has no way to notice.
+
     Args:
         adata: Focus subset with counts layer + cluster labels.
         cluster_key: obs column with cluster labels to test.
         config: Subclustering configuration.
         backend: Rscript backend from context registry (or None).
         scratch_dir: Scratch directory for temp files.
+        batch_key: obs column sc-SHC should condition its null model on, so a
+            batch effect is not reported as a supported split. ``None`` falls
+            back to ``config.donor_gate.group_key`` for callers that predate
+            this argument; the stage resolves it through the cohort block and
+            passes it explicitly, because a field named for the donor gate is
+            not where a *batch* key belongs.
 
     Returns:
         dict with per-split significance results, or MethodSkip if unavailable.
@@ -186,7 +235,8 @@ def run_scshc_test(
     alpha = formal_test_config.alpha
 
     # Resolve batch labels.
-    batch_key = config.donor_gate.group_key
+    if batch_key is None:
+        batch_key = config.donor_gate.group_key
     batch_arg = batch_key if batch_key and batch_key in adata.obs.columns else "NONE"
 
     # Prepare scratch files.
@@ -204,7 +254,7 @@ def run_scshc_test(
     if batch_arg != "NONE":
         scshc_adata.obs[batch_key] = adata.obs[batch_key].values
 
-    scshc_adata.write_h5ad(in_h5ad)
+    write_h5ad(scshc_adata, in_h5ad)
 
     # Write cluster labels CSV (barcode, cluster).
     cluster_df = pd.DataFrame(
@@ -233,10 +283,29 @@ def run_scshc_test(
     significance = {
         "method": "scshc",
         "alpha": alpha,
+        "batch_key": batch_arg,
+        "n_clusters_in": int(pd.Series(adata.obs[cluster_key]).nunique()),
         "n_splits_tested": len(sig_df),
         "n_significant": n_significant,
         "per_split": sig_df.to_dict(orient="records"),
     }
+
+    # Read the reconciled labels the R script wrote alongside the split table and
+    # attach them to obs. Without this the merge decision lives only in a scratch
+    # file: a run whose eight clusters all collapsed to one looked, from every
+    # persisted artifact, exactly like a run whose eight clusters were upheld.
+    labels_csv = out_csv.with_name(out_csv.name.replace(".csv", "_labels.csv"))
+    if labels_csv.exists():
+        labels = pd.read_csv(labels_csv).set_index("barcode")["scshc_label"]
+        aligned = labels.reindex(adata.obs_names)
+        adata.obs[f"{cluster_key}_scshc"] = pd.Categorical(aligned)
+        surviving = int(aligned.dropna().nunique())
+        significance["n_labels_surviving"] = surviving
+        significance["labels_key"] = f"{cluster_key}_scshc"
+        # The headline reading, stated rather than left to be derived: this is
+        # the difference between "the partition survived" and "there is no
+        # partition", and it is the number a write-up has to quote.
+        significance["merged_to_one"] = surviving == 1 and significance["n_clusters_in"] > 1
 
     return significance
 

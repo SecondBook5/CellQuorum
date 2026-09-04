@@ -8,6 +8,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from cellquorum.visualization.figstyle import save_cellquorum_figure
+
 matplotlib.use("Agg")
 
 
@@ -17,7 +19,7 @@ def plot_loss_curves(loss_history: dict[str, dict[str, list[float]]], out_path: 
 
     Args:
         loss_history: {phase: {metric: values}} from model.history serialization.
-        out_path: Path to write the figure PNG.
+        out_path: Path to write the figure PNG. A ``.pdf`` is written beside it.
     """
     phases = ["scvi", "scanvi", "query_surgery"]
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
@@ -42,8 +44,9 @@ def plot_loss_curves(loss_history: dict[str, dict[str, list[float]]], out_path: 
             ax.legend(fontsize=7, loc="best")
         ax.grid(alpha=0.3, linewidth=0.5)
 
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    # The shared writer supplies the atomic rename and the vector twin; these two
+    # were bare savefig calls, so the diagnostics shipped as PNG only.
+    save_cellquorum_figure(fig, out_path, dpi=150)
     plt.close(fig)
 
 
@@ -54,7 +57,7 @@ def plot_uncertainty(obs: pd.DataFrame, key_added: str, out_path: Path) -> None:
     Args:
         obs: Query obs DataFrame carrying uncertainty columns.
         key_added: Base name for uncertainty columns.
-        out_path: Path to write the figure PNG.
+        out_path: Path to write the figure PNG. A ``.pdf`` is written beside it.
     """
     fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 
@@ -92,8 +95,9 @@ def plot_uncertainty(obs: pd.DataFrame, key_added: str, out_path: Path) -> None:
     else:
         axes[2].text(0.5, 0.5, "No data", ha="center", va="center", transform=axes[2].transAxes)
 
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    # The shared writer supplies the atomic rename and the vector twin; these two
+    # were bare savefig calls, so the diagnostics shipped as PNG only.
+    save_cellquorum_figure(fig, out_path, dpi=150)
     plt.close(fig)
 
 

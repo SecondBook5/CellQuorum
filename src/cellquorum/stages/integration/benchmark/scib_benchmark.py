@@ -75,15 +75,21 @@ class ScibBenchmarkMethod(AnalysisMethod):
         X_pre = adata.obsm[pre_embedding]
 
         # Compute metrics for each embedding.
-        notes = []
+        # ``caveats``, not ``notes``, for two reasons. It is spelled that way because
+        # this module imports the stdlib ``warnings``; and it goes to StageResult's
+        # warnings channel because everything that lands in it is a metric the config
+        # asked for and did not get. A benchmark whose whole output is a ranking of
+        # embeddings cannot report a half-computed ranking through a channel the run
+        # report neither prints nor counts.
+        caveats: list[str] = []
         embedding_metrics = {}
         for emb_key in embeddings:
             if emb_key not in adata.obsm:
-                notes.append(f"Embedding '{emb_key}' not in obsm; skipped.")
+                caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
                 continue
 
             X_post = adata.obsm[emb_key]
-            batch_metrics, bio_metrics, emb_notes = self._compute_metrics(
+            batch_metrics, bio_metrics, emb_caveats = self._compute_metrics(
                 X_pre=X_pre,
                 X_post=X_post,
                 batches=batches,
@@ -91,7 +97,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 n_neighbors=n_neighbors,
                 mode=mode,
             )
-            notes.extend(emb_notes)
+            caveats.extend(emb_caveats)
 
             # Aggregate score.
             aggregate = self._aggregate_score(batch_metrics, bio_metrics, batch_weight, bio_weight)
@@ -118,7 +124,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
         }
 
         # READ-ONLY: return the SAME adata.
-        return StageResult(adata=adata, metrics=metrics, notes=notes)
+        return StageResult(adata=adata, metrics=metrics, warnings=caveats)
 
     def _compute_metrics(
         self,
@@ -147,7 +153,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
             )
             from scib_metrics.nearest_neighbors import pynndescent
 
-        notes = []
+        caveats: list[str] = []
         batch_metrics = {}
         bio_metrics = {}
 
@@ -156,10 +162,10 @@ class ScibBenchmarkMethod(AnalysisMethod):
 
         # --- Batch metrics (label-free) --- #
         batch_metrics["ilisi"] = self._safe_metric(
-            ilisi_knn, (nbrs, batches), {"scale": True}, notes, "ilisi"
+            ilisi_knn, (nbrs, batches), {"scale": True}, caveats, "ilisi"
         )
         batch_metrics["kbet"] = self._safe_metric(
-            kbet, (nbrs, batches), {"alpha": 0.05}, notes, "kbet"
+            kbet, (nbrs, batches), {"alpha": 0.05}, caveats, "kbet"
         )
         # pcr_comparison needs integer covariate codes.
         import pandas as pd
@@ -169,50 +175,56 @@ class ScibBenchmarkMethod(AnalysisMethod):
             pcr_comparison,
             (X_pre, X_post, batch_codes),
             {"scale": True},
-            notes,
+            caveats,
             "pcr_comparison",
         )
 
         # graph_connectivity + silhouette_batch need labels.
         if labels is not None:
             batch_metrics["graph_connectivity"] = self._safe_metric(
-                graph_connectivity, (nbrs, labels), {}, notes, "graph_connectivity"
+                graph_connectivity, (nbrs, labels), {}, caveats, "graph_connectivity"
             )
             batch_metrics["silhouette_batch"] = self._safe_metric(
-                silhouette_batch, (X_post, labels, batches), {}, notes, "silhouette_batch"
+                silhouette_batch, (X_post, labels, batches), {}, caveats, "silhouette_batch"
             )
 
         # --- Bio metrics (require labels + full mode) --- #
         if labels is not None and mode == "full":
             bio_metrics["clisi"] = self._safe_metric(
-                clisi_knn, (nbrs, labels), {"scale": True}, notes, "clisi"
+                clisi_knn, (nbrs, labels), {"scale": True}, caveats, "clisi"
             )
             bio_metrics["silhouette_label"] = self._safe_metric(
-                silhouette_label, (X_post, labels), {}, notes, "silhouette_label"
+                silhouette_label, (X_post, labels), {}, caveats, "silhouette_label"
             )
             bio_metrics["isolated_labels"] = self._safe_metric(
-                isolated_labels, (X_post, labels, batches), {}, notes, "isolated_labels"
+                isolated_labels, (X_post, labels, batches), {}, caveats, "isolated_labels"
             )
             # nmi_ari_cluster_labels_leiden returns dict {"nmi": ..., "ari": ...}.
             nmi_ari = self._safe_metric(
-                nmi_ari_cluster_labels_leiden, (nbrs, labels), {}, notes, "nmi_ari_leiden"
+                nmi_ari_cluster_labels_leiden, (nbrs, labels), {}, caveats, "nmi_ari_leiden"
             )
             if isinstance(nmi_ari, dict):
                 bio_metrics["nmi"] = nmi_ari.get("nmi", np.nan)
             else:
                 bio_metrics["nmi"] = np.nan
 
-        return batch_metrics, bio_metrics, notes
+        return batch_metrics, bio_metrics, caveats
 
     def _safe_metric(
         self,
         func: object,
         args: tuple,
         kwargs: dict,
-        notes: list[str],
+        caveats: list[str],
         metric_name: str,
     ) -> float:
-        """Call a metric function; record nan + note on failure."""
+        """Call a metric function; on failure return nan and record a caveat.
+
+        The caveat reaches the run report as a WARNING. A nan here is otherwise
+        invisible: ``_aggregate_score`` averages over the finite values only, so a
+        run that computed two of seven metrics reports a clean-looking aggregate
+        indistinguishable from one that computed all seven.
+        """
         try:
             result = func(*args, **kwargs)
             # Handle dict return (nmi_ari_leiden).
@@ -224,7 +236,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 return float(result[0])
             return float(result)
         except Exception as e:
-            notes.append(f"{metric_name} failed: {e}")
+            caveats.append(f"{metric_name} failed: {e}")
             return float("nan")
 
     def _aggregate_score(
@@ -271,14 +283,17 @@ class ScibBenchmarkMethod(AnalysisMethod):
             label_col = label_key_fallback
 
         # Compute iLISI (batch-mixing) only in harmonypy fallback.
-        notes = [
+        # All three entries below are degradations, so this whole channel is
+        # warnings: the caller asked for the scib suite and is getting one metric
+        # of it, which changes what the aggregate score means.
+        caveats = [
             "Using harmonypy fallback: batch-mixing (iLISI) only; "
             "bio-conservation metrics unavailable."
         ]
         embedding_metrics = {}
         for emb_key in embeddings:
             if emb_key not in adata.obsm:
-                notes.append(f"Embedding '{emb_key}' not in obsm; skipped.")
+                caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
                 continue
 
             X = adata.obsm[emb_key]
@@ -291,7 +306,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 lisi_batch = compute_lisi(X, metadata_df, [batch_key], perplexity=30)
                 ilisi = float(np.mean(lisi_batch))
             except Exception as e:
-                notes.append(f"iLISI failed for {emb_key}: {e}")
+                caveats.append(f"iLISI failed for {emb_key}: {e}")
                 ilisi = np.nan
 
             # cLISI: harmonypy fallback does not support bio-conservation metrics.
@@ -329,7 +344,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
             "mode": "fallback",
         }
 
-        return StageResult(adata=adata, metrics=metrics, notes=notes)
+        return StageResult(adata=adata, metrics=metrics, warnings=caveats)
 
 
 __all__ = ["ScibBenchmarkMethod"]

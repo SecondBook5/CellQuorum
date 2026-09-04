@@ -50,6 +50,14 @@ from cellquorum.core.context import PipelineContext, PipelinePaths
 # Import the stage executor.
 from cellquorum.core.executor import PipelineExecutionResult, PipelineExecutor
 
+# Import the run-directory hygiene gate and the inherited-artifact report.
+from cellquorum.core.output_hygiene import (
+    InheritedArtifact,
+    assert_output_dir_matches_config,
+    find_inherited_artifacts,
+    format_inherited_artifacts,
+)
+
 # Import planner utilities.
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 
@@ -189,12 +197,16 @@ def load_input_adata_from_config(config: CellQuorumConfig) -> ad.AnnData | None:
     # time. The I/O layer reads it in backed mode so the full object is never
     # materialized; without a subset the whole object is read as before.
     subset = config.input.subset
-    if subset is None:
+    exclude = config.input.exclude
+    if subset is None and exclude is None:
         return load_adata(config.input.h5ad)
     return load_adata(
         config.input.h5ad,
-        subset_column=subset.column,
-        subset_values=subset.values,
+        subset_column=subset.column if subset else None,
+        subset_values=subset.values if subset else None,
+        agreement_column=subset.require_agreement if subset else None,
+        exclude_column=exclude.column if exclude else None,
+        exclude_values=exclude.values if exclude else None,
     )
 
 
@@ -292,8 +304,18 @@ def build_pipeline_context(
         "input_h5ad": str(config.input.h5ad) if config.input.h5ad is not None else None,
         "input_counts_layer": config.input.counts_layer,
         "input_loaded": loaded_adata is not None,
-        # Record the applied row restriction (column, values, n_before/n_after)
-        # so a cell-type subset is a visible provenance step, not a silent cut.
+        # The size of the matrix this run actually analysed, recorded
+        # UNCONDITIONALLY. "input_subset" below is None when no filter applied, so
+        # without these two keys a run with no subset has its cell count nowhere in
+        # the run directory's JSON -- only inside the final .h5ad, which a run that
+        # computes a table rather than an object has no reason to write. Every
+        # figure caption in every downstream repo needs this number, and reading it
+        # from the run beats each script hardcoding its own copy.
+        "input_n_obs": int(loaded_adata.n_obs) if loaded_adata is not None else None,
+        "input_n_vars": int(loaded_adata.n_vars) if loaded_adata is not None else None,
+        # Record the applied row restriction (column, values, n_before/n_after,
+        # plus the exclusion rule and what it dropped) so a cell-type subset or an
+        # artifact-cluster drop is a visible provenance step, not a silent cut.
         "input_subset": (
             loaded_adata.uns.get("cellquorum_input_subset") if loaded_adata is not None else None
         ),
@@ -585,142 +607,14 @@ def _write_final_object(*, config: CellQuorumConfig, context: PipelineContext) -
     objects_dir.mkdir(parents=True, exist_ok=True)
     out_path = objects_dir / getattr(run_config, "final_object_name", "final_annotated.h5ad")
 
-    # h5py forbids '/' in group/dataset keys. Labels containing '/' (e.g. cell
-    # types like "T/NK" or "Pericyte/SMC") leak into KEYS in three places that
-    # break write_h5ad: uns dict keys, obs/var column names (e.g. scArches
-    # writes per-class "refprob_<label>" columns), and obsm/varm keys. Sanitize
-    # all of them before writing so the deliverable serializes regardless of the
-    # atlas/label vocabulary. Only KEYS/column-names are rewritten — the label
-    # VALUES stored in obs columns (e.g. obs["cell_type"] == "T/NK") are kept.
-    _sanitize_uns_keys_for_h5ad(adata.uns)
-    _sanitize_frame_columns_for_h5ad(adata.obs)
-    _sanitize_frame_columns_for_h5ad(adata.var)
-    _sanitize_mapping_keys_for_h5ad(adata.obsm)
-    _sanitize_mapping_keys_for_h5ad(adata.varm)
-    # Stage payloads stash rich Python structures (lists of dicts, ragged/mixed
-    # types) in uns that anndata cannot serialize to h5ad. Coerce any such
-    # non-serializable uns value to a JSON string so the deliverable always
-    # writes; the information is preserved and recoverable via json.loads.
-    _jsonify_unserializable_uns(adata.uns)
-    adata.write_h5ad(out_path)
+    # Everything that makes a real object refuse to serialize — '/' in keys,
+    # mixed-type label columns, uns payloads with no HDF5 encoding — is handled by
+    # the shared writer. See cellquorum.core.h5ad_io for what it changes and why
+    # it changes only representations, never information.
+    from cellquorum.core.h5ad_io import write_h5ad
+
+    write_h5ad(adata, out_path)
     return out_path
-
-
-def _jsonify_unserializable_uns(uns: object) -> None:
-    """
-    Replace uns values anndata can't write to h5ad with a JSON-string form.
-
-    Walks the top level of ``uns`` (and one level into nested dicts, matching how
-    stages namespace payloads under ``uns['cellquorum'][<stage>]``). A value is
-    left untouched when it is an h5ad-friendly scalar/array/str or a dict of
-    such; otherwise it is replaced by ``json.dumps(value, default=str)``.
-
-    Args:
-        uns: The AnnData.uns mapping (mutated in place).
-    """
-
-    import json
-
-    def _friendly(value: object) -> bool:
-        # Scalars and strings write fine.
-        if value is None or isinstance(value, str | int | float | bool):
-            return True
-        # Numpy arrays / pandas frames write fine.
-        module = type(value).__module__
-        if module.startswith(("numpy", "pandas")):
-            return True
-        # A dict is friendly only if all its values are friendly.
-        if isinstance(value, dict):
-            return all(isinstance(k, str) and _friendly(v) for k, v in value.items())
-        return False
-
-    def _coerce(mapping: object) -> None:
-        for key in list(mapping.keys()):
-            value = mapping[key]
-            if isinstance(value, dict) and not _friendly(value):
-                # Recurse one level so a mostly-friendly namespace keeps its
-                # simple entries and only jsonifies the offending sub-values.
-                _coerce(value)
-                # Re-check: if still unfriendly (e.g. a list-of-dicts entry
-                # remains), jsonify the whole entry.
-                for sub in list(value.keys()):
-                    if not _friendly(value[sub]):
-                        value[sub] = json.dumps(value[sub], default=str)
-            elif not _friendly(value):
-                mapping[key] = json.dumps(value, default=str)
-
-    # AnnData.uns is a mutable mapping (dict-like); coerce it in place.
-    _coerce(uns)
-
-
-def _safe_h5_key(key: str, existing: object) -> str:
-    """Return ``key`` with '/' replaced by '_', kept unique against ``existing``."""
-
-    safe = key.replace("/", "_")
-    while safe != key and safe in existing:
-        safe += "_"
-    return safe
-
-
-def _sanitize_frame_columns_for_h5ad(frame: object) -> None:
-    """
-    Rename any DataFrame columns whose names contain '/' (in place).
-
-    Column names become h5 keys under obs/var, so a '/' (e.g. in a scArches
-    "refprob_Pericyte/SMC" column) breaks write_h5ad. Column VALUES are
-    untouched.
-
-    Args:
-        frame: A pandas DataFrame (adata.obs or adata.var).
-    """
-
-    renames: dict[str, str] = {}
-    for col in list(frame.columns):
-        if isinstance(col, str) and "/" in col:
-            renames[col] = _safe_h5_key(col, set(frame.columns) | set(renames.values()))
-    if renames:
-        frame.rename(columns=renames, inplace=True)
-
-
-def _sanitize_mapping_keys_for_h5ad(mapping: object) -> None:
-    """
-    Rename any obsm/varm keys containing '/' (in place).
-
-    Args:
-        mapping: An AnnData axis mapping (adata.obsm or adata.varm).
-    """
-
-    bad = [k for k in list(mapping.keys()) if isinstance(k, str) and "/" in k]
-    for key in bad:
-        mapping[_safe_h5_key(key, set(mapping.keys()))] = mapping.pop(key)
-
-
-def _sanitize_uns_keys_for_h5ad(node: object) -> None:
-    """
-    Recursively replace '/' with '_' in dict keys within an uns-like structure.
-
-    Operates in place. Only dict KEYS are rewritten (values, including category
-    labels stored as arrays, are untouched — those serialize fine). This makes
-    label-keyed count maps (e.g. annotation-consensus ``label_counts``) writable
-    to h5ad even when labels contain '/'.
-
-    Args:
-        node: A uns value; recursion descends into dict values and list items.
-    """
-
-    if isinstance(node, dict):
-        # Rewrite offending keys, then recurse into the (possibly moved) values.
-        for key in [k for k in node if isinstance(k, str) and "/" in k]:
-            safe_key = key.replace("/", "_")
-            # Avoid clobbering an existing safe key; suffix until unique.
-            while safe_key in node and safe_key != key:
-                safe_key += "_"
-            node[safe_key] = node.pop(key)
-        for value in node.values():
-            _sanitize_uns_keys_for_h5ad(value)
-    elif isinstance(node, list | tuple):
-        for item in node:
-            _sanitize_uns_keys_for_h5ad(item)
 
 
 def _write_run_report_after_provenance(
@@ -1007,7 +901,7 @@ def bootstrap_pipeline_run(
     )
 
 
-def _restrict_plan_from_stage(plan: object, from_stage: str) -> object:
+def _restrict_plan_from_stage(plan: PipelinePlan, from_stage: str) -> PipelinePlan:
     """Return `plan` with stages before `from_stage` removed.
 
     Their results already live in the checkpoint being loaded, so re-running them
@@ -1027,6 +921,82 @@ def _restrict_plan_from_stage(plan: object, from_stage: str) -> object:
     # a stage silently is worse than running one extra.
     kept = [s for s in plan.stages if order_of.get(s.name, start) >= start]
     return dataclasses.replace(plan, stages=kept)
+
+
+def _write_inherited_artifacts_report(
+    *, context: PipelineContext, artifacts: list[InheritedArtifact]
+) -> Path:
+    """
+    Write the inventory of files this run did not produce.
+
+    The run summary names only the largest few, because a resume can inherit
+    thousands of files legitimately and a warning that scrolls is a warning nobody
+    reads. The full list belongs on disk next to the rest of the provenance, so a
+    reader assembling a figure panel can check whether the file they picked was
+    actually produced by the run they think it was.
+
+    Args:
+        context: The pipeline context, for its provenance path.
+        artifacts: The inventory, largest first.
+
+    Returns:
+        The path written.
+    """
+
+    provenance_dir = Path(context.paths.provenance)
+    provenance_dir.mkdir(parents=True, exist_ok=True)
+    path = provenance_dir / "inherited_artifacts.csv"
+    pd.DataFrame(
+        [
+            {
+                "path": artifact.path,
+                "size_bytes": artifact.size_bytes,
+                "modified_utc": artifact.modified_utc,
+            }
+            for artifact in artifacts
+        ],
+        columns=["path", "size_bytes", "modified_utc"],
+    ).to_csv(path, index=False)
+    return path
+
+
+def _config_disabled_stage_names(
+    config: CellQuorumConfig, config_dict: dict[str, Any]
+) -> list[str]:
+    """
+    Return the stages this configuration turns off.
+
+    A stage is off if either gate says so: the top-level ``stages`` flag, or the
+    stage's own ``enabled`` field. Both are honoured because they are independent --
+    ``stages.qc: false`` and ``qc: {enabled: false}`` are different ways to say the
+    same thing, and a check that read only one would miss half the cases.
+
+    This deliberately ignores the plan. Plan membership also encodes resume windows
+    and missing implementations, neither of which is a statement that a stage should
+    not exist; conflating them would make the caller's hygiene gate fire on the
+    inherited outputs a ``--from-stage`` resume is built to reuse.
+
+    Args:
+        config: The resolved configuration.
+        config_dict: The same configuration as a plain dict.
+
+    Returns:
+        Sorted stage names, so the caller's message is stable across runs.
+    """
+
+    disabled: set[str] = set()
+
+    # Read the top-level stage flags.
+    for name, flag in config.stages.model_dump().items():
+        if flag is False:
+            disabled.add(name)
+
+    # Read each stage's own enabled field.
+    for name, stage_config in config_dict.items():
+        if isinstance(stage_config, dict) and stage_config.get("enabled") is False:
+            disabled.add(name)
+
+    return sorted(disabled)
 
 
 def execute_pipeline_run(
@@ -1165,6 +1135,17 @@ def execute_pipeline_run(
     # Echo the resolved configuration showing only runnable stages.
     reporter.config_echo(config, planned_stage_names=planned_stage_names)
 
+    # Refuse to write into a directory that already holds outputs of a stage this
+    # config DISABLES. Those files cannot have come from this run, and nothing on
+    # disk says so, which is how a manuscript ends up citing QC thresholds that were
+    # never applied. Read the disabled set from the CONFIG rather than from the plan:
+    # a --from-stage resume legitimately narrows the plan, and treating those earlier
+    # stages as disabled would break resume on its own inherited outputs.
+    assert_output_dir_matches_config(
+        context.paths.root,
+        disabled_stages=_config_disabled_stage_names(config, config_dict),
+    )
+
     # Measure wall-clock time around stage execution.
     execution_start = time.perf_counter()
 
@@ -1185,6 +1166,18 @@ def execute_pipeline_run(
         execution_elapsed,
     )
 
+    # Inventory files in the output tree that this run did not write. The gate above
+    # already refused outputs of a DISABLED stage; this catches the narrower case it
+    # cannot see -- a stage that ran fine but no longer produces some group, cluster
+    # or pathway, leaving the previous run's artifact for it behind looking current.
+    # It reports and never fails: a --from-stage resume inherits earlier outputs
+    # legitimately, and timestamps alone cannot tell that apart from a leftover.
+    inherited = find_inherited_artifacts(context.paths.root, run_started_at=bootstrap_started_at)
+    inherited_warning = format_inherited_artifacts(inherited)
+    if inherited_warning:
+        logger.warning(inherited_warning)
+        _write_inherited_artifacts_report(context=context, artifacts=inherited)
+
     # Build the bootstrap execution record.
     bootstrap_record = StageExecutionRecord(
         stage_name="bootstrap",
@@ -1194,7 +1187,7 @@ def execute_pipeline_run(
         duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
         backend_used="python",
         notes=["Initialized CellQuorum execution frame."],
-        warnings=list(plan.warnings),
+        warnings=[*plan.warnings, *([inherited_warning] if inherited_warning else [])],
         metrics={
             "n_planned_stages": len(plan.stages),
             "n_enabled_stages": len(plan.enabled_stage_names()),
@@ -1203,6 +1196,8 @@ def execute_pipeline_run(
             "n_successful_stages": len(execution_result.succeeded_stage_names()),
             "n_skipped_stages": len(execution_result.skipped_stage_names()),
             "n_failed_stages": len(execution_result.failed_stage_names()),
+            "n_inherited_artifacts": len(inherited),
+            "inherited_artifact_bytes": sum(item.size_bytes for item in inherited),
         },
     )
 

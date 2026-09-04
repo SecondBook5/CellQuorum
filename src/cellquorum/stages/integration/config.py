@@ -39,6 +39,12 @@ class IntegrationConfig(StrictBaseModel):
     # Random seed for deterministic integration.
     random_state: int = 0
 
+    # Harmony iteration cap (harmonypy's own default is 10). Exposed because 10 is
+    # not enough on every dataset, and a Harmony that hits the cap returns a
+    # PARTIALLY corrected embedding — which the stage now reports as a warning
+    # instead of leaving it to an INFO log line nobody sees.
+    max_iter_harmony: int = 10
+
     # Multi-method dispatch: list of per-method sub-configs (each entry is a full
     # method config with its own `method`, `output_rep`, etc.). An empty list (the
     # default) means use the scalar `method:` path; only a non-empty list triggers

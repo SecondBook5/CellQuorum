@@ -7,10 +7,7 @@ from pathlib import Path
 import anndata as ad
 import pandas as pd
 
-from cellquorum.stages.comparative.differential_expression.pseudobulk import (
-    aggregate_pseudobulk,
-    resolve_donor_pairing,
-)
+from cellquorum.backends.script_paths import r_script_path
 from cellquorum.config.design import (
     DesignConfig,
     validate_design_against_obs,
@@ -21,9 +18,13 @@ from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
+from cellquorum.stages.comparative.differential_expression.pseudobulk import (
+    aggregate_pseudobulk,
+    resolve_donor_pairing,
+)
 
 # Path to the bundled edgeR script.
-_EDGER_R = Path(__file__).parent.parent.parent / "backends" / "r_scripts" / "edger.R"
+_EDGER_R = r_script_path("edger.R")
 
 # Token passed to the edgeR script to request the joint interaction test (an F-test
 # over every interaction coefficient) rather than the case-vs-control coefficient.

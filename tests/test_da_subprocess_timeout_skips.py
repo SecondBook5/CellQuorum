@@ -18,10 +18,10 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.comparative.differential_abundance.milo_method import MiloMethod
 from cellquorum.stages.comparative.differential_abundance.propeller_method import PropellerMethod
 from cellquorum.stages.comparative.differential_abundance.sccoda_method import SccodaMethod
-from cellquorum.methods.base import MethodSkip
 
 
 def _cohort_adata():

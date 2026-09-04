@@ -8,8 +8,9 @@ import json
 # Import Path for config and output directory arguments.
 from pathlib import Path
 
-# Import Annotated for Typer-compatible option metadata without B008 violations.
-from typing import Annotated
+# Import Annotated for Typer-compatible option metadata without B008 violations,
+# and TYPE_CHECKING so engine types can be annotated without importing the engine.
+from typing import TYPE_CHECKING, Annotated
 
 # Import Typer for the command-line interface.
 import typer
@@ -20,20 +21,18 @@ from rich.console import Console
 # Import Rich tables for stage and backend summaries.
 from rich.table import Table
 
-# Import the public pipeline API.
-from cellquorum.api import run_pipeline
-
-# Import configuration loading utilities.
-from cellquorum.config.loader import ConfigLoadError, load_config
-
-# Import shared CellQuorum exception base.
-from cellquorum.core.exceptions import CellQuorumError
-
-# Import the planner entry point.
-from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
-
-# Import the package version.
+# Import the package version. This is a plain string constant, so it is the one
+# engine import cheap enough to do at module scope.
 from cellquorum.version import __version__
+
+# The engine imports (run_pipeline, the config loader, the planner, the exception
+# base) are deliberately NOT at module scope: each reaches
+# cellquorum.config.models, which aggregates all 30 stage config modules and costs
+# ~1.6s. Paying that to print `--version` or `--help` made the CLI feel broken.
+# Each command imports what it needs in its own body instead, so startup cost is
+# proportional to the work actually requested.
+if TYPE_CHECKING:
+    from cellquorum.core.planner import PipelinePlan
 
 # Store the default configuration path as a module-level constant.
 DEFAULT_CONFIG_PATH = Path("configs/config.yaml")
@@ -247,6 +246,11 @@ def plan_command(
         json_output: Whether to print machine-readable JSON.
     """
 
+    # Import the engine only now that real work is being asked for (see the note
+    # beside the module imports).
+    from cellquorum.config.loader import ConfigLoadError, load_config
+    from cellquorum.core.planner import build_pipeline_plan
+
     # Try to load and validate the configuration.
     try:
         # Load the resolved CellQuorum configuration.
@@ -363,6 +367,12 @@ def run_command(
         json_output: Whether to print machine-readable JSON.
         quiet: Whether to suppress progress output.
     """
+
+    # Import the engine only now that real work is being asked for (see the note
+    # beside the module imports).
+    from cellquorum.api import run_pipeline
+    from cellquorum.config.loader import ConfigLoadError
+    from cellquorum.core.exceptions import CellQuorumError
 
     # Try to initialize and optionally execute the CellQuorum pipeline run.
     try:
@@ -503,3 +513,10 @@ def main() -> None:
 
     # Execute the Typer application.
     app()
+
+
+# Allow `python -m cellquorum.cli.app` to work. Without this guard the module
+# imports cleanly and exits silently, which looks indistinguishable from a CLI
+# that ran and printed nothing.
+if __name__ == "__main__":
+    main()

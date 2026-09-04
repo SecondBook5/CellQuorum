@@ -66,3 +66,11 @@ SCAFFOLD_METHOD_STAGES: dict[str, list[str]] = {
 ALL_OPTIONAL_STAGES: frozenset[str] = frozenset(StageSelectionConfig.model_fields) - set(
     MANDATORY_STAGES
 )
+
+# The same names, in declaration order, for anything that WRITES them out.
+# Iterating ALL_OPTIONAL_STAGES to build the emitted ``stages:`` block made the key
+# order depend on per-process string hashing, so regenerating a config from an
+# unchanged manifest rewrote the whole block and buried any real change in the diff.
+# Declaration order is stable and reads roughly in pipeline order; the frozenset
+# stays for membership tests, which is all it is otherwise used for.
+STAGE_ORDER: tuple[str, ...] = tuple(StageSelectionConfig.model_fields)

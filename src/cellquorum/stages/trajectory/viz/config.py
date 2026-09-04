@@ -33,5 +33,17 @@ class TrajectoryVizConfig(StrictBaseModel):
     heatmap_corr_cut: float = 0.1
     heatmap_expr_cmap: str = SEQUENTIAL_CMAP
 
+    # Activity-along-pseudotime cascade controls (all optional; nets via config).
+    # Which prior-knowledge nets to score per cell and cascade along pseudotime
+    # (e.g. ["progeny", "collectri", "hallmark", "dorothea"]); None → method default.
+    activity_resources: list[str] | None = None
+    # Per-net decoupler method override, e.g. {"progeny": "mlm"}; None → method default.
+    activity_methods: dict[str, str] | None = None
+    # Per-net cap on top-|rho| sources shown, e.g. {"hallmark": 10}; None → method default.
+    cascade_top: dict[str, int | None] | None = None
+    cascade_n_bins: int = 20
+    # Optional pseudotime-axis annotation, e.g. "basal → terminal".
+    cascade_xlab: str | None = None
+
 
 __all__ = ["TrajectoryVizConfig"]

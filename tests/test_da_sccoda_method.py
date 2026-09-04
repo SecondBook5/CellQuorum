@@ -6,6 +6,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import ast
 from pathlib import Path
 
 import anndata as ad
@@ -14,7 +15,7 @@ import pandas as pd
 import pytest
 
 from cellquorum.backends.registry import build_default_backend_registry
-from cellquorum.backends.sccoda_backend import build_sccoda_backend
+from cellquorum.backends.sccoda_backend import SCCODA_HELPER, build_sccoda_backend
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.comparative.differential_abundance.aggregation import (
     aggregate_celltype_counts,
@@ -117,9 +118,37 @@ def mock_context(tmp_path):
     return Context()
 
 
+@pytest.fixture
+def paired_adata():
+    """Build a donor-paired cohort: 6 donors, each contributing both conditions.
+
+    Distinct from ``synthetic_adata``, where donors are nested within condition.
+    Pairing is a property of the cohort rather than a setting, so both shapes need
+    covering: this one must be fitted within donor, and that one must not be.
+    Type1 rises in Disease in every donor, so the donor-level audit has a known
+    answer.
+    """
+
+    rng = np.random.default_rng(7)
+    rows = []
+    for index in range(6):
+        donor = f"P{index}"
+        for condition, base in (("Normal", (100, 50, 30)), ("Disease", (95, 80, 30))):
+            for cell_type, mean in zip(("Type0", "Type1", "Type2"), base, strict=True):
+                for _ in range(int(rng.poisson(mean))):
+                    rows.append({"donor": donor, "condition": condition, "cell_type": cell_type})
+
+    obs = pd.DataFrame(rows)
+    return ad.AnnData(X=np.zeros((len(obs), 10)), obs=obs)
+
+
 @pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
 def test_sccoda_happy_path_auto_only(synthetic_adata, mock_context):
-    """Run scCODA with auto-reference only and verify the output."""
+    """With engine reference selection disabled, only scCODA's own auto fit runs.
+
+    This is the escape hatch that reproduces a pre-existing table: the engine
+    normally picks the reference itself, so auto-only has to be asked for.
+    """
 
     method = SccodaMethod()
     config = {
@@ -130,6 +159,7 @@ def test_sccoda_happy_path_auto_only(synthetic_adata, mock_context):
         "control": "Normal",
         "seed": 0,
         "num_iterations": 2000,  # Fast for testing
+        "select_reference": False,
     }
 
     result = method.run(synthetic_adata, config, mock_context)
@@ -165,6 +195,52 @@ def test_sccoda_happy_path_auto_only(synthetic_adata, mock_context):
     assert result.metrics["control"] == "Normal"
     assert result.metrics["n_samples"] == 6
     assert result.metrics["n_celltypes"] == 3
+    assert result.metrics["reference_source"] == "sccoda_automatic"
+
+    # The sampler diagnostics are what separate a null result from a dead chain, so
+    # they must survive the trip back from the helper.
+    assert 0.0 < result.metrics["sccoda_acceptance_rate_min"] <= 1.0
+    assert result.metrics["sccoda_formula"] == 'Q("condition")'
+
+
+@pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
+def test_sccoda_engine_picks_the_reference_by_default(synthetic_adata, mock_context):
+    """The engine chooses the reference and records the criterion behind it.
+
+    Type2 is held at 30 cells per sample in both arms while Type0 and Type1 trade
+    places, so it is the only stable denominator in this cohort and the selector has
+    a knowable right answer.
+    """
+
+    result = SccodaMethod().run(
+        synthetic_adata,
+        {
+            "cell_type_col": "cell_type",
+            "condition_col": "condition",
+            "donor_col": "donor",
+            "case": "Disease",
+            "control": "Normal",
+            "seed": 0,
+            "num_iterations": 2000,
+        },
+        mock_context,
+    )
+
+    assert not isinstance(result, MethodSkip)
+    assert result.metrics["reference_source"] == "engine"
+    assert result.metrics["reference_celltype"] == "Type2"
+    assert result.metrics["reference_relaxed"] is False
+
+    df = pd.read_csv(result.artifacts[0].path)
+    assert set(df["reference"]) == {"auto", "Type2"}
+
+    # The criterion table is emitted so a reader can see what was rejected.
+    criterion = {a.name: a for a in result.artifacts}["da_reference_criterion"]
+    table = pd.read_csv(criterion.path).set_index("cell_type")
+    assert bool(table.loc["Type2", "selected"])
+    assert table.loc["Type2", "clr_variance"] == table["clr_variance"].min()
+
+    assert any("steadiest share" in note for note in result.notes)
 
 
 @pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
@@ -199,8 +275,116 @@ def test_sccoda_dual_reference(synthetic_adata, mock_context):
 
 
 @pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
+def test_sccoda_declines_pairing_when_donors_are_nested(synthetic_adata, mock_context):
+    """A donor term is refused when no donor spans both arms.
+
+    In this cohort each donor appears in one condition only, so donor is collinear
+    with condition: adding it would remove the contrast of interest rather than the
+    donor effect. The refusal has to be recorded, not silent.
+    """
+
+    result = SccodaMethod().run(
+        synthetic_adata,
+        {
+            "cell_type_col": "cell_type",
+            "condition_col": "condition",
+            "donor_col": "donor",
+            "case": "Disease",
+            "control": "Normal",
+            "seed": 0,
+            "num_iterations": 2000,
+            # Even when pairing is demanded, the design cannot support it.
+            "pair_by_donor": "always",
+        },
+        mock_context,
+    )
+
+    assert not isinstance(result, MethodSkip)
+    assert result.metrics["paired_by_donor"] is False
+    assert result.metrics["n_paired_donors"] == 0
+    assert any("collinear with condition" in note for note in result.notes)
+    assert result.metrics["sccoda_formula"] == 'Q("condition")'
+
+    # With no donor pairs there is nothing for the concordance audit to say.
+    assert result.metrics["n_donor_consistent"] is None
+
+
+@pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
+def test_sccoda_pairs_by_donor_and_audits_donor_concordance(paired_adata, mock_context):
+    """A matched cohort is fitted within donor and its calls are audited per donor."""
+
+    result = SccodaMethod().run(
+        paired_adata,
+        {
+            "cell_type_col": "cell_type",
+            "condition_col": "condition",
+            "donor_col": "donor",
+            "case": "Disease",
+            "control": "Normal",
+            "seed": 0,
+            "num_iterations": 2000,
+        },
+        mock_context,
+    )
+
+    assert not isinstance(result, MethodSkip)
+    assert result.metrics["paired_by_donor"] is True
+    assert result.metrics["n_paired_donors"] == 6
+
+    # Donor must enter as a category, not as a number. Donor ids are frequently
+    # integers, and patsy would otherwise fit a linear trend across donor index.
+    assert result.metrics["sccoda_formula"] == 'Q("condition") + C(Q("donor"))'
+    assert any("donor-paired" in note for note in result.notes)
+
+    # The concordance audit runs and its columns are merged into the DA table.
+    concordance = {a.name: a for a in result.artifacts}["da_donor_concordance"]
+    audit = pd.read_csv(concordance.path).set_index("cell_type")
+    assert set(audit.index) == {"Type0", "Type1", "Type2"}
+    assert audit.loc["Type1", "n_pairs"] == 6
+    assert audit.loc["Type1", "direction"] == 1
+
+    df = pd.read_csv(result.artifacts[0].path)
+    assert {"pattern", "n_agree", "sign_test_p"} <= set(df.columns)
+    assert result.metrics["n_donor_consistent"] >= 1
+
+
+def test_a_declared_unpaired_design_is_not_overridden_by_the_data():
+    """``design.paired: false`` is an instruction, and under ``auto`` it wins.
+
+    Inferring pairing from the data is the right default when nothing is declared, and
+    the wrong answer when something is: a cohort whose donors happen to span both arms
+    would otherwise be donor-modelled against instruction, and scCODA's fit would then
+    disagree with every other method in the same run about what design was tested.
+    """
+    resolve = SccodaMethod._resolve_pairing
+
+    # Nothing declared: the data-driven rule stands.
+    assert resolve("auto", 9, declared=None)[0] is True
+    # Declared unpaired: pairing is off, and the reason names both inputs.
+    off, reason = resolve("auto", 9, declared=False)
+    assert off is False
+    assert "paired=false" in reason and "auto" in reason
+    # An explicit switch still beats the declaration in both directions.
+    assert resolve("always", 9, declared=False)[0] is True
+    assert resolve("never", 9, declared=True)[0] is False
+
+    # The override is one-directional: declaring a cohort matched does not create the
+    # degrees of freedom to model it below the house floor.
+    assert resolve("auto", 2, declared=True)[0] is False
+    assert resolve("always", 2, declared=True)[0] is True
+
+
+@pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
 def test_sccoda_determinism(synthetic_adata, mock_context, tmp_path):
-    """Run scCODA twice with the same seed and verify identical credible_effect."""
+    """Run scCODA twice with the same seed and verify the posterior is identical.
+
+    Asserting only ``credible_effect`` is too weak to protect this. When the fit
+    was genuinely non-reproducible, two runs on a byte-identical input returned
+    inclusion probabilities of 0.729 vs 0.875, and the boolean still matched --
+    so the boolean-only assertion passed on roughly three runs in five and this
+    test read as a flake instead of the defect it was. The posterior is the thing
+    that has to be reproducible; the classification is downstream of it.
+    """
 
     method = SccodaMethod()
     config = {
@@ -234,8 +418,79 @@ def test_sccoda_determinism(synthetic_adata, mock_context, tmp_path):
     assert not isinstance(result2, MethodSkip)
     df2 = pd.read_csv(result2.artifacts[0].path)
 
-    # credible_effect should be identical
+    # Same seed, same input, same rows -- in the same order.
+    assert df1["cell_type"].tolist() == df2["cell_type"].tolist()
+
+    # The posterior itself, not just its thresholded summary. Exact equality is the
+    # right bar: the fit is single-threaded with op determinism on, so the reduction
+    # order is fixed and there is no legitimate source of last-bit drift left.
+    for column in ("inclusion_probability", "log2_fold_change"):
+        pd.testing.assert_series_equal(df1[column], df2[column], check_exact=True)
+
     assert df1["credible_effect"].tolist() == df2["credible_effect"].tolist()
+
+
+def test_sccoda_helper_pins_single_threaded_execution():
+    """The fit helper must pin both TF thread pools and the BLAS/OpenMP thread counts.
+
+    This is asserted against the *source* rather than by running the helper, for two
+    reasons. The helper only imports tensorflow inside ``sccoda_env``, so this test
+    process cannot execute the code path; and the pinning has to happen before any op
+    is constructed, so there is no later moment at which it could be observed from
+    outside anyway.
+
+    It is worth guarding because of how the defect presented. Dropping these lines
+    does not break anything visibly -- it reintroduces a fit that returns a different
+    posterior on maybe two runs in five, which reads as a flaky test rather than as
+    irreproducible science. The AST walk (rather than a text search) is deliberate:
+    commenting the calls out is exactly the regression to catch, and a text search
+    would still find them in the comment.
+
+    The environment variables must be *assigned*, not ``setdefault``-ed. A machine
+    that already exports OMP_NUM_THREADS would silently keep its own value and lose
+    the pin, so yielding to the ambient environment is itself the bug.
+    """
+
+    tree = ast.parse(SCCODA_HELPER.read_text())
+
+    pinned_pools = set()
+    assigned_env = set()
+    deferred_env = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            target = ast.unparse(node.func)
+            if target.endswith(
+                ("set_inter_op_parallelism_threads", "set_intra_op_parallelism_threads")
+            ):
+                assert (
+                    node.args and ast.literal_eval(node.args[0]) == 1
+                ), f"{target} must be pinned to 1 thread, got {ast.unparse(node)}"
+                pinned_pools.add(target.rsplit(".", 1)[-1])
+            elif target == "os.environ.setdefault" and len(node.args) == 2:
+                deferred_env.add(ast.literal_eval(node.args[0]))
+        elif isinstance(node, ast.Assign):
+            for goal in node.targets:
+                if (
+                    isinstance(goal, ast.Subscript)
+                    and ast.unparse(goal.value) == "os.environ"
+                    and isinstance(goal.slice, ast.Constant)
+                ):
+                    assigned_env.add(goal.slice.value)
+
+    assert pinned_pools == {
+        "set_inter_op_parallelism_threads",
+        "set_intra_op_parallelism_threads",
+    }, f"both TF thread pools must be pinned in {SCCODA_HELPER.name}, found {pinned_pools}"
+
+    for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "TF_DETERMINISTIC_OPS"):
+        assert variable not in deferred_env, (
+            f"{SCCODA_HELPER.name} sets {variable} with setdefault, which yields to the "
+            f"calling environment and loses the pin; assign it instead"
+        )
+        assert (
+            variable in assigned_env
+        ), f"{SCCODA_HELPER.name} must assign {variable} before the TF import"
 
 
 def test_sccoda_skip_missing_cell_type_col(synthetic_adata, mock_context):
@@ -336,3 +591,68 @@ def test_sccoda_composition_helper_respects_disable_flag(synthetic_adata, mock_c
         context=mock_context,
     )
     assert artifacts == []
+
+
+def _two_fits(primary_credible: list[str], alternate_credible: list[str]) -> tuple:
+    """Build the two fit blocks with stated credible sets."""
+
+    def block(reference: str, credible: list[str]) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "cell_type": ["A", "B", "C"],
+                "credible_effect": [ct in credible for ct in ["A", "B", "C"]],
+                "reference": reference,
+            }
+        )
+
+    return block("B", primary_credible), block("auto", alternate_credible)
+
+
+def test_reference_sensitivity_reports_an_unchanged_credible_set():
+    """The second fit is already paid for; whether it agrees is the robustness claim."""
+
+    primary, alternate = _two_fits(["A", "C"], ["C", "A"])
+
+    metrics = SccodaMethod._reference_sensitivity(primary, alternate)
+
+    assert metrics["n_credible_alternate_reference"] == 2
+    assert metrics["credible_set_reference_stable"] is True
+    assert metrics["credible_set_reference_disagreement"] is None
+
+
+def test_reference_sensitivity_names_the_cell_types_that_disagree():
+    """A credible set that depends on the denominator is a weaker claim, and says so."""
+
+    primary, alternate = _two_fits(["A", "C"], ["A"])
+
+    metrics = SccodaMethod._reference_sensitivity(primary, alternate)
+
+    assert metrics["credible_set_reference_stable"] is False
+    assert metrics["credible_set_reference_disagreement"] == "C"
+
+
+def test_reference_sensitivity_keeps_its_schema_when_only_one_fit_ran():
+    """Metric keys must not appear and disappear between runs."""
+
+    primary, _ = _two_fits(["A"], [])
+
+    metrics = SccodaMethod._reference_sensitivity(primary, primary.iloc[0:0])
+
+    assert set(metrics) == {
+        "n_credible_alternate_reference",
+        "credible_set_reference_stable",
+        "credible_set_reference_disagreement",
+    }
+    assert all(value is None for value in metrics.values())
+
+
+def test_restack_marks_the_reported_fit_only_when_there_are_two():
+    """The marker exists to disambiguate; with one fit there is nothing to disambiguate."""
+
+    primary, alternate = _two_fits(["A"], ["A"])
+
+    stacked = SccodaMethod._restack(primary, alternate)
+    assert list(stacked["is_primary"]) == [True] * 3 + [False] * 3
+
+    alone = SccodaMethod._restack(primary, primary.iloc[0:0])
+    assert "is_primary" not in alone.columns

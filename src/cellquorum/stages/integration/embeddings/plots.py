@@ -9,16 +9,13 @@ House-style figure saving integrated from save.py for the embeddings stage.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import anndata as ad
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
-from cellquorum.core.stage import StageArtifact
+from cellquorum.visualization.figio import figure_artifacts, save_figure
 from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
 from cellquorum.visualization.figstyle import apply_cellquorum_theme, distinct_palette
@@ -294,35 +291,9 @@ def apply_theme() -> None:
     mpl.rcParams.update({"svg.fonttype": "none", "pdf.fonttype": 42})
 
 
-def save_figure(
-    fig: Figure,
-    out_dir: str | Path,
-    stem: str,
-    *,
-    formats: tuple[str, ...] = ("pdf", "png"),
-    dpi: int = 300,
-) -> list[Path]:
-    """Write ``fig`` to ``out_dir/stem.<fmt>`` for each format, then close it.
-
-    Creates ``out_dir`` (and parents) if absent. Returns paths in ``formats`` order.
-    """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths: list[Path] = []
-    for fmt in formats:
-        path = out_dir / f"{stem}.{fmt}"
-        fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
-        paths.append(path)
-    plt.close(fig)
-    return paths
-
-
-def figure_artifacts(paths: list[Path], *, name: str, description: str) -> list[StageArtifact]:
-    """Wrap saved figure paths as ``kind='figure'`` stage artifacts."""
-    return [
-        StageArtifact(name=name, path=path, kind="figure", description=description)
-        for path in paths
-    ]
+# save_figure/figure_artifacts are re-exported, not redefined: the local copy was
+# a bare savefig loop that left truncated files behind and abandoned the remaining
+# formats when one raised mid-write. See visualization.figio.
 
 
 __all__ = [

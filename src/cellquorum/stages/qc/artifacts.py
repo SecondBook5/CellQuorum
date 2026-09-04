@@ -23,17 +23,18 @@ import pandas as pd
 # Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
 
+# Import the differential-attrition audit container.
+from cellquorum.stages.qc.attrition import AttritionAudit
+
 # Import QC configuration.
 from cellquorum.stages.qc.config import QCConfig
 
-# Import QC decision result container and the report-table builder.
-from cellquorum.stages.qc.decisions import QCDecisionResult, build_qc_report_table
-
-# Import QC metric result container.
+# Import the floor result and the report-table builder.
+from cellquorum.stages.qc.floors import FloorResult, build_qc_report_table
 from cellquorum.stages.qc.metrics import QCMetricsResult
+from cellquorum.stages.qc.mixture import MitoMixtureResult
 
 # Import QC threshold result container.
-from cellquorum.stages.qc.thresholds import QCThresholdResult
 
 
 class QCArtifactError(CellQuorumDataError):
@@ -123,14 +124,17 @@ def write_qc_artifacts(
     *,
     output_dir: str | PathLike[str] | Path,
     metrics_result: QCMetricsResult,
-    threshold_result: QCThresholdResult,
-    decision_result: QCDecisionResult,
+    floors: FloorResult,
+    mixture: MitoMixtureResult | None = None,
     config: QCConfig | None = None,
     adata: ad.AnnData | None = None,
     summary_extra: dict[str, object] | None = None,
     group_key: str | None = None,
     report_groups: pd.Series | None = None,
     report_group_name: str = "cell_type",
+    figure_adata: ad.AnnData | None = None,
+    publication_keys: dict[str, str] | None = None,
+    attrition_audit: AttritionAudit | None = None,
 ) -> QCArtifactManifest:
     """
     Write QC module artifacts to disk.
@@ -143,8 +147,8 @@ def write_qc_artifacts(
     Args:
         output_dir: Directory where QC artifacts should be written.
         metrics_result: Calculated QC metrics.
-        threshold_result: Constructed QC thresholds.
-        decision_result: Applied QC decisions.
+        floors: Floor masks, reasons and counts.
+        mixture: Fitted mitochondrial mixture, or None.
         config: Optional QC configuration. Defaults to QCConfig().
         adata: Optional AnnData object to write as qc.h5ad when enabled.
         summary_extra: Optional extra JSON-friendly values to include in the
@@ -152,11 +156,27 @@ def write_qc_artifacts(
         group_key: Optional obs column name for grouping QC figures by
             condition, donor, or sample.
         report_groups: Optional per-cell group labels (typically cell type)
-            aligned to ``decision_result.cell_decisions.index``, used to resolve
+            aligned to every input cell, used to resolve
             the per-group QC report table. When None the report collapses to a
             single TOTAL row.
         report_group_name: Name of the leading group column in the QC report
             table (defaults to ``cell_type``).
+        figure_adata: Optional PRE-filter AnnData used for figures only. Under
+            ``mode="filter"`` the ``adata`` written as qc.h5ad has already had
+            failing cells removed, so keep/fail figures drawn from it report a
+            100% pass rate no matter how many cells were dropped. Pass the
+            annotated pre-filter object here so the figures show the population
+            QC actually acted on. Defaults to ``adata``.
+        publication_keys: Optional resolved obs column names and condition
+            labels for the publication panels, e.g.
+            ``{"patient_key": "donor_id", "condition_key": "condition"}``. The
+            publication writer defaults to ``patient_id``, which no CellQuorum
+            cohort schema uses, so without this the whole suite raises and is
+            swallowed into a warning.
+        attrition_audit: Optional differential-attrition audit to write as
+            ``qc_attrition.csv``. None writes nothing and records the skip, so a
+            run predating the audit is distinguishable from one where it found
+            nothing to test.
 
     Returns:
         QCArtifactManifest describing written, skipped, and warned artifacts.
@@ -171,8 +191,7 @@ def write_qc_artifacts(
     # Validate artifact writer inputs.
     validate_qc_artifact_inputs(
         metrics_result=metrics_result,
-        threshold_result=threshold_result,
-        decision_result=decision_result,
+        floors=floors,
         config=qc_config,
         adata=adata,
     )
@@ -191,9 +210,17 @@ def write_qc_artifacts(
 
     # Write metric tables when enabled.
     if qc_config.outputs.write_metrics_table:
-        # Write cell metrics.
+        # Write cell metrics, including any column a model-based rule computed
+        # while building its threshold.
+        #
+        # Those columns are what the rule actually thresholded on, so a table
+        # without them cannot be used to reproduce the rule's own decision. The
+        # decision step attaches them to an internal copy; attaching them here
+        # too is what puts them on disk.
         artifacts["cell_metrics"] = write_dataframe_artifact(
-            metrics_result.cell_metrics,
+            # With the mixture posterior attached: it is a per-cell measurement, so it belongs
+            # in the metric table rather than only inside the graded evidence columns.
+            _metrics_with_posterior(metrics_result.cell_metrics, mixture),
             output_path / "cell_metrics.csv",
             index=True,
         )
@@ -217,46 +244,123 @@ def write_qc_artifacts(
         # Store metric table skips.
         skipped.extend(["cell_metrics", "gene_metrics", "feature_masks"])
 
-    # Write threshold table when enabled.
-    if qc_config.outputs.write_threshold_table:
-        # Write threshold records.
-        artifacts["thresholds"] = write_dataframe_artifact(
-            threshold_result.to_dataframe(),
-            output_path / "thresholds.csv",
-            index=False,
-        )
+    # thresholds.csv is gone with the threshold path. What replaced it is not another table of
+    # bounds: the graded policy is two severity bars plus a concordance requirement, recorded in
+    # provenance and stated in the figure notes, and the per-cell evidence behind it is on obs.
+    if qc_config.outputs.write_mixture_table:
+        # The fitted mitochondrial mixture, when that policy ran: both component fits, their
+        # variances, and how many cells each post-processing rule moved.
+        #
+        # It used to ride the threshold flag on the grounds that it was the derivation of the
+        # mitochondrial threshold. There is no such threshold now — the posterior feeds the graded
+        # metabolic axis — so the model has a flag of its own, which is what it always was.
+        if mixture is not None:
+            artifacts["mito_mixture"] = write_dataframe_artifact(
+                mixture.to_dataframe(),
+                output_path / "qc_mito_mixture.csv",
+                index=False,
+            )
 
-    # Record skipped threshold table.
+        # Record the skipped mixture table when the policy did not run.
+        else:
+            skipped.append("mito_mixture")
+
     else:
-        # Store threshold table skip.
-        skipped.append("thresholds")
+        skipped.append("mito_mixture")
 
     # Write decision tables when enabled.
     if qc_config.outputs.write_filter_table:
         # Write cell decisions.
-        artifacts["cell_decisions"] = write_dataframe_artifact(
-            decision_result.cell_decisions,
-            output_path / "cell_decisions.csv",
+        artifacts["cell_floors"] = write_dataframe_artifact(
+            floors.cell_table(),
+            output_path / "cell_floors.csv",
             index=True,
         )
 
         # Write gene decisions.
-        artifacts["gene_decisions"] = write_dataframe_artifact(
-            decision_result.gene_decisions,
-            output_path / "gene_decisions.csv",
+        artifacts["gene_floors"] = write_dataframe_artifact(
+            floors.gene_table(),
+            output_path / "gene_floors.csv",
             index=True,
         )
 
     # Record skipped decision tables.
     else:
         # Store decision table skips.
-        skipped.extend(["cell_decisions", "gene_decisions"])
+        skipped.extend(["cell_floors", "gene_floors"])
+
+    # Write the differential-attrition audit when one was run. The table carries
+    # its skipped tests too, so a reader can tell "checked and clean" from
+    # "never checked" -- which is the difference between a methods sentence that
+    # is true and one that is a guess.
+    if qc_config.outputs.attrition_audit and attrition_audit is not None:
+        artifacts["attrition"] = write_dataframe_artifact(
+            attrition_audit.to_dataframe(),
+            output_path / "qc_attrition.csv",
+            index=False,
+        )
+
+    # Record the skipped attrition table.
+    else:
+        # Store the attrition table skip.
+        skipped.append("attrition")
+
+    # Resolve the object that anything describing the FILTER must read from.
+    # Under mode="filter" ``adata`` has already lost the failing cells, so a
+    # keep/fail figure or an attrition table drawn from it reports a 100% pass
+    # rate however many cells were dropped.
+    figure_source = figure_adata if figure_adata is not None else adata
+
+    # Write the grouping labels of every cell that ENTERED QC. The h5ad written
+    # above has already lost the removed cells under mode="filter", so this table
+    # is the only place a later re-render can learn what a removed cell was — and
+    # without it a by-cell-type attrition figure reports 0% removed for every
+    # type, which is the most convincing wrong figure this stage can produce.
+    if qc_config.outputs.cell_labels:
+        if figure_source is not None:
+            from cellquorum.visualization.qc.panels import resolve_cell_type_keys
+
+            keys = publication_keys or {}
+            # Cell-type columns are auto-detected rather than passed through
+            # ``publication_keys``: that dict is splatted into the legacy figure
+            # writer, which would reject an argument it does not declare.
+            coarse_key, granular_key = resolve_cell_type_keys(figure_source.obs)
+            label_columns = {
+                "sample": keys.get("sample_key") or keys.get("patient_key"),
+                "donor": keys.get("patient_key"),
+                "condition": keys.get("condition_key"),
+                "cell_type": coarse_key,
+                "cell_type_granular": granular_key,
+            }
+            labels = pd.DataFrame(index=figure_source.obs_names.copy())
+            for name, column in label_columns.items():
+                if column and column in figure_source.obs.columns:
+                    labels[name] = figure_source.obs[column].astype(str).to_numpy()
+
+            # Skipped, not warned: an object with no cohort or cell-type columns
+            # has no labels to lose, and the missing object or missing cohort keys
+            # are already reported where they are resolved. The skip list is the
+            # manifest's own channel for "flag on, nothing to write".
+            if len(labels.columns):
+                artifacts["cell_labels"] = write_dataframe_artifact(
+                    labels,
+                    output_path / "cell_labels.csv",
+                    index=True,
+                )
+            else:
+                skipped.append("cell_labels")
+        else:
+            skipped.append("cell_labels")
+
+    # Record skipped label table when disabled.
+    else:
+        skipped.append("cell_labels")
 
     # Write the per-group QC report table when enabled.
     if qc_config.outputs.write_report_table:
         # Build the report table from the (unfiltered) cell decisions.
         report_table = build_qc_report_table(
-            decision_result.cell_decisions,
+            floors.cell_table(),
             groups=report_groups,
             group_name=report_group_name,
         )
@@ -291,50 +395,173 @@ def write_qc_artifacts(
         # Store h5ad skip.
         skipped.append("qc_h5ad")
 
-    # Write QC figures when enabled and AnnData is available.
-    if qc_config.outputs.write_figures:
-        if adata is not None:
-            # Import figure writer locally to avoid circular imports.
-            from cellquorum.visualization.qc.diagnostics import write_qc_figures
+    # Write the single-file HTML QC report when enabled. It reads the same tables
+    # already written above, so it never disagrees with them.
+    if qc_config.outputs.html_report:
+        if figure_source is not None:
+            try:
+                from cellquorum.visualization.qc.html_report import write_qc_html_report
 
-            # Generate and write QC figures.
-            fig_result = write_qc_figures(
-                adata,
-                output_path,
-                dpi=qc_config.outputs.figure_dpi,
-                figure_format=qc_config.outputs.figure_format,
-                overwrite=True,
-                thresholds=threshold_result,
-                group_key=group_key,
+                keys = publication_keys or {}
+                # A Path, like every other table artifact, so callers can treat the
+                # manifest uniformly.
+                artifacts["html_report"] = write_qc_html_report(
+                    output_path / "qc_report.html",
+                    cell_metrics=metrics_result.cell_metrics,
+                    cell_decisions=floors.cell_table(),
+                    obs=figure_source.obs,
+                    # Fall back through sample -> donor: a cohort without a
+                    # sample column still gets a meaningful attrition table.
+                    sample_key=keys.get("sample_key") or keys.get("patient_key") or "sample_id",
+                    donor_key=keys.get("patient_key"),
+                    condition_key=keys.get("condition_key"),
+                    gene_summary={
+                        "n_genes": int(len(floors.gene_keep)),
+                        "n_genes_kept": int(floors.gene_keep.sum()),
+                    },
+                    project=output_path.parent.parent.name or "CellQuorum",
+                    mode=str(qc_config.mode),
+                    case_label=keys.get("disease_label"),
+                )
+            except Exception as exc:  # pragma: no cover - defensive report fallback
+                skipped.append("html_report")
+                warnings.append(f"HTML QC report could not be written: {type(exc).__name__}: {exc}")
+        else:
+            skipped.append("html_report")
+            warnings.append(
+                "QCOutputConfig.html_report is true, but no AnnData was provided, so the "
+                "per-sample attrition table has no sample labels to group by."
             )
 
-            # Record figure paths in the artifact manifest.
-            figure_paths = [str(p) for p in fig_result.figure_paths]
+    # Record skipped HTML report when disabled.
+    else:
+        skipped.append("html_report")
 
-            # Propagate figure-generation warnings.
-            warnings.extend(fig_result.warnings)
+    # Write the typeset publication tables when enabled. Same numbers as the CSVs,
+    # set as a manuscript Table 1 rather than dumped as a grid.
+    if qc_config.outputs.publication_tables:
+        if figure_source is not None:
+            try:
+                from cellquorum.visualization.qc.publication_table import (
+                    write_qc_publication_tables,
+                )
 
-            # Write mast-cell/LE-KC style publication QC panels for every QC run.
-            # These are not a separate user-facing method; they are part of the
-            # default QC figure contract alongside the standard audit plots. The
-            # pipeline path writes a single configured format (not png+pdf+svg)
-            # so a large cohort does not pay 3x figure I/O per panel by default.
-            if qc_config.outputs.publication_figures:
-                try:
-                    from cellquorum.visualization.qc.publication import write_publication_qc_figures
-
-                    publication_paths = write_publication_qc_figures(
-                        adata,
-                        output_path / "publication",
-                        thresholds=threshold_result.to_dataframe(),
+                keys = publication_keys or {}
+                artifacts["publication_tables"] = [
+                    str(path)
+                    for path in write_qc_publication_tables(
+                        output_path,
+                        cell_metrics=metrics_result.cell_metrics,
+                        cell_decisions=floors.cell_table(),
+                        obs=figure_source.obs,
+                        sample_key=(
+                            keys.get("sample_key") or keys.get("patient_key") or "sample_id"
+                        ),
+                        donor_key=keys.get("patient_key"),
+                        condition_key=keys.get("condition_key"),
+                        gene_summary={
+                            "n_genes": int(len(floors.gene_keep)),
+                            "n_genes_kept": int(floors.gene_keep.sum()),
+                        },
+                        case_label=keys.get("disease_label"),
+                        project=output_path.parent.parent.name or "CellQuorum",
+                        formats=("html", "tex", qc_config.outputs.figure_format),
                         dpi=qc_config.outputs.figure_dpi,
-                        formats=(qc_config.outputs.figure_format,),
                     )
-                    figure_paths.extend(str(p) for p in publication_paths)
+                ]
+            except Exception as exc:  # pragma: no cover - defensive table fallback
+                skipped.append("publication_tables")
+                warnings.append(
+                    f"Publication QC tables could not be written: {type(exc).__name__}: {exc}"
+                )
+        else:
+            skipped.append("publication_tables")
+            warnings.append(
+                "QCOutputConfig.publication_tables is true, but no AnnData was provided, so "
+                "the per-sample table has no sample labels to group by."
+            )
+    else:
+        skipped.append("publication_tables")
+
+    # Write QC figures when enabled and AnnData is available. Figures render from
+    # the pre-filter object when one is supplied: the filtered object cannot show
+    # what QC removed.
+    if qc_config.outputs.write_figures:
+        if figure_source is not None:
+            # Collect paths across the three independent figure writers below.
+            # None of them is a prerequisite for another: a run can emit the
+            # overview panels without the per-metric audit plots, which is the
+            # default, because sixteen distribution plots do not answer "what did
+            # QC remove" and the six panels do.
+            figure_paths: list[str] = []
+
+            # Graded QC panels: always written when graded columns exist. Not behind a flag —
+            # they are the only figures that can describe the graded model, and a run whose
+            # verdict nobody can see is the failure this whole area exists to fix.
+            try:
+                from cellquorum.visualization.qc.graded import write_graded_qc_figures
+
+                graded_paths, graded_warnings = write_graded_qc_figures(
+                    figure_source.obs,
+                    output_path,
+                    concern_severity=qc_config.graded.concern_severity,
+                    sample_column=group_key or "sample_id",
+                    pair_column=(publication_keys or {}).get("patient_key") or "donor_id",
+                    condition_column=(publication_keys or {}).get("condition_key") or "condition",
+                    dpi=qc_config.outputs.figure_dpi,
+                )
+                figure_paths.extend(str(path) for path in graded_paths)
+                warnings.extend(graded_warnings)
+            except Exception as exc:  # pragma: no cover - defensive figure fallback
+                warnings.append(
+                    f"Graded QC figures could not be written: {type(exc).__name__}: {exc}"
+                )
+
+            # Write the figure-ready QC panel set. It answers "what did QC do to this
+            # cohort", which is the question a reviewer asks and the one per-metric
+            # histograms cannot address.
+            #
+            # The two v1 writers that used to sit here — `visualization.qc.diagnostics`
+            # (per-metric audit plots) and `visualization.qc.publication` (the legacy
+            # mast-cell/LE-KC panels) — were deleted with the threshold path. Both keyed
+            # on `cellquorum_qc_keep`, a verdict that no longer exists, so neither could
+            # render a graded run. `write_graded_qc_figures` above replaces them.
+            if qc_config.outputs.overview_figures:
+                try:
+                    from cellquorum.visualization.qc.panels import (
+                        assemble_qc_frame,
+                        write_qc_panels,
+                    )
+
+                    keys = publication_keys or {}
+                    panel_frame = assemble_qc_frame(
+                        obs=figure_source.obs,
+                        # The mixture panel colours cells by the posterior the model assigned
+                        # them, which now comes from the mixture directly rather than from
+                        # threshold-derived columns merged into the metric table.
+                        cell_metrics=_metrics_with_posterior(metrics_result.cell_metrics, mixture),
+                        cell_decisions=floors.cell_table(),
+                        sample_key=keys.get("sample_key") or keys.get("patient_key"),
+                        donor_key=keys.get("patient_key"),
+                        condition_key=keys.get("condition_key"),
+                    )
+                    mixture_models, mixture_ceiling = resolve_mixture_panel_inputs(mixture)
+                    figure_paths.extend(
+                        str(p)
+                        for p in write_qc_panels(
+                            panel_frame,
+                            output_path,
+                            case_label=keys.get("disease_label"),
+                            formats=(qc_config.outputs.figure_format,),
+                            dpi=qc_config.outputs.figure_dpi,
+                            mixture_models=mixture_models,
+                            mixture_ceiling=mixture_ceiling,
+                            mixture_posterior_cutoff=qc_config.mito_mixture.posterior_cutoff,
+                        )
+                    )
                 except Exception as exc:  # pragma: no cover - defensive figure fallback
                     warnings.append(
-                        "Publication-style QC figures could not be written: "
-                        f"{type(exc).__name__}: {exc}"
+                        "QC overview panels could not be written: " f"{type(exc).__name__}: {exc}"
                     )
 
             artifacts["figures"] = figure_paths
@@ -353,8 +580,7 @@ def write_qc_artifacts(
         # Build summary payload.
         summary_payload = build_qc_summary_payload(
             metrics_result=metrics_result,
-            threshold_result=threshold_result,
-            decision_result=decision_result,
+            floors=floors,
             artifact_names=artifacts,
             skipped=skipped,
             warnings=warnings,
@@ -381,11 +607,69 @@ def write_qc_artifacts(
     )
 
 
+def _metrics_with_posterior(
+    cell_metrics: pd.DataFrame,
+    mixture: MitoMixtureResult | None,
+) -> pd.DataFrame:
+    """Metric table with the mixture posterior attached, for the mixture panel.
+
+    Without the posterior the panel still renders, in two flat colours that say nothing about the
+    model — so it is attached here rather than left to the caller to remember.
+    """
+    if mixture is None or mixture.posterior.empty:
+        return cell_metrics
+    from cellquorum.stages.qc.mixture import MIQC_POSTERIOR_COLUMN
+
+    merged = cell_metrics.copy()
+    merged[MIQC_POSTERIOR_COLUMN] = mixture.posterior.reindex(merged.index)
+    return merged
+
+
+def resolve_mixture_panel_inputs(
+    mixture: MitoMixtureResult | None,
+) -> tuple[pd.DataFrame | None, float | None]:
+    """
+    Reduce a fitted mixture to what the mixture figure needs, or to nothing.
+
+    Args:
+        mixture: The fitted mixture, or None when the policy did not run.
+
+    Returns:
+        The fitted model table and the single mitochondrial ceiling to draw, or
+        ``(None, None)`` when no model was fit. The ceiling is returned only when
+        ONE applies to the whole object: a grouped fit produces one ceiling per
+        group, and drawing any single one of them as a horizontal line across a
+        pooled scatter would assert a bound that most of the cells were never
+        judged against.
+    """
+
+    # Return nothing when the mixture policy did not run.
+    if mixture is None:
+        return None, None
+
+    # Return nothing when the policy ran but fit no group, which is what happens
+    # on an object too small or too uniform for the mixture to be identifiable.
+    models = mixture.to_dataframe()
+    if not len(models):
+        return None, None
+
+    # Take the ceiling only when it is unambiguous.
+    # Bound in the comprehension rather than filtered via getattr: filtering on an attribute
+    # lookup cannot narrow the element type, so the list stayed `float | None` and the float()
+    # below was unchecked.
+    ceilings = [
+        value
+        for record in mixture.ceilings
+        if (value := getattr(record, "ceiling", None)) is not None
+    ]
+    ceiling = float(ceilings[0]) if len(ceilings) == 1 else None
+    return models, ceiling
+
+
 def validate_qc_artifact_inputs(
     *,
     metrics_result: QCMetricsResult,
-    threshold_result: QCThresholdResult,
-    decision_result: QCDecisionResult,
+    floors: FloorResult,
     config: QCConfig,
     adata: ad.AnnData | None,
 ) -> None:
@@ -394,8 +678,7 @@ def validate_qc_artifact_inputs(
 
     Args:
         metrics_result: QC metrics result.
-        threshold_result: QC threshold result.
-        decision_result: QC decision result.
+        floors: Floor masks and counts.
         config: QC configuration.
         adata: Optional AnnData object.
 
@@ -410,18 +693,10 @@ def validate_qc_artifact_inputs(
         )
 
     # Validate threshold result type.
-    if not isinstance(threshold_result, QCThresholdResult):
-        raise QCArtifactError(
-            "threshold_result must be a QCThresholdResult. "
-            f"Received: {type(threshold_result).__name__}."
-        )
 
     # Validate decision result type.
-    if not isinstance(decision_result, QCDecisionResult):
-        raise QCArtifactError(
-            "decision_result must be a QCDecisionResult. "
-            f"Received: {type(decision_result).__name__}."
-        )
+    if not isinstance(floors, FloorResult):
+        raise QCArtifactError(f"floors must be a FloorResult. Received: {type(floors).__name__}.")
 
     # Validate config type.
     if not isinstance(config, QCConfig):
@@ -439,8 +714,8 @@ def validate_qc_artifact_inputs(
     validate_artifact_dataframe(metrics_result.feature_masks, table_name="feature_masks")
 
     # Validate decision result tables.
-    validate_artifact_dataframe(decision_result.cell_decisions, table_name="cell_decisions")
-    validate_artifact_dataframe(decision_result.gene_decisions, table_name="gene_decisions")
+    validate_artifact_dataframe(floors.cell_table(), table_name="cell_floors")
+    validate_artifact_dataframe(floors.gene_table(), table_name="gene_floors")
 
 
 def prepare_qc_output_dir(output_dir: str | PathLike[str] | Path) -> Path:
@@ -626,30 +901,13 @@ def write_h5ad_artifact(adata: ad.AnnData, path: Path) -> Path:
     # Ensure the destination parent directory exists.
     ensure_parent_dir(path)
 
-    # Build a temporary path for atomic replacement.
-    temp_path = build_temp_path(path)
+    # Through the shared writer: it opts in to nullable strings, writes atomically,
+    # and coerces the handful of things h5py refuses (see cellquorum.core.h5ad_io).
+    from cellquorum.core.h5ad_io import H5adWriteError, write_h5ad
 
-    # Try writing the h5ad artifact.
     try:
-        # anndata >= 0.11 refuses to write pandas nullable / Arrow-backed
-        # string columns (common in externally annotated objects) unless the
-        # caller opts in. Enable it when the setting exists; older anndata
-        # writes these dtypes without a flag, so the getattr guard is a no-op.
-        if hasattr(ad.settings, "allow_write_nullable_strings"):
-            ad.settings.allow_write_nullable_strings = True
-
-        # Write AnnData to a temporary h5ad file.
-        adata.write_h5ad(temp_path)
-
-        # Atomically replace the target path.
-        temp_path.replace(path)
-
-    # Convert AnnData or filesystem errors into QC artifact errors.
-    except Exception as error:
-        # Remove the temporary file if it exists.
-        cleanup_temp_path(temp_path)
-
-        # Raise a contextual artifact error.
+        write_h5ad(adata, path)
+    except H5adWriteError as error:
         raise QCArtifactError(f"Failed to write QC AnnData artifact '{path}'.") from error
 
     # Return the written path.
@@ -659,8 +917,7 @@ def write_h5ad_artifact(adata: ad.AnnData, path: Path) -> Path:
 def build_qc_summary_payload(
     *,
     metrics_result: QCMetricsResult,
-    threshold_result: QCThresholdResult,
-    decision_result: QCDecisionResult,
+    floors: FloorResult,
     artifact_names: dict[str, Path],
     skipped: list[str],
     warnings: list[str],
@@ -671,8 +928,7 @@ def build_qc_summary_payload(
 
     Args:
         metrics_result: QC metrics result.
-        threshold_result: QC threshold result.
-        decision_result: QC decision result.
+        floors: Floor masks, reasons and counts.
         artifact_names: Written artifact paths by label.
         skipped: Skipped artifact labels.
         warnings: Artifact warnings.
@@ -685,8 +941,7 @@ def build_qc_summary_payload(
     # Build the base summary payload.
     payload: dict[str, object] = {
         "metrics": metrics_result.to_summary_dict(),
-        "thresholds": threshold_result.to_summary_dict(),
-        "decisions": decision_result.to_summary_dict(),
+        "floors": floors.to_summary_dict(),
         "artifacts": {
             artifact_name: (
                 [str(p) for p in artifact_path]
@@ -825,6 +1080,7 @@ __all__ = [
     "cleanup_temp_path",
     "ensure_parent_dir",
     "prepare_qc_output_dir",
+    "resolve_mixture_panel_inputs",
     "to_jsonable",
     "validate_artifact_dataframe",
     "validate_qc_artifact_inputs",

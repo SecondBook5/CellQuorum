@@ -78,6 +78,77 @@ def test_aggregate_celltype_counts_meta_alignment():
     assert "condition" in res.sample_meta.columns
 
 
+def test_a_missing_cell_state_label_does_not_become_a_cell_type():
+    """Cells outside a subclustering focus must not be counted as a state.
+
+    A cell-state column carries NaN by design for every cell the subclustering did
+    not analyse, and ``astype(str)`` would render those as the string "nan" -- a
+    cell type made entirely of technically-excluded cells, sitting in the
+    denominator of every real type's proportion.
+    """
+
+    a = _adata()
+    a.obs["state"] = pd.Categorical(
+        ["S1", "S1", None, "S2", "S2", None] * 2, categories=["S1", "S2"]
+    )
+
+    res = aggregate_celltype_counts(
+        a, donor_col="patient_id", condition_col="condition", cell_type_col="state"
+    )
+
+    assert set(res.counts.columns) == {"S1", "S2"}
+    assert "nan" not in {str(c) for c in res.counts.columns}
+    assert res.counts.values.sum() == 8, "only the labelled cells are counted"
+    assert res.n_unlabeled == 4
+    assert res.notes and "missing grouping value" in res.notes[0]
+    assert "state (4)" in res.notes[0], "the note should name the column responsible"
+
+
+def test_a_missing_donor_or_condition_is_excluded_too():
+    """A cell with no donor or condition cannot be assigned to a sample."""
+
+    a = _adata()
+    obs = a.obs.copy()
+    obs.loc[obs.index[0], "patient_id"] = None
+    obs.loc[obs.index[7], "condition"] = None
+    a.obs = obs
+
+    res = aggregate_celltype_counts(
+        a, donor_col="patient_id", condition_col="condition", cell_type_col="cell_type"
+    )
+
+    assert res.n_unlabeled == 2
+    assert res.counts.values.sum() == 10
+    # No sample key was built from a missing value.
+    assert not any("nan" in str(sample) for sample in res.counts.index)
+
+
+def test_a_fully_labelled_object_reports_no_exclusion():
+    """The common case stays silent: no note, no count, nothing to explain."""
+
+    res = aggregate_celltype_counts(
+        _adata(), donor_col="patient_id", condition_col="condition", cell_type_col="cell_type"
+    )
+
+    assert res.n_unlabeled == 0
+    assert res.notes == ()
+
+
+def test_an_entirely_unlabelled_column_returns_the_empty_shape():
+    """Nothing survives the label check -> empty tables plus the reason."""
+
+    a = _adata()
+    a.obs["state"] = pd.Categorical([None] * 12, categories=["S1"])
+
+    res = aggregate_celltype_counts(
+        a, donor_col="patient_id", condition_col="condition", cell_type_col="state"
+    )
+
+    assert res.counts.empty
+    assert res.n_unlabeled == 12
+    assert res.notes, "an empty result must still carry the explanation"
+
+
 def _summary_inputs():
     """Sample x cell-type counts + condition series with a clean pooled composition.
 
@@ -246,3 +317,41 @@ def test_build_composition_proportions_control_first_ordering():
     # Cell types are alphabetical within a sample.
     d1_n = comp[comp["sample"] == "d1_N"]
     assert list(d1_n["cell_type"]) == ["TypeA", "TypeB"]
+
+
+def test_a_numeric_state_column_is_not_named_with_a_decimal_point():
+    """A subcluster column is float64 (NaN forces it); its states are 1..8, not 1.0..8.0.
+
+    The engine's own subclustering produces exactly this column, and the default
+    ``cell_type_col`` (``leiden``) is numeric-looking too. Naming the state "1.0"
+    here while the R backend's table names the same state "1" made one run report
+    one state under two names, and made the join between those tables raise.
+    """
+
+    a = _adata()
+    a.obs["state"] = pd.Series(
+        [1.0, 1.0, 2.0, 2.0, np.nan, 3.0] * 2, index=a.obs_names, dtype="float64"
+    )
+
+    res = aggregate_celltype_counts(
+        a, donor_col="patient_id", condition_col="condition", cell_type_col="state"
+    )
+
+    assert set(res.counts.columns) == {"1", "2", "3"}
+    assert not any("." in str(column) for column in res.counts.columns)
+    assert res.n_unlabeled == 2
+
+
+def test_a_numeric_donor_id_does_not_build_a_decimal_sample_key():
+    """Donor IDs are often integers; "1.0_Normal" is not a sample name."""
+
+    a = _adata()
+    a.obs["donor_num"] = pd.Series([1.0] * 6 + [2.0] * 6, index=a.obs_names, dtype="float64")
+
+    res = aggregate_celltype_counts(
+        a, donor_col="donor_num", condition_col="condition", cell_type_col="cell_type"
+    )
+
+    assert set(res.counts.index) == {"1_Normal", "1_LE", "2_Normal", "2_LE"}
+    # sample_meta agrees with the key built from it, so a method can match on either.
+    assert set(res.sample_meta["donor_num"]) == {"1", "2"}

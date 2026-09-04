@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.cell_cell_communication.network.ricci_method import RicciMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.cell_cell_communication.network.ricci_method import RicciMethod
 
 
 class _Paths:
@@ -84,7 +84,9 @@ def test_ricci_runtime_error_returns_empty_frames(monkeypatch):
     pytest.importorskip("GraphRicciCurvature")
     import networkx as nx
 
-    from cellquorum.stages.cell_cell_communication.network.ricci_method import compute_ricci_curvature
+    from cellquorum.stages.cell_cell_communication.network.ricci_method import (
+        compute_ricci_curvature,
+    )
 
     # Monkeypatch OllivierRicci.compute_ricci_curvature to raise a runtime error.
     def _failing_compute(*args, **kwargs):

@@ -5,9 +5,9 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
+from cellquorum.methods.registry import MethodRegistry
 from cellquorum.stages.integration.harmony import HarmonyMethod
 from cellquorum.stages.integration.stage import IntegrationStage
-from cellquorum.methods.registry import MethodRegistry
 
 
 def _adata(n=120, n_pcs=10, seed=0):

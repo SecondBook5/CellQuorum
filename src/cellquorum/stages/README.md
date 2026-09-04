@@ -45,3 +45,4 @@ that have no module yet.
 | 330 | `multicellular_programs` | implemented |
 | 340 | `ccc_network` | implemented |
 | 350 | `ccc_viz` | implemented |
+| 360 | `module_remodeling` | implemented |

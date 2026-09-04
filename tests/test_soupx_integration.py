@@ -1,67 +1,75 @@
-"""End-to-end SoupX on one real CellRanger library (skips if data/R absent).
+"""End-to-end SoupX on one real CellRanger library (skips unless data + R present).
 
 This is the real proof that SoupX works end-to-end inside CellQuorum on the
 manuscript data — the ambient-RNA correction both the keratinocyte and mast-cell
 papers were blocked on. It is intentionally a skippable integration test (needs
-the multi-GB /mnt/e CellRanger matrices and minutes of R), NOT a unit test.
+multi-GB CellRanger matrices and minutes of R), NOT a unit test.
+
+The Cell Ranger root is named by the ``CELLQUORUM_TEST_CELLRANGER_ROOT`` environment
+variable rather than hardcoded, so this test is runnable by anyone with the data
+instead of only on the machine it was written on. See ``tests/conftest.py``.
 """
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-from pathlib import Path
-
 import numpy as np
 import pytest
+from _external_data import require_cellranger_library, require_r_package
 
-# One known LE library (raw + filtered present per the le_kc project).
-_LIB = Path("/mnt/e/lymphedema_cellranger/Set1_norm_LE/LE1_v8/outs")
-_RAW = _LIB / "raw_feature_bc_matrix.h5"
-_FILT = _LIB / "filtered_feature_bc_matrix.h5"
+# Real data plus minutes of R: integration, R-backed, and slow. The markers let this be
+# deselected wholesale (`-m "not integration"`) even where the data is present, which
+# `skipif` alone cannot do.
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.r,
+    pytest.mark.slow,
+]
 
 
-def _soupx_available() -> bool:
-    """Return True when Rscript and the SoupX R package are both available."""
+@pytest.fixture(scope="module")
+def soupx_library():
+    """Resolve one real Cell Ranger library with both matrices present.
 
-    # Rscript must be on PATH.
-    if shutil.which("Rscript") is None:
-        return False
+    Resolved in a fixture rather than at module scope so the filesystem checks happen
+    at run time. A module-scope check runs during collection for every session, even
+    when this test is deselected.
 
-    # SoupX must be installed in the R library.
-    result = subprocess.run(
-        [
-            "Rscript",
-            "--vanilla",
-            "-e",
-            'quit(status=!requireNamespace("SoupX", quietly=TRUE))',
-        ],
-        capture_output=True,
-        text=True,
+    Returns:
+        Tuple of (raw matrix path, filtered matrix path).
+    """
+
+    # One known LE library (raw + filtered present per the le_kc project).
+    library = require_cellranger_library(
+        "Set1_norm_LE",
+        "LE1_v8",
+        "outs",
+        needs=("raw_feature_bc_matrix.h5", "filtered_feature_bc_matrix.h5"),
     )
-    return result.returncode == 0
+
+    # Hand back both matrices SoupX needs.
+    return library / "raw_feature_bc_matrix.h5", library / "filtered_feature_bc_matrix.h5"
 
 
-pytestmark = pytest.mark.skipif(
-    not (_RAW.is_file() and _FILT.is_file() and _soupx_available()),
-    reason="real CellRanger data or Rscript+SoupX unavailable",
-)
-
-
-def test_soupx_on_real_library(tmp_path):
+def test_soupx_on_real_library(tmp_path, soupx_library):
     """SoupX corrects one real library and imports as integer counts."""
 
+    # Probing for the R package here (not at import) keeps the Rscript subprocess off
+    # the collection path; the result is cached across every test that asks.
+    require_r_package("SoupX")
+
+    from cellquorum.backends.rscript import RscriptBackend
     from cellquorum.stages.ambient_correction.soupx import (
         import_corrected_matrix,
         run_soupx_library,
     )
-    from cellquorum.backends.rscript import RscriptBackend
+
+    raw, filtered = soupx_library
 
     # Run SoupX on the real raw+filtered pair.
     out_dir = tmp_path / "LE1"
     rho = run_soupx_library(
-        _RAW,
-        _FILT,
+        raw,
+        filtered,
         out_dir,
         RscriptBackend(),
         resolution=0.5,

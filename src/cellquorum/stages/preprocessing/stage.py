@@ -26,10 +26,13 @@ from cellquorum.core.exceptions import CellQuorumDataError
 
 # Import pipeline stage artifact and result contracts.
 from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.core.stage_catalog import register_stage
+from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
 
 # Import preprocessing configuration.
-from cellquorum.stages.preprocessing.config import PreprocessingConfig, validate_preprocessing_config_dict
+from cellquorum.stages.preprocessing.config import (
+    PreprocessingConfig,
+    validate_preprocessing_config_dict,
+)
 
 # Import normalization implementation.
 from cellquorum.stages.preprocessing.normalization import (
@@ -49,7 +52,14 @@ class PreprocessingStageError(CellQuorumDataError):
 
 
 @register_stage(
-    name="preprocessing", order=30, config_flag="preprocessing", config_field="preprocessing"
+    name="preprocessing",
+    order=30,
+    config_flag="preprocessing",
+    config_field="preprocessing",
+    # Fits the PFlog1pPF proportional-fitting target: scclr_target="auto" estimates the NB
+    # overdispersion alpha across cells (mean/median take a cohort depth). It does not look
+    # like a fitted model and is one. See normalization._fit_scclr_target.
+    cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
 @dataclass(frozen=True)
 class PreprocessingStage:

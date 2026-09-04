@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.core.stage_catalog import register_stage
+from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 
@@ -20,6 +20,9 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_flag="integration",
     config_field="integration",
     category="integration",
+    # Fits batch-correction parameters and the scVI latent model, so damaged cells could
+    # otherwise shape the biological reference every later stage is measured against.
+    cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
 class IntegrationStage(MethodDispatchStage):
     """Config-driven batch-integration stage."""

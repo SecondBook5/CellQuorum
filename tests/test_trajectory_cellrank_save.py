@@ -32,7 +32,10 @@ def test_write_cellrank_h5ad_subsampled_label(tmp_path):
 
 def test_write_cellrank_h5ad_write_failure_returns_note(tmp_path):
     a = ad.AnnData(np.ones((5, 3), dtype="float32"))
-    missing = tmp_path / "does" / "not" / "exist"  # parent absent → write fails
-    artifact, note = write_cellrank_h5ad(a, missing)
+    # A missing output directory is created now, so provoke a real failure: put a
+    # regular file where the directory would have to be.
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory")
+    artifact, note = write_cellrank_h5ad(a, blocked)
     assert artifact is None
     assert "fail" in note.lower()

@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.clustering.subclustering.partition import run_choir, run_scshc_test
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.clustering.subclustering.partition import run_choir, run_scshc_test
 
 
 def make_synthetic_counts_adata() -> ad.AnnData:
@@ -203,6 +203,146 @@ def test_run_scshc_test_wiring_with_mocked_backend(tmp_path: Path) -> None:
     assert result["n_splits_tested"] == 2
     assert result["n_significant"] == 1
     assert result["alpha"] == 0.05
+
+
+def _scshc_backend(labels: list[str] | None, splits: pd.DataFrame) -> MagicMock:
+    """A mocked backend that writes both files ``scshc_test.R`` writes.
+
+    The second file is the point: the R script has always written the reconciled
+    labels next to the split table, and the Python side used to read only the
+    split table.
+    """
+    backend = MagicMock()
+    backend._r_package_available.return_value = True
+
+    def run_script(script_path: Path, args: list[str], timeout: int):
+        out_csv = Path(args[2])
+        splits.to_csv(out_csv, index=False)
+        if labels is not None:
+            barcodes = pd.read_csv(Path(args[1]))["barcode"]
+            pd.DataFrame({"barcode": barcodes, "scshc_label": labels}).to_csv(
+                out_csv.with_name(out_csv.name.replace(".csv", "_labels.csv")), index=False
+            )
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = ""
+        return result
+
+    backend.run_script = run_script
+    return backend
+
+
+def _clustered_adata() -> ad.AnnData:
+    adata = make_synthetic_counts_adata()
+    adata.obs["subcluster"] = ["cluster_A"] * 50 + ["cluster_B"] * 50
+    return adata
+
+
+def test_the_reconciled_partition_is_read_back_and_not_left_in_scratch(tmp_path: Path) -> None:
+    """
+    A partition sc-SHC declined to defend must be visible on the object.
+
+    "0 of 1 splits significant" is the same sentence whether one split failed out of
+    a dozen or the whole lineage collapsed to one cluster. The reconciled labels say
+    which, and they were being written to scratch and dropped: an LEC run whose eight
+    subclusters all merged into one shipped a per-subtype headline table, and nothing
+    persisted anywhere recorded the merge.
+    """
+    adata = _clustered_adata()
+    splits = pd.DataFrame(
+        {
+            "split_index": [1],
+            "node": ["Cluster 0: 0.31"],
+            "p_value": [0.31],
+            "significant": [False],
+        }
+    )
+    result = run_scshc_test(
+        adata,
+        "subcluster",
+        make_mock_config(),
+        _scshc_backend(["new1"] * 100, splits),
+        tmp_path,
+    )
+
+    assert result["n_clusters_in"] == 2
+    assert result["n_labels_surviving"] == 1
+    assert result["merged_to_one"] is True
+    assert result["labels_key"] == "subcluster_scshc"
+    assert adata.obs["subcluster_scshc"].nunique() == 1
+
+
+def test_an_upheld_partition_is_not_reported_as_merged(tmp_path: Path) -> None:
+    """The flag has to be false when nothing was merged, or it means nothing."""
+    adata = _clustered_adata()
+    splits = pd.DataFrame(
+        {
+            "split_index": [1],
+            "node": ["Node 0: 0.01"],
+            "p_value": [0.01],
+            "significant": [True],
+        }
+    )
+    result = run_scshc_test(
+        adata,
+        "subcluster",
+        make_mock_config(),
+        _scshc_backend(["new1"] * 50 + ["new2"] * 50, splits),
+        tmp_path,
+    )
+
+    assert result["n_labels_surviving"] == 2
+    assert result["merged_to_one"] is False
+
+
+def test_the_conditioning_key_is_the_one_passed_not_the_donor_gate_field(tmp_path: Path) -> None:
+    """
+    The batch sc-SHC conditions on is the stage's resolved key, and it is recorded.
+
+    Taking it from ``donor_gate.group_key`` meant a config that declared its keys once
+    in the cohort block got an unconditioned test while the donor gate ran normally.
+    Which column was used is not recoverable from the p-value, so the result says so.
+    """
+    adata = _clustered_adata()
+    adata.obs["plate"] = ["p1"] * 50 + ["p2"] * 50
+    splits = pd.DataFrame(
+        {"split_index": [1], "node": ["Node 0: 0.01"], "p_value": [0.01], "significant": [True]}
+    )
+    seen: list[str] = []
+
+    backend = _scshc_backend(None, splits)
+    inner = backend.run_script
+
+    def capture(script_path: Path, args: list[str], timeout: int):
+        seen.append(args[4])
+        return inner(script_path, args, timeout)
+
+    backend.run_script = capture
+
+    # The config's own donor-gate key names a column that does not exist here, so
+    # only the explicitly passed key can produce "plate".
+    config = make_mock_config(donor_gate_group_key="donor")
+    result = run_scshc_test(adata, "subcluster", config, backend, tmp_path, batch_key="plate")
+
+    assert seen == ["plate"]
+    assert result["batch_key"] == "plate"
+
+
+def test_a_missing_labels_file_leaves_the_partition_unreported_rather_than_guessed(
+    tmp_path: Path,
+) -> None:
+    """An older R script wrote no labels file; that is missing information, not one cluster."""
+    adata = _clustered_adata()
+    splits = pd.DataFrame(
+        {"split_index": [1], "node": ["Node 0: 0.01"], "p_value": [0.01], "significant": [True]}
+    )
+    result = run_scshc_test(
+        adata, "subcluster", make_mock_config(), _scshc_backend(None, splits), tmp_path
+    )
+
+    assert "n_labels_surviving" not in result
+    assert "merged_to_one" not in result
+    assert "subcluster_scshc" not in adata.obs.columns
 
 
 def test_scshc_node_name_pvalue_contract() -> None:

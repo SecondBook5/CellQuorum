@@ -1,7 +1,7 @@
 """The enrichment_viz stage must be registered in the default executor registry."""
 
-from cellquorum.stages.comparative.enrichment.viz.stage import EnrichmentVizStage
 from cellquorum.core.executor import build_default_stage_registry
+from cellquorum.stages.comparative.enrichment.viz.stage import EnrichmentVizStage
 
 
 def test_enrichment_viz_registered():

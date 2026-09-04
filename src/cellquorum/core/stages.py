@@ -80,6 +80,10 @@ import cellquorum.stages.cell_cell_communication.stage  # noqa: F401
 import cellquorum.stages.comparative.multicellular_programs.stage  # noqa: F401
 import cellquorum.stages.cell_cell_communication.network.stage  # noqa: F401
 import cellquorum.stages.cell_cell_communication.viz.stage  # noqa: F401
+
+# module_remodeling is the synthesis stage: it reads the module scores, the
+# partition and the design, so it registers after everything it consumes.
+import cellquorum.stages.comparative.module_remodeling.stage  # noqa: F401
 # isort: on
 
 # --- Planned-but-unimplemented stages (no class to decorate) ---

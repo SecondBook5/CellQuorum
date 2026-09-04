@@ -121,7 +121,7 @@ def test_empty_catalog_has_no_specs():
 
 PLANNED = {"integration_gate", "composition", "molecular_inference"}
 
-# The canonical 35-stage order, frozen. Any reorder/add/remove is a deliberate
+# The canonical 36-stage order, frozen. Any reorder/add/remove is a deliberate
 # change that must update this list together with the config models.
 GOLDEN_STAGE_ORDER = [
     "ambient_correction",
@@ -159,9 +159,10 @@ GOLDEN_STAGE_ORDER = [
     "multicellular_programs",
     "ccc_network",
     "ccc_viz",
+    "module_remodeling",
 ]
 
-# The 32 implemented stages, alphabetical — mirrors the executor registry
+# The 33 implemented stages, alphabetical — mirrors the executor registry
 # snapshot in tests/test_pipeline_executor.py:302-334.
 GOLDEN_IMPLEMENTED_SORTED = sorted(n for n in GOLDEN_STAGE_ORDER if n not in PLANNED)
 
@@ -202,7 +203,7 @@ def test_catalog_order_matches_golden():
 def test_catalog_implemented_set_matches_golden():
     impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
     assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 32
+    assert len(GOLDEN_IMPLEMENTED_SORTED) == 33
 
 
 def test_orders_are_unique_and_ascending():

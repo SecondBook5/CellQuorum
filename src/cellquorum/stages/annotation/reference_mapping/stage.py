@@ -1,4 +1,4 @@
-# Pipeline step (order=120): reference_mapping — map cells onto a reference via the configured method.
+# Pipeline step (order=120): reference_mapping — map cells onto a reference atlas.
 """Reference mapping stage: dispatch to configured reference method."""
 
 from __future__ import annotations

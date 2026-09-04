@@ -33,6 +33,16 @@ class OverlayConfig(StrictBaseModel):
         cell_cycle: If true, score cell cycle (requires s_genes + g2m_genes).
         s_genes: S-phase gene list (config-supplied, never defaulted).
         g2m_genes: G2M-phase gene list (config-supplied, never defaulted).
+        layer: Expression layer the gene values and program scores are read
+            from. This is the same default every other scoring stage in the
+            engine declares, and it is a default rather than ``None`` for a
+            measured reason: the overlay used to read ``adata.X``, which in this
+            engine is raw counts, so a program score written to ``obs`` was
+            ``score_genes`` over counts. On the LEC arm that score ran from
+            -4.4 to 195.3 in count units and its Spearman with library depth was
+            0.23 against 0.07 for the same panel scored on the normalized layer.
+            The scores do not stay in the figure — they land in ``obs``, where any
+            stage or driver can pick them up as "the capillary score".
     """
 
     genes: list[str] = []
@@ -41,6 +51,7 @@ class OverlayConfig(StrictBaseModel):
     cell_cycle: bool = False
     s_genes: list[str] = []
     g2m_genes: list[str] = []
+    layer: str | None = "cellquorum_normalized"
 
 
 class EmbeddingsConfig(StrictBaseModel):

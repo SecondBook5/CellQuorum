@@ -5,6 +5,10 @@ from __future__ import annotations
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.contracts import DataContract
+from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.cell_cell_communication.network._networks import (
     build_cci_network,
     build_differential_network,
@@ -13,10 +17,6 @@ from cellquorum.stages.cell_cell_communication.network._networks import (
     liana_to_canonical,
     resolve_condition_arms,
 )
-from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageArtifact, StageResult
-from cellquorum.core.stage_artifact_writer import StageArtifactWriter
-from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 
 class TopologyMethod(AnalysisMethod):
@@ -43,6 +43,7 @@ class TopologyMethod(AnalysisMethod):
             return self._skip(f"uns['{source_key}'] absent or empty", source_key=source_key)
 
         canon, notes = liana_to_canonical(liana_res)
+        warnings: list[str] = []
         if canon.empty:
             return self._skip("no canonical edges after adapter", notes=notes)
 
@@ -50,7 +51,9 @@ class TopologyMethod(AnalysisMethod):
         condition_col = config.get("condition_col")
         case = config.get("case")
         control = config.get("control")
-        arms = resolve_condition_arms(adata, canon, sample_col, condition_col, case, control, notes)
+        arms = resolve_condition_arms(
+            adata, canon, sample_col, condition_col, case, control, notes, warnings
+        )
 
         # Build per-(level, arm) networks in a fixed, deterministic order.
         levels = ["cci"] + (["gci"] if build_gci else [])
@@ -60,7 +63,7 @@ class TopologyMethod(AnalysisMethod):
         writer = StageArtifactWriter.from_context(context, default_subdir="ccc_network")
 
         for level in levels:
-            whole = self._build(canon, level, gci_max_edges, min_edges, notes)
+            whole = self._build(canon, level, gci_max_edges, min_edges, warnings)
             if whole is None:
                 continue
             topology[level] = compute_topology_ranking(whole, pagerank_alpha=pagerank_alpha)
@@ -68,7 +71,7 @@ class TopologyMethod(AnalysisMethod):
                 writer,
                 f"topology_{level}.csv",
                 topology[level],
-                notes,
+                warnings,
                 name=f"ccc_topology_{level}",
                 desc=f"Whole-cohort {level.upper()} topology ranking.",
             )
@@ -81,8 +84,8 @@ class TopologyMethod(AnalysisMethod):
                 and not case_lr.empty
                 and not ctrl_lr.empty
             ):
-                G_case = self._build(case_lr, level, gci_max_edges, min_edges, notes)
-                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, notes)
+                G_case = self._build(case_lr, level, gci_max_edges, min_edges, warnings)
+                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, warnings)
                 if G_case is not None and G_ctrl is not None:
                     # Build the signed differential network.
                     # Control first so weight = case - control.
@@ -101,12 +104,15 @@ class TopologyMethod(AnalysisMethod):
                         writer,
                         f"comparative_{level}.csv",
                         comparative[level],
-                        notes,
+                        warnings,
                         name=f"ccc_comparative_{level}",
                         desc=f"Case-vs-control {level.upper()} topology.",
                     )
             elif condition_col:
-                notes.append(f"topology: comparative {level} skipped (an arm is empty).")
+                # A warning: a condition column was configured, so the case-vs-control
+                # table is an asked-for output, and an empty arm means the comparison
+                # this stage exists to make did not happen.
+                warnings.append(f"topology: comparative {level} skipped (an arm is empty).")
 
         store = adata.uns.setdefault("ccc_network", {})
         store["topology"] = topology
@@ -117,31 +123,42 @@ class TopologyMethod(AnalysisMethod):
             adata=adata,
             artifacts=artifacts,
             notes=notes,
+            warnings=warnings,
             metrics={"method": self.name, "levels": levels, "comparative": bool(comparative)},
             backend="python",
         )
 
     def _build(
-        self, lr: pd.DataFrame, level: str, gci_max_edges: int, min_edges: int, notes: list[str]
+        self, lr: pd.DataFrame, level: str, gci_max_edges: int, min_edges: int, warnings: list[str]
     ) -> object | None:
-        """Build one network level; skip if over GCI cap or below min_edges."""
+        """Build one network level; skip if over GCI cap or below min_edges.
+
+        Both skips are WARNINGS, not notes. ``build_gci`` defaults to True, so the
+        gene-channel table is an asked-for output, and the default cap of 200k rows
+        is below every real cohort we have run — the LEC arm produced 370,538 LR
+        rows and the BEC arm 703,452, so GCI has never once been computed while the
+        run reported success and the reason sat in a note nobody reads. This fires
+        at most once per level: the caller ``continue``s when the whole-cohort build
+        returns None, so the per-arm calls do not repeat the message.
+        """
         if level == "cci":
             G = build_cci_network(lr)
         else:
             # gci: guard size (edge count ~ number of rows).
             if len(lr) > gci_max_edges:
-                notes.append(
-                    f"topology: GCI skipped ({len(lr)} rows > gci_max_edges={gci_max_edges}); "
-                    "CCI computed."
+                warnings.append(
+                    f"topology: GCI (gene-channel) topology NOT computed: {len(lr)} LR rows "
+                    f"> gci_max_edges={gci_max_edges}. Cell-type-level CCI topology was "
+                    "computed. Raise ccc_network.gci_max_edges to include gene channels."
                 )
                 return None
             G = build_gci_network(lr)
 
         # min_edges gate: skip if below threshold.
         if G.number_of_edges() < min_edges:
-            notes.append(
-                f"topology: {level.upper()} skipped ({G.number_of_edges()} edges < "
-                f"min_edges={min_edges})."
+            warnings.append(
+                f"topology: {level.upper()} topology NOT computed: {G.number_of_edges()} edges "
+                f"< min_edges={min_edges}."
             )
             return None
         return G
@@ -151,16 +168,21 @@ class TopologyMethod(AnalysisMethod):
         writer: StageArtifactWriter,
         filename: str,
         df: pd.DataFrame,
-        notes: list[str],
+        warnings: list[str],
         *,
         name: str,
         desc: str,
     ) -> list[StageArtifact]:
-        """Write one CSV; skip-not-crash on failure."""
+        """Write one CSV; skip-not-crash on failure.
+
+        A write failure is a WARNING, not a note: the stage returns success with a
+        metrics block, so a missing CSV is the only trace, and nothing in the report
+        would otherwise say the table it names was never written.
+        """
         try:
             return [writer.table(df, filename, name=name, description=desc, index=False)]
         except Exception as exc:  # pragma: no cover - filesystem dependent
-            notes.append(f"topology: failed to write {filename}: {str(exc)[:200]}")
+            warnings.append(f"topology: failed to write {filename}: {str(exc)[:200]}")
             return []
 
 

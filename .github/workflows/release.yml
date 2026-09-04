@@ -1,0 +1,169 @@
+name: Release
+
+# Releases are cut by pushing a tag. Publishing uses PyPI Trusted Publishing
+# (OIDC), so there is no API token stored in this repository.
+#
+# One-time setup on PyPI, before the first release:
+#   1. Create the `cellquorum` project (or claim the name with a manual first upload).
+#   2. Under Manage → Publishing, add a GitHub trusted publisher:
+#        owner:       SecondBook5
+#        repository:  cellquorum
+#        workflow:    release.yml
+#        environment: pypi
+#   3. In GitHub → Settings → Environments, create an environment named `pypi`.
+#      Add a required reviewer so a tag push cannot publish unattended.
+on:
+  push:
+    tags:
+      - "v*"
+
+# Least privilege by default; the publish job opts into `id-token` for OIDC.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify tag matches package version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # A wheel whose metadata disagrees with its git tag is unfixable after the
+      # fact: PyPI refuses re-uploads of a version, so a mistake here burns the
+      # version number permanently. Check before building anything.
+      - name: Compare git tag to src/cellquorum/version.py
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python -c "import re,pathlib; print(re.search(r'__version__: str = \"([^\"]+)\"', pathlib.Path('src/cellquorum/version.py').read_text()).group(1))")
+          echo "git tag:         $tag"
+          echo "version.py:      $pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag v$tag does not match __version__ $pkg in src/cellquorum/version.py"
+            exit 1
+          fi
+
+      # A release tag must describe itself in the changelog, or the release notes
+      # are archaeology six months later.
+      - name: Require a CHANGELOG entry for this version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if ! grep -qE "^#+ +\[?v?${tag}\]?" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no heading for version ${tag}"
+            exit 1
+          fi
+
+  build:
+    name: Build & verify distributions
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build tooling
+        run: pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      # Same content assertions as the CI build job. Duplicated deliberately: CI can
+      # be skipped or its result stale by the time a tag lands, and a release is the
+      # one artifact that cannot be corrected.
+      - name: Verify wheel bundles every R script
+        run: |
+          expected=$(find src/cellquorum -name '*.R' | wc -l)
+          count=$(unzip -l dist/*.whl | grep -c '\.R$')
+          echo "R scripts — source: $expected, wheel: $count"
+          if [ "$count" -ne "$expected" ]; then
+            echo "::error::Wheel bundles $count R scripts but src/cellquorum has $expected"
+            exit 1
+          fi
+
+      - name: Verify wheel bundles a non-empty LICENSE
+        run: |
+          license_line=$(unzip -l dist/*.whl | grep -E '(^|/)LICENSE( |$)' | awk '$1 != "" && $1 != "0" {print}')
+          if [ -z "$license_line" ]; then
+            echo "::error::Wheel is missing a non-empty LICENSE"
+            exit 1
+          fi
+          echo "LICENSE in wheel: $license_line"
+
+      # Without py.typed in the wheel, downstream type checkers silently treat the
+      # whole package as untyped, so this is a real regression that is invisible
+      # locally in an editable install.
+      - name: Verify wheel bundles the py.typed marker
+        run: |
+          if ! unzip -l dist/*.whl | grep -q 'cellquorum/py.typed'; then
+            echo "::error::Wheel is missing cellquorum/py.typed (PEP 561 marker)"
+            exit 1
+          fi
+          echo "py.typed present in wheel"
+
+      # Catches a malformed README or bad metadata that PyPI would reject on upload.
+      - name: Check distribution metadata renders
+        run: twine check --strict dist/*
+
+      # Prove the wheel installs and its console script runs from a clean
+      # interpreter — an editable dev install can hide a missing package-data entry.
+      - name: Smoke-test the built wheel in a clean venv
+        run: |
+          python -m venv /tmp/relcheck
+          /tmp/relcheck/bin/pip install --quiet dist/*.whl
+          /tmp/relcheck/bin/cellquorum --version
+          /tmp/relcheck/bin/python -c "import cellquorum; print('import OK', cellquorum.__version__)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Gate on a protected environment so publishing requires an explicit approval
+    # rather than happening the instant a tag is pushed.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/cellquorum
+    permissions:
+      # Required for Trusted Publishing; this is what replaces a stored API token.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Create release with the built distributions attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --notes "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md) for details."

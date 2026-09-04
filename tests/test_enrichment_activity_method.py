@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.comparative.enrichment.activity_method import ActivityMethod
 from cellquorum.methods.base import MethodSkip
+from cellquorum.stages.comparative.enrichment.activity_method import ActivityMethod
 
 # Exercises the REAL dc.mt.ulm, which drops all-zero observations (empty=True).
 # Only the network fetch is stubbed via get_net so the drop path (C2) runs for

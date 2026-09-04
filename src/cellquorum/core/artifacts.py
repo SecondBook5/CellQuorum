@@ -262,8 +262,16 @@ class ArtifactManager:
         # Create the parent directory if needed.
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Convert numpy scalars/arrays and other engine-native types before encoding,
+        # using the same converter provenance uses. Two notions of "JSON-safe" in one
+        # engine is how a run reached its final provenance write and died there on an
+        # np.int64 that every earlier stage had been perfectly happy to carry.
+        from cellquorum.core.provenance import to_json_safe
+
+        safe_payload = to_json_safe(payload)
+
         # Write the JSON payload with stable formatting.
-        path.write_text(json.dumps(payload, indent=indent, sort_keys=True), encoding="utf-8")
+        path.write_text(json.dumps(safe_payload, indent=indent, sort_keys=True), encoding="utf-8")
 
         # Register and return the written artifact.
         return self.register(

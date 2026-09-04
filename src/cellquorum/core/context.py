@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -112,6 +113,68 @@ class PipelinePaths:
         ):
             # Create each directory and any missing parent directories.
             directory.mkdir(parents=True, exist_ok=True)
+
+
+# The default cap when compute.n_jobs is "auto". Not a limit on what a user can
+# ask for — an explicit int is always honored — but on what the engine will help
+# itself to unasked. Every parallel step here holds a copy of its slice of the
+# object per worker (scDblFinder a capture, scVelo a gene block, GRNBoost2 a
+# partition), so worker count buys speed by spending memory; on a 64-core node
+# with a 15 GB atlas, deriving straight from the core count would OOM a run that
+# only asked to "use the machine".
+_AUTO_N_JOBS_CAP = 8
+
+
+def _auto_n_jobs() -> int:
+    """Worker count derived from the machine, for ``compute.n_jobs: auto``.
+
+    Prefers ``os.process_cpu_count`` (Python 3.13+) over ``os.cpu_count`` because
+    it respects CPU affinity and cgroup limits: in a container pinned to 4 CPUs,
+    ``cpu_count`` still reports the host's cores and would oversubscribe by the
+    ratio between them.
+    """
+    process_count = getattr(os, "process_cpu_count", None)
+    usable = (process_count() if process_count is not None else None) or os.cpu_count() or 1
+    return max(1, min(_AUTO_N_JOBS_CAP, int(usable)))
+
+
+def resolve_n_jobs(context: Any, override: int | str | None = None) -> int:
+    """Worker count for a parallel step: the stage's own value, else ``compute.n_jobs``.
+
+    ``compute.n_jobs`` is documented as the knob "for stages that support parallel
+    execution", so a config that sets it to 8 has asked for 8 workers everywhere
+    such a step exists. Read defensively (``getattr`` rather than attribute
+    access) because tests and lightweight callers pass duck-typed contexts that
+    carry no ``compute`` block at all.
+
+    Precedence, most specific first:
+
+    1. ``override`` — the stage's own setting, honored as-is, including 1 to pin a
+       step to serial.
+    2. ``compute.n_jobs`` as an int — the run-level answer.
+    3. ``compute.n_jobs`` as ``"auto"`` — derived from the machine, see
+       :func:`_auto_n_jobs`.
+
+    A context with no ``compute`` block at all resolves to 1 rather than to auto.
+    That case is a duck-typed caller or a test, not a user who declined to choose,
+    so it gets the conservative answer.
+
+    Args:
+        context: Pipeline context, or anything exposing ``.config.compute.n_jobs``.
+        override: A stage-level worker count. ``None`` (or ``"auto"``) means "not
+            set, inherit"; any int is honored as-is.
+
+    Returns:
+        A worker count of at least 1.
+    """
+    if override is not None and override != "auto":
+        return max(1, int(override))
+    config = getattr(context, "config", None)
+    compute = getattr(config, "compute", None)
+    n_jobs = getattr(compute, "n_jobs", 1)
+    if n_jobs == "auto":
+        return _auto_n_jobs()
+    return max(1, int(n_jobs or 1))
 
 
 @dataclass

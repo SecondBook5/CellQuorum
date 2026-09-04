@@ -105,23 +105,26 @@ def test_path_config_accepts_path_values() -> None:
     objects by Pydantic.
     """
 
-    # Build a path config using string paths.
+    # Build a path config using string paths. These are deliberately synthetic: the
+    # test only exercises Pydantic's string-to-Path coercion and never touches the
+    # filesystem, so naming a real machine's drive layout here would falsely imply the
+    # test depends on it.
     config = PathConfig(
-        data_root="/mnt/e/CellQuorumData",
-        run_root="/mnt/e/CellQuorumRuns",
-        scratch_root="/mnt/e/CellQuorumScratch",
+        data_root="/data/cellquorum/inputs",
+        run_root="/data/cellquorum/runs",
+        scratch_root="/data/cellquorum/scratch",
         manifest="examples/minimal_scrna/manifest.csv",
         output_dir="runs/test_run",
     )
 
     # Confirm the data root was converted to a Path.
-    assert config.data_root == Path("/mnt/e/CellQuorumData")
+    assert config.data_root == Path("/data/cellquorum/inputs")
 
     # Confirm the run root was converted to a Path.
-    assert config.run_root == Path("/mnt/e/CellQuorumRuns")
+    assert config.run_root == Path("/data/cellquorum/runs")
 
     # Confirm the scratch root was converted to a Path.
-    assert config.scratch_root == Path("/mnt/e/CellQuorumScratch")
+    assert config.scratch_root == Path("/data/cellquorum/scratch")
 
     # Confirm the manifest path was converted to a Path.
     assert config.manifest == Path("examples/minimal_scrna/manifest.csv")
@@ -228,6 +231,19 @@ def test_compute_config_rejects_invalid_n_jobs() -> None:
     # Confirm n_jobs=0 raises a validation error.
     with pytest.raises(ValidationError):
         ComputeConfig(n_jobs=0)
+
+    # 0 and negatives must stay rejected even though the field now accepts a
+    # string: joblib and dask both read them as "all cores", so letting one
+    # through would give a step MORE parallelism than the config asked for.
+    with pytest.raises(ValidationError):
+        ComputeConfig(n_jobs=-1)
+    with pytest.raises(ValidationError):
+        ComputeConfig(n_jobs="all")  # type: ignore[arg-type]
+
+    # "auto" is the one non-integer accepted, and the default.
+    assert ComputeConfig().n_jobs == "auto"
+    assert ComputeConfig(n_jobs="auto").n_jobs == "auto"
+    assert ComputeConfig(n_jobs=4).n_jobs == 4
 
 
 def test_r_config_accepts_supported_preferred_backends() -> None:
