@@ -97,6 +97,7 @@ def plot_lineage_family_heatmap(
     *,
     group_column: str = LINEAGE_COLUMN,
     min_cells: int = 20,
+    dpi: int = 300,
 ) -> Path | None:
     """Median severity per family for each cell population, beside what it cost them.
 
@@ -250,7 +251,7 @@ def plot_lineage_family_heatmap(
         bar.spines[spine].set_visible(False)
 
     destination = Path(output_path)
-    save_cellquorum_figure(figure, destination, dpi=200)
+    save_cellquorum_figure(figure, destination, dpi=dpi, companion_formats=(".pdf", ".svg"))
     plt.close(figure)
     return destination
 
@@ -264,6 +265,7 @@ def plot_family_cooccurrence(
     *,
     concern_severity: float = 0.50,
     max_combinations: int = 12,
+    dpi: int = 300,
 ) -> Path | None:
     """How often families raise concern together — the concordance rule, made auditable.
 
@@ -349,7 +351,7 @@ def plot_family_cooccurrence(
         axis.spines[spine].set_visible(False)
 
     destination = Path(output_path)
-    save_cellquorum_figure(figure, destination, dpi=200)
+    save_cellquorum_figure(figure, destination, dpi=dpi, companion_formats=(".pdf", ".svg"))
     plt.close(figure)
     return destination
 
@@ -425,6 +427,7 @@ def plot_severity_ecdf(
     condition_column: str | None = "condition",
     family: str = "capture_complexity",
     concern_severity: float = 0.50,
+    dpi: int = 300,
 ) -> Path | None:
     """Empirical CDF of one family's severity, per group, arms contrasted.
 
@@ -542,7 +545,7 @@ def plot_severity_ecdf(
             axis.spines[spine].set_visible(False)
 
     destination = Path(output_path)
-    save_cellquorum_figure(figure, destination, dpi=300)
+    save_cellquorum_figure(figure, destination, dpi=dpi, companion_formats=(".pdf", ".svg"))
     plt.close(figure)
     return destination
 
@@ -657,7 +660,10 @@ def write_graded_qc_figures(
 
     keep(
         plot_lineage_family_heatmap(
-            obs, directory / "graded_lineage_family.png", group_column=LINEAGE_COLUMN
+            obs,
+            directory / "graded_lineage_family.png",
+            group_column=LINEAGE_COLUMN,
+            dpi=dpi,
         )
     )
     keep(
@@ -665,6 +671,7 @@ def write_graded_qc_figures(
             obs,
             directory / "graded_family_cooccurrence.png",
             concern_severity=concern_severity,
+            dpi=dpi,
         )
     )
 
@@ -681,8 +688,34 @@ def write_graded_qc_figures(
                 condition_column=condition_column,
                 family=family,
                 concern_severity=concern_severity,
+                dpi=dpi,
             )
         )
+
+    # Raw-metric distributions, paired by donor. One modular figure per metric rather than a
+    # grid, per the spec: the point is that each is a publication panel in its own right, and a
+    # grid of nine cannot be read for any of them.
+    if pair_column and condition_column and pair_column in obs.columns:
+        control = _control_arm(obs, condition_column)
+        for metric, label, log_scale in RAW_METRICS:
+            if metric not in obs.columns:
+                # Not a warning. Which metrics exist is a property of the assay and the config —
+                # hemoglobin on a tissue with no blood, MALAT1 on a run with the nuclear axis
+                # off — and a warning per absent metric would bury the ones that matter.
+                continue
+            keep(
+                plot_metric_rainclouds(
+                    obs,
+                    directory / f"qc_metric_{metric}.png",
+                    metric=metric,
+                    label=label,
+                    log_scale=log_scale,
+                    donor_column=pair_column,
+                    condition_column=condition_column,
+                    control_label=control,
+                    dpi=dpi,
+                )
+            )
 
     if not written:
         warnings.append(
@@ -690,6 +723,22 @@ def write_graded_qc_figures(
             "found the grouping columns it needs."
         )
     return written, warnings
+
+
+def _control_arm(obs: pd.DataFrame, condition_column: str) -> str | None:
+    """Name the arm that goes on the left, without hard-coding this study's labels.
+
+    The house rule is "control first", and CellQuorum has to apply it on a cohort whose arms are
+    called something else. So the label is recognised from a list of conventional control names
+    rather than from ``"Normal"`` alone, and when none matches the first arm in natural order is
+    used — deterministic, and stated in the figure title so a reader can see which way it reads.
+    """
+    arms = [str(value) for value in pd.unique(obs[condition_column].dropna())]
+    conventional = ("normal", "control", "healthy", "wt", "wildtype", "untreated", "baseline")
+    for candidate in arms:
+        if candidate.strip().lower() in conventional:
+            return candidate
+    return None
 
 
 # ─── Attribution: what drove each exclusion ─────────────────────────────────────────
@@ -779,3 +828,212 @@ def graded_policy_sentence(
         f"deleted by grading — eligibility to fit, to receive a transform, and to inform an "
         f"inference are recorded separately."
     )
+
+
+# ─── Calibration: raw metric distributions, paired by donor ─────────────────────────
+
+#: The raw QC metrics the per-donor distribution figures cover, in reading order, with the
+#: axis label and whether a log scale is right for them.
+#:
+#: Raw metrics, not severities — this is the correction the figure spec makes explicit. A
+#: severity has already had a null subtracted and a saturating transform applied, so it cannot
+#: be read to decide where the null should sit, and 45-65% of cells sit at exactly 0.0 on several
+#: axes, which collapses any density estimate. The metric is what a calibration figure has to
+#: show; the severity is what the metric was turned into.
+RAW_METRICS: tuple[tuple[str, str, bool], ...] = (
+    ("total_counts", "UMIs per cell", True),
+    ("n_genes_by_counts", "Genes per cell", True),
+    ("pct_counts_mito", "Mitochondrial %", False),
+    ("pct_counts_ribo", "Ribosomal %", False),
+    ("pct_counts_in_top_20_genes", "Top-20-gene concentration (%)", False),
+    ("pct_counts_hemoglobin", "Hemoglobin %", False),
+    ("qc_ev_malat1_fraction_value", "MALAT1 fraction", False),
+    ("qc_ev_dissociation_stress_value", "Dissociation-stress fraction", False),
+    ("doublet_score", "Doublet score", False),
+)
+
+
+def plot_metric_rainclouds(
+    obs: pd.DataFrame,
+    destination: Path,
+    *,
+    metric: str,
+    label: str,
+    log_scale: bool,
+    donor_column: str,
+    condition_column: str,
+    control_label: str | None,
+    group_column: str | None = None,
+    dpi: int = 300,
+    max_points_per_arm: int = 300,
+    seed: int = 0,
+) -> Path | None:
+    """One raw metric, per donor, control arm left and case arm right.
+
+    The figure the spec puts first among the calibration outputs, and the one the previous
+    per-patient boxplots could not be: those were drawn with ``showfliers`` off, so the cells a
+    bound would act on were invisible, and they were drawn "after filtering", so they described
+    the result of a threshold rather than the evidence for one.
+
+    Four properties, each fixing a specific defect in what came before:
+
+    * **paired, control first, within donor** — via
+      :func:`~cellquorum.visualization.figstyle.paired_condition_order`, so this figure and every
+      other one in the run agree about who is on the left;
+    * **donors in natural order**, so ``P2`` precedes ``P10``;
+    * **the tail is drawn**, as a half-violin plus sampled cells rather than a clipped whisker;
+    * **no cell-level p-value.** Cells are not biological replicates, so a test across the
+      pooled cells of two arms answers a question nobody asked. Where a statistic is warranted
+      it is computed on donor medians by the caller, using
+      :func:`~cellquorum.visualization.figstyle.two_group_test_on_donor_medians`.
+
+    Args:
+        obs: Observation frame from the QC object.
+        destination: Output path; the vector twins are written beside it.
+        metric: Column to plot.
+        label: Y-axis label.
+        log_scale: Use a log y-axis, right for the count-like metrics and wrong for fractions.
+        donor_column: Donor column, the pairing unit.
+        condition_column: Study-arm column.
+        control_label: Arm to place first inside each donor.
+        group_column: Optional population column. When given, one figure is drawn per
+            population instead of per donor — the §4 variant of the same framework.
+        dpi: Raster resolution.
+        max_points_per_arm: Cells drawn per arm, deterministically subsampled.
+        seed: Subsampling seed.
+
+    Returns:
+        The written path, or ``None`` when the object lacks the metric or the grouping columns.
+    """
+    import matplotlib.pyplot as plt
+
+    from cellquorum.visualization.figstyle import (
+        FONTSIZE,
+        LE_RED,
+        NORMAL_BLUE,
+        TEXT,
+        natural_key,
+        paired_condition_order,
+        raincloud,
+        save_cellquorum_figure,
+        set_style,
+    )
+
+    required = [metric, donor_column, condition_column]
+    if any(column not in obs.columns for column in required):
+        return None
+
+    frame = obs[[*required, *([group_column] if group_column in obs.columns else [])]].copy()
+    frame[metric] = pd.to_numeric(frame[metric], errors="coerce")
+    frame = frame[np.isfinite(frame[metric])]
+    if frame.empty:
+        return None
+
+    # The categorical axis: donors, or populations when one is requested.
+    if group_column and group_column in frame.columns:
+        categories = sorted({str(value) for value in frame[group_column].dropna()}, key=natural_key)
+        category_column = group_column
+    else:
+        order = paired_condition_order(
+            frame,
+            donor_col=donor_column,
+            condition_col=condition_column,
+            control=control_label,
+        )
+        categories = list(dict.fromkeys(donor for donor, _ in order))
+        category_column = donor_column
+
+    arms = paired_condition_order(
+        frame, donor_col=donor_column, condition_col=condition_column, control=control_label
+    )
+    arm_order = list(dict.fromkeys(arm for _, arm in arms))
+    if not arm_order or not categories:
+        return None
+
+    # Two arms get the house red/blue and the half-violins face away from each other; more than
+    # two would make "left and right" meaningless, so they are drawn as separate offsets.
+    colours = {arm: NORMAL_BLUE if index == 0 else LE_RED for index, arm in enumerate(arm_order)}
+    sides = {arm: "left" if index == 0 else "right" for index, arm in enumerate(arm_order)}
+
+    set_style()
+    width = max(4.0, 0.95 * len(categories) + 1.6)
+    figure, axis = plt.subplots(figsize=(width, 3.9))
+
+    # The view ceiling is decided before anything is drawn, so the densities can be clipped to it.
+    # See the annotation below for why the view is clipped at all.
+    ceiling = None if log_scale else float(np.nanpercentile(frame[metric], 99.5))
+    density_clip = None if ceiling is None else (float(frame[metric].min()), ceiling)
+
+    for position, category in enumerate(categories):
+        in_category = frame[category_column].astype(str) == category
+        for arm in arm_order:
+            values = frame.loc[in_category & (frame[condition_column].astype(str) == arm), metric]
+            raincloud(
+                axis,
+                values.to_numpy(),
+                float(position),
+                color=colours[arm],
+                side=sides[arm],
+                points=max_points_per_arm,
+                # Seeded per category and arm so the drawn cells are stable across reruns but
+                # not identical between panels, which would make the jitter look like structure.
+                seed=seed + position * 17 + arm_order.index(arm),
+                clip=density_clip,
+            )
+
+    if log_scale:
+        axis.set_yscale("log")
+    else:
+        # Clip the view to the bulk, and say how many cells sit above it.
+        #
+        # Not to hide the tail — the spec is explicit that the cells a bound acts on must be
+        # visible, and hiding them is what made a mitochondrial ceiling look non-binding when it
+        # accounted for essentially every removal. But a handful of barcodes at 95%
+        # mitochondrial content flattens every box in the figure to a few pixels, which hides
+        # the distribution instead. So the axis covers the 99.5th percentile, the count beyond
+        # it is printed, and no cell goes unaccounted for.
+        assert ceiling is not None  # set above whenever log_scale is False
+        beyond = int((frame[metric] > ceiling).sum())
+        if beyond and ceiling > 0:
+            axis.set_ylim(top=ceiling * 1.08)
+            axis.annotate(
+                f"+{beyond:,} cells above {ceiling:,.3g}",
+                xy=(0.99, 0.99),
+                xycoords="axes fraction",
+                ha="right",
+                va="top",
+                fontsize=FONTSIZE["annotation"],
+                color=TEXT,
+            )
+    axis.set_xticks(range(len(categories)))
+    axis.set_xticklabels(categories, fontsize=FONTSIZE["tick"])
+    axis.set_ylabel(label, fontsize=FONTSIZE["axis_title"], color=TEXT)
+    axis.set_xlim(-0.65, len(categories) - 0.35)
+    axis.tick_params(axis="y", labelsize=FONTSIZE["tick"])
+
+    # The n per arm belongs on the figure: a raincloud over 40 cells and over 40,000 look alike.
+    counts = frame[condition_column].astype(str).value_counts()
+    handles = [
+        plt.Line2D(
+            [],
+            [],
+            marker="s",
+            linestyle="none",
+            color=colours[arm],
+            markersize=6,
+            label=f"{arm} (n={int(counts.get(arm, 0)):,})",
+        )
+        for arm in arm_order
+    ]
+    axis.legend(handles=handles, frameon=False, fontsize=FONTSIZE["legend"], loc="best")
+    axis.set_title(
+        f"{label} — {'by population' if category_column == group_column else 'by donor'}, "
+        f"{arm_order[0]} left",
+        fontsize=FONTSIZE["title"],
+        color=TEXT,
+    )
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    save_cellquorum_figure(figure, destination, dpi=dpi, companion_formats=(".pdf", ".svg"))
+    plt.close(figure)
+    return destination

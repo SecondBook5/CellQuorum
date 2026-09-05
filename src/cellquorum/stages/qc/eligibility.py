@@ -158,11 +158,45 @@ class EligibilityMasks:
     def mask(self, analysis: Analysis, permission: Permission) -> pd.Series:
         """The mask for one permission on one analysis.
 
+        Two absences that look identical in ``masks`` are not the same thing, and conflating
+        them crashed a run: a pipeline on a degenerate input where **no cell reached core** asked
+        for ``qc_fit_manifold``, got ``KeyError``, and failed the stage. "Nobody may fit the
+        manifold" is a legitimate — if alarming — outcome that the caller should be able to read
+        and report, not an invalid request.
+
+        So the distinction is made against the eligibility table rather than against this run:
+
+        - the pair is grantable by some state, but no cell on this run holds it → all-False,
+          because that is the honest answer and the caller can act on it;
+        - the pair appears nowhere in the table, e.g. FIT on an analysis no state may ever fit →
+          ``KeyError``, because asking is a caller error at any input.
+
         Raises:
-            KeyError: If that combination was never granted to any state, which means
-                asking for it is a caller error rather than an empty result.
+            KeyError: If no state grants that combination in :data:`_ELIGIBILITY`.
         """
-        return self.masks[self.column_name(analysis, permission)]
+        name = self.column_name(analysis, permission)
+        if name in self.masks:
+            return self.masks[name]
+
+        grantable = any(
+            permission in per_analysis.get(analysis, frozenset())
+            for per_analysis in _ELIGIBILITY.values()
+        )
+        if not grantable:
+            raise KeyError(
+                f"No QC state grants {permission!s} on {analysis!s}, so '{name}' can never "
+                f"exist. Available: {sorted(self.masks)}"
+            )
+        return pd.Series(False, index=self.state.index, name=name)
+
+    def is_empty(self, analysis: Analysis, permission: Permission) -> bool:
+        """Whether a grantable permission is held by no cell on this run.
+
+        The condition worth reporting rather than crashing on: ``is_empty(MANIFOLD, FIT)`` means
+        the biological reference cannot be built, which a caller should surface as a failed run
+        with a reason, not as a ``KeyError`` from an eligibility lookup.
+        """
+        return not bool(self.mask(analysis, permission).any())
 
     def to_obs_frame(self) -> pd.DataFrame:
         """Flatten to ``adata.obs`` columns."""

@@ -123,6 +123,11 @@ class AxisEvidence:
         severity: Per-cell severity in ``[0, 1]``, NaN where not usable.
         availability: Per-cell :class:`EvidenceAvailability`, sharing severity's index.
         weight: Family-aggregation multiplier, for down-weighting a shaky fit.
+        value: The raw measurement severity was derived from, when the producer has one to
+            give. Carried so a reader can check a severity against the number behind it, and
+            so the calibration figures can plot the metric rather than its transform — the
+            figure spec puts the per-donor distributions on raw metrics for exactly that
+            reason. ``None`` where the axis has no single underlying value.
 
     Raises:
         QCEvidenceError: On index mismatch, out-of-range severity, a usable NaN severity,
@@ -135,6 +140,7 @@ class AxisEvidence:
     severity: pd.Series
     availability: pd.Series
     weight: float = 1.0
+    value: pd.Series | None = None
 
     def __post_init__(self) -> None:
         if not self.severity.index.equals(self.availability.index):
@@ -179,6 +185,7 @@ def build_axis(
     severity: pd.Series,
     availability: EvidenceAvailability | pd.Series,
     weight: float = 1.0,
+    value: pd.Series | None = None,
 ) -> AxisEvidence:
     """Construct an :class:`AxisEvidence`, broadcasting a scalar availability.
 
@@ -194,6 +201,7 @@ def build_axis(
         severity: Per-cell severity in ``[0, 1]``.
         availability: One state for every cell, or a per-cell Series.
         weight: Family-aggregation weight.
+        value: Optional raw measurement behind the severity.
     """
     if isinstance(availability, EvidenceAvailability):
         availability = pd.Series(str(availability), index=severity.index, dtype=object)
@@ -211,6 +219,7 @@ def build_axis(
         severity=severity,
         availability=availability,
         weight=weight,
+        value=None if value is None else value.reindex(severity.index).astype(float),
     )
 
 
@@ -334,6 +343,12 @@ class EvidenceTable:
         for axis in self.axes:
             columns[f"qc_ev_{axis.name}_severity"] = axis.severity
             columns[f"qc_ev_{axis.name}_availability"] = axis.availability.astype(str)
+            # The raw measurement, where the producer had one. Written because a severity
+            # cannot be checked against anything on its own: MALAT1 fraction and the
+            # dissociation-stress score were computed, converted to severity, and discarded,
+            # so neither the number nor the calibration figure the spec asks for existed.
+            if axis.value is not None:
+                columns[f"qc_ev_{axis.name}_value"] = axis.value
         for family, severity in self.family_severity().items():
             columns[f"qc_ev_family_{family}_severity"] = severity
         for family, usable in self.family_usable().items():
@@ -597,7 +612,8 @@ def adjudicate_initial(
     concerning_severity = damage_severity.where(is_concerning)
     primary_driver = pd.Series("", index=cells, dtype=object)
     if concerning_severity.shape[1] and bool(has_concern.any()):
-        primary_driver.loc[has_concern] = concerning_severity.loc[has_concern].idxmax(axis=1)
+        driver = concerning_severity.loc[has_concern].idxmax(axis=1).astype(object)
+        primary_driver.loc[has_concern] = driver
 
     return AdjudicationResult(
         state=state,

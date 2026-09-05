@@ -69,19 +69,11 @@ ambient_correction:
 
 qc:
   enabled: true
-  mode: flag_no_drop           # threshold QC never deletes; only flags (cellquorum_qc_keep)
-  threshold_strategy: fixed_and_mad
   metrics:
     layer: counts
-  mad:
-    enabled: true
-    n_mads: 5.0
-    mito_n_mads: 3.0
-    groupby: [sample_id]       # per-sample MAD so high-UMI samples aren't clipped
-  basic:
+  floors:
     min_genes_per_cell: 200
     min_cells_per_gene: 3
-    max_mito_percent: 20.0     # lenient: skin keratinocytes are legitimately mito-high
   doublets:
     enabled: true
     methods: [scrublet, scdblfinder]

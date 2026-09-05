@@ -5,6 +5,9 @@ from __future__ import annotations
 # Import JSON helpers for summary artifact writing.
 import json
 
+# Import Mapping so the manifest can be read without narrowing its value type.
+from collections.abc import Mapping
+
 # Import dataclass helpers for structured artifact manifests.
 from dataclasses import dataclass, field
 
@@ -60,16 +63,9 @@ class QCArtifactManifest:
         warnings: Non-fatal artifact writing warnings.
     """
 
-    # Store the QC artifact output directory.
     output_dir: Path
-
-    # Store written artifact paths by stable artifact label.
     artifacts: dict[str, Path | list[str]] = field(default_factory=dict)
-
-    # Store skipped artifact labels.
     skipped: list[str] = field(default_factory=list)
-
-    # Store non-fatal artifact writing warnings.
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
@@ -97,7 +93,7 @@ class QCArtifactManifest:
 
     def get_path(self, artifact_name: str) -> Path:
         """
-        Return the path for a written artifact.
+        Return the path for a single-file artifact.
 
         Args:
             artifact_name: Stable artifact label.
@@ -106,7 +102,9 @@ class QCArtifactManifest:
             Path to the requested artifact.
 
         Raises:
-            QCArtifactError: If the artifact was not written.
+            QCArtifactError: If the artifact was not written, or is a group of files rather
+                than one — asking for "the" path of a figure set has no answer, and returning
+                the first would silently drop the rest.
         """
 
         # Raise clearly when the requested artifact was not written.
@@ -116,8 +114,15 @@ class QCArtifactManifest:
                 f"Available artifacts: {', '.join(self.artifacts) or '<none>'}."
             )
 
+        written = self.artifacts[artifact_name]
+        if isinstance(written, list):
+            raise QCArtifactError(
+                f"QC artifact '{artifact_name}' is a group of {len(written)} files, not one "
+                f"path. Read it from `.artifacts[{artifact_name!r}]`."
+            )
+
         # Return the artifact path.
-        return self.artifacts[artifact_name]
+        return written
 
 
 def write_qc_artifacts(
@@ -199,8 +204,10 @@ def write_qc_artifacts(
     # Prepare the output directory.
     output_path = prepare_qc_output_dir(output_dir)
 
-    # Initialize written artifact mapping.
-    artifacts: dict[str, Path] = {}
+    # Written artifact paths. The value is a union because two entries — the publication tables
+    # and the figure set — are *groups* of files written in one step, and collapsing them to a
+    # single representative path would lose the rest from the manifest.
+    artifacts: dict[str, Path | list[str]] = {}
 
     # Initialize skipped artifact labels.
     skipped: list[str] = []
@@ -420,7 +427,7 @@ def write_qc_artifacts(
                         "n_genes_kept": int(floors.gene_keep.sum()),
                     },
                     project=output_path.parent.parent.name or "CellQuorum",
-                    mode=str(qc_config.mode),
+                    floors=qc_config.floors.model_dump(),
                     case_label=keys.get("disease_label"),
                 )
             except Exception as exc:  # pragma: no cover - defensive report fallback
@@ -577,7 +584,6 @@ def write_qc_artifacts(
 
     # Write summary JSON after other artifacts so it can include manifest metadata.
     if qc_config.outputs.write_summary_json:
-        # Build summary payload.
         summary_payload = build_qc_summary_payload(
             metrics_result=metrics_result,
             floors=floors,
@@ -918,7 +924,7 @@ def build_qc_summary_payload(
     *,
     metrics_result: QCMetricsResult,
     floors: FloorResult,
-    artifact_names: dict[str, Path],
+    artifact_names: Mapping[str, Path | list[str]],
     skipped: list[str],
     warnings: list[str],
     summary_extra: dict[str, object] | None = None,
@@ -929,7 +935,8 @@ def build_qc_summary_payload(
     Args:
         metrics_result: QC metrics result.
         floors: Floor masks, reasons and counts.
-        artifact_names: Written artifact paths by label.
+        artifact_names: Written artifact paths by label. A value may be a list, because two
+            entries are groups of files written in one step rather than single paths.
         skipped: Skipped artifact labels.
         warnings: Artifact warnings.
         summary_extra: Optional extra summary values.

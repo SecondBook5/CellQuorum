@@ -1015,7 +1015,7 @@ def test_write_qc_artifacts_emits_figures_when_enabled_and_adata_present(
 
     # The panels asserted below are the legacy publication set, which is opt-in
     # now that the overview panels and typeset tables have superseded it.
-    config = QCConfig(outputs={"write_figures": True, "publication_figures": True})
+    config = QCConfig(outputs={"write_figures": True})
 
     # Build an adata with QC metrics and a condition column for grouping.
     adata = make_test_adata(

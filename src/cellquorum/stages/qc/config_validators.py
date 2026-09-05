@@ -186,8 +186,6 @@ def coerce_string_list(
     # Reject non-list and non-tuple values.
     if not isinstance(value, list | tuple):
         raise ValueError(f"{wrong_container_message} Received: {_type_name(value)}.")
-
-    # Initialize the cleaned list.
     cleaned_values: list[str] = []
 
     # Iterate over candidate entries.

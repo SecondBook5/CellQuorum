@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 # Import Literal for constrained QC configuration values.
-from typing import Literal
+from typing import ClassVar, Literal
 
 # Import Pydantic validation utilities.
 from pydantic import Field, ValidationError, field_validator, model_validator
@@ -33,16 +33,6 @@ from cellquorum.stages.qc.config_validators import (
     coerce_string_list,
     coerce_stripped_string,
 )
-
-# Define supported QC execution modes. `flag_no_drop` FLAGS failing cells WITHOUT
-# removing them — the flagged cells remain in the object and enter downstream
-# analysis. `filter` keeps only passing cells; `both` reports metrics and filters.
-# Note: the former synonym `report_only` was removed; configs using it will raise
-# a migration error directing to `flag_no_drop`.
-type QCMode = Literal["flag_no_drop", "filter", "both"]
-
-# Define supported QC threshold strategies.
-type ThresholdStrategy = Literal["fixed", "mad", "fixed_and_mad"]
 
 # Define supported doublet detection methods.
 type DoubletMethod = Literal["none", "scrublet", "scdblfinder"]
@@ -74,16 +64,9 @@ class QCMetricCalculationConfig(StrictBaseModel):
         use_raw: Whether AnnData.raw should be used when available.
     """
 
-    # Store top-n gene ranks for percent-top QC metrics.
     percent_top: list[int] = Field(default_factory=lambda: [20])
-
-    # Store whether log1p QC metrics should be calculated.
     log1p: bool = True
-
-    # Store an optional AnnData layer used for QC.
     layer: str | None = None
-
-    # Store whether AnnData.raw should be used when available.
     use_raw: bool = False
 
     @field_validator("percent_top", mode="before")
@@ -146,16 +129,9 @@ class QCFeaturePatternConfig(StrictBaseModel):
         custom_exclude_prefixes: Optional project-specific prefixes flagged for QC.
     """
 
-    # Store mitochondrial gene prefixes.
     mitochondrial_prefixes: list[str] = Field(default_factory=lambda: ["MT-"])
-
-    # Store ribosomal gene prefixes.
     ribosomal_prefixes: list[str] = Field(default_factory=lambda: ["RPS", "RPL"])
-
-    # Store hemoglobin regex patterns.
     hemoglobin_regexes: list[str] = Field(default_factory=lambda: [r"^HB[ABDEGMQZ]\d*(?!\w)"])
-
-    # Store optional custom gene prefixes flagged for QC review.
     custom_exclude_prefixes: list[str] = Field(default_factory=list)
 
     @field_validator(
@@ -190,67 +166,62 @@ class QCFeaturePatternConfig(StrictBaseModel):
         )
 
 
-class QCBasicThresholdConfig(StrictBaseModel):
-    """
-    Store fixed QC thresholds.
+class QCFloorConfig(StrictBaseModel):
+    """Absolute floors, below which a barcode is not a cell and a gene is not measurable.
 
-    Fixed thresholds are transparent and useful for reproducibility, but they can
-    remove real biology if applied too aggressively. CellQuorum therefore keeps
-    QC in report-only mode by default and makes all fixed thresholds auditable.
+    These are the only fixed numbers left in QC, and none of them is a threshold in the v1
+    sense. A floor states where the *assay's detection limit* lies; it does not judge a cell
+    against its cohort. Everything that used to be judged by a fixed ceiling — mitochondrial
+    percentage, gene and count maxima — is now graded severity, which asks whether a cell is
+    unusual *for cells like it* and requires concordance across independent evidence families
+    before condemning anything. See :mod:`cellquorum.stages.qc.floors`.
+
+    The five ceilings that used to live here (``max_genes_per_cell``, ``max_counts_per_cell``,
+    ``max_mito_percent``, ``max_ribo_percent``, ``max_hemoglobin_percent``) are gone. A hard
+    ``max_mito_percent: 8.0`` is exactly the rule that removed 20% of keratinocytes and 47% of
+    smooth muscle: those populations are legitimately mitochondrion-rich, and a cohort-wide
+    ceiling cannot tell that from damage.
+
+    **To run QC without removing anything**, set all three floors to ``null``. That replaces the
+    old ``mode: flag_no_drop`` and is strictly more informative, because it says which floor was
+    lifted rather than switching the whole stage off. Note that graded adjudication never deletes
+    a cell in any configuration — it assigns per-analysis permissions — so the floors are the only
+    place a barcode can leave the object.
 
     Args:
-        min_genes_per_cell: Optional minimum detected genes per barcode.
-        max_genes_per_cell: Optional maximum detected genes per barcode.
-        min_counts_per_cell: Optional minimum total counts per barcode.
-        max_counts_per_cell: Optional maximum total counts per barcode.
-        min_cells_per_gene: Optional minimum cells in which a gene must be detected.
-        max_mito_percent: Optional hard mitochondrial percentage cutoff.
-        max_ribo_percent: Optional hard ribosomal percentage cutoff.
-        max_hemoglobin_percent: Optional hard hemoglobin percentage cutoff.
+        min_genes_per_cell: Genes a barcode must detect to be a cell. None disables the floor.
+        min_counts_per_cell: Counts a barcode must carry. None disables the floor.
+        min_cells_per_gene: Cells a gene must be detected in to be measurable. None disables it.
     """
 
-    # Store the optional minimum detected genes per barcode.
+    #: Genes a barcode must detect. Below this there is no population to be unusual against,
+    #: and an empty droplet admitted here can anchor a provisional lineage and corrupt its null.
     min_genes_per_cell: int | None = 200
 
-    # Store the optional maximum detected genes per barcode.
-    max_genes_per_cell: int | None = None
-
-    # Store the optional minimum total counts per barcode.
+    #: Counts a barcode must carry. Off by default — the gene floor is the better-behaved of
+    #: the two, since total counts vary by an order of magnitude across real cell types.
     min_counts_per_cell: int | None = None
 
-    # Store the optional maximum total counts per barcode.
-    max_counts_per_cell: int | None = None
-
-    # Store the optional minimum cells per detected gene.
+    #: Cells a gene must be detected in. Gene filtering has no home in graded QC, which scores
+    #: cells and never genes, so it lives here on its own axis.
     min_cells_per_gene: int | None = 3
-
-    # Store the optional hard mitochondrial percentage cutoff.
-    max_mito_percent: float | None = 8.0
-
-    # Store the optional hard ribosomal percentage cutoff.
-    max_ribo_percent: float | None = None
-
-    # Store the optional hard hemoglobin percentage cutoff.
-    max_hemoglobin_percent: float | None = None
 
     @field_validator(
         "min_genes_per_cell",
-        "max_genes_per_cell",
         "min_counts_per_cell",
-        "max_counts_per_cell",
         "min_cells_per_gene",
         mode="before",
     )
     @classmethod
     def validate_optional_non_negative_int(cls, value: object) -> int | None:
         """
-        Validate optional non-negative integer thresholds.
+        Validate optional non-negative integer floors.
 
         Args:
-            value: Candidate threshold.
+            value: Candidate floor.
 
         Returns:
-            Validated integer threshold or None.
+            Validated integer floor or None.
 
         Raises:
             ValueError: If the value is negative, boolean, or non-integer.
@@ -260,216 +231,9 @@ class QCBasicThresholdConfig(StrictBaseModel):
         return coerce_non_negative_int(
             value,
             optional=True,
-            bool_message="Integer QC thresholds cannot be boolean values.",
-            type_message="Integer QC thresholds must be integers.",
-            negative_message="Integer QC thresholds must be >= 0.",
-        )
-
-    @field_validator(
-        "max_mito_percent",
-        "max_ribo_percent",
-        "max_hemoglobin_percent",
-        mode="before",
-    )
-    @classmethod
-    def validate_optional_percent(cls, value: object) -> float | None:
-        """
-        Validate optional percentage thresholds.
-
-        Args:
-            value: Candidate percentage threshold.
-
-        Returns:
-            Validated percentage threshold or None.
-
-        Raises:
-            ValueError: If the value is outside [0, 100], boolean, or non-numeric.
-        """
-
-        # Delegate to the shared bounded-float coercion helper (0-100 percent).
-        return coerce_float_in_range(
-            value,
-            optional=True,
-            low=0.0,
-            high=100.0,
-            bool_message="Percentage QC thresholds cannot be boolean values.",
-            type_message="Percentage QC thresholds must be numeric.",
-            range_message="Percentage QC thresholds must be between 0 and 100.",
-        )
-
-    @model_validator(mode="after")
-    def validate_threshold_pairs(self) -> QCBasicThresholdConfig:
-        """
-        Validate fixed min/max threshold pairs.
-
-        Returns:
-            Validated fixed-threshold configuration.
-
-        Raises:
-            ValueError: If a minimum threshold exceeds its paired maximum.
-        """
-
-        # Validate detected gene threshold ordering when both values are present.
-        if (
-            self.min_genes_per_cell is not None
-            and self.max_genes_per_cell is not None
-            and self.min_genes_per_cell > self.max_genes_per_cell
-        ):
-            raise ValueError("min_genes_per_cell cannot exceed max_genes_per_cell.")
-
-        # Validate total count threshold ordering when both values are present.
-        if (
-            self.min_counts_per_cell is not None
-            and self.max_counts_per_cell is not None
-            and self.min_counts_per_cell > self.max_counts_per_cell
-        ):
-            raise ValueError("min_counts_per_cell cannot exceed max_counts_per_cell.")
-
-        # Return the validated model.
-        return self
-
-
-class QCMadThresholdConfig(StrictBaseModel):
-    """
-    Store adaptive MAD-based QC settings.
-
-    MAD-based filtering supports permissive, dataset-aware outlier detection.
-    The default general threshold is 5 MADs, matching the best-practices example.
-    Mitochondrial filtering is configured separately because it is commonly
-    handled more strictly.
-
-    Args:
-        enabled: Whether MAD-based QC thresholds are enabled.
-        n_mads: Number of MADs for general outlier metrics.
-        metrics: QC metrics evaluated with the general MAD threshold.
-        mito_metric: Mitochondrial percentage metric.
-        mito_n_mads: Number of MADs for mitochondrial outlier detection.
-        groupby: Optional metadata columns used for group-wise MAD thresholds.
-        log1p_metrics: Whether count-like metrics should be log1p-transformed upstream.
-        skip_zero_mad: Whether zero-MAD metrics should be skipped with a warning.
-    """
-
-    # Store whether MAD thresholding is enabled.
-    enabled: bool = True
-
-    # Store the general MAD multiplier.
-    n_mads: float = 5.0
-
-    # Store the default general outlier metrics.
-    #
-    # `pct_counts_in_top_20_genes` is deliberately NOT here, even though the
-    # metric is still computed and reported. It measures transcriptome
-    # complexity, and for terminally differentiated cells low complexity IS the
-    # phenotype: a plasma cell's counts are mostly immunoglobulin and a mast
-    # cell's mostly protease granules, so a cohort-wide threshold reads their
-    # identity as damage. On the skin atlas it removed 383 plasma cells whose
-    # median depth (19,259 UMI, 1.0% mito) was three times the depth of the
-    # cells it kept, with IGKC alone at 38.7% of their counts -- an inverted
-    # filter that discarded the best cells of that lineage. Add it back only for
-    # a homogeneous population where complexity really is a quality signal.
-    metrics: list[str] = Field(
-        default_factory=lambda: [
-            "log1p_total_counts",
-            "log1p_n_genes_by_counts",
-        ]
-    )
-
-    # Store the mitochondrial metric evaluated separately.
-    #
-    # Set to None to switch mitochondrial MAD filtering off and rely on the
-    # fixed `basic.max_mito_percent` ceiling instead. That is the right choice
-    # whenever the retained population has to be comparable across samples: a
-    # per-sample MAD ceiling tightens on the CLEANEST samples, because MAD
-    # shrinks as the distribution tightens. On the skin atlas that produced
-    # ceilings from 2.0% to 11.2% across 18 samples, so the same 6%-mito cell
-    # was kept in one sample and dropped in another.
-    mito_metric: str | None = "pct_counts_mito"
-
-    # Store the mitochondrial MAD multiplier.
-    mito_n_mads: float = 3.0
-
-    # Store optional grouping columns for group-wise MAD thresholding.
-    groupby: list[str] = Field(default_factory=list)
-
-    # Store whether count-like metrics should be log1p transformed upstream.
-    log1p_metrics: bool = True
-
-    # Store whether zero-MAD metrics should be skipped instead of forced.
-    skip_zero_mad: bool = True
-
-    @field_validator("n_mads", "mito_n_mads", mode="before")
-    @classmethod
-    def validate_positive_float(cls, value: object) -> float:
-        """
-        Validate positive floating-point threshold settings.
-
-        Args:
-            value: Candidate numeric value.
-
-        Returns:
-            Validated positive float.
-
-        Raises:
-            ValueError: If the value is boolean, non-numeric, or non-positive.
-        """
-
-        # Delegate to the shared strictly-positive-float coercion helper.
-        return coerce_positive_float(
-            value,
-            bool_message="MAD multipliers cannot be boolean values.",
-            type_message="MAD multipliers must be numeric.",
-            nonpositive_message="MAD multipliers must be > 0.",
-        )
-
-    @field_validator("metrics", "groupby", mode="before")
-    @classmethod
-    def validate_string_list(cls, value: object) -> list[str]:
-        """
-        Validate a list of non-empty strings.
-
-        Args:
-            value: Candidate string list.
-
-        Returns:
-            Cleaned list of strings.
-
-        Raises:
-            ValueError: If the value is not a list of non-empty strings.
-        """
-
-        # Delegate to the shared string-list coercion helper.
-        return coerce_string_list(
-            value,
-            not_a_list_message="MAD fields must be provided as lists, not strings.",
-            wrong_container_message="MAD fields must be lists of strings.",
-            item_type_message="MAD list entries must be strings.",
-            empty_item_message="MAD list entries cannot be empty.",
-        )
-
-    @field_validator("mito_metric", mode="before")
-    @classmethod
-    def validate_mito_metric(cls, value: object) -> str | None:
-        """
-        Validate the mitochondrial metric name.
-
-        Args:
-            value: Candidate mitochondrial metric name, or None to disable
-                adaptive mitochondrial filtering.
-
-        Returns:
-            Cleaned mitochondrial metric name, or None when disabled.
-
-        Raises:
-            ValueError: If the metric name is neither None nor a non-empty string.
-        """
-
-        # Delegate to the shared optional stripped-string coercion helper, which
-        # passes None through as an explicit request to disable the mito MAD.
-        return coerce_stripped_string(
-            value,
-            optional=True,
-            type_message="mito_metric must be a string or None.",
-            empty_message="mito_metric cannot be empty.",
+            bool_message="QC floors cannot be boolean values.",
+            type_message="QC floors must be integers.",
+            negative_message="QC floors must be >= 0.",
         )
 
 
@@ -577,10 +341,7 @@ class QCMitoMixtureConfig(StrictBaseModel):
             the fit is treated as collapsed to one component.
     """
 
-    # Store whether mixture-model mitochondrial filtering is enabled.
     enabled: bool = False
-
-    # Store the mitochondrial metric used as the regression response.
     mito_metric: str = "pct_counts_mito"
 
     # Store the library complexity metric used as the regression predictor.
@@ -589,8 +350,6 @@ class QCMitoMixtureConfig(StrictBaseModel):
     # wants the linear relationship between complexity and mitochondrial fraction
     # that RNA leakage produces.
     complexity_metric: str = "n_genes_by_counts"
-
-    # Store the posterior probability above which a cell is called compromised.
     posterior_cutoff: float = 0.75
 
     # Store whether the fitted model is reduced to one mitochondrial ceiling per
@@ -601,18 +360,12 @@ class QCMitoMixtureConfig(StrictBaseModel):
     # is indefensible in a mitochondrial QC rule. Projection also produces the
     # number a methods section actually needs: a per-group ceiling in percent.
     monotone_mito_projection: bool = True
-
-    # Store whether cells below the intact component's line are always kept.
     keep_all_below_boundary: bool = True
-
-    # Store whether the discard region is extended leftwards for monotonicity.
     enforce_left_cutoff: bool = True
 
     # Store the fitting groups. Empty by default because the safe default is a
     # single-lineage object, where identity grouping is already implicit.
     groupby: list[str] = Field(default_factory=list)
-
-    # Store progressively coarser groupings for groups too small to fit.
     fallback_groupby: list[list[str]] = Field(default_factory=list)
 
     # Store how the grouping hierarchy is resolved.
@@ -622,23 +375,11 @@ class QCMitoMixtureConfig(StrictBaseModel):
     # worse guarantee about the design, because group size and study arm are
     # correlated in most cohorts.
     level_policy: Literal["uniform", "per_group"] = "uniform"
-
-    # Store the smallest group that will be fit.
     min_cells: int = 100
-
-    # Store the expectation-maximisation iteration cap.
     max_iterations: int = 500
-
-    # Store the relative convergence tolerance.
     tolerance: float = 1e-6
-
-    # Store the number of restarts.
     n_restarts: int = 5
-
-    # Store the seed for randomized restarts.
     random_state: int = 0
-
-    # Store the minimum share of cells a component may hold.
     min_component_weight: float = 0.01
 
     @field_validator("mito_metric", "complexity_metric", mode="before")
@@ -848,30 +589,17 @@ class QCDoubletConfig(StrictBaseModel):
         per_sample: Whether doublets should be evaluated per sample.
     """
 
-    # Store whether doublet auditing is enabled.
     enabled: bool = True
-
-    # Store the selected doublet detection method.
     method: DoubletMethod = "scdblfinder"
 
     # Store detectors to run (consensus over these); overrides single method when
     # set. Default matches the single-method default (`method`) so an unconfigured
     # run uses the same detector regardless of which field the caller reads.
     methods: list[str] = Field(default_factory=lambda: ["scdblfinder"])
-
-    # Store how to combine per-method calls: any | all | majority.
     consensus: str = "any"
-
-    # Store whether predicted doublets should be removed automatically.
     remove: bool = False
-
-    # Store the expected doublet rate.
     expected_doublet_rate: float = 0.06
-
-    # Store an optional manual doublet score threshold.
     score_threshold: float | None = None
-
-    # Store whether doublets should be evaluated per sample.
     per_sample: bool = True
 
     @field_validator("expected_doublet_rate", "score_threshold", mode="before")
@@ -941,19 +669,10 @@ class QCCellCycleConfig(StrictBaseModel):
         random_state: Random seed for reproducibility.
     """
 
-    # Store whether cell-cycle scoring is enabled.
     enabled: bool = False
-
-    # Store the layer to score on (must be log-normalized).
     score_layer: str = "cellquorum_normalized"
-
-    # Store S-phase genes (empty by default; caller fills from Tirosh constants).
     s_genes: list[str] = Field(default_factory=list)
-
-    # Store G2M-phase genes (empty by default; caller fills from Tirosh constants).
     g2m_genes: list[str] = Field(default_factory=list)
-
-    # Store the random seed for deterministic scoring.
     random_state: int = 0
 
     @field_validator("s_genes", "g2m_genes", mode="before")
@@ -1024,22 +743,11 @@ class QCAmbientRNAConfig(StrictBaseModel):
         require_raw_droplets_for_correction: Whether correction requires raw droplets.
     """
 
-    # Store whether ambient RNA assessment is enabled.
     enabled: bool = True
-
-    # Store the selected ambient RNA method.
     method: AmbientMethod = "audit"
-
-    # Store whether ambient RNA correction should modify counts.
     correction_enabled: bool = False
-
-    # Store an optional assumed contamination fraction.
     contamination_fraction: float | None = None
-
-    # Store optional marker genes used for ambient RNA audits.
     marker_genes: list[str] = Field(default_factory=list)
-
-    # Store whether correction requires raw droplet data.
     require_raw_droplets_for_correction: bool = True
 
     @field_validator("contamination_fraction", mode="before")
@@ -1134,10 +842,7 @@ class QCDuplicateNameConfig(StrictBaseModel):
         obs_names: Policy for duplicate AnnData observation names.
     """
 
-    # Store duplicate variable-name handling policy.
     var_names: DuplicateNamePolicy = "make_unique"
-
-    # Store duplicate observation-name handling policy.
     obs_names: DuplicateNamePolicy = "warn"
 
 
@@ -1173,16 +878,6 @@ class QCOutputConfig(StrictBaseModel):
         write_figures: Master switch for every QC figure. False writes no
             figures at all, whatever the per-writer flags below say.
         figure_format: File format used for QC figures.
-        diagnostic_figures: Whether to write the per-metric audit plots (one
-            histogram, violin and scatter per metric). Off by default: they show
-            each metric's distribution but cannot show what QC removed, which is
-            the question the overview panels answer in six figures instead of
-            sixteen. Turn on to inspect a single metric in isolation.
-        publication_figures: Whether to write the legacy publication panel set
-            (mito/ribo/hb boxes, doublet ECDF, scree, MAD panel, A–M plus a
-            visual-QA contact sheet). Off by default: superseded by
-            ``overview_figures`` and ``publication_tables``, kept for runs that
-            need to reproduce an earlier figure exactly.
         html_report: Whether to write the single-file HTML QC report
             (``qc_report.html``): cohort funnel, per-sample attrition, rule
             attribution, applied thresholds. The CSVs stay canonical; this is the
@@ -1200,49 +895,18 @@ class QCOutputConfig(StrictBaseModel):
             dumped, so the QC paragraph of a paper can be written from them.
     """
 
-    # Store whether QC metric tables should be written.
     write_metrics_table: bool = True
-
-    # Store whether filtering decision tables should be written.
     write_filter_table: bool = True
-
-    # Store whether threshold tables should be written.
     write_mixture_table: bool = True
-
-    # Store whether the per-group QC report table should be written.
     write_report_table: bool = True
-
-    # Store whether the pre-filter grouping-label table should be written.
     cell_labels: bool = True
-
-    # Store whether the differential-attrition audit table should be written.
     attrition_audit: bool = True
-
-    # Store whether QC summary JSON should be written.
     write_summary_json: bool = True
-
-    # Store whether a QC AnnData object should be written.
     write_h5ad: bool = True
-
-    # Store whether any QC figures should be written.
     write_figures: bool = True
-
-    # Store the QC figure format.
     figure_format: QCFigureFormat = "png"
-
-    # Store whether the per-metric audit plots are written.
-    diagnostic_figures: bool = False
-
-    # Store whether the legacy publication QC panel set is written.
-    publication_figures: bool = False
-
-    # Store whether the single-file HTML QC report is written.
     html_report: bool = True
-
-    # Store whether the figure-ready QC panel set is written.
     overview_figures: bool = True
-
-    # Store whether the typeset publication QC tables are written.
     publication_tables: bool = True
 
     # Store the QC figure DPI resolution.
@@ -1299,28 +963,13 @@ class QCAttritionAuditConfig(StrictBaseModel):
             to; the flag only controls what gets shouted about.
     """
 
-    # Store whether the audit runs.
     enabled: bool = True
-
-    # Store extra factors to audit beyond the resolved condition and batch keys.
     factors: list[str] = Field(default_factory=list)
-
-    # Store the blocking column, or None to resolve the donor key.
     block: str | None = None
-
-    # Store whether the batch key is audited.
     audit_batch: bool = True
-
-    # Store whether the per-subset pass runs.
     audit_subsets: bool = True
-
-    # Store the subset column, or None to resolve the cell-type annotation.
     subset: str | None = None
-
-    # Store the significance level for the warning.
     alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
-
-    # Store the smallest removal-rate gap that may raise a warning.
     min_rate_difference: float = Field(default=0.02, ge=0.0, le=1.0)
 
 
@@ -1337,7 +986,7 @@ class QCGradedConfig(StrictBaseModel):
     they are deliberately not tuned for any dataset.
 
     Args:
-        enabled: Whether graded adjudication runs alongside the threshold rules.
+        enabled: Whether graded adjudication runs. On by default — it is the QC system.
         concern_severity: Family severity at or above which a family is concerning, making
             the cell at least borderline.
         severe_severity: Family severity at or above which a family is severe. Only severe
@@ -1355,8 +1004,17 @@ class QCGradedConfig(StrictBaseModel):
             nuclear-retained signal is expected rather than evidence of leakage.
     """
 
-    # Whether graded adjudication runs.
-    enabled: bool = False
+    # Whether graded adjudication runs. Defaulted False while it ran *alongside* the threshold
+    # rules and was the experimental path; with those rules deleted, False now means "compute the
+    # evidence and then judge nothing", so a default run would apply detection floors and hand
+    # every real question downstream unanswered. That is not a conservative default, it is an
+    # inert one, so this is on.
+    #
+    # The bars below are uncalibrated on purpose (see the frozen architecture spec: calibration
+    # is read off the figures, never guessed). Turning the switch on does not make them more or
+    # less calibrated than a config that sets `enabled: true` by hand — which every real config
+    # already did — it only stops the default from being a QC stage that decides nothing.
+    enabled: bool = True
 
     # Bars on family severity. Severity is `z / (z + half_severity_z)` where z is a robust
     # deviation from the healthy mode, so every bar converts to a number of deviations:
@@ -1376,8 +1034,6 @@ class QCGradedConfig(StrictBaseModel):
     #     0.50       1.93%     10.77%       4.24%     4.71%
     #     0.667      0.03%      9.69%       1.54%     0.56%
     #     0.80       0.00%      8.90%       0.00%     0.02%
-
-    # 3 deviations — "unusual". Above this a cell is at least borderline.
     concern_severity: float = 0.50
 
     # 6 deviations — genuinely severe, and low enough that capture, nuclear and multiplet
@@ -1391,11 +1047,7 @@ class QCGradedConfig(StrictBaseModel):
     uninformative_capture_severity: float = 0.90
 
     min_coverage_for_quarantine: float = 0.50
-
-    # 4.5 deviations, ~2.7% of real cells — a plausible 10x doublet rate at these loadings.
     multiplet_severity: float = 0.60
-
-    # Assay context: nuclear-retained signal means something different in snRNA.
     nuclear_axis_applicable: bool = True
 
     # ── Lineage-conditional severity ──────────────────────────────────────────────── #
@@ -1492,14 +1144,9 @@ class QCConfig(StrictBaseModel):
 
     Args:
         enabled: Whether the QC module is enabled.
-        mode: QC behavior. `flag_no_drop` flags failing cells but keeps them in
-            the object; `filter` removes failing cells; `both` reports and filters.
-            The default is `flag_no_drop` (no-drop mode), so the stage warns loudly
-            when it flags cells it does not remove.
-        threshold_strategy: Which threshold family should be used.
         metrics: QC metric calculation settings.
-        basic: Fixed QC threshold settings.
-        mad: Adaptive MAD QC settings.
+        floors: Absolute floors, the only place a barcode leaves the object.
+        graded: Graded-adjudication settings (evidence -> core/borderline/quarantine).
         mito_mixture: Mixture-model (miQC) mitochondrial QC settings.
         features: Feature family pattern settings.
         doublets: Doublet detection settings.
@@ -1512,106 +1159,75 @@ class QCConfig(StrictBaseModel):
         fail_on_empty_result: Whether filtering to zero cells or genes is fatal.
     """
 
-    # Store whether QC is enabled.
     enabled: bool = True
-
-    # Store whether QC should report only, filter only, or both.
-    mode: QCMode = "flag_no_drop"
-
-    # Store which threshold strategy should be applied.
-    threshold_strategy: ThresholdStrategy = "fixed_and_mad"
-
-    # Store metric calculation settings.
     metrics: QCMetricCalculationConfig = Field(default_factory=QCMetricCalculationConfig)
 
-    # Store fixed QC threshold settings.
-    basic: QCBasicThresholdConfig = Field(default_factory=QCBasicThresholdConfig)
-
-    # Store graded-adjudication settings (evidence -> core/borderline/quarantine).
+    # Store the absolute floors. There is no `mode` beside this: the floors always remove what
+    # they match, graded adjudication never removes anything, and a run that should drop nothing
+    # sets all three floors to null. A `mode` switch on top of that could only contradict one of
+    # the two, which is what the old `flag_no_drop` default did — it made QC report without acting.
+    floors: QCFloorConfig = Field(default_factory=QCFloorConfig)
     graded: QCGradedConfig = Field(default_factory=QCGradedConfig)
-
-    # Store adaptive MAD threshold settings.
-    mad: QCMadThresholdConfig = Field(default_factory=QCMadThresholdConfig)
-
-    # Store mixture-model mitochondrial threshold settings.
     mito_mixture: QCMitoMixtureConfig = Field(default_factory=QCMitoMixtureConfig)
-
-    # Store feature pattern settings.
     features: QCFeaturePatternConfig = Field(default_factory=QCFeaturePatternConfig)
-
-    # Store doublet detection settings.
     doublets: QCDoubletConfig = Field(default_factory=QCDoubletConfig)
-
-    # Store cell-cycle scoring settings.
     cell_cycle: QCCellCycleConfig = Field(default_factory=QCCellCycleConfig)
-
-    # Store ambient RNA assessment settings.
     ambient: QCAmbientRNAConfig = Field(default_factory=QCAmbientRNAConfig)
-
-    # Store duplicate name policy settings.
     duplicate_names: QCDuplicateNameConfig = Field(default_factory=QCDuplicateNameConfig)
-
-    # Store differential-attrition audit settings.
     attrition_audit: QCAttritionAuditConfig = Field(default_factory=QCAttritionAuditConfig)
-
-    # Store output settings.
     outputs: QCOutputConfig = Field(default_factory=QCOutputConfig)
-
-    # Store whether empty filtered results should fail.
     fail_on_empty_result: bool = True
 
-    @field_validator("mode", mode="before")
+    #: Keys the v1 threshold path owned, mapped to what replaces them. Kept as a real error
+    #: rather than silent acceptance: a config that still says `max_mito_percent: 8.0` was
+    #: written expecting a hard ceiling, and quietly ignoring it would change that run's
+    #: results without telling anyone.
+    _REMOVED_KEYS: ClassVar[dict[str, str]] = {
+        "mode": (
+            "QC no longer has a mode. The floors always remove what they match and graded "
+            "adjudication never removes anything, so there is nothing left for a mode to "
+            "select. For the old `flag_no_drop` behaviour set every floor to null:\n"
+            "  qc:\n    floors:\n      min_genes_per_cell: null\n"
+            "      min_counts_per_cell: null\n      min_cells_per_gene: null"
+        ),
+        "threshold_strategy": (
+            "Threshold strategies ('fixed', 'mad', 'fixed_and_mad') are gone with the "
+            "threshold path. Severity is graded per lineage instead; tune `qc.graded`."
+        ),
+        "mad": (
+            "MAD thresholding is replaced by graded severity, which is a robust z against a "
+            "lineage-conditional null rather than a cohort-wide MAD bound — the difference "
+            "that stops rare populations being removed for being rare. Tune `qc.graded`."
+        ),
+        "basic": (
+            "`basic` is now `floors`, and keeps only min_genes_per_cell, min_counts_per_cell "
+            "and min_cells_per_gene. The five `max_*` ceilings are gone: a cohort-wide "
+            "`max_mito_percent` cannot distinguish a mitochondrion-rich cell type from a "
+            "damaged cell, which is why it removed 20% of keratinocytes. Graded metabolic "
+            "evidence answers that per lineage and cannot condemn a cell on its own."
+        ),
+    }
+
+    @model_validator(mode="before")
     @classmethod
-    def _reject_renamed_report_only(cls, value: object) -> object:
-        """
-        Reject the removed mode alias 'report_only'.
+    def _reject_removed_threshold_keys(cls, data: object) -> object:
+        """Fail with a migration message when a config still sets a v1 threshold key.
 
         Args:
-            value: Candidate mode value.
+            data: Raw config mapping, before field validation.
 
         Returns:
-            Validated mode value.
+            The mapping unchanged when it uses no removed key.
 
         Raises:
-            CellQuorumConfigError: If mode is the removed 'report_only' alias.
+            CellQuorumConfigError: If a removed v1 key is present.
         """
-
-        if value == "report_only":
-            raise CellQuorumConfigError(
-                "QC mode 'report_only' was renamed to 'flag_no_drop'. "
-                "Update your config to `mode: flag_no_drop` (identical behavior: "
-                "flag failing cells, drop none, warn)."
-            )
-        return value
-
-    # The two cross-field validators that used to live here both guarded the threshold path:
-    # one required `mad.enabled` for a MAD strategy, the other refused `mito_mixture` and
-    # `mad.mito_metric` together because whichever rule was stricter would silently decide.
-    # That conflict cannot arise now — no code applies a MAD rule, so the mixture is the only
-    # mitochondrial policy there is, and the guard did nothing but reject valid configs.
-    # `mad` and `threshold_strategy` themselves are removed next.
-
-    def should_filter(self) -> bool:
-        """
-        Return whether QC should apply filtering.
-
-        Returns:
-            True when mode is filter or both.
-        """
-
-        # Return whether the QC mode includes filtering.
-        return self.mode in {"filter", "both"}
-
-    def should_report(self) -> bool:
-        """
-        Return whether QC should produce reports and metrics.
-
-        Returns:
-            True in flag_no_drop mode or both.
-        """
-
-        # Return whether the QC mode includes reporting.
-        return self.mode in {"flag_no_drop", "both"}
+        if not isinstance(data, Mapping):
+            return data
+        for key, guidance in cls._REMOVED_KEYS.items():
+            if key in data:
+                raise CellQuorumConfigError(f"`qc.{key}` was removed. {guidance}")
+        return data
 
     def enabled_metric_families(self) -> list[str]:
         """
@@ -1622,11 +1238,7 @@ class QCConfig(StrictBaseModel):
         """
 
         # Initialize the enabled metric family list.
-        families = ["basic"]
-
-        # Add MAD metrics when MAD thresholding is enabled.
-        if self.mad.enabled:
-            families.append("mad")
+        families = ["floors"]
 
         # Add doublet metrics when doublet auditing is enabled.
         if self.doublets.enabled:
@@ -1661,21 +1273,14 @@ def validate_qc_config_dict(config: Mapping[str, object]) -> QCConfig:
     # Reject unknown top-level QC keys before Pydantic validation.
     reject_unknown_keys(
         config_dict,
-        allowed_keys=[
-            "enabled",
-            "mode",
-            "threshold_strategy",
-            "metrics",
-            "basic",
-            "mad",
-            "features",
-            "doublets",
-            "cell_cycle",
-            "ambient",
-            "duplicate_names",
-            "outputs",
-            "fail_on_empty_result",
-        ],
+        # Derived from the model rather than restated: the hand-maintained list this replaces
+        # had drifted and was silently rejecting `graded`, `mito_mixture` and `attrition_audit`
+        # — three live sub-configs — because nobody updated it when they landed.
+        #
+        # The removed v1 keys are allowed *through* this gate on purpose, so that
+        # `_reject_removed_threshold_keys` can answer with a migration message instead of this
+        # function reporting them as an unrecognised name.
+        allowed_keys=[*QCConfig.model_fields, *QCConfig._REMOVED_KEYS],
         field_path="qc",
     )
 
@@ -1690,22 +1295,19 @@ def validate_qc_config_dict(config: Mapping[str, object]) -> QCConfig:
 
 
 __all__ = [
+    "QCFloorConfig",
     "AmbientMethod",
     "DoubletMethod",
     "DuplicateNamePolicy",
     "QCAmbientRNAConfig",
     "QCAttritionAuditConfig",
-    "QCBasicThresholdConfig",
     "QCCellCycleConfig",
     "QCConfig",
     "QCDoubletConfig",
     "QCDuplicateNameConfig",
     "QCFigureFormat",
     "QCFeaturePatternConfig",
-    "QCMadThresholdConfig",
     "QCMetricCalculationConfig",
-    "QCMode",
     "QCOutputConfig",
-    "ThresholdStrategy",
     "validate_qc_config_dict",
 ]

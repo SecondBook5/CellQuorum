@@ -91,12 +91,11 @@ def make_stage_test_adata() -> ad.AnnData:
     return ad.AnnData(X=matrix, obs=obs, var=var)
 
 
-def make_stage_qc_config(*, mode: str = "flag_no_drop") -> QCConfig:
+def make_stage_qc_config() -> QCConfig:
     """
     Build a deterministic QC configuration for stage tests.
 
     Args:
-        mode: QC execution mode.
 
     Returns:
         QCConfig with fixed thresholds only and simple output settings.
@@ -104,15 +103,11 @@ def make_stage_qc_config(*, mode: str = "flag_no_drop") -> QCConfig:
 
     # Return the deterministic stage QC configuration.
     return QCConfig(
-        mode=mode,
-        threshold_strategy="fixed",
         metrics={"percent_top": [2]},
-        basic={
+        floors={
             "min_genes_per_cell": 2,
             "min_cells_per_gene": 2,
-            "max_mito_percent": 60.0,
         },
-        mad={"enabled": False},
         outputs={
             "write_h5ad": False,
             "write_figures": False,
@@ -247,9 +242,7 @@ def test_resolve_qc_config_accepts_object_qc_field(tmp_path: Path) -> None:
     # Build a context with object-style QC config.
     context = make_context(
         tmp_path,
-        config=SimpleNamespace(
-            qc={"mode": "filter", "threshold_strategy": "fixed", "mad": {"enabled": False}}
-        ),
+        config=SimpleNamespace(qc={"floors": {"min_genes_per_cell": 1}}),
     )
 
     # Resolve the QC config.
@@ -257,7 +250,7 @@ def test_resolve_qc_config_accepts_object_qc_field(tmp_path: Path) -> None:
 
     # Confirm object config was validated.
     assert isinstance(resolved, QCConfig)
-    assert resolved.mode == "filter"
+    assert resolved.floors.min_genes_per_cell == 1
 
 
 def test_coerce_qc_config_rejects_invalid_value() -> None:
@@ -703,7 +696,7 @@ def test_build_qc_stage_summary_extra_uses_context_metadata(tmp_path: Path) -> N
     context = make_context(tmp_path)
 
     # Build QC config.
-    config = make_stage_qc_config(mode="both")
+    config = make_stage_qc_config()
 
     # Build summary extra payload.
     payload = build_qc_stage_summary_extra(
@@ -716,6 +709,4 @@ def test_build_qc_stage_summary_extra_uses_context_metadata(tmp_path: Path) -> N
     assert payload["stage_name"] == "qc"
     assert payload["run_id"] == "stage-test-run"
     assert payload["random_seed"] == 123
-    assert payload["mode"] == "both"
-    assert payload["threshold_strategy"] == "fixed"
-    assert payload["enabled_metric_families"] == ["basic", "doublets", "ambient_rna"]
+    assert payload["enabled_metric_families"] == ["floors", "doublets", "ambient_rna"]

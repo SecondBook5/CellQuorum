@@ -14,11 +14,10 @@ from cellquorum.config.validation import ConfigValidationError
 # Import QC configuration models under test.
 from cellquorum.stages.qc.config import (
     QCAmbientRNAConfig,
-    QCBasicThresholdConfig,
     QCConfig,
     QCDoubletConfig,
     QCFeaturePatternConfig,
-    QCMadThresholdConfig,
+    QCFloorConfig,
     QCMetricCalculationConfig,
     QCOutputConfig,
     validate_qc_config_dict,
@@ -29,11 +28,9 @@ def test_qc_config_defaults_follow_single_cell_best_practices() -> None:
     """
     Verify that default QC settings reflect the intended conservative workflow.
 
-    The default QC configuration should calculate standard Scanpy-compatible
-    metrics, use percent_top=[20], use permissive 5-MAD filtering for general
-    outliers, handle mitochondrial filtering separately with 3 MADs plus a hard
-    cutoff, and keep doublet/ambient behavior in audit mode rather than removing
-    or correcting data automatically.
+    The default QC configuration should calculate standard Scanpy-compatible metrics, use
+    percent_top=[20], apply only absolute detection floors, and keep doublet/ambient behavior
+    in audit mode rather than removing or correcting data automatically.
     """
 
     # Build the default QC configuration.
@@ -41,12 +38,6 @@ def test_qc_config_defaults_follow_single_cell_best_practices() -> None:
 
     # Confirm QC is enabled by default.
     assert config.enabled is True
-
-    # Confirm default QC mode is flag_no_drop.
-    assert config.mode == "flag_no_drop"
-
-    # Confirm default thresholding uses fixed and MAD logic.
-    assert config.threshold_strategy == "fixed_and_mad"
 
     # Confirm percent-top metric calculation follows the best-practices example.
     assert config.metrics.percent_top == [20]
@@ -60,24 +51,24 @@ def test_qc_config_defaults_follow_single_cell_best_practices() -> None:
     # Confirm AnnData.raw is not used by default.
     assert config.metrics.use_raw is False
 
-    # Confirm default general MAD threshold is permissive.
-    assert config.mad.n_mads == 5.0
+    # Confirm the default floors are detection limits, and that only three exist. The gene
+    # floor is on because a barcode below it has no population to be unusual against; the count
+    # floor is off because total counts vary by an order of magnitude across real cell types.
+    assert config.floors.min_genes_per_cell == 200
+    assert config.floors.min_counts_per_cell is None
+    assert config.floors.min_cells_per_gene == 3
+    assert set(type(config.floors).model_fields) == {
+        "min_genes_per_cell",
+        "min_counts_per_cell",
+        "min_cells_per_gene",
+    }
 
-    # Confirm default MAD metrics match the intended QC covariates. Complexity
-    # (pct_counts_in_top_20_genes) is computed and reported but not filtered on,
-    # because for a plasma or mast cell low complexity is identity, not damage.
-    assert config.mad.metrics == [
-        "log1p_total_counts",
-        "log1p_n_genes_by_counts",
-    ]
-    assert "pct_counts_in_top_20_genes" not in config.mad.metrics
-
-    # Confirm mitochondrial MAD filtering is configured separately.
-    assert config.mad.mito_metric == "pct_counts_mito"
-    assert config.mad.mito_n_mads == 3.0
-
-    # Confirm the hard mitochondrial cutoff is conservative and configurable.
-    assert config.basic.max_mito_percent == 8.0
+    # Confirm no cohort-relative bound is configured anywhere on the model. Graded severity
+    # owns every such judgement now, so a fixed ceiling reappearing here is a regression.
+    assert not hasattr(config, "mode")
+    assert not hasattr(config, "threshold_strategy")
+    assert not hasattr(config, "mad")
+    assert not hasattr(config, "basic")
 
     # Confirm human mitochondrial prefixes are used by default.
     assert config.features.mitochondrial_prefixes == ["MT-"]
@@ -107,51 +98,53 @@ def test_qc_config_defaults_follow_single_cell_best_practices() -> None:
     assert config.duplicate_names.obs_names == "warn"
 
 
-def test_qc_config_mode_helpers_report_filter_and_both() -> None:
+@pytest.mark.parametrize(
+    ("removed_key", "value", "expected_guidance"),
+    [
+        ("mode", "flag_no_drop", "floors"),
+        ("mode", "filter", "floors"),
+        ("mode", "report_only", "floors"),
+        ("threshold_strategy", "fixed", "graded"),
+        ("mad", {"enabled": True}, "lineage-conditional"),
+        ("basic", {"max_mito_percent": 8.0}, "keratinocytes"),
+    ],
+)
+def test_every_removed_v1_key_fails_with_migration_guidance(
+    removed_key: str, value: object, expected_guidance: str
+) -> None:
+    """A config still setting a v1 threshold key must fail, and say what replaces it.
+
+    Silently ignoring these would be the worse failure. A config that says
+    ``max_mito_percent: 8.0`` was written expecting a hard ceiling to be applied; accepting it
+    and doing nothing would change that run's results without telling anyone. So each removed
+    key raises and names its replacement.
     """
-    Verify that QC mode helper methods expose filtering and reporting behavior.
-
-    Later QC stage code should not reimplement mode checks. These helpers define
-    whether a config should write metrics, apply filters, or do both.
-    """
-
-    # Build a flag_no_drop configuration.
-    flag_no_drop = QCConfig(mode="flag_no_drop")
-
-    # Confirm flag_no_drop mode reports but does not filter.
-    assert flag_no_drop.should_report() is True
-    assert flag_no_drop.should_filter() is False
-
-    # Build a filter-only configuration.
-    filter_only = QCConfig(mode="filter")
-
-    # Confirm filter-only mode filters but does not report.
-    assert filter_only.should_report() is False
-    assert filter_only.should_filter() is True
-
-    # Build a configuration that reports and filters.
-    both = QCConfig(mode="both")
-
-    # Confirm both mode reports and filters.
-    assert both.should_report() is True
-    assert both.should_filter() is True
-
-
-def test_qc_config_rejects_removed_report_only_mode() -> None:
-    """
-    Verify that the removed 'report_only' mode alias raises a clear migration error.
-
-    The mode was renamed to 'flag_no_drop' in #181; this ensures configs using the
-    old name fail loudly with a message pointing to the new name.
-    """
-
-    import pytest
 
     from cellquorum.core.exceptions import CellQuorumConfigError
 
-    # Confirm that 'report_only' is rejected with a clear error.
-    with pytest.raises(CellQuorumConfigError, match="flag_no_drop"):
-        QCConfig(mode="report_only")
+    with pytest.raises(CellQuorumConfigError, match=expected_guidance):
+        QCConfig(**{removed_key: value})
+
+
+def test_running_without_removing_anything_is_expressed_as_null_floors() -> None:
+    """The capability the deleted ``mode: flag_no_drop`` provided still exists.
+
+    It is now stated per floor rather than as a global switch, which says *which* limit was
+    lifted. Graded adjudication never deletes a cell in any configuration, so with every floor
+    off nothing can leave the object.
+    """
+
+    config = QCConfig(
+        floors={
+            "min_genes_per_cell": None,
+            "min_counts_per_cell": None,
+            "min_cells_per_gene": None,
+        }
+    )
+
+    assert config.floors.min_genes_per_cell is None
+    assert config.floors.min_counts_per_cell is None
+    assert config.floors.min_cells_per_gene is None
 
 
 def test_qc_config_enabled_metric_families_reflect_enabled_submodules() -> None:
@@ -159,7 +152,7 @@ def test_qc_config_enabled_metric_families_reflect_enabled_submodules() -> None:
     Verify that enabled metric-family reporting follows submodule flags.
 
     The enabled metric-family helper will later support reports, provenance, and
-    stage summaries. It should reflect MAD, doublet, and ambient RNA settings.
+    stage summaries. It should reflect doublet and ambient RNA settings.
     """
 
     # Build the default QC configuration.
@@ -167,22 +160,19 @@ def test_qc_config_enabled_metric_families_reflect_enabled_submodules() -> None:
 
     # Confirm all default metric families are enabled.
     assert default_config.enabled_metric_families() == [
-        "basic",
-        "mad",
+        "floors",
         "doublets",
         "ambient_rna",
     ]
 
     # Build a configuration with optional audit families disabled.
     reduced_config = QCConfig(
-        threshold_strategy="fixed",
-        mad={"enabled": False},
         doublets={"enabled": False, "method": "none"},
         ambient={"enabled": False, "method": "none"},
     )
 
     # Confirm only basic metrics remain enabled.
-    assert reduced_config.enabled_metric_families() == ["basic"]
+    assert reduced_config.enabled_metric_families() == ["floors"]
 
 
 def test_metric_calculation_config_cleans_percent_top_values() -> None:
@@ -306,242 +296,84 @@ def test_feature_pattern_config_rejects_single_string_patterns(field_name: str) 
         QCFeaturePatternConfig.model_validate({field_name: "MT-"})
 
 
-def test_basic_threshold_config_accepts_valid_fixed_thresholds() -> None:
-    """
-    Verify that valid fixed QC thresholds can be configured.
+def test_floor_config_accepts_the_three_surviving_floors() -> None:
+    """The floors are absolute detection limits, not cohort-relative bounds.
 
-    Fixed thresholds remain useful for transparent, reproducible QC even though
-    CellQuorum defaults to conservative report-only behavior.
+    Only three survive the threshold path. Each says where the assay stops resolving anything,
+    which is why none of them is a quantile: "fewer than 100 genes detected" is a statement
+    about the instrument, not about how this cohort happens to be distributed.
     """
 
-    # Build a fixed-threshold config with valid min/max settings.
-    config = QCBasicThresholdConfig(
+    config = QCFloorConfig(
         min_genes_per_cell=100,
-        max_genes_per_cell=6000,
         min_counts_per_cell=500,
-        max_counts_per_cell=50000,
         min_cells_per_gene=20,
-        max_mito_percent=12.5,
-        max_ribo_percent=80.0,
-        max_hemoglobin_percent=10.0,
     )
 
-    # Confirm integer thresholds were retained.
     assert config.min_genes_per_cell == 100
-    assert config.max_genes_per_cell == 6000
     assert config.min_counts_per_cell == 500
-    assert config.max_counts_per_cell == 50000
     assert config.min_cells_per_gene == 20
-
-    # Confirm percentage thresholds were converted to floats.
-    assert config.max_mito_percent == 12.5
-    assert config.max_ribo_percent == 80.0
-    assert config.max_hemoglobin_percent == 10.0
 
 
 @pytest.mark.parametrize(
     "field_name",
-    [
-        "min_genes_per_cell",
-        "max_genes_per_cell",
-        "min_counts_per_cell",
-        "max_counts_per_cell",
-        "min_cells_per_gene",
-    ],
+    ["min_genes_per_cell", "min_counts_per_cell", "min_cells_per_gene"],
 )
-def test_basic_threshold_config_rejects_invalid_integer_thresholds(field_name: str) -> None:
+def test_floor_config_rejects_invalid_integer_floors(field_name: str) -> None:
     """
-    Verify that integer QC thresholds reject invalid values.
+    Verify that integer QC floors reject invalid values.
 
-    Integer thresholds should not accept booleans, negative values, or fractional
-    values because those would produce confusing filtering rules.
+    Floors should not accept booleans, negative values, or fractional values because those
+    would produce confusing filtering rules.
     """
 
     # Confirm boolean values are rejected.
     with pytest.raises(ValidationError, match=field_name):
-        QCBasicThresholdConfig.model_validate({field_name: True})
+        QCFloorConfig.model_validate({field_name: True})
 
     # Confirm negative values are rejected.
     with pytest.raises(ValidationError, match=field_name):
-        QCBasicThresholdConfig.model_validate({field_name: -1})
+        QCFloorConfig.model_validate({field_name: -1})
 
     # Confirm floating-point values are rejected.
     with pytest.raises(ValidationError, match=field_name):
-        QCBasicThresholdConfig.model_validate({field_name: 1.5})
+        QCFloorConfig.model_validate({field_name: 1.5})
 
 
 @pytest.mark.parametrize(
-    "field_name",
+    "removed_ceiling",
     [
+        "max_genes_per_cell",
+        "max_counts_per_cell",
         "max_mito_percent",
         "max_ribo_percent",
         "max_hemoglobin_percent",
     ],
 )
-def test_basic_threshold_config_rejects_invalid_percent_thresholds(field_name: str) -> None:
-    """
-    Verify that percentage QC thresholds reject invalid values.
+def test_the_five_removed_ceilings_are_not_silently_accepted(removed_ceiling: str) -> None:
+    """A ceiling reaching the floor config must fail rather than be ignored.
 
-    Percent thresholds must stay within [0, 100] and should not accept booleans
-    or string-like values.
-    """
-
-    # Confirm boolean values are rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCBasicThresholdConfig.model_validate({field_name: True})
-
-    # Confirm values below zero are rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCBasicThresholdConfig.model_validate({field_name: -0.1})
-
-    # Confirm values above one hundred are rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCBasicThresholdConfig.model_validate({field_name: 100.1})
-
-    # Confirm strings are rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCBasicThresholdConfig.model_validate({field_name: "8"})
-
-
-def test_basic_threshold_config_rejects_inconsistent_gene_threshold_pair() -> None:
-    """
-    Verify that minimum gene thresholds cannot exceed maximum gene thresholds.
-
-    This prevents impossible fixed filtering rules from reaching the QC decision
-    engine.
+    ``QCFloorConfig`` is strict, so an unknown field raises. That is the point: these five
+    ceilings judged a cell against a cohort-wide number, which is exactly the rule that
+    removed 20% of keratinocytes and 47% of smooth muscle for being legitimately
+    mitochondrion-rich. Accepting the key and ignoring it would leave a config that reads as
+    though a limit is enforced when it is not.
     """
 
-    # Confirm inconsistent gene thresholds fail validation.
-    with pytest.raises(ValidationError, match="min_genes_per_cell"):
-        QCBasicThresholdConfig(min_genes_per_cell=5000, max_genes_per_cell=1000)
+    with pytest.raises(ValidationError):
+        QCFloorConfig.model_validate({removed_ceiling: 10.0})
 
 
-def test_basic_threshold_config_rejects_inconsistent_count_threshold_pair() -> None:
-    """
-    Verify that minimum count thresholds cannot exceed maximum count thresholds.
+def test_a_floor_of_zero_is_distinct_from_no_floor() -> None:
+    """``0`` and ``None`` must not collapse into each other.
 
-    This prevents impossible total-count filtering rules from reaching the QC
-    decision engine.
-    """
-
-    # Confirm inconsistent count thresholds fail validation.
-    with pytest.raises(ValidationError, match="min_counts_per_cell"):
-        QCBasicThresholdConfig(min_counts_per_cell=50000, max_counts_per_cell=1000)
-
-
-def test_mad_threshold_config_defaults_match_best_practices() -> None:
-    """
-    Verify that MAD threshold defaults match the intended QC strategy.
-
-    General outlier filtering should use 5 MADs on log-count, log-gene, and
-    percent-top metrics, while mitochondrial filtering has a separate 3-MAD rule.
+    ``min_cells_per_gene: 0`` keeps every gene while still recording that a floor was applied;
+    ``None`` disables the rule. Both retain everything, so a bug conflating them would be
+    invisible in the output and visible only in the provenance a reader trusts.
     """
 
-    # Build the default MAD threshold configuration.
-    config = QCMadThresholdConfig()
-
-    # Confirm MAD thresholding is enabled.
-    assert config.enabled is True
-
-    # Confirm the general MAD multiplier is permissive.
-    assert config.n_mads == 5.0
-
-    # Confirm default general MAD metrics, complexity deliberately excluded.
-    assert config.metrics == [
-        "log1p_total_counts",
-        "log1p_n_genes_by_counts",
-    ]
-
-    # Confirm mitochondrial MAD settings are separate.
-    assert config.mito_metric == "pct_counts_mito"
-    assert config.mito_n_mads == 3.0
-
-    # Confirm zero-MAD behavior is explicit.
-    assert config.skip_zero_mad is True
-
-
-@pytest.mark.parametrize("field_name", ["n_mads", "mito_n_mads"])
-def test_mad_threshold_config_rejects_invalid_mad_multipliers(field_name: str) -> None:
-    """
-    Verify that MAD multipliers must be positive numeric values.
-
-    MAD multipliers of zero, negative values, booleans, or strings would make
-    adaptive QC thresholding invalid or ambiguous.
-    """
-
-    # Confirm boolean values are rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCMadThresholdConfig.model_validate({field_name: True})
-
-    # Confirm zero is rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCMadThresholdConfig.model_validate({field_name: 0})
-
-    # Confirm negative values are rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCMadThresholdConfig.model_validate({field_name: -1})
-
-    # Confirm strings are rejected.
-    with pytest.raises(ValidationError, match=field_name):
-        QCMadThresholdConfig.model_validate({field_name: "5"})
-
-
-def test_mad_threshold_config_cleans_groupby_and_metric_lists() -> None:
-    """
-    Verify that MAD metric and groupby lists are cleaned.
-
-    These fields will later become DataFrame column lookups, so harmless
-    whitespace should be stripped before threshold construction.
-    """
-
-    # Build a MAD config with padded metric and groupby values.
-    config = QCMadThresholdConfig(
-        metrics=[" total_counts ", " n_genes_by_counts "],
-        groupby=[" sample_id ", " batch "],
-    )
-
-    # Confirm metrics were cleaned.
-    assert config.metrics == ["total_counts", "n_genes_by_counts"]
-
-    # Confirm groupby fields were cleaned.
-    assert config.groupby == ["sample_id", "batch"]
-
-
-def test_mad_threshold_config_rejects_empty_mito_metric() -> None:
-    """
-    Verify that the mitochondrial metric name cannot be empty.
-
-    Threshold construction needs a real metric column name for mitochondrial
-    outlier detection.
-    """
-
-    # Confirm an empty mitochondrial metric name fails validation.
-    with pytest.raises(ValidationError, match="mito_metric"):
-        QCMadThresholdConfig(mito_metric="   ")
-
-
-def test_qc_config_rejects_mad_strategy_when_mad_disabled() -> None:
-    """
-    Verify that MAD threshold strategies require MAD settings to be enabled.
-
-    This prevents a configuration from requesting MAD-based filtering while
-    simultaneously disabling the MAD threshold module.
-    """
-
-    # Confirm mad-only strategy fails when MAD is disabled.
-    with pytest.raises(ValidationError, match="MAD threshold strategy"):
-        QCConfig(threshold_strategy="mad", mad={"enabled": False})
-
-    # Confirm fixed-and-MAD strategy fails when MAD is disabled.
-    with pytest.raises(ValidationError, match="MAD threshold strategy"):
-        QCConfig(threshold_strategy="fixed_and_mad", mad={"enabled": False})
-
-    # Confirm fixed-only strategy is valid when MAD is disabled.
-    config = QCConfig(threshold_strategy="fixed", mad={"enabled": False})
-
-    # Confirm the fixed-only configuration was accepted.
-    assert config.threshold_strategy == "fixed"
-    assert config.mad.enabled is False
+    assert QCFloorConfig(min_cells_per_gene=0).min_cells_per_gene == 0
+    assert QCFloorConfig(min_cells_per_gene=None).min_cells_per_gene is None
 
 
 def test_doublet_config_defaults_to_audit_without_removal() -> None:
@@ -758,11 +590,6 @@ def test_validate_qc_config_dict_accepts_valid_mapping() -> None:
     # Validate a representative QC configuration dictionary.
     config = validate_qc_config_dict(
         {
-            "mode": "both",
-            "threshold_strategy": "fixed",
-            "mad": {
-                "enabled": False,
-            },
             "metrics": {
                 "percent_top": [50, 20, 20],
             },
@@ -780,14 +607,19 @@ def test_validate_qc_config_dict_accepts_valid_mapping() -> None:
     # Confirm the helper returned a QCConfig object.
     assert isinstance(config, QCConfig)
 
-    # Confirm mode was parsed.
-    assert config.mode == "both"
-
     # Confirm percent_top values were cleaned.
     assert config.metrics.percent_top == [20, 50]
 
-    # Confirm MAD thresholding was disabled.
-    assert config.mad.enabled is False
+    # Confirm the optional audit families were disabled.
+    assert config.doublets.enabled is False
+    assert config.ambient.enabled is False
+
+    # Confirm the live sub-configs are reachable through this helper. The hand-maintained
+    # allow-list this replaced had drifted and rejected `graded`, `mito_mixture` and
+    # `attrition_audit` — three sections that do real work — so a config using them failed
+    # validation with an "unknown key" error naming a key that was perfectly valid.
+    for section in ("graded", "mito_mixture", "attrition_audit", "floors"):
+        assert isinstance(validate_qc_config_dict({section: {}}), QCConfig)
 
 
 def test_validate_qc_config_dict_rejects_non_mapping_input() -> None:
@@ -826,4 +658,4 @@ def test_validate_qc_config_dict_wraps_pydantic_errors() -> None:
 
     # Confirm invalid nested settings are wrapped in ConfigValidationError.
     with pytest.raises(ConfigValidationError, match="Invalid QC configuration"):
-        validate_qc_config_dict({"mode": "invalid_mode"})
+        validate_qc_config_dict({"floors": {"min_genes_per_cell": -5}})

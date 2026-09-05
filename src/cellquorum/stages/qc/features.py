@@ -60,19 +60,10 @@ class QCFeatureMaskSummary:
         n_custom_exclude: Number of custom-excluded features.
     """
 
-    # Store the number of variables represented in the mask table.
     n_vars: int
-
-    # Store the number of mitochondrial features.
     n_mito: int
-
-    # Store the number of ribosomal features.
     n_ribo: int
-
-    # Store the number of hemoglobin features.
     n_hemoglobin: int
-
-    # Store the number of custom-excluded features.
     n_custom_exclude: int
 
     def to_dict(self) -> dict[str, int]:

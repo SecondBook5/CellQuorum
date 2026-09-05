@@ -127,7 +127,6 @@ def build_disabled_qc_stage_result(
         metrics={
             "stage_name": stage_name,
             "enabled": False,
-            "mode": qc_config.mode,
             "reason": "qc_disabled",
         },
     )
@@ -156,8 +155,7 @@ def build_qc_stage_summary_extra(
         "stage_name": stage_name,
         "run_id": str(getattr(context, "run_id", "cellquorum-run")),
         "random_seed": int(getattr(context, "random_seed", 1337)),
-        "mode": qc_config.mode,
-        "threshold_strategy": qc_config.threshold_strategy,
+        "floors": qc_config.floors.model_dump(),
         "enabled_metric_families": qc_config.enabled_metric_families(),
     }
 
@@ -383,8 +381,7 @@ def build_qc_stage_metrics(
     return {
         "stage_name": stage_name,
         "enabled": True,
-        "mode": qc_config.mode,
-        "threshold_strategy": qc_config.threshold_strategy,
+        "floors": qc_config.floors.model_dump(),
         "input_shape": {
             "n_obs": int(input_adata.n_obs),
             "n_vars": int(input_adata.n_vars),

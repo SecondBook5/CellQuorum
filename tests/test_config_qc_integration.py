@@ -75,10 +75,8 @@ def test_cellquorum_config_default_includes_qc_config() -> None:
 
     # Confirm key QC defaults are available from the top-level config.
     assert config.qc.enabled is True
-    assert config.qc.mode == "flag_no_drop"
-    assert config.qc.threshold_strategy == "fixed_and_mad"
-    assert config.qc.basic.min_genes_per_cell == 200
-    assert config.qc.basic.min_cells_per_gene == 3
+    assert config.qc.floors.min_genes_per_cell == 200
+    assert config.qc.floors.min_cells_per_gene == 3
 
 
 def test_cellquorum_config_accepts_qc_mapping_directly() -> None:
@@ -92,15 +90,9 @@ def test_cellquorum_config_accepts_qc_mapping_directly() -> None:
     config = CellQuorumConfig(
         qc={
             "enabled": True,
-            "mode": "filter",
-            "threshold_strategy": "fixed",
-            "mad": {
-                "enabled": False,
-            },
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 123,
                 "min_cells_per_gene": 4,
-                "max_mito_percent": 9.5,
             },
         }
     )
@@ -109,12 +101,8 @@ def test_cellquorum_config_accepts_qc_mapping_directly() -> None:
     assert isinstance(config.qc, QCConfig)
 
     # Confirm nested QC values were retained.
-    assert config.qc.mode == "filter"
-    assert config.qc.threshold_strategy == "fixed"
-    assert config.qc.mad.enabled is False
-    assert config.qc.basic.min_genes_per_cell == 123
-    assert config.qc.basic.min_cells_per_gene == 4
-    assert config.qc.basic.max_mito_percent == 9.5
+    assert config.qc.floors.min_genes_per_cell == 123
+    assert config.qc.floors.min_cells_per_gene == 4
 
 
 def test_validate_config_dict_accepts_qc_block() -> None:
@@ -133,15 +121,9 @@ def test_validate_config_dict_accepts_qc_block() -> None:
             },
             "qc": {
                 "enabled": True,
-                "mode": "both",
-                "threshold_strategy": "fixed",
-                "mad": {
-                    "enabled": False,
-                },
-                "basic": {
+                "floors": {
                     "min_genes_per_cell": 150,
                     "min_cells_per_gene": 5,
-                    "max_mito_percent": 12.0,
                 },
             },
         }
@@ -152,11 +134,8 @@ def test_validate_config_dict_accepts_qc_block() -> None:
 
     # Confirm QC config was parsed.
     assert isinstance(config.qc, QCConfig)
-    assert config.qc.mode == "both"
-    assert config.qc.threshold_strategy == "fixed"
-    assert config.qc.basic.min_genes_per_cell == 150
-    assert config.qc.basic.min_cells_per_gene == 5
-    assert config.qc.basic.max_mito_percent == 12.0
+    assert config.qc.floors.min_genes_per_cell == 150
+    assert config.qc.floors.min_cells_per_gene == 5
 
 
 def test_validate_config_dict_rejects_unknown_qc_keys() -> None:
@@ -200,14 +179,9 @@ compute:
   prefer_gpu: false
 qc:
   enabled: true
-  mode: filter
-  threshold_strategy: fixed
-  mad:
-    enabled: false
-  basic:
+  floors:
     min_genes_per_cell: 175
     min_cells_per_gene: 6
-    max_mito_percent: 11.0
 """,
         encoding="utf-8",
     )
@@ -221,12 +195,8 @@ qc:
     # Confirm QC settings loaded.
     assert isinstance(config.qc, QCConfig)
     assert config.project.name == "yaml_qc_project"
-    assert config.qc.mode == "filter"
-    assert config.qc.threshold_strategy == "fixed"
-    assert config.qc.mad.enabled is False
-    assert config.qc.basic.min_genes_per_cell == 175
-    assert config.qc.basic.min_cells_per_gene == 6
-    assert config.qc.basic.max_mito_percent == 11.0
+    assert config.qc.floors.min_genes_per_cell == 175
+    assert config.qc.floors.min_cells_per_gene == 6
 
 
 def test_qc_stage_resolves_top_level_config_qc_block() -> None:
@@ -238,15 +208,7 @@ def test_qc_stage_resolves_top_level_config_qc_block() -> None:
     """
 
     # Build a top-level config with custom QC settings.
-    config = CellQuorumConfig(
-        qc={
-            "mode": "both",
-            "threshold_strategy": "fixed",
-            "mad": {
-                "enabled": False,
-            },
-        }
-    )
+    config = CellQuorumConfig(qc={})
 
     # Build a lightweight context carrying the top-level config.
     context = SimpleNamespace(config=config)
@@ -256,8 +218,6 @@ def test_qc_stage_resolves_top_level_config_qc_block() -> None:
 
     # Confirm the top-level QC config was used directly.
     assert resolved_qc_config is config.qc
-    assert resolved_qc_config.mode == "both"
-    assert resolved_qc_config.threshold_strategy == "fixed"
 
 
 def test_qc_stage_enablement_uses_stage_flag_and_qc_flag() -> None:

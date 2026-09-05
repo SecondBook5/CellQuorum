@@ -84,6 +84,14 @@ docs/superpowers/
 scripts/le_*.py
 configs/le_global_granular.yaml
 
+# The `clean` variants pin absolute run directories and a /mnt cellranger root, so they
+# describe one machine rather than the engine. Kept out of the tree for the same reason
+# as the granular config above; `configs/le_global.yaml` remains the portable example.
+configs/le_global_clean.yaml
+configs/le_global_clean_da.yaml
+configs/le_global_clean_da_artifact_kept.yaml
+configs/le_global_clean_da_paired.yaml
+
 # Lymphedema-specific validation: proves the engine on one real dataset, but the
 # study scripts and their outputs are not part of the reusable engine.
 lymphedema/

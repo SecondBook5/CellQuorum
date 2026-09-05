@@ -398,8 +398,10 @@ def detect_doublets(
 
     # Combine calls into predicted_doublet + a summary doublet_score (max).
     if call_cols:
-        calls = pd.DataFrame(call_cols)
-        adata.obs["predicted_doublet"] = combine_consensus(calls, config.consensus).to_numpy()
+        # A distinct name: `calls` above holds one method's per-cell array, and rebinding it to
+        # the assembled frame made the two shapes indistinguishable to a reader and to mypy.
+        call_frame = pd.DataFrame(call_cols)
+        adata.obs["predicted_doublet"] = combine_consensus(call_frame, config.consensus).to_numpy()
         score_cols = [f"doublet_score_{m}" for m in methods_run]
         # skipna=True so a per-cell NaN from one method (e.g. a cell scDblFinder
         # could not score) does not contaminate the summary when another method

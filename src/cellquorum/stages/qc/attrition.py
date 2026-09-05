@@ -150,34 +150,19 @@ class AttritionTest:
         skipped: Why no test was run, or None when one was.
     """
 
-    # Store the factor and the unit of analysis.
     factor: str
     unit: str
-
-    # Store the procedure used.
     test: str
-
-    # Store the per-level counts.
     levels: tuple[str, ...]
     n_cells: tuple[float, ...]
     n_removed: tuple[float, ...]
     removal_rate: tuple[float, ...]
-
-    # Store the effect size.
     rate_difference: float | None = None
     odds_ratio: float | None = None
-
-    # Store the inference.
     p_value: float | None = None
     n_strata: int | None = None
-
-    # Store the reason no test was run.
     skipped: str | None = None
-
-    # Store which subset the record covers, None meaning the whole cohort.
     subset: str | None = None
-
-    # Store the multiplicity-adjusted p-value, set only on subset records.
     p_value_adjusted: float | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -249,10 +234,7 @@ class AttritionAudit:
             materially unbalanced.
     """
 
-    # Store the test records.
     tests: list[AttritionTest] = field(default_factory=list)
-
-    # Store the warnings.
     warnings: list[str] = field(default_factory=list)
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -839,20 +821,12 @@ def audit_qc_design_leaks(
     # by the config path a user would have to edit to change it.
     groupings: list[tuple[str, tuple[str, ...]]] = []
 
-    # Read the MAD block. Grouping matters here only for the mitochondrial metric:
-    # per-sample grouping of depth-like metrics is standard and defensible, while
-    # the mitochondrial pathology above is specific to mitochondrial content.
-    mad = getattr(config, "mad", None)
-    if mad is not None and getattr(mad, "enabled", True):
-        mad_groupby = tuple(getattr(mad, "groupby", None) or ())
-        if mad_groupby:
-            if getattr(mad, "mito_metric", None):
-                groupings.append(("mad.groupby", mad_groupby))
-
-            # With mitochondrial MAD off, only the condition rule applies, so
-            # check that alone rather than dropping the grouping entirely.
-            elif condition and condition in mad_groupby:
-                groupings.append(("mad.groupby", (condition,)))
+    # The MAD block used to be read here too. It is gone with the threshold path, so the
+    # mixture below is the only adaptive rule whose grouping can absorb a design factor. With
+    # MAD went the metric-scoping condition — MAD carried both depth metrics, where per-sample
+    # grouping is defensible, and a mitochondrial metric, where it is not. The mixture is a
+    # mitochondrial rule by construction, so there is no longer a metric to scope on and every
+    # grouping it declares is checked.
 
     # Read the mixture block, including its fallbacks: a fallback level is a
     # grouping that gets used, so naming a design factor there is the same defect

@@ -76,7 +76,7 @@ def _qc_products(adata):
     There is no ``mode`` any more. Floors always filter, because a barcode below the detection
     limit is not a cell; every judgement belongs to graded adjudication, which never deletes.
     """
-    config = QCConfig(basic={"min_genes_per_cell": 10, "min_cells_per_gene": 1})
+    config = QCConfig(floors={"min_genes_per_cell": 10, "min_cells_per_gene": 1})
     metrics = calculate_qc_metrics(adata, config)
     floors = apply_floors(
         adata.X,
@@ -184,9 +184,7 @@ def test_cell_labels_table_covers_the_cells_qc_removed(tmp_path):
         floors=floors,
     )
     config = QCConfig(
-        mode="filter",
-        threshold_strategy="fixed",
-        basic={"min_genes_per_cell": 10, "min_cells_per_gene": 1, "max_mito_percent": None},
+        floors={"min_genes_per_cell": 10, "min_cells_per_gene": 1},
         outputs={"write_figures": False, "write_h5ad": False, "publication_tables": False},
     )
 

@@ -82,10 +82,11 @@ def _generic_config(h5ad_path: Path, output_dir: Path) -> dict:
             "adjudication": False,
         },
         "qc": {
-            "mode": "flag_no_drop",
-            "threshold_strategy": "fixed",
             "metrics": {"layer": "counts", "percent_top": [2]},
-            "mad": {"enabled": False},
+            # The fixture has 50 genes, so the default 200-gene detection floor would remove
+            # every cell. Set the floors to the fixture's scale: this test is about the stages
+            # executing on a generic cohort, not about this synthetic matrix being clean.
+            "floors": {"min_genes_per_cell": 5, "min_cells_per_gene": 1},
             "outputs": {"write_h5ad": False, "write_figures": False},
         },
         # cp10k recipe keeps this generalization smoke test env-independent; the

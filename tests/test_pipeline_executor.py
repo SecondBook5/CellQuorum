@@ -118,18 +118,12 @@ def build_test_config(*, qc_mode: str = "flag_no_drop") -> CellQuorumConfig:
             "enabled": False,
         },
         qc={
-            "mode": qc_mode,
-            "threshold_strategy": "fixed",
             "metrics": {
                 "percent_top": [2],
             },
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 2,
                 "min_cells_per_gene": 2,
-                "max_mito_percent": 60.0,
-            },
-            "mad": {
-                "enabled": False,
             },
             "outputs": {
                 "write_h5ad": False,
@@ -420,11 +414,16 @@ def test_executor_runs_qc_stage_and_updates_context(tmp_path: Path) -> None:
 
     # Confirm context AnnData was preserved and updated.
     assert isinstance(execution_result.context.adata, ad.AnnData)
-    assert execution_result.context.adata.shape == (3, 4)
 
-    # Confirm QC annotations were added.
-    assert "cellquorum_qc_keep" in execution_result.context.adata.obs
-    assert "cellquorum_qc_keep" in execution_result.context.adata.var
+    # Confirm QC annotations were added. The v1 assertion here was
+    # `"cellquorum_qc_keep" in obs` and `in var` — a per-cell and per-gene verdict written onto
+    # the OUTPUT object. Under floors the output has already had sub-floor barcodes removed, so
+    # such a column would be all-True and carry no information; the meaningful version lives on
+    # the pre-filter figure object, which `test_qc_figure_source.py` covers. What the output
+    # carries instead is the graded evidence, which is what downstream stages actually read.
+    obs = execution_result.context.adata.obs
+    assert "qc_floor_reason" in obs
+    assert "qc_state_initial" in obs
 
     # Confirm the execution record captured artifacts.
     record = execution_result.stage_execution_records[0]

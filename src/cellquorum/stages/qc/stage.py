@@ -60,7 +60,7 @@ from cellquorum.stages.qc.attrition import audit_qc_design_leaks, audit_qc_stage
 from cellquorum.stages.qc.config import QCConfig
 
 # Import QC decision construction.
-from cellquorum.stages.qc.floors import apply_floors
+from cellquorum.stages.qc.floors import apply_floors, require_non_empty_qc_result
 
 # Import QC metric calculation.
 from cellquorum.stages.qc.lineage import (
@@ -118,6 +118,46 @@ def _condition_mixture_on_lineage(qc_config: QCConfig) -> QCConfig:
     )
 
 
+def _analysable_mask(
+    input_adata: ad.AnnData,
+    output_adata: ad.AnnData,
+    cell_keep: pd.Series,
+) -> pd.Series:
+    """Cells that survived QC as analysable, indexed by every cell that ENTERED QC.
+
+    "Analysable" spans both axes on which a cell can be lost, because auditing either one alone
+    misreads the run:
+
+    * the floors physically remove a barcode — on real data this is a small share of the loss;
+    * graded adjudication quarantines a cell, which keeps it in the object but withdraws every
+      permission that could contribute to a conclusion. That is a loss for any purpose the
+      attrition audit cares about, and it is where nearly all of the loss now happens.
+
+    Borderline is NOT counted as lost. A borderline cell is retained, projected, annotated, and
+    contributes to composition through a sensitivity universe; calling it lost would report
+    attrition that has not happened.
+
+    Args:
+        input_adata: The object as it entered QC, defining the index.
+        output_adata: The post-floor object carrying the graded state column, if any.
+        cell_keep: Per-barcode floor mask over the input index.
+
+    Returns:
+        Boolean Series over ``input_adata.obs_names``. Barcodes removed by a floor are False;
+        a cell present in the output is False when quarantined and True otherwise.
+    """
+    analysable = cell_keep.reindex(input_adata.obs_names).fillna(False).astype(bool)
+
+    state = output_adata.obs.get("qc_state_initial")
+    if state is None:
+        return analysable
+
+    quarantined = (
+        state.astype(str).eq("quarantine").reindex(input_adata.obs_names).fillna(False).astype(bool)
+    )
+    return analysable & ~quarantined
+
+
 @register_stage(name="qc", order=20, config_flag="qc", config_field="qc")
 @dataclass(frozen=True)
 class QCStage:
@@ -144,11 +184,7 @@ class QCStage:
     #: Stage name, injected by ``@register_stage``. Declared so the contract is visible to a
     #: reader and to a type checker rather than appearing by decorator magic.
     name: ClassVar[str]
-
-    # Store an optional explicit QC configuration override.
     config: QCConfig | None = None
-
-    # Store the results subdirectory used for QC artifacts.
     output_subdir: str = "qc"
 
     def run(self, context: object) -> StageResult:
@@ -230,15 +266,26 @@ class QCStage:
             get_qc_matrix(adata, qc_config)[0],
             adata.obs_names,
             adata.var_names,
-            min_genes_per_cell=qc_config.basic.min_genes_per_cell,
-            min_counts_per_cell=qc_config.basic.min_counts_per_cell,
-            min_cells_per_gene=qc_config.basic.min_cells_per_gene,
+            min_genes_per_cell=qc_config.floors.min_genes_per_cell,
+            min_counts_per_cell=qc_config.floors.min_counts_per_cell,
+            min_cells_per_gene=qc_config.floors.min_cells_per_gene,
         )
 
         # Floors always filter, so there is no mode to configure. Under the old `flag_no_drop`
         # default the stage computed a verdict, kept every cell, and left three places in the
         # codebase reading a boolean that controlled nothing.
         output_adata = build_qc_output_adata(adata=adata, floors=floors)
+
+        # Stop here when the floors emptied the object.
+        #
+        # `fail_on_empty_result` was declared and read by nothing, so this case ran on: a
+        # 50-gene test matrix met the default 200-gene floor, every cell was removed, and the
+        # run continued until a downstream reduction raised `zero-size array to reduction
+        # operation minimum which has no identity` five stages later. That is the least useful
+        # place to learn the floor was wrong, and it is the exact mistake a first-time user
+        # makes — the default floor assumes a filtered whole-transcriptome matrix.
+        if qc_config.fail_on_empty_result:
+            require_non_empty_qc_result(floors, n_genes=int(output_adata.n_vars))
 
         # Carry calculated QC metrics onto the QC AnnData before figure/h5ad
         # artifact writing. The durable metric tables remain canonical, but
@@ -315,16 +362,21 @@ class QCStage:
                 report_group_name = candidate
                 break
 
-        # Test whether QC removed cells at the same rate in every arm of the
-        # design. This runs on the UNFILTERED obs against the decision table:
-        # output_adata has already lost the removed cells under mode="filter", so
-        # measured against it every arm's attrition is zero. A filter whose rate
-        # tracks the condition is a covariate, and nothing downstream can tell the
-        # difference, so the engine checks rather than trusting the thresholds to
-        # have been fair.
+        # Test whether QC lost cells at the same rate in every arm of the design. This runs on
+        # the UNFILTERED obs: output_adata has already lost the sub-floor barcodes, so measured
+        # against it every arm's attrition is zero. A loss rate that tracks the condition is a
+        # covariate, and nothing downstream can tell the difference, so the engine checks rather
+        # than trusting the bars to have been fair.
+        #
+        # The `keep` series is deliberately NOT `floors.cell_keep` alone. It was, and that made
+        # the audit blind to the axis that now does the work: the gene floor removes almost
+        # nothing on real data (measured: ~0% of keratinocyte, mast, LEC and SMC removals), while
+        # graded quarantine is what actually excludes cells. An audit watching only the floors
+        # would have reported no differential attrition on precisely the cohort where the
+        # mast-cell arm difference was real.
         attrition_audit = audit_qc_stage_attrition(
             obs=adata.obs,
-            keep=floors.cell_keep,
+            keep=_analysable_mask(adata, output_adata, floors.cell_keep),
             config=qc_config,
             cohort=cohort,
             design=design,

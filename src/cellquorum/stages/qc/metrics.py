@@ -67,19 +67,10 @@ class QCMetricsResult:
         warnings: Non-fatal metric-calculation warnings.
     """
 
-    # Store cell-level QC metrics.
     cell_metrics: pd.DataFrame
-
-    # Store gene-level QC metrics.
     gene_metrics: pd.DataFrame
-
-    # Store feature-family masks.
     feature_masks: pd.DataFrame
-
-    # Store JSON-friendly summary values.
     summary: dict[str, object]
-
-    # Store non-fatal warnings.
     warnings: list[str] = field(default_factory=list)
 
     def to_summary_dict(self) -> dict[str, object]:
@@ -206,9 +197,10 @@ def collect_groupby_columns(config: QCConfig) -> list[str]:
         Deduplicated grouping column names, ordered by first appearance.
     """
 
-    # Gather the MAD grouping and, when the mixture model is enabled, its own
-    # grouping plus every fallback grouping it may descend through.
-    requested = list(config.mad.groupby)
+    # Gather, when the mixture model is enabled, its grouping plus every fallback grouping it
+    # may descend through. The MAD grouping that used to lead this list went with the
+    # threshold path, leaving the mixture as the only group-wise rule.
+    requested: list[str] = []
     if config.mito_mixture.enabled:
         requested.extend(config.mito_mixture.groupby)
         for grouping in config.mito_mixture.fallback_groupby:
@@ -690,8 +682,6 @@ def calculate_percent_top(
     # Reject invalid top_n values defensively.
     if top_n <= 0:
         raise QCMetricsError(f"top_n must be > 0. Received: {top_n}.")
-
-    # Initialize top-count sums.
     top_sums = np.zeros(int(matrix.shape[0]), dtype=float)
 
     # Use sparse row iteration for sparse matrices.

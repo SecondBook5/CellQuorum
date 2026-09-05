@@ -110,15 +110,11 @@ def _chain_config(h5ad_path) -> CellQuorumConfig:
         # PFlog1pPF default needs the isolated scclr env (covered separately).
         preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
         qc={
-            "mode": "flag_no_drop",  # keep all cells so downstream has signal
-            "threshold_strategy": "fixed",
             "metrics": {"percent_top": [2]},
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 1,
                 "min_cells_per_gene": 1,
-                "max_mito_percent": 100.0,
             },
-            "mad": {"enabled": False},
             "doublets": {"enabled": False},
         },
         integration={
@@ -255,15 +251,11 @@ def test_full_analysis_chain_runs_de_da_enrichment_viz(tmp_path):
         },
         preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
         qc={
-            "mode": "flag_no_drop",
-            "threshold_strategy": "fixed",
             "metrics": {"percent_top": [2]},
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 1,
                 "min_cells_per_gene": 1,
-                "max_mito_percent": 100.0,
             },
-            "mad": {"enabled": False},
             "doublets": {"enabled": False},
         },
         integration={
@@ -431,15 +423,11 @@ def test_embeddings_stage_runs_in_full_chain(tmp_path):
         },
         preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
         qc={
-            "mode": "flag_no_drop",
-            "threshold_strategy": "fixed",
             "metrics": {"percent_top": [2]},
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 1,
                 "min_cells_per_gene": 1,
-                "max_mito_percent": 100.0,
             },
-            "mad": {"enabled": False},
             "doublets": {"enabled": False},
         },
         integration={

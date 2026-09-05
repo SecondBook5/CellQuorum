@@ -28,7 +28,7 @@ from cellquorum.stages.qc.validation import (
     require_obs_columns,
     summarize_adata_shape,
     validate_duplicate_name_policy,
-    validate_mad_groupby_columns,
+    validate_mixture_groupby_columns,
     validate_qc_input_adata,
     validate_qc_matrix,
 )
@@ -524,7 +524,7 @@ def test_validate_qc_matrix_rejects_negative_sparse_values() -> None:
         validate_qc_matrix(matrix, expected_n_obs=2, matrix_source="X")
 
 
-def test_validate_mad_groupby_columns_accepts_existing_columns() -> None:
+def test_validate_mixture_groupby_columns_accepts_existing_columns() -> None:
     """
     Verify that requested MAD groupby columns can exist in AnnData.obs.
 
@@ -536,13 +536,13 @@ def test_validate_mad_groupby_columns_accepts_existing_columns() -> None:
     adata = make_test_adata()
 
     # Build a QC configuration requesting existing groupby columns.
-    config = QCConfig(mad={"groupby": ["sample_id", "batch"]})
+    config = QCConfig(mito_mixture={"enabled": True, "groupby": ["sample_id", "batch"]})
 
     # Confirm validation passes without raising.
-    validate_mad_groupby_columns(adata, config)
+    validate_mixture_groupby_columns(adata, config)
 
 
-def test_validate_mad_groupby_columns_rejects_missing_columns() -> None:
+def test_validate_mixture_groupby_columns_rejects_missing_columns() -> None:
     """
     Verify that missing MAD groupby columns fail validation.
 
@@ -553,14 +553,14 @@ def test_validate_mad_groupby_columns_rejects_missing_columns() -> None:
     adata = make_test_adata()
 
     # Build a QC configuration requesting a missing groupby column.
-    config = QCConfig(mad={"groupby": ["donor_id"]})
+    config = QCConfig(mito_mixture={"enabled": True, "groupby": ["donor_id"]})
 
     # Confirm missing groupby columns fail clearly.
     with pytest.raises(QCInputValidationError, match="missing AnnData.obs column"):
-        validate_mad_groupby_columns(adata, config)
+        validate_mixture_groupby_columns(adata, config)
 
 
-def test_validate_mad_groupby_columns_skips_when_mad_disabled() -> None:
+def test_validate_mixture_groupby_columns_skips_when_mad_disabled() -> None:
     """
     Verify that groupby validation is skipped when MAD thresholding is disabled.
 
@@ -572,16 +572,10 @@ def test_validate_mad_groupby_columns_skips_when_mad_disabled() -> None:
     adata = make_test_adata()
 
     # Build a fixed-only QC configuration with missing groupby metadata.
-    config = QCConfig(
-        threshold_strategy="fixed",
-        mad={
-            "enabled": False,
-            "groupby": ["donor_id"],
-        },
-    )
+    config = QCConfig()
 
     # Confirm validation does not raise when MAD is disabled.
-    validate_mad_groupby_columns(adata, config)
+    validate_mixture_groupby_columns(adata, config)
 
 
 def test_validate_qc_input_adata_records_requested_groupby_columns() -> None:
@@ -595,7 +589,7 @@ def test_validate_qc_input_adata_records_requested_groupby_columns() -> None:
     adata = make_test_adata()
 
     # Build a QC configuration requesting group-wise MAD thresholds.
-    config = QCConfig(mad={"groupby": ["sample_id"]})
+    config = QCConfig(mito_mixture={"enabled": True, "groupby": ["sample_id"]})
 
     # Validate the QC input.
     summary = validate_qc_input_adata(adata, config)

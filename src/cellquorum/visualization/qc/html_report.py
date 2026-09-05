@@ -474,7 +474,7 @@ def render_qc_html_report(
     thresholds: pd.DataFrame | None = None,
     gene_summary: dict[str, int] | None = None,
     project: str = "CellQuorum",
-    mode: str = "filter",
+    floors: dict[str, int | None] | None = None,
     case_label: str | None = None,
     generated_at: datetime | None = None,
 ) -> str:
@@ -487,7 +487,8 @@ def render_qc_html_report(
         thresholds: Optional applied-threshold table.
         gene_summary: Optional gene-level counts (``n_genes``, ``n_genes_kept``).
         project: Project or run name for the heading.
-        mode: QC mode, so a reader knows whether cells were dropped or flagged.
+        floors: The applied absolute floors, so a reader knows what could remove a barcode.
+            Every floor ``None`` means nothing was removed at all.
         case_label: Condition treated as the case arm, for chip colouring.
         generated_at: Timestamp override, for reproducible output in tests.
 
@@ -505,11 +506,18 @@ def render_qc_html_report(
 
     body: list[str] = ['<div class="wrap">']
     body.append(f"<h1>QC report &mdash; {_esc(project)}</h1>")
-    verb = "removed" if mode in {"filter", "both"} else "flagged, none removed"
-    body.append(
-        f'<p class="sub">Generated {stamp} &middot; QC mode <code>{_esc(mode)}</code> '
-        f"&middot; failing cells {verb}</p>"
+    # QC has no mode: the floors are the only thing that can remove a barcode, and graded
+    # adjudication assigns permissions without deleting. So the honest header states the floors
+    # rather than a mode name, and says plainly when none of them is set.
+    active = {name: value for name, value in (floors or {}).items() if value is not None}
+    floor_text = (
+        " &middot; ".join(
+            f"<code>{_esc(name)} &ge; {value:,}</code>" for name, value in active.items()
+        )
+        if active
+        else "<code>no floors set</code> &middot; no barcode was removed"
     )
+    body.append(f'<p class="sub">Generated {stamp} &middot; {floor_text}</p>')
 
     # Cohort funnel.
     worst = sample_table.loc[~sample_table["sample"].eq("TOTAL")]
@@ -696,7 +704,7 @@ def write_qc_html_report(
     thresholds: pd.DataFrame | None = None,
     gene_summary: dict[str, int] | None = None,
     project: str = "CellQuorum",
-    mode: str = "filter",
+    floors: dict[str, int | None] | None = None,
     case_label: str | None = None,
 ) -> Path:
     """
@@ -713,7 +721,7 @@ def write_qc_html_report(
         thresholds: Optional applied-threshold table.
         gene_summary: Optional gene-level counts.
         project: Project or run name for the heading.
-        mode: QC mode string.
+        floors: The applied absolute floors.
         case_label: Condition treated as the case arm.
 
     Returns:
@@ -739,7 +747,7 @@ def write_qc_html_report(
         thresholds=thresholds,
         gene_summary=gene_summary,
         project=project,
-        mode=mode,
+        floors=floors,
         case_label=case_label,
     )
     destination = Path(output_path)

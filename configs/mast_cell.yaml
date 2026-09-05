@@ -52,7 +52,6 @@ ambient_correction:
 
 qc:
   enabled: true
-  mode: both
 
 preprocessing:
   enabled: true

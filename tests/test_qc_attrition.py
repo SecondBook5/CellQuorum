@@ -600,58 +600,115 @@ def test_a_factor_that_is_also_the_block_is_not_stratified_on_itself() -> None:
     assert [record.unit for record in audit.tests] == ["cell"]
 
 
-def test_the_audit_reaches_the_stage_result_and_the_run_directory(tmp_path: Path) -> None:
-    """
-    Verify a real QC stage run warns about differential attrition and writes it.
+def _concordant_damage_cohort(
+    *,
+    disease_fraction: float,
+    normal_fraction: float,
+    n_per_arm: int = 200,
+    n_genes: int = 60,
+    n_mito_genes: int = 5,
+    seed: int = 0,
+) -> ad.AnnData:
+    """A cohort whose damaged cells fail on two independent evidence families at once.
 
-    The unit tests prove the statistics; this proves the plumbing, which is where
-    a check like this normally dies. The measurement has to happen on the
-    UNFILTERED object: under ``mode="filter"`` the stage's output has already lost
-    the removed cells, and every arm's attrition measured on it is zero.
-    """
+    Damage has to be concordant to reach quarantine: the frozen adjudication requires severe
+    evidence from at least two independent families, and metabolic/stress is marked SUPPORTING so
+    it can never establish a case alone. A fixture that only raises mitochondrial content
+    therefore produces no quarantine at all — correctly, because that is the rule that stopped
+    mitochondrion-rich populations being removed for their biology.
 
-    # Build a cohort whose disease arm carries far more mitochondrial reads, so a
-    # single fixed mito ceiling removes it preferentially. This is the realistic
-    # shape of the problem -- nobody writes a rule that names the condition.
-    generator = np.random.default_rng(0)
-    n_per_arm = 200
+    So the damaged cells here are debris in the way real debris is: they detect almost nothing
+    (capture/complexity) and what they do carry is mitochondrial (metabolic/stress).
+
+    The damaged fraction stays a minority of each arm on purpose. Severity is measured against a
+    null estimated from the data, so a cohort that is half debris makes debris the norm and
+    nothing looks extreme — the same reason the previous 50/50 fixture scored only 0.25 severity
+    on cells sitting at 50% mitochondrial content.
+
+    Args:
+        disease_fraction: Share of the Disease arm that is debris.
+        normal_fraction: Share of the Normal arm that is debris.
+        n_per_arm: Cells per arm.
+        n_genes: Total genes.
+        n_mito_genes: How many of those are mitochondrial.
+        seed: RNG seed, so the planted damage is reproducible.
+
+    Returns:
+        AnnData with ``condition``, ``donor_id`` and a ``truth_damaged`` ground-truth column.
+    """
+    generator = np.random.default_rng(seed)
     conditions = np.array(["Normal"] * n_per_arm + ["Disease"] * n_per_arm)
     donors = np.array([f"D{position % 8}" for position in range(2 * n_per_arm)])
 
-    # Give the disease arm a mitochondrial fraction above the ceiling set below,
-    # and the normal arm one well beneath it.
-    mito_counts = np.where(
-        conditions == "Disease",
-        generator.integers(200, 400, size=2 * n_per_arm),
-        generator.integers(1, 10, size=2 * n_per_arm),
-    ).astype(float)
+    damaged = np.zeros(2 * n_per_arm, dtype=bool)
+    for arm, fraction in (("Normal", normal_fraction), ("Disease", disease_fraction)):
+        in_arm = np.flatnonzero(conditions == arm)
+        chosen = generator.choice(in_arm, size=int(round(fraction * len(in_arm))), replace=False)
+        damaged[chosen] = True
 
-    # Build a two-gene matrix: one mitochondrial, one not, plus filler so the
-    # gene-level rules have something to keep.
-    other = generator.integers(80, 120, size=(2 * n_per_arm, 3)).astype(float)
-    matrix = np.column_stack([mito_counts, other])
-    adata = ad.AnnData(
-        X=matrix,
+    matrix = np.zeros((2 * n_per_arm, n_genes))
+    healthy = ~damaged
+
+    # Healthy: broad capture across the transcriptome, ordinary mitochondrial share.
+    matrix[healthy, n_mito_genes:] = generator.poisson(
+        50, size=(int(healthy.sum()), n_genes - n_mito_genes)
+    )
+    matrix[healthy, :n_mito_genes] = generator.poisson(20, size=(int(healthy.sum()), n_mito_genes))
+
+    # Debris: a tenth of genes detected at all, and mitochondrial counts dominating what is left.
+    detected = generator.binomial(1, 0.10, size=(int(damaged.sum()), n_genes - n_mito_genes))
+    matrix[damaged, n_mito_genes:] = detected * generator.poisson(
+        3, size=(int(damaged.sum()), n_genes - n_mito_genes)
+    )
+    matrix[damaged, :n_mito_genes] = generator.poisson(60, size=(int(damaged.sum()), n_mito_genes))
+
+    return ad.AnnData(
+        X=matrix.astype(np.float32),
         obs=pd.DataFrame(
-            {"condition": conditions, "donor_id": donors},
+            {"condition": conditions, "donor_id": donors, "truth_damaged": damaged},
             index=[f"cell_{position}" for position in range(2 * n_per_arm)],
         ),
-        var=pd.DataFrame(index=["MT-ND1", "ACTB", "GAPDH", "B2M"]),
+        var=pd.DataFrame(
+            index=[f"MT-{position}" for position in range(n_mito_genes)]
+            + [f"G{position}" for position in range(n_genes - n_mito_genes)]
+        ),
     )
 
-    # Configure a fixed mito ceiling and declare the cohort keys.
+
+def test_the_audit_reaches_the_stage_result_and_the_run_directory(tmp_path: Path) -> None:
+    """A real QC stage run must warn about differential attrition and write it.
+
+    The unit tests prove the statistics; this proves the plumbing, which is where a check like
+    this normally dies. Two things have to be right for it to see anything:
+
+    * the measurement happens on the UNFILTERED obs, since the stage's output has already lost
+      the sub-floor barcodes and every arm's attrition measured on it is zero;
+    * the loss it measures spans **graded quarantine**, not only the floors.
+
+    The second point is why this fixture changed shape. It used to create the arm difference with
+    a fixed ``max_mito_percent: 20`` ceiling and measure ``floors.cell_keep`` — and both halves of
+    that are now wrong. There is no mito ceiling, and metabolic evidence is a *supporting* family
+    that can never condemn a cell alone, which is exactly the change that stopped keratinocytes
+    being removed for being mitochondrion-rich. So a mito-only fixture produces zero quarantine by
+    design, and auditing the floors alone would see nothing on real data either, where the gene
+    floor accounts for ~0% of the removals in every population measured.
+
+    The damaged cells here are therefore concordant across two independent families — low capture
+    complexity AND mitochondrial dominance, i.e. genuine debris — which is the route that
+    quarantines. ``truth_damaged`` records which cells those are so the audit can be checked
+    against the ground truth rather than against itself.
+    """
+
+    adata = _concordant_damage_cohort(disease_fraction=0.30, normal_fraction=0.05)
+
     config = CellQuorumConfig(
         cohort={"condition_key": "condition", "donor_key": "donor_id"},
         qc=QCConfig(
-            mode="filter",
-            threshold_strategy="fixed",
-            basic={"min_genes_per_cell": 1, "min_cells_per_gene": 1, "max_mito_percent": 20.0},
-            mad={"enabled": False},
+            floors={"min_genes_per_cell": 1, "min_cells_per_gene": 1},
             outputs={"write_h5ad": False, "write_figures": False},
         ),
     )
 
-    # Run the stage.
     paths = PipelinePaths.from_output_dir(tmp_path / "run")
     paths.ensure_directories()
     result = QCStage().run(
@@ -664,6 +721,13 @@ def test_the_audit_reaches_the_stage_result_and_the_run_directory(tmp_path: Path
         )
     )
 
+    # The graded path must actually have excluded the planted debris, or the audit below is
+    # measuring nothing and would pass for the wrong reason.
+    state = result.adata.obs["qc_state_initial"].astype(str)
+    truth = adata.obs["truth_damaged"].reindex(state.index).astype(bool)
+    assert (state[truth] == "quarantine").all(), "planted debris must quarantine"
+    assert (state[~truth] != "quarantine").all(), "healthy cells must not quarantine"
+
     # Confirm the stage warned, in the warnings a report actually renders.
     assert any("Differential attrition" in message for message in result.warnings)
 
@@ -671,15 +735,12 @@ def test_the_audit_reaches_the_stage_result_and_the_run_directory(tmp_path: Path
     summary = result.metrics["attrition_audit"]
     assert summary["flagged_factors"] == ["condition"]
 
-    # Confirm the table landed in the run directory with its rows intact.
+    # Confirm the table landed in the run directory with its rows intact, tested at BOTH units.
+    # The donor-level test is the one that matters scientifically — cells are not replicates —
+    # and the cell-level one is kept because their disagreement is itself informative.
     table = pd.read_csv(tmp_path / "run" / "results" / "qc" / "qc_attrition.csv")
     assert set(table["factor"]) == {"condition"}
     assert set(table["unit"]) == {"cell", "donor_id"}
-
-    # Confirm the rates were measured before filtering. Read off the FILTERED
-    # object every rate is zero, which is the bug this test exists to catch.
-    cell_row = table[table["unit"] == "cell"].iloc[0]
-    assert cell_row["rate_difference"] > 0.5
 
 
 def test_the_audit_can_be_turned_off() -> None:
@@ -755,7 +816,6 @@ def test_grouping_the_mixture_on_the_condition_is_reported_as_a_leak() -> None:
     # Group the mixture on the condition.
     warnings = audit_qc_design_leaks(
         config=QCConfig(
-            mad={"mito_metric": None},
             mito_mixture={"enabled": True, "groupby": ["cell_type", "condition"]},
         ),
         cohort=make_leak_cohort(),
@@ -780,7 +840,6 @@ def test_grouping_the_mixture_on_a_replicate_is_reported_as_a_leak() -> None:
     # Name a replicate key at the primary level and another in a fallback.
     warnings = audit_qc_design_leaks(
         config=QCConfig(
-            mad={"mito_metric": None},
             mito_mixture={
                 "enabled": True,
                 "groupby": ["cell_type", "sample_id"],
@@ -803,48 +862,40 @@ def test_grouping_the_mixture_on_a_replicate_is_reported_as_a_leak() -> None:
     assert "CLEANEST" in warnings[0]
 
 
-def test_per_sample_mad_is_a_leak_only_while_it_thresholds_mitochondrial_content() -> None:
+def test_a_per_library_mixture_grouping_is_reported_with_no_metric_to_scope_on() -> None:
     """
-    Verify the MAD check is scoped to the metric the pathology was measured on.
+    Verify a per-library mixture grouping is reported, with no metric to scope on.
 
-    Grouping depth-like metrics per sample is standard and defensible: sequencing
-    depth genuinely varies by sample. The inversion documented in this engine is
-    specific to mitochondrial content, so warning about every per-sample MAD
-    grouping would teach a user to ignore the warning.
+    This test used to assert that the check was *scoped by metric*: MAD carried depth metrics,
+    where per-sample grouping is standard and defensible, alongside a mitochondrial metric, where
+    it inverts with quality. Warning on the depth case would have taught a reader to ignore the
+    warning, so the check only fired when the mitochondrial metric was on.
+
+    The mixture is a mitochondrial rule by construction, so that distinction has nothing left to
+    separate — there is no depth-only configuration of it. Every grouping it declares is checked.
     """
 
-    # Group MAD per sample with mitochondrial MAD ON.
-    with_mito = audit_qc_design_leaks(
-        config=QCConfig(mad={"groupby": ["sample_id"]}),
+    per_library = audit_qc_design_leaks(
+        config=QCConfig(mito_mixture={"enabled": True, "groupby": ["sample_id"]}),
         cohort=make_leak_cohort(),
     )
 
-    # Confirm the mitochondrial case is reported.
-    assert len(with_mito) == 1
-    assert "mad.groupby" in with_mito[0]
-
-    # Group MAD per sample with mitochondrial MAD off.
-    without_mito = audit_qc_design_leaks(
-        config=QCConfig(mad={"groupby": ["sample_id"], "mito_metric": None}),
-        cohort=make_leak_cohort(),
-    )
-
-    # Confirm the depth-only case is left alone.
-    assert without_mito == []
+    assert len(per_library) == 1
+    assert "mito_mixture.groupby" in per_library[0]
+    assert "CLEANEST" in per_library[0]
 
 
-def test_the_condition_rule_still_applies_to_mad_without_mitochondrial_grouping() -> None:
+def test_the_condition_check_is_independent_of_the_replicate_check() -> None:
     """
-    Verify narrowing the MAD check by metric does not exempt the condition.
+    Verify the condition check is independent of the replicate check.
 
-    The mitochondrial scoping above is about which metric inverts with quality.
-    Grouping on the study arm is wrong for any metric, so it must survive the
-    narrowing.
+    They are different defects with different reasons: a replicate grouping makes the boundary
+    strictest on the cleanest sample, while an arm grouping absorbs the contrast every downstream
+    test is trying to measure. A config that names only the arm must still be reported.
     """
 
-    # Group MAD on the condition with mitochondrial MAD off.
     warnings = audit_qc_design_leaks(
-        config=QCConfig(mad={"groupby": ["condition"], "mito_metric": None}),
+        config=QCConfig(mito_mixture={"enabled": True, "groupby": ["condition"]}),
         cohort=make_leak_cohort(),
     )
 
@@ -863,7 +914,6 @@ def test_an_identity_grouping_and_a_disabled_rule_are_silent() -> None:
     # Use the recommended grouping: cell identity and nothing else.
     recommended = audit_qc_design_leaks(
         config=QCConfig(
-            mad={"mito_metric": None},
             mito_mixture={"enabled": True, "groupby": ["cell_type"]},
         ),
         cohort=make_leak_cohort(),
@@ -890,7 +940,6 @@ def test_the_guard_is_silent_when_no_design_keys_are_declared() -> None:
     # Declare no keys at all.
     warnings = audit_qc_design_leaks(
         config=QCConfig(
-            mad={"mito_metric": None},
             mito_mixture={"enabled": True, "groupby": ["condition", "sample_id"]},
         ),
     )

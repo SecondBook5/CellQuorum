@@ -7,12 +7,16 @@ from collections.abc import Sequence
 
 # Import dataclass helpers for structured validation summaries.
 from dataclasses import dataclass, field
+from typing import Any
 
 # Import AnnData for runtime input validation.
 import anndata as ad
 
 # Import NumPy for matrix dtype and finite-value checks.
 import numpy as np
+
+# Import numpy typing for array annotations that survive a strict checker.
+import numpy.typing as npt
 
 # Import sparse matrix helpers for sparse AnnData.X validation.
 import scipy.sparse as sp
@@ -56,41 +60,20 @@ class QCInputValidationSummary:
         has_raw: Whether AnnData.raw is present.
         obs_names_unique: Whether observation names are unique.
         var_names_unique: Whether variable names are unique.
-        requested_groupby: MAD groupby columns requested by config.
+        requested_groupby: Mixture-model groupby columns requested by config.
         warnings: Non-fatal validation warnings.
     """
 
-    # Store the number of AnnData observations.
     n_obs: int
-
-    # Store the number of AnnData variables.
     n_vars: int
-
-    # Store the selected matrix observation count.
     matrix_n_obs: int
-
-    # Store the selected matrix variable count.
     matrix_n_vars: int
-
-    # Store the selected matrix source label.
     matrix_source: str
-
-    # Store the selected matrix runtime type.
     matrix_type: str
-
-    # Store whether AnnData.raw is present.
     has_raw: bool
-
-    # Store whether observation names are unique.
     obs_names_unique: bool
-
-    # Store whether variable names are unique.
     var_names_unique: bool
-
-    # Store requested MAD groupby columns.
     requested_groupby: tuple[str, ...] = field(default_factory=tuple)
-
-    # Store non-fatal validation warnings.
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, object]:
@@ -174,8 +157,8 @@ def validate_qc_input_adata(
         matrix_source=matrix_source,
     )
 
-    # Validate MAD groupby columns requested by config.
-    validate_mad_groupby_columns(adata, qc_config)
+    # Validate mixture-model groupby columns requested by config.
+    validate_mixture_groupby_columns(adata, qc_config)
 
     # Initialize non-fatal validation warnings.
     warnings: list[str] = []
@@ -209,7 +192,7 @@ def validate_qc_input_adata(
         has_raw=adata.raw is not None,
         obs_names_unique=adata.obs_names.is_unique,
         var_names_unique=adata.var_names.is_unique,
-        requested_groupby=tuple(qc_config.mad.groupby),
+        requested_groupby=tuple(qc_config.mito_mixture.groupby),
         warnings=tuple(warnings),
     )
 
@@ -351,9 +334,16 @@ def validate_qc_matrix(
     return matrix_n_obs, matrix_n_vars
 
 
-def validate_mad_groupby_columns(adata: ad.AnnData, config: QCConfig) -> None:
-    """
-    Validate that requested MAD groupby columns exist in AnnData.obs.
+def validate_mixture_groupby_columns(adata: ad.AnnData, config: QCConfig) -> None:
+    """Validate that the mixture model's groupby columns exist in ``AnnData.obs``.
+
+    Checked up front because the failure is otherwise deep and unhelpful: a missing column
+    makes the mixture fall back to a coarser null, which succeeds and produces a *plausible*
+    posterior estimated over the wrong reference class. A typo in ``groupby`` would therefore
+    change every severity score in the run without failing anything.
+
+    This replaces the MAD groupby check, which validated ``config.mad.groupby`` — a config
+    section the threshold path took with it.
 
     Args:
         adata: AnnData object.
@@ -363,21 +353,28 @@ def validate_mad_groupby_columns(adata: ad.AnnData, config: QCConfig) -> None:
         QCInputValidationError: If one or more requested groupby columns are missing.
     """
 
-    # Return early when MAD thresholding is disabled.
-    if not config.mad.enabled:
+    # Return early when the mixture is disabled.
+    if not config.mito_mixture.enabled:
         return
 
-    # Return early when no groupby columns were requested.
-    if not config.mad.groupby:
-        return
+    # Collect every column the mixture may group on, across the primary level and each
+    # fallback level. A column used only by a fallback still has to exist, since the fallback
+    # is reached exactly when the primary level cannot be fitted.
+    requested: list[str] = list(config.mito_mixture.groupby)
+    for level in config.mito_mixture.fallback_groupby:
+        requested.extend(level)
 
-    # Identify missing observation columns.
-    missing_columns = [column for column in config.mad.groupby if column not in adata.obs.columns]
+    # Identify missing observation columns, preserving request order and dropping repeats.
+    # `dict.fromkeys` rather than a set: the order the config asked for the columns in is what
+    # makes the failure message readable, and a set would scramble it.
+    missing_columns = [
+        column for column in dict.fromkeys(requested) if column not in adata.obs.columns
+    ]
 
     # Raise a clear error when requested columns are absent.
     if missing_columns:
         raise QCInputValidationError(
-            "MAD group-wise QC requested missing AnnData.obs column(s): "
+            "Mixture-model group-wise QC requested missing AnnData.obs column(s): "
             f"{', '.join(missing_columns)}."
         )
 
@@ -503,7 +500,7 @@ def validate_duplicate_name_policy(
     )
 
 
-def _validate_numeric_dtype(dtype: np.dtype[object], *, matrix_source: str) -> None:
+def _validate_numeric_dtype(dtype: np.dtype[Any], *, matrix_source: str) -> None:
     """
     Validate that a matrix dtype is numeric.
 
@@ -573,7 +570,7 @@ def _validate_sparse_non_negative_values(
 
 
 def _validate_dense_finite_values(
-    matrix: np.ndarray[object, object],
+    matrix: npt.NDArray[Any],
     *,
     matrix_source: str,
 ) -> None:
@@ -600,7 +597,7 @@ def _validate_dense_finite_values(
 
 
 def _validate_dense_non_negative_values(
-    matrix: np.ndarray[object, object],
+    matrix: npt.NDArray[Any],
     *,
     matrix_source: str,
 ) -> None:
@@ -633,7 +630,7 @@ __all__ = [
     "require_obs_columns",
     "summarize_adata_shape",
     "validate_duplicate_name_policy",
-    "validate_mad_groupby_columns",
+    "validate_mixture_groupby_columns",
     "validate_qc_input_adata",
     "validate_qc_matrix",
 ]

@@ -299,10 +299,10 @@ def audit_archetypes(
         table=table,
     )
 
-    for label, row in audit.flagged().iterrows():
+    for archetype_label, row in audit.flagged().iterrows():
         logger.warning(
             "Archetype %s (n=%d): %.0f%% excluded from fitting — %s",
-            label,
+            str(archetype_label),
             int(row["n_supporting"]),
             100.0 * row["excluded_fraction"],
             (

@@ -44,6 +44,9 @@ from dataclasses import dataclass, field
 # Import NumPy for the expectation-maximisation numerics.
 import numpy as np
 
+# Import numpy typing so the position arrays used with `.iloc` are typed as integer arrays.
+import numpy.typing as npt
+
 # Import pandas for metric table handling.
 import pandas as pd
 
@@ -144,31 +147,16 @@ class MitoMixtureModel:
         fallback: Reason the group could not be fit, or None on success.
     """
 
-    # Store the group label.
     group: str
-
-    # Store the number of cells in the fit.
     n_cells: int
-
-    # Store whether the fit converged.
     converged: bool
-
-    # Store the iteration count.
     n_iterations: int
-
-    # Store the final log-likelihood.
     log_likelihood: float
-
-    # Store the compromised component parameters.
     compromised_weight: float
     compromised_intercept: float
     compromised_slope: float
-
-    # Store the intact component parameters.
     intact_intercept: float
     intact_slope: float
-
-    # Store how many cells the model flags.
     n_compromised: int
 
     # Store the per-component residual variances. Without these the recorded
@@ -176,19 +164,11 @@ class MitoMixtureModel:
     # regression lines but not the boundary between them.
     compromised_variance: float = 0.0
     intact_variance: float = 0.0
-
-    # Store how the raw posterior and the two policy rules each contributed.
     n_raw_compromised: int = 0
     n_rescued_below_boundary: int = 0
     n_swept_left_cutoff: int = 0
-
-    # Store which grouping-hierarchy level produced this model.
     level: int = 0
-
-    # Store how many cells this model actually scored.
     n_assigned: int = 0
-
-    # Store the reason this group could not be fit, when it could not.
     fallback: str | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -246,21 +226,12 @@ class MitoCeiling:
         disagreement_fraction: ``disagreement`` as a share of ``n_cells``.
     """
 
-    # Store the columns and values identifying the group.
     groupby_columns: tuple[str, ...]
     group_values: tuple[str, ...]
     group: str
-
-    # Store the group size.
     n_cells: int
-
-    # Store the projected ceiling, or None when nothing is filtered.
     ceiling: float | None
-
-    # Store how many cells the ceiling removes.
     n_removed: int
-
-    # Store how faithfully the ceiling reproduces the model.
     disagreement: int
     disagreement_fraction: float
 
@@ -306,20 +277,13 @@ class MitoMixtureResult:
             projected onto the mitochondrial axis.
     """
 
-    # Store the adjusted per-cell probabilities.
     probabilities: pd.Series
 
     # Store the un-hardened per-cell posteriors. Defaults to empty so a
     # hand-constructed result stays valid.
     posterior: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
-
-    # Store one record per fitted group.
     models: list[MitoMixtureModel] = field(default_factory=list)
-
-    # Store non-fatal warnings.
     warnings: list[str] = field(default_factory=list)
-
-    # Store one record per projected group.
     ceilings: list[MitoCeiling] = field(default_factory=list)
 
     def ceilings_to_dataframe(self) -> pd.DataFrame:
@@ -401,25 +365,12 @@ class _ComponentFit:
         converged: Whether the tolerance was reached.
     """
 
-    # Store per-component regression coefficients.
     coefficients: np.ndarray
-
-    # Store per-component residual variances.
     variances: np.ndarray
-
-    # Store per-component mixing weights.
     weights: np.ndarray
-
-    # Store per-cell responsibilities.
     responsibilities: np.ndarray
-
-    # Store the final log-likelihood.
     log_likelihood: float
-
-    # Store the iteration count.
     n_iterations: int
-
-    # Store whether the fit converged.
     converged: bool
 
 
@@ -432,16 +383,28 @@ def fit_mito_mixture(
 
     The returned probability is *adjusted*: the two post-processing rules of miQC
     (``keep_all_below_boundary`` and ``enforce_left_cutoff``) are folded into it as
-    hard 0.0 and 1.0 values. That is deliberate. It means the entire policy is
-    expressible as a single upper bound on one column, so it flows through the same
-    threshold and decision machinery as every other QC rule, appears in the
-    decision table like every other rule, and needs no special case anywhere
-    downstream.
+    hard 0.0 and 1.0 values. That is deliberate — it keeps the entire policy in one
+    column, so nothing downstream needs a special case for it.
+
+    That column is now consumed as the graded **metabolic/stress** axis rather than as a
+    threshold rule. The distinction matters in two ways a reader has to know about:
+
+    * the posterior is a **calibrated probability** and is used at its own scale. Passing it
+      through a robust z, as any other severity axis gets, once moved 22,541 cells between
+      states — a cell the model gave a 10% chance of being compromised scored 0.59. The way to
+      make it mean "compromised *for a cell like this*" is to fit the mixture within lineage,
+      which the stage does, never to rescale the output;
+    * metabolic evidence is a **supporting** family, so a high posterior can never on its own
+      quarantine a cell. It needs concordance from an independent family. That is what stopped
+      mitochondrion-rich populations — keratinocytes, mast cells — being removed for their
+      biology.
 
     Cells the model cannot speak to -- a group too small to fit, a fit that will
-    not converge, a missing metric value -- receive 0.0, meaning keep. A numerical
-    failure must never be the reason a cell is discarded, and the fixed
-    ``basic.max_mito_percent`` backstop still applies to them.
+    not converge, a missing metric value -- receive 0.0, meaning no evidence of compromise. A
+    numerical failure must never be the reason a cell is discarded. Note that there is no longer
+    a fixed ``max_mito_percent`` backstop behind them: that ceiling was deleted with the
+    threshold path, so a cell the mixture cannot model carries no metabolic evidence at all and
+    is judged on the other families alone.
 
     Args:
         cell_metrics: Cell-level QC metric table.
@@ -551,10 +514,17 @@ def fit_mito_mixture(
             continue
 
         # Commit this level's successful fits.
+        # Positional array assignment is ordinary pandas, but the stubs only model a scalar or
+        # an indexed Series on the right-hand side, so both writes are ignored explicitly rather
+        # than by loosening the annotations that make `positions` an integer array.
         for outcome in fitted:
-            probabilities.iloc[outcome.positions] = outcome.adjusted
+            probabilities.iloc[outcome.positions] = np.asarray(  # type: ignore[call-overload]
+                outcome.adjusted, dtype=float
+            )
             if outcome.raw is not None:
-                posterior.iloc[outcome.positions] = outcome.raw
+                posterior.iloc[outcome.positions] = np.asarray(  # type: ignore[call-overload]
+                    outcome.raw, dtype=float
+                )
             pending[outcome.positions] = False
             models.append(outcome.model)
             warnings.extend(outcome.warnings)
@@ -624,7 +594,9 @@ class _GroupOutcome:
     ``level_policy`` in :class:`QCMitoMixtureConfig`.
 
     Args:
-        positions: Positions of the cells this outcome would score.
+        positions: Integer positions of the cells this outcome would score. Typed as an
+            integer array rather than a bare ``ndarray`` because it indexes with ``.iloc``,
+            where a float array would silently select nothing on some pandas versions.
         model: Model record, fitted or deferred.
         adjusted: Per-cell adjusted probabilities, or None when deferred.
         raw: Per-cell RAW posteriors, before the post-processing rules, or None
@@ -633,19 +605,10 @@ class _GroupOutcome:
         warnings: Warnings that only apply if the outcome is committed.
     """
 
-    # Store the cells this outcome would score.
-    positions: np.ndarray
-
-    # Store the model record.
+    positions: npt.NDArray[np.intp]
     model: MitoMixtureModel
-
-    # Store the probabilities to write back, when there are any.
     adjusted: np.ndarray | None
-
-    # Store the un-hardened posteriors, when there are any.
     raw: np.ndarray | None = None
-
-    # Store warnings that are only true if this outcome is used.
     warnings: tuple[str, ...] = ()
 
 
@@ -1114,10 +1077,7 @@ class _HardeningOutcome:
         n_swept_left_cutoff: Cells rule two forced to discard.
     """
 
-    # Store the hardened probabilities.
     adjusted: np.ndarray
-
-    # Store the raw model verdict and each rule's contribution to changing it.
     n_raw_compromised: int
     n_rescued_below_boundary: int
     n_swept_left_cutoff: int

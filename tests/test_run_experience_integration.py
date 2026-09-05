@@ -55,18 +55,12 @@ def build_test_config(*, qc_mode: str = "flag_no_drop") -> CellQuorumConfig:
             "enabled": False,
         },
         qc={
-            "mode": qc_mode,
-            "threshold_strategy": "fixed",
             "metrics": {
                 "percent_top": [2],
             },
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 2,
                 "min_cells_per_gene": 2,
-                "max_mito_percent": 60.0,
-            },
-            "mad": {
-                "enabled": False,
             },
             "outputs": {
                 "write_h5ad": False,

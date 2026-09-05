@@ -59,19 +59,11 @@ stages:
 
 qc:
   enabled: true
-  mode: flag_no_drop
-  threshold_strategy: fixed_and_mad
   metrics:
     layer: counts
-  mad:
-    enabled: true
-    n_mads: 5.0
-    mito_n_mads: 3.0
-    groupby: [sample_id]
-  basic:
+  floors:
     min_genes_per_cell: 100
     min_cells_per_gene: 1
-    max_mito_percent: 30.0
   doublets:
     enabled: true
     methods: [scrublet, scdblfinder]

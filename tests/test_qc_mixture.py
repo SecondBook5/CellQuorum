@@ -795,6 +795,15 @@ def test_the_fitted_model_and_its_posterior_reach_the_run_directory(tmp_path: Pa
     recorded the mitochondrial bound without the fit that produced it or the
     belief it held about any individual cell. Recovering either meant
     instrumenting the engine and re-running.
+
+    The self-check gate is off for this fixture, deliberately and not to hide anything.
+    ``make_mixture_adata`` plants a compromised population at ~20-30% weight — that is the whole
+    point, since the test asserts the model recovers it — and on 400 synthetic cells the
+    provisional clustering puts planted damage and healthy cells in one Leiden group. The
+    rare-population gate then reports that group as losing most of its cells to damage evidence,
+    which is exactly what it should say about a group that really is half debris. It is a
+    property of the fixture, not of the code under test here, and the gate has its own tests
+    in ``test_qc_selfcheck.py`` that check it against reproductions of the four real bugs.
     """
 
     # Run the stage with the mixture as the only mitochondrial policy.
@@ -804,11 +813,9 @@ def test_the_fitted_model_and_its_posterior_reach_the_run_directory(tmp_path: Pa
         PipelineContext(
             config=CellQuorumConfig(
                 qc=QCConfig(
-                    mode="flag_no_drop",
-                    threshold_strategy="mad",
-                    basic={"min_genes_per_cell": 1, "min_cells_per_gene": 1},
-                    mad={"mito_metric": None},
+                    floors={"min_genes_per_cell": 1, "min_cells_per_gene": 1},
                     mito_mixture={"enabled": True},
+                    graded={"self_check_fails_run": False},
                     outputs={"write_h5ad": False, "write_figures": False},
                 )
             ),
@@ -830,7 +837,14 @@ def test_the_fitted_model_and_its_posterior_reach_the_run_directory(tmp_path: Pa
 
     # Confirm the fitted model landed beside it, complete enough to be rerun.
     mixture = pd.read_csv(qc_dir / "qc_mito_mixture.csv")
-    assert len(mixture) == 1
+
+    # One row per fitted group, not one row per run. The mixture is now conditioned on lineage as
+    # well as library, so a cohort yields a model per (library x lineage) group plus whatever the
+    # fallback levels cover. This assertion used to be `== 1`, which only held while the mixture
+    # was fitted once over everything — the configuration that gave a constitutively
+    # high-mitochondrial cell type a high compromised probability on its biology alone.
+    assert len(mixture) >= 1
+    assert mixture["group"].is_unique
     for column in (
         "compromised_intercept",
         "compromised_slope",
@@ -844,30 +858,35 @@ def test_the_fitted_model_and_its_posterior_reach_the_run_directory(tmp_path: Pa
         "n_swept_left_cutoff",
     ):
         assert column in mixture.columns
-    assert mixture["compromised_variance"].iloc[0] > 0.0
-    assert mixture["intact_variance"].iloc[0] > 0.0
+    assert (mixture["compromised_variance"] > 0.0).all()
+    assert (mixture["intact_variance"] > 0.0).all()
 
-    # Confirm the recorded model found the injected compromised population rather
-    # than an arbitrary split.
-    assert 0.1 < mixture["compromised_weight"].iloc[0] < 0.4
+    # Confirm the recorded model found the injected compromised population rather than an
+    # arbitrary split. Checked on the group that carries the planted damage rather than on row 0,
+    # since group order is not part of the contract.
+    weights = mixture["compromised_weight"]
+    assert ((weights > 0.1) & (weights < 0.4)).any(), (
+        f"no fitted group recovered the injected ~20-30% compromised population; "
+        f"weights were {weights.round(3).tolist()}"
+    )
 
 
 def test_config_refuses_two_competing_mitochondrial_policies() -> None:
     """
     Verify the mixture and the mitochondrial MAD rule cannot both be enabled.
 
-    Both are adaptive mitochondrial policies. Running both means the stricter one
-    silently wins, and which one that is would vary by dataset, so the run would
-    not be describable in a methods section.
+    There used to be two, and running both meant the stricter one silently won — which one
+    that was varied by dataset, so the run was not describable in a methods section. The
+    conflict is now impossible by construction rather than guarded: the MAD rule is gone, so
+    the mixture is the only mitochondrial policy that exists.
     """
 
-    # Confirm enabling both is rejected, with a message naming the way out.
-    with pytest.raises(ValueError, match="competing adaptive mitochondrial"):
-        QCConfig(
-            mad={"mito_metric": "pct_counts_mito"},
-            mito_mixture={"enabled": True},
-        )
-
-    # Confirm the mixture alone is accepted.
-    config = QCConfig(mad={"mito_metric": None}, mito_mixture={"enabled": True})
+    # The mixture enables on its own, with nothing to disable first.
+    config = QCConfig(mito_mixture={"enabled": True})
     assert config.mito_mixture.enabled is True
+
+    # And the rule it used to compete with cannot be configured at all.
+    from cellquorum.core.exceptions import CellQuorumConfigError
+
+    with pytest.raises(CellQuorumConfigError, match="graded"):
+        QCConfig(mad={"mito_metric": "pct_counts_mito"}, mito_mixture={"enabled": True})

@@ -55,7 +55,10 @@ class _Ctx:
 
 def test_qc_stage_runs_cell_cycle_when_enabled(tmp_path):
     a = _adata()
-    qc = QCConfig(mode="flag_no_drop", cell_cycle={"enabled": True})
+    qc = QCConfig(
+        cell_cycle={"enabled": True},
+        floors={"min_genes_per_cell": None, "min_cells_per_gene": None},
+    )
     ctx = _Ctx(a, tmp_path, qc)
     result = QCStage().run(ctx)
     assert "phase" in result.adata.obs
@@ -63,7 +66,10 @@ def test_qc_stage_runs_cell_cycle_when_enabled(tmp_path):
 
 def test_qc_stage_flags_doublets_when_enabled(tmp_path):
     a = _adata()
-    qc = QCConfig(mode="flag_no_drop", doublets={"enabled": True, "methods": ["scrublet"]})
+    qc = QCConfig(
+        doublets={"enabled": True, "methods": ["scrublet"]},
+        floors={"min_genes_per_cell": None, "min_cells_per_gene": None},
+    )
     ctx = _Ctx(a, tmp_path, qc)
     result = QCStage().run(ctx)
     assert "predicted_doublet" in result.adata.obs
@@ -86,13 +92,13 @@ def test_qc_stage_exposes_feature_family_metrics_to_plots(tmp_path):
     a = ad.AnnData(X=x, var=pd.DataFrame(index=genes))
     a.layers["counts"] = x.copy()
     qc = QCConfig(
-        mode="flag_no_drop",
         metrics={"layer": "counts", "percent_top": [20]},
         doublets={"enabled": False},
         ambient={"enabled": False},
-        # The per-metric histograms asserted below are the diagnostic set, opt-in
-        # now that the overview panels answer "what did QC remove" instead.
-        outputs={"figure_dpi": 40, "diagnostic_figures": True},
+        # A 6-gene fixture is below any real detection floor, so the floors are lifted
+        # explicitly. This is what the deleted `mode: flag_no_drop` used to arrange.
+        floors={"min_genes_per_cell": None, "min_cells_per_gene": None},
+        outputs={"figure_dpi": 40},
     )
     ctx = _Ctx(a, tmp_path, qc)
 
@@ -109,6 +115,15 @@ def test_qc_stage_exposes_feature_family_metrics_to_plots(tmp_path):
         for artifact in result.artifacts
         if artifact.kind == "file" and artifact.path.suffix == ".png"
     }
-    assert "qc_pct_counts_mito_histogram.png" in figure_names
-    assert "qc_pct_counts_ribo_histogram.png" in figure_names
-    assert "qc_pct_counts_hemoglobin_histogram.png" in figure_names
+
+    # This used to assert three per-metric histogram filenames — the v1 diagnostics module's
+    # way of proving the figure layer saw the feature-family columns. That module is gone, and
+    # asserting filenames was always an indirect test of the wrong thing: a renamed figure broke
+    # it while a silently-absent column did not.
+    #
+    # So assert the property instead. The figure source is built from the PRE-filter object, and
+    # the panel writer raises if a metric it plots is missing, so a figure set reaching disk with
+    # no warnings is evidence the columns arrived.
+    assert figure_names, "the stage wrote no figures, so nothing consumed the metric columns"
+    assert "qc_overview.png" in figure_names
+    assert not [warning for warning in result.warnings if "could not be written" in warning]

@@ -152,7 +152,9 @@ def fit_robust_null(values: pd.Series, groups: pd.Series | None) -> RobustNull:
     for quantile, normal_z in QUANTILE_SCALE_FALLBACKS:
         if bool((scale > 0).all()):
             break
-        upper = grouped.transform(lambda group, q=quantile: group.quantile(q))
+        upper: pd.Series = grouped.transform(
+            lambda group, q=quantile: float(group.quantile(q))  # type: ignore[arg-type,return-value]
+        )
         scale = scale.where(scale > 0, (upper - location) / normal_z)
 
     # A group too small for a stable median, or with genuinely no spread, is not a null.
@@ -182,7 +184,14 @@ def tail_severity(
         half_severity_z: z at which severity is 0.5.
     """
     numeric = pd.to_numeric(values, errors="coerce").astype(float)
-    prepared = np.log1p(numeric.clip(lower=0.0)) if log_scale else numeric
+    # Rebuilt as a Series rather than relying on the ufunc's return: `np.log1p` on a Series does
+    # preserve the index at runtime, but its annotation widens to include a bare ndarray, and an
+    # index silently lost here would misalign every severity downstream.
+    prepared = (
+        pd.Series(np.log1p(numeric.clip(lower=0.0).to_numpy()), index=numeric.index, dtype=float)
+        if log_scale
+        else numeric
+    )
 
     null = fit_robust_null(prepared, groups)
     return _saturating_severity(null.z(prepared, direction=direction), half_severity_z)
@@ -242,6 +251,7 @@ def axis_from_severity(
     direction: Direction,
     severity: pd.Series,
     weight: float = 1.0,
+    value: pd.Series | None = None,
 ) -> AxisEvidence:
     """Build an axis whose availability follows from whether a severity was produced.
 
@@ -269,6 +279,7 @@ def axis_from_severity(
             index=severity.index,
         ),
         weight=weight,
+        value=value,
     )
 
 
@@ -465,6 +476,7 @@ def build_evidence_table(
         direction: Direction,
         severity: pd.Series,
         weight: float = 1.0,
+        value: pd.Series | None = None,
     ) -> None:
         axes.append(
             axis_from_severity(
@@ -473,6 +485,7 @@ def build_evidence_table(
                 direction=direction,
                 severity=severity,
                 weight=weight,
+                value=value,
             )
         )
 
@@ -543,6 +556,7 @@ def build_evidence_table(
                 # Tracks disease biology as much as damage, so reduced weight even inside
                 # its own family.
                 weight=0.6,
+                value=stress,
             )
 
         # --- nuclear / cytoplasmic integrity --------------------------------------- #
@@ -557,6 +571,7 @@ def build_evidence_table(
                         nuclear,
                         direction=Direction.UPPER_TAIL,
                     ),
+                    value=nuclear,
                 )
 
     # --- multiplet ------------------------------------------------------------------ #

@@ -145,18 +145,12 @@ def build_execution_config(h5ad_path: Path | None) -> CellQuorumConfig:
             "normalization": {"recipe": "cellquorum_log1p_cp10k_v1"},
         },
         qc={
-            "mode": "flag_no_drop",
-            "threshold_strategy": "fixed",
             "metrics": {
                 "percent_top": [2],
             },
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 2,
                 "min_cells_per_gene": 2,
-                "max_mito_percent": 60.0,
-            },
-            "mad": {
-                "enabled": False,
             },
             "outputs": {
                 "write_h5ad": False,
@@ -250,8 +244,8 @@ def test_execute_pipeline_run_loads_input_and_runs_qc(tmp_path: Path) -> None:
     assert isinstance(result.context.adata, ad.AnnData)
 
     # Confirm QC annotations exist on final AnnData.
-    assert "cellquorum_qc_keep" in result.context.adata.obs
-    assert "cellquorum_qc_keep" in result.context.adata.var
+    assert "qc_floor_reason" in result.context.adata.obs
+    assert "qc_state_initial" in result.context.adata.obs
 
     # Confirm provenance stage execution records were written. The first record
     # is always bootstrap; ambient_correction (disabled by default) is recorded
@@ -354,16 +348,11 @@ compute:
 r:
   enabled: false
 qc:
-  mode: flag_no_drop
-  threshold_strategy: fixed
   metrics:
     percent_top: [2]
-  basic:
+  floors:
     min_genes_per_cell: 2
     min_cells_per_gene: 2
-    max_mito_percent: 60.0
-  mad:
-    enabled: false
   outputs:
     write_h5ad: false
     write_figures: false

@@ -168,7 +168,11 @@ def provisional_lineages(
     embedding[groupable] = work.obsm["X_pca"]
     adata.obsm[PROVISIONAL_EMBEDDING] = embedding
 
-    labels.loc[work.obs_names] = ["L" + str(value) for value in work.obs["_lineage"]]
+    labels.loc[work.obs_names] = pd.Series(
+        ["L" + str(value) for value in work.obs["_lineage"]],
+        index=work.obs_names,
+        dtype=object,
+    )
     n_groups = int(pd.Series(labels).nunique())
     logger.info(
         "Provisional lineages: %d groups over %d cells (%d unassigned below the %d-gene floor).",
@@ -428,9 +432,11 @@ def audit_lineages(
     # Exclusion among cells that are not multiplets: the share attributable to damage, which is
     # the only kind that can mean a population is being lost.
     not_multiplet = ~multiplet
-    damage_excluded = (excluded & not_multiplet).groupby(labels).sum()
-    eligible = not_multiplet.groupby(labels).sum()
-    frame["damage_excluded_fraction"] = (damage_excluded / eligible.replace(0, np.nan)).fillna(0.0)
+    damage_excluded = (excluded & not_multiplet).groupby(labels).sum().astype(float)
+    eligible = not_multiplet.groupby(labels).sum().astype(float)
+    frame["damage_excluded_fraction"] = (damage_excluded / eligible.replace(0.0, np.nan)).fillna(
+        0.0
+    )
 
     frame["suspect"] = frame["median_absolute_severity"] >= suspect_severity
     frame["vulnerable"] = frame["damage_excluded_fraction"] >= vulnerable_fraction

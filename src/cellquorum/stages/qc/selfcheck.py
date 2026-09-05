@@ -41,6 +41,8 @@ from typing import Literal
 
 import pandas as pd
 
+from cellquorum.stages.qc.lineage import UNASSIGNED
+
 logger = logging.getLogger(__name__)
 
 type Verdict = Literal["fail", "warn"]
@@ -210,7 +212,17 @@ def check_no_coherent_population_removed(
     if lineage_audit is None or lineage_audit.empty or "vulnerable" not in lineage_audit.columns:
         return Check(name, True, "no lineage audit on this run.", "warn")
 
+    # The `unassigned` bucket is not a lineage and cannot be a lost population: it holds exactly
+    # the barcodes that failed the lineage gene floor, so they have no group to be coherent with
+    # and the clustering never placed them. It is the one label where "most of this group was
+    # excluded" is the expected result rather than a warning — the floor is 50 genes, below which
+    # a barcode carries too little to be anything, and the lowest-complexity real population
+    # measured in this tissue sits at 744.
+    #
+    # Left in, it fires on any run with real debris and at any size, which is how a check that
+    # gates the run becomes a check people switch off.
     flagged = lineage_audit[lineage_audit["vulnerable"]]
+    flagged = flagged[flagged.index.astype(str) != UNASSIGNED]
     real = flagged
     if "n_cells" in flagged.columns:
         # Two floors, because two different things make a flag untrustworthy. A handful of

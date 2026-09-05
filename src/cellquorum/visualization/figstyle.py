@@ -15,6 +15,7 @@ from __future__ import annotations
 import colorsys
 import contextlib
 import math
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -258,6 +259,196 @@ def condition_palette(
     for i, name in enumerate(extra):
         palette[name] = CATEGORICAL_PALETTE[i % len(CATEGORICAL_PALETTE)]
     return palette
+
+
+_NATURAL_CHUNK = re.compile(r"(\d+)")
+
+
+def natural_key(label: object) -> tuple[object, ...]:
+    """Sort key that orders embedded numbers numerically, so ``P2`` precedes ``P10``.
+
+    Plain string sorting gives ``P1, P10, P12, P2, P4`` — the order every existing figure in
+    this codebase used, which reads as a mistake to anyone looking at a donor axis and makes
+    two adjacent panels of the same cohort disagree about who is second.
+
+    Returns:
+        A tuple mixing lowercased text chunks and integers, comparable within a consistent set
+        of labels.
+    """
+    text = str(label)
+    return tuple(
+        int(chunk) if chunk.isdigit() else chunk.lower()
+        for chunk in _NATURAL_CHUNK.split(text)
+        if chunk != ""
+    )
+
+
+def paired_condition_order(
+    frame: pd.DataFrame,
+    *,
+    donor_col: str,
+    condition_col: str,
+    control: str | None,
+) -> list[tuple[str, str]]:
+    """Donor-major order with the control arm first inside each donor.
+
+    The house rule for every paired figure: *Normal first, then Lymphedema, within donor*, with
+    donors in natural order. Centralised here because it was previously re-derived per figure and
+    disagreed between them — the composition figure faceted Disease before Normal while the
+    split-violin put Lymphedema on the left, so two figures of one cohort read in opposite
+    directions.
+
+    Args:
+        frame: Any table carrying the donor and condition columns.
+        donor_col: Column identifying the donor (the pairing unit).
+        condition_col: Column identifying the arm.
+        control: The arm to place first. ``None`` falls back to natural order of the arm labels,
+            which at least makes the choice deterministic.
+
+    Returns:
+        ``(donor, condition)`` pairs in plotting order, containing only combinations present in
+        ``frame`` — a donor missing one arm contributes the arm it has rather than a gap.
+    """
+    present = frame[[donor_col, condition_col]].dropna().astype(str).drop_duplicates()
+    arms = sorted(present[condition_col].unique(), key=natural_key)
+
+    def arm_rank(arm: str) -> tuple[int, tuple[object, ...]]:
+        # The control arm sorts first; everything else keeps natural order behind it.
+        return (0 if control is not None and arm == str(control) else 1, natural_key(arm))
+
+    ordered_arms = sorted(arms, key=arm_rank)
+    order: list[tuple[str, str]] = []
+    for donor in sorted(present[donor_col].unique(), key=natural_key):
+        for arm in ordered_arms:
+            if ((present[donor_col] == donor) & (present[condition_col] == arm)).any():
+                order.append((donor, arm))
+    return order
+
+
+def raincloud(
+    ax: Axes,
+    values: Sequence[float] | np.ndarray,
+    position: float,
+    *,
+    color: str,
+    side: str = "right",
+    width: float = 0.36,
+    points: int = 300,
+    seed: int = 0,
+    rasterize_points: bool = True,
+    clip: tuple[float, float] | None = None,
+) -> None:
+    """Draw one half-violin plus a compact box, median, whiskers and sampled points.
+
+    The primitive behind the §3 and §4 distribution figures. Three properties are the point of
+    it, each of which a plain boxplot or violin got wrong on this data:
+
+    * **the tail is visible.** Every current QC boxplot is drawn with ``showfliers`` off, which
+      hides exactly the cells a threshold acts on. That is what made a mitochondrial ceiling look
+      non-binding when it accounted for essentially all removals;
+    * **the density and the summary are both shown**, because a KDE alone cannot be read for a
+      median and a box alone cannot show bimodality — and mitochondrial fraction is bimodal;
+    * **points are deterministically subsampled**, so a dense figure stays legible and rerunning
+      the same run redraws the same figure.
+
+    Args:
+        ax: Target axes.
+        values: The sample. Non-finite entries are dropped rather than plotted at zero.
+        position: Category centre on the categorical axis.
+        color: Fill colour for this arm.
+        side: ``"right"`` or ``"left"`` — which way the half-violin opens.
+        width: Half-violin extent.
+        points: How many individual cells to draw at most. 0 draws none.
+        seed: Subsampling seed, so the drawn cells are stable across runs.
+        rasterize_points: Rasterize the point layer while leaving text and axes vector, per the
+            figure spec. A cohort-scale scatter otherwise makes a PDF no viewer will open.
+        clip: Optional ``(low, high)`` bound for the DENSITY only. Given when the caller has
+            clipped the view to the bulk, so the density stops where the axis does instead of
+            being drawn as a thin spike into the top margin. It never drops a cell: the box,
+            whiskers and percentiles are computed on the whole sample regardless, and the caller
+            reports the count beyond the bound.
+    """
+    sample = np.asarray(values, dtype=float)
+    sample = sample[np.isfinite(sample)]
+    if sample.size == 0:
+        return
+
+    sign = 1.0 if side == "right" else -1.0
+
+    # Half-violin, as an explicit filled band rather than a mirrored `violinplot` body.
+    #
+    # Mirroring the matplotlib body's vertices puts the outline in the right place but leaves a
+    # polygon whose winding no longer describes a fillable region, so the density rendered as a
+    # bare curve — an outline is not a density, and the fill is what carries the shape at a
+    # glance. Evaluating the KDE and calling `fill_betweenx` also makes the band start exactly at
+    # the centre line, which the mirrored version only approximated.
+    if sample.size > 2 and float(np.ptp(sample)) > 0:
+        try:
+            from scipy.stats import gaussian_kde
+
+            low_bound = sample.min() if clip is None else max(sample.min(), clip[0])
+            high_bound = sample.max() if clip is None else min(sample.max(), clip[1])
+            if high_bound <= low_bound:
+                raise ValueError("empty density range")
+            grid = np.linspace(low_bound, high_bound, 256)
+            # Scott's rule, left at the default: these metrics are zero-inflated, and a bandwidth
+            # hand-tuned for UMI counts oversmooths a fraction whose mode is exactly zero.
+            density = gaussian_kde(sample)(grid)
+            peak = float(density.max())
+            if peak > 0:
+                extent = position + sign * (density / peak) * width
+                ax.fill_betweenx(
+                    grid,
+                    position,
+                    extent,
+                    facecolor=color,
+                    edgecolor=color,
+                    linewidth=0.6,
+                    alpha=0.40,
+                    zorder=1,
+                )
+        except Exception:  # noqa: BLE001 — a density is an adornment, never the figure
+            # A singular covariance (every value identical after the ptp check, which floating
+            # point allows) must cost the caller the density, not the panel.
+            pass
+
+    # Compact box with whiskers at the 5th/95th percentile, and the median drawn on top so it
+    # stays legible against the fill.
+    #
+    # `+ sign` and not `- sign`: the box belongs on the SAME side as its own cloud. Subtracting
+    # put each arm's box under the other arm's violin, so a paired figure read as though the two
+    # summaries were swapped.
+    q1, median, q3 = np.percentile(sample, [25, 50, 75])
+    low, high = np.percentile(sample, [5, 95])
+    box_x = position + sign * 0.06
+    ax.vlines(box_x, low, high, color=TEXT, linewidth=0.9, zorder=3)
+    ax.add_patch(
+        plt.Rectangle(
+            (box_x - 0.045, q1),
+            0.09,
+            max(q3 - q1, 0.0),
+            facecolor=color,
+            edgecolor=TEXT,
+            linewidth=0.8,
+            zorder=4,
+        )
+    )
+    ax.hlines(median, box_x - 0.06, box_x + 0.06, color="white", linewidth=1.4, zorder=5)
+
+    if points > 0:
+        generator = np.random.default_rng(seed)
+        drawn = sample if sample.size <= points else generator.choice(sample, points, replace=False)
+        jitter = generator.uniform(0.04, width * 0.85, size=drawn.size) * sign
+        ax.scatter(
+            position + jitter,
+            drawn,
+            s=2.0,
+            color=color,
+            alpha=0.30,
+            linewidths=0,
+            zorder=2,
+            rasterized=rasterize_points,
+        )
 
 
 def diverging_norm(values: np.ndarray, *, vmax: float | None = None) -> TwoSlopeNorm:
@@ -580,6 +771,7 @@ def save_cellquorum_figure(
     dpi: int = 300,
     tight: bool = True,
     vector_companion: bool = True,
+    companion_formats: tuple[str, ...] = (_VECTOR_COMPANION,),
     **kwargs: Any,
 ) -> Path:
     """
@@ -602,9 +794,14 @@ def save_cellquorum_figure(
         path: Output file path (a full path, distinct from ``save_figure``).
         dpi: Resolution in dots per inch (default: 300 for publication).
         tight: Whether to use tight_layout and bbox_inches='tight'.
-        vector_companion: Write a ``.pdf`` beside a raster ``path``. Off for the rare
+        vector_companion: Write a vector twin beside a raster ``path``. Off for the rare
             figure whose vector form is pathological (a dense hexbin, a 100k-point
             scatter) rather than merely large.
+        companion_formats: Which vector suffixes to write. Defaults to PDF alone, which is
+            what a manuscript needs and what every existing caller expects. The V2 QC figures
+            pass ``(".pdf", ".svg")`` because their spec requires SVG for figures a reader is
+            expected to edit; it is opt-in rather than universal so a large cohort does not pay
+            three vector writes per panel for formats nobody opens.
         **kwargs: Additional arguments passed to fig.savefig().
 
     Returns:
@@ -636,8 +833,9 @@ def save_cellquorum_figure(
         # Drop any caller-supplied ``format``: it describes the raster target, and
         # honouring it here would write PNG bytes into a file named ``.pdf``.
         companion_kwargs = {k: v for k, v in save_kwargs.items() if k != "format"}
-        with contextlib.suppress(Exception):
-            atomic_savefig(fig, path.with_suffix(_VECTOR_COMPANION), **companion_kwargs)
+        for suffix in companion_formats:
+            with contextlib.suppress(Exception):
+                atomic_savefig(fig, path.with_suffix(suffix), **companion_kwargs)
 
     return path
 
@@ -1385,6 +1583,9 @@ def render_figure(
 
 
 __all__ = [
+    "raincloud",
+    "paired_condition_order",
+    "natural_key",
     # Core contract (pinned).
     "TEXT",
     "render_figure",

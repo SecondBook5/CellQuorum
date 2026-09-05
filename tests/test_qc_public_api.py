@@ -72,15 +72,11 @@ def make_public_api_qc_config() -> qc.QCConfig:
 
     # Return fixed-threshold QC configuration.
     return qc.QCConfig(
-        mode="flag_no_drop",
-        threshold_strategy="fixed",
         metrics={"percent_top": [2]},
-        basic={
+        floors={
             "min_genes_per_cell": 2,
             "min_cells_per_gene": 2,
-            "max_mito_percent": 60.0,
         },
-        mad={"enabled": False},
         outputs={
             "write_h5ad": False,
             "write_figures": False,
@@ -156,9 +152,6 @@ def test_qc_public_api_can_validate_config_mapping() -> None:
     config = qc.validate_qc_config_dict(
         {
             "enabled": True,
-            "mode": "flag_no_drop",
-            "threshold_strategy": "fixed",
-            "mad": {"enabled": False},
         }
     )
 
@@ -167,8 +160,6 @@ def test_qc_public_api_can_validate_config_mapping() -> None:
 
     # Confirm configured fields were preserved.
     assert config.enabled is True
-    assert config.mode == "flag_no_drop"
-    assert config.threshold_strategy == "fixed"
 
 
 def test_qc_public_api_can_run_metrics_and_floors() -> None:

@@ -195,6 +195,48 @@ def apply_floors(
     )
 
 
+def require_non_empty_qc_result(floors: FloorResult, *, n_genes: int) -> None:
+    """Fail when the floors left nothing to analyse, naming the floor that did it.
+
+    Backs ``QCConfig.fail_on_empty_result``, which was declared and read by nothing. Without
+    it an over-strict floor produced an empty object that stayed empty until some downstream
+    reduction failed on a zero-size array — a stack trace several stages away from the cause,
+    on the most common first-run mistake there is.
+
+    Args:
+        floors: The applied floor result.
+        n_genes: Genes surviving the gene floor.
+
+    Raises:
+        QCFloorError: If no cell or no gene survived.
+    """
+    reasons = floors.reason[floors.reason != ""].value_counts()
+    culprit = (
+        f" Every removal was attributed to: {', '.join(reasons.index.astype(str))}."
+        if len(reasons)
+        else ""
+    )
+
+    if int(floors.cell_keep.sum()) == 0:
+        raise QCFloorError(
+            f"The QC floors removed all {len(floors.cell_keep):,} barcodes, leaving nothing to "
+            f"analyse.{culprit} A floor that removes everything is almost always set for a "
+            f"different kind of input than the one supplied — `min_genes_per_cell` defaults to "
+            f"200, which assumes a whole-transcriptome matrix and will empty a small panel, a "
+            f"subsampled fixture, or an already-aggregated object. Lower the floors, or set them "
+            f"to null to keep every barcode. Set `qc.fail_on_empty_result: false` to proceed "
+            f"anyway."
+        )
+
+    if n_genes == 0:
+        raise QCFloorError(
+            f"The gene floor removed all {len(floors.gene_keep):,} genes, leaving nothing to "
+            f"analyse. `min_cells_per_gene` is above the number of cells in which any gene is "
+            f"detected here. Lower it, or set it to null. Set `qc.fail_on_empty_result: false` "
+            f"to proceed anyway."
+        )
+
+
 def build_qc_report_table(
     cell_decisions: pd.DataFrame,
     *,
@@ -280,4 +322,5 @@ __all__ = [
     "QCFloorError",
     "apply_floors",
     "build_qc_report_table",
+    "require_non_empty_qc_result",
 ]

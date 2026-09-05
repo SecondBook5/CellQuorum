@@ -128,15 +128,14 @@ def main(
         compute=ComputeConfig(backend="cpu", prefer_gpu=False, fallback_to_cpu=True),
         r=RConfig(enabled=False),
         qc=QCConfig(
-            mode="flag_no_drop",
-            threshold_strategy="fixed",
             metrics={"percent_top": [20]},
-            basic={
+            # A smoke subset is small and arbitrary, so the floors are set to keep everything
+            # the assay detected; the point of the run is that the stages execute, not that this
+            # subset is clean.
+            floors={
                 "min_genes_per_cell": 1,
                 "min_cells_per_gene": 1,
-                "max_mito_percent": 100.0,
             },
-            mad={"enabled": False},
             outputs={
                 "write_h5ad": False,
                 "write_figures": False,

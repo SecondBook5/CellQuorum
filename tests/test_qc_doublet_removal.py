@@ -41,8 +41,11 @@ def test_doublets_removed_when_remove_true(tmp_path):
     config = {
         "qc": {
             "enabled": True,
-            "mode": "flag_no_drop",
             "metrics": {"layer": "counts"},
+            # The fixture is a handful of synthetic barcodes, below any real
+            # detection floor. Lifting the floors isolates the doublet decision,
+            # which is what this test is about.
+            "floors": {"min_genes_per_cell": None, "min_cells_per_gene": None},
             "doublets": {
                 "enabled": True,
                 "method": "scrublet",
@@ -85,8 +88,11 @@ def test_doublets_kept_when_remove_false(tmp_path):
     config = {
         "qc": {
             "enabled": True,
-            "mode": "flag_no_drop",
             "metrics": {"layer": "counts"},
+            # The fixture is a handful of synthetic barcodes, below any real
+            # detection floor. Lifting the floors isolates the doublet decision,
+            # which is what this test is about.
+            "floors": {"min_genes_per_cell": None, "min_cells_per_gene": None},
             "doublets": {
                 "enabled": True,
                 "method": "scrublet",

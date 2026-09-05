@@ -39,20 +39,20 @@ SCANNED_DIRS = ("configs", "src", "tests", "scripts")
 SCANNED_SUFFIXES = (".py", ".yaml", ".yml", ".R", ".csv")
 
 # Absolute path roots that name one machine's layout. Each is a path *prefix* appearing
-# inside the file, so `/mnt/e/data` is caught while the word "home" in prose is not.
+# inside the file, so `/mnt/e/data` is caught while "home" in prose is not. machine-path-ok
 #
 # System roots (/usr, /opt, /etc, /var) and /tmp are deliberately absent: those are
 # portable across POSIX machines, and /tmp is the conventional place for scratch
 # fixtures.
 MACHINE_SPECIFIC_PREFIXES = (
-    "/mnt/",
-    "/home/",
-    "/Users/",
-    "/media/",
-    "/Volumes/",
+    "/mnt/",  # machine-path-ok - this is the pattern list, not a path
+    "/home/",  # machine-path-ok
+    "/Users/",  # machine-path-ok
+    "/media/",  # machine-path-ok
+    "/Volumes/",  # machine-path-ok
 )
 
-# Windows drive letters, e.g. `C:\Users` or `D:/data`. Kept separate because it needs a
+# Windows drive letters, e.g. a `C:` or `D:` prefix. Kept separate because it needs a
 # pattern rather than a literal prefix.
 WINDOWS_DRIVE = re.compile(r"\b[A-Za-z]:[\\/]")
 

@@ -67,7 +67,6 @@ stages:
 
 qc:
   enabled: true
-  mode: flag_no_drop
   metrics:
     layer: counts
   doublets:

@@ -38,7 +38,11 @@ def test_pp_qc_flag_no_drop_annotates_metrics() -> None:
     """cq.pp.qc runs the real QC stage and returns annotated adata + result."""
 
     adata = _counts_adata()
-    out = cq.pp.qc(adata, mode="flag_no_drop", metrics={"layer": "counts"})
+    out = cq.pp.qc(
+        adata,
+        floors={"min_genes_per_cell": None, "min_cells_per_gene": None},
+        metrics={"layer": "counts"},
+    )
 
     assert isinstance(out, NotebookStageOutput)
     # QC metric columns are present on the returned adata.
@@ -57,7 +61,7 @@ def test_pp_qc_accepts_base_config_and_kwargs() -> None:
     out = cq.pp.qc(
         adata,
         config={"project": {"name": "nb"}},
-        mode="flag_no_drop",
+        floors={"min_genes_per_cell": None, "min_cells_per_gene": None},
         metrics={"layer": "counts"},
     )
     assert "pct_counts_mito" in out.adata.obs.columns

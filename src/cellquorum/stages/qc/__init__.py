@@ -12,18 +12,16 @@ from cellquorum.stages.qc.artifacts import (
 # Import QC configuration public objects.
 from cellquorum.stages.qc.config import (
     QCAmbientRNAConfig,
-    QCBasicThresholdConfig,
     QCConfig,
     QCDoubletConfig,
     QCDuplicateNameConfig,
     QCFeaturePatternConfig,
-    QCMadThresholdConfig,
+    QCFloorConfig,
     QCMetricCalculationConfig,
     QCOutputConfig,
     validate_qc_config_dict,
 )
 
-# Import QC decision public objects.
 # Import QC feature annotation public objects.
 from cellquorum.stages.qc.features import (
     CUSTOM_EXCLUDE_COLUMN,
@@ -58,7 +56,6 @@ from cellquorum.stages.qc.stage import (
     QCStageError,
 )
 
-# Import QC threshold public objects.
 # Import QC input validation public objects.
 from cellquorum.stages.qc.validation import (
     QCInputValidationError,
@@ -67,7 +64,7 @@ from cellquorum.stages.qc.validation import (
     require_obs_columns,
     summarize_adata_shape,
     validate_duplicate_name_policy,
-    validate_mad_groupby_columns,
+    validate_mixture_groupby_columns,
     validate_qc_input_adata,
     validate_qc_matrix,
 )
@@ -83,7 +80,7 @@ __all__ = [
     "QCAmbientRNAConfig",
     "QCArtifactError",
     "QCArtifactManifest",
-    "QCBasicThresholdConfig",
+    "QCFloorConfig",
     "QCConfig",
     "QCDoubletConfig",
     "QCDuplicateNameConfig",
@@ -92,7 +89,6 @@ __all__ = [
     "QCFeaturePatternConfig",
     "QCInputValidationError",
     "QCInputValidationSummary",
-    "QCMadThresholdConfig",
     "QCMetricCalculationConfig",
     "QCMetricsError",
     "QCMetricsResult",
@@ -108,7 +104,7 @@ __all__ = [
     "summarize_adata_shape",
     "summarize_feature_masks",
     "validate_duplicate_name_policy",
-    "validate_mad_groupby_columns",
+    "validate_mixture_groupby_columns",
     "validate_qc_config_dict",
     "validate_qc_input_adata",
     "validate_qc_matrix",

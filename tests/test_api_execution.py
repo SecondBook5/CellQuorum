@@ -127,18 +127,12 @@ def build_execution_config(h5ad_path: Path) -> CellQuorumConfig:
             "enabled": False,
         },
         qc={
-            "mode": "flag_no_drop",
-            "threshold_strategy": "fixed",
             "metrics": {
                 "percent_top": [2],
             },
-            "basic": {
+            "floors": {
                 "min_genes_per_cell": 2,
                 "min_cells_per_gene": 2,
-                "max_mito_percent": 60.0,
-            },
-            "mad": {
-                "enabled": False,
             },
             "outputs": {
                 "write_h5ad": False,
@@ -175,7 +169,7 @@ def test_run_pipeline_executes_by_default_for_config_model(tmp_path: Path) -> No
 
     # Confirm final AnnData contains QC annotations.
     assert isinstance(result.context.adata, ad.AnnData)
-    assert "cellquorum_qc_keep" in result.context.adata.obs
+    assert "qc_state_initial" in result.context.adata.obs
 
 
 def test_run_pipeline_can_bootstrap_only_for_config_model(tmp_path: Path) -> None:
@@ -233,18 +227,12 @@ def test_run_pipeline_executes_by_default_for_dictionary(tmp_path: Path) -> None
                 "enabled": False,
             },
             "qc": {
-                "mode": "flag_no_drop",
-                "threshold_strategy": "fixed",
                 "metrics": {
                     "percent_top": [2],
                 },
-                "basic": {
+                "floors": {
                     "min_genes_per_cell": 2,
                     "min_cells_per_gene": 2,
-                    "max_mito_percent": 60.0,
-                },
-                "mad": {
-                    "enabled": False,
                 },
                 "outputs": {
                     "write_h5ad": False,
@@ -286,16 +274,11 @@ compute:
 r:
   enabled: false
 qc:
-  mode: flag_no_drop
-  threshold_strategy: fixed
   metrics:
     percent_top: [2]
-  basic:
+  floors:
     min_genes_per_cell: 2
     min_cells_per_gene: 2
-    max_mito_percent: 60.0
-  mad:
-    enabled: false
   outputs:
     write_h5ad: false
     write_figures: false
@@ -316,7 +299,7 @@ qc:
 
     # Confirm final AnnData contains QC annotations.
     assert isinstance(result.context.adata, ad.AnnData)
-    assert "cellquorum_qc_keep" in result.context.adata.obs
+    assert "qc_state_initial" in result.context.adata.obs
 
 
 def test_run_pipeline_rejects_unsupported_config_input(tmp_path: Path) -> None:

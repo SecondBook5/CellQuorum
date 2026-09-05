@@ -553,7 +553,7 @@ def test_html_report_is_a_single_self_contained_file(tmp_path: Path) -> None:
         thresholds=_thresholds(),
         gene_summary={"n_genes": 2000, "n_genes_kept": 1240},
         project="test_cohort",
-        mode="filter",
+        floors={"min_genes_per_cell": 200, "min_cells_per_gene": 3},
         case_label="Lymphedema",
     )
     html = path.read_text(encoding="utf-8")
