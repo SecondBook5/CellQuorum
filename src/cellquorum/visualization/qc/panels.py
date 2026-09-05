@@ -50,6 +50,7 @@ from cellquorum.visualization.figstyle import (
     two_group_test_on_donor_medians,
 )
 from cellquorum.visualization.qc.summarise import (
+    condition_rank,
     order_samples,
     summarize_qc_rows,
 )
@@ -721,25 +722,29 @@ def _condition_colors(
 ) -> dict[str, str]:
     """Assign the two-colour condition palette in a stable order.
 
-    Two hues only. More conditions fall back to grey rather than inventing a
-    categorical palette here, which would bypass the project's palette check.
+    Two hues only. More conditions fall back to grey rather than inventing a categorical palette
+    here, which would bypass the project's palette check.
+
+    Which arm counts as control is decided by :func:`~.summarise.condition_rank`, not here. The
+    two used to derive it separately — the palette to pick hues, the row ordering to pick
+    positions — which meant the colour a sample was drawn in and the position it was drawn at
+    could in principle disagree about which arm was the control. They are the same question, so
+    they now have one answer.
     """
 
     if "condition" not in frame.columns:
         return {}
-    levels = [str(v) for v in pd.unique(frame["condition"].dropna())]
-    if case_label and case_label in levels:
-        control = [v for v in levels if v != case_label]
-        ordered = ([control[0]] if control else []) + [case_label]
-    else:
-        ordered = sorted(levels)
-    # Insertion order is control then case, because every legend built from this
-    # iterates it and a legend reading case-then-control fights the design.
-    palette: dict[str, str] = {}
-    if len(ordered) >= 1:
-        palette[ordered[0]] = NORMAL_BLUE
-    if len(ordered) >= 2:
-        palette[ordered[-1]] = LE_RED
+    levels = [str(value) for value in pd.unique(frame["condition"].dropna())]
+    ranks = condition_rank(levels, case_label)
+
+    # Insertion order is control then case, because every legend built from this iterates it and
+    # a legend reading case-then-control fights the design.
+    by_rank = {0: NORMAL_BLUE, 1: LE_RED}
+    palette: dict[str, str] = {
+        level: by_rank[rank]
+        for level, rank in sorted(ranks.items(), key=lambda item: item[1])
+        if rank in by_rank
+    }
     for level in levels:
         palette.setdefault(level, REMOVED_GREY)
     return palette
