@@ -20,10 +20,10 @@ So these panels are built around the questions that actually caught those proble
 
 Horizontal layout so labels read left to right. Populations ordered by the quantity under
 discussion rather than alphabetically, so the figure has a direction. Severity uses a
-monotonic-lightness map (``magma_r``) because it is a magnitude; exclusion *fractions* use a
-diverging map centred on the cohort rate, because the question is "worse or better than
-typical", not "how big". Panels are omitted when their input is absent rather than stubbed with
-an empty axis.
+monotonic-lightness map (``magma_r``) because it is a magnitude, and it is scaled to the observed
+range rather than to a nominal 0-1: quarantine is rare by design, so a fixed range would put every
+bar in the first few percent of the colormap and encode nothing. Panels are omitted when their
+input is absent rather than stubbed with an empty axis.
 
 One addition specific to this model: **counts are always annotated on severity cells.** A median
 severity of 0.9 over eleven cells and over eleven thousand are different claims, and a heatmap
@@ -37,6 +37,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from cellquorum.visualization.qc.summarise import as_float
 
 # ─── Column contract ────────────────────────────────────────────────────────────────
 
@@ -194,7 +196,7 @@ def plot_lineage_family_heatmap(
     for row in range(len(table.index)):
         for column_index in range(len(columns)):
             value = table.iloc[row, column_index]
-            if not np.isfinite(value):
+            if not np.isfinite(as_float(value)):
                 # An unmeasurable family is not a severity of zero. Marking it keeps absent
                 # evidence from reading as evidence of health, which is the model's core rule.
                 heat.text(column_index, row, "·", ha="center", va="center", fontsize=9, color="0.5")
@@ -206,7 +208,7 @@ def plot_lineage_family_heatmap(
                 ha="center",
                 va="center",
                 fontsize=6.5,
-                color="white" if value > 0.55 * ceiling else "0.15",
+                color="white" if as_float(value) > 0.55 * ceiling else "0.15",
             )
 
     legend = figure.colorbar(image, cax=legend_axis, orientation="horizontal")
@@ -310,19 +312,40 @@ def plot_family_cooccurrence(
     if counts.empty:
         return None
 
-    excluded = _excluded_mask(obs)
-    exclusion = excluded.groupby(labels).mean().reindex(counts.index)
+    # Coloured by QUARANTINE rate, not by exclusion-from-fitting.
+    #
+    # Exclusion was the original choice and it is a dead encoding: any cell with a concerning
+    # family loses FIT, so the value was 1.00 for every combination except multiplet, and every
+    # bar rendered at the dark end of the map. Measured on the 201,871-cell cohort it spanned
+    # 0.631-1.000, almost all of it exactly 1.
+    #
+    # Quarantine rate spans 0.000-0.374 on the same data, and it varies with concordance by
+    # construction: every single-family combination is 0.000 because one family can never condemn
+    # a cell, two families reach ~0.11, three reach 0.37. So the colour now shows the panel's
+    # actual question — is requiring concordance doing any work — instead of showing nothing.
+    quarantined = obs[STATE_COLUMN].astype(str).eq("quarantine") if STATE_COLUMN in obs else None
+    if quarantined is None:
+        return None
+    consequence = quarantined.groupby(labels).mean().reindex(counts.index)
 
     set_style()
     figure, axis = plt.subplots(figsize=(8.4, max(3.0, 0.42 * len(counts) + 1.8)))
 
     positions = range(len(counts))
-    # Coloured by consequence, not by size: a frequent combination that excludes nobody is a
-    # different story from a rare one that excludes everybody.
+    # Coloured by consequence, not by size: a frequent combination that condemns nobody is a
+    # different story from a rare one that condemns a third of its cells.
+    #
+    # Scaled to the observed maximum rather than to 1.0. Quarantine is rare by design — the
+    # cohort rate is 0.5% — so a fixed 0-1 range would put every bar in the first 3% of the
+    # colormap and flatten the encoding a second time, for the opposite reason.
+    ceiling = float(consequence.max()) if len(consequence) else 0.0
+    scale = ceiling if ceiling > 0 else 1.0
     image = axis.barh(
         positions,
         counts.to_numpy(),
-        color=[plt.get_cmap("magma_r")(min(value, 1.0)) for value in exclusion.fillna(0.0)],
+        color=[
+            plt.get_cmap("magma_r")(min(value / scale, 1.0)) for value in consequence.fillna(0.0)
+        ],
         height=0.74,
     )
     axis.set_yticks(
@@ -337,11 +360,11 @@ def plot_family_cooccurrence(
         fontsize=10,
         loc="left",
     )
-    for bar, count, rate in zip(image, counts.to_numpy(), exclusion.fillna(0.0), strict=False):
+    for bar, count, rate in zip(image, counts.to_numpy(), consequence.fillna(0.0), strict=False):
         axis.text(
             bar.get_width(),
             bar.get_y() + bar.get_height() / 2,
-            f"  {count:,}  ({rate:.0%} excluded)",
+            f"  {count:,}  ({rate:.1%} quarantined)",
             va="center",
             fontsize=7,
             color="0.2",

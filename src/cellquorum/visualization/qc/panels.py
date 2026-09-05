@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 import matplotlib as mpl
 import matplotlib.patheffects as path_effects
@@ -36,6 +37,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
@@ -50,6 +52,7 @@ from cellquorum.visualization.figstyle import (
     two_group_test_on_donor_medians,
 )
 from cellquorum.visualization.qc.summarise import (
+    as_float,
     condition_rank,
     order_samples,
     summarize_qc_rows,
@@ -750,6 +753,32 @@ def _condition_colors(
     return palette
 
 
+def _hide_colorbar_outline(bar: object) -> None:
+    """Hide a colorbar's outline, tolerating a colorbar that has none.
+
+    ``Colorbar.outline`` is optional: it is a real ``Spine`` for the standard mappable colorbar
+    and absent for some kinds. The attribute access was unguarded, so a colorbar without one
+    would raise partway through styling a figure that had already been drawn.
+    """
+    outline = getattr(bar, "outline", None)
+    if outline is not None:
+        outline.set_visible(False)
+
+
+def _tune_layout(fig: Figure, **padding: float) -> None:
+    """Adjust the figure's layout-engine padding, if it has an engine to adjust.
+
+    ``Figure.get_layout_engine()`` returns ``None`` for a figure not created with one, so the
+    unguarded ``.set()`` raised ``AttributeError``. Every current caller does build its figure
+    with a constrained layout, which is why this never fired — but a panel added without one
+    would have failed at styling time rather than at creation, which is a confusing place to
+    learn about it.
+    """
+    engine = fig.get_layout_engine()
+    if engine is not None:
+        engine.set(**padding)
+
+
 def _panel_label(ax: Axes, letter: str, *, dx: float = -30.0, dy: float = 14.0) -> None:
     """Panel letter offset in POINTS from the axes' top-left corner.
 
@@ -916,10 +945,10 @@ def plot_rule_attribution(ax: Axes, rule_table: pd.DataFrame, n_cells: int) -> N
 
     limit = max(1, int(table["n_failed"].max()))
     for position, row in zip(positions, table.itertuples(), strict=True):
-        pct = 100.0 * row.n_failed / n_cells if n_cells else 0.0
+        pct = 100.0 * as_float(row.n_failed) / n_cells if n_cells else 0.0
         ax.text(
-            row.n_failed + limit * 0.02,
-            position,
+            as_float(row.n_failed) + limit * 0.02,
+            float(position),
             f"{row.n_failed:,}  ({pct:.1f}%)",
             va="center",
             ha="left",
@@ -1226,8 +1255,8 @@ def plot_sample_attrition(
     halo = [path_effects.withStroke(linewidth=2.2, foreground="white")]
     for position, row in zip(positions, table.itertuples(), strict=True):
         ax.text(
-            row.pct_removed + limit * 0.02,
-            position,
+            as_float(row.pct_removed) + limit * 0.02,
+            float(position),
             f"{row.cells_removed:,}/{row.cells_in:,}",
             va="center",
             ha="left",
@@ -1401,7 +1430,7 @@ def plot_joint_scatter(
         bar.set_label(METRIC_LABELS.get(color_metric, color_metric), fontsize=7, labelpad=2)
         bar.ax.xaxis.set_label_position("top")
         bar.ax.tick_params(labelsize=6.2, length=2, pad=1)
-        bar.outline.set_visible(False)
+        _hide_colorbar_outline(bar)
 
     # Take the retained swatch from the middle of the colour map actually in use,
     # so the key points at the dots on the plot rather than at some other colour.
@@ -1488,10 +1517,11 @@ def plot_joint_marginals(
     ax_top = ax.inset_axes((0.0, 1.0 + gap, 1.0, size), sharex=ax)
     ax_right = ax.inset_axes((1.0 + gap, 0.0, size, 1.0), sharey=ax)
 
-    for marginal, column, orientation in (
+    marginals: tuple[tuple[Axes, str, Literal["vertical", "horizontal"]], ...] = (
         (ax_top, x_column, "vertical"),
         (ax_right, y_column, "horizontal"),
-    ):
+    )
+    for marginal, column, orientation in marginals:
         finite = data[column].to_numpy(dtype=float)
         finite = finite[np.isfinite(finite) & (finite > 0)]
         if finite.size == 0:
@@ -1503,7 +1533,7 @@ def plot_joint_marginals(
                 continue
             marginal.hist(
                 subset[column],
-                bins=bins,
+                bins=bins.tolist(),
                 orientation=orientation,
                 color=color,
                 alpha=alpha,
@@ -1606,7 +1636,7 @@ def plot_mito_mixture(
         bar = ax.figure.colorbar(points, ax=ax, pad=0.02, fraction=0.045)
         bar.set_label("P(compromised)", fontsize=7.5)
         bar.ax.tick_params(labelsize=7)
-        bar.outline.set_visible(False)
+        _hide_colorbar_outline(bar)
     else:
         for keep, color, label in (
             (True, KEPT_GREEN, "Retained"),
@@ -1638,11 +1668,11 @@ def plot_mito_mixture(
         ):
             intercept = model.get(f"{prefix}_intercept")
             slope = model.get(f"{prefix}_slope")
-            if not (np.isfinite(intercept) and np.isfinite(slope)):
+            if not (np.isfinite(as_float(intercept)) and np.isfinite(as_float(slope))):
                 continue
             ax.plot(
                 grid,
-                intercept + slope * grid,
+                as_float(intercept) + as_float(slope) * grid,
                 color=color,
                 linestyle=style,
                 linewidth=1.5,
@@ -1929,7 +1959,7 @@ def _plot_metric_matrix(
     bar = ax.figure.colorbar(image, ax=ax, fraction=0.035, pad=0.02, aspect=14)
     bar.set_label("Robust z\nvs cohort", fontsize=7)
     bar.ax.tick_params(labelsize=6.5, length=2)
-    bar.outline.set_visible(False)
+    _hide_colorbar_outline(bar)
 
 
 # Below this many input cells a percentage is a ratio of a handful of barcodes.
@@ -1991,7 +2021,7 @@ def _cell_type_bar_colors(
 ) -> list[str]:
     """Colour each row by its role, then fade the rows too small to read as rates."""
     return [
-        group if row.is_group else (small if row.cells_in < SMALL_CELL_TYPE else member)
+        group if row.is_group else (small if as_float(row.cells_in) < SMALL_CELL_TYPE else member)
         for row in display.itertuples()
     ]
 
@@ -2044,7 +2074,7 @@ def plot_cell_type_composition(
         # A gap the label can sit in: multiplicative on a log axis, additive on a
         # linear one. Using one rule for both puts the small rows' labels either
         # inside their own bar or off the axis.
-        end = max(float(row.cells_in), 0.7)
+        end = max(as_float(row.cells_in), 0.7)
         ax.text(
             end * 1.28 if on_log else end + top * 0.02,
             position,
@@ -2134,7 +2164,7 @@ def plot_cell_type_attrition(
         path_effects=halo,
     )
     for position, row in zip(positions, display.itertuples(), strict=True):
-        pct = 0.0 if pd.isna(row.pct_removed) else float(row.pct_removed)
+        pct = 0.0 if pd.isna(row.pct_removed) else as_float(row.pct_removed)
         ax.text(
             pct + max(limit, 1.0) * 0.02,
             position,
@@ -2204,7 +2234,7 @@ def plot_cell_type_matrix(
         if labels
         else None,
         # Scale on the granular rows only: the subtotals are aggregates of them.
-        scale_mask=members if members.sum() >= 3 else None,
+        scale_mask=members.tolist() if members.sum() >= 3 else None,
     )
     subtitle = "median per cell type, scaled within metric"
     if display[usable].isna().all(axis=1).any():
@@ -2280,7 +2310,7 @@ def write_qc_overview_figure(
     )
     # Generous vertical padding: the subtitles are annotations the layout engine
     # cannot measure, so rows need slack the engine would not otherwise leave.
-    fig.get_layout_engine().set(w_pad=0.08, h_pad=0.14, wspace=0.05, hspace=0.10)
+    _tune_layout(fig, w_pad=0.08, h_pad=0.14, wspace=0.05, hspace=0.10)
     outer = fig.add_gridspec(
         n_rows,
         n_cols,
@@ -2392,7 +2422,7 @@ def write_qc_cell_type_figure(
 
     set_publication_style(dpi=dpi)
     fig = plt.figure(figsize=(12.6, min(2.0 + 0.27 * len(display), 22.0)), layout="constrained")
-    fig.get_layout_engine().set(w_pad=0.06, h_pad=0.10, wspace=0.03)
+    _tune_layout(fig, w_pad=0.06, h_pad=0.10, wspace=0.03)
     # The left panel carries the shared row labels, so it needs the width they eat
     # on top of the width its own bars need.
     grid = fig.add_gridspec(1, 3, width_ratios=[1.34, 0.95, 1.0])
@@ -2482,7 +2512,7 @@ def write_qc_panels(
 
     # Attrition: funnel above rule attribution.
     fig = plt.figure(figsize=(7.2, 1.4 + 0.42 * max(len(rule_table), 3)), layout="constrained")
-    fig.get_layout_engine().set(h_pad=0.12, hspace=0.14)
+    _tune_layout(fig, h_pad=0.12, hspace=0.14)
     grid = fig.add_gridspec(2, 1, height_ratios=[0.40, 1.0])
     ax_top = fig.add_subplot(grid[0])
     plot_cohort_funnel(ax_top, frame)

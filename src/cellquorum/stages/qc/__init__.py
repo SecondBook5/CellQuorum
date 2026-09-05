@@ -1,4 +1,23 @@
-"""Quality-control public API for CellQuorum."""
+"""Quality-control public API for CellQuorum.
+
+Two design documents are normative for this package, and both are tracked in the repository
+rather than kept as working notes:
+
+``docs/design/qc-graded-adjudication.md``
+    The architecture: evidence families, concordance, ``core``/``borderline``/``quarantine``,
+    per-analysis eligibility, and the stage order (``qc_evidence`` at 20, ``query_projection``
+    at 105, ``qc_finalization`` at 135). **Frozen** — do not change the architecture or invent
+    numeric thresholds against it.
+
+``docs/design/qc-reporting-figures.md``
+    The figure and table contract: which figures exist, paired control-first ordering, the rule
+    that a plot may never substitute ``0`` for evidence that was not measured, and the
+    requirement that the visualization layer *consume* QC state rather than recompute it.
+
+They are cited here because they were previously gitignored, which is how a session rebuilt the
+figure set twice against a spec that had been on disk the whole time. A normative document the
+code depends on belongs where the code is.
+"""
 
 from __future__ import annotations
 

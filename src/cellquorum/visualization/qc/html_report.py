@@ -152,18 +152,35 @@ def _esc(value: object) -> str:
     return html.escape("" if value is None else str(value))
 
 
+def _as_float(value: object) -> float:
+    """Coerce a table cell to a float, mapping absent or unparseable values to NaN.
+
+    Row records come out of pandas typed as a wide union — a cell may be a float, a numpy
+    scalar, a string or None — and the formatters below take a number. Coercing once here keeps
+    the call sites honest about the fact that a missing cell is NaN rather than zero.
+    """
+    if value is None:
+        return float("nan")
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def _num(value: object, digits: int = 0) -> str:
     """Format a number with thousands separators, or an em dash when absent."""
-    if value is None or (isinstance(value, float) and not np.isfinite(value)):
+    number = _as_float(value)
+    if not np.isfinite(number):
         return '<span class="nil">&mdash;</span>'
-    return f"{float(value):,.{digits}f}"
+    return f"{number:,.{digits}f}"
 
 
 def _cell(value: object, digits: int = 0) -> str:
     """A right-aligned numeric cell that sorts numerically."""
-    if value is None or (isinstance(value, float) and not np.isfinite(value)):
+    number = _as_float(value)
+    if not np.isfinite(number):
         return '<td data-v="NaN"><span class="nil">&mdash;</span></td>'
-    return f'<td data-v="{float(value)}">{float(value):,.{digits}f}</td>'
+    return f'<td data-v="{number}">{number:,.{digits}f}</td>'
 
 
 def _pct_bar(pct: float, *, warn_above: float = 25.0) -> str:
@@ -525,7 +542,7 @@ def render_qc_html_report(
             body.append(_cell(record.get("cells_in")))
             body.append(_cell(record.get("cells_kept")))
             body.append(_cell(record.get("cells_removed")))
-            body.append(_pct_bar(record.get("pct_removed")))
+            body.append(_pct_bar(_as_float(record.get("pct_removed"))))
             for key, _, digits in present_metrics:
                 body.append(_cell(record.get(key), digits))
             body.append("</tr>")
@@ -549,7 +566,7 @@ def render_qc_html_report(
             body.append(_cell(record.get("lower"), 2))
             body.append(_cell(record.get("upper"), 2))
             body.append(_cell(record.get("cells_failed")))
-            body.append(_pct_bar(record.get("pct_of_input")))
+            body.append(_pct_bar(_as_float(record.get("pct_of_input"))))
             body.append(_cell(record.get("only_this_rule")))
             body.append("</tr>")
         body.append(

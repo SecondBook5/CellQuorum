@@ -33,11 +33,6 @@ from cellquorum.visualization.qc.html_report import (
     summarize_qc_pool,
     summarize_qc_rows,
 )
-
-# Rule humanisation, cell-type grouping and the subtotal tint all live with the
-# panels, and the table must agree with the figures word for word and row for
-# row: "Mitochondrial % > 6.1 (MAD)" in panel B and in Table 2, and the same
-# cell types in the same order in Table 3 and the by-cell-type figure.
 from cellquorum.visualization.qc.panels import (
     GROUP_BAND,
     SMALL_CELL_TYPE,
@@ -48,6 +43,12 @@ from cellquorum.visualization.qc.panels import (
     redundant_group_members,
     resolve_cell_type_keys,
 )
+
+# Rule humanisation, cell-type grouping and the subtotal tint all live with the
+# panels, and the table must agree with the figures word for word and row for
+# row: "Mitochondrial % > 6.1 (MAD)" in panel B and in Table 2, and the same
+# cell types in the same order in Table 3 and the by-cell-type figure.
+from cellquorum.visualization.qc.summarise import as_float
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -135,7 +136,15 @@ class TypesetTable:
 
         if self.group_totals is None or group not in self.group_totals.index:
             return None
-        return self.group_totals.loc[group]
+        row = self.group_totals.loc[group]
+        # A duplicated group label would make `.loc` return a frame rather than a row, which no
+        # caller handles. Reporting it beats silently rendering the first match.
+        if isinstance(row, pd.DataFrame):
+            raise QCTableError(
+                f"Group {group!r} appears {len(row)} times in the subtotal table; group labels "
+                f"must be unique."
+            )
+        return row
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +497,7 @@ def build_cell_type_table(
     # One group means its bar already is the cohort total; printing both would be
     # the same row twice.
     if group_totals is not None and len(group_totals) == 1:
-        total = None
+        total = None  # type: ignore[assignment]
 
     footnotes = [
         ("a", "Barcodes of that cell type entering the quality-control stage."),
@@ -506,10 +515,10 @@ def build_cell_type_table(
     n_lineages = named["coarse"].nunique() if group else 1
     if group and n_lineages > 1:
         subtitle_bits.append(f"in {n_lineages:,} lineages")
-    n_kept = int(pooled["cells_kept"])
+    n_kept = int(as_float(pooled["cells_kept"]))
     if n_kept and len(named):
         largest = named.loc[named["cells_kept"].idxmax()]
-        share = 100.0 * float(largest["cells_kept"]) / n_kept
+        share = 100.0 * as_float(largest["cells_kept"]) / n_kept
         subtitle_bits.append(f"{share:.1f}% of retained cells are {largest['cell_type']}")
     # Only worth naming when there is something to compare it against, and only
     # among populations big enough for a percentage to mean anything.
@@ -517,7 +526,8 @@ def build_cell_type_table(
     if len(sizeable) > 1:
         hardest = sizeable.loc[sizeable["pct_removed"].idxmax()]
         subtitle_bits.append(
-            f"hardest hit: {hardest['cell_type']} ({float(hardest['pct_removed']):.1f}% removed)"
+            f"hardest hit: {hardest['cell_type']} "
+            f"({as_float(hardest['pct_removed']):.1f}% removed)"
         )
     if len(named) < len(rows):
         unlabelled = rows.loc[rows["cell_type"] == UNLABELLED, "cells_in"].sum()
@@ -1016,7 +1026,15 @@ def _measure(dpi: int = 200) -> _TextWidth:
     from matplotlib.font_manager import FontProperties
 
     scratch = plt.figure(figsize=(1.0, 1.0), dpi=dpi)
-    renderer = scratch.canvas.get_renderer()
+    # `get_renderer` is an Agg-canvas method, not part of the canvas base class, so it is
+    # fetched defensively: a non-Agg backend would otherwise raise here while measuring text.
+    get_renderer = getattr(scratch.canvas, "get_renderer", None)
+    if get_renderer is None:  # pragma: no cover - Agg is the configured backend
+        raise QCTableError(
+            "Measuring table text needs an Agg canvas; the active matplotlib backend "
+            f"({type(scratch.canvas).__name__}) does not provide get_renderer()."
+        )
+    renderer = get_renderer()
     cache: dict[tuple[str, float, str], float] = {}
 
     def width(text: str, size: float, weight: str = "normal") -> float:
@@ -1089,7 +1107,9 @@ def _draw_table(
     # so they have to be measured too or a group total collides with its neighbour.
     bar_rows: list[list[str]] = []
     for label, _ in groups:
-        subtotal = table.group_total(label) if label is not None else None
+        if label is None:
+            continue
+        subtotal = table.group_total(label)
         if subtotal is None:
             continue
         bar_rows.append(_bar_cells(table, columns, label, subtotal))
@@ -1314,18 +1334,18 @@ def _draw_table(
     y += 0.05
     rule(y, _PAD_X, table_width, 1.25)
     y += 0.11
-    marker_lines = {}
+    marker_lines: dict[int, tuple[str | None, str]] = {}
     for marker, text in table.footnotes:
         for offset, line in enumerate(
             _wrap_to_width(text, table_width - _PAD_X - 0.10, measure, _NOTE_PT)
         ):
             marker_lines[len(marker_lines)] = (marker if offset == 0 else None, line)
-    for _, (marker, line) in sorted(marker_lines.items()):
-        if marker:
+    for _, (line_marker, line) in sorted(marker_lines.items()):
+        if line_marker:
             axes.text(
                 _PAD_X,
                 y - 0.018,
-                marker,
+                line_marker,
                 fontsize=_MARKER_PT - 0.6,
                 va="top",
                 family="serif",

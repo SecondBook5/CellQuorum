@@ -41,6 +41,23 @@ class QCSummaryError(ValueError):
     """Report a QC summary asked for on a frame that cannot support it."""
 
 
+def as_float(value: object) -> float:
+    """Coerce one table cell to a float, mapping absent or unparseable values to NaN.
+
+    Exists to hold a single type-ignore instead of thirteen. A pandas row obtained from
+    ``itertuples`` or ``.loc`` has attributes typed as a wide union — float, numpy scalar, str,
+    ``Timestamp``, ``Timedelta``, ``None`` — and the plotting and formatting boundaries want a
+    number. Coercing at the boundary was already happening; doing it through one named function
+    makes the NaN-not-zero contract explicit and keeps the checker suppression in one place.
+    """
+    if value is None:
+        return float("nan")
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def metric_columns(frame: pd.DataFrame) -> list[str]:
     """The numeric per-cell columns in ``frame`` that a summary should take medians of.
 
@@ -256,6 +273,7 @@ def order_samples(
 
 __all__ = [
     "COUNT_COLUMNS",
+    "as_float",
     "QCSummaryError",
     "metric_columns",
     "natural_sort_key",
