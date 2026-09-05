@@ -23,6 +23,11 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.exceptions import CellQuorumDataError
+from cellquorum.visualization.qc.summarise import (
+    order_samples,
+    summarize_qc_pool,
+    summarize_qc_rows,
+)
 
 # Condition chip colours. Two hues, far apart in both hue and lightness, so the
 # chips stay distinguishable under deuteranopia and in greyscale print.
@@ -244,80 +249,6 @@ def build_qc_cell_frame(
     return frame
 
 
-def summarize_qc_rows(
-    frame: pd.DataFrame,
-    *,
-    label: str,
-    name: str,
-    carry: tuple[str, ...] = (),
-    median_population: str = "all",
-) -> pd.DataFrame:
-    """Aggregate a QC cell frame into one attrition row per label value.
-
-    Args:
-        frame: Output of :func:`build_qc_cell_frame`.
-        label: Column to group by.
-        name: Name the grouping column takes in the result.
-        carry: Other label columns to carry through, reported as ``"mixed"``
-            when a group spans several values.
-        median_population: ``"all"`` or ``"retained"`` — which cells the metric
-            medians describe. Attrition counts are always pre-filter.
-
-    Returns:
-        One row per group value, in first-appearance order.
-
-    Raises:
-        QCHTMLReportError: If ``median_population`` is not a known value.
-    """
-
-    if median_population not in {"all", "retained"}:
-        raise QCHTMLReportError(
-            f"median_population must be 'all' or 'retained', got {median_population!r}."
-        )
-
-    rows: list[dict[str, object]] = []
-    for value, chunk in frame.groupby(label, observed=True, dropna=False, sort=True):
-        row: dict[str, object] = {name: str(value)}
-        for other in carry:
-            if other in chunk.columns:
-                values = chunk[other].dropna().unique()
-                row[other] = str(values[0]) if len(values) == 1 else "mixed"
-        rows.append({**row, **summarize_qc_pool(chunk, median_population=median_population)})
-    columns = [name, *(c for c in carry if c in frame.columns)]
-    return pd.DataFrame(rows, columns=None if rows else columns)
-
-
-def summarize_qc_pool(frame: pd.DataFrame, *, median_population: str = "all") -> dict[str, object]:
-    """Aggregate a QC cell frame into one pooled row.
-
-    Medians pool the cells rather than averaging per-group medians, which would
-    weight a 21-cell group like a 490-cell one.
-
-    Args:
-        frame: Output of :func:`build_qc_cell_frame`, or a subset of it.
-        median_population: ``"all"`` or ``"retained"``.
-
-    Returns:
-        Attrition counts and metric medians, without any label column.
-    """
-
-    n_in = int(len(frame))
-    n_keep = int(frame["keep"].sum()) if n_in else 0
-    row: dict[str, object] = {
-        "cells_in": n_in,
-        "cells_kept": n_keep,
-        "cells_removed": n_in - n_keep,
-        "pct_removed": 100.0 * (n_in - n_keep) / n_in if n_in else float("nan"),
-    }
-    described = frame.loc[frame["keep"]] if median_population == "retained" else frame
-    for _, target in _METRIC_COLUMNS:
-        if target in frame.columns:
-            # NaN when a group lost every cell, which is the honest value: it
-            # contributed nothing to the analysed dataset.
-            row[target] = float(described[target].median()) if len(described) else float("nan")
-    return row
-
-
 def build_sample_qc_table(
     *,
     cell_metrics: pd.DataFrame,
@@ -372,6 +303,7 @@ def build_sample_qc_table(
 
     table = summarize_qc_rows(
         frame,
+        metrics=[target for _, target in _METRIC_COLUMNS],
         label="sample",
         name="sample",
         carry=("donor", "condition"),
@@ -381,15 +313,19 @@ def build_sample_qc_table(
     # Order by donor then condition so paired samples sit adjacent — the layout
     # that makes a within-donor quality imbalance visible. Shared with the figure
     # panels so a reader comparing table to figure sees the same row order.
-    from cellquorum.visualization.qc.panels import order_samples
-
     table = order_samples(table, case_label=case_label)
 
     total: dict[str, object] = {"sample": "TOTAL"}
     for label in ("donor", "condition"):
         if label in table.columns:
             total[label] = ""
-    total.update(summarize_qc_pool(frame, median_population=median_population))
+    total.update(
+        summarize_qc_pool(
+            frame,
+            median_population=median_population,
+            metrics=[target for _, target in _METRIC_COLUMNS],
+        )
+    )
     table = pd.concat([table, pd.DataFrame([total])], ignore_index=True)
     return table
 

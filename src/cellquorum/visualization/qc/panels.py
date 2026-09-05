@@ -49,6 +49,10 @@ from cellquorum.visualization.figstyle import (
     set_publication_style,
     two_group_test_on_donor_medians,
 )
+from cellquorum.visualization.qc.summarise import (
+    order_samples,
+    summarize_qc_rows,
+)
 
 # Removed cells are grey: desaturated so they read as background against either
 # condition colour, dark enough to stay visible when printed.
@@ -344,8 +348,12 @@ def summarize_by_sample(frame: pd.DataFrame) -> pd.DataFrame:
     if "sample" not in frame.columns:
         return pd.DataFrame()
 
-    table = _summarize_qc_groups(
+    table = summarize_qc_rows(
         frame,
+        # Pinned rather than discovered: the summariser can find metric columns itself, but this
+        # table's columns are a published contract and the frame also carries derived columns
+        # (the miQC posterior) that were never table columns.
+        metrics=[metric for metric in METRIC_LABELS if metric in frame.columns],
         label="sample",
         name="sample",
         carry={"donor": "donor", "condition": "condition"},
@@ -469,14 +477,15 @@ def summarize_by_cell_type(
         return pd.DataFrame(), None
     group = "cell_type" if stub == "cell_type_granular" and "cell_type" in frame.columns else None
 
-    rows = _summarize_qc_groups(
+    rows = summarize_qc_rows(
         frame,
+        metrics=[metric for metric in METRIC_LABELS if metric in frame.columns],
         label=stub,
         name="cell_type",
         # Carried under a neutral name: the coarse column is itself called
         # cell_type when the granular label is the stub, and two columns of that
         # name would leave the table holding whichever was written last.
-        carry={group: "group"} if group else None,
+        carry={group: "group"} if group else {},
         median_population=median_population,
     )
     if rows.empty:
@@ -487,55 +496,17 @@ def summarize_by_cell_type(
     if group and not redundant_group_members(rows, name="cell_type", group="group").all():
         # Skipped when every group restates itself, i.e. the granular label adds no
         # sub-structure anywhere: grouping then buys a bar per row and nothing else.
-        subtotals = _summarize_qc_groups(
-            frame, label=group, name="group", median_population=median_population
+        subtotals = summarize_qc_rows(
+            frame,
+            metrics=[metric for metric in METRIC_LABELS if metric in frame.columns],
+            label=group,
+            name="group",
+            median_population=median_population,
         )
         # Same order as the rows they head, so a caller can walk them together.
         order = list(dict.fromkeys(rows["group"]))
         group_totals = subtotals.set_index("group").reindex(order)
     return rows, group_totals
-
-
-def _summarize_qc_groups(
-    frame: pd.DataFrame,
-    *,
-    label: str,
-    name: str,
-    carry: dict[str, str] | None = None,
-    median_population: str = "retained",
-) -> pd.DataFrame:
-    """Aggregate the per-cell frame into one attrition row per label value.
-
-    Counts come off the pre-filter population always; only the metric medians
-    honour ``median_population``. ``carry`` maps a source column to the name it
-    takes in the result, and reports ``"mixed"`` when a group spans values.
-    """
-
-    carry = carry or {}
-    metrics = [m for m in METRIC_LABELS if m in frame.columns]
-    records: list[dict[str, object]] = []
-    for value, chunk in frame.groupby(label, observed=True, dropna=False, sort=True):
-        record: dict[str, object] = {name: str(value)}
-        for source, target in carry.items():
-            if source in chunk.columns:
-                unique = chunk[source].dropna().unique()
-                record[target] = str(unique[0]) if len(unique) == 1 else "mixed"
-        n_in = int(len(chunk))
-        n_keep = int(chunk["keep"].sum())
-        record.update(
-            cells_in=n_in,
-            cells_kept=n_keep,
-            cells_removed=n_in - n_keep,
-            pct_removed=100.0 * (n_in - n_keep) / n_in if n_in else np.nan,
-        )
-        described = chunk.loc[chunk["keep"]] if median_population == "retained" else chunk
-        for metric in metrics:
-            # NaN when a group lost every cell: it contributed nothing to the
-            # analysed dataset, which is the honest value rather than zero.
-            record[metric] = float(described[metric].median()) if len(described) else np.nan
-        records.append(record)
-    columns = [name, *carry.values(), "cells_in", "cells_kept", "cells_removed", "pct_removed"]
-    return pd.DataFrame(records, columns=None if records else columns)
 
 
 def cell_type_display_rows(
@@ -772,62 +743,6 @@ def _condition_colors(
     for level in levels:
         palette.setdefault(level, REMOVED_GREY)
     return palette
-
-
-def order_samples(table: pd.DataFrame, *, case_label: str | None = None) -> pd.DataFrame:
-    """Order a per-sample table donor-major, control before case.
-
-    The reading order every QC figure and table shares: donors numerically
-    (P2 before P10), and within a donor the control sample first so the eye moves
-    control-to-case, never the reverse.
-
-    Args:
-        table: Per-sample table with any of ``donor``, ``condition``, ``sample``.
-        case_label: Condition value that marks the case arm.
-
-    Returns:
-        The table reordered, with a reset index.
-    """
-
-    return _order_by_donor_then_condition(table, _condition_colors(table, case_label))
-
-
-def _order_by_donor_then_condition(
-    table: pd.DataFrame,
-    palette: dict[str, str],
-) -> pd.DataFrame:
-    """Order rows donor-major, control before case within each donor.
-
-    Sorting the condition column alphabetically is not good enough: "LE" precedes
-    "Normal", so every donor's rows would read case-then-control and the eye would
-    have to reverse each pair. Rank by the palette's control/case assignment
-    instead, which is fixed by the design rather than by the label spelling.
-    """
-
-    ranks = {
-        level: (0 if color == NORMAL_BLUE else 1 if color == LE_RED else 2)
-        for level, color in palette.items()
-    }
-    ordered = table.copy()
-    keys: list[str] = []
-    if "donor" in ordered.columns:
-        # Natural sort, so P2 precedes P10. Plain string sort gives P1, P10, P12,
-        # P2 — which reads as a scrambled cohort on any donor list past nine.
-        ordered["_donor_key"] = _natural_key(ordered["donor"])
-        keys.append("_donor_key")
-    if "condition" in ordered.columns and ranks:
-        ordered["_condition_rank"] = ordered["condition"].astype(str).map(ranks).fillna(2)
-        keys.append("_condition_rank")
-    keys += [c for c in ("sample",) if c in ordered.columns]
-    ordered = ordered.sort_values(keys).reset_index(drop=True)
-    return ordered.drop(columns=["_donor_key", "_condition_rank"], errors="ignore")
-
-
-def _natural_key(values: pd.Series) -> pd.Series:
-    """Zero-pad every digit run so a lexical sort orders labels numerically."""
-    return values.astype(str).str.replace(
-        r"(\d+)", lambda match: match.group(1).zfill(6), regex=True
-    )
 
 
 def _panel_label(ax: Axes, letter: str, *, dx: float = -30.0, dy: float = 14.0) -> None:
@@ -1907,7 +1822,7 @@ def plot_sample_matrix(
         return
 
     palette = _condition_colors(sample_table, case_label=case_label)
-    table = _order_by_donor_then_condition(sample_table, palette)
+    table = order_samples(sample_table, case_label=case_label)
     strip = (
         [palette.get(str(c), REMOVED_GREY) for c in table["condition"]]
         if palette and "condition" in table.columns
