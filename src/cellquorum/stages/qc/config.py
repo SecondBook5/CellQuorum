@@ -653,79 +653,6 @@ class QCDoubletConfig(StrictBaseModel):
         return self
 
 
-class QCCellCycleConfig(StrictBaseModel):
-    """
-    Store cell-cycle scoring settings (opt-in).
-
-    Cell-cycle scoring is disabled by default and is intended to run on the
-    log-normalized layer. Gene lists default to empty; callers fill them from
-    the Tirosh constants when empty to avoid import cycles.
-
-    Args:
-        enabled: Whether cell-cycle scoring is enabled.
-        score_layer: Layer to score on (must be log-normalized).
-        s_genes: S-phase gene list (default empty; filled by caller).
-        g2m_genes: G2M-phase gene list (default empty; filled by caller).
-        random_state: Random seed for reproducibility.
-    """
-
-    enabled: bool = False
-    score_layer: str = "cellquorum_normalized"
-    s_genes: list[str] = Field(default_factory=list)
-    g2m_genes: list[str] = Field(default_factory=list)
-    random_state: int = 0
-
-    @field_validator("s_genes", "g2m_genes", mode="before")
-    @classmethod
-    def validate_gene_lists(cls, value: object) -> list[str]:
-        """
-        Validate gene lists.
-
-        Args:
-            value: Candidate gene list.
-
-        Returns:
-            Cleaned gene list.
-
-        Raises:
-            ValueError: If the value is not a list of non-empty strings.
-        """
-
-        # Delegate to the shared string-list coercion helper.
-        return coerce_string_list(
-            value,
-            not_a_list_message="Gene lists must be provided as lists, not strings.",
-            wrong_container_message="Gene lists must be lists of strings.",
-            item_type_message="Gene names must be strings.",
-            empty_item_message="Gene names cannot be empty.",
-        )
-
-    @field_validator("random_state", mode="before")
-    @classmethod
-    def validate_random_state(cls, value: object) -> int:
-        """
-        Validate the random state seed.
-
-        Args:
-            value: Candidate random state.
-
-        Returns:
-            Validated random state.
-
-        Raises:
-            ValueError: If the value is not a non-negative integer.
-        """
-
-        # Delegate to the shared required non-negative-integer coercion helper.
-        return coerce_non_negative_int(
-            value,
-            optional=False,
-            bool_message="random_state cannot be a boolean value.",
-            type_message="random_state must be an integer.",
-            negative_message="random_state must be >= 0.",
-        )
-
-
 class QCAmbientRNAConfig(StrictBaseModel):
     """
     Store ambient RNA assessment settings.
@@ -1150,7 +1077,6 @@ class QCConfig(StrictBaseModel):
         mito_mixture: Mixture-model (miQC) mitochondrial QC settings.
         features: Feature family pattern settings.
         doublets: Doublet detection settings.
-        cell_cycle: Cell-cycle scoring settings.
         ambient: Ambient RNA assessment settings.
         duplicate_names: Duplicate name handling settings.
         attrition_audit: Differential-attrition audit settings -- whether QC
@@ -1171,7 +1097,6 @@ class QCConfig(StrictBaseModel):
     mito_mixture: QCMitoMixtureConfig = Field(default_factory=QCMitoMixtureConfig)
     features: QCFeaturePatternConfig = Field(default_factory=QCFeaturePatternConfig)
     doublets: QCDoubletConfig = Field(default_factory=QCDoubletConfig)
-    cell_cycle: QCCellCycleConfig = Field(default_factory=QCCellCycleConfig)
     ambient: QCAmbientRNAConfig = Field(default_factory=QCAmbientRNAConfig)
     duplicate_names: QCDuplicateNameConfig = Field(default_factory=QCDuplicateNameConfig)
     attrition_audit: QCAttritionAuditConfig = Field(default_factory=QCAttritionAuditConfig)
@@ -1198,6 +1123,14 @@ class QCConfig(StrictBaseModel):
             "MAD thresholding is replaced by graded severity, which is a robust z against a "
             "lineage-conditional null rather than a cohort-wide MAD bound — the difference "
             "that stops rare populations being removed for being rare. Tune `qc.graded`."
+        ),
+        "cell_cycle": (
+            "Cell-cycle scoring never worked here and has been removed. It needs a "
+            "log-normalized layer, which preprocessing creates at order 30 — QC runs at 20, so "
+            "`qc.cell_cycle.enabled: true` raised KeyError('cellquorum_normalized') on every "
+            "real input. Score it where the normalized layer exists: set "
+            "`embeddings.overlay.cell_cycle: true`, which now defaults to the same Tirosh gene "
+            "sets this block used."
         ),
         "basic": (
             "`basic` is now `floors`, and keeps only min_genes_per_cell, min_counts_per_cell "
@@ -1301,7 +1234,6 @@ __all__ = [
     "DuplicateNamePolicy",
     "QCAmbientRNAConfig",
     "QCAttritionAuditConfig",
-    "QCCellCycleConfig",
     "QCConfig",
     "QCDoubletConfig",
     "QCDuplicateNameConfig",

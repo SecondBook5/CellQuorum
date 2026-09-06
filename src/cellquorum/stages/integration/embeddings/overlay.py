@@ -19,6 +19,124 @@ import scipy.sparse as sp
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.stages.integration.embeddings.config import OverlayConfig
 
+# ─── Cell-cycle reference gene sets ──────────────────────────────────────────────────
+#
+# Tirosh et al., Science 2016 (doi:10.1126/science.aad0501), the sets Seurat and scanpy
+# both ship. Kept here because this module is the only place in the engine that scores
+# cell cycle: an identical pair lived in `stages/qc/cell_cycle.py`, wired into a stage
+# that runs BEFORE normalization, so enabling it there raised
+# `KeyError: 'cellquorum_normalized'` on every real input. That module is gone; these
+# are its gene lists, moved to the scorer that can actually use them.
+#
+# They are DEFAULTS, not a fixed policy: `s_genes` / `g2m_genes` in the overlay config
+# still override them, which matters for any non-human dataset since these are human
+# symbols.
+
+#: S-phase signature.
+TIROSH_S_GENES: tuple[str, ...] = (
+    "MCM5",
+    "PCNA",
+    "TYMS",
+    "FEN1",
+    "MCM2",
+    "MCM4",
+    "RRM1",
+    "UNG",
+    "GINS2",
+    "MCM6",
+    "CDCA7",
+    "DTL",
+    "PRIM1",
+    "UHRF1",
+    "MLF1IP",
+    "HELLS",
+    "RFC2",
+    "RPA2",
+    "NASP",
+    "RAD51AP1",
+    "GMNN",
+    "WDR76",
+    "SLBP",
+    "CCNE2",
+    "UBR7",
+    "POLD3",
+    "MSH2",
+    "ATAD2",
+    "RAD51",
+    "RRM2",
+    "CDC45",
+    "CDC6",
+    "EXO1",
+    "TIPIN",
+    "DSCC1",
+    "BLM",
+    "CASP8AP2",
+    "USP1",
+    "CLSPN",
+    "POLA1",
+    "CHAF1B",
+    "BRIP1",
+    "E2F8",
+)
+
+#: G2M-phase signature.
+TIROSH_G2M_GENES: tuple[str, ...] = (
+    "HMGB2",
+    "CDK1",
+    "NUSAP1",
+    "UBE2C",
+    "BIRC5",
+    "TPX2",
+    "TOP2A",
+    "NDC80",
+    "CKS2",
+    "NUF2",
+    "CKS1B",
+    "MKI67",
+    "TMPO",
+    "CENPF",
+    "TACC3",
+    "FAM64A",
+    "SMC4",
+    "CCNB2",
+    "CKAP2L",
+    "CKAP2",
+    "AURKB",
+    "BUB1",
+    "KIF11",
+    "ANP32E",
+    "TUBB4B",
+    "GTSE1",
+    "KIF20B",
+    "HJURP",
+    "CDCA3",
+    "HN1",
+    "CDC20",
+    "TTK",
+    "CDC25C",
+    "KIF2C",
+    "RANGAP1",
+    "NCAPD2",
+    "DLGAP5",
+    "CDCA2",
+    "CDCA8",
+    "ECT2",
+    "KIF23",
+    "HMMR",
+    "AURKA",
+    "PSRC1",
+    "ANLN",
+    "LBR",
+    "CKAP5",
+    "CENPE",
+    "CTCF",
+    "NEK2",
+    "G2E3",
+    "GAS2L3",
+    "CBX5",
+    "CENPA",
+)
+
 
 class MagicUnavailable(Exception):
     """The optional 'magic' package is not importable."""
@@ -110,8 +228,13 @@ def resolve_features(
 
     # Cell cycle.
     if overlay_cfg.cell_cycle:
-        s_present = [g for g in overlay_cfg.s_genes if g in adata.var_names]
-        g2m_present = [g for g in overlay_cfg.g2m_genes if g in adata.var_names]
+        # Fall back to the curated Tirosh sets when the config names none. Previously
+        # `cell_cycle: true` with the default empty lists scored nothing and emitted a
+        # warning, so the flag looked like a toggle and behaved like a no-op.
+        s_requested = overlay_cfg.s_genes or list(TIROSH_S_GENES)
+        g2m_requested = overlay_cfg.g2m_genes or list(TIROSH_G2M_GENES)
+        s_present = [g for g in s_requested if g in adata.var_names]
+        g2m_present = [g for g in g2m_requested if g in adata.var_names]
         if s_present and g2m_present:
             sc.tl.score_genes_cell_cycle(
                 adata,
@@ -125,7 +248,11 @@ def resolve_features(
                     FeatureValues(col, adata.obs[col].to_numpy().astype(float), "cell_cycle")
                 )
         else:
-            warnings.append("overlay: cell_cycle requested but s_genes/g2m_genes not present")
+            warnings.append(
+                "overlay: cell_cycle requested, but none of the S/G2M genes are in this "
+                "object. The defaults are human symbols (Tirosh et al. 2016); a non-human "
+                "dataset must supply s_genes/g2m_genes explicitly."
+            )
 
     # Arbitrary obs columns.
     for col in overlay_cfg.obs_columns:

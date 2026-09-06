@@ -1,4 +1,4 @@
-"""QC stage invokes doublet + cell-cycle add-ons when enabled."""
+"""QC stage invokes its add-ons when enabled."""
 
 from __future__ import annotations
 
@@ -6,22 +6,17 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.qc.cell_cycle import TIROSH_G2M_GENES, TIROSH_S_GENES
 from cellquorum.stages.qc.config import QCConfig
 from cellquorum.stages.qc.stage import QCStage
 
 
 def _adata(seed=0):
     rng = np.random.default_rng(seed)
-    # Include more Tirosh genes + background genes for proper scoring.
-    s = TIROSH_S_GENES[:15]
-    g2m = TIROSH_G2M_GENES[:15]
-    genes = s + g2m + [f"G{i}" for i in range(200)]  # More genes for control set.
+    genes = [f"G{i}" for i in range(230)]
     n = 120
     x = rng.poisson(1.0, size=(n, len(genes))).astype(np.float32)
     a = ad.AnnData(X=x, var=pd.DataFrame(index=genes))
     a.layers["counts"] = x.copy()
-    a.layers["cellquorum_normalized"] = np.log1p(x)
     return a
 
 
@@ -53,15 +48,24 @@ class _Ctx:
         return self._adata
 
 
-def test_qc_stage_runs_cell_cycle_when_enabled(tmp_path):
-    a = _adata()
-    qc = QCConfig(
-        cell_cycle={"enabled": True},
-        floors={"min_genes_per_cell": None, "min_cells_per_gene": None},
-    )
-    ctx = _Ctx(a, tmp_path, qc)
-    result = QCStage().run(ctx)
-    assert "phase" in result.adata.obs
+def test_qc_cannot_be_asked_to_score_cell_cycle() -> None:
+    """QC has no cell-cycle hook, and asking for one says where scoring actually lives.
+
+    It had one, and it could never run: scoring needs a log-normalized layer, preprocessing
+    creates that at order 30, and QC is order 20 — so `qc.cell_cycle.enabled: true` raised
+    `KeyError('cellquorum_normalized')` on any real input. It went unnoticed because the test
+    fixture here manufactured the layer, so the test passed on a state the pipeline cannot
+    reach.
+
+    The working scorer is `embeddings.overlay`, at order 200, where the layer exists. It now
+    carries the Tirosh gene sets this path used, so the capability moved rather than vanished.
+    """
+    import pytest
+
+    from cellquorum.core.exceptions import CellQuorumConfigError
+
+    with pytest.raises(CellQuorumConfigError, match="embeddings.overlay"):
+        QCConfig(cell_cycle={"enabled": True})
 
 
 def test_qc_stage_flags_doublets_when_enabled(tmp_path):

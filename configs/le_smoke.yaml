@@ -70,8 +70,6 @@ qc:
     consensus: all
     remove: true
     per_sample: true
-  cell_cycle:
-    enabled: false               # scored post-normalization (export), not in QC
   ambient:
     enabled: false
 

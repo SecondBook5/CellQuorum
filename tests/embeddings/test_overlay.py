@@ -43,6 +43,41 @@ def test_resolve_cell_cycle():
     assert "S_score" in labels and "G2M_score" in labels
 
 
+def test_cell_cycle_defaults_to_the_tirosh_sets_instead_of_scoring_nothing():
+    """`cell_cycle: true` with no gene lists must score, not warn and do nothing.
+
+    ``s_genes`` and ``g2m_genes`` default to empty, and the guard here required both to be
+    non-empty — so the documented way to turn cell-cycle scoring on produced a warning and no
+    scores. The curated Tirosh sets are now the fallback, moved here from the deleted
+    ``stages/qc/cell_cycle`` module, which held the same lists in a stage that ran before
+    normalization and could therefore never use them.
+    """
+    rng = np.random.default_rng(0)
+    genes = list(overlay.TIROSH_S_GENES[:12]) + list(overlay.TIROSH_G2M_GENES[:12])
+    genes += [f"BG_{i}" for i in range(120)]  # background, for scanpy's control bins
+    a = ad.AnnData(X=rng.poisson(2.0, size=(60, len(genes))).astype("float32"))
+    a.var_names = genes
+
+    feats, warnings = overlay.resolve_features(a, OverlayConfig(cell_cycle=True), random_state=0)
+    labels = {f.label for f in feats}
+    assert "S_score" in labels and "G2M_score" in labels
+    assert not [w for w in warnings if "cell_cycle" in w]
+
+
+def test_cell_cycle_on_a_non_human_object_says_so():
+    """The defaults are human symbols, so a non-human object must be told, not silently skipped.
+
+    The previous message named the config keys without explaining why nothing scored; on a mouse
+    object — where the symbols are `Mcm5`, not `MCM5` — that reads as a bug in the pipeline.
+    """
+    rng = np.random.default_rng(1)
+    a = ad.AnnData(X=rng.random((20, 4)).astype("float32"))
+    a.var_names = ["Mcm5", "Pcna", "Top2a", "Actb"]
+
+    _feats, warnings = overlay.resolve_features(a, OverlayConfig(cell_cycle=True), random_state=0)
+    assert any("non-human" in w for w in warnings)
+
+
 def _counts_and_lognorm():
     """An object shaped the way the engine leaves one: X is counts, the layer is lognorm.
 

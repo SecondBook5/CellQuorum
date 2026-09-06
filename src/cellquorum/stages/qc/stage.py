@@ -526,7 +526,7 @@ class QCStage:
         Args:
             output_adata: The QC object, mutated in place with scores and flags.
             qc_config: Resolved QC configuration.
-            addon_metrics: Accumulator this method adds ``cell_cycle`` / ``doublets`` to.
+            addon_metrics: Accumulator this method adds ``doublets`` to.
             context: Pipeline context, for the R backend and the cohort sample key.
 
         Returns:
@@ -535,22 +535,6 @@ class QCStage:
             only mutated in place would silently discard the removal — which it did, and
             ``test_doublets_removed_when_remove_true`` caught it.
         """
-        # Cell-cycle scoring (opt-in): fill default Tirosh lists when empty.
-        if qc_config.cell_cycle.enabled:
-            from cellquorum.stages.qc.cell_cycle import (
-                TIROSH_G2M_GENES,
-                TIROSH_S_GENES,
-                score_cell_cycle,
-            )
-
-            cc_config = qc_config.cell_cycle
-            if not cc_config.s_genes:
-                cc_config = cc_config.model_copy(update={"s_genes": TIROSH_S_GENES})
-            if not cc_config.g2m_genes:
-                cc_config = cc_config.model_copy(update={"g2m_genes": TIROSH_G2M_GENES})
-            cc_metrics = score_cell_cycle(output_adata, cc_config)
-            addon_metrics["cell_cycle"] = cc_metrics
-
         # Doublet detection (flag-only unless config.remove): consensus over methods.
         if qc_config.doublets.enabled:
             from cellquorum.stages.qc.doublets import detect_doublets
