@@ -125,6 +125,41 @@ class QCArtifactManifest:
         return written
 
 
+def _report_figure_order(written: object) -> list[Path]:
+    """Pick and order the figures worth inlining in the HTML report.
+
+    Not every figure belongs in a report a person reads top to bottom. The selection is the
+    calibration set — the raw-metric distributions the severity bars were read off, the
+    population view of what the verdict cost, and the concordance panel the quarantine rule
+    rests on — in that order, because that is the order the argument runs in.
+
+    The rest stay on disk as individual files. A report that inlined all two dozen would be a
+    directory listing with pictures, and the point of a report is that it has a thread.
+    """
+    if not isinstance(written, list):
+        return []
+    paths = [Path(str(item)) for item in written]
+    by_name = {path.name: path for path in paths if path.suffix == ".png"}
+
+    preferred = [
+        "qc_overview.png",
+        "graded_lineage_family.png",
+        "graded_family_cooccurrence.png",
+        "qc_joint_density.png",
+        "qc_mito_mixture.png",
+        "qc_metric_total_counts.png",
+        "qc_metric_n_genes_by_counts.png",
+        "qc_metric_pct_counts_mito.png",
+        "qc_metric_pct_counts_ribo.png",
+        "qc_metric_pct_counts_in_top_20_genes.png",
+        "qc_metric_qc_ev_malat1_fraction_value.png",
+        "qc_metric_qc_ev_dissociation_stress_value.png",
+        "qc_metric_doublet_score.png",
+        "qc_attrition.png",
+    ]
+    return [by_name[name] for name in preferred if name in by_name]
+
+
 def write_qc_artifacts(
     *,
     output_dir: str | PathLike[str] | Path,
@@ -402,94 +437,6 @@ def write_qc_artifacts(
         # Store h5ad skip.
         skipped.append("qc_h5ad")
 
-    # Write the single-file HTML QC report when enabled. It reads the same tables
-    # already written above, so it never disagrees with them.
-    if qc_config.outputs.html_report:
-        if figure_source is not None:
-            try:
-                from cellquorum.visualization.qc.html_report import write_qc_html_report
-
-                keys = publication_keys or {}
-                # A Path, like every other table artifact, so callers can treat the
-                # manifest uniformly.
-                artifacts["html_report"] = write_qc_html_report(
-                    output_path / "qc_report.html",
-                    cell_metrics=metrics_result.cell_metrics,
-                    cell_decisions=floors.cell_table(),
-                    obs=figure_source.obs,
-                    # Fall back through sample -> donor: a cohort without a
-                    # sample column still gets a meaningful attrition table.
-                    sample_key=keys.get("sample_key") or keys.get("patient_key") or "sample_id",
-                    donor_key=keys.get("patient_key"),
-                    condition_key=keys.get("condition_key"),
-                    gene_summary={
-                        "n_genes": int(len(floors.gene_keep)),
-                        "n_genes_kept": int(floors.gene_keep.sum()),
-                    },
-                    project=output_path.parent.parent.name or "CellQuorum",
-                    floors=qc_config.floors.model_dump(),
-                    case_label=keys.get("disease_label"),
-                )
-            except Exception as exc:  # pragma: no cover - defensive report fallback
-                skipped.append("html_report")
-                warnings.append(f"HTML QC report could not be written: {type(exc).__name__}: {exc}")
-        else:
-            skipped.append("html_report")
-            warnings.append(
-                "QCOutputConfig.html_report is true, but no AnnData was provided, so the "
-                "per-sample attrition table has no sample labels to group by."
-            )
-
-    # Record skipped HTML report when disabled.
-    else:
-        skipped.append("html_report")
-
-    # Write the typeset publication tables when enabled. Same numbers as the CSVs,
-    # set as a manuscript Table 1 rather than dumped as a grid.
-    if qc_config.outputs.publication_tables:
-        if figure_source is not None:
-            try:
-                from cellquorum.visualization.qc.publication_table import (
-                    write_qc_publication_tables,
-                )
-
-                keys = publication_keys or {}
-                artifacts["publication_tables"] = [
-                    str(path)
-                    for path in write_qc_publication_tables(
-                        output_path,
-                        cell_metrics=metrics_result.cell_metrics,
-                        cell_decisions=floors.cell_table(),
-                        obs=figure_source.obs,
-                        sample_key=(
-                            keys.get("sample_key") or keys.get("patient_key") or "sample_id"
-                        ),
-                        donor_key=keys.get("patient_key"),
-                        condition_key=keys.get("condition_key"),
-                        gene_summary={
-                            "n_genes": int(len(floors.gene_keep)),
-                            "n_genes_kept": int(floors.gene_keep.sum()),
-                        },
-                        case_label=keys.get("disease_label"),
-                        project=output_path.parent.parent.name or "CellQuorum",
-                        formats=("html", "tex", qc_config.outputs.figure_format),
-                        dpi=qc_config.outputs.figure_dpi,
-                    )
-                ]
-            except Exception as exc:  # pragma: no cover - defensive table fallback
-                skipped.append("publication_tables")
-                warnings.append(
-                    f"Publication QC tables could not be written: {type(exc).__name__}: {exc}"
-                )
-        else:
-            skipped.append("publication_tables")
-            warnings.append(
-                "QCOutputConfig.publication_tables is true, but no AnnData was provided, so "
-                "the per-sample table has no sample labels to group by."
-            )
-    else:
-        skipped.append("publication_tables")
-
     # Write QC figures when enabled and AnnData is available. Figures render from
     # the pre-filter object when one is supplied: the filtered object cannot show
     # what QC removed.
@@ -581,6 +528,102 @@ def write_qc_artifacts(
     else:
         # Store figure skip.
         skipped.append("figures")
+
+    # Write the typeset publication tables when enabled. Same numbers as the CSVs,
+    # set as a manuscript Table 1 rather than dumped as a grid.
+    if qc_config.outputs.publication_tables:
+        if figure_source is not None:
+            try:
+                from cellquorum.visualization.qc.publication_table import (
+                    write_qc_publication_tables,
+                )
+
+                keys = publication_keys or {}
+                artifacts["publication_tables"] = [
+                    str(path)
+                    for path in write_qc_publication_tables(
+                        output_path,
+                        cell_metrics=metrics_result.cell_metrics,
+                        cell_decisions=floors.cell_table(),
+                        obs=figure_source.obs,
+                        sample_key=(
+                            keys.get("sample_key") or keys.get("patient_key") or "sample_id"
+                        ),
+                        donor_key=keys.get("patient_key"),
+                        condition_key=keys.get("condition_key"),
+                        gene_summary={
+                            "n_genes": int(len(floors.gene_keep)),
+                            "n_genes_kept": int(floors.gene_keep.sum()),
+                        },
+                        case_label=keys.get("disease_label"),
+                        project=output_path.parent.parent.name or "CellQuorum",
+                        formats=("html", "tex", qc_config.outputs.figure_format),
+                        dpi=qc_config.outputs.figure_dpi,
+                    )
+                ]
+            except Exception as exc:  # pragma: no cover - defensive table fallback
+                skipped.append("publication_tables")
+                warnings.append(
+                    f"Publication QC tables could not be written: {type(exc).__name__}: {exc}"
+                )
+        else:
+            skipped.append("publication_tables")
+            warnings.append(
+                "QCOutputConfig.publication_tables is true, but no AnnData was provided, so "
+                "the per-sample table has no sample labels to group by."
+            )
+    else:
+        skipped.append("publication_tables")
+
+    # Write the single-file HTML QC report when enabled. It reads the same tables and figures
+    # already written above, so it never disagrees with them — which is also why it is written
+    # LAST: it inlines the figures, and it can only inline the ones that already exist.
+    if qc_config.outputs.html_report:
+        if figure_source is not None:
+            try:
+                from cellquorum.visualization.qc.html_report import write_qc_html_report
+
+                keys = publication_keys or {}
+                # A Path, like every other table artifact, so callers can treat the
+                # manifest uniformly.
+                artifacts["html_report"] = write_qc_html_report(
+                    output_path / "qc_report.html",
+                    cell_metrics=metrics_result.cell_metrics,
+                    cell_decisions=floors.cell_table(),
+                    obs=figure_source.obs,
+                    # Fall back through sample -> donor: a cohort without a
+                    # sample column still gets a meaningful attrition table.
+                    sample_key=keys.get("sample_key") or keys.get("patient_key") or "sample_id",
+                    donor_key=keys.get("patient_key"),
+                    condition_key=keys.get("condition_key"),
+                    gene_summary={
+                        "n_genes": int(len(floors.gene_keep)),
+                        "n_genes_kept": int(floors.gene_keep.sum()),
+                    },
+                    project=output_path.parent.parent.name or "CellQuorum",
+                    floors=qc_config.floors.model_dump(),
+                    case_label=keys.get("disease_label"),
+                    # The distribution and population panels, in reading order: the raw-metric
+                    # rainclouds the bars were calibrated from, then what the verdict cost each
+                    # population, then the concordance the quarantine rule depends on.
+                    figures=_report_figure_order(artifacts.get("figures")),
+                    # Findings that stand in for a panel that could not be drawn, so a metric
+                    # with no spread reports its flatness instead of vanishing.
+                    notes=[warning for warning in warnings if "no distribution plotted" in warning],
+                )
+            except Exception as exc:  # pragma: no cover - defensive report fallback
+                skipped.append("html_report")
+                warnings.append(f"HTML QC report could not be written: {type(exc).__name__}: {exc}")
+        else:
+            skipped.append("html_report")
+            warnings.append(
+                "QCOutputConfig.html_report is true, but no AnnData was provided, so the "
+                "per-sample attrition table has no sample labels to group by."
+            )
+
+    # Record skipped HTML report when disabled.
+    else:
+        skipped.append("html_report")
 
     # Write summary JSON after other artifacts so it can include manifest metadata.
     if qc_config.outputs.write_summary_json:

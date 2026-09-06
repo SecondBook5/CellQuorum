@@ -749,8 +749,11 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
     # Confirm only the summary was written.
     assert set(manifest.artifacts) == {"summary"}
 
-    # Confirm disabled artifacts were skipped.
-    assert manifest.skipped == [
+    # Confirm disabled artifacts were skipped. Compared as a set: which artifacts were skipped
+    # is the contract, the order the writer happened to visit them in is not. Asserting the
+    # sequence made the list fail when figures moved ahead of the HTML report — a reordering
+    # forced by the report inlining those figures, which it can only do once they exist.
+    assert set(manifest.skipped) == {
         "cell_metrics",
         "gene_metrics",
         "feature_masks",
@@ -764,7 +767,7 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
         "html_report",
         "publication_tables",
         "figures",
-    ]
+    }
 
     # Confirm no warnings were emitted when disabled outputs are skipped explicitly.
     assert manifest.warnings == []

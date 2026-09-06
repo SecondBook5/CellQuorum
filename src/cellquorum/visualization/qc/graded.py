@@ -676,6 +676,8 @@ def write_graded_qc_figures(
 
     written: list[Path] = []
     warnings: list[str] = []
+    # Findings that replace a figure rather than accompanying one.
+    notes: list[str] = []
 
     def keep(path: Path | None) -> None:
         if path is not None:
@@ -723,9 +725,24 @@ def write_graded_qc_figures(
         for metric, label, log_scale in RAW_METRICS:
             if metric not in obs.columns:
                 # Not a warning. Which metrics exist is a property of the assay and the config —
-                # hemoglobin on a tissue with no blood, MALAT1 on a run with the nuclear axis
-                # off — and a warning per absent metric would bury the ones that matter.
+                # MALAT1 on a run with the nuclear axis off — and a warning per absent metric
+                # would bury the ones that matter.
                 continue
+
+            # A measured-but-flat metric gets a sentence rather than a figure. The sentence is
+            # the finding: "hemoglobin is zero in 98.5% of cells" is real QC information that a
+            # collapsed violin would have hidden behind broken geometry.
+            column = pd.to_numeric(obs[metric], errors="coerce").dropna()
+            if len(column) and float(column.quantile(0.75) - column.quantile(0.25)) == 0.0:
+                modal = column.mode()
+                if len(modal):
+                    share = float((column == modal.iloc[0]).mean())
+                    if share >= 0.95:
+                        notes.append(
+                            f"{label}: no distribution plotted — {share:.1%} of cells sit at "
+                            f"exactly {modal.iloc[0]:.4g}, so there is no spread to show."
+                        )
+                        continue
             keep(
                 plot_metric_rainclouds(
                     obs,
@@ -745,7 +762,7 @@ def write_graded_qc_figures(
             "Graded QC figures produced nothing: the graded columns are present but no panel "
             "found the grouping columns it needs."
         )
-    return written, warnings
+    return written, [*warnings, *notes]
 
 
 def _control_arm(obs: pd.DataFrame, condition_column: str) -> str | None:
@@ -951,6 +968,21 @@ def plot_metric_rainclouds(
     frame = frame[np.isfinite(frame[metric])]
     if frame.empty:
         return None
+
+    # A metric with no spread has no distribution to draw, and drawing one anyway produces
+    # geometry rather than information: on this cohort hemoglobin is exactly 0.000 for 98.5% of
+    # cells (skin, no blood contamination), so the box collapsed to zero height, the density
+    # estimate degenerated, and the panel rendered as empty rectangles on an axis running to
+    # -0.15. The fact is worth reporting; the figure is not, so the caller is told instead of
+    # being handed a misleading plot.
+    #
+    # Deliberately distinct from "unavailable": this metric WAS measured, and the answer is that
+    # it is uniformly zero. Conflating the two is the failure the figure spec names.
+    values = frame[metric]
+    if float(values.quantile(0.75) - values.quantile(0.25)) == 0.0:
+        modal_share = float((values == values.mode().iloc[0]).mean())
+        if modal_share >= 0.95:
+            return None
 
     # The categorical axis: donors, or populations when one is requested.
     if group_column and group_column in frame.columns:

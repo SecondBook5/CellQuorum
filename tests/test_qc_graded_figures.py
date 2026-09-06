@@ -253,18 +253,50 @@ def test_the_same_seed_draws_the_same_cells() -> None:
     assert not np.array_equal(offsets(0), offsets(1))
 
 
-def test_a_metric_with_a_single_value_does_not_crash(tmp_path: Path) -> None:
-    """Zero spread is a real case — a fraction that is 0.0 for every cell in a small panel.
+def test_a_metric_with_no_spread_reports_its_flatness_instead_of_drawing_it(
+    tmp_path: Path,
+) -> None:
+    """A flat metric gets a sentence from the caller, not a panel.
 
-    A density estimate is undefined there, so the half-violin is skipped while the box and the
-    points still draw. Silently producing nothing would hide a metric that genuinely has no
-    variation, which is itself worth seeing.
+    Hemoglobin on this tissue is exactly 0.000 for 98.5% of cells — skin, no blood. Drawing a
+    raincloud of that produced geometry rather than information: the box collapsed to zero
+    height, the density estimate degenerated, and the panel rendered as empty rectangles on an
+    axis running to -0.15. The flatness is a real QC finding and `write_graded_qc_figures`
+    reports it in words; the figure would only have hidden it.
+
+    Distinct from an ABSENT metric, which also returns None: that one was never measured. The
+    caller separates them, and the spec forbids conflating them.
     """
     frame = _cohort()
     frame["pct_counts_mito"] = 0.0
+    assert (
+        plot_metric_rainclouds(
+            frame,
+            tmp_path / "qc_metric_flat.png",
+            metric="pct_counts_mito",
+            label="Mitochondrial %",
+            log_scale=False,
+            donor_column="donor_id",
+            condition_column="condition",
+            control_label="Normal",
+        )
+        is None
+    )
+    assert not list(tmp_path.glob("*.png"))
+
+
+def test_a_metric_with_narrow_but_real_spread_still_draws(tmp_path: Path) -> None:
+    """The control. The flatness guard must not swallow a genuinely narrow distribution.
+
+    A metric can be tightly concentrated and still worth plotting; only a zero inter-quartile
+    range with almost every cell on one value is a non-distribution.
+    """
+    frame = _cohort()
+    generator = np.random.default_rng(3)
+    frame["pct_counts_mito"] = generator.normal(2.0, 0.05, len(frame))
     written = plot_metric_rainclouds(
         frame,
-        tmp_path / "qc_metric_flat.png",
+        tmp_path / "qc_metric_narrow.png",
         metric="pct_counts_mito",
         label="Mitochondrial %",
         log_scale=False,

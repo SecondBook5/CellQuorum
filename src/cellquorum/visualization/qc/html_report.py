@@ -15,7 +15,9 @@ than a table library for the same reason.
 
 from __future__ import annotations
 
+import base64
 import html
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -43,6 +45,19 @@ class QCHTMLReportError(CellQuorumDataError):
 
 
 _CSS = """
+/* Figures are inlined as data URIs, so they scale to the container rather than to their pixel
+   size — a 2,700px-wide raincloud would otherwise force a horizontal scrollbar on the page. */
+figure.fig { margin: 1.4rem 0; }
+figure.fig img {
+  width: 100%; height: auto; display: block;
+  border: 1px solid var(--rule); border-radius: 3px; background: #fff;
+}
+figure.fig figcaption {
+  font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+ul.notes { color: var(--ink); font-size: 0.9rem; }
+ul.notes li { margin: 0.3rem 0; }
 :root {
   --ink: #1F2933; --muted: #6B7280; --rule: #E3E7EB; --bg: #FFFFFF;
   --band: #F7F9FA; --accent: #24608F;
@@ -206,6 +221,11 @@ def _chip(label: str, *, case_label: str | None) -> str:
 # Metrics summarised as medians: QC distributions are skewed and a mean is
 # dragged by the same outliers the filter exists to remove. Shared by every
 # grouping — per sample, per cell type — so the numbers agree across tables.
+#: Graded verdict columns, read but never recomputed here: this report displays QC's
+#: conclusion, it does not form one.
+_STATE_COLUMN = "qc_state_initial"
+_REASON_COLUMN = "qc_state_reason"
+
 _METRIC_COLUMNS: tuple[tuple[str, str], ...] = (
     ("total_counts", "median_umi"),
     ("n_genes_by_counts", "median_genes"),
@@ -264,6 +284,96 @@ def build_qc_cell_frame(
                 cell_metrics[source].reindex(frame.index), errors="coerce"
             )
     return frame
+
+
+# ─── Graded adjudication: what the evidence concluded ────────────────────────────────
+
+#: Reason codes emitted by the adjudicator, with the sentence a reader needs. Keyed on the
+#: enum values in ``stages.qc.evidence.AdjudicationReason``; an unknown code still renders,
+#: under its raw name, because a silently dropped row would understate the cohort.
+_REASON_TEXT: dict[str, str] = {
+    "no_concern": "No evidence family reached the concern bar.",
+    "single_family_concern": "One family raised concern; concordance requires two.",
+    "supporting_evidence_only": (
+        "Only metabolic/stress evidence, which cannot establish damage alone."
+    ),
+    "concordant_severe_damage": "Severe evidence from independent families agreed.",
+    "uninformative_barcode": "Too little signal to model at all.",
+    "probable_multiplet": "Probably more than one cell; not a damage call.",
+    "withheld_low_coverage": "Too few usable families to reach a verdict.",
+}
+
+_STATE_TEXT: dict[str, str] = {
+    "core": "may fit the biological reference",
+    "borderline": "retained and projected, never fits",
+    "quarantine": "informs nothing",
+}
+
+
+def build_graded_state_table(obs: pd.DataFrame) -> pd.DataFrame:
+    """Per-state counts, and the reasons that produced them.
+
+    Returns an empty frame when the object carries no graded verdict, so a floors-only run
+    renders without the section rather than with an empty one.
+    """
+    if _STATE_COLUMN not in obs.columns:
+        return pd.DataFrame()
+
+    state = obs[_STATE_COLUMN].astype(str)
+    reason = (
+        obs[_REASON_COLUMN].astype(str)
+        if _REASON_COLUMN in obs.columns
+        else pd.Series("", index=obs.index)
+    )
+    rows: list[dict[str, object]] = []
+    for value in ("core", "borderline", "quarantine"):
+        selected = state == value
+        if not bool(selected.any()):
+            continue
+        within = reason[selected].value_counts()
+        rows.append(
+            {
+                "state": value,
+                "meaning": _STATE_TEXT.get(value, ""),
+                "cells": int(selected.sum()),
+                "pct": 100.0 * float(selected.mean()),
+                "reasons": [(str(k), int(v)) for k, v in within.items()],
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_eligibility_table(obs: pd.DataFrame) -> pd.DataFrame:
+    """Per-analysis FIT counts, which is what the verdict actually controls.
+
+    The states are a summary; the masks are the mechanism. A reader who wants to know what QC
+    *did* needs to see how many cells may fit each model, because that is the number every
+    downstream cohort statistic is computed from.
+    """
+    columns = sorted(column for column in obs.columns if column.startswith("qc_fit_"))
+    if not columns:
+        return pd.DataFrame()
+    total = int(len(obs))
+    return pd.DataFrame(
+        [
+            {
+                "analysis": column.removeprefix("qc_fit_").replace("_", " "),
+                "may_fit": int(obs[column].sum()),
+                "pct": 100.0 * float(obs[column].mean()) if total else 0.0,
+            }
+            for column in columns
+        ]
+    )
+
+
+def embed_png(path: Path) -> str:
+    """Inline one PNG as a data URI, so the report stays a single portable file.
+
+    Linking would be smaller, but a run directory copied or archived without its figures then
+    renders a page of broken images, and the report is the artefact people forward.
+    """
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def build_sample_qc_table(
@@ -430,6 +540,10 @@ def render_qc_html_report(
     floors: dict[str, int | None] | None = None,
     case_label: str | None = None,
     generated_at: datetime | None = None,
+    graded_states: pd.DataFrame | None = None,
+    eligibility: pd.DataFrame | None = None,
+    figures: Sequence[Path] = (),
+    notes: Sequence[str] = (),
 ) -> str:
     """
     Render the QC report as a single self-contained HTML document.
@@ -441,6 +555,13 @@ def render_qc_html_report(
         gene_summary: Optional gene-level counts (``n_genes``, ``n_genes_kept``).
         project: Project or run name for the heading.
         floors: The applied absolute floors, so a reader knows what could remove a barcode.
+        graded_states: Output of :func:`build_graded_state_table`. Omitted sections are skipped,
+            so a floors-only run renders without an empty graded heading.
+        eligibility: Output of :func:`build_eligibility_table`.
+        figures: PNGs to inline, in reading order. Embedded as data URIs rather than linked, so
+            the report survives being copied away from its run directory.
+        notes: Findings that replace a figure — a metric with no spread, for instance — so the
+            information is not lost with the panel that could not show it.
             Every floor ``None`` means nothing was removed at all.
         case_label: Condition treated as the case arm, for chip colouring.
         generated_at: Timestamp override, for reproducible output in tests.
@@ -502,6 +623,81 @@ def render_qc_html_report(
             f'<div class="k">Worst sample &middot; {_esc(worst_name)}</div></div>'
         )
     body.append("</div>")
+
+    # Graded adjudication. Placed directly under the funnel because it is the verdict: the
+    # floors below removed 13 barcodes of 201,871 on the validation cohort, while this decides
+    # what the other 201,858 are allowed to do.
+    if graded_states is not None and not graded_states.empty:
+        body.append("<h2>What the evidence concluded</h2>")
+        body.append(
+            '<p class="sub">Technical evidence, graded per cell within its own lineage, then '
+            "combined. Two routes to quarantine only: a barcode too uninformative to model, or "
+            "severe evidence from at least two <em>independent</em> families. A single extreme "
+            "axis never condemns a cell on its own.</p>"
+        )
+        body.append('<div class="funnel">')
+        for _, record in graded_states.iterrows():
+            css = "stat" if record["state"] == "core" else "stat warn"
+            body.append(
+                f'<div class="{css}"><div class="n">{_num(record["cells"])}</div>'
+                f'<div class="k">{_esc(record["state"])} '
+                f'({float(record["pct"]):.1f}%)</div></div>'
+            )
+        body.append("</div>")
+
+        body.append("<table><thead><tr>")
+        for name, css in (
+            ("State", ' class="txt"'),
+            ("Cells", ""),
+            ("%", ""),
+            ("Why", ' class="txt"'),
+        ):
+            body.append(f"<th{css}>{name}</th>")
+        body.append("</tr></thead><tbody>")
+        for _, record in graded_states.iterrows():
+            reasons = record["reasons"]
+            for index, (code, count) in enumerate(reasons):
+                body.append("<tr>")
+                if index == 0:
+                    body.append(
+                        f'<td class="txt" rowspan="{len(reasons)}"><strong>'
+                        f'{_esc(record["state"])}</strong><br>'
+                        f'<span class="nil">{_esc(record["meaning"])}</span></td>'
+                    )
+                body.append(_cell(count))
+                share = 100.0 * count / int(record["cells"]) if int(record["cells"]) else 0.0
+                body.append(_pct_bar(share, warn_above=101.0))
+                body.append(
+                    f'<td class="txt"><code>{_esc(code)}</code> &mdash; '
+                    f"{_esc(_REASON_TEXT.get(code, 'reason not described'))}</td>"
+                )
+                body.append("</tr>")
+        body.append(
+            "</tbody><caption>Percentages are within the state, not of the cohort. "
+            "A cell has exactly one reason.</caption></table>"
+        )
+
+    if eligibility is not None and not eligibility.empty:
+        body.append("<h2>What each analysis may be fitted on</h2>")
+        body.append(
+            '<p class="sub">The verdict assigns permissions rather than deleting cells, so this '
+            "is what QC actually controls: every cohort statistic downstream is estimated from "
+            "the cells counted here.</p>"
+        )
+        body.append(
+            '<table><thead><tr><th class="txt">Analysis</th><th>May fit</th>'
+            "<th>% of cells</th></tr></thead><tbody>"
+        )
+        for _, record in eligibility.iterrows():
+            body.append("<tr>")
+            body.append(f'<td class="txt">{_esc(record["analysis"])}</td>')
+            body.append(_cell(record["may_fit"]))
+            body.append(_pct_bar(float(record["pct"]), warn_above=101.0))
+            body.append("</tr>")
+        body.append(
+            "</tbody><caption>A cell may be transformed by a model it is not permitted to fit "
+            "&mdash; that is the point of the distinction.</caption></table>"
+        )
 
     # Per-sample attrition. Skipped for a single unlabelled library: the table
     # would be the funnel restated as one row plus its own total.
@@ -627,11 +823,34 @@ def render_qc_html_report(
         )
         body.append("</div>")
 
+    # Evidence figures, inlined. These are the calibration outputs: distributions the bars were
+    # read off, and the population-level view of what the verdict cost.
+    if figures:
+        body.append("<h2>Evidence and calibration figures</h2>")
+        body.append(
+            '<p class="sub">Distributions are on RAW metrics, pre-filter, because a figure drawn '
+            "after filtering cannot justify the bound that produced it. Paired panels read "
+            "control-arm-left within each donor.</p>"
+        )
+        for path in figures:
+            if not path.exists():
+                continue
+            body.append('<figure class="fig">')
+            body.append(f'<img alt="{_esc(path.stem)}" src="{embed_png(path)}">')
+            body.append(f"<figcaption>{_esc(path.stem)}</figcaption>")
+            body.append("</figure>")
+
+    if notes:
+        body.append('<h2>Notes</h2><ul class="notes">')
+        for note in notes:
+            body.append(f"<li>{_esc(note)}</li>")
+        body.append("</ul>")
+
     body.append(
-        "<footer>Written by CellQuorum QC. Every number here is derived from "
-        "<code>cell_metrics.csv</code>, <code>cell_decisions.csv</code> and "
-        "<code>thresholds.csv</code> in this directory &mdash; those tables remain "
-        "canonical.</footer>"
+        "<footer>Written by CellQuorum QC. Every number here is read from "
+        "<code>cell_metrics.csv</code>, <code>cell_floors.csv</code> and the graded "
+        "evidence columns on <code>qc.h5ad</code> in this directory &mdash; those remain "
+        "canonical, and this report recomputes none of them.</footer>"
     )
     body.append("</div>")
 
@@ -659,6 +878,8 @@ def write_qc_html_report(
     project: str = "CellQuorum",
     floors: dict[str, int | None] | None = None,
     case_label: str | None = None,
+    figures: Sequence[Path] = (),
+    notes: Sequence[str] = (),
 ) -> Path:
     """
     Build and write the HTML QC report.
@@ -676,6 +897,8 @@ def write_qc_html_report(
         project: Project or run name for the heading.
         floors: The applied absolute floors.
         case_label: Condition treated as the case arm.
+        figures: PNGs to inline, in reading order.
+        notes: Findings that stand in for a figure that could not be drawn.
 
     Returns:
         The written path.
@@ -702,6 +925,12 @@ def write_qc_html_report(
         project=project,
         floors=floors,
         case_label=case_label,
+        # Read off obs rather than recomputed: this report displays the verdict QC reached, and
+        # a report that re-derived it could disagree with the object it describes.
+        graded_states=build_graded_state_table(obs),
+        eligibility=build_eligibility_table(obs),
+        figures=figures,
+        notes=notes,
     )
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
