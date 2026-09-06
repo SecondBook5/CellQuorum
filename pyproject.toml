@@ -81,12 +81,12 @@ dev = [
   "pytest-xdist==3.8.0",
   # Lint + format. Must match the ruff-pre-commit rev in .pre-commit-config.yaml
   # and the pinned install in .github/workflows/ci.yml — all three move together.
-  "ruff==0.8.6",
+  "ruff==0.16.5",
   # Type checking, plus stubs for the untyped third-party libraries we import.
-  "mypy==1.18.2",
-  "types-PyYAML==6.0.12.20250915",
+  "mypy==2.3.1",
+  "types-PyYAML==6.0.12.20260815",
   # Git hook runner, so `pre-commit install` needs no separate global install.
-  "pre-commit==4.3.0",
+  "pre-commit==4.6.2",
   # Documentation site.
   "mkdocs-material==9.7.7",
   "mkdocstrings[python]==1.0.6",
