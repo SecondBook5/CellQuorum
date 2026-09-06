@@ -76,7 +76,7 @@ gpu = [
 # reviewable in isolation instead of landing inside an unrelated feature diff.
 dev = [
   # Test runner and the plugins the test tiers rely on.
-  "pytest==9.0.2",
+  "pytest==9.1.1",
   "pytest-cov==7.1.0",
   "pytest-xdist==3.8.0",
   # Lint + format. Must match the ruff-pre-commit rev in .pre-commit-config.yaml
