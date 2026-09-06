@@ -7,6 +7,7 @@ import warnings
 from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 import anndata as ad
 import numpy as np
@@ -17,9 +18,60 @@ from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 
 from cellquorum.core.contracts import DataContract
+from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+
+def _resolve_counts(adata: ad.AnnData, counts_layer: str, *, what: str) -> Any:
+    """Return the raw-count matrix, tolerating the several places an atlas keeps it.
+
+    scArches needs integer counts, and where they live depends on where the atlas came from:
+    a CellQuorum object carries them in ``layers[counts_layer]``, while a CellxGene download
+    carries them in ``.raw.X`` and leaves ``layers`` empty. The lookup here was
+    ``adata.layers[counts_layer]`` with no fallback, so the second case raised a bare
+    ``KeyError: 'counts'`` — the message named a layer rather than the problem, on a step that
+    only runs after minutes of atlas loading.
+
+    Order is deliberate: the named layer wins when present, because a caller that asked for a
+    specific layer means it. ``.raw`` is next. ``X`` is used only if it actually looks like
+    counts, since scArches on log-normalized values fits a negative-binomial to the wrong scale
+    and produces a plausible, wrong embedding rather than an error.
+
+    Args:
+        adata: Atlas or query object.
+        counts_layer: The layer name the config asked for.
+        what: ``"atlas"`` or ``"query"``, for the error message.
+
+    Returns:
+        The count matrix.
+
+    Raises:
+        CellQuorumDataError: If no integer-valued matrix can be found.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    if counts_layer in adata.layers:
+        return adata.layers[counts_layer]
+    if adata.raw is not None and adata.raw.shape[1] >= adata.n_vars:
+        # `.raw` is the CellxGene convention. Subset to this object's genes so the matrix still
+        # aligns with `var_names` after any filtering upstream.
+        return adata.raw[:, adata.var_names].X
+
+    matrix = adata.X
+    sample = (matrix[:200] if not sp.issparse(matrix) else matrix[:200].toarray()).ravel()
+    finite = sample[np.isfinite(sample)]
+    if finite.size and np.allclose(finite, np.round(finite)) and float(finite.max()) > 1.0:
+        return matrix
+
+    raise CellQuorumDataError(
+        f"reference_mapping needs raw counts for the {what}, and none were found: no "
+        f"layers[{counts_layer!r}] (present: {sorted(adata.layers)}), no .raw, and X does not "
+        f"look like counts. scArches fits a negative binomial, so log-normalized values would "
+        f"give a plausible but wrong embedding — hence failing rather than guessing."
+    )
 
 
 class ScArchesMethod(AnalysisMethod):
@@ -116,7 +168,7 @@ class ScArchesMethod(AnalysisMethod):
             )
 
         # Set atlas X to counts layer + copy labels.
-        atlas.X = atlas.layers[counts_layer]
+        atlas.X = _resolve_counts(atlas, counts_layer, what="atlas")
         atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
 
         # Gene intersection.
@@ -272,7 +324,7 @@ class ScArchesMethod(AnalysisMethod):
 
                 # Prepare query.
                 q = query_train.copy()
-                q.X = q.layers[counts_layer]
+                q.X = _resolve_counts(q, counts_layer, what="query")
                 q.obs["_labels"] = unlabeled_category
                 q.obs[atlas_batch_key] = query_batch_value
 

@@ -580,9 +580,18 @@ class SubclusteringStage:
         widened = series.reindex(index)
         if series.dtype == bool or pd.api.types.is_bool_dtype(series.dtype):
             return pd.array([None if pd.isna(v) else bool(v) for v in widened], dtype="boolean")
-        if isinstance(series.dtype, pd.CategoricalDtype) or series.dtype != object:
+        if isinstance(series.dtype, pd.CategoricalDtype):
             return widened
-        return pd.Categorical(widened)
+        # Tested for string-ness, not for `object`.
+        #
+        # The check used to be `series.dtype != object`, which meant "only convert a
+        # plain-object column". pandas 3 gives string columns a `StringDtype`, so every label
+        # column started taking the early return and came back as strings rather than the
+        # categorical this function documents and scanpy expects — `.cat.categories` on a
+        # projected label then raises, and a groupby over it carries no level order.
+        if pd.api.types.is_string_dtype(series.dtype) or series.dtype == object:
+            return pd.Categorical(widened)
+        return widened
 
     def _resolve_rscript_backend(self, context: object) -> object | None:
         """Return the Rscript backend from context registry, or None."""

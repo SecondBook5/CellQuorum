@@ -39,7 +39,10 @@ def test_boolean_column_with_missing_values_is_written_as_nullable_boolean(tmp_p
     a = _adata()
     verdict = pd.Series([True] * 4 + [False] * 2, index=a.obs_names[:6])
     a.obs["donor_qc_qc_pass"] = verdict.reindex(a.obs_names)
-    assert a.obs["donor_qc_qc_pass"].dtype == object  # the state that broke writes
+    # The state that broke writes is a bool column carrying missing values, however pandas of
+    # the day represents it — `object` on pandas 2, nullable `boolean` on 3. Assert the property.
+    assert a.obs["donor_qc_qc_pass"].isna().any()
+    assert not pd.api.types.is_bool_dtype(a.obs["donor_qc_qc_pass"])
 
     path = tmp_path / "a.h5ad"
     notes = write_h5ad(a, path)
@@ -66,7 +69,9 @@ def test_written_object_keeps_the_parts_a_resume_needs(tmp_path):
 
     back = ad.read_h5ad(path)
     assert list(back.obsm) == ["X_pca_harmony"]
-    assert list(back.layers) == ["counts"]
+    # anndata 0.13 reports a `None` key in `layers` (it stands for `X`), present before any
+    # write happens, so an equality check against the layer list pins an anndata version.
+    assert "counts" in back.layers
     assert back.uns["provenance"]["stage"] == "test"
     assert list(back.var.columns) == ["gene"]
     assert back.shape == a.shape

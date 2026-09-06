@@ -64,5 +64,9 @@ def test_the_result_is_object_dtype_so_a_merge_key_is_stable() -> None:
     left = as_label_strings(pd.Series([1.0, 2.0]))
     right = as_label_strings(pd.Series(["1", "2"]))
 
-    assert left.dtype == right.dtype == object
+    # The claim is that the two AGREE, not that they are `object` specifically. pandas 3 gives
+    # string columns a `StringDtype`, which is the better dtype and still a stable merge key;
+    # asserting `== object` pinned a library detail rather than the property.
+    assert left.dtype == right.dtype
+    assert pd.api.types.is_string_dtype(left) and pd.api.types.is_string_dtype(right)
     assert list(left) == list(right)

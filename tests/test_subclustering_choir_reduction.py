@@ -217,4 +217,7 @@ def test_run_choir_writes_plain_string_index(tmp_path, _config, monkeypatch):
     result = partition.run_choir(adata, _config, backend, tmp_path)
     assert not isinstance(result, MethodSkip)
     written = ad.read_h5ad(Path(backend.captured[0][1][0]))
-    assert written.obs_names.dtype == object
+    # What CHOIR needs is that the barcodes are plain strings R can read back, not that pandas
+    # stores them as `object`. pandas 3 uses `StringDtype`, which satisfies the requirement.
+    assert pd.api.types.is_string_dtype(written.obs_names)
+    assert all(isinstance(name, str) for name in written.obs_names[:5])
