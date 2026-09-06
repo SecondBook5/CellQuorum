@@ -147,7 +147,10 @@ class RunReporter:
                             else str(entry)
                             for entry in listed
                         ]
-                        params.append(f"methods=[{', '.join(chosen)}]")
+                        # No square brackets: rich parses `[...]` as a style tag and swallows
+                        # it, which is why `methods=[harmony, scvi]` rendered as a bare
+                        # `methods=` and the fix looked worse than the bug it replaced.
+                        params.append(f"methods={'+'.join(chosen)}")
                     elif "method" in stage_cfg and stage_cfg["method"]:
                         params.append(f"method={stage_cfg['method']}")
                     # Add up to 4 informative scalar fields.
@@ -159,10 +162,11 @@ class RunReporter:
                             break
                         # Truncate list fields to counts.
                         if isinstance(value, list):
+                            # Same reason as above — brackets would be eaten by rich markup.
                             if len(value) == 0:
-                                params.append(f"{key}=[]")
+                                params.append(f"{key}=none")
                             else:
-                                params.append(f"{key}=[{len(value)} items]")
+                                params.append(f"{key}={len(value)} items")
                             count += 1
                         elif value is not None and value != "" and not isinstance(value, dict):
                             # Show scalar/simple values.
