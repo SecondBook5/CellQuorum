@@ -12,13 +12,12 @@ files; it never imports pySCENIC into the CellQuorum process.
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # Import the process-level probe cache (see _probe.py for why this exists).
-from cellquorum.backends._probe import env_python_module_available
+from cellquorum.backends._probe import env_python_module_available, resolve_launcher
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the pyscenic environment.
@@ -144,7 +143,7 @@ class PyscenicBackend(BaseBackend):
             )
 
         cmd = [
-            self.launcher,
+            resolve_launcher(self.launcher) or self.launcher,
             "run",
             "-n",
             self.env_name,
@@ -163,7 +162,7 @@ class PyscenicBackend(BaseBackend):
     def _launcher_available(self) -> bool:
         """Return whether the environment launcher is on PATH."""
 
-        return shutil.which(self.launcher) is not None
+        return resolve_launcher(self.launcher) is not None
 
     def _py_module_available(self, module_name: str) -> bool:
         """Return whether a Python module is importable inside the configured env.
@@ -188,7 +187,7 @@ class PyscenicBackend(BaseBackend):
         # measurements motivating it. Validation stays above so an invalid name still
         # raises before anything is cached.
         return env_python_module_available(
-            self.launcher,
+            resolve_launcher(self.launcher) or self.launcher,
             self.env_name,
             module_name,
             self.timeout_seconds,

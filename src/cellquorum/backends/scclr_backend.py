@@ -12,11 +12,11 @@ temp files; it never imports scclr into the CellQuorum process.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from cellquorum.backends._probe import resolve_launcher
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the scclr environment.
@@ -161,7 +161,7 @@ class ScclrBackend(BaseBackend):
             )
 
         cmd = [
-            self.launcher,
+            resolve_launcher(self.launcher) or self.launcher,
             "run",
             "-n",
             self.env_name,
@@ -180,14 +180,22 @@ class ScclrBackend(BaseBackend):
     def _launcher_available(self) -> bool:
         """Return whether the environment launcher is on PATH."""
 
-        return shutil.which(self.launcher) is not None
+        return resolve_launcher(self.launcher) is not None
 
     def _scclr_importable(self) -> bool:
         """Return whether ``import scclr`` succeeds inside the configured env."""
 
         try:
             result = subprocess.run(
-                [self.launcher, "run", "-n", self.env_name, "python", "-c", "import scclr"],
+                [
+                    resolve_launcher(self.launcher) or self.launcher,
+                    "run",
+                    "-n",
+                    self.env_name,
+                    "python",
+                    "-c",
+                    "import scclr",
+                ],
                 check=False,
                 capture_output=True,
                 text=True,

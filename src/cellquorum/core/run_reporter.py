@@ -132,8 +132,23 @@ class RunReporter:
                 if isinstance(stage_cfg, dict) and stage_cfg:
                     # Build compact param line.
                     params = []
-                    # Add method if present.
-                    if "method" in stage_cfg and stage_cfg["method"]:
+                    # A `methods` list wins over the single `method` field.
+                    #
+                    # The banner used to print `method=` unconditionally, so a stage configured
+                    # with `methods: [harmony, scvi]` advertised `method=harmony` — the unused
+                    # single-method default — and a reader checking what a run was doing was told
+                    # scVI was not running when it was. A run banner nobody can trust is worse
+                    # than no banner.
+                    listed = stage_cfg.get("methods")
+                    if isinstance(listed, list) and listed:
+                        chosen = [
+                            str(entry.get("method", entry))
+                            if isinstance(entry, dict)
+                            else str(entry)
+                            for entry in listed
+                        ]
+                        params.append(f"methods=[{', '.join(chosen)}]")
+                    elif "method" in stage_cfg and stage_cfg["method"]:
                         params.append(f"method={stage_cfg['method']}")
                     # Add up to 4 informative scalar fields.
                     count = 0

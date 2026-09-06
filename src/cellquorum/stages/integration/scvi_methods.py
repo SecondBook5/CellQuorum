@@ -18,6 +18,10 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.integration._fit_population import resolve_training_set
 
+#: Below this many highly variable genes a latent space is not worth fitting on them;
+#: fall back to every gene and say so, rather than training on a handful.
+_MIN_HVG_FOR_SCVI = 500
+
 
 def _write_denoised_layer(
     adata: ad.AnnData,
@@ -175,10 +179,50 @@ class ScVIMethod(AnalysisMethod):
         denoised_layer = config.get("denoised_layer") or None
         denoised_genes = list(config.get("denoised_genes") or [])
         denoised_library_size = config.get("denoised_library_size", 1e4)
+        # Default True: training on all genes is the wrong default for scVI, and a caller who
+        # genuinely wants every gene can say so.
+        use_hvg = bool(config.get("use_highly_variable", True))
 
         scvi.settings.seed = random_state
         work = adata.copy()
         work.X = work.layers["counts"]
+
+        # Restrict to highly variable genes before training.
+        #
+        # This was absent, so scVI trained on every gene — on this cohort ~33,000 of them for
+        # 202,000 cells, roughly sixteen times the decoder parameters of the usual 2,000-gene
+        # setup. That is not merely slow: uninformative genes contribute reconstruction loss
+        # without contributing structure, so the latent space is worse, and this latent space is
+        # what clustering uses and what scArches builds its query model on. A degraded embedding
+        # therefore propagates all the way into the cell-type calls.
+        #
+        # Honours `feature_selection` rather than selecting genes itself: that stage flags
+        # `var['highly_variable']` and deliberately does not subset, so each consumer opts in.
+        # Absent the flag, every gene is used and a note says so — silently training on all
+        # genes is the behaviour being fixed, so it must not be the silent default.
+        if use_hvg:
+            if "highly_variable" in work.var.columns:
+                mask = work.var["highly_variable"].fillna(False).to_numpy(dtype=bool)
+                if int(mask.sum()) >= _MIN_HVG_FOR_SCVI:
+                    work = work[:, mask].copy()
+                    hvg_note = f"scVI trained on {int(mask.sum()):,} highly variable genes."
+                else:
+                    hvg_note = (
+                        f"scVI: only {int(mask.sum())} highly variable genes flagged, below the "
+                        f"{_MIN_HVG_FOR_SCVI} needed for a usable latent space — using all "
+                        f"{work.n_vars:,} genes instead."
+                    )
+            else:
+                hvg_note = (
+                    "scVI: use_highly_variable is set but var['highly_variable'] is absent — "
+                    "enable the feature_selection stage. Using all "
+                    f"{work.n_vars:,} genes."
+                )
+        else:
+            hvg_note = (
+                f"scVI trained on all {work.n_vars:,} genes (use_highly_variable not set). "
+                f"Standard practice is 2,000-5,000 highly variable genes."
+            )
 
         # A trained encoder is a function, so scVI can honour fit_scope=CORE where Harmony
         # cannot: train on the cells QC permits, then encode every cell through the trained
@@ -228,7 +272,7 @@ class ScVIMethod(AnalysisMethod):
             "output_rep": output_rep,
             "n_latent": n_latent,
         }
-        notes = [f"scVI latent ({n_latent}d) over '{batch_key}' -> {output_rep}."]
+        notes = [f"scVI latent ({n_latent}d) over '{batch_key}' -> {output_rep}.", hvg_note]
         notes.extend(denoised_notes)
         if scope_note:
             notes.append(scope_note)

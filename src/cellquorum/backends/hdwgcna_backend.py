@@ -12,11 +12,11 @@ through temporary files; it never imports hdWGCNA into the CellQuorum process.
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from cellquorum.backends._probe import resolve_launcher
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the hdwgcna environment.
@@ -163,7 +163,7 @@ class HdwgcnaBackend(BaseBackend):
             )
 
         cmd = [
-            self.launcher,
+            resolve_launcher(self.launcher) or self.launcher,
             "run",
             "-n",
             self.env_name,
@@ -182,7 +182,7 @@ class HdwgcnaBackend(BaseBackend):
     def _launcher_available(self) -> bool:
         """Return whether the environment launcher is on PATH."""
 
-        return shutil.which(self.launcher) is not None
+        return resolve_launcher(self.launcher) is not None
 
     def _r_package_available(self, package_name: str) -> bool:
         """
@@ -211,7 +211,7 @@ class HdwgcnaBackend(BaseBackend):
         try:
             result = subprocess.run(
                 [
-                    self.launcher,
+                    resolve_launcher(self.launcher) or self.launcher,
                     "run",
                     "-n",
                     self.env_name,

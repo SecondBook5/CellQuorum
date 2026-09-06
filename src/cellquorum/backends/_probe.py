@@ -31,12 +31,73 @@ is cached.
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from functools import cache
+from pathlib import Path
 
 # Note on scope: only the *subprocess* probe is cached here. The sibling
 # `_launcher_available` checks on each backend use `shutil.which`, which measured
 # 0.00s, so caching them would add indirection for no gain.
+
+
+# Where a conda-family launcher lives when it is not on PATH. Ordered most-specific first.
+#
+# `micromamba` installs itself as a shell FUNCTION — `micromamba shell hook` defines one so that
+# `micromamba activate` can modify the calling shell. A function is invisible to
+# `shutil.which()`, so on a machine whose PATH never reaches the binary's directory the probe
+# concludes the launcher is absent while `command -v micromamba` in the same terminal says it is
+# right there. That is exactly what happened: a run died with "The scclr backend is unavailable
+# (missing: micromamba)" on a machine with micromamba installed and a working scclr env.
+_LAUNCHER_SEARCH_DIRS: tuple[str, ...] = (
+    "$MAMBA_ROOT_PREFIX/bin",
+    "$MICROMAMBA_ROOT_PREFIX/bin",
+    "$CONDA_PREFIX/bin",
+    "~/micromamba/bin",
+    "~/.local/bin",
+    "~/miniforge3/bin",
+    "~/mambaforge/bin",
+    "~/miniconda3/bin",
+    "~/anaconda3/bin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+)
+
+
+@cache
+def resolve_launcher(name: str) -> str | None:
+    """Locate an environment launcher, tolerating one that is not on PATH.
+
+    ``shutil.which`` first, because an explicit PATH entry is the caller's intent. Failing that,
+    the conventional install directories — so a launcher that exists is found rather than
+    reported missing. Six backends each called ``shutil.which(self.launcher)`` directly; they now
+    share this, so a launcher findable for one is findable for all.
+
+    Args:
+        name: Launcher name (``micromamba``/``mamba``/``conda``), or an absolute path, which is
+            returned unchanged when it is executable.
+
+    Returns:
+        Absolute path to the launcher, or None when it genuinely is not installed.
+    """
+    candidate = Path(name).expanduser()
+    if candidate.is_absolute():
+        return str(candidate) if os.access(candidate, os.X_OK) else None
+
+    found = shutil.which(name)
+    if found:
+        return found
+
+    for raw in _LAUNCHER_SEARCH_DIRS:
+        expanded = os.path.expandvars(raw)
+        # An unset variable leaves the literal `$NAME` behind; skip rather than stat it.
+        if "$" in expanded:
+            continue
+        binary = Path(expanded).expanduser() / name
+        if binary.is_file() and os.access(binary, os.X_OK):
+            return str(binary)
+    return None
 
 
 @cache

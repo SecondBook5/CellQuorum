@@ -30,11 +30,11 @@ changes.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from cellquorum.backends._probe import resolve_launcher
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the partipy environment.
@@ -153,7 +153,7 @@ class PartipyBackend(BaseBackend):
             )
 
         cmd = [
-            self.launcher,
+            resolve_launcher(self.launcher) or self.launcher,
             "run",
             "-n",
             self.env_name,
@@ -171,13 +171,21 @@ class PartipyBackend(BaseBackend):
 
     def _launcher_available(self) -> bool:
         """Return whether the environment launcher is on PATH."""
-        return shutil.which(self.launcher) is not None
+        return resolve_launcher(self.launcher) is not None
 
     def _partipy_importable(self) -> bool:
         """Return whether ``import partipy`` succeeds inside the configured env."""
         try:
             result = subprocess.run(
-                [self.launcher, "run", "-n", self.env_name, "python", "-c", "import partipy"],
+                [
+                    resolve_launcher(self.launcher) or self.launcher,
+                    "run",
+                    "-n",
+                    self.env_name,
+                    "python",
+                    "-c",
+                    "import partipy",
+                ],
                 check=False,
                 capture_output=True,
                 text=True,
