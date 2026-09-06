@@ -19,6 +19,9 @@ statistics helper can import, rather than each ``astype(str)`` making its own.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
+import numpy as np
 import pandas as pd
 
 
@@ -44,7 +47,11 @@ def as_label_strings(values: pd.Series) -> pd.Series:
         values = values.astype(object)
 
     def _one(value: object) -> object:
-        if pd.isna(value):
+        # `pd.isna` has no overload for a bare `object`, and these values genuinely are
+        # arbitrary cells from an object-dtype column. Cast rather than `# type: ignore`:
+        # pandas-stubs 3.x accepts the call and reports the ignore as unused, so the suppression
+        # would be required on one version and an error on the next.
+        if value is None or (np.isscalar(value) and pd.isna(cast(Any, value))):
             return value
         # np.float64 subclasses float, so this covers numpy scalars too.
         if isinstance(value, float) and value.is_integer():

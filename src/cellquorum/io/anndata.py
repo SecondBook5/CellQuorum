@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 # Import PathLike for filesystem-like input path typing.
+from collections.abc import Mapping
 from os import PathLike
 
 # Import Path for robust filesystem validation.
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 # Import AnnData for return type validation.
 import anndata as ad
@@ -104,6 +105,37 @@ def validate_adata_path(path: str | PathLike[str] | Path) -> Path:
 
     # Return the validated path.
     return normalized_path
+
+
+def _read_frame(element: object, *, name: str) -> pd.DataFrame:
+    """Read an obs/var element and narrow it to the DataFrame it is.
+
+    ``anndata.io.read_elem`` is annotated to return ``AxisStorable`` — the union of everything
+    an AnnData axis can hold, some fifteen types. That is honest for the general function and
+    useless here, because ``handle["obs"]`` is an obs group and nothing else. Left unnarrowed it
+    produced fifty-one type errors on one variable, every one of them the checker pointing out
+    that a ``CSRDataset`` has no ``.iloc``.
+
+    So the narrowing is asserted once, at the read, rather than suppressed at each of the twenty
+    downstream uses — and it is a real check: an h5ad whose obs group does not decode to a frame
+    is malformed, and saying so here beats an ``AttributeError`` twenty lines later.
+
+    Args:
+        element: Whatever ``read_elem`` returned.
+        name: Element name, for the error message.
+
+    Returns:
+        The element as a DataFrame.
+
+    Raises:
+        CellQuorumDataError: If it is not one.
+    """
+    if not isinstance(element, pd.DataFrame):
+        raise CellQuorumDataError(
+            f"Expected '{name}' in this h5ad to decode as a DataFrame, got "
+            f"{type(element).__name__}. The file's {name} group is malformed."
+        )
+    return element
 
 
 def _require_obs_column(obs: pd.DataFrame, column: str, *, setting: str) -> pd.Series:
@@ -470,8 +502,8 @@ def load_group_sample(
         return np.random.default_rng([int(seed), int.from_bytes(digest, "big")])
 
     with h5py.File(validated_path, "r") as handle:
-        obs = read_elem(handle["obs"])
-        var = read_elem(handle["var"])
+        obs = _read_frame(read_elem(handle["obs"]), name="obs")
+        var = _read_frame(read_elem(handle["var"]), name="var")
         groups_as_str = _require_obs_column(obs, group_column, setting="group_column")
         agreement_as_str = (
             _require_obs_column(obs, agreement_column, setting="agreement_column")
@@ -536,7 +568,11 @@ def load_group_sample(
         if key not in handle:
             raise AnnDataLoadError(f"{validated_path} has no {key!r}.")
         rows = np.flatnonzero(keep)
-        matrix = sparse_dataset(handle[key])[rows][:, columns]
+        # `sparse_dataset` is annotated to return `float | Any` by anndata 0.13's stubs, so the
+        # two-step slice below — its documented interface for reading a backed matrix without
+        # loading it — does not typecheck. Cast rather than suppress, so the intent survives.
+        backed = cast(Any, sparse_dataset(handle[key]))
+        matrix = backed[rows][:, columns]
 
         # A layer's provenance has to travel with its values. This reader moves a named layer
         # into ``X``, and the stages downstream ask a contract what ``X`` *is* -- so without
@@ -545,7 +581,12 @@ def load_group_sample(
         # data. The tag is read under the name it was stored as and re-recorded under the name
         # the values now have.
         tag_key = f"uns/cellquorum/layer_tags/{'X' if layer is None else layer}"
-        source_tag = read_elem(handle[tag_key]) if tag_key in handle else None
+        # Narrowed for the same reason as obs/var above: a layer tag is a small mapping, and
+        # `read_elem` types it as the whole AxisStorable union. Treated as absent when the key
+        # is present but does not decode to a mapping — an unreadable tag should cost the tag,
+        # not the load.
+        raw_tag = read_elem(handle[tag_key]) if tag_key in handle else None
+        source_tag: Mapping[str, object] | None = raw_tag if isinstance(raw_tag, Mapping) else None
 
     selected_obs = obs.iloc[rows].copy()
     # A categorical sliced down to two of thirteen cell types keeps all thirteen levels, and a

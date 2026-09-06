@@ -311,7 +311,7 @@ inference is anticonservative here. Build on this rather than replacing it.
 
 There are currently three candidate homes for QC plots:
 
-- `visualization/qc/publication.py` — tracked, legacy `cellquorum_qc_keep` semantics
+- the since-removed *publication.py* — tracked, legacy `cellquorum_qc_keep` semantics
 - `visualization/qc/panels.py` — **untracked, in flight**, 2135 lines, already contains
   `qc_joint_density`
 - `visualization/qc/graded.py` — proposed new V2 module

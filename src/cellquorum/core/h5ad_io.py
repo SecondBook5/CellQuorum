@@ -40,8 +40,9 @@ from __future__ import annotations
 
 import contextlib
 import json
+from collections.abc import Container, MutableMapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -165,7 +166,7 @@ def sanitize_for_h5ad(adata: ad.AnnData) -> list[str]:
     return notes
 
 
-def safe_h5_key(key: str, existing: object) -> str:
+def safe_h5_key(key: str, existing: Container[str]) -> str:
     """Return ``key`` with ``/`` replaced by ``_``, kept unique against ``existing``."""
     safe = key.replace("/", "_")
     while safe != key and safe in existing:
@@ -185,7 +186,7 @@ def _sanitize_frame_columns(frame: pd.DataFrame, *, axis: str) -> list[str]:
     return [f"{axis}: renamed {len(renames)} column(s) containing '/' ({_first_few(renames)})"]
 
 
-def _sanitize_mapping_keys(mapping: object, *, name: str) -> list[str]:
+def _sanitize_mapping_keys(mapping: MutableMapping[str, Any], *, name: str) -> list[str]:
     """Rename obsm/varm keys containing ``/``."""
     bad = [k for k in list(mapping.keys()) if isinstance(k, str) and "/" in k]
     for key in bad:
@@ -310,7 +311,7 @@ def _as_string_categorical(series: pd.Series) -> pd.Categorical:
     return pd.Categorical(out)
 
 
-def _jsonify_unwritable_uns(uns: object) -> list[str]:
+def _jsonify_unwritable_uns(uns: MutableMapping[str, Any]) -> list[str]:
     """Replace uns values anndata cannot write with their JSON text.
 
     Recurses through nested dicts — stages namespace payloads under
@@ -335,7 +336,7 @@ def _jsonify_unwritable_uns(uns: object) -> list[str]:
     """
     notes: list[str] = []
 
-    def _coerce(mapping: dict, prefix: str) -> None:
+    def _coerce(mapping: MutableMapping[str, Any], prefix: str) -> None:
         for key in list(mapping.keys()):
             value = mapping[key]
             if _writable_uns_value(value):

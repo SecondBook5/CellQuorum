@@ -46,6 +46,12 @@ dependencies = [
   "pandas>=2.1",
   "scipy>=1.11",
   "scanpy>=1.10",
+  # Required by the DEFAULT highly-variable-gene method. `feature_selection.method` defaults to
+  # "seurat_v3", and scanpy's implementation of it imports `skmisc.loess` — so without this a
+  # pip-installed CellQuorum raises ModuleNotFoundError the first time it selects features.
+  # It was declared in all three envs/*.yml conda recipes and nowhere in the pip metadata, so
+  # the conda path worked and the pip path did not, and CI installs via pip.
+  "scikit-misc>=0.3",
   "matplotlib>=3.8",
   "seaborn>=0.13",
   "jinja2>=3.1",
@@ -85,6 +91,12 @@ dev = [
   # Type checking, plus stubs for the untyped third-party libraries we import.
   "mypy==1.18.2",
   "types-PyYAML==6.0.12.20250915",
+  # Perceptual colour maths for the categorical-palette audit. A dev tool, not runtime:
+  # `visualization/palette_audit.py` measures CAM02-UCS distances between the palette hues
+  # under simulated colour-vision deficiency, and `tests/test_palette_audit.py` pins the
+  # measured separations so a hue change fails loudly. Nothing the engine does at run time
+  # needs it, which is why it is here rather than in the runtime dependencies.
+  "colorspacious==1.1.2",
   # Git hook runner, so `pre-commit install` needs no separate global install.
   "pre-commit==4.3.0",
   # Documentation site.

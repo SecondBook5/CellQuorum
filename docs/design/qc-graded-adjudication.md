@@ -16,7 +16,7 @@ parameters with no defaults chosen by guesswork.
 
 The current QC stage computes a careful verdict and writes it to
 `cellquorum_qc_keep`. Across the whole codebase, three places read that column:
-`visualization/qc/diagnostics.py`, `visualization/qc/publication.py`, and
+the since-removed *diagnostics.py*, the since-removed *publication.py*, and
 `stages/annotation/population_identity/stage.py:450`. Two of them draw pictures.
 
 Nothing else reads it — not preprocessing, feature selection, PCA, integration,

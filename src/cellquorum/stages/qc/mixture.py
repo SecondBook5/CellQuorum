@@ -454,7 +454,13 @@ def fit_mito_mixture(
 
     # Track which cells still need a model. Cells missing either metric are never
     # eligible: they keep their 0.0 and stay subject to the fixed ceiling.
-    pending = (np.isfinite(mito) & np.isfinite(complexity)).to_numpy()
+    #
+    # `copy=True` is required, not defensive. Under pandas 3 `.to_numpy()` returns a READ-ONLY
+    # view of the Series' buffer, so the `pending[...] = False` that retires each fitted group
+    # below raised `ValueError: assignment destination is read-only` — sixteen tests, one line.
+    # The engine's dependency floors are lower bounds, so CI resolves the newest pandas while a
+    # developer environment may sit on 2.x, and the same code passes locally and fails there.
+    pending = (np.isfinite(mito) & np.isfinite(complexity)).to_numpy(copy=True)
 
     # Track the grouping the accepted models were actually fit at, which is what
     # the projection below must group by. Defaults to the requested grouping so an

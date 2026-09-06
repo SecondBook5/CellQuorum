@@ -11,8 +11,18 @@ from __future__ import annotations
 
 import pytest
 
-from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE
-from cellquorum.visualization.palette_audit import (
+# The audit needs `colorspacious` for the CAM02-UCS conversion. It is a dev-extra dependency,
+# not a runtime one, so skip rather than error when the suite runs without `[dev]` installed.
+# Erroring here aborts COLLECTION, which takes the whole run down with it: on CI this module
+# raised ModuleNotFoundError and pytest reported "22 skipped, 1 error" — it never reached the
+# other three thousand tests, so a missing palette tool read as a totally broken test suite.
+pytest.importorskip(
+    "colorspacious",
+    reason="colorspacious is a [dev] extra; install with `pip install -e .[dev]`",
+)
+
+from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE  # noqa: E402
+from cellquorum.visualization.palette_audit import (  # noqa: E402
     PaletteAuditError,
     _perceptual,
     audit_palette,
