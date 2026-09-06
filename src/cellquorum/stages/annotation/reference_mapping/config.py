@@ -20,6 +20,18 @@ class ReferenceMappingConfig(StrictBaseModel):
     # obs column in the atlas holding cell-type labels.
     label_key: str = "cell_type"
 
+    #: Optional COARSER atlas column to derive a second resolution from, written as
+    #: ``{key_added}_coarse``. Train on the fine column and collapse — do not map twice.
+    #:
+    #: scANVI is semi-supervised, so the label set shapes both the latent space and the
+    #: classifier: a coarse-trained model is a different model, not another readout of the
+    #: same one. Two mappings therefore cost two full trainings and can contradict each
+    #: other, calling a cell ``LEC`` coarse and ``Fibroblast CCL19+`` fine. A collapse is one
+    #: prediction read at two depths, and it is strictly more robust at the coarse level,
+    #: because confusion inside a family — a capillary EC read as a venule EC — still yields
+    #: ``VEC``. Refused at run time if the hierarchy is not clean.
+    coarse_label_key: str | None = None
+
     # obs column in the atlas holding batch labels.
     atlas_batch_key: str = "batch"
 

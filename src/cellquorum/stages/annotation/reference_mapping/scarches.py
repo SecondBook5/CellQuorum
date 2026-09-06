@@ -74,6 +74,75 @@ def _resolve_counts(adata: ad.AnnData, counts_layer: str, *, what: str) -> Any:
     )
 
 
+def _label_hierarchy(atlas: ad.AnnData, fine_key: str, coarse_key: str) -> dict[str, str]:
+    """Map each fine label to its single coarse parent, refusing an ambiguous hierarchy.
+
+    Args:
+        atlas: The reference, before gene subsetting.
+        fine_key: The finer annotation column, the one the model is trained on.
+        coarse_key: The coarser column to collapse to.
+
+    Returns:
+        ``{fine label: coarse label}``.
+
+    Raises:
+        CellQuorumDataError: If any fine label appears under more than one coarse label, or
+            either column is missing.
+    """
+
+    for key in (fine_key, coarse_key):
+        if key not in atlas.obs.columns:
+            raise CellQuorumDataError(
+                f"reference_mapping: atlas has no obs column {key!r}. "
+                f"Available: {sorted(atlas.obs.columns)[:20]}"
+            )
+
+    pairs = atlas.obs[[fine_key, coarse_key]].astype(str)
+    per_fine = pairs.groupby(fine_key, observed=True)[coarse_key].unique()
+    ambiguous = {k: sorted(v) for k, v in per_fine.items() if len(v) > 1}
+    if ambiguous:
+        raise CellQuorumDataError(
+            f"reference_mapping: {coarse_key!r} is not a clean parent of {fine_key!r} — "
+            f"{len(ambiguous)} fine label(s) appear under several coarse labels, e.g. "
+            f"{dict(list(ambiguous.items())[:3])}. Collapsing would have to choose one and "
+            f"would be inventing an annotation, so map the two resolutions separately instead."
+        )
+    return {str(k): str(v[0]) for k, v in per_fine.items()}
+
+
+def _collapse_labels(
+    labels: Sequence[str], hierarchy: dict[str, str]
+) -> tuple[list[str], set[str]]:
+    """Collapse predicted fine labels to their coarse parents.
+
+    Why derive rather than run a second mapping: scANVI is *semi-supervised*, so the label set
+    shapes both the latent space and the classifier — a coarse-trained model is a different
+    model, not a different readout of the same one. Two independent mappings therefore cost two
+    full trainings AND can disagree with each other, labelling a cell ``LEC`` at coarse
+    resolution and ``Fibroblast CCL19+`` at fine. A collapse cannot: the two columns are one
+    prediction, read at two depths.
+
+    Args:
+        labels: Predicted fine labels, one per cell.
+        hierarchy: Output of :func:`_label_hierarchy`.
+
+    Returns:
+        ``(coarse labels, fine labels that had no parent)``. An unmapped label keeps its own
+        name rather than becoming a blank, so a cell is never silently un-annotated.
+    """
+    unmapped: set[str] = set()
+    out: list[str] = []
+    for label in labels:
+        name = str(label)
+        parent = hierarchy.get(name)
+        if parent is None:
+            unmapped.add(name)
+            out.append(name)
+        else:
+            out.append(parent)
+    return out, unmapped
+
+
 class ScArchesMethod(AnalysisMethod):
     """scArches reference mapping: multi-seed scVI→scANVI→surgery with kNN uncertainty."""
 
@@ -108,6 +177,9 @@ class ScArchesMethod(AnalysisMethod):
             )
 
         label_key = config.get("label_key", "cell_type")
+        # An optional COARSER atlas column to derive a second resolution from. See
+        # `_collapse_labels` for why this is a collapse and not a second mapping.
+        coarse_label_key = config.get("coarse_label_key") or None
         atlas_batch_key = config.get("atlas_batch_key", "batch")
         query_batch_value = config.get("query_batch_value", "query")
         counts_layer = config.get("counts_layer", "counts")
@@ -170,6 +242,14 @@ class ScArchesMethod(AnalysisMethod):
         # Set atlas X to counts layer + copy labels.
         atlas.X = _resolve_counts(atlas, counts_layer, what="atlas")
         atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
+
+        # Learn the label hierarchy from the atlas itself, before the atlas is subset to shared
+        # genes and thrown away. Validated rather than assumed: a granular level that appears
+        # under two different coarse types has no single collapse, and silently picking one
+        # would invent an annotation.
+        coarse_map: dict[str, str] | None = None
+        if coarse_label_key is not None:
+            coarse_map = _label_hierarchy(atlas, label_key, coarse_label_key)
 
         # Gene intersection.
         shared = sorted(set(atlas.var_names) & set(adata.var_names))
@@ -434,6 +514,23 @@ class ScArchesMethod(AnalysisMethod):
             "knn_agreement"
         ]
 
+        # The coarser resolution, derived rather than separately predicted.
+        collapse_notes: list[str] = []
+        if coarse_map is not None:
+            coarse_labels, unmapped = _collapse_labels(consensus_labels, coarse_map)
+            result_query.obs[f"{key_added}_coarse"] = pd.Categorical(coarse_labels)
+            # Confidence carries over unchanged: a cell's coarse call is exactly as certain as
+            # the granular call it came from, and any confusion WITHIN a coarse family — a
+            # capillary EC read as a venule EC — leaves the coarse label untouched, so the
+            # derived column is never less reliable than its source.
+            result_query.obs[f"{key_added}_coarse_confidence"] = consensus_confidence
+            if unmapped:
+                collapse_notes.append(
+                    f"reference_mapping: {len(unmapped)} predicted label(s) had no entry in the "
+                    f"{coarse_label_key!r} hierarchy and were left unmapped: "
+                    f"{sorted(unmapped)[:5]}"
+                )
+
         # Per-seed columns.
         for s in seeds:
             result_query.obs[f"{key_added}_seed{s}"] = pd.Categorical(seed_predictions[s]["hard"])
@@ -571,6 +668,7 @@ class ScArchesMethod(AnalysisMethod):
             notes.append(f"kNN accuracy (CV): {knn_accuracy:.3f}")
         else:
             notes.append("kNN accuracy: N/A (too few cells per class for k-fold CV)")
+        notes.extend(collapse_notes)
 
         return StageResult(adata=result_query, metrics=metrics, artifacts=artifacts, notes=notes)
 
