@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -150,9 +151,24 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         if skip is not None:
             return skip
 
-        # Write query h5ad (lognorm layer + X_pca + cell_type).
+        # Write query h5ad (lognorm layer + X_pca + cell_type), restricted to the reference's
+        # gene space. Reading the reference's var_names here costs one h5ad header read and
+        # saves handing R roughly eleven times more matrix than it can use.
+        reference_genes: list[str] | None = None
+        if reference_h5ad:
+            try:
+                reference_genes = list(ad.read_h5ad(reference_h5ad, backed="r").var_names)
+            except Exception as exc:  # noqa: BLE001
+                return self._skip(
+                    f"could not read the reference's gene space ({type(exc).__name__})",
+                    error=str(exc)[:200],
+                    reference_h5ad=str(reference_h5ad),
+                )
+
         query_h5ad = scratch / "scdiag_query.h5ad"
-        self._write_query_h5ad(adata, query_h5ad, cell_type_col, expression_layer)
+        self._write_query_h5ad(
+            adata, query_h5ad, cell_type_col, expression_layer, reference_genes=reference_genes
+        )
 
         # Optional: write soft scores if provided.
         soft_scores_path = None
@@ -317,9 +333,34 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         path: Path,
         cell_type_col: str,
         expression_layer: str = "lognorm",
+        reference_genes: Sequence[str] | None = None,
     ) -> None:
-        """Write query AnnData to h5ad (lognorm layer + X_pca + cell label)."""
-        # Prepare a minimal h5ad for R consumption.
+        """Write the query as an h5ad for R: lognorm expression, X_pca, and the label column.
+
+        ``reference_genes`` restricts the write to the genes the reference actually has, which
+        is not an optimization but the whole usable gene set: scDiagnostics projects the query
+        onto the reference's PC space, and that rotation matrix is defined over the reference's
+        genes. A gene only in the query has no loading to project through.
+
+        Writing the full space instead handed R 201,871 x 33,417 -- a 3.7 GB h5ad that
+        zellkonverter expands to tens of gigabytes in memory, and the process died there. The R
+        script's first action was to intersect down to the shared genes anyway, so every one of
+        the ~30,000 extra columns was paid for and then discarded.
+
+        Args:
+            adata: The annotated query object.
+            path: Destination ``.h5ad``.
+            cell_type_col: ``obs`` column holding the labels being diagnosed.
+            expression_layer: Layer to write as expression; must be log-normalized.
+            reference_genes: Genes present in the reference. None writes every gene, which is
+                only appropriate when no reference is involved.
+        """
+        # Restrict FIRST, so the copy below is of the subset rather than of everything.
+        if reference_genes is not None:
+            shared = [gene for gene in dict.fromkeys(reference_genes) if gene in adata.var_names]
+            if shared:
+                adata = adata[:, shared]
+
         query = ad.AnnData(X=adata.layers[expression_layer].copy())
         query.obs_names = adata.obs_names
         query.var_names = adata.var_names
