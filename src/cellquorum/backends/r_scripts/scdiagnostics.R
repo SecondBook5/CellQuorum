@@ -128,17 +128,31 @@ tryCatch(
       query_types <- unique(colData(query_sce)[[cell_type_col]])
       cell_types <- as.character(query_types)
 
-      # Run detectAnomaly (isolation forest).
-      anomaly_result <- scDiagnostics::detectAnomaly(
-        reference_data = ref_sce,
-        query_data = query_sce,
-        ref_cell_type_col = cell_type_col,
-        query_cell_type_col = cell_type_col,
-        cell_types = cell_types,
-        pc_subset = pc_subset,
-        n_tree = n_tree,
-        anomaly_treshold = 0.5
+      # Each diagnostic is attempted INDEPENDENTLY.
+      #
+      # They were two bare calls in sequence, so an error in either aborted the script and lost
+      # the other's results. On the full cohort that is exactly what happened: detectAnomaly
+      # scored all 201,871 cells, then the kNN call raised "'to' must be a finite number", the
+      # script exited non-zero, and the stage returned nothing at all -- discarding a complete
+      # per-cell diagnostic because a second, cell-type-level one failed. These are separate
+      # measurements of separate things; one being unavailable is not the other being wrong.
+      anomaly_result <- tryCatch(
+        scDiagnostics::detectAnomaly(
+          reference_data = ref_sce,
+          query_data = query_sce,
+          ref_cell_type_col = cell_type_col,
+          query_cell_type_col = cell_type_col,
+          cell_types = cell_types,
+          pc_subset = pc_subset,
+          n_tree = n_tree,
+          anomaly_treshold = 0.5
+        ),
+        error = function(e) {
+          message(paste("detectAnomaly failed:", conditionMessage(e)))
+          NULL
+        }
       )
+      if (is.null(anomaly_result)) anomaly_result <- list()
       # detectAnomaly returns a list KEYED BY CELL TYPE. Each element carries
       # `query_anomaly_scores` for that type's query cells only, and their barcodes are the
       # rownames of `query_mat_subset`. So the per-cell vector is assembled by scattering each
@@ -180,15 +194,34 @@ tryCatch(
       }
 
       # Run calculateNearestNeighborProbabilities (kNN confidence).
-      knn_result <- scDiagnostics::calculateNearestNeighborProbabilities(
-        query_data = query_sce,
-        reference_data = ref_sce,
-        query_cell_type_col = cell_type_col,
-        ref_cell_type_col = cell_type_col,
-        cell_types = cell_types,
-        pc_subset = pc_subset,
-        n_neighbor = n_neighbor
+      #
+      # ONE call for all cell types, wrapped. Retrying per cell type is not an option: this
+      # function calls `projectPCA` on the FULL objects internally and zellkonverter's matrices
+      # densify to 3.5 + 4.5 GiB, so eighty per-type calls would be eighty full projections --
+      # hours of work to recover a population-level summary.
+      #
+      # On the full cohort this raised "'to' must be a finite number". The function balances
+      # each type's query and reference counts by resampling, and the granular labels here run
+      # to 11:1 against the reference (10,786 query "Mast CDC42EP3 hi" cells against 972), so a
+      # bound goes non-finite somewhere in that balancing. Unwrapped, that error aborted the
+      # script and discarded the per-cell anomaly scores for all 201,871 cells that had already
+      # been computed. It is now reported as unavailable, which is what it is.
+      knn_result <- tryCatch(
+        scDiagnostics::calculateNearestNeighborProbabilities(
+          query_data = query_sce,
+          reference_data = ref_sce,
+          query_cell_type_col = cell_type_col,
+          ref_cell_type_col = cell_type_col,
+          cell_types = cell_types,
+          pc_subset = pc_subset,
+          n_neighbor = n_neighbor
+        ),
+        error = function(e) {
+          message(paste("kNN probabilities unavailable:", conditionMessage(e)))
+          NULL
+        }
       )
+      if (is.null(knn_result)) knn_result <- list()
       # calculateNearestNeighborProbabilities returns ONE number per cell type, not one per
       # cell: each element holds a scalar `query_prob` alongside `n_query`. So this is a
       # population-level statistic and the column name says so — `_group` — because a
