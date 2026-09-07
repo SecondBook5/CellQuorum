@@ -203,25 +203,62 @@ class ScdiagnosticsMethod(RAnalysisMethod):
             str(reference_h5ad) if reference_h5ad and Path(reference_h5ad).is_file() else "NONE"
         )
 
-        # Prepare output CSV path.
-        out_csv = scratch / "scdiag_results.csv"
+        # Call R once per batch of cell types, so its unconditional densification is bounded.
+        #
+        # One call over the whole query means R allocates a single contiguous 4.8 GB vector, and
+        # the WSL2 guest dies rather than the allocation failing. Batches of whole cell types
+        # keep that request in the hundreds of megabytes while the REFERENCE stays complete in
+        # every call -- which matters, because the reference is what defines the PCA space. Split
+        # the reference too and each batch would get its own basis, making the anomaly scores
+        # incomparable between them. The reference PCA is recomputed per call on identical input,
+        # so the space is identical across batches.
+        query_labels = adata.obs[cell_type_col].astype(str)
+        batches = self._query_batches(
+            query_labels, int(config.get("max_query_cells_per_call", 25_000))
+        )
+        if len(batches) > 1:
+            reference_notes.append(
+                f"Query sent to R in {len(batches)} batches of whole cell types "
+                f"(<={int(config.get('max_query_cells_per_call', 25_000)):,} cells each). "
+                f"scDiagnostics densifies unconditionally, so one call over all "
+                f"{adata.n_obs:,} cells asks R for a single contiguous "
+                f"{adata.n_obs * len(reference_genes or []) * 8 / 1e9:.1f} GB vector."
+            )
 
-        # Build R script args.
-        args = [
-            str(query_h5ad),
-            str(out_csv),
-            cell_type_col,
-            ref_arg,
-            str(soft_scores_path) if soft_scores_path else "NONE",
-            ",".join(map(str, pc_subset)),
-            str(n_tree),
-            str(n_neighbor),
-        ]
+        frames: list[pd.DataFrame] = []
+        for index, batch_labels in enumerate(batches):
+            if len(batches) == 1:
+                batch_query = query_h5ad
+            else:
+                batch_query = scratch / f"scdiag_query_batch{index}.h5ad"
+                mask = query_labels.isin(batch_labels).to_numpy()
+                self._write_query_h5ad(
+                    adata[mask],
+                    batch_query,
+                    cell_type_col,
+                    expression_layer,
+                    reference_genes=reference_genes,
+                )
 
-        # Run the R script (wrap errors → MethodSkip: diagnostics must not kill
-        # the pipeline).
-        try:
-            result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=timeout)
+            out_csv = scratch / f"scdiag_results_batch{index}.csv"
+            args = [
+                str(batch_query),
+                str(out_csv),
+                cell_type_col,
+                ref_arg,
+                str(soft_scores_path) if soft_scores_path and index == 0 else "NONE",
+                ",".join(map(str, pc_subset)),
+                str(n_tree),
+                str(n_neighbor),
+            ]
+
+            # A failing batch is reported and skipped rather than ending the stage: the other
+            # batches are independent measurements of different cells.
+            try:
+                result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=timeout)
+            except (FileNotFoundError, CellQuorumBackendError) as exc:
+                return self._skip("R execution failed", error=str(exc)[:500])
+
             if result.returncode != 0:
                 # The R diagnosis goes in the REASON, not only in details. It was in details
                 # alone, and the reporter prints reasons — so a run ended with
@@ -230,15 +267,26 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 # ref_cell_type_granular"). Finding that needed a hand-parse of
                 # provenance/stage_execution_records.json.
                 detail = _first_r_error(result.stderr) or "no error line in stderr"
-                return self._skip(
-                    f"scDiagnostics R script failed: {detail}",
-                    stderr=result.stderr.strip()[:500],
+                if len(batches) == 1:
+                    return self._skip(
+                        f"scDiagnostics R script failed: {detail}",
+                        stderr=result.stderr.strip()[:500],
+                    )
+                reference_notes.append(
+                    f"Batch {index + 1}/{len(batches)} ({', '.join(batch_labels[:3])}...) "
+                    f"failed and is unscored: {detail}"
                 )
-        except (FileNotFoundError, CellQuorumBackendError) as e:
-            return self._skip("R execution failed", error=str(e)[:500])
+                continue
 
-        # Read back diagnostic columns from the CSV (indexed by barcode).
-        diag_df = self._read_diagnostic_csv(out_csv)
+            frames.append(self._read_diagnostic_csv(out_csv))
+
+        if not frames:
+            return self._skip(
+                "scDiagnostics produced no results in any batch",
+                n_batches=len(batches),
+            )
+
+        diag_df = pd.concat(frames) if len(frames) > 1 else frames[0]
 
         # Join diagnostic columns onto obs by barcode (read-only with respect to existing data:
         # this adds `scdiag_*` columns and never touches cell_type or an embedding).
@@ -254,13 +302,23 @@ class ScdiagnosticsMethod(RAnalysisMethod):
             # Reindex diagnostic DataFrame to adata.obs_names order.
             diag_df = diag_df.reindex(result_adata.obs_names)
 
-            # Validate barcode alignment: ensure all cells have values.
-            n_missing = diag_df.isnull().all(axis=1).sum()
-            if n_missing > 0:
+            # Validate barcode alignment. Unscored cells are an ERROR only when every batch
+            # succeeded: then a gap means R returned barcodes that do not match obs_names, which
+            # would silently misattribute scores to the wrong cells. When a batch failed, its
+            # cells are legitimately unscored and already named in the notes, so they stay NaN
+            # rather than aborting a stage that produced valid results for everything else.
+            n_missing = int(diag_df.isnull().all(axis=1).sum())
+            all_batches_ran = len(frames) == len(batches)
+            if n_missing > 0 and all_batches_ran:
                 raise CellQuorumBackendError(
                     f"scDiagnostics barcode misalignment: {n_missing} "
-                    f"cells missing diagnostics after reindex. "
-                    f"R script barcodes do not match adata.obs_names."
+                    f"cells missing diagnostics after reindex, with every batch reporting "
+                    f"success. R script barcodes do not match adata.obs_names."
+                )
+            if n_missing > 0:
+                reference_notes.append(
+                    f"{n_missing:,} of {adata.n_obs:,} cells are unscored because "
+                    f"{len(batches) - len(frames)} of {len(batches)} batches failed."
                 )
 
             # Assign diagnostic columns to obs.
@@ -353,6 +411,51 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 "soft_scores_obsm": soft_scores_obsm,
             },
         )
+
+    @staticmethod
+    def _query_batches(
+        labels: pd.Series,
+        max_cells: int,
+    ) -> list[list[str]]:
+        """Group cell types into batches, each under a cell budget.
+
+        This is what bounds the single largest allocation R makes. scDiagnostics densifies
+        unconditionally -- ``projectPCA`` does ``scale(t(as.matrix(assay(query_data, ...))))``
+        and ``detectAnomaly`` does ``t(as.matrix(assay(query_data, ...)))`` -- so a 201,871 x
+        3,000 query becomes one contiguous 4.8 GB R vector. That single request, not the total
+        footprint, is what took the WSL2 VM down five times: capping the VM lower did not help,
+        and removing 11 GB of unrelated waste did not help, because R either gets its one block
+        or the guest dies.
+
+        Batching by CELL TYPE rather than by arbitrary blocks, because ``detectAnomaly`` fits an
+        isolation forest per type against that type's reference cells. Splitting a type across
+        calls would fit it twice on partial data.
+
+        Args:
+            labels: Per-cell labels, in object order.
+            max_cells: Soft cap per batch. A single type larger than this becomes its own batch,
+                since a type cannot be split without changing the method.
+
+        Returns:
+            Batches of label names. One batch when the whole query already fits.
+        """
+        counts = labels.value_counts()
+        if int(counts.sum()) <= max_cells:
+            return [list(counts.index.astype(str))]
+
+        batches: list[list[str]] = []
+        current: list[str] = []
+        running = 0
+        # Largest first, so a big type claims its own batch instead of forcing a small one over.
+        for name, size in counts.items():
+            if current and running + int(size) > max_cells:
+                batches.append(current)
+                current, running = [], 0
+            current.append(str(name))
+            running += int(size)
+        if current:
+            batches.append(current)
+        return batches
 
     def _subsample_reference(
         self,

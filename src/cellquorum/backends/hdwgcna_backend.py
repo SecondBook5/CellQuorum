@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cellquorum.backends._probe import resolve_launcher
+from cellquorum.backends._probe import resolve_env, resolve_launcher
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the hdwgcna environment.
@@ -250,7 +251,7 @@ class HdwgcnaBackend(BaseBackend):
 
 def build_hdwgcna_backend(
     *,
-    env_name: str = "hdwgcna_env",
+    env_name: str | Sequence[str] = "hdwgcna_env",
     launcher: str = "micromamba",
     timeout_seconds: int = 60,
 ) -> HdwgcnaBackend:
@@ -266,7 +267,17 @@ def build_hdwgcna_backend(
         Configured HdwgcnaBackend instance.
     """
 
-    return HdwgcnaBackend(env_name=env_name, launcher=launcher, timeout_seconds=timeout_seconds)
+    # Accept several acceptable environment names and pick the one that exists here.
+    # Names are a fact about a machine: the container creates the canonical name, while a
+    # given workstation may already have the same software under another. Resolving keeps one
+    # analysis config correct in both places instead of pinning it to one filesystem.
+    candidates = [env_name] if isinstance(env_name, str) else list(env_name)
+    resolved = resolve_env(resolve_launcher(launcher) or launcher, candidates)
+    return HdwgcnaBackend(
+        env_name=resolved or candidates[0],
+        launcher=launcher,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 # Path to the bundled hdWGCNA helper script, run inside hdwgcna env.

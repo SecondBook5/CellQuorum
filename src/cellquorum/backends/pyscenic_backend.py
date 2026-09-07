@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # Import the process-level probe cache (see _probe.py for why this exists).
-from cellquorum.backends._probe import env_python_module_available, resolve_launcher
+from cellquorum.backends._probe import env_python_module_available, resolve_env, resolve_launcher
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the pyscenic environment.
@@ -204,13 +205,23 @@ class PyscenicBackend(BaseBackend):
 
 def build_pyscenic_backend(
     *,
-    env_name: str = "pyscenic_env",
+    env_name: str | Sequence[str] = "pyscenic_env",
     launcher: str = "micromamba",
     timeout_seconds: int = 60,
 ) -> PyscenicBackend:
     """Build a pySCENIC subprocess backend."""
 
-    return PyscenicBackend(env_name=env_name, launcher=launcher, timeout_seconds=timeout_seconds)
+    # Accept several acceptable environment names and pick the one that exists here.
+    # Names are a fact about a machine: the container creates the canonical name, while a
+    # given workstation may already have the same software under another. Resolving keeps one
+    # analysis config correct in both places instead of pinning it to one filesystem.
+    candidates = [env_name] if isinstance(env_name, str) else list(env_name)
+    resolved = resolve_env(resolve_launcher(launcher) or launcher, candidates)
+    return PyscenicBackend(
+        env_name=resolved or candidates[0],
+        launcher=launcher,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 # Paths to the bundled in-env helper scripts, run inside pyscenic_env.

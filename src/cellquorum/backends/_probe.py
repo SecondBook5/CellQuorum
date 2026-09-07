@@ -31,9 +31,11 @@ is cached.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
+from collections.abc import Sequence
 from functools import cache
 from pathlib import Path
 
@@ -97,6 +99,72 @@ def resolve_launcher(name: str) -> str | None:
         binary = Path(expanded).expanduser() / name
         if binary.is_file() and os.access(binary, os.X_OK):
             return str(binary)
+    return None
+
+
+@cache
+def existing_env_names(launcher: str) -> frozenset[str]:
+    """Names of the environments the launcher can see.
+
+    Cached for the process: a launcher does not gain environments mid-run, and the listing
+    costs a subprocess.
+
+    Args:
+        launcher: Launcher executable, ideally already resolved by :func:`resolve_launcher`.
+
+    Returns:
+        The environment names, or an empty set when the listing fails.
+    """
+    try:
+        result = subprocess.run(
+            [launcher, "env", "list", "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return frozenset()
+    if result.returncode != 0:
+        return frozenset()
+    try:
+        payload = json.loads(result.stdout)
+    except ValueError:
+        return frozenset()
+    return frozenset(str(path).rstrip("/").rsplit("/", 1)[-1] for path in payload.get("envs", []))
+
+
+def resolve_env(launcher: str, candidates: Sequence[str]) -> str | None:
+    """Return the first candidate environment that actually exists.
+
+    The same job as :func:`resolve_launcher`, one level up: a backend names the environment it
+    wants, and this decides which of the acceptable names is present here.
+
+    It exists because environment names are a fact about a MACHINE, not about an analysis. The
+    container built by ``docker/Dockerfile`` creates ``pyscenic_env`` and ``hdwgcna_env`` -- the
+    names the code defaults to -- while this workstation has ``scenic_env`` and ``lekc_hubs``.
+    Pointing the config at the local names made both stages work here and would have broken
+    them in the container, so the analysis config had become machine-bound. Listing candidates
+    instead keeps one config correct in both places.
+
+    Args:
+        launcher: Launcher executable.
+        candidates: Acceptable environment names, most-preferred first.
+
+    Returns:
+        The first name present, the first candidate when the listing is unavailable (so a
+        probe failure degrades to the old single-name behaviour rather than reporting the
+        backend missing), or None when no candidate was given.
+    """
+    names = [str(name) for name in candidates if str(name)]
+    if not names:
+        return None
+    available = existing_env_names(launcher)
+    if not available:
+        return names[0]
+    for name in names:
+        if name in available:
+            return name
     return None
 
 

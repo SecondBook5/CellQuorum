@@ -78,7 +78,12 @@ class GrnConfig(StrictBaseModel):
     seed: int = 0
 
     # Name of the isolated micromamba environment.
-    env_name: str = "pyscenic_env"
+    # A list is accepted, most-preferred first, and the first name that EXISTS is used.
+    # Environment names are a fact about a machine, not about an analysis: the container
+    # built by docker/Dockerfile creates "pyscenic_env", while a workstation may already have
+    # the same software under a different name. Pinning the config to one of them made the
+    # other silently report the backend missing and skip the stage.
+    env_name: str | list[str] = "pyscenic_env"
 
     # Environment launcher (micromamba).
     launcher: str = "micromamba"
