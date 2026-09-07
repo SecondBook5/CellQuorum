@@ -68,6 +68,21 @@ class MarkerVoteMethod(AnalysisMethod):
         panels = config.get("marker_panels", {}) or {}
         random_state = int(config.get("random_state", 0))
 
+        # No panels means no evidence, so say so instead of writing a column of NaN.
+        #
+        # `marker_panels` defaults to `{}`, and with it empty the scoring loop below simply does
+        # not execute: every cell got NaN, the stage reported success with `n_types: 0`, and
+        # `cell_type_markers` was an all-null categorical. Marker voting is the *mechanistic*
+        # leg of this annotation — the one that is neither a trained model nor an atlas — so a
+        # silently empty column removes the only independent check without anyone noticing.
+        if not panels:
+            return self._skip(
+                "no marker_panels configured, so there is nothing to score. Marker voting is "
+                "the mechanistic evidence in a multi-source annotation; an empty panel set "
+                "produces an all-null column that looks like a computed answer. Supply "
+                "annotation.marker_panels as {cell_type: [genes]}."
+            )
+
         # Score genes on the log-normalized layer for each cell-type panel.
         # Use a temporary object whose .X is the score layer so score_genes reads it.
         scored = adata.copy()

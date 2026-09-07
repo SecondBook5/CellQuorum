@@ -170,6 +170,28 @@ class ScdiagnosticsMethod(RAnalysisMethod):
             adata, query_h5ad, cell_type_col, expression_layer, reference_genes=reference_genes
         )
 
+        # Cap how many reference cells per label reach R.
+        #
+        # zellkonverter densifies on read, so the full skin reference -- 157,692 x 3,000 as R
+        # doubles -- is 3.8 GB before scDiagnostics does any work, on top of 4.8 GB for the
+        # query. What the reference is FOR here is characterizing each cell type well enough to
+        # build a PCA basis and an isolation forest over five components; that saturates in the
+        # low hundreds of cells per type, so carrying tens of thousands buys precision the
+        # method cannot use and costs gigabytes at the exact moment the pipeline is already
+        # holding the cohort plus a GPU context.
+        #
+        # Stratified by label and seeded, so it is reproducible and no type is dropped.
+        if reference_h5ad:
+            reference_h5ad, ref_note = self._subsample_reference(
+                reference_h5ad,
+                scratch=scratch,
+                label_column=cell_type_col,
+                max_per_label=int(config.get("max_reference_cells_per_label", 300)),
+                seed=int(config.get("random_state", 0)),
+            )
+            if ref_note:
+                reference_notes.append(ref_note)
+
         # Optional: write soft scores if provided.
         soft_scores_path = None
         if soft_scores_obsm and soft_scores_obsm in adata.obsm:
@@ -218,10 +240,15 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         # Read back diagnostic columns from the CSV (indexed by barcode).
         diag_df = self._read_diagnostic_csv(out_csv)
 
-        # Join diagnostic columns onto obs by barcode (read-only; never
-        # modify cell_type). Reindex to match adata.obs_names order so
-        # values align to the correct cells.
-        result_adata = adata.copy()
+        # Join diagnostic columns onto obs by barcode (read-only with respect to existing data:
+        # this adds `scdiag_*` columns and never touches cell_type or an embedding).
+        #
+        # NOT a deep copy. `adata.copy()` here duplicated the entire cohort object -- two sparse
+        # layers over 201,871 x 33,417 is about 7.7 GB -- purely to add a few obs columns, and it
+        # did so at the worst possible moment: immediately after the R subprocess had allocated
+        # roughly 8.6 GB of densified matrices. Adding obs columns in place is what every other
+        # stage does; the copy was the anomaly.
+        result_adata = adata
 
         if not diag_df.empty:
             # Reindex diagnostic DataFrame to adata.obs_names order.
@@ -325,6 +352,59 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 "reference_used": False,
                 "soft_scores_obsm": soft_scores_obsm,
             },
+        )
+
+    def _subsample_reference(
+        self,
+        reference_h5ad: str,
+        *,
+        scratch: Path,
+        label_column: str,
+        max_per_label: int,
+        seed: int,
+    ) -> tuple[str, str | None]:
+        """Cap reference cells per label, writing a smaller file for R when it helps.
+
+        Args:
+            reference_h5ad: Path to the prepared reference.
+            scratch: Directory for the reduced copy.
+            label_column: ``obs`` column to stratify on.
+            max_per_label: Cells to keep per label. Non-positive disables the cap.
+            seed: Seed for the per-label draw, so the reduction is reproducible.
+
+        Returns:
+            ``(path, note)`` — the path R should read, and a note when a reduction happened.
+        """
+        if max_per_label <= 0:
+            return reference_h5ad, None
+
+        reference = ad.read_h5ad(reference_h5ad, backed="r")
+        if label_column not in reference.obs.columns:
+            return reference_h5ad, None
+
+        labels = reference.obs[label_column].astype(str)
+        counts = labels.value_counts()
+        if int(counts.max()) <= max_per_label:
+            return reference_h5ad, None
+
+        rng = np.random.default_rng(seed)
+        positions = np.arange(reference.n_obs)
+        keep: list[int] = []
+        for label in counts.index:
+            members = positions[(labels == label).to_numpy()]
+            if len(members) > max_per_label:
+                members = rng.choice(members, size=max_per_label, replace=False)
+            keep.extend(members.tolist())
+        keep_sorted = np.sort(np.asarray(keep, dtype=int))
+
+        reduced_path = scratch / "scdiag_reference_subsampled.h5ad"
+        write_h5ad(reference[keep_sorted].to_memory(), reduced_path)
+        return str(reduced_path), (
+            f"Reference reduced from {reference.n_obs:,} to {len(keep_sorted):,} cells "
+            f"(<={max_per_label} per label, seed {seed}) before handing it to R. "
+            f"Densified, the full reference is ~"
+            f"{reference.n_obs * reference.n_vars * 8 / 1e9:.1f} GB in R; the anomaly detector "
+            f"characterizes each type from a few hundred cells."
         )
 
     def _write_query_h5ad(
