@@ -22,14 +22,19 @@ def test_build_defaults() -> None:
 
 
 def test_run_script_builds_micromamba_argv(monkeypatch, tmp_path: Path) -> None:
+    """argv[0] is the RESOLVED launcher path, not the bare name.
+
+    The six external backends each called ``shutil.which(self.launcher)``; they now share
+    ``resolve_launcher``, which also looks in the conventional install directories, because
+    micromamba installs as a shell *function* and so is invisible to ``which``. Patching
+    ``shutil`` on this module therefore no longer intercepts anything — the module does not
+    import it — and the command carries an absolute path.
+    """
     script = tmp_path / "s.py"
     script.write_text("print('hi')\n")
     b = build_celloracle_backend()
 
     captured = {}
-
-    def fake_which(_name):  # noqa: ANN001, ANN202
-        return "/usr/bin/micromamba"
 
     def fake_run(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
         captured["cmd"] = cmd
@@ -42,11 +47,20 @@ def test_run_script_builds_micromamba_argv(monkeypatch, tmp_path: Path) -> None:
 
         return R()
 
-    monkeypatch.setattr("cellquorum.backends.celloracle_backend.shutil.which", fake_which)
+    monkeypatch.setattr(
+        "cellquorum.backends.celloracle_backend.resolve_launcher",
+        lambda _name: "/usr/bin/micromamba",
+    )
     monkeypatch.setattr("cellquorum.backends.celloracle_backend.subprocess.run", fake_run)
 
     b.run_script(script, ["--h5ad", "x.h5ad"], timeout=123)
-    assert captured["cmd"][:5] == ["micromamba", "run", "-n", "celloracle_env", "python"]
+    assert captured["cmd"][:5] == [
+        "/usr/bin/micromamba",
+        "run",
+        "-n",
+        "celloracle_env",
+        "python",
+    ]
     assert str(script) in captured["cmd"]
     assert captured["cmd"][-2:] == ["--h5ad", "x.h5ad"]
     assert captured["check"] is False
@@ -62,7 +76,7 @@ def test_run_script_missing_launcher_raises(monkeypatch, tmp_path: Path) -> None
     script = tmp_path / "s.py"
     script.write_text("x=1\n")
     b = build_celloracle_backend()
-    monkeypatch.setattr("cellquorum.backends.celloracle_backend.shutil.which", lambda _n: None)
+    monkeypatch.setattr("cellquorum.backends.celloracle_backend.resolve_launcher", lambda _n: None)
     with pytest.raises(FileNotFoundError):
         b.run_script(script, [])
 

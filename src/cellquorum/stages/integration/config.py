@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from cellquorum.backends.harmonypy_backend import DEFAULT_MAX_ITER_HARMONY
 from cellquorum.config.base import StrictBaseModel
 
 
@@ -33,17 +34,28 @@ class IntegrationConfig(StrictBaseModel):
     # scVI latent dimensionality.
     n_latent: int = 30
 
+    # Whether scVI trains on highly variable genes only. None (the default) follows the
+    # feature-selection stage: its flag if present, all genes if not. `true` requires the
+    # flag and fails without it rather than training on everything; `false` forces all
+    # genes. Declared here because scVI read this key while the schema forbade it, so the
+    # override was unreachable from YAML and the value was always the default.
+    use_highly_variable: bool | None = None
+
     # scVI max training epochs (None => scvi-tools default / early stop).
     max_epochs: int | None = None
 
     # Random seed for deterministic integration.
     random_state: int = 0
 
-    # Harmony iteration cap (harmonypy's own default is 10). Exposed because 10 is
-    # not enough on every dataset, and a Harmony that hits the cap returns a
-    # PARTIALLY corrected embedding — which the stage now reports as a warning
-    # instead of leaving it to an INFO log line nobody sees.
-    max_iter_harmony: int = 10
+    # Harmony iteration cap. Exposed because a Harmony that hits the cap returns a PARTIALLY
+    # corrected embedding, which the stage reports as a warning rather than leaving to an INFO
+    # log line nobody sees.
+    #
+    # The default is imported, not repeated. It was written as a literal `10` here AND as
+    # `DEFAULT_MAX_ITER_HARMONY = 10` in the backend, so raising one would have left the other
+    # silently governing every config that does not name the field — the same two-places-one-
+    # decision problem that made `stages.feature_selection: true` skip its own stage.
+    max_iter_harmony: int = DEFAULT_MAX_ITER_HARMONY
 
     # Multi-method dispatch: list of per-method sub-configs (each entry is a full
     # method config with its own `method`, `output_rep`, etc.). An empty list (the

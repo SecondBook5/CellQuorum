@@ -649,7 +649,8 @@ class DimensionalityConfig(StrictBaseModel):
         n_pcs: Number of principal components, or "auto" to select via the
             variance-ratio knee.
         max_pcs: Upper bound on components computed and considered for "auto".
-        use_highly_variable: Whether to restrict PCA to highly-variable genes.
+        use_highly_variable: Whether to restrict PCA to highly-variable genes. None
+            follows the feature_selection stage; True requires its output.
         random_state: Seed for deterministic PCA.
     """
 
@@ -669,8 +670,12 @@ class DimensionalityConfig(StrictBaseModel):
     # Store the upper bound on components for auto selection.
     max_pcs: int = 50
 
-    # Store whether PCA is restricted to highly-variable genes.
-    use_highly_variable: bool = False
+    # Store whether PCA is restricted to highly-variable genes. None (the default) means
+    # "follow feature_selection": use the HVGs when that stage flagged them, all genes
+    # when it did not. Enabling HVG selection and then having to repeat the decision here
+    # is what let `stages.feature_selection: true` produce a PCA on all ~33,000 genes.
+    # `true` demands the HVGs and fails if they are absent; `false` forces all genes.
+    use_highly_variable: bool | None = None
 
     # Store the PCA random seed.
     random_state: int = 0
@@ -759,8 +764,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether preprocessing is enabled.
     preprocessing: bool = True
 
-    # Store whether the feature-selection (HVG) stage may run.
-    feature_selection: bool = True
+    # Store whether the feature-selection (HVG) stage may run. Opt-in: flagging HVGs
+    # changes which genes PCA and scVI see, so it is a stated methodological choice.
+    feature_selection: bool = False
 
     # Store whether dimensionality reduction is enabled.
     dimensionality: bool = True
@@ -774,17 +780,19 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether annotation is enabled.
     annotation: bool = True
 
-    # Store whether annotation-diagnostics evaluation is enabled.
-    annotation_diagnostics: bool = True
+    # Store whether annotation-diagnostics evaluation is enabled. Opt-in: needs R and
+    # the scDiagnostics package.
+    annotation_diagnostics: bool = False
 
     # Store whether annotation-consensus reconciliation is enabled.
     annotation_consensus: bool = True
 
-    # Store whether reference mapping is enabled.
-    reference_mapping: bool = True
+    # Store whether reference mapping is enabled. Opt-in: requires an atlas h5ad, which
+    # has no default.
+    reference_mapping: bool = False
 
-    # Store whether integration-benchmark evaluation is enabled.
-    integration_benchmark: bool = True
+    # Store whether integration-benchmark evaluation is enabled. Opt-in: a diagnostic.
+    integration_benchmark: bool = False
 
     # Store whether integration-gate filtering is enabled (reserved).
     integration_gate: bool = False
@@ -798,8 +806,8 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether automatic discovery is enabled.
     discovery: bool = True
 
-    # Store whether subclustering is enabled.
-    subclustering: bool = True
+    # Store whether subclustering is enabled. Opt-in: needs a target population named.
+    subclustering: bool = False
 
     # Store whether cluster/state adjudication is enabled.
     adjudication: bool = True
@@ -1052,6 +1060,71 @@ class CellQuorumConfig(StrictBaseModel):
             )
 
         # Return the validated config object.
+        return self
+
+    @model_validator(mode="after")
+    def reconcile_stage_switches(self) -> CellQuorumConfig:
+        """
+        Make ``stages:`` the single switch deciding whether a stage runs.
+
+        Whether a stage runs was spelled in TWO places: the ``stages:`` block, which the
+        planner reads, and an ``enabled`` field on the stage's own config block, which the
+        run gate at ``stage_base`` reads. Five of them defaulted to opposite values --
+        ``feature_selection``, ``annotation_diagnostics``, ``reference_mapping``,
+        ``integration_benchmark`` and ``subclustering`` -- so ``stages.feature_selection:
+        true`` put the stage in the plan, printed it in the banner, reached it at position
+        4 of 36, and then skipped it with "disabled by config" because the block's own
+        default said no. Nothing was misconfigured and nothing warned; the HVGs simply were
+        never flagged, and PCA and scVI silently ran on all ~33,000 genes.
+
+        So ``stages:`` decides:
+
+        * set in ``stages:`` -- that wins, and the block's ``enabled`` is aligned to it
+        * set only on the block -- mirrored up, so the plan matches what will run
+        * set in neither -- the ``stages:`` default applies
+
+        Only one direction of disagreement is refused rather than resolved. ``stages.X:
+        false`` with ``X.enabled: true`` is switching a stage off and leaving its settings
+        behind, which is both unambiguous and what the old two-flag AND already did, so it
+        stays silent. ``stages.X: true`` with an explicit ``X.enabled: false`` is the
+        dangerous one: it reads as "run this stage", and the thing that actually happens is
+        the silent skip described above. That halts at load.
+
+        Component switches nested inside a stage (``qc.doublets.enabled``,
+        ``qc.graded.enabled``) are untouched: those decide whether a *part* of a stage
+        runs, which is a different question with only one place to ask it.
+
+        Returns:
+            Validated CellQuorumConfig, with both switches in agreement.
+
+        Raises:
+            ValueError: If a stage is requested in ``stages:`` and explicitly disabled in
+                its own block.
+        """
+
+        for name in type(self.stages).model_fields:
+            block = getattr(self, name, None)
+            if block is None or not hasattr(block, "enabled"):
+                continue
+
+            flag = bool(getattr(self.stages, name))
+            flag_given = name in self.stages.model_fields_set
+            block_given = "enabled" in block.model_fields_set
+
+            if flag_given and flag and block_given and not block.enabled:
+                raise ValueError(
+                    f"stages.{name}=True contradicts {name}.enabled=False. Whether a stage "
+                    f"runs is declared once, in `stages:`, and this pair is the combination "
+                    f"that plans the stage and then skips it. Remove `enabled` from the "
+                    f"`{name}:` block, or set `stages.{name}: false`."
+                )
+
+            if block_given and not flag_given:
+                # Mirror upward so the plan, the banner and the gate agree.
+                setattr(self.stages, name, bool(block.enabled))
+            else:
+                block.enabled = flag
+
         return self
 
     @model_validator(mode="after")

@@ -24,6 +24,27 @@ if TYPE_CHECKING:
 _SCDIAGNOSTICS_R = r_script_path("scdiagnostics.R")
 
 
+def _first_r_error(stderr: str) -> str | None:
+    """Pull the actual failure line out of R's stderr.
+
+    R stderr is mostly Bioconductor deprecation warnings — on this stage, three paragraphs of
+    ``'S4Vectors:::anyMissing()' is deprecated`` around one line that says what went wrong. So
+    the ``ERROR:``/``Error in`` line is what belongs in a skip reason; truncating the front of
+    stderr instead would surface the warnings and bury the cause.
+
+    Args:
+        stderr: Captured standard error from the R subprocess.
+
+    Returns:
+        The first error line, trimmed, or None when stderr has none.
+    """
+    for line in stderr.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("ERROR:", "Error in", "Error:")):
+            return stripped[:300]
+    return None
+
+
 class ScdiagnosticsMethod(RAnalysisMethod):
     """scDiagnostics annotation-confidence diagnostics (query-only or query+ref).
 
@@ -84,6 +105,28 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         reference_h5ad = config.get("reference_h5ad")
         soft_scores_obsm = config.get("soft_scores_obsm")
         pc_subset = config.get("pc_subset", [1, 2, 3, 4, 5])
+
+        # Prefer the reference `reference_mapping` prepared over a hand-configured path.
+        #
+        # A configured `reference_h5ad` was in practice the RAW atlas, which is the wrong
+        # reference twice over: unfiltered, so it includes the lesional-disease cells the
+        # mapping deliberately excluded, and indexed by Ensembl ID while the query uses gene
+        # symbols, so the two share no genes at all. Confirming a mapping against a different
+        # reference than the mapping used is not a confirmation.
+        reference_notes: list[str] = []
+        prepared = adata.uns.get("cellquorum", {}).get("reference_prepared")
+        if isinstance(prepared, dict) and Path(str(prepared.get("path", ""))).is_file():
+            if reference_h5ad and str(reference_h5ad) != str(prepared["path"]):
+                reference_notes.append(
+                    f"Using the reference prepared by reference_mapping "
+                    f"({prepared['n_cells']:,} cells x {prepared['n_genes']:,} genes) instead of "
+                    f"the configured reference_h5ad, so the diagnostics judge the mapping "
+                    f"against the reference it was built from."
+                )
+            reference_h5ad = prepared["path"]
+            # Labels on both sides live under the same column by construction, which is what
+            # scDiagnostics requires: it takes ONE column name for reference and query.
+            cell_type_col = str(prepared.get("label_column", cell_type_col))
         n_tree = config.get("n_tree", 500)
         n_neighbor = config.get("n_neighbor", 15)
         timeout = config.get("timeout_seconds", 1800)
@@ -142,8 +185,16 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         try:
             result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=timeout)
             if result.returncode != 0:
+                # The R diagnosis goes in the REASON, not only in details. It was in details
+                # alone, and the reporter prints reasons — so a run ended with
+                # "scDiagnostics R script failed" and nothing else, while R had actually said
+                # exactly what was wrong ("Reference h5ad missing cell_type column:
+                # ref_cell_type_granular"). Finding that needed a hand-parse of
+                # provenance/stage_execution_records.json.
+                detail = _first_r_error(result.stderr) or "no error line in stderr"
                 return self._skip(
-                    "scDiagnostics R script failed", stderr=result.stderr.strip()[:500]
+                    f"scDiagnostics R script failed: {detail}",
+                    stderr=result.stderr.strip()[:500],
                 )
         except (FileNotFoundError, CellQuorumBackendError) as e:
             return self._skip("R execution failed", error=str(e)[:500])
@@ -175,7 +226,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
 
         # Count which diagnostics were computed.
         diagnostics_run = [col for col in diag_df.columns if col.startswith("scdiag_")]
-        notes = []
+        notes = list(reference_notes)
         if diagnostics_run:
             notes.append(
                 f"Computed {len(diagnostics_run)} diagnostic columns: " f"{diagnostics_run}"
@@ -272,7 +323,11 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         query = ad.AnnData(X=adata.layers[expression_layer].copy())
         query.obs_names = adata.obs_names
         query.var_names = adata.var_names
-        query.obs[cell_type_col] = adata.obs[cell_type_col].values
+        # Written as plain strings. A pandas Categorical becomes an h5ad categorical, which
+        # zellkonverter reads as an R factor, which scDiagnostics' `projectPCA` reports as the
+        # factor's integer CODES — so its `cell_type == "<label>"` filter matched nothing and
+        # every kNN probability came back NaN with `n_query = 0`.
+        query.obs[cell_type_col] = adata.obs[cell_type_col].astype(str).to_numpy()
         query.obsm["X_pca"] = adata.obsm["X_pca"].copy()
         write_h5ad(query, path)
 

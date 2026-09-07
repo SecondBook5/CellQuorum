@@ -35,6 +35,18 @@ class ReferenceMappingConfig(StrictBaseModel):
     # obs column in the atlas holding batch labels.
     atlas_batch_key: str = "batch"
 
+    #: ``var`` column in the atlas holding gene identifiers of the QUERY's kind, when the
+    #: atlas's own ``var_names`` are a different kind. CellxGene releases index by Ensembl ID
+    #: and demote the symbol to ``var['feature_name']``, so such an atlas shares exactly zero
+    #: genes with a Cell Ranger cohort — and this stage used to report that as a skip, quietly
+    #: turning a run built around atlas mapping into a run with no atlas mapping.
+    #:
+    #: None (the default) detects the column by measuring which candidate actually overlaps
+    #: the query most, which handles the common conventions without being told. Set it
+    #: explicitly for a reference that names the column something unusual; a name that does
+    #: not exist is an error rather than a silent fallback to detection.
+    atlas_gene_symbol_col: str | None = None
+
     # Batch value assigned to the query dataset.
     query_batch_value: str = "query"
 

@@ -5,6 +5,9 @@ suppressPackageStartupMessages({
   library(zellkonverter)
   library(scDiagnostics)
   library(SingleCellExperiment)
+  # runPCA: the reference PCA has to be computed here so its rotation matrix exists. See the
+  # reference branch below.
+  library(scater)
 })
 
 # Parse command-line arguments.
@@ -53,6 +56,18 @@ tryCatch(
       stop(paste("Query h5ad missing cell_type column:", cell_type_col))
     }
 
+    # Force the label column to CHARACTER.
+    #
+    # anndata writes a string obs column as an h5ad categorical (strings_to_categoricals is on
+    # by default), zellkonverter reads that back as an R factor, and scDiagnostics' internal
+    # `projectPCA` then reports `cell_type` as the factor's integer CODES — 1, 2, 3 — so its own
+    # `cell_type == "<label>"` filter matches nothing. Every cell type came back with
+    # `n_query = 0` and a NaN probability, while `detectAnomaly`, which subsets the SCE
+    # directly, worked on the very same input. Writing strings from Python cannot prevent this
+    # because anndata converts them on the way out, so it is undone here instead.
+    colData(query_sce)[[cell_type_col]] <-
+      as.character(colData(query_sce)[[cell_type_col]])
+
     # Initialize result data frame (keyed by barcode).
     barcodes <- colnames(query_sce)
     results <- data.frame(barcode = barcodes, stringsAsFactors = FALSE)
@@ -71,16 +86,43 @@ tryCatch(
           stop("Reference h5ad has no assays.")
         }
       }
-      if (!"PCA" %in% reducedDimNames(ref_sce)) {
-        if ("X_pca" %in% reducedDimNames(ref_sce)) {
-          reducedDimNames(ref_sce)[reducedDimNames(ref_sce) == "X_pca"] <- "PCA"
-        } else {
-          stop("Reference h5ad missing PCA reducedDim.")
-        }
-      }
       if (!cell_type_col %in% colnames(colData(ref_sce))) {
         stop(paste("Reference h5ad missing cell_type column:", cell_type_col))
       }
+      # Character, for the same reason as the query above.
+      colData(ref_sce)[[cell_type_col]] <-
+        as.character(colData(ref_sce)[[cell_type_col]])
+
+      # Restrict BOTH objects to the genes they share, then compute the reference PCA HERE.
+      #
+      # scDiagnostics::projectPCA projects the query onto the reference's PC space using
+      #   rotation_mat <- attributes(reducedDim(reference_data, "PCA"))[["rotation"]]
+      #   PCA_genes    <- rownames(rotation_mat)
+      # and stops with "Genes in reference PCA are not found in query data." when that is
+      # missing. A PCA read back from an h5ad has no rotation attribute — zellkonverter maps
+      # the coordinates and nothing else — so reusing a stored `X_pca` could never work, and
+      # reusing coordinates computed on the reference's own gene set and normalization would
+      # not be a shared space with the query even if it did. scater::runPCA attaches the
+      # rotation, which is what makes the projection meaningful.
+      shared_genes <- intersect(rownames(ref_sce), rownames(query_sce))
+      if (length(shared_genes) < 10) {
+        stop(paste0(
+          "Reference and query share only ", length(shared_genes), " genes; ",
+          "scDiagnostics projects the query onto the reference PC space and cannot do that ",
+          "across disjoint gene sets. Reference names genes like ",
+          paste(head(rownames(ref_sce), 2), collapse = "/"), " and query like ",
+          paste(head(rownames(query_sce), 2), collapse = "/"), "."
+        ))
+      }
+      ref_sce <- ref_sce[shared_genes, ]
+      query_sce <- query_sce[shared_genes, ]
+
+      n_pcs <- max(pc_subset)
+      ref_sce <- scater::runPCA(ref_sce, ncomponents = n_pcs, exprs_values = "logcounts")
+      message(paste0(
+        "Reference PCA computed on ", length(shared_genes),
+        " shared genes; ", n_pcs, " components, rotation retained for projection."
+      ))
 
       # Get unique cell types (use query cell types for filtering).
       query_types <- unique(colData(query_sce)[[cell_type_col]])
@@ -97,14 +139,44 @@ tryCatch(
         n_tree = n_tree,
         anomaly_treshold = 0.5
       )
-      # DEFENSIVE: detectAnomaly may return nested per-cell-type results.
-      # Extract in query-cell order; skip if structure unexpected.
-      if (!is.null(anomaly_result$anomaly_scores) &&
-          length(anomaly_result$anomaly_scores) == length(barcodes)) {
-        results$scdiag_anomaly <- anomaly_result$anomaly_scores
+      # detectAnomaly returns a list KEYED BY CELL TYPE. Each element carries
+      # `query_anomaly_scores` for that type's query cells only, and their barcodes are the
+      # rownames of `query_mat_subset`. So the per-cell vector is assembled by scattering each
+      # type's scores back to its own barcodes.
+      #
+      # The previous code read `anomaly_result$anomaly_scores` — a field this object does not
+      # have — and fell through to a "not in expected format; skipped" message. That was not a
+      # defensive branch catching an odd case: it was the only branch that ever ran, so the
+      # reference diagnostics silently produced nothing every time, and the CSV came back
+      # holding barcodes and no diagnostics at all.
+      anomaly_by_barcode <- rep(NA_real_, length(barcodes))
+      names(anomaly_by_barcode) <- barcodes
+      anomaly_flag <- rep(NA, length(barcodes))
+      names(anomaly_flag) <- barcodes
+      n_anomaly_scored <- 0
+      for (type_name in names(anomaly_result)) {
+        element <- anomaly_result[[type_name]]
+        scores <- element$query_anomaly_scores
+        type_barcodes <- rownames(element$query_mat_subset)
+        if (is.null(scores) || is.null(type_barcodes) ||
+            length(scores) != length(type_barcodes)) {
+          message(paste0("detectAnomaly: unusable result for '", type_name, "'; left NA"))
+          next
+        }
+        known <- type_barcodes %in% barcodes
+        anomaly_by_barcode[type_barcodes[known]] <- scores[known]
+        if (!is.null(element$query_anomaly)) {
+          anomaly_flag[type_barcodes[known]] <- element$query_anomaly[known]
+        }
+        n_anomaly_scored <- n_anomaly_scored + sum(known)
+      }
+      if (n_anomaly_scored > 0) {
+        results$scdiag_anomaly <- as.numeric(anomaly_by_barcode[barcodes])
+        results$scdiag_anomaly_flag <- as.logical(anomaly_flag[barcodes])
+        message(paste0("detectAnomaly: scored ", n_anomaly_scored, " of ",
+                       length(barcodes), " query cells."))
       } else {
-        message("detectAnomaly scores not in expected per-query-cell format; ",
-                "skipped")
+        message("detectAnomaly returned no usable per-cell scores.")
       }
 
       # Run calculateNearestNeighborProbabilities (kNN confidence).
@@ -117,14 +189,34 @@ tryCatch(
         pc_subset = pc_subset,
         n_neighbor = n_neighbor
       )
-      # DEFENSIVE: kNN probabilities may be nested per cell type.
-      # Extract in query-cell order; skip if structure unexpected.
-      if (!is.null(knn_result$nn_probabilities) &&
-          length(knn_result$nn_probabilities) == length(barcodes)) {
-        results$scdiag_knn_prob <- knn_result$nn_probabilities
+      # calculateNearestNeighborProbabilities returns ONE number per cell type, not one per
+      # cell: each element holds a scalar `query_prob` alongside `n_query`. So this is a
+      # population-level statistic and the column name says so — `_group` — because a
+      # group value broadcast into a per-cell column is read as per-cell evidence, and a
+      # reviewer would take it for a per-cell confidence. `n_query` travels with it so the
+      # denominator is visible: a probability from 4 cells is not a probability from 4,000.
+      knn_by_barcode <- rep(NA_real_, length(barcodes))
+      names(knn_by_barcode) <- barcodes
+      knn_n <- rep(NA_integer_, length(barcodes))
+      names(knn_n) <- barcodes
+      query_labels <- as.character(colData(query_sce)[[cell_type_col]])
+      n_knn_types <- 0
+      for (type_name in names(knn_result)) {
+        element <- knn_result[[type_name]]
+        prob <- element$query_prob
+        if (is.null(prob) || length(prob) != 1 || !is.finite(prob)) next
+        in_type <- query_labels == type_name
+        knn_by_barcode[in_type] <- as.numeric(prob)
+        knn_n[in_type] <- if (is.null(element$n_query)) NA_integer_ else as.integer(element$n_query)
+        n_knn_types <- n_knn_types + 1
+      }
+      if (n_knn_types > 0) {
+        results$scdiag_knn_prob_group <- as.numeric(knn_by_barcode[barcodes])
+        results$scdiag_knn_prob_group_n <- as.integer(knn_n[barcodes])
+        message(paste0("kNN probabilities: ", n_knn_types,
+                       " cell-type-level values broadcast to their member cells."))
       } else {
-        message("kNN probabilities not in expected per-query-cell format; ",
-                "skipped")
+        message("kNN probabilities returned nothing usable.")
       }
     }
 

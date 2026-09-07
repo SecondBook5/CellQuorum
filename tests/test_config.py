@@ -350,8 +350,10 @@ def test_stage_selection_config_defaults_to_major_capabilities_enabled() -> None
     # Confirm discovery is enabled by default.
     assert config.discovery is True
 
-    # Confirm subclustering is enabled by default.
-    assert config.subclustering is True
+    # Subclustering is opt-in: it needs a target population named, so there is nothing for
+    # it to do by default. Same for the other four stages that need user input before they
+    # mean anything — see test_stages_block_is_the_only_switch below.
+    assert config.subclustering is False
 
     # Confirm composition analysis is enabled by default.
     assert config.composition is True

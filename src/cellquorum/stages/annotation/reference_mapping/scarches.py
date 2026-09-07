@@ -23,6 +23,189 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
+#: ``var`` columns that conventionally hold gene symbols on a public reference. CellxGene
+#: releases index ``var_names`` by Ensembl ID and put the symbol in ``feature_name``, so an
+#: atlas downloaded from there shares ZERO gene names with a Cell Ranger cohort, whose
+#: ``var_names`` are symbols. Ordered by how specific the name is.
+_SYMBOL_COLUMNS: tuple[str, ...] = (
+    "feature_name",
+    "gene_name",
+    "gene_symbol",
+    "gene_symbols",
+    "symbol",
+    "symbols",
+    "gene_ids",
+)
+
+
+def _align_atlas_gene_space(
+    atlas: ad.AnnData,
+    query_genes: pd.Index,
+    *,
+    symbol_column: str | None,
+) -> tuple[ad.AnnData, str | None, int]:
+    """Re-index the atlas onto whichever identifier it shares with the query.
+
+    A reference and a query only intersect if they name genes the same way, and the two most
+    common conventions do not agree: Cell Ranger writes symbols, CellxGene writes Ensembl IDs
+    with the symbol demoted to ``var['feature_name']``. Intersecting them directly yields zero
+    genes — which this stage then reported as a *skip*, so a run whose entire purpose was atlas
+    mapping quietly did no atlas mapping and carried on.
+
+    Each candidate is scored by how many genes it actually shares with the query and the best
+    one wins, so the choice is evidence rather than a convention this code hopes holds. The
+    incumbent ``var_names`` is scored too and kept when it is already best.
+
+    Args:
+        atlas: Reference object. Re-indexed IN PLACE when a better identifier is found, because
+            copying a multi-gigabyte reference to rewrite ``var`` is not worth the memory.
+        query_genes: The query's ``var_names``.
+        symbol_column: An explicit ``var`` column to use. Skips detection, and is an error if
+            it does not exist — an explicit request that silently fell back would reintroduce
+            exactly the failure this function exists to remove.
+
+    Returns:
+        ``(atlas, column_used, n_shared)``. ``column_used`` is None when ``var_names`` was
+        already the right identifier.
+
+    Raises:
+        CellQuorumDataError: If ``symbol_column`` is named but absent.
+    """
+    wanted = set(query_genes)
+    baseline = len(wanted & set(atlas.var_names))
+
+    if symbol_column is not None:
+        if symbol_column not in atlas.var.columns:
+            raise CellQuorumDataError(
+                f"reference_mapping.atlas_gene_symbol_col='{symbol_column}' is not a column of "
+                f"the atlas var. Available: {sorted(atlas.var.columns)}"
+            )
+        candidates = [symbol_column]
+    else:
+        candidates = [name for name in _SYMBOL_COLUMNS if name in atlas.var.columns]
+
+    best_column: str | None = None
+    best_shared = baseline
+    for name in candidates:
+        values = atlas.var[name].astype(str)
+        shared = len(wanted & set(values))
+        if shared > best_shared:
+            best_column, best_shared = name, shared
+
+    if best_column is None:
+        return atlas, None, baseline
+
+    # Renamed IN PLACE. A filtered skin atlas is ~157,000 x 32,000 sparse, roughly 2.4 GB, and
+    # `atlas.copy()` here deep-copies X and every layer — on top of the copy `.raw` subsetting
+    # already made. Re-indexing touches only `var`, so copying the matrix to do it would risk
+    # an OOM after several minutes of atlas loading, in service of nothing. The caller passes
+    # ownership and rebinds the return value.
+    atlas.var["_original_var_names"] = atlas.var_names.astype(str)
+    atlas.var_names = pd.Index(atlas.var[best_column].astype(str))
+
+    # Symbol columns are not unique — several Ensembl IDs map to one symbol, and CellxGene
+    # keeps them all. Collapse to the first occurrence so the re-index is 1:1; a duplicate
+    # would otherwise make the intersection ambiguous and the subset non-deterministic. Only
+    # this branch copies, and only when the reference actually has duplicates.
+    duplicated = atlas.var_names.duplicated(keep="first")
+    if duplicated.any():
+        atlas = atlas[:, ~duplicated].copy()
+    return atlas, best_column, len(wanted & set(atlas.var_names))
+
+
+def _write_prepared_reference(
+    atlas_train: ad.AnnData,
+    ref_latent: np.ndarray,
+    *,
+    path: Path,
+    key_added: str,
+    coarse_map: dict[str, str] | None,
+    counts_layer: str,
+    batch_key: str,
+) -> int:
+    """Persist the reference the mapping actually used, with its corrected coordinates.
+
+    scANVI produces a batch-corrected latent space for the REFERENCE as well as the query, and
+    that space is what every downstream confirmation needs. It was computed
+    (``scanvi.get_latent_representation(atlas_train)``), used to fit the kNN classifier, and
+    then dropped: only the query's copy reached ``obsm``. The per-seed ``.npz`` does carry a
+    ``ref_latent`` array, but as an anonymous matrix — no barcodes, no labels, no gene names —
+    so it is a pile of coordinates rather than a reference. Reconstructing row identity meant
+    re-reading the 2.3 GB atlas and replaying the filters, which is only as reproducible as
+    both of those staying byte-identical.
+
+    So the reference is written as a real object, and three consumers stop having to invent
+    their own:
+
+    * ``annotation_diagnostics``, which was pointed at the RAW atlas — unfiltered (lesional AD
+      included, so a different reference than the mapping used) and Ensembl-indexed (so no
+      shared genes). Both go away when it reads this instead.
+    * CHOIR, so the second confirmation judges against the same reference as the first.
+    * the joint atlas+query embedding, the figure that shows whether query LEC land on
+      reference LEC or in empty space.
+
+    Labels are written under ``key_added`` — the same column name the query's predictions get —
+    because scDiagnostics takes one column name for both sides and the mismatch
+    (``Cell_type_granular`` on the reference, ``ref_cell_type_granular`` on the query) is what
+    made it fail.
+
+    Args:
+        atlas_train: The reference as trained on: filtered, gene-aligned to the query's
+            identifiers, and subset to the shared HVGs. ``obs['_labels']`` holds its labels.
+        ref_latent: scANVI latent coordinates for those cells, in that row order.
+        path: Destination ``.h5ad``.
+        key_added: Column name to write labels under, matching the query's prediction column.
+        coarse_map: Granular-to-coarse label map, when a coarse resolution was requested.
+        counts_layer: Name to store the raw counts under.
+        batch_key: ``obs`` column holding the reference's batch labels, carried through when
+            present so a consumer can model or inspect it.
+
+    Returns:
+        The number of reference cells written.
+    """
+    import scanpy as sc_local
+
+    labels = atlas_train.obs["_labels"].astype(str)
+    prepared = ad.AnnData(
+        X=atlas_train.X.copy(),
+        obs=pd.DataFrame(index=atlas_train.obs_names.astype(str)),
+        var=pd.DataFrame(index=atlas_train.var_names.astype(str)),
+    )
+    # Plain strings, NOT pandas Categorical. anndata writes a categorical as an h5ad
+    # categorical, zellkonverter reads that back as an R factor, and scDiagnostics'
+    # `projectPCA` then reports `cell_type` as the factor's integer CODES — 1, 2, 3 — so its
+    # own `cell_type == "LEC"` filter matches nothing and every cell type reports
+    # `n_query = 0`. The kNN probabilities came back NaN for that reason alone, while
+    # `detectAnomaly`, which subsets the SCE directly, worked fine on the same input.
+    prepared.obs[key_added] = labels.to_numpy().astype(str)
+    if coarse_map is not None:
+        coarse, _ = _collapse_labels(labels.tolist(), coarse_map)
+        prepared.obs[f"{key_added}_coarse"] = np.asarray(coarse, dtype=object).astype(str)
+    if batch_key in atlas_train.obs.columns:
+        prepared.obs[batch_key] = atlas_train.obs[batch_key].astype(str).to_numpy()
+
+    # Counts kept as a layer, and X made log-normalized. R's diagnostics want a `logcounts`
+    # assay, and normalizing here rather than in R keeps the transform in one language and
+    # matched to the counts the model itself saw.
+    prepared.layers[counts_layer] = atlas_train.X.copy()
+    sc_local.pp.normalize_total(prepared, target_sum=1e4)
+    sc_local.pp.log1p(prepared)
+
+    prepared.obsm["X_scANVI"] = np.asarray(ref_latent, dtype="float32")
+    prepared.uns["cellquorum_prepared_reference"] = {
+        "label_column": key_added,
+        "coarse_label_column": f"{key_added}_coarse" if coarse_map is not None else None,
+        "latent_key": "X_scANVI",
+        "counts_layer": counts_layer,
+        "n_genes": int(prepared.n_vars),
+        "gene_space": "query identifiers (aligned); shared highly variable genes",
+        "x_is": "log1p CP10K",
+    }
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prepared.write_h5ad(path)
+    return int(prepared.n_obs)
+
 
 def _resolve_counts(adata: ad.AnnData, counts_layer: str, *, what: str) -> Any:
     """Return the raw-count matrix, tolerating the several places an atlas keeps it.
@@ -181,6 +364,9 @@ class ScArchesMethod(AnalysisMethod):
         # `_collapse_labels` for why this is a collapse and not a second mapping.
         coarse_label_key = config.get("coarse_label_key") or None
         atlas_batch_key = config.get("atlas_batch_key", "batch")
+        # An explicit atlas var column holding identifiers of the query's kind. None means
+        # detect it by measuring overlap; see `_align_atlas_gene_space`.
+        atlas_gene_symbol_col = config.get("atlas_gene_symbol_col") or None
         query_batch_value = config.get("query_batch_value", "query")
         counts_layer = config.get("counts_layer", "counts")
         n_top_genes = int(config.get("n_top_genes", 3000))
@@ -239,8 +425,14 @@ class ScArchesMethod(AnalysisMethod):
                 details={"method": self.name, "n_atlas_cells": len(atlas), "knn_k": knn_k},
             )
 
-        # Set atlas X to counts layer + copy labels.
+        # Set atlas X to counts. Done while var_names are still the atlas's own identifiers,
+        # because `.raw` is indexed by those — resolving after the re-index below would look up
+        # symbols in an Ensembl-indexed `.raw`.
         atlas.X = _resolve_counts(atlas, counts_layer, what="atlas")
+        # `.raw` has now been read and nothing reads it again, so drop it. On the filtered skin
+        # atlas that releases roughly 2.4 GB, which matters because the atlas is held fully in
+        # memory alongside the query, the shared-gene subset, and the HVG subset.
+        atlas.raw = None
         atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
 
         # Learn the label hierarchy from the atlas itself, before the atlas is subset to shared
@@ -251,23 +443,51 @@ class ScArchesMethod(AnalysisMethod):
         if coarse_label_key is not None:
             coarse_map = _label_hierarchy(atlas, label_key, coarse_label_key)
 
+        # Put the atlas into whichever gene identifier it shares with the query before
+        # intersecting. Without this, a CellxGene atlas (Ensembl var_names) against a Cell
+        # Ranger cohort (symbol var_names) shares nothing at all.
+        atlas, symbol_column, n_aligned = _align_atlas_gene_space(
+            atlas, adata.var_names, symbol_column=atlas_gene_symbol_col
+        )
+        # Materialized only now, after any re-index and de-duplication, so the subset above
+        # copies one matrix rather than two. Resolving `X` alone was a half-fix: HVG selection
+        # and scVI's setup both address the counts by LAYER NAME, so an atlas that keeps its
+        # counts in `.raw` — every CellxGene download, where `layers` is empty — still died with
+        # a bare `KeyError: 'counts'`. Assignment stores the same object, so this is free.
+        atlas.layers[counts_layer] = atlas.X
+
+        gene_space_note: str | None = None
+        if symbol_column is not None:
+            gene_space_note = (
+                f"Atlas genes re-indexed from var_names onto var['{symbol_column}'] to match "
+                f"the query's identifiers: {n_aligned:,} shared genes (0 before)."
+            )
+
         # Gene intersection.
         shared = sorted(set(atlas.var_names) & set(adata.var_names))
 
-        # Guard: must have shared genes.
+        # No overlap is a misconfiguration, not an absent capability, so it fails rather than
+        # skips. This was a MethodSkip: the atlas loaded, matched nothing, the stage vanished
+        # with a line in the log, and the run continued to the confirmation stages as though
+        # mapping had happened. A stage that IS the analysis must not opt out quietly.
         if len(shared) == 0:
-            return MethodSkip(
-                reason="reference_mapping skipped: no shared genes between atlas and query "
-                "(check gene ID types: symbols vs Ensembl)",
-                details={
-                    "method": self.name,
-                    "n_atlas_genes": len(atlas.var_names),
-                    "n_query_genes": len(adata.var_names),
-                },
+            searched = [name for name in _SYMBOL_COLUMNS if name in atlas.var.columns]
+            raise CellQuorumDataError(
+                f"reference_mapping: the atlas and the query share no genes. The atlas names "
+                f"{len(atlas.var_names):,} genes like {list(atlas.var_names[:3])} and the query "
+                f"names {len(adata.var_names):,} like {list(adata.var_names[:3])} — usually "
+                f"Ensembl IDs against symbols. Symbol columns searched in the atlas var: "
+                f"{searched or 'none found'}. Set "
+                f"`reference_mapping.atlas_gene_symbol_col` to the column holding identifiers "
+                f"of the query's kind."
             )
 
         atlas_train = atlas[:, shared].copy()
-        query_full = adata.copy()  # Keep the full input for return.
+        # Release the full reference before the query is copied twice below. Measured on the
+        # real skin atlas the peak here is ~24.8 GB, and nothing reads `atlas` again, so holding
+        # it through two copies of a 202,000-cell query is how this stage runs out of memory
+        # after four minutes of loading. `atlas_train` owns what is still needed.
+        del atlas
         query_train = adata[:, shared].copy()
 
         # HVG selection.
@@ -405,6 +625,9 @@ class ScArchesMethod(AnalysisMethod):
                 # Prepare query.
                 q = query_train.copy()
                 q.X = _resolve_counts(q, counts_layer, what="query")
+                # Same reason as the atlas: scVI's transferred setup addresses counts by layer
+                # name, so the layer has to exist even when the counts came from `.raw` or `X`.
+                q.layers[counts_layer] = q.X
                 q.obs["_labels"] = unlabeled_category
                 q.obs[atlas_batch_key] = query_batch_value
 
@@ -504,7 +727,12 @@ class ScArchesMethod(AnalysisMethod):
 
         # Write results onto the FULL input query (all genes, not HVG subset).
         # Cells are NOT subset (only genes were), so obs_names order is preserved.
-        result_query = query_full.copy()
+        #
+        # Copied HERE rather than before training. It used to be `query_full = adata.copy()` up
+        # by the gene intersection, used for nothing but this line — so a second full copy of a
+        # 202,000-cell object with three layers sat resident through the entire multi-seed
+        # training loop, hours during which nothing read it.
+        result_query = adata.copy()
         assert len(result_query) == n_cells, "Cell count mismatch after gene subset."
         result_query.obs[key_added] = pd.Categorical(consensus_labels)
         result_query.obs[f"{key_added}_consensus_frac"] = consensus_fracs
@@ -602,6 +830,50 @@ class ScArchesMethod(AnalysisMethod):
 
         # Write final reference-mapping artifacts.
         artifacts = []
+        # Collected here and folded into `notes` below, which is built after the artifacts.
+        reference_notes: list[str] = []
+
+        # The reference, as actually used, with its corrected coordinates. See
+        # `_write_prepared_reference` for why this is not optional.
+        if objects_path is not None:
+            prepared_path = objects_path / f"{key_added}_reference_prepared.h5ad"
+            n_prepared = _write_prepared_reference(
+                atlas_train,
+                ref_latent_best,
+                path=prepared_path,
+                key_added=key_added,
+                coarse_map=coarse_map,
+                counts_layer=counts_layer,
+                batch_key=atlas_batch_key,
+            )
+            artifacts.append(
+                StageArtifact(
+                    name="reference_prepared",
+                    path=prepared_path,
+                    kind="h5ad",
+                    description=(
+                        "The reference the mapping used: filtered, aligned to the query's gene "
+                        "identifiers, shared HVGs, labels under the query's prediction column, "
+                        "and the scANVI-corrected latent space in obsm['X_scANVI']."
+                    ),
+                )
+            )
+            # Published so `annotation_diagnostics` and CHOIR can find it without being told a
+            # path, and so neither has to re-read the raw atlas to guess at the same reference.
+            result_query.uns.setdefault("cellquorum", {})["reference_prepared"] = {
+                "path": str(prepared_path),
+                "label_column": key_added,
+                "latent_key": "X_scANVI",
+                "n_cells": n_prepared,
+                "n_genes": len(hvg_list),
+                "produced_by": f"reference_mapping seed {best_seed}",
+            }
+            reference_notes.append(
+                f"Prepared reference written ({n_prepared:,} cells x {len(hvg_list):,} genes) "
+                f"with the scANVI-corrected latent space, for the confirmation stages and the "
+                f"joint atlas+query embedding."
+            )
+
         if hasattr(context.paths, "results"):
             results_path = Path(context.paths.results)
             if results_path.exists():
@@ -669,6 +941,9 @@ class ScArchesMethod(AnalysisMethod):
         else:
             notes.append("kNN accuracy: N/A (too few cells per class for k-fold CV)")
         notes.extend(collapse_notes)
+        notes.extend(reference_notes)
+        if gene_space_note is not None:
+            notes.append(gene_space_note)
 
         return StageResult(adata=result_query, metrics=metrics, artifacts=artifacts, notes=notes)
 

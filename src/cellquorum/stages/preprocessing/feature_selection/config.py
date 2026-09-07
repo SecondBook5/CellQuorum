@@ -8,12 +8,17 @@ from cellquorum.config.base import StrictBaseModel
 class FeatureSelectionConfig(StrictBaseModel):
     """Highly-variable-gene selection settings.
 
-    Opt-in stage: off by default. When enabled, it flags var['highly_variable']
-    but never subsets the object. To consume the HVGs, also set
-    dimensionality.use_highly_variable: true in the config.
+    Opt-in stage: off by default. When enabled it flags var['highly_variable'] but never
+    subsets the object; PCA and scVI read the flag and restrict themselves to it.
+
+    Turned on in ONE place -- ``stages.feature_selection: true``. Consumers used to need
+    their own repeat of the decision, which is how a run reached this stage at position 4
+    of 36, skipped it, and then built both the PCA basis and the scVI latent space from all
+    ~33,000 genes without a word.
     """
 
-    # Whether the feature-selection stage runs (opt-in; off by default).
+    # Whether the feature-selection stage runs. Kept in step with `stages.feature_selection`
+    # by CellQuorumConfig.reconcile_stage_switches; declare it there, not here.
     enabled: bool = False
 
     # HVG method registry key (seurat_v3 | pearson_residuals | seurat).

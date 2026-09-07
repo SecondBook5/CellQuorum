@@ -22,6 +22,7 @@ import scipy.sparse as sp
 from kneed import KneeLocator
 
 from cellquorum.core.contracts import DataContract
+from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.qc.eligibility import fitting_cells
@@ -204,7 +205,27 @@ class PCAMethod(AnalysisMethod):
         n_pcs = config.get("n_pcs", "auto")
         max_pcs = int(config.get("max_pcs", 50))
         random_state = int(config.get("random_state", 0))
-        use_hvg = bool(config.get("use_highly_variable", False))
+
+        # Resolve HVG use against what feature_selection actually produced, rather than
+        # trusting a second declaration of the same decision. `None` (the default) follows
+        # the flag; `True` demands it and refuses to run without it, because a config that
+        # asks for HVGs and silently receives all ~33,000 genes produces a real embedding
+        # from the wrong genes -- which is exactly what happened, and nothing said so.
+        hvg_setting = config.get("use_highly_variable")
+        has_hvg_flag = "highly_variable" in adata.var.columns
+        if hvg_setting is None:
+            use_hvg = has_hvg_flag
+        else:
+            use_hvg = bool(hvg_setting)
+            if use_hvg and not has_hvg_flag:
+                raise CellQuorumStageError(
+                    "dimensionality",
+                    "use_highly_variable is set but var['highly_variable'] is absent, so "
+                    "PCA would silently run on every gene. Enable the feature-selection "
+                    "stage (`stages.feature_selection: true`), or set "
+                    "`dimensionality.use_highly_variable: false` to use all genes on "
+                    "purpose.",
+                )
 
         # Compute the full (capped) PCA once so we have the variance-ratio curve.
         # scanpy >=1.10 deprecated use_highly_variable in favor of mask_var:
@@ -214,13 +235,19 @@ class PCAMethod(AnalysisMethod):
         # projected onto it. This stage declares fit_scope=CORE at registration; the branch
         # below is what honours it.
         #
-        # Component count comes from the FIT population, not the full object: asking for
-        # more components than there are fitting cells is what turns a small core into an
-        # error deep inside the SVD.
+        # Component count comes from the FIT population and the MASKED gene set, not the full
+        # object: asking for more components than there are fitting cells, or than there are
+        # genes left after the HVG mask, is what turns a small core or a short HVG list into
+        # an error deep inside the SVD.
         fitting = fitting_cells(adata.obs)
         n_fit_cells = adata.n_obs if fitting is None else int(fitting.sum())
-        n_comps = int(min(max_pcs, n_fit_cells - 1, adata.n_vars - 1))
         mask_var = "highly_variable" if use_hvg else None
+        n_genes_used = (
+            adata.n_vars
+            if mask_var is None
+            else int(adata.var[mask_var].fillna(False).to_numpy(dtype=bool).sum())
+        )
+        n_comps = int(min(max_pcs, n_fit_cells - 1, n_genes_used - 1))
         scope_notes: list[str] = []
 
         # Route by normalization method: a scclr-normalized layer carries a
@@ -233,6 +260,7 @@ class PCAMethod(AnalysisMethod):
                 input_layer=input_layer,
                 row_center_col=row_center_col,
                 n_comps=n_comps,
+                mask_var=mask_var,
                 random_state=random_state,
                 context=context,
             )
@@ -500,6 +528,7 @@ class PCAMethod(AnalysisMethod):
         input_layer: str,
         row_center_col: str,
         n_comps: int,
+        mask_var: str | None,
         random_state: int,
         context: object,
     ) -> None:
@@ -511,6 +540,22 @@ class PCAMethod(AnalysisMethod):
         backend's PCA helper and writes ``obsm["X_pca"]`` +
         ``uns["pca"]["variance_ratio"]`` so the shared knee/scree/truncate logic
         runs unchanged.
+
+        ``mask_var`` restricts the decomposition to a gene subset. This method used to take
+        no mask at all, so ``use_highly_variable: true`` was constructed by the caller and
+        then dropped on the floor for every scclr-normalized layer -- which is every run of
+        the default PFlog1pPF recipe. The row centre is recomputed over the subset because
+        the implicit centering subtracts each cell's mean of *the matrix being decomposed*;
+        reusing the all-gene centre would subtract the wrong constant per cell.
+
+        Args:
+            adata: Object carrying the scclr layer and the per-cell row centre.
+            input_layer: Layer holding sparse PFlog values.
+            row_center_col: ``obs`` column with the per-cell centre for that layer.
+            n_comps: Number of components to compute.
+            mask_var: ``var`` column restricting PCA to a gene subset, or None.
+            random_state: Seed passed to the helper.
+            context: Pipeline context supplying the backend registry and scratch dir.
 
         Raises:
             CellQuorumStageError: If the scclr backend is unavailable.
@@ -541,6 +586,12 @@ class PCAMethod(AnalysisMethod):
         layer = adata.layers[input_layer]
         sparse = layer.tocsr() if sp.issparse(layer) else sp.csr_matrix(np.asarray(layer))
         row_center = np.asarray(adata.obs[row_center_col].to_numpy(), dtype=float)
+
+        if mask_var is not None:
+            gene_mask = adata.var[mask_var].fillna(False).to_numpy(dtype=bool)
+            sparse = sparse[:, gene_mask]
+            # The centre must match the submatrix, not the object it came from.
+            row_center = np.asarray(sparse.sum(axis=1), dtype=float).ravel() / sparse.shape[1]
 
         scratch = Path(getattr(getattr(context, "paths", None), "scratch", tempfile.gettempdir()))
         scratch.mkdir(parents=True, exist_ok=True)

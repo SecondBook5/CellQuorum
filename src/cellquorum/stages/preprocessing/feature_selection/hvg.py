@@ -24,8 +24,8 @@ _COUNT_FLAVORS = {"seurat_v3", "pearson_residuals"}
 class HVGMethod(AnalysisMethod):
     """Scanpy HVG selection; flavor + layer chosen by config.
 
-    Writes var['highly_variable'] but never subsets the object. To consume
-    the HVGs, also set dimensionality.use_highly_variable: true.
+    Writes var['highly_variable'] but never subsets the object. PCA and scVI
+    consume the flag automatically once it exists.
     """
 
     name = "seurat"

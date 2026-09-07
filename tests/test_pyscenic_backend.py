@@ -25,7 +25,12 @@ def test_run_script_builds_micromamba_python_argv(monkeypatch, tmp_path) -> None
     script = tmp_path / "job.py"
     script.write_text("print('hi')\n")
     b = build_pyscenic_backend()
-    monkeypatch.setattr(b, "_launcher_available", lambda: True)
+    # Resolve to a known path so the assertion does not depend on where this machine
+    # installed micromamba: argv[0] is the resolved launcher, not the bare name.
+    monkeypatch.setattr(
+        "cellquorum.backends.pyscenic_backend.resolve_launcher",
+        lambda _name: "/usr/bin/micromamba",
+    )
 
     captured = {}
 
@@ -38,7 +43,7 @@ def test_run_script_builds_micromamba_python_argv(monkeypatch, tmp_path) -> None
     b.run_script(script, ["--flag", "value"], timeout=123)
 
     assert captured["cmd"] == [
-        "micromamba",
+        "/usr/bin/micromamba",
         "run",
         "-n",
         "pyscenic_env",

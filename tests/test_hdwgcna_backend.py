@@ -13,7 +13,14 @@ from cellquorum.backends.hdwgcna_backend import (
 
 
 def test_unavailable_when_launcher_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("shutil.which", lambda _name: None)
+    """Patching ``shutil.which`` no longer hides the launcher.
+
+    The backends share ``resolve_launcher`` now, which falls back to the conventional install
+    directories when ``which`` comes up empty — micromamba installs as a shell function and
+    so is invisible to ``which``, which is why six backends all reported it missing on a
+    machine that had it. Hiding it in a test therefore means patching that.
+    """
+    monkeypatch.setattr("cellquorum.backends.hdwgcna_backend.resolve_launcher", lambda _name: None)
     backend = build_hdwgcna_backend()
     status = backend.status()
     assert status.available is False
@@ -25,7 +32,10 @@ def test_run_script_builds_micromamba_rscript_command(
 ) -> None:
     script = tmp_path / "hdwgcna.R"
     script.write_text("cat('ok')\n")
-    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+    monkeypatch.setattr(
+        "cellquorum.backends.hdwgcna_backend.resolve_launcher",
+        lambda _name: "/usr/bin/micromamba",
+    )
     captured: dict[str, list[str]] = {}
 
     def fake_run(cmd, **_kwargs):  # noqa: ANN001, ANN003
@@ -36,8 +46,9 @@ def test_run_script_builds_micromamba_rscript_command(
     backend = build_hdwgcna_backend(env_name="hdwgcna_env")
     proc = backend.run_script(script, ["a", "b"])
     assert proc.returncode == 0
+    # The resolved absolute path, not the bare name — see resolve_launcher.
     assert captured["cmd"][:5] == [
-        "micromamba",
+        "/usr/bin/micromamba",
         "run",
         "-n",
         "hdwgcna_env",

@@ -122,9 +122,12 @@ def test_config_echo_excludes_per_stage_disabled():
     cfg = CellQuorumConfig.model_validate(
         {
             "project": {"name": "test"},
-            "stages": {"dimensionality": True, "clustering": True},
-            "dimensionality": {"enabled": False, "method": "pca"},
-            "clustering": {"enabled": True, "method": "leiden"},
+            # Disabled in `stages:` — the one place a stage is switched. Stating
+            # `dimensionality.enabled: False` alongside `stages.dimensionality: True`, as
+            # this test used to, is now a config error rather than a silent skip.
+            "stages": {"dimensionality": False, "clustering": True},
+            "dimensionality": {"method": "pca"},
+            "clustering": {"method": "leiden"},
         }
     )
     # Provide planned_stage_names with only clustering (dimensionality excluded).

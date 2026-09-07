@@ -119,26 +119,27 @@ def test_an_unmapped_label_keeps_its_name_and_is_reported() -> None:
 
 # ═══ Against the real atlas ════════════════════════════════════════════════════════
 
-_ATLAS = (
-    "/mnt/e/atopic_dermatitis_singlecell_atlas/data/CellxGene/"
-    "e046218f-6a66-46f9-a91c-7f26b4ee00c2.h5ad"
-)
-
 
 @pytest.mark.integration
 def test_the_real_skin_atlas_has_a_clean_hierarchy() -> None:
     """The property this design depends on, checked against the actual reference.
 
-    Marked integration because it needs the 2.3 GB atlas. If a future atlas release breaks the
-    tree, `_label_hierarchy` raises at run time — but finding out here is cheaper than finding
-    out after scANVI has trained.
+    Marked integration because it needs the 2.3 GB atlas, which is named by an environment
+    variable rather than a path: a literal made the suite depend on one machine's drive
+    letter, so it skipped silently everywhere else while looking like coverage.
+
+    If a future atlas release breaks the tree, `_label_hierarchy` raises at run time — but
+    finding out here is cheaper than finding out after scANVI has trained.
     """
-    import pathlib
+    from _external_data import require_external_file
 
-    if not pathlib.Path(_ATLAS).exists():
-        pytest.skip("skin atlas not present on this machine")
+    path = require_external_file(
+        "CELLQUORUM_TEST_SKIN_ATLAS",
+        what="the CellxGene atopic-dermatitis skin atlas .h5ad (Cell_type + "
+        "Cell_type_granular columns)",
+    )
 
-    atlas = ad.read_h5ad(_ATLAS, backed="r")
+    atlas = ad.read_h5ad(path, backed="r")
     hierarchy = _label_hierarchy(atlas, "Cell_type_granular", "Cell_type")
 
     assert len(hierarchy) == 86

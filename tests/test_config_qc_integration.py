@@ -220,67 +220,28 @@ def test_qc_stage_resolves_top_level_config_qc_block() -> None:
     assert resolved_qc_config is config.qc
 
 
-def test_qc_stage_enablement_uses_stage_flag_and_qc_flag() -> None:
+def test_qc_stage_enablement_follows_the_stages_block() -> None:
     """
-    Verify QC stage enablement respects both top-level and QC-level flags.
+    Verify QC enablement comes from ``stages.qc`` alone.
 
-    The top-level stages.qc flag controls whether QC is allowed to run, while
-    qc.enabled controls the QC module itself.
+    This test used to assert an AND over two flags -- ``stages.qc`` and ``qc.enabled`` --
+    and built configs where the two disagreed to prove each could veto. That design is the
+    one that let ``stages.feature_selection: true`` be planned, reached, and then skipped
+    "disabled by config", so PCA and scVI ran on all ~33,000 genes. Whether a stage runs is
+    declared once now, and a contradiction is refused at load rather than resolved.
     """
 
-    # Build config with top-level QC stage disabled.
-    top_level_disabled = CellQuorumConfig(
-        stages={
-            "qc": False,
-        },
-        qc={
-            "enabled": True,
-        },
-    )
+    # Disabling via the stages block disables the stage.
+    disabled = CellQuorumConfig(stages={"qc": False})
+    assert disabled.qc.enabled is False
+    assert is_qc_stage_enabled(SimpleNamespace(config=disabled), disabled.qc) is False
 
-    # Confirm top-level stage selection disables QC.
-    assert (
-        is_qc_stage_enabled(
-            SimpleNamespace(config=top_level_disabled),
-            top_level_disabled.qc,
-        )
-        is False
-    )
+    # Enabling via the stages block reaches the QC block's own gate.
+    enabled = CellQuorumConfig(stages={"qc": True})
+    assert enabled.qc.enabled is True
+    assert is_qc_stage_enabled(SimpleNamespace(config=enabled), enabled.qc) is True
 
-    # Build config with QC module disabled.
-    qc_disabled = CellQuorumConfig(
-        stages={
-            "qc": True,
-        },
-        qc={
-            "enabled": False,
-        },
-    )
-
-    # Confirm module-level QC flag disables QC.
-    assert (
-        is_qc_stage_enabled(
-            SimpleNamespace(config=qc_disabled),
-            qc_disabled.qc,
-        )
-        is False
-    )
-
-    # Build config with both flags enabled.
-    qc_enabled = CellQuorumConfig(
-        stages={
-            "qc": True,
-        },
-        qc={
-            "enabled": True,
-        },
-    )
-
-    # Confirm QC is enabled when both flags allow it.
-    assert (
-        is_qc_stage_enabled(
-            SimpleNamespace(config=qc_enabled),
-            qc_enabled.qc,
-        )
-        is True
-    )
+    # Saying it in the stage block still works, and the stages block is kept in step.
+    block_style = CellQuorumConfig(qc={"enabled": False})
+    assert block_style.stages.qc is False
+    assert is_qc_stage_enabled(SimpleNamespace(config=block_style), block_style.qc) is False

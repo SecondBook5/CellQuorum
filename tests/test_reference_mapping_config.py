@@ -18,7 +18,8 @@ def test_reference_mapping_config_defaults():
     assert rm.cv_folds == 3
     assert rm.knn_k == 30
     assert rm.key_added == "ref_state"
-    assert c.stages.reference_mapping is True
+    # Both switches agree: reference mapping needs an atlas h5ad, which has no default.
+    assert c.stages.reference_mapping is False
 
 
 def test_reference_mapping_robustness_knobs_are_configurable():

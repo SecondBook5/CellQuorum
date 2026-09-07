@@ -24,8 +24,14 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-# harmonypy's own default. Named here so both call sites inherit one value.
-DEFAULT_MAX_ITER_HARMONY = 10
+# Iteration cap for Harmony. Named here so every call site inherits one value.
+#
+# Raised from harmonypy's own default of 10, which is too low once a cohort has many batches:
+# on this 18-library skin cohort Harmony hit 10 without converging and returned a partially
+# corrected embedding, which then propagates into everything reading obsm['X_pca_harmony'].
+# Raising the cap is close to free because harmonypy stops at convergence and reports the
+# iterations it actually used — a dataset that converges at 12 still costs 12.
+DEFAULT_MAX_ITER_HARMONY = 50
 
 
 @dataclass(frozen=True)

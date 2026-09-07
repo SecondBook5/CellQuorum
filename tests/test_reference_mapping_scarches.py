@@ -182,16 +182,29 @@ def test_mean_soft_probabilities_aligns_mismatched_label_columns():
     assert mean.sum(axis=1).to_numpy()[0] == pytest.approx(1.0)
 
 
-def test_scarches_skips_on_no_shared_genes(tmp_path: Path) -> None:
-    """ScArchesMethod should MethodSkip if atlas and query have no shared genes."""
+def test_scarches_fails_loudly_on_no_shared_genes(tmp_path: Path) -> None:
+    """No overlap is a misconfiguration, so it raises rather than skipping.
+
+    This asserted ``MethodSkip``. On the real cohort that meant the 2.3 GB CellxGene atlas
+    loaded, shared exactly zero genes with the query (Ensembl var_names against Cell Ranger
+    symbols), and the stage removed itself from the run with one log line — so a pipeline built
+    around atlas mapping did no atlas mapping, and the first visible symptom was a *later*
+    stage failing on the absent ``ref_cell_type_granular`` column.
+
+    A stage that IS the analysis must not opt out quietly. The gene-space mismatch that caused
+    it is handled by `_align_atlas_gene_space`; this covers what is left, a genuinely disjoint
+    pair, and the error has to name both identifier styles so the cause is readable.
+    """
+    from cellquorum.core.exceptions import CellQuorumDataError
+
     atlas = _synth(200, 0)
     atlas.var_names = [f"atlas_g{i}" for i in range(50)]
     atlas.write_h5ad(tmp_path / "atlas.h5ad")
     query = _synth(60, 1, labels=False)
     query.var_names = [f"query_g{i}" for i in range(50)]
-    res = ScArchesMethod().run(query, _cfg(tmp_path / "atlas.h5ad"), context=_Ctx(tmp_path))
-    assert isinstance(res, MethodSkip)
-    assert "no shared genes" in res.reason.lower()
+
+    with pytest.raises(CellQuorumDataError, match="share no genes"):
+        ScArchesMethod().run(query, _cfg(tmp_path / "atlas.h5ad"), context=_Ctx(tmp_path))
 
 
 def test_scarches_skips_on_too_few_atlas_cells(tmp_path: Path) -> None:
