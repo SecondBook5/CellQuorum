@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,6 +45,19 @@ class RscriptBackend(BaseBackend):
 
     # Store the timeout used for script execution (separate from availability checks).
     script_timeout_seconds: int = 600
+
+    # Address-space ceiling for the R child, in GB. 0 or None disables it.
+    #
+    # A timeout bounds how LONG a subprocess may run; nothing bounded how much memory it could
+    # take, and one R process measured 36.9 GB on a 43 GB VM while the pipeline's own Python held
+    # 4.4 GB. Under WSL2 that memory is host-backed, so the guest died with no R error, no
+    # traceback, no stage record and nothing in the Windows event log -- five runs lost, each
+    # looking like a different bug.
+    #
+    # 12 GB is generous for every script here (the heaviest measured 889 MB for the work that
+    # matters) while leaving the guest able to report the failure. R's own message names the size
+    # it wanted, which is the diagnosis: "cannot allocate vector of size 31.6 Gb".
+    max_memory_gb: float | None = 12.0
 
     # Store Rscript backend requirements.
     requirement_list: list[BackendRequirement] = field(
@@ -242,8 +256,41 @@ class RscriptBackend(BaseBackend):
             timeout=timeout if timeout is not None else self.script_timeout_seconds,
         )
 
+    def _memory_limit_preexec(self) -> Callable[[], None] | None:
+        """Build a ``preexec_fn`` that caps the child's address space, or None.
+
+        An R subprocess must not be able to kill the machine. One reached **36.9 GB** on a 43 GB
+        VM -- measured, with the pipeline's own Python holding only 4.4 GB -- and because that
+        memory is host-backed under WSL2 the guest died outright: no R error, no Python
+        traceback, no stage record, nothing in the Windows event log. Five runs were lost to
+        that, and each one looked like a different bug.
+
+        ``RLIMIT_AS`` turns it into an ordinary failure. R reports "cannot allocate vector of
+        size ...", the script exits non-zero, and the stage skips with a recorded reason. A
+        diagnostic being unavailable is a result; taking the machine down is not.
+
+        Returns:
+            A callable for ``subprocess(preexec_fn=...)``, or None when no limit is configured
+            or the platform has no ``resource`` module.
+        """
+        limit_gb = self.max_memory_gb
+        if not limit_gb or limit_gb <= 0:
+            return None
+        try:
+            import resource
+        except ImportError:  # pragma: no cover - Windows
+            return None
+
+        limit_bytes = int(limit_gb * 1024**3)
+
+        def _apply() -> None:
+            # Soft AND hard: R must not be able to raise its own ceiling.
+            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+
+        return _apply
+
     def _run(self, cmd: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
-        """Run an Rscript command from a throwaway working directory.
+        """Run an Rscript command from a throwaway working directory, under a memory cap.
 
         R opens a default graphics device the first time anything draws, and in a
         non-interactive session that device is ``pdf()`` writing ``Rplots.pdf``
@@ -256,6 +303,8 @@ class RscriptBackend(BaseBackend):
         A per-call temporary directory absorbs that and takes it away again. It is
         safe because every R script here receives absolute paths as arguments: none
         of them calls ``setwd``, reads ``getwd``, or names a relative file.
+
+        See :meth:`_memory_limit_preexec` for why the address space is capped.
         """
 
         with tempfile.TemporaryDirectory(prefix="cellquorum-rscript-") as scratch:
@@ -266,6 +315,7 @@ class RscriptBackend(BaseBackend):
                 text=True,
                 timeout=timeout,
                 cwd=scratch,
+                preexec_fn=self._memory_limit_preexec(),  # noqa: PLW1509
             )
 
     def _rscript_available(self) -> bool:
