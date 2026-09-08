@@ -51,6 +51,19 @@ def _style_axes(ax: Axes, axis_labels: tuple[str, str]) -> None:
 _PAGA_EDGE = "#5a5a5a"
 
 
+def _adaptive_point_size(n_cells: int) -> float:
+    """Marker size that shrinks with cell count so a large cohort keeps its texture.
+
+    A size tuned for ~20k cells renders a 167k-cell cohort as fat overlapping discs —
+    the "cartooney" poster-paint look — instead of a scatter whose internal density is
+    visible. Calibrated so ~167k cells land near 1.2 (validated by eye against the
+    reference atlas figure), with a floor for pathological sizes and a ceiling so small
+    datasets still show. Shared by the categorical panel and the continuous overlays so
+    the two read as one figure set.
+    """
+    return float(np.clip(3.5 * (20_000.0 / max(n_cells, 1)) ** 0.5, 0.5, 6.0))
+
+
 def _figsize_for(n_groups: int) -> tuple[float, float]:
     """Grow the canvas with group count so many named labels have room to repel."""
     if n_groups <= 12:
@@ -202,9 +215,7 @@ def categorical_embedding(
 
     # Marker area shrinks as the cohort grows, so a 200,000-cell atlas keeps its
     # internal structure visible instead of saturating into solid colour.
-    size = point_size
-    if size is None:
-        size = float(np.clip(6.0 * (20_000.0 / max(n_obs, 1)) ** 0.5, 1.2, 6.0))
+    size = _adaptive_point_size(n_obs) if point_size is None else point_size
 
     width, height = _figsize_for(len(cats))
     if legend:
@@ -226,7 +237,9 @@ def categorical_embedding(
             xy[mask, 1],
             s=size,
             c=palette[cat],
-            alpha=0.8,
+            # 0.6, not full opacity: overlapping points then build visible density
+            # within a cluster instead of flooding it to one flat poster colour.
+            alpha=0.6,
             linewidths=0,
             rasterized=True,
             label=cat,
@@ -354,39 +367,62 @@ def continuous_overlay(
     axis_labels: tuple[str, str],
     cmap: str = _SEQUENTIAL_CMAP,
     sort_high_on_top: bool = True,
-    clip_pct: float = 0.0,
+    clip_pct: float | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
+    point_size: float | None = None,
 ) -> Figure:
     """Color a 2-D embedding scatter by a per-cell value vector.
 
     ``clip_pct`` view-clips the color scale to the [clip_pct, 100-clip_pct]
     percentiles when explicit ``vmin``/``vmax`` are not supplied (keeps outliers
-    from flattening the ramp). For signed layers (e.g. MAGIC z-scores) pass
+    from flattening the ramp). ``None`` picks a gentle default (2% each tail) for
+    unsigned data, because a handful of very high-expressing cells otherwise
+    compress every other cell into the dark end of the ramp and the panel reads as
+    "off everywhere but a few dots". For signed layers (e.g. MAGIC z-scores) pass
     ``cmap="RdBu_r", vmin=-2, vmax=2``.
+
+    ``point_size=None`` scales the marker with cell count, matching the categorical
+    panel: a size tuned for ~20k cells renders a 167k-cell cohort as fat overlapping
+    discs (the "cartooney" look) rather than a smooth density.
     """
     coords = np.asarray(coords)[:, :2]
     values = np.asarray(values, dtype=float)
     order = np.argsort(values, kind="mergesort") if sort_high_on_top else np.arange(len(values))
 
-    if vmin is None and vmax is None and clip_pct > 0 and np.isfinite(values).any():
-        finite = values[np.isfinite(values)]
-        vmin, vmax = np.percentile(finite, [clip_pct, 100 - clip_pct])
+    # Gentle default clip so outliers do not flatten the ramp. Skipped when the caller
+    # sets explicit vmin/vmax (signed layers), and harmless on near-constant data.
+    if vmin is None and vmax is None:
+        pct = 2.0 if clip_pct is None else clip_pct
+        if pct > 0 and np.isfinite(values).any():
+            finite = values[np.isfinite(values)]
+            lo, hi = np.percentile(finite, [pct, 100 - pct])
+            if hi > lo:  # a degenerate all-equal vector would give lo==hi
+                vmin, vmax = lo, hi
 
-    fig = Figure(figsize=(5.0, 5.0))
+    # Same n-adaptive sizing as the categorical panel, so the two read as one figure set.
+    size = _adaptive_point_size(len(values)) if point_size is None else point_size
+
+    fig = Figure(figsize=(5.6, 5.0))
     ax = fig.add_subplot(111)
     sctr = ax.scatter(
         coords[order, 0],
         coords[order, 1],
         c=values[order],
         cmap=cmap,
-        s=6.0,
+        s=size,
+        alpha=0.9,
         linewidths=0,
         rasterized=True,
         vmin=vmin,
         vmax=vmax,
     )
-    fig.colorbar(sctr, ax=ax, shrink=0.55, aspect=18)
+    cbar = fig.colorbar(sctr, ax=ax, shrink=0.55, aspect=22, pad=0.02)
+    # Thin, light frame: the default heavy dark outline reads as a clunky box beside
+    # the frameless scatter.
+    cbar.outline.set_linewidth(0.4)
+    cbar.outline.set_edgecolor("#BDBDBD")
+    cbar.ax.tick_params(labelsize=8, length=2, width=0.4)
     ax.set_title(title)
     _style_axes(ax, axis_labels)
     return fig
