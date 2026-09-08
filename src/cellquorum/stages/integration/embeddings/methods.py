@@ -137,6 +137,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
         threshold = float(config.get("paga_threshold", 0.2))
+        min_label_frac = float(config.get("min_label_frac", 0.001))
         tags = list(config.get("embeddings", ["umap", "phate"]))
         groupby = compute.resolve_paga_groupby(
             adata,
@@ -158,6 +159,10 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
             if spec["obsm"] not in adata.obsm:
                 warnings.append(f"categorical_embedding: {spec['obsm']} absent (tag '{tag}')")
                 continue
+            # Two panels, not one. The PAGA scaffold answers "which populations sit
+            # adjacent", which is a different question from "where is each population",
+            # and drawn over the points it reads as a grey hairball across the middle of
+            # the figure that goes in the paper.
             try:
                 fig = plots.categorical_embedding(
                     adata,
@@ -165,9 +170,35 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                     basis=spec["obsm"],
                     axis_labels=spec["axis"],
                     paga_threshold=threshold,
+                    paga_overlay=False,
+                    min_label_frac=min_label_frac,
                 )
                 paths = save_figure(
                     fig, figures_dir, f"categorical_{tag}", formats=formats, dpi=dpi
+                )
+                artifacts += figure_artifacts(
+                    paths,
+                    name="embedding_figure",
+                    description=f"{tag} categorical embedding ({groupby}).",
+                )
+                n_figures += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"categorical_embedding: {tag} failed: {str(exc)[:200]}")
+
+            if "paga" not in adata.uns:
+                continue
+            try:
+                fig = plots.categorical_embedding(
+                    adata,
+                    groupby,
+                    basis=spec["obsm"],
+                    axis_labels=spec["axis"],
+                    paga_threshold=threshold,
+                    paga_overlay=True,
+                    min_label_frac=min_label_frac,
+                )
+                paths = save_figure(
+                    fig, figures_dir, f"categorical_{tag}_paga", formats=formats, dpi=dpi
                 )
                 artifacts += figure_artifacts(
                     paths,
@@ -176,7 +207,9 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                 )
                 n_figures += 1
             except Exception as exc:  # noqa: BLE001
-                warnings.append(f"categorical_embedding: {tag} failed: {str(exc)[:200]}")
+                warnings.append(
+                    f"categorical_embedding: {tag} paga overlay failed: {str(exc)[:200]}"
+                )
 
         if n_figures == 0:
             return self._skip("no embeddings available to render", warnings=warnings)

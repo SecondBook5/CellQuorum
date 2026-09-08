@@ -94,13 +94,24 @@ def categorical_embedding(
     basis: str,
     axis_labels: tuple[str, str],
     paga_threshold: float = 0.2,
-    point_size: float = 6.0,
+    point_size: float | None = None,
+    paga_overlay: bool = True,
+    min_label_frac: float = 0.001,
 ) -> Figure:
     """Per-group scatter on `basis`, with PAGA graph overlaid when present.
 
     PAGA nodes are drawn at per-group centroids in the embedding; edges are the
     upper-triangle connectivities above `paga_threshold`, width ~ normalized weight.
     Categories iterate in the categorical's category order (or sorted for non-categorical).
+
+    ``point_size=None`` scales the marker with cell count, because a size tuned for
+    20,000 cells paints a 200,000-cell cohort into flat blocks where the rare
+    populations are the ones that disappear.
+
+    ``min_label_frac`` suppresses the on-plot name (and the PAGA node) for any group
+    holding less than that fraction of cells. Without it a 2-cell category is drawn
+    with the same weight as a 70,000-cell lineage, and its label lands in the middle
+    of a real cluster it has no claim to.
     """
     xy = np.asarray(adata.obsm[basis])[:, :2]
     orig_col = adata.obs[group_key]
@@ -130,16 +141,34 @@ def categorical_embedding(
         if _m.any():
             centroids[_cat] = np.array([np.median(xy[_m, 0]), np.median(xy[_m, 1])])
 
+    # Counts drive three separate decisions below: draw order, the label floor, and
+    # which PAGA nodes are worth drawing.
+    counts = groups.value_counts()
+    n_obs = int(len(groups))
+    label_floor = max(1, int(round(min_label_frac * n_obs)))
+
+    # Marker area shrinks as the cohort grows, so a 200,000-cell atlas keeps its
+    # internal structure visible instead of saturating into solid colour.
+    size = point_size
+    if size is None:
+        size = float(np.clip(6.0 * (20_000.0 / max(n_obs, 1)) ** 0.5, 1.2, 6.0))
+
     fig = Figure(figsize=_figsize_for(len(cats)))
     ax = fig.add_subplot(111)
-    for cat in cats:
+    # ABUNDANT FIRST, so rare populations are drawn last and stay visible. Iterating
+    # `cats` instead put whichever category happened to sort last on top: on this
+    # cohort the 70,000-cell fibroblast blob buried LEC and Plasma, the two
+    # populations the analysis is about. `cats` order is still what the palette and
+    # the PAGA connectivity matrix are indexed by, so it is kept for both.
+    draw_order = [c for c in counts.index if c in palette]
+    for cat in draw_order:
         mask = (groups == cat).to_numpy()
         if not mask.any():
             continue  # declared-but-empty category: nothing to draw
         ax.scatter(
             xy[mask, 0],
             xy[mask, 1],
-            s=point_size,
+            s=size,
             c=palette[cat],
             alpha=0.8,
             linewidths=0,
@@ -152,7 +181,7 @@ def categorical_embedding(
     # normalized connectivity, so weak links fade toward invisible instead of
     # crowding the plot into a black hairball when there are many groups.
     node_size = 90.0 if len(cats) <= 15 else 55.0
-    paga = adata.uns.get("paga")
+    paga = adata.uns.get("paga") if paga_overlay else None
     if paga is not None and "connectivities" in paga:
         conn = paga["connectivities"]
         conn = conn.toarray() if hasattr(conn, "toarray") else np.asarray(conn)
@@ -160,10 +189,13 @@ def categorical_embedding(
         # `cats[i]` aligns with connectivity row/col i (both from cat.codes order).
         # A category with no cells yields a NaN centroid; guard so its edges/node
         # are skipped rather than drawn at a bogus position.
+        # Below-floor categories are left NaN so neither their node nor their edges
+        # are drawn: a node whose centroid is a handful of cells sits wherever those
+        # cells happen to fall, and every edge it carries is drawn to that accident.
         pos = np.full((n, 2), np.nan)
         for i in range(min(n, len(cats))):
             centroid = centroids.get(cats[i])
-            if centroid is not None:
+            if centroid is not None and int(counts.get(cats[i], 0)) >= label_floor:
                 pos[i] = centroid
         mx = conn.max() or 1.0
         for i in range(n):
@@ -202,7 +234,7 @@ def categorical_embedding(
     texts = []
     for cat in cats:
         centroid = centroids.get(cat)
-        if centroid is None:
+        if centroid is None or int(counts.get(cat, 0)) < label_floor:
             continue
         texts.append(
             ax.text(

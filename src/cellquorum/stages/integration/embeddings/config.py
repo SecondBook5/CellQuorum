@@ -73,6 +73,10 @@ class EmbeddingsConfig(StrictBaseModel):
         embeddings: Which bases to render figures for.
         figure_formats: File formats per figure.
         dpi: Raster resolution.
+        min_label_frac: A group holding less than this fraction of cells is drawn
+            but not named, and gets no PAGA node. Guards against a handful of cells
+            being labelled with the same authority as a major lineage, with its
+            name landing on top of a cluster it is not.
         overlay: Feature-overlay specification.
         magic: Opt-in scoped MAGIC configuration.
     """
@@ -88,6 +92,7 @@ class EmbeddingsConfig(StrictBaseModel):
     embeddings: list[str] = ["umap", "phate"]
     figure_formats: list[str] = ["pdf", "png"]
     dpi: int = 300
+    min_label_frac: float = 0.001
     overlay: OverlayConfig = Field(default_factory=OverlayConfig)
     magic: MagicConfig = Field(default_factory=MagicConfig)
 

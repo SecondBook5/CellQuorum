@@ -22,6 +22,7 @@ _EMB_CONFIG_KEYS = (
     "embeddings",
     "figure_formats",
     "dpi",
+    "min_label_frac",
     "overlay",
     "magic",
 )
@@ -68,6 +69,15 @@ class EmbeddingsStage(MethodDispatchStage):
         if "cluster_key" not in augmented:
             clustering = getattr(config, "clustering", None)
             augmented["cluster_key"] = getattr(clustering, "key_added", "leiden")
+        # Graph resolution FOLLOWS the clustering stage rather than being restated here.
+        # When the UMAP has to rebuild the neighbor graph on a different representation,
+        # it must rebuild it at the same k the clusters were found at, or the picture and
+        # the cluster labels describe two differently-resolved graphs.
+        if "n_neighbors" not in augmented:
+            clustering = getattr(config, "clustering", None)
+            n_neighbors = getattr(clustering, "n_neighbors", None)
+            if n_neighbors is not None:
+                augmented["n_neighbors"] = n_neighbors
         # Named granular subtype column: sits between the coarse cell-type column
         # and numeric leiden in PAGA grouping precedence, so a per-lineage object
         # is labelled by its named subtypes instead of "0"/"1"/"2". The consensus
