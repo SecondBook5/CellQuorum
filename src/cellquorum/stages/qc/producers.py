@@ -374,6 +374,16 @@ def multiplet_agreement_severity(
     detectors rate this cell extreme for their own distribution.
     """
     present = [column for column in DOUBLET_SCORE_COLUMNS if column in obs.columns]
+
+    # An entirely-NaN column is a detector that DID NOT RUN, not a detector that ran and
+    # could not score some cells. The distinction is load-bearing: with `skipna=False`
+    # below, one all-NaN column would drive the per-cell minimum to NaN everywhere, so a
+    # single dead detector silently voids the whole multiplet family. On the lymphedema
+    # cohort scDblFinder (the R backend) produced all-NaN and did exactly that — 201,871
+    # cells with no multiplet severity, so no cell could ever be flagged a probable
+    # multiplet. Agreement is only meaningful among the detectors that actually ran; drop
+    # the absent ones first.
+    present = [column for column in present if not obs[column].isna().all()]
     if not present:
         return None
 
@@ -392,8 +402,9 @@ def multiplet_agreement_severity(
         for column in present
     ]
 
-    # skipna=False so a detector that could not score a cell leaves the agreement unknown
-    # rather than silently deferring to the other detector.
+    # skipna=False so a detector that ran but could not score THIS cell leaves the
+    # agreement unknown rather than silently deferring to the other detector. (Detectors
+    # that scored no cells at all were already dropped above.)
     return pd.concat(severities, axis=1).min(axis=1, skipna=False)
 
 

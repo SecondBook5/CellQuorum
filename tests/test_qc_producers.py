@@ -436,6 +436,46 @@ def test_one_detector_alone_does_not_reach_agreement() -> None:
     assert (severity.iloc[lone] < 0.5).all()
 
 
+def test_dead_detector_does_not_void_the_family() -> None:
+    """An all-NaN detector column means that detector DID NOT RUN, so agreement should
+
+    fall back to the detector that did — not return NaN everywhere. This is the
+    lymphedema bug: scDblFinder produced all-NaN, and with skipna=False the per-cell
+    minimum went NaN for all 201,871 cells, so no cell could ever be a probable multiplet.
+    """
+    rng = np.random.default_rng(RNG_SEED)
+    n = 500
+    obs = pd.DataFrame(
+        {
+            "sample_id": ["A"] * n,
+            "doublet_score_scdblfinder": np.full(n, np.nan),  # detector did not run
+            "doublet_score_scrublet": rng.normal(0.031, 0.006, n),
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    hot = np.arange(10)
+    obs.loc[obs.index[hot], "doublet_score_scrublet"] = 0.60
+
+    severity = multiplet_agreement_severity(obs, obs["sample_id"])
+    assert severity is not None
+    assert not severity.isna().all(), "a dead detector voided the whole family"
+    assert (severity.iloc[hot] > 0.5).all(), "the surviving detector's doublets were lost"
+
+
+def test_all_detectors_dead_returns_none() -> None:
+    """If every detector column is all-NaN, the family is genuinely absent -> None."""
+    n = 100
+    obs = pd.DataFrame(
+        {
+            "sample_id": ["A"] * n,
+            "doublet_score_scdblfinder": np.full(n, np.nan),
+            "doublet_score_scrublet": np.full(n, np.nan),
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    assert multiplet_agreement_severity(obs, obs["sample_id"]) is None
+
+
 def test_redundant_doublet_score_column_is_not_double_counted() -> None:
     """`doublet_score` copies a detector, so it must not satisfy agreement twice."""
     rng = np.random.default_rng(RNG_SEED)
