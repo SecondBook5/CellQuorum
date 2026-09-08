@@ -224,7 +224,10 @@ def test_diagnostics_prefers_the_prepared_reference_over_a_configured_path(
     }
 
     # Mirror the resolution the method performs, which is what a caller depends on.
-    config = {"reference_h5ad": "/mnt/e/some/raw_atlas.h5ad", "cell_type_col": "cell_type"}
+    config = {
+        "reference_h5ad": str(tmp_path / "configured_raw_atlas.h5ad"),
+        "cell_type_col": "cell_type",
+    }
     resolved = query.uns.get("cellquorum", {}).get("reference_prepared")
     assert Path(str(resolved["path"])).is_file()
     assert str(resolved["path"]) != config["reference_h5ad"]
