@@ -337,6 +337,8 @@ def test_default_stage_registry_contains_qc() -> None:
         "population_identity",
         "preprocessing",
         "qc",
+        "qc_finalization",
+        "query_projection",
         "reference_mapping",
         "state_scoring",
         "subclustering",

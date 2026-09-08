@@ -44,10 +44,18 @@ import cellquorum.stages.integration.stage  # noqa: F401
 # Clustering → annotation → sub-structure → label reconciliation.
 import cellquorum.stages.clustering.stage  # noqa: F401
 import cellquorum.stages.annotation.stage  # noqa: F401
+
+# query_projection (105) places borderline cells on the frozen core manifold; it must run
+# after annotation (90, so core labels exist) and before qc_finalization (135) consumes it.
+import cellquorum.stages.qc.query_projection_stage  # noqa: F401
 import cellquorum.stages.clustering.subclustering.stage  # noqa: F401
 import cellquorum.stages.annotation.adjudication.stage  # noqa: F401
 import cellquorum.stages.annotation.reference_mapping.stage  # noqa: F401
 import cellquorum.stages.annotation.consensus.stage  # noqa: F401
+
+# qc_finalization (135) decides rescue and writes qc_state_final, after reference_mapping
+# (120) and consensus (130) so atlas support is available as rescue evidence.
+import cellquorum.stages.qc.finalization  # noqa: F401
 
 # Diagnostics run after reference mapping so transferred labels can be audited.
 import cellquorum.stages.annotation.diagnostics.stage  # noqa: F401

@@ -133,9 +133,15 @@ GOLDEN_STAGE_ORDER = [
     "integration_gate",
     "clustering",
     "annotation",
+    # order=105: place borderline cells on the frozen core manifold, after annotation
+    # (labels exist) and before qc_finalization (consumes it).
+    "query_projection",
     "adjudication",
     "reference_mapping",
     "annotation_consensus",
+    # order=135: per-cell rescue → qc_state_final, after reference_mapping/consensus so
+    # atlas support is available as rescue evidence.
+    "qc_finalization",
     "annotation_diagnostics",
     "population_identity",
     # order=155, deliberately AFTER reference_mapping (120) and population_identity
@@ -165,7 +171,7 @@ GOLDEN_STAGE_ORDER = [
     "module_remodeling",
 ]
 
-# The 33 implemented stages, alphabetical — mirrors the executor registry
+# The 35 implemented stages, alphabetical — mirrors the executor registry
 # snapshot in tests/test_pipeline_executor.py:302-334.
 GOLDEN_IMPLEMENTED_SORTED = sorted(n for n in GOLDEN_STAGE_ORDER if n not in PLANNED)
 
@@ -196,6 +202,8 @@ STAGES_WITHOUT_CATEGORY = {
     "adjudication",
     "annotation_consensus",
     "population_identity",
+    "query_projection",
+    "qc_finalization",
 }
 
 
@@ -206,7 +214,7 @@ def test_catalog_order_matches_golden():
 def test_catalog_implemented_set_matches_golden():
     impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
     assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 33
+    assert len(GOLDEN_IMPLEMENTED_SORTED) == 35
 
 
 def test_orders_are_unique_and_ascending():

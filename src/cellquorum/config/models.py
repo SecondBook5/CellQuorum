@@ -109,6 +109,8 @@ from cellquorum.stages.preprocessing.feature_selection.config import FeatureSele
 
 # Import the QC configuration model.
 from cellquorum.stages.qc.config import QCConfig
+from cellquorum.stages.qc.finalization_config import QCFinalizationConfig
+from cellquorum.stages.qc.query_projection_config import QueryProjectionConfig
 
 # Import the state-scoring configuration model.
 from cellquorum.stages.state_scoring.config import StateScoringConfig
@@ -809,6 +811,16 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether subclustering is enabled. Opt-in: needs a target population named.
     subclustering: bool = False
 
+    # Store whether query projection is enabled: place borderline cells on the frozen
+    # core manifold (order 105). Opt-in — it is only meaningful once graded QC has
+    # produced borderline cells, and it feeds qc_finalization.
+    query_projection: bool = False
+
+    # Store whether QC finalization is enabled: per-cell rescue → qc_state_final
+    # (order 135). Opt-in, and paired with query_projection: without the projection it
+    # can only mark every borderline cell unresolved.
+    qc_finalization: bool = False
+
     # Store whether cluster/state adjudication is enabled.
     adjudication: bool = True
 
@@ -962,6 +974,12 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store subclustering settings.
     subclustering: SubclusteringConfig = Field(default_factory=SubclusteringConfig)
+
+    # Store query-projection settings (borderline → frozen core manifold, order 105).
+    query_projection: QueryProjectionConfig = Field(default_factory=QueryProjectionConfig)
+
+    # Store QC-finalization settings (per-cell rescue → qc_state_final, order 135).
+    qc_finalization: QCFinalizationConfig = Field(default_factory=QCFinalizationConfig)
 
     # Store adjudication settings.
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
