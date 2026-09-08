@@ -19,12 +19,12 @@ that have no module yet.
 | 70 | `integration_gate` | planned |
 | 80 | `clustering` | implemented |
 | 90 | `annotation` | implemented |
-| 100 | `subclustering` | implemented |
 | 110 | `adjudication` | implemented |
 | 120 | `reference_mapping` | implemented |
 | 130 | `annotation_consensus` | implemented |
 | 140 | `annotation_diagnostics` | implemented |
 | 150 | `population_identity` | implemented |
+| 155 | `subclustering` | implemented |
 | 160 | `integration_benchmark` | implemented |
 | 170 | `state_scoring` | implemented |
 | 180 | `discovery` | implemented |

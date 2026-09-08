@@ -1,6 +1,11 @@
-# Pipeline step (order=155): subclustering — resolve finer structure within annotated
-# populations. Runs AFTER reference_mapping (120) and population_identity (150); see the
-# registration below for why.
+# Pipeline step (order=155): subclustering — resolve finer structure within populations.
+#
+# The first line is a machine-read contract (tests/test_stage_headers.py): one line,
+# `order=` matching the registration, ending in a period. Wrapping the sentence onto a
+# second line breaks it, so context goes here instead.
+#
+# Runs AFTER reference_mapping (120) and population_identity (150); see the registration
+# below for why.
 """Subclustering stage implementation."""
 
 from __future__ import annotations

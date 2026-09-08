@@ -133,12 +133,15 @@ GOLDEN_STAGE_ORDER = [
     "integration_gate",
     "clustering",
     "annotation",
-    "subclustering",
     "adjudication",
     "reference_mapping",
     "annotation_consensus",
     "annotation_diagnostics",
     "population_identity",
+    # order=155, deliberately AFTER reference_mapping (120) and population_identity
+    # (150): the atlas labels it focuses on have to exist, and the populations it
+    # subdivides have to have been audited for donor support, before it splits them.
+    "subclustering",
     "integration_benchmark",
     "state_scoring",
     "discovery",
