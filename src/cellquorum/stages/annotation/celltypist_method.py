@@ -9,6 +9,7 @@ CellTypist on that. The input contract asserts the counts layer really is counts
 from __future__ import annotations
 
 import anndata as ad
+import pandas as pd
 import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
@@ -57,9 +58,25 @@ class CellTypistMethod(AnalysisMethod):
         except Exception as exc:  # noqa: BLE001
             return self._skip(f"model '{model}' unavailable", error=str(exc)[:120])
 
-        # Build the CP10k-log space CellTypist expects, FROM COUNTS, on a copy.
-        work = adata.copy()
-        work.X = work.layers[counts_layer].copy()
+        # Build the CP10k-log space CellTypist expects, FROM COUNTS, on a MINIMAL object.
+        #
+        # The counts matrix genuinely has to be copied -- normalize_total and log1p write into it
+        # -- but the rest of the cohort does not. `adata.copy()` duplicated both layers, every
+        # obsm and ~90 obs columns as well, on a 201,871 x 33,417 object.
+        #
+        # The NEIGHBOUR GRAPH is carried deliberately. With `majority_voting`, CellTypist reuses
+        # an existing graph if it finds one ("Detected a neighborhood graph in the input object,
+        # will run over-clustering on the basis of it") and otherwise computes its own. Dropping
+        # it would not just be slower, it would change the over-clustering and therefore the
+        # labels -- so the memory saving must not extend to it. It is sparse: for 201,871 cells at
+        # 15 neighbours, a few hundred MB against the several GB the full copy cost.
+        work = ad.AnnData(
+            X=adata.layers[counts_layer].copy(),
+            obs=pd.DataFrame(index=adata.obs_names),
+            var=pd.DataFrame(index=adata.var_names),
+            obsp={key: adata.obsp[key] for key in adata.obsp},
+            uns={"neighbors": adata.uns["neighbors"]} if "neighbors" in adata.uns else {},
+        )
         sc.pp.normalize_total(work, target_sum=1e4)
         sc.pp.log1p(work)
 

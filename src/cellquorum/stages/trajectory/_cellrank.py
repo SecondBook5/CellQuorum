@@ -151,9 +151,23 @@ def _build_realtime_kernel(
         return None
 
     try:
-        # A dedicated numeric, ordered-categorical time column drives the problem;
-        # never mutate the caller's obs in place.
-        tp_adata = adata.copy()
+        # A dedicated numeric, ordered-categorical time column drives the problem; never mutate
+        # the caller's obs in place.
+        #
+        # That intent is right, but `adata.copy()` bought it by duplicating every matrix, layer,
+        # embedding and graph to add ONE column. This shares the matrices and takes its own obs
+        # instead, which is the only part being written. At stage 30 the object carries counts,
+        # the normalized layer, the sparse denoised layer, spliced/unspliced from the velocyto
+        # looms and four embeddings, so the copy is the largest in the pipeline.
+        tp_adata = ad.AnnData(
+            X=adata.X,
+            obs=adata.obs.copy(),
+            var=adata.var,
+            obsm=adata.obsm,
+            obsp=adata.obsp,
+            layers=adata.layers,
+            uns=adata.uns,
+        )
         levels = sorted(time_numeric.dropna().unique())
         tp_adata.obs["_cq_time"] = pd.Categorical(
             time_numeric.to_numpy(), categories=levels, ordered=True

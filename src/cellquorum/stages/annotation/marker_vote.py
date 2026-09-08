@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
@@ -84,9 +85,18 @@ class MarkerVoteMethod(AnalysisMethod):
             )
 
         # Score genes on the log-normalized layer for each cell-type panel.
-        # Use a temporary object whose .X is the score layer so score_genes reads it.
-        scored = adata.copy()
-        scored.X = scored.layers[score_layer]
+        # A MINIMAL object whose .X is the score layer, so score_genes reads it.
+        #
+        # `adata.copy()` duplicated the whole cohort -- two sparse layers over 201,871 x 33,417,
+        # every obsm and ~90 obs columns -- to change which matrix is .X. score_genes reads the
+        # matrix and the gene names and nothing else. This is the same fault that made
+        # state_scoring allocate 12 GB in one minute and sit at zero free memory until the VM
+        # died; the panels this stage now scores make it run for real rather than no-op.
+        scored = ad.AnnData(
+            X=adata.layers[score_layer],
+            obs=pd.DataFrame(index=adata.obs_names),
+            var=pd.DataFrame(index=adata.var_names),
+        )
         score_cols = {}
         for cell_type, genes in panels.items():
             present = [g for g in genes if g in scored.var_names]

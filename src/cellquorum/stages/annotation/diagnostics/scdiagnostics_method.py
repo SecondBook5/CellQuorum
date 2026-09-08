@@ -380,7 +380,9 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         safe_probs = np.where(probs > 0, probs, 1.0)
         entropy_values = -(probs * np.log2(safe_probs)).sum(axis=1)
 
-        result_adata = adata.copy()
+        # In place: this adds ONE obs column, which never justified copying the cohort. Same
+        # reasoning as the reference-mode path above.
+        result_adata = adata
         result_adata.obs["scdiag_entropy"] = entropy_values
 
         out_csv = scratch / "scdiag_results.csv"

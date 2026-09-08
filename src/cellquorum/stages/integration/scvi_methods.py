@@ -258,8 +258,19 @@ class ScVIMethod(AnalysisMethod):
         hvg_setting = config.get("use_highly_variable")
 
         scvi.settings.seed = random_state
-        work = adata.copy()
-        work.X = work.layers["counts"]
+        # A MINIMAL object: one matrix, plus obs and var.
+        #
+        # `adata.copy()` duplicated every layer and every obsm to change which matrix is .X --
+        # and nothing here reads `work.layers` afterwards. On this cohort that is counts AND
+        # cellquorum_normalized AND the denoised layer AND four embeddings copied so that one of
+        # them could be assigned to X. obs and var are carried whole because the training-set
+        # split, the batch key and the HVG mask all live there, and DataFrames are cheap beside
+        # the matrices. obs is copied because a label column is written into it below.
+        work = ad.AnnData(
+            X=adata.layers["counts"],
+            obs=adata.obs.copy(),
+            var=adata.var.copy(),
+        )
 
         # Restrict to highly variable genes before training.
         #
