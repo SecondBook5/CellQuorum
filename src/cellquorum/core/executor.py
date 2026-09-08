@@ -107,15 +107,11 @@ class PipelineExecutionResult:
 
     Args:
         context: Final pipeline context after executed stages have updated AnnData.
-        stage_results: Successful stage results keyed by stage name.
         stage_execution_records: Lifecycle records for every planned stage decision.
     """
 
     # Store the final pipeline context.
     context: PipelineContext
-
-    # Store successful stage results by stage name.
-    stage_results: dict[str, StageResult] = field(default_factory=dict)
 
     # Store lifecycle records for every planned stage decision.
     stage_execution_records: list[StageExecutionRecord] = field(default_factory=list)
@@ -255,7 +251,6 @@ class PipelineExecutor:
 
         # Initialize mutable execution state.
         current_context = context
-        stage_results: dict[str, StageResult] = {}
         stage_execution_records: list[StageExecutionRecord] = []
 
         # Execute or skip every planned stage in order, with progress tracking.
@@ -311,10 +306,23 @@ class PipelineExecutor:
                         f"Stage: {planned_stage.name}"
                     )
 
-                # Store the successful stage result.
-                stage_results[planned_stage.name] = stage_result
-
                 # Propagate the updated AnnData object to downstream stages.
+                #
+                # The result is NOT retained. There used to be a `stage_results` dict holding
+                # every successful StageResult for the whole run, and `StageResult.adata` is a
+                # full AnnData -- so each stage that returned a modified object pinned another
+                # reference to a cohort-sized one, and nothing could be collected until the run
+                # ended. Measured on the 201,871-cell cohort: resident memory reached ~36 GB by
+                # mid-run and never came down, so from stage 12 onward the process ran at zero
+                # available memory -- 568s, then 388s, then 494s of sustained zero -- surviving
+                # on swap until a later stage needed one more allocation and the WSL2 guest died.
+                # Fixing individual stages kept moving the failure instead of preventing it,
+                # because the stages were not what accumulated.
+                #
+                # Nothing needed the dict: every consumer read `.metrics`, `.notes` or key
+                # presence, and `stage_execution_records` already carries all three per stage,
+                # plus status, warnings and artifacts. Two records of the same thing where one
+                # of them holds the cohort.
                 current_context = current_context.with_adata(stage_result.adata)
 
                 # Checkpoint the object this stage produced, when enabled. Written
@@ -337,7 +345,6 @@ class PipelineExecutor:
         # Return the complete execution result.
         return PipelineExecutionResult(
             context=current_context,
-            stage_results=stage_results,
             stage_execution_records=stage_execution_records,
         )
 

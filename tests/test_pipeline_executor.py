@@ -48,6 +48,21 @@ from cellquorum.core.planner import PipelinePlan, PlannedStage
 from cellquorum.core.stage import StageResult
 
 
+def _record(execution, stage_name):
+    """The success record for a stage, by name.
+
+    `execution_result.stage_results` used to hold a StageResult per stage for the whole run, and
+    StageResult carries a full AnnData -- so the executor pinned a cohort-sized object per stage
+    and resident memory never came down. It was removed; `stage_execution_records` already
+    carries status, metrics, notes, warnings and artifacts, which is everything these assertions
+    read.
+    """
+    for record in execution.stage_execution_records:
+        if record.stage_name == stage_name and record.status == "success":
+            return record
+    return None
+
+
 def build_test_backend_registry() -> BackendRegistry:
     """
     Build a deterministic backend registry.
@@ -410,7 +425,7 @@ def test_executor_runs_qc_stage_and_updates_context(tmp_path: Path) -> None:
     assert execution_result.has_failures() is False
 
     # Confirm QC result was stored.
-    assert "qc" in execution_result.stage_results
+    assert "qc" in execution_result.succeeded_stage_names()
 
     # Confirm context AnnData was preserved and updated.
     assert isinstance(execution_result.context.adata, ad.AnnData)
@@ -457,7 +472,7 @@ def test_executor_records_disabled_stage_as_skipped(tmp_path: Path) -> None:
     assert record.skip_reason.reason == "Disabled by test configuration."
 
     # Confirm no stage result was stored.
-    assert execution_result.stage_results == {}
+    assert execution_result.succeeded_stage_names() == []
 
 
 def test_executor_records_unimplemented_enabled_stage_as_skipped(tmp_path: Path) -> None:
@@ -509,8 +524,8 @@ def test_executor_runs_custom_registered_stage(tmp_path: Path) -> None:
 
     # Confirm the custom stage succeeded.
     assert execution_result.succeeded_stage_names() == ["echo"]
-    assert execution_result.stage_results["echo"].notes == ["Echo stage executed."]
-    assert execution_result.stage_results["echo"].metrics == {"echo": True}
+    assert _record(execution_result, "echo").notes == ["Echo stage executed."]
+    assert _record(execution_result, "echo").metrics == {"echo": True}
 
 
 def test_executor_records_failed_stage_and_stops_by_default(tmp_path: Path) -> None:

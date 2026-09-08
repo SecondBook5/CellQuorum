@@ -172,7 +172,11 @@ def reconcile_looms(
         notes.append("no sample produced spliced/unspliced layers")
         return None, notes
 
+    # Released as soon as the concatenation owns the data. One loom is ~0.45 GB sparse
+    # (36,601 genes x ~8,400 cells, three layers), so eighteen held alongside the combined
+    # object is roughly 16 GB where 8 GB is needed.
     combined = ad.concat(parts, join="outer", index_unique=None)
+    parts.clear()
     combined_set = set(combined.obs_names)
     shared = [n for n in adata.obs_names if n in combined_set]
     if not shared:

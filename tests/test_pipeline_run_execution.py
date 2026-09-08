@@ -234,8 +234,8 @@ def test_execute_pipeline_run_loads_input_and_runs_qc(tmp_path: Path) -> None:
     # Confirm QC and preprocessing succeeded.
     assert "qc" in result.execution_result.succeeded_stage_names()
     assert "preprocessing" in result.execution_result.succeeded_stage_names()
-    assert "qc" in result.execution_result.stage_results
-    assert "preprocessing" in result.execution_result.stage_results
+    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "preprocessing" in result.execution_result.succeeded_stage_names()
 
     # Confirm future stages were skipped explicitly (composition not yet implemented).
     assert "composition" in result.execution_result.skipped_stage_names()

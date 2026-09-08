@@ -159,7 +159,7 @@ def test_trajectory_track_runs_end_to_end(tmp_path: Path) -> None:
 
     # The trajectory producer stage succeeded (DPT ran on X_pca).
     assert "trajectory" in execution.succeeded_stage_names()
-    assert "trajectory" in execution.stage_results
+    assert "trajectory" in execution.succeeded_stage_names()
 
     # The trajectory_viz stage did not fail (it succeeds or records a skip; a
     # crash would surface here).

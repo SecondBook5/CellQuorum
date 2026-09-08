@@ -27,6 +27,22 @@ from cellquorum.backends.registry import BackendRegistry
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.pipeline import execute_pipeline_run
 
+
+def _record(execution, stage_name):
+    """The success record for a stage, by name.
+
+    `execution_result.stage_results` used to hold a StageResult per stage for the whole run, and
+    StageResult carries a full AnnData -- so the executor pinned a cohort-sized object per stage
+    and resident memory never came down. It was removed; `stage_execution_records` already
+    carries status, metrics, notes, warnings and artifacts, which is everything these assertions
+    read.
+    """
+    for record in execution.stage_execution_records:
+        if record.stage_name == stage_name and record.status == "success":
+            return record
+    return None
+
+
 # Real marker genes so marker-vote annotation has something to score against.
 _TYPE_A = ["A1", "A2", "A3"]
 _TYPE_B = ["B1", "B2", "B3"]
@@ -208,7 +224,7 @@ def test_annotation_actually_runs_not_skipped(tmp_path):
     )
 
     # annotation succeeded and its record is not a skip.
-    ann = result.execution_result.stage_results.get("annotation")
+    ann = _record(result.execution_result, "annotation")
     assert ann is not None
     assert not ann.metrics.get("skipped", False), "annotation skipped — ordering bug?"
     assert "cell_type" in result.context.adata.obs
@@ -384,8 +400,8 @@ def test_full_gpu_chain_threads_every_stage_output(tmp_path):
     assert "cell_type" in final.obs
 
     # PCA and clustering actually ran on GPU (not a silent CPU fallback).
-    dim = result.execution_result.stage_results["dimensionality"]
-    clu = result.execution_result.stage_results["clustering"]
+    dim = _record(result.execution_result, "dimensionality")
+    clu = _record(result.execution_result, "clustering")
     assert dim.metrics.get("compute") == "gpu", "PCA did not run on GPU"
     assert clu.metrics.get("compute") == "gpu", "clustering did not run on GPU"
 

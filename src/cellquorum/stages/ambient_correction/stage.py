@@ -136,8 +136,14 @@ class AmbientCorrectionStage:
         # Concatenate the corrected per-library matrices into ONE AnnData and make
         # it the object the executor threads downstream. This is the whole point:
         # QC / normalization / ... must run on the corrected counts.
+        # `ran_soupx` replaces later truthiness checks on `corrected_libraries`, so the list can
+        # be released the moment the concatenation owns the data. Holding all 18 libraries AND
+        # the concatenated cohort makes the peak twice the final object -- the same
+        # hold-everything-then-combine shape as the executor's retained stage results.
+        ran_soupx = bool(corrected_libraries)
         if corrected_libraries:
             corrected_adata = ad.concat(corrected_libraries, join="outer")
+            corrected_libraries.clear()
             # Carry the per-library contamination fractions in uns for provenance.
             corrected_adata.uns.setdefault("cellquorum", {})["ambient_correction"] = {
                 "method": "soupx",
@@ -175,7 +181,7 @@ class AmbientCorrectionStage:
         # returned object MUST be the concatenated corrected AnnData carrying the
         # counts — never the stale input. This is the guard whose absence let the
         # disk-only sidecar bug ship silently.
-        if corrected_libraries:
+        if ran_soupx:
             if corrected_adata is adata or "counts" not in corrected_adata.layers:
                 raise CellQuorumContractError(
                     "ambient_correction ran SoupX but did not return the corrected "
