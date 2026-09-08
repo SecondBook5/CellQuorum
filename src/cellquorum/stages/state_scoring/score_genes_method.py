@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import anndata as ad
+import numpy as np
+import pandas as pd
 import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
@@ -50,14 +52,30 @@ class ScoreGenesMethod(AnalysisMethod):
         if not programs:
             return self._skip("no programs configured", n_programs=0)
 
-        # Score on a working copy whose .X is the lognorm layer so score_genes
-        # reads it; write the resulting scores back onto the real object's obs.
-        scored = adata.copy()
-        scored.X = scored.layers[layer] if layer != "X" and layer in scored.layers else scored.X
+        # Score on a working object whose .X is the lognorm layer so score_genes reads it, then
+        # write the resulting scores onto the real object's obs.
+        #
+        # MINIMAL, not a copy of everything.
+        #
+        # `adata.copy()` here duplicated the whole cohort -- two sparse layers over
+        # 201,871 x 33,417, four obsm entries and ~90 obs columns -- when `score_genes` reads
+        # only the expression matrix and the gene names. Measured on the real run, that copy
+        # allocated 12 GB in about a minute and left the process at zero available memory, where
+        # it thrashed for 26 minutes before the VM died.
+        matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
+        scored = ad.AnnData(
+            X=matrix,
+            obs=pd.DataFrame(index=adata.obs_names),
+            var=pd.DataFrame(index=adata.var_names),
+        )
 
         done: list[dict] = []
         skipped: list[dict] = []
         score_cols: dict[str, str] = {}
+        # Collected and assigned ONCE. Writing each score straight into `adata.obs` reallocated
+        # a 201,871-row frame per program -- the "DataFrame is highly fragmented" warning -- and
+        # the sawtooth that warning describes is visible in the memory trace.
+        new_columns: dict[str, np.ndarray] = {}
         for program, genes in programs.items():
             present = [g for g in genes if g in scored.var_names]
             if len(present) < min_genes:
@@ -67,9 +85,14 @@ class ScoreGenesMethod(AnalysisMethod):
                 continue
             col = f"{key_prefix}{program}"
             sc.tl.score_genes(scored, present, score_name=col, random_state=random_state)
-            adata.obs[col] = scored.obs[col].to_numpy()
+            new_columns[col] = scored.obs[col].to_numpy()
             score_cols[program] = col
             done.append({"program": program, "n_present": len(present), "n_genes": len(genes)})
+
+        if new_columns:
+            adata.obs = pd.concat(
+                [adata.obs, pd.DataFrame(new_columns, index=adata.obs_names)], axis=1
+            )
 
         if not done:
             return self._skip(
