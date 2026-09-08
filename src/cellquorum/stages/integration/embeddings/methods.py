@@ -154,6 +154,55 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
+    def _resolve_color_columns(self, adata: ad.AnnData, config: dict) -> list[str]:
+        """Which obs columns to colour the atlas by.
+
+        ``color_by`` is its OWN switch. It used to be absent, and the colour column was
+        whatever ``resolve_paga_groupby`` returned — so "what do I colour the atlas by"
+        and "what do I compute PAGA over" were one setting. Setting ``paga_groupby`` to
+        the reference-mapping column for a topology panel therefore silently repainted
+        the atlas figure from the consensus labels to the reference labels, which is not
+        a thing anyone asked for and is invisible from either setting's own point of view.
+
+        Empty (the default) FOLLOWS the PAGA resolution rather than restating it, so the
+        historical behaviour is unchanged until someone opts in.
+        """
+        requested = [str(c) for c in (config.get("color_by") or [])]
+        if requested:
+            return [c for c in requested if c in adata.obs.columns]
+        groupby = compute.resolve_paga_groupby(
+            adata,
+            config.get("paga_groupby"),
+            cell_type_key=config.get("cell_type_key", "cell_type"),
+            granular_key=config.get("granular_key", "cell_type_granular"),
+            cluster_key=config.get("cluster_key", "leiden"),
+        )
+        return [groupby] if groupby else []
+
+    def _resolve_subsets(self, adata: ad.AnnData, config: dict) -> list[tuple[str, object | None]]:
+        """Cell subsets to render the atlas over, as ``(suffix, mask_or_None)``.
+
+        The QC states granted ``TRANSFORM`` on the manifold (borderline, quarantine) are
+        deliberately given embedding coordinates so a figure can show what was excluded
+        — see ``stages.qc.eligibility._ELIGIBILITY``. Nothing wired that intent to the
+        figures, so the paper's atlas was drawn over every cell, painting QC-flagged
+        cells in cell-type colours as though they were core. On the lymphedema cohort
+        that is 34,116 cells, 17% of the plot, carrying 3x the core mitochondrial
+        fraction on 62% of core complexity — exactly the cells that drift into the gaps
+        between clusters and blur the boundaries.
+
+        Empty ``atlas_states`` (the default) keeps the historical all-cells behaviour.
+        """
+        states = [str(s) for s in (config.get("atlas_states") or [])]
+        column = str(config.get("qc_state_column") or "qc_state_initial")
+        if not states or column not in adata.obs.columns:
+            return [("", None)]
+        mask = adata.obs[column].astype(str).isin(states).to_numpy()
+        if not mask.any():
+            return [("", None)]
+        # Both: the restricted atlas, and the unrestricted one for comparison.
+        return [(f"_{'_'.join(states)}", mask), ("_allcells", None)]
+
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         figures_dir = Path(context.paths.figures) / "embeddings"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -163,15 +212,11 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         legend = bool(config.get("legend", True))
         title = str(config.get("figure_title") or "")
         tags = list(config.get("embeddings", ["umap", "phate"]))
-        groupby = compute.resolve_paga_groupby(
-            adata,
-            config.get("paga_groupby"),
-            cell_type_key=config.get("cell_type_key", "cell_type"),
-            granular_key=config.get("granular_key", "cell_type_granular"),
-            cluster_key=config.get("cluster_key", "leiden"),
-        )
-        if groupby is None:
+
+        color_columns = self._resolve_color_columns(adata, config)
+        if not color_columns:
             return self._skip("no grouping column present")
+        subsets = self._resolve_subsets(adata, config)
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -183,70 +228,64 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
             if spec["obsm"] not in adata.obsm:
                 warnings.append(f"categorical_embedding: {spec['obsm']} absent (tag '{tag}')")
                 continue
-            # Two panels, not one. The PAGA scaffold answers "which populations sit
-            # adjacent", which is a different question from "where is each population",
-            # and drawn over the points it reads as a grey hairball across the middle of
-            # the figure that goes in the paper.
-            try:
-                fig = plots.categorical_embedding(
-                    adata,
-                    groupby,
-                    basis=spec["obsm"],
-                    axis_labels=spec["axis"],
-                    paga_threshold=threshold,
-                    paga_overlay=False,
-                    min_label_frac=min_label_frac,
-                    legend=legend,
-                    title=title,
-                )
-                paths = save_figure(
-                    fig, figures_dir, f"categorical_{tag}", formats=formats, dpi=dpi
-                )
-                artifacts += figure_artifacts(
-                    paths,
-                    name="embedding_figure",
-                    description=f"{tag} categorical embedding ({groupby}).",
-                )
-                n_figures += 1
-            except Exception as exc:  # noqa: BLE001
-                warnings.append(f"categorical_embedding: {tag} failed: {str(exc)[:200]}")
-
-            if "paga" not in adata.uns:
-                continue
-            try:
-                fig = plots.categorical_embedding(
-                    adata,
-                    groupby,
-                    basis=spec["obsm"],
-                    axis_labels=spec["axis"],
-                    paga_threshold=threshold,
-                    paga_overlay=True,
-                    min_label_frac=min_label_frac,
-                    legend=legend,
-                    title=title,
-                )
-                paths = save_figure(
-                    fig, figures_dir, f"categorical_{tag}_paga", formats=formats, dpi=dpi
-                )
-                artifacts += figure_artifacts(
-                    paths,
-                    name="embedding_figure",
-                    description=f"{tag} categorical embedding with PAGA overlay ({groupby}).",
-                )
-                n_figures += 1
-            except Exception as exc:  # noqa: BLE001
-                warnings.append(
-                    f"categorical_embedding: {tag} paga overlay failed: {str(exc)[:200]}"
-                )
+            for column in color_columns:
+                for suffix, mask in subsets:
+                    # Two panels per combination. The PAGA scaffold answers "which
+                    # populations sit adjacent", a different question from "where is each
+                    # population", and drawn over the points it reads as a grey hairball
+                    # across the middle of the figure that goes in the paper. The overlay
+                    # is only meaningful on the column PAGA was actually computed over.
+                    overlays: list[tuple[bool, str]] = [(False, "")]
+                    paga_over = adata.uns.get("paga", {}).get("groups")
+                    if "paga" in adata.uns and (paga_over is None or paga_over == column):
+                        overlays.append((True, "_paga"))
+                    for overlay_on, overlay_suffix in overlays:
+                        stem = f"categorical_{tag}_{column}{suffix}{overlay_suffix}"
+                        try:
+                            fig = plots.categorical_embedding(
+                                adata,
+                                column,
+                                basis=spec["obsm"],
+                                axis_labels=spec["axis"],
+                                paga_threshold=threshold,
+                                paga_overlay=overlay_on,
+                                min_label_frac=min_label_frac,
+                                legend=legend,
+                                title=title,
+                                cell_mask=mask,
+                            )
+                            paths = save_figure(fig, figures_dir, stem, formats=formats, dpi=dpi)
+                            artifacts += figure_artifacts(
+                                paths,
+                                name="embedding_figure",
+                                description=(
+                                    f"{tag} categorical embedding coloured by '{column}'"
+                                    f"{' with PAGA overlay' if overlay_on else ''}"
+                                    f"{' (' + suffix.lstrip('_') + ')' if suffix else ''}."
+                                ),
+                            )
+                            n_figures += 1
+                        except Exception as exc:  # noqa: BLE001
+                            warnings.append(
+                                f"categorical_embedding: {stem} failed: {str(exc)[:200]}"
+                            )
 
         if n_figures == 0:
             return self._skip("no embeddings available to render", warnings=warnings)
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            notes=[f"categorical_embedding rendered {n_figures} figures."],
+            notes=[
+                f"categorical_embedding rendered {n_figures} figures "
+                f"over {len(color_columns)} colour column(s): {', '.join(color_columns)}."
+            ],
             warnings=warnings,
-            metrics={"method": self.name, "n_figures": n_figures, "groupby": groupby},
+            metrics={
+                "method": self.name,
+                "n_figures": n_figures,
+                "color_by": color_columns,
+                "subsets": [s or "allcells" for s, _ in subsets],
+            },
             backend="python",
         )
 

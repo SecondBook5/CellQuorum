@@ -119,6 +119,7 @@ def categorical_embedding(
     min_label_frac: float = 0.001,
     legend: bool = True,
     title: str = "",
+    cell_mask: np.ndarray | None = None,
 ) -> Figure:
     """Per-group scatter on `basis`, with PAGA graph overlaid when present.
 
@@ -139,9 +140,23 @@ def categorical_embedding(
     the small ones ``min_label_frac`` leaves unnamed on the plot — so nothing drawn is
     unidentifiable, and the count that decides whether a population is real is on the
     figure rather than in a table beside it.
+
+    ``cell_mask`` restricts the panel to a subset of cells (e.g. QC-core only) WITHOUT
+    subsetting the object, so no multi-gigabyte copy is made to draw a figure. The
+    category order is still taken from the unfiltered column, because that order is what
+    ``uns['paga']['connectivities']`` is indexed by; only the drawn points, the counts,
+    and the centroids come from the subset.
     """
     xy = np.asarray(adata.obsm[basis])[:, :2]
     orig_col = adata.obs[group_key]
+    if cell_mask is not None:
+        cell_mask = np.asarray(cell_mask, dtype=bool)
+        if cell_mask.shape[0] != adata.n_obs:
+            raise ValueError(f"cell_mask has {cell_mask.shape[0]} entries for {adata.n_obs} cells.")
+        if not cell_mask.any():
+            raise ValueError("cell_mask selects no cells.")
+        xy = xy[cell_mask]
+        orig_col = orig_col[cell_mask]
     # Category order must match how scanpy indexes uns['paga']['connectivities'].
     # sc.tl.paga builds it from `cat.codes` (see scanpy _paga._compute_connectivities),
     # so connectivity index i corresponds to `cat.categories[i]` — the FULL declared

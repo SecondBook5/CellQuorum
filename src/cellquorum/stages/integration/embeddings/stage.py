@@ -25,6 +25,9 @@ _EMB_CONFIG_KEYS = (
     "min_label_frac",
     "legend",
     "figure_title",
+    "color_by",
+    "qc_state_column",
+    "atlas_states",
     "overlay",
     "magic",
 )

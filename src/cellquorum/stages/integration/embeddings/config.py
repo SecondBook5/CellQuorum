@@ -80,6 +80,14 @@ class EmbeddingsConfig(StrictBaseModel):
         legend: Draw a side legend listing every group with its cell count. Covers
             the small groups ``min_label_frac`` leaves unnamed on the plot.
         figure_title: Optional title for the categorical panels. Empty means none.
+        color_by: obs columns to colour the atlas by, one panel each. Its own switch:
+            empty FOLLOWS the PAGA grouping rather than restating it, but setting it
+            stops ``paga_groupby`` from doubling as the atlas's colour decision.
+        qc_state_column: obs column holding the QC state (core/borderline/quarantine).
+        atlas_states: QC states the atlas panel is restricted to, e.g. ``[core]``. Empty
+            draws every cell (the historical behaviour). When set, BOTH the restricted
+            panel and an ``_allcells`` panel are written, so what the restriction removed
+            is visible rather than merely absent.
         overlay: Feature-overlay specification.
         magic: Opt-in scoped MAGIC configuration.
     """
@@ -98,6 +106,9 @@ class EmbeddingsConfig(StrictBaseModel):
     min_label_frac: float = 0.001
     legend: bool = True
     figure_title: str = ""
+    color_by: list[str] = []
+    qc_state_column: str = "qc_state_initial"
+    atlas_states: list[str] = []
     overlay: OverlayConfig = Field(default_factory=OverlayConfig)
     magic: MagicConfig = Field(default_factory=MagicConfig)
 
