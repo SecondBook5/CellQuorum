@@ -18,7 +18,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.exceptions import CellQuorumDataError
+from cellquorum.core.exceptions import CellQuorumDataError, CellQuorumStageError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -190,19 +190,10 @@ def _write_prepared_reference(
     prepared.layers[counts_layer] = atlas_train.X.copy()
     sc_local.pp.normalize_total(prepared, target_sum=1e4)
     sc_local.pp.log1p(prepared)
-
-    # Validate reference embedding before writing
-    stds = np.std(ref_latent, axis=0)
-    n_variable = int((stds > 1e-6).sum())
-    if n_variable < 2:
-        from cellquorum.core.exceptions import CellQuorumStageError
-
-        raise CellQuorumStageError(
-            "reference_mapping",
-            f"Reference scANVI embedding collapsed: only {n_variable}/{ref_latent.shape[1]} "
-            f"dimensions have variance. This means the reference atlas training failed.",
-        )
-
+    # NOTE: the collapse check for ref_latent lives at its PRODUCTION site
+    # (`scanvi.get_latent_representation(atlas_train)`), not here. This function only
+    # persists an object it is handed; validating scientific content in a writer means a
+    # persistence unit test cannot use a placeholder matrix, and conflates two concerns.
     prepared.obsm["X_scANVI"] = np.asarray(ref_latent, dtype="float32")
     prepared.uns["cellquorum_prepared_reference"] = {
         "label_column": key_added,
@@ -663,6 +654,20 @@ class ScArchesMethod(AnalysisMethod):
                 q_latent = qmodel.get_latent_representation(q)
                 ref_latent = scanvi.get_latent_representation(atlas_train)
 
+                # Validate at the PRODUCTION site: a collapsed latent here means scANVI
+                # training or query surgery failed for this seed, and every downstream
+                # coordinate, kNN and figure built on it is meaningless. Caught here it
+                # names the seed; caught downstream it is a mystery in a plot.
+                for latent, which in ((ref_latent, "reference"), (q_latent, "query")):
+                    n_variable = int((np.std(latent, axis=0) > 1e-6).sum())
+                    if n_variable < 2:
+                        raise CellQuorumStageError(
+                            "reference_mapping",
+                            f"scANVI {which} latent collapsed on seed {seed}: only "
+                            f"{n_variable}/{latent.shape[1]} dimensions have variance "
+                            f"(std > 1e-6). Training produced a degenerate manifold.",
+                        )
+
                 # kNN uncertainty (NOT softmax).
                 nn = NearestNeighbors(n_neighbors=knn_k)
                 nn.fit(ref_latent)
@@ -780,32 +785,9 @@ class ScArchesMethod(AnalysisMethod):
             result_query.obs[f"refprob_{col}"] = mean_soft_df[col].to_numpy()
         result_query.obsm[f"{key_added}_probabilities"] = prob_matrix
 
-        # Latent embedding from the best-agreeing seed (single-seed; see note).
-        scANVI_latent = seed_latents[best_seed]["query"]
-
-        # Validate the embedding is not degenerate before writing it.
-        stds = np.std(scANVI_latent, axis=0)
-        n_variable = int((stds > 1e-6).sum())
-        if n_variable < 2:
-            from cellquorum.core.exceptions import CellQuorumStageError
-
-            raise CellQuorumStageError(
-                "reference_mapping",
-                f"scANVI embedding collapsed: only {n_variable}/{scANVI_latent.shape[1]} "
-                f"dimensions have variance (std > 1e-6). Surgery produced a degenerate manifold. "
-                f"First 10 stds: {stds[:10].tolist()}. Check: reference and query have "
-                f"sufficient gene overlap, scVI latent (X_scvi) was valid, reference labels "
-                f"are not all identical.",
-            )
-        if n_variable < scANVI_latent.shape[1] // 2:
-            # Warning for partial collapse
-            warnings.warn(
-                f"scANVI embedding has low effective dimensionality: only {n_variable}/"
-                f"{scANVI_latent.shape[1]} dimensions have variance. Surgery may have failed.",
-                stacklevel=2,
-            )
-
-        result_query.obsm["X_scANVI"] = scANVI_latent
+        # Latent embedding from the best-agreeing seed (single-seed; see note). Already
+        # collapse-checked at its production site in the per-seed loop, so no re-check here.
+        result_query.obsm["X_scANVI"] = seed_latents[best_seed]["query"]
 
         # uns metadata.
         ref_states = list(atlas_train.obs["_labels"].unique())

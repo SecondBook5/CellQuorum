@@ -9,9 +9,12 @@ from cellquorum.visualization import figstyle
 
 
 def test_palette_is_shared_with_figstyle():
-    # Categorical colors come from figstyle's shared generator, not a private
+    # Categorical colors come from figstyle's shared authority, not a private
     # hardcoded list in the plotter — one source of truth for the house look.
-    assert plots.distinct_palette is figstyle.distinct_palette
+    # The plotter now uses palette_colors (validated CATEGORICAL_PALETTE first,
+    # then the generator past its size) rather than the raw generator, so the
+    # atlas gets the audited hues instead of raw golden-angle vivids.
+    assert plots.palette_colors is figstyle.palette_colors
 
 
 def test_continuous_overlay_respects_explicit_vmin_vmax():
