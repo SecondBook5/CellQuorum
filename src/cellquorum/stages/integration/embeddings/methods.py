@@ -37,18 +37,26 @@ class UmapMethod(AnalysisMethod):
         return DataContract()
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        use_rep = config.get("use_rep")
+        n_neighbors = config.get("n_neighbors")
         try:
             compute.compute_umap(
                 adata,
                 min_dist=float(config.get("umap_min_dist", 0.3)),
                 random_state=_seed(config, context),
+                use_rep=use_rep,
+                n_neighbors=int(n_neighbors) if n_neighbors is not None else None,
             )
         except compute.EmbeddingsComputeError as exc:
             return self._skip(f"{exc}")
+
+        note = "umap: wrote obsm['X_umap']"
+        if use_rep:
+            note += f" from '{use_rep}'"
         return StageResult(
             adata=adata,
-            notes=["umap: wrote obsm['X_umap']"],
-            metrics={"method": self.name},
+            notes=[note],
+            metrics={"method": self.name, "use_rep": use_rep},
             backend="python",
         )
 

@@ -64,12 +64,48 @@ def _is_usable_grouping(adata: ad.AnnData, column: str) -> bool:
     return int(values.nunique(dropna=True)) >= 2
 
 
-def compute_umap(adata: ad.AnnData, *, min_dist: float, random_state: int) -> None:
-    """Compute UMAP on the existing neighbors graph; write obsm['X_umap'].
+def compute_umap(
+    adata: ad.AnnData,
+    *,
+    min_dist: float,
+    random_state: int,
+    use_rep: str | None = None,
+    n_neighbors: int | None = None,
+) -> None:
+    """Compute UMAP on the neighbors graph; write obsm['X_umap'].
 
     GPU via rapids_singlecell if available, else scanpy CPU. Seed threaded.
+
+    If ``use_rep`` is specified and differs from the existing neighbors graph's
+    use_rep, neighbors will be recomputed on the specified representation before
+    computing UMAP. This ensures UMAP is computed from the correct latent space
+    (e.g. X_scANVI after reference mapping, not X_scvi from before).
     """
-    if not _has_neighbors(adata):
+    # Check if we need to recompute neighbors on a different representation
+    needs_recompute = False
+    if use_rep is not None and _has_neighbors(adata):
+        existing_rep = adata.uns.get("neighbors", {}).get("params", {}).get("use_rep")
+        if existing_rep != use_rep:
+            needs_recompute = True
+            import warnings
+
+            warnings.warn(
+                f"Recomputing neighbors on '{use_rep}' (was '{existing_rep}'). "
+                f"UMAP will use the new representation.",
+                stacklevel=2,
+            )
+
+    if needs_recompute or (use_rep is not None and not _has_neighbors(adata)):
+        # Recompute neighbors on the specified representation
+        if use_rep not in adata.obsm:
+            raise RepMissing(f"representation '{use_rep}' absent from obsm")
+        sc.pp.neighbors(
+            adata,
+            use_rep=use_rep,
+            n_neighbors=n_neighbors or 15,
+            random_state=random_state,
+        )
+    elif not _has_neighbors(adata):
         raise NeighborsMissing("neighbors graph absent; run clustering first")
     # GPU (rapids_singlecell) first when available; any GPU-path failure — the
     # common case here is that cuml is absent — falls back to the seeded scanpy
