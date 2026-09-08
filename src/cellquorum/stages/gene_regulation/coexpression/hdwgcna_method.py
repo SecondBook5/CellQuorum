@@ -118,11 +118,21 @@ class HdwgcnaMethod(AnalysisMethod):
         scratch.mkdir(parents=True, exist_ok=True)
         h5ad = scratch / "coexpr_input.h5ad"
 
-        # If layer is set and != "X" and present in layers, write a shallow copy with X = layer
+        # Genuinely shallow, which the old comment claimed and `adata.copy()` did not do. It
+        # duplicated the whole cohort to change which matrix is .X, and then wrote every layer
+        # and embedding into a file R has to read back -- paying for the duplication twice, once
+        # in memory and once in what zellkonverter must parse.
+        #
+        # hdWGCNA needs the expression matrix, the gene names and the grouping columns in obs.
         if layer and layer != "X" and layer in adata.layers:
-            a2 = adata.copy()
-            a2.X = a2.layers[layer]
-            write_h5ad(a2, h5ad)
+            write_h5ad(
+                ad.AnnData(
+                    X=adata.layers[layer],
+                    obs=adata.obs.copy(),
+                    var=adata.var.copy(),
+                ),
+                h5ad,
+            )
         else:
             write_h5ad(adata, h5ad)
 
