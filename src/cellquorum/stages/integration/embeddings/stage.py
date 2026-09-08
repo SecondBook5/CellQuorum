@@ -23,6 +23,8 @@ _EMB_CONFIG_KEYS = (
     "figure_formats",
     "dpi",
     "min_label_frac",
+    "legend",
+    "figure_title",
     "overlay",
     "magic",
 )

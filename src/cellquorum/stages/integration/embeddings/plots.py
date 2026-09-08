@@ -18,7 +18,7 @@ from matplotlib.figure import Figure
 from cellquorum.visualization.figio import figure_artifacts, save_figure
 from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
-from cellquorum.visualization.figstyle import apply_cellquorum_theme, distinct_palette
+from cellquorum.visualization.figstyle import apply_cellquorum_theme, palette_colors
 
 # Single source of truth: tag -> obsm key + axis labels.
 EMBEDDING_REGISTRY: dict[str, dict] = {
@@ -60,6 +60,26 @@ def _figsize_for(n_groups: int) -> tuple[float, float]:
     return (9.2, 8.6)
 
 
+def _angular_sweep(centroids: dict[str, np.ndarray], cats: list[str]) -> list[str]:
+    """Order groups by the angle of their centroid about the global centroid.
+
+    Assigning palette slots in this order is what makes SPATIALLY ADJACENT clusters
+    get ADJACENT slots — and adjacent-slot separation is precisely what
+    :data:`CATEGORICAL_PALETTE` guarantees across its full 18 slots (its overflow
+    tier is adjacent-pair separated, not all-pairs). Assigning by abundance instead
+    leaves the pairing to chance, which is how two touching blobs end up a few
+    perceptual units apart — the one place on an embedding where colour has to do
+    real work, because there is no gap to read the boundary from.
+    """
+    present = [c for c in cats if c in centroids]
+    if len(present) < 3:
+        return present
+    points = np.array([centroids[c] for c in present], dtype=float)
+    center = points.mean(axis=0)
+    angles = np.arctan2(points[:, 1] - center[1], points[:, 0] - center[0])
+    return [present[i] for i in np.argsort(angles)]
+
+
 def _repel_labels(ax: Axes, texts: list) -> None:
     """De-collide per-group text labels with leader lines (best-effort).
 
@@ -97,6 +117,8 @@ def categorical_embedding(
     point_size: float | None = None,
     paga_overlay: bool = True,
     min_label_frac: float = 0.001,
+    legend: bool = True,
+    title: str = "",
 ) -> Figure:
     """Per-group scatter on `basis`, with PAGA graph overlaid when present.
 
@@ -112,6 +134,11 @@ def categorical_embedding(
     holding less than that fraction of cells. Without it a 2-cell category is drawn
     with the same weight as a 70,000-cell lineage, and its label lands in the middle
     of a real cluster it has no claim to.
+
+    ``legend`` adds a side legend carrying every group with its cell count, including
+    the small ones ``min_label_frac`` leaves unnamed on the plot — so nothing drawn is
+    unidentifiable, and the count that decides whether a population is real is on the
+    figure rather than in a table beside it.
     """
     xy = np.asarray(adata.obsm[basis])[:, :2]
     orig_col = adata.obs[group_key]
@@ -127,19 +154,30 @@ def categorical_embedding(
         cats = sorted(orig_col.astype(str).unique())
     # Compare against the stringified column so int/categorical dtypes still match.
     groups = orig_col.astype(str)
-    # One distinct jewel/vivid color per category (a generator, not a cycled
-    # fixed list): N categories get N distinct colors, so no two clusters share
-    # a hue the way cycling a short list would.
-    colors = distinct_palette(len(cats))
-    palette = {c: colors[i] for i, c in enumerate(cats)}
     # Per-group centroid (per-axis median: robust to trailing arcs/stragglers and
-    # always sits inside the point cloud). Computed once and reused for BOTH the
-    # text label and the PAGA node, so every node sits exactly under its label.
+    # always sits inside the point cloud). Computed once and reused for the text
+    # label, the PAGA node, and the palette sweep below, so every node sits exactly
+    # under its label.
     centroids: dict[str, np.ndarray] = {}
     for _cat in cats:
         _m = (groups == _cat).to_numpy()
         if _m.any():
             centroids[_cat] = np.array([np.median(xy[_m, 0]), np.median(xy[_m, 1])])
+
+    # Colors come from `palette_colors`, the module's single authority for "what
+    # colors for n categories": the audited CATEGORICAL_PALETTE while it covers n,
+    # the non-repeating generator past it. Calling the generator directly (which
+    # this did) bypassed the validated palette entirely, so a 15-category atlas was
+    # painted in raw golden-angle vivids instead of the hues the audit passed.
+    #
+    # Slots are then dealt in ANGULAR SWEEP order, not category order, so spatial
+    # neighbours land on adjacent slots. See `_angular_sweep`.
+    colors = palette_colors(len(cats))
+    sweep = _angular_sweep(centroids, cats)
+    palette = {c: colors[i] for i, c in enumerate(sweep)}
+    # Declared-but-absent categories still need a color for the PAGA node loop.
+    for _i, _cat in enumerate(c for c in cats if c not in palette):
+        palette[_cat] = colors[(len(sweep) + _i) % len(colors)]
 
     # Counts drive three separate decisions below: draw order, the label floor, and
     # which PAGA nodes are worth drawing.
@@ -153,7 +191,10 @@ def categorical_embedding(
     if size is None:
         size = float(np.clip(6.0 * (20_000.0 / max(n_obs, 1)) ** 0.5, 1.2, 6.0))
 
-    fig = Figure(figsize=_figsize_for(len(cats)))
+    width, height = _figsize_for(len(cats))
+    if legend:
+        width += 2.0  # room for the side legend rather than squeezing the plot
+    fig = Figure(figsize=(width, height))
     ax = fig.add_subplot(111)
     # ABUNDANT FIRST, so rare populations are drawn last and stay visible. Iterating
     # `cats` instead put whichever category happened to sort last on top: on this
@@ -250,6 +291,43 @@ def categorical_embedding(
             )
         )
     _repel_labels(ax, texts)
+
+    if title:
+        ax.set_title(title, fontsize=11, fontweight="bold", pad=8)
+
+    # Side legend, ordered by abundance and carrying counts. Built from proxy handles
+    # rather than the scatter labels so the ORDER is abundance (what a reader scans
+    # for) while the DRAW order stays rare-on-top (what keeps rare groups visible) —
+    # the two orders are deliberately different and a shared handle list would force
+    # them to be the same.
+    if legend:
+        from matplotlib.lines import Line2D
+
+        handles = [
+            Line2D(
+                [],
+                [],
+                marker="o",
+                linestyle="none",
+                markersize=5,
+                markerfacecolor=palette[cat],
+                markeredgecolor="none",
+                label=f"{cat} ({int(counts[cat]):,})",
+            )
+            for cat in counts.index
+            if cat in palette
+        ]
+        if handles:
+            ax.legend(
+                handles=handles,
+                loc="center left",
+                bbox_to_anchor=(1.01, 0.5),
+                frameon=False,
+                fontsize=7.5,
+                handletextpad=0.3,
+                labelspacing=0.5,
+                borderaxespad=0.0,
+            )
     return fig
 
 

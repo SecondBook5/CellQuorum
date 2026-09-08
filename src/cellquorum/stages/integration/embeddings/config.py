@@ -77,6 +77,9 @@ class EmbeddingsConfig(StrictBaseModel):
             but not named, and gets no PAGA node. Guards against a handful of cells
             being labelled with the same authority as a major lineage, with its
             name landing on top of a cluster it is not.
+        legend: Draw a side legend listing every group with its cell count. Covers
+            the small groups ``min_label_frac`` leaves unnamed on the plot.
+        figure_title: Optional title for the categorical panels. Empty means none.
         overlay: Feature-overlay specification.
         magic: Opt-in scoped MAGIC configuration.
     """
@@ -93,6 +96,8 @@ class EmbeddingsConfig(StrictBaseModel):
     figure_formats: list[str] = ["pdf", "png"]
     dpi: int = 300
     min_label_frac: float = 0.001
+    legend: bool = True
+    figure_title: str = ""
     overlay: OverlayConfig = Field(default_factory=OverlayConfig)
     magic: MagicConfig = Field(default_factory=MagicConfig)
 

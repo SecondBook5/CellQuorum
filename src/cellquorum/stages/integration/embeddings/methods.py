@@ -26,6 +26,24 @@ def _seed(config: dict, context: object) -> int:
     return int(getattr(context, "random_seed", 1337))
 
 
+def _basis_requested(config: dict, tag: str) -> bool:
+    """Whether `config.embeddings` asks for the `tag` basis at all.
+
+    ``embeddings`` is the ONE switch for which bases exist. It used to gate only
+    which bases got FIGURES, while the compute methods ran unconditionally from the
+    stage's default method list — which is not reachable from config, so there was no
+    way to decline an embedding. `embeddings: [umap]` therefore still paid for PHATE
+    over every cell and merely never drew it; the atlas object carried ``X_phate``
+    while the config said ``[umap]``. On a 202,000-cell cohort that is the expensive
+    one, and the cost was invisible because nothing in the output contradicted the
+    config. An absent key keeps the historical default (compute it).
+    """
+    requested = config.get("embeddings")
+    if requested is None:
+        return True
+    return tag in {str(t) for t in requested}
+
+
 class UmapMethod(AnalysisMethod):
     """Compute UMAP coordinates from the neighbors graph."""
 
@@ -37,6 +55,8 @@ class UmapMethod(AnalysisMethod):
         return DataContract()
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        if not _basis_requested(config, "umap"):
+            return self._skip("umap not in config.embeddings")
         use_rep = config.get("use_rep")
         n_neighbors = config.get("n_neighbors")
         try:
@@ -72,6 +92,8 @@ class PhateMethod(AnalysisMethod):
         return DataContract()
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        if not _basis_requested(config, "phate"):
+            return self._skip("phate not in config.embeddings")
         try:
             compute.compute_phate(
                 adata,
@@ -138,6 +160,8 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
         threshold = float(config.get("paga_threshold", 0.2))
         min_label_frac = float(config.get("min_label_frac", 0.001))
+        legend = bool(config.get("legend", True))
+        title = str(config.get("figure_title") or "")
         tags = list(config.get("embeddings", ["umap", "phate"]))
         groupby = compute.resolve_paga_groupby(
             adata,
@@ -172,6 +196,8 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                     paga_threshold=threshold,
                     paga_overlay=False,
                     min_label_frac=min_label_frac,
+                    legend=legend,
+                    title=title,
                 )
                 paths = save_figure(
                     fig, figures_dir, f"categorical_{tag}", formats=formats, dpi=dpi
@@ -196,6 +222,8 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                     paga_threshold=threshold,
                     paga_overlay=True,
                     min_label_frac=min_label_frac,
+                    legend=legend,
+                    title=title,
                 )
                 paths = save_figure(
                     fig, figures_dir, f"categorical_{tag}_paga", formats=formats, dpi=dpi
