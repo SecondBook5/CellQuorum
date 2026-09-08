@@ -50,6 +50,9 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 return self._fallback_backend(adata, config)
 
         # Extract config.
+        # Held so the stage can return the FULL object even when metrics use a subsample.
+        full_adata = adata
+
         batch_key = config.get("batch_key", "batch")
         label_key = config.get("label_key", "cell_type")
         label_key_fallback = config.get("label_key_fallback")
@@ -66,6 +69,44 @@ class ScibBenchmarkMethod(AnalysisMethod):
             label_col = label_key
         elif label_key_fallback and label_key_fallback in adata.obs.columns:
             label_col = label_key_fallback
+
+        # Subsample before computing anything, when the cohort is larger than the cap.
+        #
+        # kBET, iLISI and cLISI are k-nearest-neighbour statistics, and at n_neighbors=90 over
+        # 201,871 cells the neighbour structures are enormous -- this stage was where one run
+        # died. scib's own documentation recommends subsampling for kBET, and the reason is
+        # statistical as much as computational: these are POPULATION properties of the
+        # embedding, so they converge long before the full cohort. A batch-mixing score
+        # estimated from 40,000 cells is not a worse answer than one from 201,871, it is the
+        # same answer for a fraction of the work.
+        #
+        # STRATIFIED BY BATCH, which matters more than the size: every one of these metrics is
+        # about how batches mix, so a draw that lost a small library would change the thing being
+        # measured. Seeded, so the score is reproducible.
+        max_cells = config.get("max_cells", 40_000)
+        subsample_note: str | None = None
+        if max_cells and adata.n_obs > int(max_cells):
+            rng = np.random.default_rng(int(config.get("random_state", 0)))
+            batch_values = adata.obs[batch_key].astype(str).to_numpy()
+            keep: list[int] = []
+            positions = np.arange(adata.n_obs)
+            # Proportional per batch, with a floor so a small library is never dropped entirely.
+            share = int(max_cells) / adata.n_obs
+            for value in np.unique(batch_values):
+                members = positions[batch_values == value]
+                take = max(1, min(len(members), int(round(len(members) * share))))
+                keep.extend(
+                    members if take >= len(members) else rng.choice(members, take, replace=False)
+                )
+            index = np.sort(np.asarray(keep, dtype=int))
+            subsample_note = (
+                f"scib metrics computed on {len(index):,} of {adata.n_obs:,} cells, stratified by "
+                f"'{batch_key}' (seed {int(config.get('random_state', 0))}). kBET/iLISI/cLISI are "
+                f"kNN statistics at n_neighbors={n_neighbors}; they describe the embedding as a "
+                f"population and converge well below the full cohort, and scib's own guidance is "
+                f"to subsample for kBET."
+            )
+            adata = adata[index]
 
         # Prepare batch/label arrays.
         batches = adata.obs[batch_key].to_numpy()
@@ -123,8 +164,12 @@ class ScibBenchmarkMethod(AnalysisMethod):
             "mode": mode,
         }
 
-        # READ-ONLY: return the SAME adata.
-        return StageResult(adata=adata, metrics=metrics, warnings=caveats)
+        # READ-ONLY, and the object returned is the FULL one. `adata` above may be a subsampled
+        # view used for the metrics; returning it would silently drop cells from every later
+        # stage, which is a far worse failure than a slow benchmark.
+        if subsample_note:
+            caveats.append(subsample_note)
+        return StageResult(adata=full_adata, metrics=metrics, warnings=caveats)
 
     def _compute_metrics(
         self,

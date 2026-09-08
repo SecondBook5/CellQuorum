@@ -1,4 +1,6 @@
-# Pipeline step (order=100): subclustering — resolve finer structure within annotated clusters.
+# Pipeline step (order=155): subclustering — resolve finer structure within annotated
+# populations. Runs AFTER reference_mapping (120) and population_identity (150); see the
+# registration below for why.
 """Subclustering stage implementation."""
 
 from __future__ import annotations
@@ -30,9 +32,24 @@ class SubclusteringFocusError(CellQuorumConfigError):
     """The configured focus selects no cells, so there is nothing to subcluster."""
 
 
+# order=155, moved from 100.
+#
+# At 100 this ran BEFORE reference_mapping (120), so the atlas labels it should focus on did
+# not exist yet: `focus.label_key` defaulted to `cell_type`, which nothing had written, and
+# `focus.labels: []` means "keep all cells" -- so on a real cohort it handed CHOIR all 201,871
+# cells and hit its 1800s timeout. There was no way to say "subcluster the LEC" because
+# nothing had yet decided which cells were LEC.
+#
+# 155 puts it after population_identity (150) rather than merely after the mapping. That
+# stage audits whether a population is supported by enough cells, samples and donors, or is
+# one donor's artifact. Subclustering asks "does this population contain distinct subtypes",
+# which is only worth asking of a population that is real -- and CHOIR permutation-tests
+# every split, so it is expensive enough to be worth ordering deliberately.
+#
+# Safe to move: nothing outside this stage reads the `subcluster` column.
 @register_stage(
     name="subclustering",
-    order=100,
+    order=155,
     config_flag="subclustering",
     config_field="subclustering",
     category="subclustering",

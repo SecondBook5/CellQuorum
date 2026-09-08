@@ -50,6 +50,14 @@ class IntegrationBenchmarkConfig(StrictBaseModel):
     embeddings: list[str] = ["X_pca_harmony", "X_pca_scanorama"]
 
     # Number of neighbors for kNN-based metrics (ilisi/clisi/kbet/connectivity/nmi).
+    #: Cap on cells used for the metrics. 0 or None uses every cell.
+    #:
+    #: kBET, iLISI and cLISI are kNN statistics, and at n_neighbors=90 over 201,871 cells the
+    #: neighbour structures are large enough to have killed a run at this stage. They describe
+    #: the embedding as a POPULATION, so they converge well below the full cohort, and scib's own
+    #: documentation recommends subsampling for kBET. The draw is stratified by batch and seeded.
+    max_cells: int | None = 40_000
+
     n_neighbors: int = 90
 
     # Evaluation mode: full (batch+bio) or batch_only (batch metrics only).
