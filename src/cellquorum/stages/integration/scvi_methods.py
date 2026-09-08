@@ -347,11 +347,34 @@ class ScVIMethod(AnalysisMethod):
 
         # Passing `work` explicitly is the out-of-sample step. When training used every cell
         # the default argument is equivalent, and left alone so the common path is untouched.
-        adata.obsm[output_rep] = (
+        latent = (
             model.get_latent_representation()
             if train is work
             else model.get_latent_representation(work)
         )
+
+        # Validate the embedding is not degenerate before writing it.
+        stds = np.std(latent, axis=0)
+        n_variable = int((stds > 1e-6).sum())
+        if n_variable < 2:
+            raise CellQuorumStageError(
+                "integration",
+                f"scVI embedding collapsed: only {n_variable}/{latent.shape[1]} dimensions have "
+                f"variance (std > 1e-6). Training produced a degenerate manifold. "
+                f"First 10 stds: {stds[:10].tolist()}. Check: batch key has >1 batch, "
+                f"counts layer is not empty, HVG selection didn't fail.",
+            )
+        if n_variable < n_latent // 2:
+            # Warning for partial collapse - not fatal but suspicious
+            import warnings
+
+            warnings.warn(
+                f"scVI embedding has low effective dimensionality: only {n_variable}/{n_latent} "
+                f"dimensions have variance. This may indicate a problem with the data or training.",
+                stacklevel=2,
+            )
+
+        adata.obsm[output_rep] = latent
 
         # Optional: the decoder's expected expression, for the genes the caller named.
         # Collected here and appended below, where the stage's note list is built.

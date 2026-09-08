@@ -191,6 +191,18 @@ def _write_prepared_reference(
     sc_local.pp.normalize_total(prepared, target_sum=1e4)
     sc_local.pp.log1p(prepared)
 
+    # Validate reference embedding before writing
+    stds = np.std(ref_latent, axis=0)
+    n_variable = int((stds > 1e-6).sum())
+    if n_variable < 2:
+        from cellquorum.core.exceptions import CellQuorumStageError
+
+        raise CellQuorumStageError(
+            "reference_mapping",
+            f"Reference scANVI embedding collapsed: only {n_variable}/{ref_latent.shape[1]} "
+            f"dimensions have variance. This means the reference atlas training failed.",
+        )
+
     prepared.obsm["X_scANVI"] = np.asarray(ref_latent, dtype="float32")
     prepared.uns["cellquorum_prepared_reference"] = {
         "label_column": key_added,
@@ -769,7 +781,31 @@ class ScArchesMethod(AnalysisMethod):
         result_query.obsm[f"{key_added}_probabilities"] = prob_matrix
 
         # Latent embedding from the best-agreeing seed (single-seed; see note).
-        result_query.obsm["X_scANVI"] = seed_latents[best_seed]["query"]
+        scANVI_latent = seed_latents[best_seed]["query"]
+
+        # Validate the embedding is not degenerate before writing it.
+        stds = np.std(scANVI_latent, axis=0)
+        n_variable = int((stds > 1e-6).sum())
+        if n_variable < 2:
+            from cellquorum.core.exceptions import CellQuorumStageError
+
+            raise CellQuorumStageError(
+                "reference_mapping",
+                f"scANVI embedding collapsed: only {n_variable}/{scANVI_latent.shape[1]} "
+                f"dimensions have variance (std > 1e-6). Surgery produced a degenerate manifold. "
+                f"First 10 stds: {stds[:10].tolist()}. Check: reference and query have "
+                f"sufficient gene overlap, scVI latent (X_scvi) was valid, reference labels "
+                f"are not all identical.",
+            )
+        if n_variable < scANVI_latent.shape[1] // 2:
+            # Warning for partial collapse
+            warnings.warn(
+                f"scANVI embedding has low effective dimensionality: only {n_variable}/"
+                f"{scANVI_latent.shape[1]} dimensions have variance. Surgery may have failed.",
+                stacklevel=2,
+            )
+
+        result_query.obsm["X_scANVI"] = scANVI_latent
 
         # uns metadata.
         ref_states = list(atlas_train.obs["_labels"].unique())
