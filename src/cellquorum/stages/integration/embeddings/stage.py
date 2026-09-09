@@ -30,6 +30,10 @@ _EMB_CONFIG_KEYS = (
     "atlas_states",
     "exclude_multiplets",
     "multiplet_column",
+    "exclude_high_mixing",
+    "max_effective_labels",
+    "mixing_k",
+    "mixing_rep",
     "overlay",
     "magic",
 )

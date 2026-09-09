@@ -90,6 +90,12 @@ class EmbeddingsConfig(StrictBaseModel):
             is visible rather than merely absent.
         exclude_multiplets: Also drop probable multiplets from the restricted panel.
         multiplet_column: obs column holding the probable-multiplet flag.
+        exclude_high_mixing: Drop atlas cells whose manifold neighbourhood mixes too many
+            lineages (a detector-independent doublet/low-info backstop). Off by default.
+        max_effective_labels: A neighbourhood spanning more than this many labels (effective
+            count) is dropped when exclude_high_mixing is on.
+        mixing_k: Neighbours per cell for the mixing computation.
+        mixing_rep: obsm key for the mixing manifold; None tries X_scANVI/X_scvi/PCA.
         overlay: Feature-overlay specification.
         magic: Opt-in scoped MAGIC configuration.
     """
@@ -116,6 +122,14 @@ class EmbeddingsConfig(StrictBaseModel):
     # where unrelated lineages meet and paints it salt-and-pepper.
     exclude_multiplets: bool = True
     multiplet_column: str = "qc_probable_multiplet"
+    # Detector-independent doublet/low-info backstop: drop atlas cells whose manifold
+    # neighbourhood effectively spans more than `max_effective_labels` lineages. Off by
+    # default (it can also catch genuinely intermediate cells); turn on when doublet
+    # detector coverage is weak. Computed in the manifold via neighborhood_label_entropy.
+    exclude_high_mixing: bool = False
+    max_effective_labels: float = 2.5
+    mixing_k: int = 30
+    mixing_rep: str | None = None
     overlay: OverlayConfig = Field(default_factory=OverlayConfig)
     magic: MagicConfig = Field(default_factory=MagicConfig)
 

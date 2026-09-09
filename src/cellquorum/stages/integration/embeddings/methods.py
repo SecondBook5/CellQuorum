@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import anndata as ad
+import numpy as np
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -17,6 +18,10 @@ from cellquorum.stages.integration.embeddings.plots import (
     figure_artifacts,
     save_figure,
 )
+
+# Per-cell neighbourhood-mixing metrics, written to obs when high-mixing exclusion is on.
+_NEIGHBORHOOD_ENTROPY_COLUMN = "neighborhood_label_entropy"
+_EFFECTIVE_LABELS_COLUMN = "neighborhood_effective_labels"
 
 
 def _seed(config: dict, context: object) -> int:
@@ -214,10 +219,60 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
             if is_multiplet.any():
                 suffix += "_nodoublet"
 
+        # Detector-independent backstop: drop cells whose manifold neighbourhood mixes
+        # too many lineages (see _EFFECTIVE_LABELS_COLUMN). Off by default because it can
+        # also catch genuinely intermediate real cells; turned on when doublet detector
+        # coverage is weak (e.g. a dead scDblFinder).
+        if config.get("exclude_high_mixing", False) and _EFFECTIVE_LABELS_COLUMN in adata.obs:
+            max_eff = float(config.get("max_effective_labels", 2.5))
+            eff = adata.obs[_EFFECTIVE_LABELS_COLUMN].to_numpy(dtype=float)
+            high_mix = np.nan_to_num(eff, nan=0.0) > max_eff
+            mask = mask & ~high_mix
+            if high_mix.any():
+                suffix += "_lowmix"
+
         if not mask.any():
             return [("", None)]
         # Both: the restricted atlas, and the unrestricted one for comparison.
         return [(f"_{suffix}", mask), ("_allcells", None)]
+
+    def _ensure_mixing_metric(
+        self, adata: ad.AnnData, config: dict, color_columns: list[str]
+    ) -> None:
+        """Write per-cell neighbourhood mixing to obs when exclusion asks for it.
+
+        A detector-independent doublet / low-information signal, computed in the manifold
+        (not the UMAP): a cell whose nearest neighbours are a jumble of unrelated lineages
+        has no coherent identity. Written once here so ``_resolve_subsets`` can threshold
+        it and so it is inspectable afterwards, rather than hidden inside the mask.
+        """
+        if not config.get("exclude_high_mixing", False):
+            return
+        if _EFFECTIVE_LABELS_COLUMN in adata.obs:
+            return  # already computed (e.g. a prior stage)
+        rep = self._resolve_mixing_rep(adata, config)
+        if rep is None or not color_columns:
+            return
+        from cellquorum.stages.qc.projection import neighborhood_label_entropy
+
+        labels = adata.obs[color_columns[0]].astype(str).to_numpy()
+        ent, eff = neighborhood_label_entropy(
+            np.asarray(adata.obsm[rep]), labels, k=int(config.get("mixing_k", 30))
+        )
+        adata.obs[_NEIGHBORHOOD_ENTROPY_COLUMN] = ent
+        adata.obs[_EFFECTIVE_LABELS_COLUMN] = eff
+
+    def _resolve_mixing_rep(self, adata: ad.AnnData, config: dict) -> str | None:
+        requested = config.get("mixing_rep") or config.get("use_rep")
+        candidates = (
+            (requested, "X_scANVI", "X_scvi", "X_pca_harmony", "X_pca")
+            if requested
+            else ("X_scANVI", "X_scvi", "X_pca_harmony", "X_pca")
+        )
+        for key in candidates:
+            if key and key in adata.obsm:
+                return key
+        return None
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         figures_dir = Path(context.paths.figures) / "embeddings"
@@ -232,6 +287,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         color_columns = self._resolve_color_columns(adata, config)
         if not color_columns:
             return self._skip("no grouping column present")
+        self._ensure_mixing_metric(adata, config, color_columns)
         subsets = self._resolve_subsets(adata, config)
 
         apply_theme()

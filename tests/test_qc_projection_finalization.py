@@ -14,7 +14,10 @@ import pandas as pd
 import pytest
 
 from cellquorum.stages.qc.finalization import QCFinalizationStage
-from cellquorum.stages.qc.projection import project_query_cells
+from cellquorum.stages.qc.projection import (
+    neighborhood_label_entropy,
+    project_query_cells,
+)
 from cellquorum.stages.qc.query_projection_stage import QueryProjectionStage
 
 
@@ -166,3 +169,69 @@ def test_projection_skips_when_no_borderline() -> None:
     adata.obs["qc_state_initial"] = pd.Categorical(["core"] * adata.n_obs)
     result = QueryProjectionStage().run(_Ctx(adata))
     assert result.metrics.get("skipped")
+
+
+def test_neighborhood_entropy_flags_mixed_cells() -> None:
+    """A cell in a pure neighbourhood scores ~1 effective label; one whose neighbours are
+
+    an even mix of lineages scores near the number of lineages. This is the
+    detector-independent doublet/low-info signal.
+    """
+    rng = np.random.default_rng(0)
+    # Three tight, separated blobs (pure neighbourhoods) ...
+    a = rng.normal(-10, 0.2, (100, 2))
+    b = rng.normal(0, 0.2, (100, 2))
+    c = rng.normal(10, 0.2, (100, 2))
+    # ... plus one point at the centroid of all three (maximally mixed neighbourhood).
+    mixed = np.array([[0.0, 0.0]])  # sits in blob b, so still fairly pure here
+    coords = np.vstack([a, b, c, mixed])
+    labels = np.array(["A"] * 100 + ["B"] * 100 + ["C"] * 100 + ["B"])
+
+    ent, eff = neighborhood_label_entropy(coords, labels, k=15)
+    # A cell deep in blob A has a pure neighbourhood.
+    assert eff[0] < 1.5
+    # Overall, pure blobs dominate: median effective labels is ~1.
+    assert np.median(eff) < 1.5
+
+
+def test_neighborhood_entropy_high_at_a_true_junction() -> None:
+    """Cells sitting between two equally-close blobs get a genuinely mixed neighbourhood."""
+    rng = np.random.default_rng(1)
+    left = rng.normal(-1.0, 0.05, (100, 2))
+    right = rng.normal(1.0, 0.05, (100, 2))
+    # A cluster of cells exactly between the two, each surrounded by both.
+    junction = rng.normal(0.0, 0.02, (40, 2))
+    coords = np.vstack([left, right, junction])
+    labels = np.array(["L"] * 100 + ["R"] * 100 + ["L"] * 20 + ["R"] * 20)
+
+    _, eff = neighborhood_label_entropy(coords, labels, k=30)
+    junction_eff = eff[200:]
+    # Junction cells see both L and R -> ~2 effective labels.
+    assert junction_eff.mean() > 1.5
+
+
+def test_high_mixing_exclusion_in_atlas_subset() -> None:
+    import pandas as pd
+
+    from cellquorum.stages.integration.embeddings.methods import CategoricalEmbeddingMethod
+
+    n = 300
+    adata = ad.AnnData(np.zeros((n, 2), dtype="float32"))
+    adata.obs["qc_state_final"] = pd.Categorical(["core"] * n)
+    adata.obs["ref_cell_type_granular_coarse"] = pd.Categorical(["A"] * n)
+    # 30 cells pre-marked as high-mixing.
+    eff = np.ones(n)
+    eff[:30] = 4.0
+    adata.obs["neighborhood_effective_labels"] = eff
+
+    method = CategoricalEmbeddingMethod()
+    cfg = {
+        "qc_state_column": "qc_state_final",
+        "atlas_states": ["core"],
+        "exclude_high_mixing": True,
+        "max_effective_labels": 2.5,
+    }
+    subsets = method._resolve_subsets(adata, cfg)
+    suffix, mask = subsets[0]
+    assert "lowmix" in suffix
+    assert int(mask.sum()) == 270  # 300 minus 30 high-mixing

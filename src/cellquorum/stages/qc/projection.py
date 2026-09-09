@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import pandas as pd
 from scipy.stats import entropy
 from sklearn.neighbors import NearestNeighbors
 
@@ -159,4 +160,60 @@ def project_query_cells(
     )
 
 
-__all__ = ["QueryProjection", "project_query_cells"]
+def neighborhood_label_entropy(
+    coords: np.ndarray,
+    labels: np.ndarray,
+    *,
+    k: int = 30,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-cell label mixing of each cell's own neighbourhood in a shared manifold.
+
+    A detector-independent doublet / low-information signal. A cell whose nearest
+    neighbours in the manifold are a jumble of *different* lineages — a fibroblast among
+    macrophages — either is a doublet or carries too little information to have an
+    identity. Both are what pool in the salt-and-pepper zone at the centre of a UMAP.
+    Unlike Scrublet/scDblFinder this needs no doublet model, so it still works when every
+    doublet detector has died (which is exactly when a backstop is wanted).
+
+    Computed in the MANIFOLD (scVI/PCA latent), never in the 2-D UMAP: the UMAP is a lossy
+    projection and its local mixing is partly an artefact of the layout. Identity lives in
+    the latent space, so mixing must be measured there.
+
+    Args:
+        coords: ``(n, d)`` cell coordinates in the manifold.
+        labels: ``(n,)`` per-cell labels (e.g. coarse cell type).
+        k: Neighbours per cell, including the cell itself; clamped to ``n``.
+
+    Returns:
+        ``(entropy, effective_labels)``, both ``(n,)`` aligned to ``coords``.
+        ``effective_labels = exp(entropy)`` is the number of labels the neighbourhood
+        effectively spans — 1 for a pure neighbourhood, higher as it mixes — and reads
+        more naturally as a threshold than nats of entropy do.
+
+    Raises:
+        ValueError: If shapes disagree or the input is empty.
+    """
+    coords = np.asarray(coords, dtype=float)
+    labels = np.asarray(labels)
+    if coords.ndim != 2 or coords.shape[0] == 0:
+        raise ValueError("coords must be a non-empty 2-D array.")
+    if labels.shape[0] != coords.shape[0]:
+        raise ValueError(f"labels has {labels.shape[0]} entries for {coords.shape[0]} cells.")
+
+    n = coords.shape[0]
+    k_eff = int(min(k, n))
+    nn = NearestNeighbors(n_neighbors=k_eff).fit(coords)
+    _, idx = nn.kneighbors(coords)
+
+    codes, _ = pd.factorize(labels)
+    n_labels = int(codes.max()) + 1 if codes.size and codes.max() >= 0 else 1
+    neighbour_codes = codes[idx]  # (n, k_eff)
+
+    ent = np.zeros(n, dtype=float)
+    for i in range(n):
+        counts = np.bincount(neighbour_codes[i], minlength=n_labels)
+        ent[i] = entropy(counts / counts.sum())
+    return ent, np.exp(ent)
+
+
+__all__ = ["QueryProjection", "project_query_cells", "neighborhood_label_entropy"]
