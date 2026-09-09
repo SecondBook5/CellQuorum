@@ -52,6 +52,11 @@ class OverlayConfig(StrictBaseModel):
     s_genes: list[str] = []
     g2m_genes: list[str] = []
     layer: str | None = "cellquorum_normalized"
+    # Colormaps. Expression is unsigned -> sequential magma (a smoother heat ramp than
+    # viridis for marker panels). Signed scores (programs, cell cycle) -> a diverging map
+    # centred at 0, matching the published figures.
+    expression_cmap: str = "magma"
+    score_cmap: str = "RdBu_r"
 
 
 class EmbeddingsConfig(StrictBaseModel):

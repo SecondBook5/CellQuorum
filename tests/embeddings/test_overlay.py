@@ -164,6 +164,29 @@ def test_magic_scoped_tags_imputed_and_guard_blocks():
         assert_not_imputed(a, "magic")
 
 
+def test_magic_scoped_layer_is_sparse_and_scoped():
+    """The imputed layer stays sparse and only the requested genes carry values.
+
+    Guards the memory fix: the old code densified the full matrix (26 GB on the real
+    cohort) and returned all genes; now only the requested columns are filled, in a
+    sparse full-width layer.
+    """
+    import scipy.sparse as sp
+
+    a = _adata()
+    overlay.impute_magic_scoped(a, ["GENE_A"], knn=5, solver="approximate", random_state=0)
+    layer = a.layers["magic"]
+    assert sp.issparse(layer), "imputed layer must be sparse, not a dense full-width array"
+
+    dense = layer.toarray()
+    a_col = a.var_names.get_loc("GENE_A")
+    b_col = a.var_names.get_loc("GENE_B")
+    # The requested gene is imputed (smoothed -> broadly nonzero); an unrequested gene
+    # stays exactly zero.
+    assert (dense[:, a_col] != 0).any()
+    assert (dense[:, b_col] == 0).all()
+
+
 def test_magic_unavailable_raises(monkeypatch):
     a = _adata()
     import builtins

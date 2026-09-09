@@ -476,12 +476,33 @@ class ContinuousOverlayMethod(AnalysisMethod):
                 warnings.append(f"continuous_overlay: embedding '{tag}' unavailable")
                 continue
             coords = adata.obsm[spec["obsm"]]
+            expr_cmap = str(overlay_cfg.expression_cmap)
+            score_cmap = str(overlay_cfg.score_cmap)
             # Track used stems per embedding to detect and de-duplicate collisions.
             used_stems: dict[str, int] = {}
             for feat in features:
                 try:
+                    # Expression (genes) is unsigned -> a sequential heat map (magma).
+                    # Scores (programs, cell-cycle) are signed around 0 -> a diverging map
+                    # centred at 0, so blue is genuinely below-average and red above, the
+                    # way the published cell-cycle figure reads. Colouring a signed score
+                    # with a sequential ramp hides the sign, which is the whole point of it.
+                    signed = feat.kind in ("program", "cell_cycle")
+                    if signed:
+                        finite = feat.values[np.isfinite(feat.values)]
+                        vlim = float(np.percentile(np.abs(finite), 98)) if finite.size else 1.0
+                        vlim = vlim or 1.0
+                        cmap, vmin, vmax = score_cmap, -vlim, vlim
+                    else:
+                        cmap, vmin, vmax = expr_cmap, None, None
                     fig = plots.continuous_overlay(
-                        coords, feat.values, title=feat.label, axis_labels=spec["axis"]
+                        coords,
+                        feat.values,
+                        title=feat.label,
+                        axis_labels=spec["axis"],
+                        cmap=cmap,
+                        vmin=vmin,
+                        vmax=vmax,
                     )
                     safe = re.sub(r"[^0-9A-Za-z_.-]", "_", feat.label)
                     # De-duplicate stem collisions: append counter if already used.

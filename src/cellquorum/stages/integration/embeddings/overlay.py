@@ -301,16 +301,31 @@ def impute_magic_scoped(
 
     use_layer = layer_in is not None and layer_in in adata.layers
     source = adata.layers[layer_in] if use_layer else adata.X
-    dense_X = source.toarray() if sp.issparse(source) else np.asarray(source)
-    operator = magic.MAGIC(knn=knn, solver=solver, random_state=random_state, verbose=0)
-    imputed = operator.fit_transform(dense_X, genes="all_genes")
-    imputed = np.asarray(imputed)
 
-    out = np.zeros_like(dense_X, dtype=float)
-    for gene in present:
-        j = adata.var_names.get_loc(gene)
-        out[:, j] = imputed[:, j]
-    adata.layers[layer_out] = out
+    # Do NOT densify the input. `source.toarray()` on this cohort's 201,871 x 33,417 is
+    # ~26 GB, and the old code then asked MAGIC for genes="all_genes" (a second full dense
+    # matrix) and allocated a third via np.zeros_like for the output layer — ~78 GB to
+    # impute a 20-gene marker panel, which OOM-killed the process. MAGIC accepts a sparse
+    # matrix (it reduces to PCA internally) and its `genes=` argument returns ONLY the
+    # requested columns, so the diffusion is full-graph but the returned matrix is
+    # (n_cells x len(present)).
+    positions = [adata.var_names.get_loc(gene) for gene in present]
+    operator = magic.MAGIC(knn=knn, solver=solver, random_state=random_state, verbose=0)
+    imputed = np.asarray(operator.fit_transform(source, genes=positions), dtype="float32")
+    if imputed.ndim == 1:
+        imputed = imputed.reshape(-1, 1)
+
+    # Write a SPARSE, full-width layer: it spans the gene space (shape-compatible with X)
+    # but only the imputed columns carry values. Same reasoning as the scVI denoised layer
+    # — a dense full-width layer here would be the 26 GB we just avoided on input.
+    n_obs, n_vars = adata.n_obs, adata.n_vars
+    rows = np.tile(np.arange(n_obs, dtype=np.int32), len(positions))
+    cols = np.repeat(np.asarray(positions, dtype=np.int32), n_obs)
+    adata.layers[layer_out] = sp.coo_matrix(
+        (imputed.ravel(order="F"), (rows, cols)),
+        shape=(n_obs, n_vars),
+        dtype="float32",
+    ).tocsc()
     set_layer_tag(adata, layer_out, kind="imputed")
     return present
 
