@@ -18,7 +18,7 @@ from matplotlib.figure import Figure
 from cellquorum.visualization.figio import figure_artifacts, save_figure
 from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
-from cellquorum.visualization.figstyle import apply_cellquorum_theme, palette_colors
+from cellquorum.visualization.figstyle import apply_cellquorum_theme, muted_palette_colors
 
 # Single source of truth: tag -> obsm key + axis labels.
 EMBEDDING_REGISTRY: dict[str, dict] = {
@@ -192,15 +192,15 @@ def categorical_embedding(
         if _m.any():
             centroids[_cat] = np.array([np.median(xy[_m, 0]), np.median(xy[_m, 1])])
 
-    # Colors come from `palette_colors`, the module's single authority for "what
-    # colors for n categories": the audited CATEGORICAL_PALETTE while it covers n,
-    # the non-repeating generator past it. Calling the generator directly (which
-    # this did) bypassed the validated palette entirely, so a 15-category atlas was
-    # painted in raw golden-angle vivids instead of the hues the audit passed.
+    # Colors come from the MUTED atlas palette, not the bright CATEGORICAL_PALETTE. A
+    # 200,000-cell UMAP in saturated primaries reads as clip-art; the desaturated jewel
+    # tones are what make it read as data (and match the published atlas figures). Still
+    # a fixed, non-repeating authority — never the golden-angle generator directly, which
+    # is what once painted a 15-category atlas in raw vivids.
     #
     # Slots are then dealt in ANGULAR SWEEP order, not category order, so spatial
     # neighbours land on adjacent slots. See `_angular_sweep`.
-    colors = palette_colors(len(cats))
+    colors = muted_palette_colors(len(cats))
     sweep = _angular_sweep(centroids, cats)
     palette = {c: colors[i] for i, c in enumerate(sweep)}
     # Declared-but-absent categories still need a color for the PAGA node loop.
@@ -310,12 +310,20 @@ def categorical_embedding(
                 centroid[0],
                 centroid[1],
                 cat,
-                fontsize=7,
+                fontsize=9,
+                fontweight="bold",
                 ha="center",
                 va="center",
                 zorder=10,
                 clip_on=False,
-                bbox={"boxstyle": "round,pad=0.18", "fc": "white", "ec": "none", "alpha": 0.8},
+                # Faint tint of the cluster's own colour behind bold black text, as in the
+                # published atlas — a plain white box reads flatter and more clip-art.
+                bbox={
+                    "boxstyle": "round,pad=0.25",
+                    "fc": palette.get(cat, "#FFFFFF"),
+                    "ec": "none",
+                    "alpha": 0.28,
+                },
             )
         )
     _repel_labels(ax, texts)

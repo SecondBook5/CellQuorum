@@ -181,6 +181,30 @@ CATEGORICAL_PALETTE: list[str] = [
     "#d05ce3",  # overflow: orchid
 ]
 
+# Muted jewel palette for large cell-atlas embeddings. The bright CATEGORICAL_PALETTE
+# above is right for a handful of bars or a volcano plot, but painting a 200,000-cell
+# UMAP in saturated primaries reads as cartoonish — the clusters look like poster
+# clip-art rather than data. These desaturated Paul-Tol-derived tones are the palette
+# the published lymphedema atlas figures use; the set passed a CVD gate (worst-case
+# CAM02-UCS separation under normal + deuter/protan/tritan vision, lightness band
+# 30-80) as recorded in the analysis repo. Ordered so an angular sweep (see
+# embeddings.plots) puts contrasting hues on spatially adjacent clusters.
+MUTED_PALETTE: list[str] = [
+    "#6699CC",  # soft blue
+    "#CC6677",  # rose
+    "#882255",  # wine
+    "#117733",  # green
+    "#C7A83B",  # sand/gold
+    "#AA4499",  # purple
+    "#44AA99",  # teal
+    "#332288",  # indigo
+    "#7A1C0A",  # dark red
+    "#999933",  # olive
+    "#88CCEE",  # cyan
+    "#EE8866",  # light orange
+    "#004488",  # navy
+]
+
 
 def distinct_palette(n: int) -> list[str]:
     """Return ``n`` maximally-distinct hex colors spanning jewel + vivid-bright tones.
@@ -754,6 +778,22 @@ def palette_colors(n: int) -> list[str]:
     if n <= len(CATEGORICAL_PALETTE):
         return CATEGORICAL_PALETTE[:n]
     return distinct_palette(n)
+
+
+def muted_palette_colors(n: int) -> list[str]:
+    """``n`` distinct colors from the muted atlas palette, generator past its size.
+
+    Same contract as :func:`palette_colors` (validated fixed set first, never cycle),
+    but drawn from :data:`MUTED_PALETTE` — the desaturated tones a large cell-atlas
+    embedding wants instead of saturated primaries. Past 13 it hands off to
+    :func:`distinct_palette`; those overflow colors are brighter, which is acceptable
+    because past 13 categories colour is a secondary cue to position and labels anyway.
+    """
+    if n <= 0:
+        return []
+    if n <= len(MUTED_PALETTE):
+        return MUTED_PALETTE[:n]
+    return MUTED_PALETTE + distinct_palette(n - len(MUTED_PALETTE))
 
 
 def get_group_palette(groups: list[str]) -> dict[str, str]:
@@ -1592,7 +1632,9 @@ __all__ = [
     "NORMAL_BLUE",
     "LE_RED",
     "CATEGORICAL_PALETTE",
+    "MUTED_PALETTE",
     "distinct_palette",
+    "muted_palette_colors",
     "set_style",
     "condition_palette",
     "diverging_norm",

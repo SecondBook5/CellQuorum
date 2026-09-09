@@ -11,10 +11,11 @@ from cellquorum.visualization import figstyle
 def test_palette_is_shared_with_figstyle():
     # Categorical colors come from figstyle's shared authority, not a private
     # hardcoded list in the plotter — one source of truth for the house look.
-    # The plotter now uses palette_colors (validated CATEGORICAL_PALETTE first,
-    # then the generator past its size) rather than the raw generator, so the
-    # atlas gets the audited hues instead of raw golden-angle vivids.
-    assert plots.palette_colors is figstyle.palette_colors
+    # The plotter uses muted_palette_colors (the MUTED atlas palette first, then the
+    # generator past its size), not the raw generator: a 200k-cell UMAP in saturated
+    # primaries reads as clip-art, so the atlas gets the desaturated jewel tones the
+    # published figures use.
+    assert plots.muted_palette_colors is figstyle.muted_palette_colors
 
 
 def test_continuous_overlay_respects_explicit_vmin_vmax():
