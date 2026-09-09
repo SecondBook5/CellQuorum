@@ -192,16 +192,32 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         between clusters and blur the boundaries.
 
         Empty ``atlas_states`` (the default) keeps the historical all-cells behaviour.
+
+        When ``exclude_multiplets`` is set, probable multiplets are also dropped from the
+        restricted panel: a flagged doublet is not one biological cell, so it has no cell
+        type and no place in a cell-type atlas. Doublets pool where unrelated lineages
+        meet — the salt-and-pepper mixing zone at the centre of a UMAP — so leaving them
+        in is what paints that zone. They stay in the ``_allcells`` twin, which exists
+        precisely to show what the restriction removed.
         """
         states = [str(s) for s in (config.get("atlas_states") or [])]
         column = str(config.get("qc_state_column") or "qc_state_initial")
         if not states or column not in adata.obs.columns:
             return [("", None)]
         mask = adata.obs[column].astype(str).isin(states).to_numpy()
+
+        suffix = "_".join(states)
+        multiplet_col = str(config.get("multiplet_column") or "qc_probable_multiplet")
+        if config.get("exclude_multiplets", True) and multiplet_col in adata.obs.columns:
+            is_multiplet = adata.obs[multiplet_col].to_numpy(dtype=bool)
+            mask = mask & ~is_multiplet
+            if is_multiplet.any():
+                suffix += "_nodoublet"
+
         if not mask.any():
             return [("", None)]
         # Both: the restricted atlas, and the unrestricted one for comparison.
-        return [(f"_{'_'.join(states)}", mask), ("_allcells", None)]
+        return [(f"_{suffix}", mask), ("_allcells", None)]
 
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
         figures_dir = Path(context.paths.figures) / "embeddings"

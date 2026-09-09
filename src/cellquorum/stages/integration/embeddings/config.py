@@ -88,6 +88,8 @@ class EmbeddingsConfig(StrictBaseModel):
             draws every cell (the historical behaviour). When set, BOTH the restricted
             panel and an ``_allcells`` panel are written, so what the restriction removed
             is visible rather than merely absent.
+        exclude_multiplets: Also drop probable multiplets from the restricted panel.
+        multiplet_column: obs column holding the probable-multiplet flag.
         overlay: Feature-overlay specification.
         magic: Opt-in scoped MAGIC configuration.
     """
@@ -109,6 +111,11 @@ class EmbeddingsConfig(StrictBaseModel):
     color_by: list[str] = []
     qc_state_column: str = "qc_state_initial"
     atlas_states: list[str] = []
+    # Drop probable multiplets from the restricted atlas panel (they stay in _allcells).
+    # A flagged doublet is not one biological cell; it pools in the central mixing zone
+    # where unrelated lineages meet and paints it salt-and-pepper.
+    exclude_multiplets: bool = True
+    multiplet_column: str = "qc_probable_multiplet"
     overlay: OverlayConfig = Field(default_factory=OverlayConfig)
     magic: MagicConfig = Field(default_factory=MagicConfig)
 

@@ -63,3 +63,36 @@ def test_magic_zscore_layer_skips_when_absent():
     adata = ad.AnnData(np.zeros((5, 3), dtype="float32"))
     assert plots.magic_zscore_layer(adata) is False
     assert "magic_z" not in adata.layers
+
+
+def test_atlas_subset_excludes_probable_multiplets():
+    """A flagged doublet is not a cell type, so it is dropped from the restricted atlas
+
+    panel but kept in the _allcells twin. This clears the central salt-and-pepper
+    mixing zone, which is ~12% doublets, without touching the genuinely intermediate
+    cells around it.
+    """
+    import pandas as pd
+
+    from cellquorum.stages.integration.embeddings.methods import CategoricalEmbeddingMethod
+
+    n = 1000
+    adata = ad.AnnData(np.zeros((n, 2), dtype="float32"))
+    state = np.array(["core"] * 800 + ["rescued"] * 100 + ["unresolved_borderline"] * 100)
+    mult = np.zeros(n, dtype=bool)
+    mult[:50] = True  # 50 core cells are also probable multiplets
+    adata.obs["qc_state_final"] = pd.Categorical(state)
+    adata.obs["qc_probable_multiplet"] = mult
+
+    method = CategoricalEmbeddingMethod()
+    cfg = {"qc_state_column": "qc_state_final", "atlas_states": ["core", "rescued"]}
+    subsets = method._resolve_subsets(adata, cfg)
+
+    suffix, mask = subsets[0]
+    assert "nodoublet" in suffix
+    assert int(mask.sum()) == 850  # 900 core+rescued minus 50 doublets
+    assert subsets[1] == ("_allcells", None)  # twin keeps everything
+
+    # Opt-out restores the full core+rescued set.
+    off = method._resolve_subsets(adata, {**cfg, "exclude_multiplets": False})
+    assert int(off[0][1].sum()) == 900

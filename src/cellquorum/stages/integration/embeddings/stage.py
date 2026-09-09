@@ -28,6 +28,8 @@ _EMB_CONFIG_KEYS = (
     "color_by",
     "qc_state_column",
     "atlas_states",
+    "exclude_multiplets",
+    "multiplet_column",
     "overlay",
     "magic",
 )
