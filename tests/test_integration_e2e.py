@@ -127,3 +127,47 @@ def test_integration_runs_end_to_end_and_writes_the_corrected_embedding(tmp_path
     assert final_adata.obsm["X_pca_harmony"].shape[0] == final_adata.n_obs
     # Clustering was configured to read the corrected embedding, not raw PCA.
     assert "leiden" in final_adata.obs.columns
+
+
+def test_clustering_auto_couples_to_the_corrected_embedding_by_default(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The common case: a user enables integration and leaves clustering.use_rep unset.
+
+    The test above sets clustering.use_rep explicitly, so it never exercised the
+    auto-coupling default at all -- the actual most-common config shape. Spies on the
+    dispatched method to prove it received the corrected embedding, not just that a
+    plausible-looking note claimed so.
+    """
+    from cellquorum.stages.clustering.neighbors_leiden import LeidenMethod
+
+    captured: dict[str, str] = {}
+    orig_run = LeidenMethod._run
+
+    def spy_run(self, adata, config, context):
+        captured["use_rep"] = config.get("use_rep")
+        return orig_run(self, adata, config, context)
+
+    monkeypatch.setattr(LeidenMethod, "_run", spy_run)
+
+    h5ad_path = tmp_path / "pbmc.h5ad"
+    _pbmc_adata().write_h5ad(h5ad_path)
+    output_dir = tmp_path / "run"
+
+    config = _config_with_integration(h5ad_path)
+    del config["clustering"]["use_rep"]
+
+    result = run_pipeline(
+        config,
+        output_dir=output_dir,
+        backend_registry=_cpu_registry(),
+        execute=True,
+    )
+
+    execution = result.execution_result
+    assert execution is not None
+    assert not execution.has_failures()
+    assert captured["use_rep"] == "X_pca_harmony", (
+        f"Clustering should auto-couple to the corrected embedding by default, "
+        f"actually used {captured['use_rep']!r}"
+    )

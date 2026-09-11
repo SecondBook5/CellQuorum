@@ -98,7 +98,7 @@ def test_clustering_stage_honors_enabled_false():
     assert any("disabled" in w for w in result.warnings)
 
 
-def test_clustering_auto_couples_to_last_integration_method_output_rep():
+def test_clustering_auto_couples_to_last_integration_method_output_rep(monkeypatch):
     """When integration runs a methods list, clustering couples to the last method's output_rep."""
     from pydantic import BaseModel
 
@@ -149,6 +149,17 @@ def test_clustering_auto_couples_to_last_integration_method_output_rep():
         clustering=clustering_cfg,
     )
 
+    # Spy on the dispatched method to see what use_rep it actually received -- the note
+    # alone does not prove the coupling took effect, only that the stage believes it did.
+    captured: dict[str, str] = {}
+    orig_run = LeidenMethod._run
+
+    def spy_run(self, adata, run_config, run_context):
+        captured["use_rep"] = run_config.get("use_rep")
+        return orig_run(self, adata, run_config, run_context)
+
+    monkeypatch.setattr(LeidenMethod, "_run", spy_run)
+
     ctx = _Ctx(a, config)
     result = stage.run(ctx)
     # Clustering should have auto-coupled to X_scvi (the last method's output_rep).
@@ -156,3 +167,65 @@ def test_clustering_auto_couples_to_last_integration_method_output_rep():
         "X_scvi" in note for note in result.notes
     ), f"Expected X_scvi in notes: {result.notes}"
     assert "leiden" in result.adata.obs
+    # The note is only honest if the dispatched method actually read X_scvi, not X_pca.
+    assert captured["use_rep"] == "X_scvi", (
+        f"Note claimed auto-coupling to X_scvi, but LeidenMethod actually used "
+        f"{captured['use_rep']!r}"
+    )
+
+
+def test_clustering_falls_back_to_pca_when_integration_is_configured_but_skipped():
+    """integration.enabled=True is not proof integration wrote its output.
+
+    Harmony (and scVI/scANVI) can internally MethodSkip -- e.g. a missing batch_key
+    column -- which the stage records as skipped without raising. `stages.integration`
+    stays True either way, since that reflects configuration, not outcome. Coupling to
+    X_pca_harmony on config alone crashes clustering with a contract error on a key that
+    was never written; the auto-couple must check the actual AnnData, not just the flag.
+    """
+    from pydantic import BaseModel
+
+    class MockIntegrationConfig(BaseModel):
+        enabled: bool = True
+        methods: list[dict] = []
+        output_rep: str = "X_pca_harmony"
+
+    class MockClusteringConfig(BaseModel):
+        enabled: bool = True
+        method: str = "leiden"
+        n_neighbors: int = 15
+        resolution: float = 1.0
+        random_state: int = 0
+        key_added: str = "leiden"
+        use_rep: str = "X_pca"
+
+        model_fields_set: set = set()
+
+    class MockStages(BaseModel):
+        integration: bool = True
+        clustering: bool = True
+
+    class MockConfig(BaseModel):
+        stages: MockStages
+        integration: MockIntegrationConfig
+        clustering: MockClusteringConfig
+
+    reg = MethodRegistry()
+    reg.register(LeidenMethod)
+    stage = ClusteringStage(registry=reg)
+    a = _adata_with_pca()
+    # No X_pca_harmony written -- integration was configured but its method skipped.
+
+    config = MockConfig(
+        stages=MockStages(),
+        integration=MockIntegrationConfig(),
+        clustering=MockClusteringConfig(),
+    )
+
+    ctx = _Ctx(a, config)
+    result = stage.run(ctx)
+
+    assert "leiden" in result.adata.obs
+    assert any(
+        "X_pca_harmony" in w and "not present" in w.lower() for w in result.warnings
+    ), f"Expected a warning naming the missing embedding: {result.warnings}"
