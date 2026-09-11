@@ -93,6 +93,10 @@ def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Pat
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    from cellquorum.visualization.figstyle import apply_cellquorum_theme, save_cellquorum_figure
+
+    apply_cellquorum_theme()
+
     # Show at most the leading 30 PCs for legibility.
     n_show = int(min(30, len(variance_ratio)))
     x = np.arange(1, n_show + 1)
@@ -118,8 +122,6 @@ def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Pat
 
     # Persist and close. The shared writer supplies the atomic rename and the
     # vector twin; closing stays here, since save_cellquorum_figure does not close.
-    from cellquorum.visualization.figstyle import save_cellquorum_figure
-
     save_cellquorum_figure(fig, output_path, dpi=150)
     plt.close(fig)
 
