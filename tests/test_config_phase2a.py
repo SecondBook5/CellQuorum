@@ -50,6 +50,11 @@ def test_clustering_defaults():
     assert c.n_neighbors == 15
     assert c.resolution == 1.0
     assert c.key_added == "leiden"
+    # Opt-in and off by default -- a full sweep is a "run once to choose a resolution"
+    # cost, not a per-run one.
+    assert c.resolution_diagnostic.enabled is False
+    assert c.resolution_diagnostic.adaptive is True
+    assert c.resolution_diagnostic.n_bootstraps == 20
 
 
 def test_strict_rejects_unknown_field():

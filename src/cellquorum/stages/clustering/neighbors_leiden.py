@@ -28,7 +28,7 @@ import pandas as pd
 import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageResult
+from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.qc.eligibility import Analysis, fitting_cells
 
@@ -94,6 +94,84 @@ def _neighbors_and_leiden(
     )
 
 
+def run_neighbors_leiden_routed(
+    target: ad.AnnData,
+    *,
+    context: object,
+    n_neighbors: int,
+    use_rep: str,
+    resolution: float,
+    random_state: int,
+    key_added: str,
+) -> tuple[str, str | None]:
+    """Build the kNN graph and run Leiden on ``target``, GPU-first with CPU fallback.
+
+    Shared by LeidenMethod and the resolution-diagnostic bootstrap sweep so the two
+    cannot drift on GPU routing or the fallback behavior -- the diagnostic's whole point
+    is to describe what the real clustering run would do, so it must route identically.
+
+    Args:
+        target: Object to cluster in place (mutated: obsp graph, obs[key_added]).
+        context: Pipeline context, for the GPU/CPU routing decision.
+        n_neighbors, use_rep, resolution, random_state, key_added: As in LeidenMethod.
+
+    Returns:
+        ``(compute_used, gpu_fallback_note)`` -- "gpu" or "cpu", and a message when GPU
+        was unavailable or failed, else None.
+    """
+    from cellquorum.backends.compute import resolve_compute
+
+    routing = resolve_compute(context)
+    compute_used = "cpu"
+    gpu_fallback_note = routing.get("fallback_reason")
+
+    if routing["use_gpu"]:
+        try:
+            import rapids_singlecell as rsc
+
+            rsc.get.anndata_to_GPU(target)
+            rsc.pp.neighbors(
+                target, n_neighbors=n_neighbors, use_rep=use_rep, random_state=random_state
+            )
+            rsc.tl.leiden(
+                target, resolution=resolution, random_state=random_state, key_added=key_added
+            )
+            rsc.get.anndata_to_CPU(target)
+            compute_used = "gpu"
+        except Exception as exc:  # noqa: BLE001
+            if not routing["fallback_to_cpu"]:
+                raise
+            try:
+                import rapids_singlecell as rsc
+
+                rsc.get.anndata_to_CPU(target)
+            except Exception:
+                pass
+            gpu_fallback_note = (
+                f"GPU clustering failed ({type(exc).__name__}: {str(exc)[:80]}); "
+                "fell back to CPU."
+            )
+            _neighbors_and_leiden(
+                target,
+                n_neighbors=n_neighbors,
+                use_rep=use_rep,
+                resolution=resolution,
+                random_state=random_state,
+                key_added=key_added,
+            )
+    else:
+        _neighbors_and_leiden(
+            target,
+            n_neighbors=n_neighbors,
+            use_rep=use_rep,
+            resolution=resolution,
+            random_state=random_state,
+            key_added=key_added,
+        )
+
+    return compute_used, gpu_fallback_note
+
+
 class LeidenMethod(AnalysisMethod):
     """Leiden clustering strategy over a PCA embedding."""
 
@@ -129,12 +207,6 @@ class LeidenMethod(AnalysisMethod):
         key_added = config.get("key_added", "leiden")
         use_rep = config.get("use_rep", "X_pca")
 
-        from cellquorum.backends.compute import resolve_compute
-
-        routing = resolve_compute(context)
-        compute_used = "cpu"
-        gpu_fallback_note = routing.get("fallback_reason")
-
         # Cluster boundaries are inferred from whoever takes part, so the partition is fitted
         # on the cells QC permits to fit. This stage declares fit_scope=CORE at registration;
         # this is what honours it. CLUSTERING is its own analysis in the eligibility table
@@ -147,49 +219,15 @@ class LeidenMethod(AnalysisMethod):
         # edges it had to non-core cells, leaving it artificially isolated.
         target = adata if fitting is None else adata[fitting].copy()
 
-        if routing["use_gpu"]:
-            try:
-                import rapids_singlecell as rsc
-
-                rsc.get.anndata_to_GPU(target)
-                rsc.pp.neighbors(
-                    target, n_neighbors=n_neighbors, use_rep=use_rep, random_state=random_state
-                )
-                rsc.tl.leiden(
-                    target, resolution=resolution, random_state=random_state, key_added=key_added
-                )
-                rsc.get.anndata_to_CPU(target)
-                compute_used = "gpu"
-            except Exception as exc:  # noqa: BLE001
-                if not routing["fallback_to_cpu"]:
-                    raise
-                try:
-                    import rapids_singlecell as rsc
-
-                    rsc.get.anndata_to_CPU(target)
-                except Exception:
-                    pass
-                gpu_fallback_note = (
-                    f"GPU clustering failed ({type(exc).__name__}: {str(exc)[:80]}); "
-                    "fell back to CPU."
-                )
-                _neighbors_and_leiden(
-                    target,
-                    n_neighbors=n_neighbors,
-                    use_rep=use_rep,
-                    resolution=resolution,
-                    random_state=random_state,
-                    key_added=key_added,
-                )
-        else:
-            _neighbors_and_leiden(
-                target,
-                n_neighbors=n_neighbors,
-                use_rep=use_rep,
-                resolution=resolution,
-                random_state=random_state,
-                key_added=key_added,
-            )
+        compute_used, gpu_fallback_note = run_neighbors_leiden_routed(
+            target,
+            context=context,
+            n_neighbors=n_neighbors,
+            use_rep=use_rep,
+            resolution=resolution,
+            random_state=random_state,
+            key_added=key_added,
+        )
 
         notes: list[str] = []
         if target is adata:
@@ -214,12 +252,90 @@ class LeidenMethod(AnalysisMethod):
         # unconditionally, so duplicating the same line into notes would only repeat it
         # in verbose runs.
 
+        artifacts: list[StageArtifact] = []
+        diag_config = config.get("resolution_diagnostic") or {}
+        if diag_config.get("enabled", False):
+            notes.extend(
+                self._run_resolution_diagnostic(
+                    target,
+                    context=context,
+                    n_neighbors=n_neighbors,
+                    use_rep=use_rep,
+                    diag_config=diag_config,
+                    artifacts=artifacts,
+                )
+            )
+
         return StageResult(
             adata=adata,
             metrics={"n_clusters": n_clusters, "resolution": resolution, "compute": compute_used},
             notes=notes,
             warnings=[gpu_fallback_note] if gpu_fallback_note else [],
+            artifacts=artifacts,
         )
+
+    @staticmethod
+    def _run_resolution_diagnostic(
+        target: ad.AnnData,
+        *,
+        context: object,
+        n_neighbors: int,
+        use_rep: str,
+        diag_config: dict,
+        artifacts: list[StageArtifact],
+    ) -> list[str]:
+        """Run the opt-in bootstrap resolution sweep and, when possible, its figure.
+
+        Runs on ``target`` -- the same fit-eligible population the real partition was
+        fitted on -- so the diagnostic describes the actual clustering run, not a
+        different population. Mutates ``artifacts`` in place with the figure, when one
+        was written; returns the notes to fold into the stage's own.
+        """
+        from cellquorum.stages.clustering.resolution_diagnostic import (
+            compute_resolution_stability,
+            summarize_resolution_stability,
+        )
+        from cellquorum.stages.clustering.resolution_diagnostic_viz import (
+            write_resolution_diagnostic_figure,
+        )
+
+        resolutions = diag_config.get("resolutions", [0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6])
+        long_df, n_clusters_by_resolution = compute_resolution_stability(
+            target,
+            use_rep=use_rep,
+            n_neighbors=n_neighbors,
+            resolutions=resolutions,
+            n_bootstraps=int(diag_config.get("n_bootstraps", 20)),
+            subsample_fraction=float(diag_config.get("subsample_fraction", 0.8)),
+            random_state=int(diag_config.get("random_state", 0)),
+            context=context,
+            adaptive=bool(diag_config.get("adaptive", True)),
+        )
+        summary = summarize_resolution_stability(long_df, n_clusters_by_resolution)
+
+        notes = [
+            f"Resolution diagnostic swept {len(n_clusters_by_resolution)} resolution(s) "
+            f"({min(resolutions)}-{max(resolutions)}); see the figure for cluster-count "
+            f"and bootstrap-stability curves. This does not change the resolution used above."
+        ]
+
+        figures_dir = getattr(getattr(context, "paths", None), "figures", None)
+        if figures_dir is not None and diag_config.get("write_figures", True):
+            from pathlib import Path
+
+            figure_path = write_resolution_diagnostic_figure(
+                summary, Path(figures_dir) / "clustering_resolution_diagnostic.png"
+            )
+            if figure_path is not None:
+                artifacts.append(
+                    StageArtifact(
+                        name="clustering_resolution_diagnostic",
+                        path=figure_path,
+                        kind="figure",
+                        description="Bootstrap cluster-stability across a Leiden resolution sweep.",
+                    )
+                )
+        return notes
 
     def _transfer_and_graph(
         self,

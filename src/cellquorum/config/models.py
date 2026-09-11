@@ -703,6 +703,54 @@ class DimensionalityConfig(StrictBaseModel):
         return value
 
 
+class ResolutionDiagnosticConfig(StrictBaseModel):
+    """
+    Bootstrap cluster-stability diagnostic across a resolution sweep.
+
+    Opt-in and expensive by design: an N-resolution x M-bootstrap sweep reruns
+    neighbors+Leiden roughly N*(M+1) times, which is a "run once to choose a
+    resolution" cost, not a per-pipeline-run one -- so it defaults off rather than
+    silently slowing down every run for users who already know their resolution or
+    are fine with the default.
+
+    Method: bootstrap-subsample stability (Patterson-Cross, Levine & Bhaduri 2021,
+    "chooseR"; see also scclusteval). At each resolution, a reference partition is
+    fitted on every core cell; repeated subsamples are independently reclustered, and
+    each reference cluster is scored by the Jaccard overlap to its best-matching
+    cluster in the subsample. High, stable Jaccard across bootstraps means the
+    partition at that resolution is robust to resampling noise -- the closest
+    available proxy to ground truth when no labeled reference exists.
+    """
+
+    # Whether the diagnostic sweep runs at all.
+    enabled: bool = False
+
+    # Resolutions to sweep. Mirrors the same neighbors graph (use_rep, n_neighbors) the
+    # real clustering run uses; only resolution varies.
+    resolutions: list[float] = [0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6]
+
+    # Independent subsamples per resolution. More bootstraps narrow the stability
+    # estimate's own noise, at proportional cost.
+    n_bootstraps: int = Field(default=20, ge=1)
+
+    # Two-round allocation (round 1: a small share at every resolution; round 2: the
+    # rest weighted toward uncertain/transitioning resolutions) vs. spending
+    # n_bootstraps evenly everywhere. See module docstring for why this differs from
+    # classic successive-halving.
+    adaptive: bool = True
+
+    # Fraction of fit-eligible cells kept per subsample.
+    subsample_fraction: float = Field(default=0.8, gt=0.0, lt=1.0)
+
+    # Seed for subsample draws; passed through unchanged to each bootstrap's own
+    # neighbors/Leiden call, so bootstrap-to-bootstrap variation reflects the resampled
+    # cells, not solver randomness.
+    random_state: int = 0
+
+    # Whether to write the two-panel stability figure.
+    write_figures: bool = True
+
+
 class ClusteringConfig(StrictBaseModel):
     """
     Store clustering (neighbors + Leiden) settings.
@@ -716,6 +764,8 @@ class ClusteringConfig(StrictBaseModel):
         key_added: obs column that receives cluster labels.
         use_rep: Embedding to cluster on (set to the integration output, e.g.
             "X_pca_harmony", when integration runs; defaults to raw PCA).
+        resolution_diagnostic: Opt-in bootstrap cluster-stability sweep across
+            resolutions; see ResolutionDiagnosticConfig.
     """
 
     # Store whether the clustering stage may run.
@@ -739,6 +789,9 @@ class ClusteringConfig(StrictBaseModel):
     # Embedding to cluster on (set to the integration output, e.g.
     # "X_pca_harmony", when integration runs; defaults to raw PCA).
     use_rep: str = "X_pca"
+
+    # Opt-in bootstrap-stability sweep across resolutions; see ResolutionDiagnosticConfig.
+    resolution_diagnostic: ResolutionDiagnosticConfig = ResolutionDiagnosticConfig()
 
 
 class StageSelectionConfig(StrictBaseModel):
