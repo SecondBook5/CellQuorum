@@ -108,9 +108,12 @@ from cellquorum.stages.preprocessing.config import PreprocessingConfig
 from cellquorum.stages.preprocessing.feature_selection.config import FeatureSelectionConfig
 
 # Import the QC configuration model.
-from cellquorum.stages.qc.config import QCConfig
-from cellquorum.stages.qc.finalization_config import QCFinalizationConfig
-from cellquorum.stages.qc.query_projection_config import QueryProjectionConfig
+from cellquorum.stages.qc.config import (
+    QCConfig,
+    QCFinalizationConfig,
+    QCSpliceMetricsConfig,
+    QueryProjectionConfig,
+)
 
 # Import the state-scoring configuration model.
 from cellquorum.stages.state_scoring.config import StateScoringConfig
@@ -654,6 +657,8 @@ class DimensionalityConfig(StrictBaseModel):
         use_highly_variable: Whether to restrict PCA to highly-variable genes. None
             follows the feature_selection stage; True requires its output.
         random_state: Seed for deterministic PCA.
+        precision: Arithmetic dtype for standard PCA. "input" preserves the layer's
+            dtype; float64 increases working memory but can improve numerical stability.
     """
 
     # Store whether the dimensionality stage may run.
@@ -681,6 +686,8 @@ class DimensionalityConfig(StrictBaseModel):
 
     # Store the PCA random seed.
     random_state: int = 0
+
+    precision: Literal["input", "float32", "float64"] = "input"
 
 
 class ClusteringConfig(StrictBaseModel):
@@ -731,6 +738,7 @@ class StageSelectionConfig(StrictBaseModel):
 
     Args:
         ambient_correction: Whether ambient correction is enabled.
+        qc_splice_metrics: Whether the optional splice-QC extraction is enabled.
         qc: Whether quality control is enabled.
         preprocessing: Whether preprocessing is enabled.
         dimensionality: Whether dimensionality reduction is enabled.
@@ -759,6 +767,11 @@ class StageSelectionConfig(StrictBaseModel):
     # manifest, no CellRanger raw/filtered h5, no Rscript), so enabling it cannot
     # break a run that has nothing to correct from.
     ambient_correction: bool = True
+
+    # Store whether the optional splice-QC extraction is enabled (order 15). Opt-in: it
+    # only does anything when a manifest names a per-sample velocyto loom, and it never
+    # generates one, so enabling it on a run with no looms is a no-op skip.
+    qc_splice_metrics: bool = False
 
     # Store whether quality control is enabled.
     qc: bool = True
@@ -974,6 +987,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store subclustering settings.
     subclustering: SubclusteringConfig = Field(default_factory=SubclusteringConfig)
+
+    # Store splice-QC settings (optional intronic-fraction extraction, order 15).
+    qc_splice_metrics: QCSpliceMetricsConfig = Field(default_factory=QCSpliceMetricsConfig)
 
     # Store query-projection settings (borderline → frozen core manifold, order 105).
     query_projection: QueryProjectionConfig = Field(default_factory=QueryProjectionConfig)

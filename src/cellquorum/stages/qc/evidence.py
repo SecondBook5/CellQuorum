@@ -965,6 +965,19 @@ def build_evidence_table(
                     value=nuclear,
                 )
 
+    # Independent of total_counts: written directly to obs by the optional
+    # qc_splice_metrics stage (order=15) from reconciled velocyto spliced/unspliced
+    # counts, not derived from the gene-fraction machinery above.
+    if nuclear_axis_applicable and "qc_splice_intronic_fraction" in obs.columns:
+        splice = obs["qc_splice_intronic_fraction"].astype(float)
+        add(
+            "splice_intronic_fraction",
+            EvidenceFamily.NUCLEAR_INTEGRITY,
+            Direction.UPPER_TAIL,
+            severity_of(splice, direction=Direction.UPPER_TAIL),
+            value=splice,
+        )
+
     multiplet = multiplet_agreement_severity(obs, groups, half_severity_z=half_severity_z)
     if multiplet is not None:
         add("doublet_agreement", EvidenceFamily.MULTIPLET, Direction.UPPER_TAIL, multiplet)

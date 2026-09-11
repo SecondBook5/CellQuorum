@@ -70,6 +70,23 @@ def test_gene_evidence_preserves_prefilter_numerator():
     np.testing.assert_allclose(nuclear.value, [0.2, 0.0])
 
 
+def test_splice_intronic_fraction_becomes_a_nuclear_integrity_axis():
+    adata = ad.AnnData(
+        np.ones((3, 1)),
+        obs=pd.DataFrame(
+            {"qc_splice_intronic_fraction": [0.1, 0.4, np.nan]},
+            index=["c0", "c1", "c2"],
+        ),
+    )
+    metrics = pd.DataFrame({"total_counts": [10.0, 10.0, 10.0]}, index=adata.obs_names)
+
+    evidence = build_evidence_table(adata, metrics)
+
+    splice = next(axis for axis in evidence.axes if axis.name == "splice_intronic_fraction")
+    assert splice.family == EvidenceFamily.NUCLEAR_INTEGRITY
+    np.testing.assert_allclose(splice.value, [0.1, 0.4, np.nan])
+
+
 def test_gene_fraction_rejects_missing_layer():
     from cellquorum.stages.qc.evidence import gene_fraction
     from cellquorum.stages.qc.validation import QCInputValidationError

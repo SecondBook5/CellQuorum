@@ -11,6 +11,7 @@ that have no module yet.
 | Order | Stage | Status |
 |---|---|---|
 | 10 | `ambient_correction` | implemented |
+| 15 | `qc_splice_metrics` | implemented |
 | 20 | `qc` | implemented |
 | 30 | `preprocessing` | implemented |
 | 40 | `feature_selection` | implemented |
@@ -20,11 +21,11 @@ that have no module yet.
 | 80 | `clustering` | implemented |
 | 90 | `annotation` | implemented |
 | 105 | `query_projection` | implemented |
-| 110 | `adjudication` | implemented |
 | 120 | `reference_mapping` | implemented |
 | 130 | `annotation_consensus` | implemented |
 | 135 | `qc_finalization` | implemented |
 | 140 | `annotation_diagnostics` | implemented |
+| 145 | `adjudication` | implemented |
 | 150 | `population_identity` | implemented |
 | 155 | `subclustering` | implemented |
 | 160 | `integration_benchmark` | implemented |

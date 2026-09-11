@@ -1013,6 +1013,19 @@ class QueryProjectionConfig(StrictBaseModel):
     k: int = Field(default=15, ge=1, strict=True)
 
 
+class QCSpliceMetricsConfig(StrictBaseModel):
+    """Settings for the optional lightweight splice-QC stage (order=15).
+
+    Reuses the trajectory stage's own manifest column names rather than inventing a
+    second way to say the same thing: one manifest, one ``sample_col``/``loom_path_col``
+    pair, whether the reader is this stage or the velocity method.
+    """
+
+    sample_col: str = "sample_id"
+
+    loom_path_col: str = "loom_path"
+
+
 __all__ = [
     "coerce_float_in_range",
     "coerce_non_negative_int",
@@ -1028,6 +1041,7 @@ __all__ = [
     "QCAttritionAuditConfig",
     "QCConfig",
     "QCDoubletConfig",
+    "QCSpliceMetricsConfig",
     "QCDuplicateNameConfig",
     "QCFigureFormat",
     "QCFeaturePatternConfig",

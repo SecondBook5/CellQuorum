@@ -35,6 +35,11 @@ from cellquorum.core.stage_catalog import (
 # --- Implemented stages (import fires @register_stage) ---
 # Backbone: QC → preprocessing → dim-reduction → integration.
 import cellquorum.stages.ambient_correction.stage  # noqa: F401
+
+# qc_splice_metrics (15) reads spliced/unspliced counts a prior velocyto run already
+# produced (never generates them); it must run before qc (20) so qc_evidence can read
+# the intronic-fraction column it writes.
+import cellquorum.stages.qc.splice_metrics  # noqa: F401
 import cellquorum.stages.qc.stage  # noqa: F401
 import cellquorum.stages.preprocessing.stage  # noqa: F401
 import cellquorum.stages.preprocessing.feature_selection.stage  # noqa: F401

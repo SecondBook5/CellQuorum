@@ -125,6 +125,9 @@ PLANNED = {"integration_gate", "composition", "molecular_inference"}
 # change that must update this list together with the config models.
 GOLDEN_STAGE_ORDER = [
     "ambient_correction",
+    # order=15: optional, reads spliced/unspliced counts a prior velocyto run already
+    # produced (never generates them), before qc_evidence (20) can use them.
+    "qc_splice_metrics",
     "qc",
     "preprocessing",
     "feature_selection",
@@ -174,7 +177,7 @@ GOLDEN_STAGE_ORDER = [
     "module_remodeling",
 ]
 
-# The 35 implemented stages, alphabetical — mirrors the executor registry
+# The 36 implemented stages, alphabetical — mirrors the executor registry
 # snapshot in tests/test_pipeline_executor.py:302-334.
 GOLDEN_IMPLEMENTED_SORTED = sorted(n for n in GOLDEN_STAGE_ORDER if n not in PLANNED)
 
@@ -194,13 +197,14 @@ NON_STAGE_CONFIG_FIELDS = {
     "contrasts",
 }
 
-# The 5 implemented stages that deliberately have NO method-registry category
+# The 8 implemented stages that deliberately have NO method-registry category
 # (they are structural/reconciliation steps, not method-dispatch stages). Frozen
 # here as an INDEPENDENT source of truth: the identity invariant below pins each
 # stage's declared category against this list rather than against the decorator's
 # own value, so a mistyped or misplaced category= argument fails loudly.
 STAGES_WITHOUT_CATEGORY = {
     "qc",
+    "qc_splice_metrics",
     "preprocessing",
     "adjudication",
     "annotation_consensus",
@@ -217,7 +221,7 @@ def test_catalog_order_matches_golden():
 def test_catalog_implemented_set_matches_golden():
     impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
     assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 35
+    assert len(GOLDEN_IMPLEMENTED_SORTED) == 36
 
 
 def test_orders_are_unique_and_ascending():
