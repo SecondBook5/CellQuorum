@@ -27,7 +27,7 @@ scales are monotonic-lightness (``magma_r``) or symmetric diverging
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -43,13 +43,13 @@ from matplotlib.patches import Patch
 
 from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.stages.qc.mixture import MIQC_POSTERIOR_COLUMN
+from cellquorum.stats.donor_comparison import TwoGroupTest
 from cellquorum.visualization.figstyle import (
     LE_RED,
     NORMAL_BLUE,
     TEXT,
     save_figure,
     set_publication_style,
-    two_group_test_on_donor_medians,
 )
 from cellquorum.visualization.qc.summarise import (
     as_float,
@@ -981,6 +981,7 @@ def plot_paired_dumbbell(
     title: str | None = None,
     subtitle: str | None = None,
     show_legend: bool = True,
+    comparison: TwoGroupTest | None = None,
 ) -> None:
     """
     Draw one row per donor, the donor's two conditions as connected dots.
@@ -1164,29 +1165,19 @@ def plot_paired_dumbbell(
             borderaxespad=0.4,
         )
 
-    # The paired test, in the empty row below the last donor. This panel is
-    # already donor-level -- one point per donor per
-    # arm -- so the test that belongs on it is the paired one over those donors,
-    # and "higher in 5 of 9" without a p-value is the weakest form of the result.
-    # Restricted to the donors actually drawn, so the number and the picture
-    # cannot disagree: `wide` dropped any donor missing an arm.
-    drawn = sample_table.loc[sample_table["donor"].isin(wide.index)]
-    test = two_group_test_on_donor_medians(
-        drawn,
-        value_col=value,
-        group_col="condition",
-        donor_col="donor",
-        group1=control_level,
-        group2=case_level,
-    )
-    if test is not None:
-        # Both tests are Wilcoxon's: signed-rank when paired, rank-sum (a.k.a.
-        # Mann-Whitney) when the arms are disjoint.
-        family = "signed-rank" if test.test == "wilcoxon_signed_rank" else "rank-sum"
+    if comparison is not None:
+        if (
+            comparison.test != "wilcoxon_signed_rank"
+            or comparison.group1 != control_level
+            or comparison.group2 != case_level
+            or set(comparison.donors_group1) != set(wide.index.astype(str))
+            or set(comparison.donors_group2) != set(wide.index.astype(str))
+        ):
+            raise QCPanelError("The supplied comparison does not match the plotted donor pairs.")
         ax.text(
             0.0,
             y_floor + 0.30,
-            f"Wilcoxon {family} p = {test.p_value:.2g}",
+            f"Wilcoxon signed-rank p = {comparison.p_value:.2g}",
             transform=ax.get_yaxis_transform(),
             fontsize=7.5,
             color=TEXT,
@@ -2258,6 +2249,7 @@ def write_qc_overview_figure(
     formats: tuple[str, ...] = ("png",),
     dpi: int = 300,
     title: str | None = None,
+    comparisons: Mapping[str, TwoGroupTest] | None = None,
 ) -> list[Path]:
     """
     Write the composite QC overview: the one figure that tells the whole story.
@@ -2348,6 +2340,7 @@ def write_qc_overview_figure(
                 "pct_counts_mito",
                 case_label=case_label,
                 thresholds=thresholds,
+                comparison=(comparisons or {}).get("pct_counts_mito"),
                 title="Mitochondrial % by donor",
                 subtitle=None,
             )
@@ -2459,6 +2452,7 @@ def write_qc_panels(
     mixture_models: pd.DataFrame | None = None,
     mixture_ceiling: float | None = None,
     mixture_posterior_cutoff: float = 0.75,
+    comparisons: Mapping[str, TwoGroupTest] | None = None,
 ) -> list[Path]:
     """
     Write the full advanced QC panel set: composite overview plus standalones.
@@ -2503,6 +2497,7 @@ def write_qc_panels(
             formats=formats,
             dpi=dpi,
             title=title,
+            comparisons=comparisons,
         )
     )
 
@@ -2637,6 +2632,7 @@ def write_qc_panels(
                             xlabel=xlabel,
                             title=panel_title,
                             show_legend=False,
+                            comparison=(comparisons or {}).get(metric),
                         )
                     except QCPanelError:
                         axis.set_axis_off()

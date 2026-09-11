@@ -17,7 +17,6 @@ import contextlib
 import math
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +32,8 @@ from matplotlib.figure import Figure
 
 if TYPE_CHECKING:
     import anndata as ad
+
+    from cellquorum.stats.donor_comparison import TwoGroupTest
 
 TEXT = "#202428"
 NORMAL_BLUE = "#1B4F8A"
@@ -694,6 +695,7 @@ def apply_cellquorum_theme() -> None:
             "figure.titleweight": "bold",
             "pdf.fonttype": 42,  # TrueType fonts in PDF
             "ps.fonttype": 42,  # TrueType fonts in PS
+            "svg.fonttype": "none",
         }
     )
 
@@ -1052,6 +1054,17 @@ def add_statistical_annotation_box(
 def set_publication_style(*, dpi: int = 300, small: bool = False) -> None:
     """Apply the shared compact publication style globally."""
 
+    sns.set_style(
+        "ticks",
+        {
+            "axes.linewidth": 0.75,
+            "axes.edgecolor": AXIS_COLOR,
+            "xtick.major.width": 0.75,
+            "ytick.major.width": 0.75,
+        },
+    )
+    sns.set_context("paper", font_scale=1.0)
+
     base_font = 7 if small else FONTSIZE["tick"]
     title_font = 8 if small else FONTSIZE["title"]
     axis_font = 7 if small else FONTSIZE["axis_title"]
@@ -1092,16 +1105,6 @@ def set_publication_style(*, dpi: int = 300, small: bool = False) -> None:
         }
     )
     mpl.rcParams["axes.prop_cycle"] = cycler("color", CATEGORICAL_PALETTE)
-    sns.set_style(
-        "ticks",
-        {
-            "axes.linewidth": 0.75,
-            "axes.edgecolor": AXIS_COLOR,
-            "xtick.major.width": 0.75,
-            "ytick.major.width": 0.75,
-        },
-    )
-    sns.set_context("paper", font_scale=1.0)
 
 
 def categorical_palette(values: Sequence[str]) -> dict[str, str]:
@@ -1140,127 +1143,6 @@ def pvalue_to_stars(pvalue: float) -> str:
     if pvalue < 0.05:
         return "*"
     return "ns"
-
-
-@dataclass(frozen=True)
-class TwoGroupTest:
-    """A two-group comparison whose unit of analysis is explicit.
-
-    Attributes:
-        p_value: Two-sided p-value.
-        test: Test performed, ``"wilcoxon_signed_rank"`` (paired donors) or
-            ``"mann_whitney"`` (independent donors).
-        n_group1: Number of DONORS in the first group (never cells).
-        n_group2: Number of donors in the second group; equals ``n_group1``
-            for the paired test.
-        label: Ready-to-draw annotation naming the test and the donor n.
-    """
-
-    p_value: float
-    test: str
-    n_group1: int
-    n_group2: int
-    label: str
-
-
-def two_group_test_on_donor_medians(
-    frame: pd.DataFrame,
-    *,
-    value_col: str,
-    group_col: str,
-    donor_col: str,
-    group1: str,
-    group2: str,
-    min_donors: int = 3,
-) -> TwoGroupTest | None:
-    """Compare two groups of a per-cell metric at the DONOR level.
-
-    A rank test run over cells is pseudoreplicated: cells from one donor are
-    not independent draws, so cell-level n inflates the test and returns a
-    p-value of order 1e-40 for a difference that may hold in three donors out
-    of nine. The unit of analysis for a cohort question is the donor, so each
-    donor is collapsed to its median first and the test is run on those
-    medians. When the same donors appear in both groups the design is paired
-    and a Wilcoxon signed-rank test is used; otherwise Mann-Whitney.
-
-    Args:
-        frame: Per-cell table holding the metric, group, and donor columns.
-        value_col: Per-cell metric column.
-        group_col: Two-level grouping column (e.g. condition).
-        donor_col: Donor/subject column defining the unit of analysis.
-        group1: First group level.
-        group2: Second group level.
-        min_donors: Minimum donors per group; below this the comparison is
-            not reportable.
-
-    Returns:
-        A TwoGroupTest, or None when the columns are absent, a group is
-        empty, or either group has fewer than ``min_donors`` donors. None
-        means "do not annotate" — an underpowered p-value is worse than no
-        p-value on a publication figure.
-    """
-
-    from scipy import stats
-
-    required = {value_col, group_col, donor_col}
-    if not required.issubset(frame.columns):
-        return None
-
-    table = frame.loc[:, [value_col, group_col, donor_col]].copy()
-    table[value_col] = pd.to_numeric(table[value_col], errors="coerce")
-    table[group_col] = table[group_col].astype(str)
-    table[donor_col] = table[donor_col].astype(str)
-    table = table.replace([np.inf, -np.inf], np.nan).dropna()
-    table = table[table[group_col].isin({str(group1), str(group2)})]
-    if table.empty:
-        return None
-
-    # One value per donor per group: the donor is the unit of analysis.
-    medians = table.groupby([group_col, donor_col], observed=True)[value_col].median()
-    try:
-        first = medians.loc[str(group1)]
-        second = medians.loc[str(group2)]
-    except KeyError:
-        return None
-    if len(first) < min_donors or len(second) < min_donors:
-        return None
-
-    shared = sorted(set(first.index) & set(second.index))
-    paired = len(shared) >= min_donors and len(shared) == len(first) == len(second)
-    if paired:
-        # A matched design must block on donor; ignoring the pairing is the
-        # same error that turned 695 significant LEC genes into 1382.
-        result = stats.wilcoxon(
-            first.loc[shared].to_numpy(dtype=float),
-            second.loc[shared].to_numpy(dtype=float),
-            alternative="two-sided",
-        )
-        return TwoGroupTest(
-            p_value=float(result.pvalue),
-            test="wilcoxon_signed_rank",
-            n_group1=len(shared),
-            n_group2=len(shared),
-            label=(
-                f"Wilcoxon signed-rank p = {float(result.pvalue):.2g}\n"
-                f"donor medians, n = {len(shared)} paired"
-            ),
-        )
-
-    result = stats.mannwhitneyu(
-        first.to_numpy(dtype=float),
-        second.to_numpy(dtype=float),
-        alternative="two-sided",
-    )
-    return TwoGroupTest(
-        p_value=float(result.pvalue),
-        test="mann_whitney",
-        n_group1=len(first),
-        n_group2=len(second),
-        label=(
-            f"Mann–Whitney p = {float(result.pvalue):.2g}\n"
-            f"donor medians, n = {len(first)} vs {len(second)}"
-        ),
-    )
 
 
 def add_stat_bracket(
@@ -1309,10 +1191,9 @@ def violin_with_stats(
     point_size: float = 2.0,
     alpha_violin: float = 0.55,
     alpha_points: float = 0.35,
+    comparison: TwoGroupTest | None = None,
 ) -> Axes:
-    """Layer violin, box, jitter, and optional Mann-Whitney annotation."""
-
-    from scipy import stats
+    """Layer distributions and optionally annotate a precomputed donor comparison."""
 
     if palette is None:
         palette = categorical_palette(data[x_col].dropna().astype(str).unique().tolist())
@@ -1377,12 +1258,10 @@ def violin_with_stats(
         legend=False,
     )
 
-    if len(order) == 2:
-        g1 = plot_data.loc[plot_data[x_col].eq(order[0]), y_col].dropna().to_numpy(dtype=float)
-        g2 = plot_data.loc[plot_data[x_col].eq(order[1]), y_col].dropna().to_numpy(dtype=float)
-        if len(g1) >= 3 and len(g2) >= 3:
-            _, pvalue = stats.mannwhitneyu(g1, g2, alternative="two-sided")
-            add_stat_bracket(ax, 0, 1, float(plot_data[y_col].max()), float(pvalue))
+    if comparison is not None:
+        if len(order) != 2 or set(order) != {comparison.group1, comparison.group2}:
+            raise ValueError("The supplied comparison does not match the plotted groups.")
+        add_stat_bracket(ax, 0, 1, float(plot_data[y_col].max()), comparison.p_value)
 
     sns.despine(ax=ax)
     return ax
@@ -1489,11 +1368,18 @@ def categorical_embedding(
     xy = np.asarray(adata.obsm[basis])
     groups = adata.obs[group_key].astype(str).to_numpy()
     categories = list(order) if order is not None else sorted(pd.unique(groups))
+    if len(categories) != len(set(categories)):
+        raise ValueError("Embedding category order must not contain duplicates.")
+    missing = set(groups) - set(categories)
+    if missing:
+        raise ValueError(f"Embedding category order omits observed populations: {sorted(missing)}")
     if palette is None:
         resolved_palette = categorical_palette(categories)
     elif isinstance(palette, dict):
         resolved_palette = dict(palette)
     else:
+        if len(palette) == 0:
+            raise ValueError("Embedding palette must contain at least one color.")
         resolved_palette = {
             category: palette[index % len(palette)] for index, category in enumerate(categories)
         }
@@ -1598,26 +1484,22 @@ def render_figure(
     figures: list[Path],
     warnings: list[str],
 ) -> None:
-    """Render one figure; on failure warn and carry on, never sink the stage.
+    """Render with isolated rcParams, collecting output paths or a failure warning.
 
-    Every stage that draws figures already wrote this by hand, four to five times
-    each, and all of them recorded the failure as a *note*. Notes are not printed
-    and not counted, while warnings are both — so the visible outcome of a figure
-    that failed to draw was a report with a panel quietly missing from it. That is
-    the one failure a figure stage most needs to announce.
-
-    Args:
-        name: What was being drawn, for the warning text (e.g. ``"shift-field"``).
-        render: Zero-argument callable that draws and returns the paths written
-            (or None, for renderers that only save).
-        figures: Collector extended with whatever ``render`` returned.
-        warnings: Collector appended to when ``render`` raises.
+    The callback saves its outputs; newly opened pyplot figures are closed on exit.
+    Figures already open before the callback are preserved. Matplotlib rendering must
+    remain serial within a process; rc_context does not provide thread isolation.
     """
+    existing_figures = set(plt.get_fignums())
     try:
-        produced = render()
+        with mpl.rc_context():
+            produced = render()
     except Exception as exc:  # noqa: BLE001 — one figure must not fail a stage
         warnings.append(f"{name} figure failed: {str(exc)[:150]}")
         return
+    finally:
+        for number in set(plt.get_fignums()) - existing_figures:
+            plt.close(number)
     if produced:
         figures.extend(produced if isinstance(produced, list | tuple) else [produced])
 

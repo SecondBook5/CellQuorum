@@ -172,20 +172,12 @@ def plot_lineage_family_heatmap(
     bar = figure.add_subplot(grid[0, 1])
     legend_axis = figure.add_subplot(grid[1, 0])
 
-    # Severity is a magnitude, so a monotonic-lightness map. Fixed 0-1 limits, because the
-    # scale is absolute by construction and letting it autoscale would make two runs
-    # incomparable — the whole point of a calibrated severity.
-    # Scaled to the observed range, not fixed to [0, 1]. Severity is absolute by construction, so
-    # a fixed scale is tempting for cross-run comparability — but real cohorts occupy 0.00-0.20,
-    # which renders as a uniformly pale grid carrying no information at all. The ceiling is
-    # printed on the legend instead, so the scale is stated rather than guessed.
-    # The ceiling comes from groups large enough to mean something. A pooled three-cell row at
-    # severity 1.00 otherwise sets the scale for the whole panel and renders every real lineage
-    # pale — the tiny group is the least informative row and was dominating the most.
+    # Derive the displayed scale from sufficiently populated groups.
     substantial = counts.loc[table.index] >= min_cells
     scale_source = table[substantial.to_numpy()] if bool(substantial.any()) else table
-    ceiling = float(np.nanmax(scale_source.to_numpy(dtype=float)))
-    ceiling = max(ceiling, 0.05)
+    scale_values = scale_source.to_numpy(dtype=float)
+    finite_values = scale_values[np.isfinite(scale_values)]
+    ceiling = max(float(finite_values.max()), 0.05) if finite_values.size else 0.05
     image = heat.imshow(
         table.to_numpy(dtype=float), cmap="magma_r", vmin=0.0, vmax=ceiling, aspect="auto"
     )
@@ -925,7 +917,7 @@ def plot_metric_rainclouds(
     * **no cell-level p-value.** Cells are not biological replicates, so a test across the
       pooled cells of two arms answers a question nobody asked. Where a statistic is warranted
       it is computed on donor medians by the caller, using
-      :func:`~cellquorum.visualization.figstyle.two_group_test_on_donor_medians`.
+      :func:`~cellquorum.stats.donor_comparison.two_group_test_on_donor_medians`.
 
     Args:
         obs: Observation frame from the QC object.
