@@ -200,9 +200,13 @@ def test_full_cpu_chain_threads_every_stage_output(tmp_path):
     # clustering -> Leiden labels (and it ran on the corrected embedding)
     assert "leiden" in final.obs, "cluster labels lost"
     assert final.obs["leiden"].nunique() >= 2, "clustering found <2 clusters"
-    # annotation -> cell-type labels derived from the clusters
+    # annotation -> cell-type labels derived from the clusters. "Unassigned" is a
+    # legitimate outcome now that marker_vote gates each panel through a permutation
+    # significance test rather than always forcing a best-guess label -- this fixture's
+    # small, shared 36-gene universe can leave a cluster's real signal statistically
+    # indistinguishable from a same-sized random gene set drawn from that same pool.
     assert "cell_type" in final.obs, "annotation labels lost"
-    assert set(final.obs["cell_type"].unique()) <= {"TypeA", "TypeB"}
+    assert set(final.obs["cell_type"].unique()) <= {"TypeA", "TypeB", "Unassigned"}
 
 
 def test_annotation_actually_runs_not_skipped(tmp_path):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from cellquorum.config.base import StrictBaseModel
 
 
@@ -32,6 +34,17 @@ class AnnotationConfig(StrictBaseModel):
 
     # Random seed for deterministic scoring.
     random_state: int = 0
+
+    # marker_vote: random gene sets drawn per permutation-null significance test. One
+    # score_genes call per permutation covers every cluster and every same-sized panel
+    # at once, so this is the dominant cost knob, not a per-panel one.
+    n_permutations: int = Field(default=100, ge=1)
+
+    # marker_vote: a candidate panel must beat the permutation null at this significance
+    # level to be eligible to win a cluster; the standard scientific convention (0.05),
+    # not a value tuned to any particular dataset. A cluster with no eligible panel is
+    # labeled "Unassigned" rather than given an unsupported best-guess.
+    significance_alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
 
     # CellTypist model name or path (required when method == 'celltypist').
     model: str | None = None

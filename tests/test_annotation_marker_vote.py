@@ -12,13 +12,19 @@ from cellquorum.stages.annotation.marker_vote import MarkerVoteMethod
 
 
 def _clustered_adata(seed=0):
-    # Two clusters; cluster 0 expresses gene set A, cluster 1 expresses set B.
+    # Two clusters; cluster 0 expresses gene set A, cluster 1 expresses set B. A
+    # realistic-sized background gene pool matters here, not just for cast: the
+    # significance test's permutation null draws random gene sets from the FULL gene
+    # universe, and with only the 6 marker genes to draw from, "random" and "real
+    # panel" become the same tiny pool -- not a meaningful background, unlike any real
+    # transcriptome, where a handful of markers sit among thousands of unrelated genes.
     rng = np.random.default_rng(seed)
     n = 100
-    genes = ["A1", "A2", "A3", "B1", "B2", "B3"]
-    x = rng.random((n, 6)).astype(np.float32) * 0.1
+    n_bg = 300
+    genes = ["A1", "A2", "A3", "B1", "B2", "B3"] + [f"BG{i}" for i in range(n_bg)]
+    x = rng.random((n, len(genes))).astype(np.float32) * 0.1
     x[: n // 2, :3] += 2.0  # cluster 0 -> A genes
-    x[n // 2 :, 3:] += 2.0  # cluster 1 -> B genes
+    x[n // 2 :, 3:6] += 2.0  # cluster 1 -> B genes
     a = ad.AnnData(X=x, var=pd.DataFrame(index=genes))
     a.layers["cellquorum_normalized"] = x.copy()
     set_layer_tag(a, "cellquorum_normalized", kind="lognorm", recipe="cellquorum_pf_log1p_pf_v1")
@@ -135,3 +141,66 @@ def test_a_panel_with_zero_present_genes_cannot_win_a_novel_cluster_by_default()
     assert any(
         "TypeGhost" in w for w in result.warnings
     ), f"Expected a warning naming the panel with no present genes: {result.warnings}"
+
+
+def _pdx_like_adata(seed=2):
+    """One real cell type, one panel that is technically present but pure noise.
+
+    Mirrors the actual failure found on GSE140819's HTAPP-StJude-SMP-PDX1: an "Immune"
+    marker panel whose genes exist in var_names (survive gene filtering) but whose real
+    expression (0.2% of cells, near-zero counts) is statistically indistinguishable from
+    a random gene set. A relative-score argmax alone cannot tell that apart from real
+    signal; a permutation-null significance test can.
+
+    Two clusters: "0" has real elevated signal for TypeReal; "1" has no elevated signal
+    for anything -- a genuinely unrepresented population, like the PDX sample's minority
+    clusters that neither Immune nor Stromal genuinely explain.
+    """
+    rng = np.random.default_rng(seed)
+    n_per = 150
+    n_bg = 400
+    real_genes = ["R1", "R2", "R3"]
+    noise_genes = ["N1", "N2", "N3"]
+    bg_genes = [f"BG{i}" for i in range(n_bg)]
+    genes = real_genes + noise_genes + bg_genes
+
+    # Baseline: everything (including the "noise" panel) drawn from the same
+    # background distribution -- the noise panel is present but carries no signal.
+    x = rng.random((n_per * 2, len(genes))).astype(np.float32) * 0.3
+    # Cluster 0 gets real, strong elevation for the real panel only.
+    x[:n_per, :3] += 2.5
+
+    a = ad.AnnData(X=x, var=pd.DataFrame(index=genes))
+    a.layers["cellquorum_normalized"] = x.copy()
+    set_layer_tag(a, "cellquorum_normalized", kind="lognorm", recipe="cellquorum_pf_log1p_pf_v1")
+    a.obs["leiden"] = pd.Categorical(["0"] * n_per + ["1"] * n_per)
+    return a
+
+
+def test_a_present_but_noise_level_panel_cannot_win_by_relative_score_alone():
+    """The deeper fix: a panel with real genes but no real signal must not win either.
+
+    Excluding zero-present-gene panels (the earlier fix) is not enough -- this panel's
+    genes are all present in var_names. What disqualifies it is that its score is
+    statistically indistinguishable from a random gene set of the same size, which only
+    a significance test against a permutation null can determine.
+    """
+    m = MarkerVoteMethod()
+    a = _pdx_like_adata()
+    cfg = {
+        "cluster_key": "leiden",
+        "score_layer": "cellquorum_normalized",
+        "key_added": "cell_type",
+        "random_state": 0,
+        "marker_panels": {"TypeReal": ["R1", "R2", "R3"], "TypeNoise": ["N1", "N2", "N3"]},
+    }
+    result = m.run(a, cfg, context=None)
+    from cellquorum.methods.base import MethodSkip
+
+    assert not isinstance(result, MethodSkip)
+    assignments = result.metrics["assignments"]
+    assert assignments["0"] == "TypeReal", f"Real signal should still win cluster 0: {assignments}"
+    assert assignments["1"] != "TypeNoise", (
+        f"TypeNoise (present genes, zero real signal) won cluster 1 by relative score "
+        f"alone, with nothing to distinguish it from a random gene set: {assignments}"
+    )

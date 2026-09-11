@@ -14,6 +14,20 @@ def test_annotation_defaults():
     assert c.method == "marker_vote"
     assert c.cluster_key == "leiden"
     assert c.key_added == "cell_type"
+    assert c.n_permutations == 100
+    assert c.significance_alpha == 0.05
+
+
+def test_annotation_rejects_non_positive_n_permutations():
+    with pytest.raises(ValidationError):
+        AnnotationConfig(n_permutations=0)
+
+
+def test_annotation_rejects_significance_alpha_outside_open_unit_interval():
+    with pytest.raises(ValidationError):
+        AnnotationConfig(significance_alpha=0.0)
+    with pytest.raises(ValidationError):
+        AnnotationConfig(significance_alpha=1.0)
 
 
 def test_annotation_strict():
