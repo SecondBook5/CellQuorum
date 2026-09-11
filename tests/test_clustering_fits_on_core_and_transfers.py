@@ -254,13 +254,15 @@ def test_a_dataset_without_graded_qc_behaves_as_before() -> None:
     assert not any("transfer" in note for note in result.notes)
 
 
-def test_an_empty_fit_population_falls_back_rather_than_clustering_nothing() -> None:
+def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:
     """An all-False mask is a misconfiguration, not an instruction to partition zero cells."""
     adata = _cohort()
     adata.obs[FIT_COLUMN] = False
-    _cluster(adata)
+    from cellquorum.core.exceptions import CellQuorumDataError
 
-    assert adata.obs["leiden"].notna().all()
+    with pytest.raises(CellQuorumDataError, match="permits no cells"):
+        _cluster(adata)
+    assert "leiden" not in adata.obs
 
 
 def test_the_run_records_how_many_cells_fitted_and_how_many_were_transferred() -> None:

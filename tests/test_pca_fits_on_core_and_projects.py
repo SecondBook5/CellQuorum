@@ -252,15 +252,17 @@ def test_a_dataset_without_graded_qc_behaves_as_before(tmp_path: Path) -> None:
     assert not any("QC-permitted" in note for note in result.notes)
 
 
-def test_an_empty_fit_population_falls_back_rather_than_fitting_on_nothing(
+def test_an_empty_fit_population_cannot_restore_excluded_cells(
     tmp_path: Path,
 ) -> None:
     """An all-False mask is a misconfiguration, not an instruction to fit on zero cells."""
     adata = _cohort()
     adata.obs[FIT_COLUMN] = False
-    _run_pca(adata, tmp_path)
+    from cellquorum.core.exceptions import CellQuorumDataError
 
-    assert adata.obsm["X_pca"].shape[0] == adata.n_obs
+    with pytest.raises(CellQuorumDataError, match="permits no cells"):
+        _run_pca(adata, tmp_path)
+    assert "X_pca" not in adata.obsm
 
 
 def test_component_count_is_capped_by_the_fit_population_not_the_cohort(

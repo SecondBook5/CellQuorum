@@ -80,5 +80,6 @@ def test_unguarded_petsc_import_is_why_the_probe_has_to_do_this() -> None:
     deleted -- a failure here is good news, not a regression.
     """
     done = _run("from petsc4py import PETSc\nPETSc.Sys.getVersion()")
+    assert done.returncode != 0
     assert "SURVIVED" not in done.stdout
-    assert "MPI_Abort" in done.stderr
+    assert "MPI_ABORT" in done.stderr.upper()

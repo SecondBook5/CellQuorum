@@ -95,7 +95,8 @@ def normalize_adata(
         adata: Input AnnData object.
         config: Normalization configuration.
         copy: Whether to copy the AnnData object before mutation.
-        use_gpu: Whether to use GPU acceleration (requires cupy).
+        use_gpu: Reserved compatibility argument; current recipes run on CPU or
+            in the separate scclr environment and do not use this flag.
         backend: Optional scclr subprocess backend, required by the PFlog1pPF
             recipe (``cellquorum_pf_log1p_pf_v1``), which runs the real
             Booeshaghi/Pachter transform in the isolated scclr environment.
@@ -326,7 +327,7 @@ def apply_normalization_recipe(
         recipe: Recipe name.
         target_sum: Target sum for scaling recipes.
         pseudocount: Pseudocount for log recipes.
-        use_gpu: Whether to use GPU acceleration (only applies to pf_log1p_pf_v1).
+        use_gpu: Reserved compatibility argument; these matrix recipes run on CPU.
 
     Returns:
         Tuple of (normalized matrix, diagnostics, warnings).

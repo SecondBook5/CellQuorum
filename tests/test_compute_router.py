@@ -60,3 +60,21 @@ def test_resolve_compute_shape(monkeypatch):
     monkeypatch.setattr("cellquorum.backends.compute.gpu_compute_available", lambda: False)
     r = resolve_compute(_Ctx(_Compute(backend="auto", fallback_to_cpu=True)))
     assert r == {"use_gpu": False, "fallback_to_cpu": True}
+
+
+def test_explicit_gpu_cannot_silently_ignore_disabled_fallback(monkeypatch):
+    import pytest
+
+    from cellquorum.core.exceptions import CellQuorumBackendError
+
+    monkeypatch.setattr("cellquorum.backends.compute.gpu_compute_available", lambda: False)
+    for backend in ("gpu", "rapids"):
+        with pytest.raises(CellQuorumBackendError, match="GPU compute is required"):
+            resolve_compute(_Ctx(_Compute(backend=backend, fallback_to_cpu=False)))
+
+
+def test_permitted_gpu_fallback_has_an_auditable_reason(monkeypatch):
+    monkeypatch.setattr("cellquorum.backends.compute.gpu_compute_available", lambda: False)
+    result = resolve_compute(_Ctx(_Compute(backend="gpu", fallback_to_cpu=True)))
+    assert result["use_gpu"] is False
+    assert "fell back to CPU" in result["fallback_reason"]

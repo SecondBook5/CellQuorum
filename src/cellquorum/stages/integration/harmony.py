@@ -154,7 +154,7 @@ class HarmonyMethod(AnalysisMethod):
 
         routing = resolve_compute(context)
         compute_used = "cpu"
-        gpu_fallback_note = None
+        gpu_fallback_note = routing.get("fallback_reason")
         z = None
         if routing["use_gpu"]:
             try:

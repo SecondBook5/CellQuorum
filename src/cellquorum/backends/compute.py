@@ -12,6 +12,8 @@ This is the single place that answer lives, so every stage routes consistently.
 
 from __future__ import annotations
 
+from cellquorum.core.exceptions import CellQuorumBackendError
+
 # Cache the capability probe result for the process (it cannot change mid-run).
 _GPU_AVAILABLE: bool | None = None
 
@@ -68,44 +70,27 @@ def _compute_settings(context: object) -> tuple[str, bool, bool]:
 
 
 def should_use_gpu(context: object) -> bool:
-    """
-    Return whether a stage should route to GPU compute for this run.
-
-    Args:
-        context: Pipeline context exposing config.compute (ComputeConfig/dict/None).
-
-    Returns:
-        True iff the config permits GPU AND GPU compute is actually available.
-    """
-
-    # Resolve the config preference.
-    backend, prefer_gpu, _ = _compute_settings(context)
-
-    # Escape hatch: an explicit CPU request forces CPU regardless of hardware.
-    if backend == "cpu":
-        return False
-
-    # Decide whether the config *wants* GPU.
-    wants_gpu = backend in {"gpu", "rapids"} or (backend == "auto" and bool(prefer_gpu))
-
-    # Only use GPU when both wanted AND actually available.
-    return wants_gpu and gpu_compute_available()
+    """Resolve GPU use while enforcing the configured fallback policy."""
+    return resolve_compute(context)["use_gpu"]
 
 
 def resolve_compute(context: object) -> dict:
+    """Resolve compute, raising when required GPU support is unavailable.
+
+    Explicit GPU requests that permit CPU fallback carry a human-readable reason.
+    Automatic selection may choose CPU without treating that as a failed request.
     """
-    Return the routing decision for a method as a small dict.
-
-    Args:
-        context: Pipeline context.
-
-    Returns:
-        {"use_gpu": bool, "fallback_to_cpu": bool}.
-    """
-
-    # Combine the decision with the fallback policy.
-    _, _, fallback = _compute_settings(context)
-    return {"use_gpu": should_use_gpu(context), "fallback_to_cpu": bool(fallback)}
+    backend, prefer_gpu, fallback = _compute_settings(context)
+    wants_gpu = backend in {"gpu", "rapids"} or (backend == "auto" and prefer_gpu)
+    use_gpu = wants_gpu and gpu_compute_available()
+    result = {"use_gpu": bool(use_gpu), "fallback_to_cpu": bool(fallback)}
+    if wants_gpu and not use_gpu:
+        reason = "CuPy, rapids-singlecell, or a working CUDA device is unavailable."
+        if not fallback:
+            raise CellQuorumBackendError(f"GPU compute is required: {reason}")
+        if backend in {"gpu", "rapids"}:
+            result["fallback_reason"] = f"Requested GPU compute fell back to CPU: {reason}"
+    return result
 
 
 __all__ = ["gpu_compute_available", "resolve_compute", "should_use_gpu"]

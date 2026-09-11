@@ -136,13 +136,15 @@ def test_a_dataset_without_graded_qc_trains_on_everything_silently() -> None:
     assert note is None
 
 
-def test_an_empty_fit_population_falls_back_rather_than_training_on_nothing() -> None:
+def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:
     """An all-False mask is a misconfiguration, not an instruction to train on zero cells."""
-    work = _work(fit=[False] * 10, batches=["p1"] * 10)
-    train, note = resolve_training_set(work, conditioning_keys=[BATCH])
+    import pytest
 
-    assert train is work
-    assert note is None
+    from cellquorum.core.exceptions import CellQuorumDataError
+
+    work = _work(fit=[False] * 10, batches=["p1"] * 10)
+    with pytest.raises(CellQuorumDataError, match="permits no cells"):
+        resolve_training_set(work, conditioning_keys=[BATCH])
 
 
 # ═══ Harmony states that it cannot honour the scope ════════════════════════════════

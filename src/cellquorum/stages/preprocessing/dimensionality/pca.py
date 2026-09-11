@@ -205,6 +205,7 @@ class PCAMethod(AnalysisMethod):
         n_pcs = config.get("n_pcs", "auto")
         max_pcs = int(config.get("max_pcs", 50))
         random_state = int(config.get("random_state", 0))
+        precision = config.get("precision", "input")
 
         # Resolve HVG use against what feature_selection actually produced, rather than
         # trusting a second declaration of the same decision. `None` (the default) follows
@@ -255,6 +256,11 @@ class PCAMethod(AnalysisMethod):
         # sparse path (no densify). Any other layer uses the standard scanpy PCA.
         row_center_col = f"{input_layer}_row_center"
         if row_center_col in adata.obs.columns:
+            if precision != "input":
+                raise CellQuorumStageError(
+                    "dimensionality",
+                    "Explicit PCA precision is not supported by the scclr backend.",
+                )
             self._run_scclr_pca(
                 adata,
                 input_layer=input_layer,
@@ -284,6 +290,7 @@ class PCAMethod(AnalysisMethod):
                 mask_var=mask_var,
                 random_state=random_state,
                 context=context,
+                precision=precision,
             )
         else:
             compute_used, gpu_fallback_note, scope_note = self._fit_on_core_then_project(
@@ -294,6 +301,7 @@ class PCAMethod(AnalysisMethod):
                 mask_var=mask_var,
                 random_state=random_state,
                 context=context,
+                precision=precision,
             )
             scope_notes.append(scope_note)
 
@@ -365,8 +373,10 @@ class PCAMethod(AnalysisMethod):
                 "n_comps_computed": int(n_comps),
                 "n_pcs_cumulative_variance": cumulative_variance,
                 "compute": compute_used,
+                "precision": precision,
             },
             notes=notes,
+            warnings=[gpu_fallback_note] if gpu_fallback_note else [],
         )
 
     def _fit_on_core_then_project(
@@ -379,6 +389,7 @@ class PCAMethod(AnalysisMethod):
         mask_var: str | None,
         random_state: int,
         context: object,
+        precision: str = "input",
     ) -> tuple[str, str | None, str]:
         """Fit the PCA basis on the QC fit population, then project every cell onto it.
 
@@ -408,6 +419,7 @@ class PCAMethod(AnalysisMethod):
             mask_var=mask_var,
             random_state=random_state,
             context=context,
+            precision=precision,
         )
 
         # No basis means nothing to project onto. Only reachable if a backend stops writing
@@ -421,6 +433,7 @@ class PCAMethod(AnalysisMethod):
                 mask_var=mask_var,
                 random_state=random_state,
                 context=context,
+                precision=precision,
             )
             return (
                 compute_used,
@@ -461,6 +474,38 @@ class PCAMethod(AnalysisMethod):
         mask_var: str | None,
         random_state: int,
         context: object,
+        precision: str = "input",
+    ) -> tuple[str, str | None]:
+        """Fit with explicit arithmetic precision and preserve the expression layer."""
+        if precision not in {"input", "float32", "float64"}:
+            raise ValueError(f"Unsupported PCA precision: {precision}")
+        source = adata.layers[input_layer]
+        try:
+            if precision != "input":
+                adata.layers[input_layer] = source.astype(precision, copy=False)
+            arithmetic_dtype = str(adata.layers[input_layer].dtype)
+            result = self._run_scanpy_pca_backend(
+                adata,
+                input_layer=input_layer,
+                n_comps=n_comps,
+                mask_var=mask_var,
+                random_state=random_state,
+                context=context,
+            )
+            adata.uns["pca"]["params"]["arithmetic_dtype"] = arithmetic_dtype
+            return result
+        finally:
+            adata.layers[input_layer] = source
+
+    def _run_scanpy_pca_backend(
+        self,
+        adata: ad.AnnData,
+        *,
+        input_layer: str,
+        n_comps: int,
+        mask_var: str | None,
+        random_state: int,
+        context: object,
     ) -> tuple[str, str | None]:
         """Run standard scanpy/rapids PCA on a dense/standard lognorm layer.
 
@@ -472,7 +517,7 @@ class PCAMethod(AnalysisMethod):
 
         routing = resolve_compute(context)
         compute_used = "cpu"
-        gpu_fallback_note = None
+        gpu_fallback_note = routing.get("fallback_reason")
 
         if routing["use_gpu"]:
             try:

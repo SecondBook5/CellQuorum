@@ -133,7 +133,7 @@ class LeidenMethod(AnalysisMethod):
 
         routing = resolve_compute(context)
         compute_used = "cpu"
-        gpu_fallback_note = None
+        gpu_fallback_note = routing.get("fallback_reason")
 
         # Cluster boundaries are inferred from whoever takes part, so the partition is fitted
         # on the cells QC permits to fit. This stage declares fit_scope=CORE at registration;
@@ -217,6 +217,7 @@ class LeidenMethod(AnalysisMethod):
             adata=adata,
             metrics={"n_clusters": n_clusters, "resolution": resolution, "compute": compute_used},
             notes=notes,
+            warnings=[gpu_fallback_note] if gpu_fallback_note else [],
         )
 
     def _transfer_and_graph(

@@ -238,3 +238,18 @@ def test_preprocessing_stage_disabled_normalization_includes_shape_metrics(tmp_p
     assert result.metrics.get("n_cells") == input_adata.n_obs
     assert result.metrics.get("n_genes") == input_adata.n_vars
     assert len(result.artifacts) == 0
+
+
+def test_cpu_normalization_does_not_require_rapids_in_gpu_workflow(tmp_path, monkeypatch):
+    config = _cp10k_config()
+    config.compute.backend = "gpu"
+    config.compute.prefer_gpu = True
+    config.compute.fallback_to_cpu = False
+
+    def unexpected_probe():
+        raise AssertionError("CPU normalization must not probe RAPIDS")
+
+    monkeypatch.setattr("cellquorum.backends.compute.gpu_compute_available", unexpected_probe)
+    result = PreprocessingStage().run(make_context(tmp_path, config=config))
+    assert result.metrics["compute"] == "cpu"
+    assert "cellquorum_normalized" in result.adata.layers

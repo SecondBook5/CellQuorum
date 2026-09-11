@@ -189,13 +189,13 @@ def test_a_dataset_without_graded_qc_behaves_as_before(tmp_path) -> None:
     assert not any("QC-permitted" in note for note in warnings)
 
 
-def test_an_empty_fit_population_falls_back_rather_than_fitting_on_nothing(tmp_path) -> None:
+def test_an_empty_fit_population_cannot_restore_excluded_cells(tmp_path) -> None:
     """An all-False mask is a misconfiguration, not an instruction to fit on zero cells."""
     backend = _scclr_backend_or_skip()
     adata = _cohort()
     adata.obs[FIT_COLUMN] = False
 
-    normalized, diagnostics, _ = _normalize(adata, backend, tmp_path=tmp_path)
+    from cellquorum.core.exceptions import CellQuorumDataError
 
-    assert diagnostics["scclr_effective_target"] == "auto"
-    assert normalized.shape[0] == adata.n_obs
+    with pytest.raises(CellQuorumDataError, match="permits no cells"):
+        _normalize(adata, backend, tmp_path=tmp_path)

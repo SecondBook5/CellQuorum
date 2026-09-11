@@ -32,6 +32,29 @@ def _gpu_or_skip() -> None:
         pytest.skip("no CUDA device available")
 
 
+@pytest.fixture(autouse=True)
+def require_actual_cuda_training(monkeypatch):
+    _gpu_or_skip()
+    from scvi.model import SCANVI, SCVI
+
+    trained_devices = []
+
+    def checked_train(original):
+        def train(model, *args, **kwargs):
+            result = original(model, *args, **kwargs)
+            device = next(model.module.parameters()).device.type
+            assert device == "cuda", f"GPU test trained on {device}"
+            trained_devices.append(device)
+            return result
+
+        return train
+
+    for model_class in (SCVI, SCANVI):
+        monkeypatch.setattr(model_class, "train", checked_train(model_class.train))
+    yield
+    assert trained_devices, "No model training was verified"
+
+
 class _Registry:
     """Backend registry stub that reports GPU availability."""
 

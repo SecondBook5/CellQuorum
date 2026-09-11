@@ -18,9 +18,6 @@ from pathlib import Path
 # Import AnnData for stage input and output typing.
 import anndata as ad
 
-# Import GPU compute routing.
-from cellquorum.backends.compute import should_use_gpu
-
 # Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
 
@@ -133,9 +130,6 @@ class PreprocessingStage:
         # Ensure the output directory exists.
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine whether to use GPU compute.
-        use_gpu = should_use_gpu(context)
-
         # Resolve the scclr backend (for the PFlog1pPF recipe) and a scratch dir.
         scclr_backend = None
         registry = getattr(context, "backend_registry", None)
@@ -151,7 +145,6 @@ class PreprocessingStage:
             adata,
             preprocessing_config.normalization,
             copy=True,
-            use_gpu=use_gpu,
             backend=scclr_backend,
             scratch_dir=scratch_dir,
         )
@@ -176,7 +169,7 @@ class PreprocessingStage:
         ]
 
         # Combine warnings from all preprocessing layers.
-        warnings = normalization_result.warnings
+        warnings = list(normalization_result.warnings)
 
         # Build human-readable stage notes.
         notes = build_preprocessing_stage_notes(
@@ -193,6 +186,11 @@ class PreprocessingStage:
             normalization_result=normalization_result,
             input_adata=adata,
             output_adata=normalization_result.adata,
+        )
+        stage_metrics["compute"] = (
+            "scclr"
+            if preprocessing_config.normalization.recipe == "cellquorum_pf_log1p_pf_v1"
+            else "cpu"
         )
 
         # Return the stage result.
