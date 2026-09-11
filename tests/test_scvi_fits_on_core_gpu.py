@@ -189,8 +189,10 @@ def test_scvi_falls_back_and_says_so_when_a_batch_is_missing_from_core() -> None
     result = _run_scvi(adata)
 
     assert adata.obsm["X_scvi"].shape == (adata.n_obs, 5)
-    disclosures = [note for note in result.notes if "trained on all cells" in note]
-    assert len(disclosures) == 1, result.notes
+    # A warning, not a note: this outcome is avoidable (unlike Harmony's permanent
+    # limitation), so it must print unconditionally rather than only in verbose runs.
+    disclosures = [w for w in result.warnings if "trained on all cells" in w]
+    assert len(disclosures) == 1, result.warnings
     assert "p2" in disclosures[0]
 
 
@@ -220,3 +222,41 @@ def test_scanvi_trains_on_core_and_encodes_every_cell() -> None:
     assert latent.shape == (adata.n_obs, 5)
     assert np.isfinite(latent).all()
     assert any("QC-permitted cells" in note for note in result.notes), result.notes
+
+
+def test_scanvi_trains_on_real_hardware_with_missing_labels() -> None:
+    """The missing-label fix (NaN -> unlabeled_category, not the string "nan") on real scvi-tools.
+
+    Every other test of this fix uses hand-rolled stubs standing in for scvi.model.SCVI/SCANVI,
+    which proves the DataFrame construction is right but not that real scvi-tools training
+    tolerates it. This drives the same scenario -- a Categorical label column with real NaNs --
+    through actual GPU training end to end.
+    """
+    _gpu_or_skip()
+    from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
+
+    adata = _cohort()
+    half = adata.n_obs // 2
+    # A Categorical column, a third unlabeled -- the realistic h5ad-round-trip shape.
+    cell_type = (["A"] * (half // 2) + ["B"] * (half - half // 2)) * 2
+    for i in range(0, adata.n_obs, 5):
+        cell_type[i] = None
+    adata.obs["cell_type"] = pd.Series(cell_type, index=adata.obs.index, dtype="category")
+
+    result = ScANVIMethod()._run(
+        adata,
+        {
+            "batch_key": BATCH,
+            "label_key": "cell_type",
+            "n_latent": 5,
+            "output_rep": "X_scanvi",
+            "max_epochs": 2,
+            "random_state": 0,
+        },
+        context=_Context(),
+    )
+
+    latent = adata.obsm["X_scanvi"]
+    assert latent.shape == (adata.n_obs, 5)
+    assert np.isfinite(latent).all()
+    assert result.metrics["label_key"] == "cell_type"

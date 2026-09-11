@@ -26,10 +26,8 @@ import pandas as pd
 import pytest
 
 from cellquorum.core.exceptions import CellQuorumDataError
-from cellquorum.stages.integration.scvi_methods import (
-    _add_decodable_genes,
-    _write_denoised_layer,
-)
+from cellquorum.stages.integration._hvg_selection import _add_decodable_genes
+from cellquorum.stages.integration.scvi_methods import _write_denoised_layer
 
 _GENES = ["HVG1", "HVG2", "HVG3", "PECAM1", "COL1A1", "PROX1"]
 

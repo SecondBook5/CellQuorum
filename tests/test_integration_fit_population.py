@@ -51,13 +51,14 @@ def _work(
 def test_training_is_restricted_to_the_fit_population() -> None:
     """With every batch represented in the core, training uses core cells only."""
     work = _work(fit=[True] * 6 + [False] * 4, batches=["p1"] * 5 + ["p2"] * 5)
-    train, note = resolve_training_set(work, conditioning_keys=[BATCH])
+    train, note, warning = resolve_training_set(work, conditioning_keys=[BATCH])
 
     assert train.n_obs == 6
     assert train is not work
     assert note is not None
     assert "6 QC-permitted cells" in note
     assert "4 further cells encoded" in note
+    assert warning is None
 
 
 def test_the_training_object_is_a_copy_not_a_view() -> None:
@@ -67,7 +68,7 @@ def test_the_training_object_is_a_copy_not_a_view() -> None:
     exactly the class of bug that surfaces only on a long GPU run.
     """
     work = _work(fit=[True] * 6 + [False] * 4, batches=["p1"] * 10)
-    train, _ = resolve_training_set(work, conditioning_keys=[BATCH])
+    train, _, _ = resolve_training_set(work, conditioning_keys=[BATCH])
 
     assert not train.is_view
     train.obs["scratch"] = 1
@@ -77,7 +78,7 @@ def test_the_training_object_is_a_copy_not_a_view() -> None:
 def test_every_conditioning_category_survives_into_the_training_set() -> None:
     """The model must see each batch it will later be asked to encode."""
     work = _work(fit=[True, False, True, False], batches=["p1", "p1", "p2", "p2"])
-    train, _ = resolve_training_set(work, conditioning_keys=[BATCH])
+    train, _, _ = resolve_training_set(work, conditioning_keys=[BATCH])
 
     assert set(train.obs[BATCH]) == set(work.obs[BATCH])
 
@@ -93,13 +94,18 @@ def test_a_batch_absent_from_the_core_blocks_the_split() -> None:
     rather than merely imprecise.
     """
     work = _work(fit=[True] * 5 + [False] * 5, batches=["p1"] * 5 + ["p2"] * 5)
-    train, note = resolve_training_set(work, conditioning_keys=[BATCH])
+    train, note, warning = resolve_training_set(work, conditioning_keys=[BATCH])
 
     assert train is work, "training was restricted despite an unrepresented batch"
-    assert note is not None
-    assert "trained on all cells" in note
-    assert BATCH in note
-    assert "p2" in note
+    assert note is None
+    # A warning, not a note: this is the fit_scope=CORE contract failing to hold for a
+    # reason the algorithm could have avoided (unlike Harmony's permanent limitation),
+    # so it must reach StageResult.warnings and print unconditionally, not only in
+    # verbose runs.
+    assert warning is not None
+    assert "trained on all cells" in warning
+    assert BATCH in warning
+    assert "p2" in warning
 
 
 def test_a_label_absent_from_the_core_blocks_the_split_for_scanvi() -> None:
@@ -109,17 +115,18 @@ def test_a_label_absent_from_the_core_blocks_the_split_for_scanvi() -> None:
         batches=["p1"] * 10,
         labels=["A"] * 6 + ["B"] * 4,
     )
-    train, note = resolve_training_set(work, conditioning_keys=[BATCH, "_scanvi_labels"])
+    train, note, warning = resolve_training_set(work, conditioning_keys=[BATCH, "_scanvi_labels"])
 
     assert train is work
-    assert note is not None
-    assert "_scanvi_labels" in note
+    assert note is None
+    assert warning is not None
+    assert "_scanvi_labels" in warning
 
 
 def test_a_conditioning_key_that_is_not_a_column_is_ignored() -> None:
     """scANVI passes a labels key that scVI does not have; absence must not raise."""
     work = _work(fit=[True] * 6 + [False] * 4, batches=["p1"] * 10)
-    train, _ = resolve_training_set(work, conditioning_keys=[BATCH, "not_a_column"])
+    train, _, _ = resolve_training_set(work, conditioning_keys=[BATCH, "not_a_column"])
 
     assert train.n_obs == 6
 
@@ -130,10 +137,11 @@ def test_a_conditioning_key_that_is_not_a_column_is_ignored() -> None:
 def test_a_dataset_without_graded_qc_trains_on_everything_silently() -> None:
     """Absent QC columns must not become a hidden dependency, nor produce a scary note."""
     work = _work(fit=None, batches=["p1"] * 10)
-    train, note = resolve_training_set(work, conditioning_keys=[BATCH])
+    train, note, warning = resolve_training_set(work, conditioning_keys=[BATCH])
 
     assert train is work
     assert note is None
+    assert warning is None
 
 
 def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:

@@ -15,51 +15,14 @@ import numpy as np
 import scipy.sparse as sp
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.exceptions import CellQuorumDataError, CellQuorumStageError
+from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.integration._embedding_collapse import check_embedding_collapse
 from cellquorum.stages.integration._fit_population import resolve_training_set
-
-#: Below this many highly variable genes a latent space is not worth fitting on them;
-#: fall back to every gene and say so, rather than training on a handful.
-_MIN_HVG_FOR_SCVI = 500
-
-
-def _add_decodable_genes(
-    work: ad.AnnData,
-    mask: np.ndarray,
-    denoised_genes: list[str],
-) -> tuple[np.ndarray, list[str]]:
-    """Extend an HVG training mask to cover the genes the denoised panel asks for.
-
-    scVI's decoder can only reconstruct genes the model saw during training, so a marker that
-    missed the HVG cut is not merely less accurate — it is unavailable. The markers that miss
-    are systematically the broadly expressed lineage genes (high mean, low relative variance),
-    which is exactly what a panel like ``PECAM1``/``COL1A1`` is made of.
-
-    Args:
-        work: The object about to be subset; supplies ``var_names``.
-        mask: Boolean HVG mask over ``work.var_names``. Not mutated.
-        denoised_genes: Genes the caller wants decoded later. Absent names are ignored here;
-            :func:`_write_denoised_layer` reports them.
-
-    Returns:
-        ``(mask, added)`` — the extended mask, and the genes it gained in request order.
-    """
-    extended = mask.copy()
-    if not denoised_genes:
-        return extended, []
-
-    added: list[str] = []
-    for gene in dict.fromkeys(denoised_genes):
-        if gene not in work.var_names:
-            continue
-        index = work.var_names.get_loc(gene)
-        if not extended[index]:
-            extended[index] = True
-            added.append(gene)
-    return extended, added
+from cellquorum.stages.integration._gpu_gate import require_gpu
+from cellquorum.stages.integration._hvg_selection import restrict_to_highly_variable
+from cellquorum.stages.integration._provenance import record_integration_provenance
 
 
 def _write_denoised_layer(
@@ -225,19 +188,7 @@ class ScVIMethod(AnalysisMethod):
         """
 
         # Self-gate on GPU availability via the backend registry when present.
-        registry = getattr(context, "backend_registry", None)
-        gpu_ok = False
-        if registry is not None and hasattr(registry, "available"):
-            try:
-                gpu_ok = bool(registry.available("gpu"))
-            except Exception:
-                gpu_ok = False
-        if not gpu_ok:
-            raise CellQuorumStageError(
-                "integration",
-                "scVI integration requires a GPU backend, which is unavailable. "
-                "Use method='harmony' for CPU integration.",
-            )
+        require_gpu(context, method_name="scVI")
 
         # Import scvi lazily (heavy) and train.
         import scvi
@@ -253,11 +204,6 @@ class ScVIMethod(AnalysisMethod):
         denoised_layer = config.get("denoised_layer") or None
         denoised_genes = list(config.get("denoised_genes") or [])
         denoised_library_size = config.get("denoised_library_size", 1e4)
-        # `None` (the default) follows the feature-selection stage: use the HVGs when they
-        # were flagged, all genes when they were not. Restating the decision here is what
-        # let `stages.feature_selection: true` train scVI on all ~33,000 genes anyway.
-        hvg_setting = config.get("use_highly_variable")
-
         scvi.settings.seed = random_state
         # A MINIMAL object: one matrix, plus obs and var.
         #
@@ -273,74 +219,23 @@ class ScVIMethod(AnalysisMethod):
             var=adata.var.copy(),
         )
 
-        # Restrict to highly variable genes before training.
-        #
-        # This was absent, so scVI trained on every gene — on this cohort ~33,000 of them for
-        # 202,000 cells, roughly sixteen times the decoder parameters of the usual 2,000-gene
-        # setup. That is not merely slow: uninformative genes contribute reconstruction loss
-        # without contributing structure, so the latent space is worse, and this latent space is
-        # what clustering uses and what scArches builds its query model on. A degraded embedding
-        # therefore propagates all the way into the cell-type calls.
-        #
-        # Honours `feature_selection` rather than selecting genes itself: that stage flags
-        # `var['highly_variable']` and deliberately does not subset, so consumption happens
-        # here. An explicit `true` with no flag present is an error rather than a note: a
-        # warning in a 40-minute run scrolls past, and the resulting latent space is
-        # perfectly usable-looking while being built from the wrong genes.
-        has_hvg_flag = "highly_variable" in work.var.columns
-        if hvg_setting is None:
-            use_hvg = has_hvg_flag
-        else:
-            use_hvg = bool(hvg_setting)
-            if use_hvg and not has_hvg_flag:
-                raise CellQuorumStageError(
-                    "integration",
-                    "scVI: use_highly_variable is set but var['highly_variable'] is absent, "
-                    "so training would silently use every gene. Enable the feature-selection "
-                    "stage (`stages.feature_selection: true`), or set "
-                    "`integration.use_highly_variable: false` to use all genes on purpose.",
-                )
-
-        if use_hvg:
-            mask = work.var["highly_variable"].fillna(False).to_numpy(dtype=bool)
-            if int(mask.sum()) >= _MIN_HVG_FOR_SCVI:
-                # Genes requested for the denoised panel are added to the training set even
-                # when they are not highly variable. The decoder can only reconstruct genes
-                # the model saw, so subsetting to HVGs alone silently drops any marker that
-                # missed the cut — and the ones that miss are the broadly expressed lineage
-                # markers (high mean, low relative variance) that a panel most needs. Left
-                # unhandled it is not even a quiet degradation: the decoder returned 17
-                # columns for a 20-gene request and the write failed on a shape mismatch
-                # after the model had trained.
-                n_hvg = int(mask.sum())
-                mask, added = _add_decodable_genes(
-                    work, mask, denoised_genes if denoised_layer else []
-                )
-                work = work[:, mask].copy()
-                hvg_note = f"scVI trained on {n_hvg:,} highly variable genes."
-                if added:
-                    hvg_note += (
-                        f" Plus {len(added)} non-variable gene(s) required by "
-                        f"`denoised_genes` so the decoder can reconstruct them: "
-                        f"{', '.join(added)}."
-                    )
-            else:
-                hvg_note = (
-                    f"scVI: only {int(mask.sum())} highly variable genes flagged, below the "
-                    f"{_MIN_HVG_FOR_SCVI} needed for a usable latent space — using all "
-                    f"{work.n_vars:,} genes instead."
-                )
-        else:
-            hvg_note = (
-                f"scVI trained on all {work.n_vars:,} genes: the feature-selection stage "
-                f"flagged no highly variable genes. Standard practice is 2,000-5,000."
-            )
+        # Restrict to highly variable genes before training. Shared with scANVI so the two
+        # cannot drift on the threshold, the messages, or whether the check happens at all.
+        # Genes requested for the denoised panel are unioned in even when not highly variable
+        # -- the decoder can only reconstruct genes it saw, so subsetting to HVGs alone would
+        # silently drop any marker that missed the cut. See `_hvg_selection` module docstring.
+        work, hvg_note = restrict_to_highly_variable(
+            work,
+            config,
+            method_name="scVI",
+            extra_required_genes=denoised_genes if denoised_layer else None,
+        )
 
         # A trained encoder is a function, so scVI can honour fit_scope=CORE where Harmony
         # cannot: train on the cells QC permits, then encode every cell through the trained
         # model. The excluded cells get a real latent coordinate without having shaped the
         # latent space.
-        train, scope_note = resolve_training_set(work, conditioning_keys=[batch_key])
+        train, scope_note, scope_warning = resolve_training_set(work, conditioning_keys=[batch_key])
 
         scvi.model.SCVI.setup_anndata(train, batch_key=batch_key)
         model = scvi.model.SCVI(train, n_latent=n_latent)
@@ -375,30 +270,21 @@ class ScVIMethod(AnalysisMethod):
                 )
             )
 
-        cq = adata.uns.setdefault("cellquorum", {})
-        # Single-method provenance (backward-compatible path, last-wins).
-        cq["integration"] = {
-            "method": "scvi",
-            "batch_key": batch_key,
-            "output_rep": output_rep,
-            "n_latent": n_latent,
-        }
-        # Per-method provenance (multi-method path, namespaced by output_rep).
-        cq.setdefault("integration_methods", {})[output_rep] = {
-            "method": "scvi",
-            "batch_key": batch_key,
-            "output_rep": output_rep,
-            "n_latent": n_latent,
-        }
+        record_integration_provenance(
+            adata, method="scvi", batch_key=batch_key, output_rep=output_rep, n_latent=n_latent
+        )
         notes = [f"scVI latent ({n_latent}d) over '{batch_key}' -> {output_rep}.", hvg_note]
         notes.extend(denoised_notes)
         if scope_note:
             notes.append(scope_note)
+        warnings = [collapse_warning] if collapse_warning else []
+        if scope_warning:
+            warnings.append(scope_warning)
         return StageResult(
             adata=adata,
             metrics={"method": "scvi", "n_latent": n_latent, "output_rep": output_rep},
             notes=notes,
-            warnings=[collapse_warning] if collapse_warning else [],
+            warnings=warnings,
         )
 
 

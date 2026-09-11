@@ -37,8 +37,8 @@ def resolve_training_set(
     work: ad.AnnData,
     *,
     conditioning_keys: Sequence[str],
-) -> tuple[ad.AnnData, str | None]:
-    """Return the object to train on, and a note when the fit population could not be used.
+) -> tuple[ad.AnnData, str | None, str | None]:
+    """Return the object to train on, and a note or warning describing the outcome.
 
     Args:
         work: The model's working copy, already carrying counts in ``X``.
@@ -46,23 +46,28 @@ def resolve_training_set(
             labels for scANVI. Every category of each must appear in the fit population.
 
     Returns:
-        ``(train, note)``. ``train`` is ``work`` itself when training on every cell, or a
-        copy restricted to the fit population. ``note`` is None when there was nothing worth
-        reporting, meaning either no QC masks exist or the split was applied cleanly.
+        ``(train, note, warning)``. ``train`` is ``work`` itself when training on every
+        cell, or a copy restricted to the fit population. At most one of ``note``/
+        ``warning`` is set: ``note`` describes a routine, working outcome (no QC masks
+        exist, or the split was applied cleanly) and belongs in ``StageResult.notes``.
+        ``warning`` means the fit_scope=CORE contract could not be honoured for a reason
+        the algorithm could otherwise have avoided — a conditioning category absent from
+        the core — so non-core cells influenced the latent space. This must reach
+        ``StageResult.warnings``, not just notes, or it is invisible outside verbose runs.
     """
     fitting = fitting_cells(work.obs)
     if fitting is None:
-        return work, None
+        return work, None, None
 
     missing = _categories_absent_from(work.obs, fitting, conditioning_keys)
     if missing:
-        note = (
+        warning = (
             f"Integration trained on all cells: the QC fit population is missing "
             f"{_describe(missing)}, which the model conditions on, so held-out cells could "
             f"not be encoded. Non-core cells therefore influenced the latent space."
         )
-        logger.warning(note)
-        return work, note
+        logger.warning(warning)
+        return work, None, warning
 
     train = work[fitting.to_numpy(dtype=bool)].copy()
     note = (
@@ -71,7 +76,7 @@ def resolve_training_set(
         f"influencing it."
     )
     logger.info(note)
-    return train, note
+    return train, note, None
 
 
 def _categories_absent_from(

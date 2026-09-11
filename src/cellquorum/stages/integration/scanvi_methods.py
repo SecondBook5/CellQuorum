@@ -18,6 +18,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.integration._embedding_collapse import check_embedding_collapse
 from cellquorum.stages.integration._fit_population import resolve_training_set
+from cellquorum.stages.integration._gpu_gate import require_gpu
+from cellquorum.stages.integration._hvg_selection import restrict_to_highly_variable
+from cellquorum.stages.integration._provenance import record_integration_provenance
 
 
 class ScANVIMethod(AnalysisMethod):
@@ -61,19 +64,7 @@ class ScANVIMethod(AnalysisMethod):
         """
 
         # Self-gate on GPU availability via the backend registry when present.
-        registry = getattr(context, "backend_registry", None)
-        gpu_ok = False
-        if registry is not None and hasattr(registry, "available"):
-            try:
-                gpu_ok = bool(registry.available("gpu"))
-            except Exception:
-                gpu_ok = False
-        if not gpu_ok:
-            raise CellQuorumStageError(
-                "integration",
-                "scANVI integration requires a GPU backend, which is unavailable. "
-                "Use method='harmony' for CPU integration.",
-            )
+        require_gpu(context, method_name="scANVI")
 
         # scANVI is semi-supervised: it needs a label column to condition on.
         label_key = config.get("label_key")
@@ -98,7 +89,7 @@ class ScANVIMethod(AnalysisMethod):
         # scANVI writes a latent space, not a Harmony-corrected PCA.
         output_rep = config.get("output_rep", "X_scanvi")
         max_epochs = config.get("max_epochs", None)
-        unlabeled_category = config.get("unlabeled_category", "Unknown")
+        unlabeled_category = str(config.get("unlabeled_category", "Unknown"))
         random_state = int(config.get("random_state", 0))
 
         scvi.settings.seed = random_state
@@ -115,12 +106,30 @@ class ScANVIMethod(AnalysisMethod):
             obs=adata.obs.copy(),
             var=adata.var.copy(),
         )
-        work.obs["_scanvi_labels"] = work.obs[label_key].astype(str)
+        # Missing labels (NaN/None) are the natural pandas representation for "not yet
+        # annotated" and must become the unlabeled sentinel, not the literal string "nan" --
+        # otherwise scANVI treats "no label" as a real, distinct cell-type category and
+        # learns an embedding cluster for it instead of predicting these cells semi-
+        # supervised, the entire point of running scANVI over scVI.
+        #
+        # The missing mask is read before `.astype(str)`, not after: obs cell-type columns
+        # are routinely pandas Categorical (anndata's default for string obs after an h5ad
+        # round-trip), and assigning a not-yet-a-category value like "Unknown" straight into
+        # one raises `TypeError: Cannot setitem on a Categorical with a new category`.
+        raw_labels = work.obs[label_key]
+        is_missing = raw_labels.isna().to_numpy()
+        labels = raw_labels.astype(str)
+        labels[is_missing] = unlabeled_category
+        work.obs["_scanvi_labels"] = labels
+
+        # Restrict to highly variable genes before training. Shared with scVI so the two
+        # cannot drift on the threshold, the messages, or whether the check happens at all.
+        work, hvg_note = restrict_to_highly_variable(work, config, method_name="scANVI")
 
         # As with scVI, the encoder is a function, so fit_scope=CORE is honourable: train on
         # the cells QC permits, encode everyone. scANVI conditions on labels as well as batch,
         # so both are checked for coverage before the split is taken.
-        train, scope_note = resolve_training_set(
+        train, scope_note, scope_warning = resolve_training_set(
             work, conditioning_keys=[batch_key, "_scanvi_labels"]
         )
 
@@ -148,23 +157,14 @@ class ScANVIMethod(AnalysisMethod):
 
         adata.obsm[output_rep] = latent
 
-        cq = adata.uns.setdefault("cellquorum", {})
-        # Single-method provenance (backward-compatible path, last-wins).
-        cq["integration"] = {
-            "method": "scanvi",
-            "batch_key": batch_key,
-            "label_key": label_key,
-            "output_rep": output_rep,
-            "n_latent": n_latent,
-        }
-        # Per-method provenance (multi-method path, namespaced by output_rep).
-        cq.setdefault("integration_methods", {})[output_rep] = {
-            "method": "scanvi",
-            "batch_key": batch_key,
-            "label_key": label_key,
-            "output_rep": output_rep,
-            "n_latent": n_latent,
-        }
+        record_integration_provenance(
+            adata,
+            method="scanvi",
+            batch_key=batch_key,
+            output_rep=output_rep,
+            n_latent=n_latent,
+            label_key=label_key,
+        )
         return StageResult(
             adata=adata,
             metrics={
@@ -176,9 +176,13 @@ class ScANVIMethod(AnalysisMethod):
             notes=[
                 f"scANVI latent ({n_latent}d) over '{batch_key}' "
                 f"conditioned on '{label_key}' -> {output_rep}.",
+                hvg_note,
                 *([scope_note] if scope_note else []),
             ],
-            warnings=[collapse_warning] if collapse_warning else [],
+            warnings=[
+                *([collapse_warning] if collapse_warning else []),
+                *([scope_warning] if scope_warning else []),
+            ],
         )
 
 

@@ -26,6 +26,7 @@ from cellquorum.backends.harmonypy_backend import (
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.integration._provenance import record_integration_provenance
 from cellquorum.stages.qc.eligibility import fitting_cells
 
 
@@ -192,28 +193,21 @@ class HarmonyMethod(AnalysisMethod):
 
         # Write the corrected embedding and record provenance.
         adata.obsm[output_rep] = np.ascontiguousarray(corrected)
-        cq = adata.uns.setdefault("cellquorum", {})
-        # Single-method provenance (backward-compatible path, last-wins).
-        cq["integration"] = {
-            "method": "harmony",
-            "batch_key": batch_key,
-            "input_rep": input_rep,
-            "output_rep": output_rep,
-        }
-        # Per-method provenance (multi-method path, namespaced by output_rep).
-        cq.setdefault("integration_methods", {})[output_rep] = {
-            "method": "harmony",
-            "batch_key": batch_key,
-            "input_rep": input_rep,
-            "output_rep": output_rep,
-        }
+        record_integration_provenance(
+            adata,
+            method="harmony",
+            batch_key=batch_key,
+            output_rep=output_rep,
+            input_rep=input_rep,
+        )
 
         notes = [
             f"Harmony corrected {input_rep} over '{batch_key}' -> {output_rep} "
             f"on {compute_used.upper()}."
         ]
-        if gpu_fallback_note:
-            notes.append(gpu_fallback_note)
+        # gpu_fallback_note goes into warnings below, not here -- warnings already print
+        # unconditionally, so duplicating the same line into notes would only repeat it
+        # in verbose runs.
 
         # The integration stage declares fit_scope=CORE, and Harmony is the one method that
         # cannot honour it. Harmony returns corrected coordinates directly rather than a
