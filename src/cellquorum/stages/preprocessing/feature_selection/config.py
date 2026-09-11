@@ -40,5 +40,8 @@ class FeatureSelectionConfig(StrictBaseModel):
     # var_name regex patterns to exclude from HVG (e.g. MT-/ribo/hb/sex-linked).
     exclude_gene_patterns: list[str] = []
 
+    # Whether to write the mean-vs-dispersion HVG diagnostic figure.
+    write_figures: bool = True
+
 
 __all__ = ["FeatureSelectionConfig"]

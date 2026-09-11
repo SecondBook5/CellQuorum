@@ -8,13 +8,15 @@ correctness bug, so the input contract asserts the expected layer kind.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import anndata as ad
 import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageResult
+from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.preprocessing.feature_selection.visualization import write_hvg_figure
 from cellquorum.stages.qc.eligibility import fitting_cells
 
 # Flavors that require raw counts vs. the log-normalized layer.
@@ -116,8 +118,26 @@ class HVGMethod(AnalysisMethod):
             adata.var["highly_variable"] = hv
 
         n_hvg = int(adata.var["highly_variable"].sum())
+
+        artifacts = []
+        figures_dir = getattr(getattr(context, "paths", None), "figures", None)
+        if figures_dir is not None and config.get("write_figures", True):
+            figure_path = write_hvg_figure(
+                adata.var, Path(figures_dir) / "feature_selection_hvg.png", method=method
+            )
+            if figure_path is not None:
+                artifacts.append(
+                    StageArtifact(
+                        name="feature_selection_hvg",
+                        path=figure_path,
+                        kind="figure",
+                        description="Mean-vs-dispersion HVG selection diagnostic.",
+                    )
+                )
+
         return StageResult(
             adata=adata,
+            artifacts=artifacts,
             metrics={
                 "method": method,
                 "n_hvg": n_hvg,

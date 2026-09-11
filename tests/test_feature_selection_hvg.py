@@ -89,3 +89,56 @@ def test_seurat_flavor_flags_hvg_from_lognorm():
     result = HVGMethod().run(a, cfg, context=None)
     assert "highly_variable" in result.adata.var.columns
     assert int(result.adata.var["highly_variable"].sum()) >= 1
+
+
+class _Paths:
+    def __init__(self, figures):
+        self.figures = figures
+
+
+class _Context:
+    def __init__(self, figures):
+        self.paths = _Paths(figures)
+
+
+def test_writes_hvg_figure_by_default_when_context_provides_a_figures_dir(tmp_path):
+    a = _counts_adata()
+    cfg = {
+        "method": "seurat_v3",
+        "n_top_genes": 20,
+        "counts_layer": "counts",
+        "lognorm_layer": "cellquorum_normalized",
+        "exclude_gene_patterns": [],
+    }
+    result = HVGMethod().run(a, cfg, context=_Context(tmp_path))
+
+    figure_artifacts = [art for art in result.artifacts if art.kind == "figure"]
+    assert len(figure_artifacts) == 1
+    assert figure_artifacts[0].path.exists()
+
+
+def test_no_figure_written_without_a_usable_context(tmp_path):
+    a = _counts_adata()
+    cfg = {
+        "method": "seurat_v3",
+        "n_top_genes": 20,
+        "counts_layer": "counts",
+        "lognorm_layer": "cellquorum_normalized",
+        "exclude_gene_patterns": [],
+    }
+    result = HVGMethod().run(a, cfg, context=None)
+    assert not any(art.kind == "figure" for art in result.artifacts)
+
+
+def test_write_figures_false_skips_the_figure(tmp_path):
+    a = _counts_adata()
+    cfg = {
+        "method": "seurat_v3",
+        "n_top_genes": 20,
+        "counts_layer": "counts",
+        "lognorm_layer": "cellquorum_normalized",
+        "exclude_gene_patterns": [],
+        "write_figures": False,
+    }
+    result = HVGMethod().run(a, cfg, context=_Context(tmp_path))
+    assert not any(art.kind == "figure" for art in result.artifacts)
