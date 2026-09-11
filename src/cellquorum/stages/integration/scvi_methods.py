@@ -364,14 +364,16 @@ class ScVIMethod(AnalysisMethod):
                 f"First 10 stds: {stds[:10].tolist()}. Check: batch key has >1 batch, "
                 f"counts layer is not empty, HVG selection didn't fail.",
             )
+        collapse_warning = None
         if n_variable < n_latent // 2:
-            # Warning for partial collapse - not fatal but suspicious
-            import warnings
-
-            warnings.warn(
+            # Not fatal but suspicious. A plain warnings.warn here would not reach anything
+            # this pipeline's own reporting reads (StageResult.warnings, the run report, or
+            # provenance) -- it would only hit Python's default warning stream, which a batch
+            # run or notebook can easily never display, on top of being deduplicated per
+            # call site by default. Recorded as a stage warning instead, further down.
+            collapse_warning = (
                 f"scVI embedding has low effective dimensionality: only {n_variable}/{n_latent} "
-                f"dimensions have variance. This may indicate a problem with the data or training.",
-                stacklevel=2,
+                f"dimensions have variance. This may indicate a problem with the data or training."
             )
 
         adata.obsm[output_rep] = latent
@@ -414,6 +416,7 @@ class ScVIMethod(AnalysisMethod):
             adata=adata,
             metrics={"method": "scvi", "n_latent": n_latent, "output_rep": output_rep},
             notes=notes,
+            warnings=[collapse_warning] if collapse_warning else [],
         )
 
 
