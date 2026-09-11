@@ -25,8 +25,10 @@ class FeatureSelectionConfig(StrictBaseModel):
     # seurat_v3 (default) operates on raw counts; seurat (v1) operates on lognorm.
     method: str = "seurat_v3"
 
-    # Number of top HVGs to flag.
-    n_top_genes: int = 2000
+    # Number of top HVGs to flag. 3,000 rather than scvi-tools' tutorial default of 2,000:
+    # still squarely standard practice, with more margin against dropping a biologically
+    # relevant gene that scores as low-variance.
+    n_top_genes: int = 3000
 
     # Counts layer for count-based flavors (seurat_v3 / pearson_residuals).
     counts_layer: str = "counts"

@@ -37,7 +37,8 @@ class HVGMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         """Count flavors require the counts layer; seurat requires lognorm."""
 
-        method = config.get("method", "seurat")
+        # Fallback matches FeatureSelectionConfig.method; see the comment in `_run`.
+        method = config.get("method", "seurat_v3")
         if method in _COUNT_FLAVORS:
             layer = config.get("counts_layer", "counts")
             return DataContract(
@@ -55,8 +56,10 @@ class HVGMethod(AnalysisMethod):
     def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
         """Compute HVGs, strip excluded patterns, flag var['highly_variable']."""
 
-        method = config.get("method", "seurat")
-        n_top = int(config.get("n_top_genes", 2000))
+        # Fallbacks match FeatureSelectionConfig; that model is the source of truth, these
+        # only cover a bare dict passed straight to `_run` (e.g. in tests).
+        method = config.get("method", "seurat_v3")
+        n_top = int(config.get("n_top_genes", 3000))
         batch_key = config.get("batch_key", None)
         exclude = config.get("exclude_gene_patterns", []) or []
 

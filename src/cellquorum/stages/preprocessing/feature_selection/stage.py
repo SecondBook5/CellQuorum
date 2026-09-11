@@ -23,9 +23,9 @@ class FeatureSelectionStage(MethodDispatchStage):
     """Config-driven highly-variable-gene selection stage."""
 
     def _select_method_name(self, config: dict) -> str:
-        """Return the configured HVG method (default 'seurat')."""
+        """Return the configured HVG method. Fallback matches FeatureSelectionConfig.method."""
 
-        return config.get("method", "seurat")
+        return config.get("method", "seurat_v3")
 
     def _validate_output(self, result: StageResult) -> None:
         """Assert HVGs were flagged (non-skip only)."""
