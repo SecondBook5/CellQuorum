@@ -98,14 +98,29 @@ class MarkerVoteMethod(AnalysisMethod):
             var=pd.DataFrame(index=adata.var_names),
         )
         score_cols = {}
+        # Panels with zero present genes are excluded from candidacy entirely, not scored
+        # as a flat 0.0. A "neutral" 0.0 is not neutral against real panels: score_genes
+        # scores are gene-set expression minus a matched control set, which is legitimately
+        # negative for a cluster that matches neither known type -- exactly a genuinely
+        # novel population, the case this method most needs to get right. A absent-gene
+        # panel sitting at 0.0 would silently outscore every real candidate there and win
+        # an unsupported label. This is virtually always a config problem (typo, wrong
+        # species/ID convention), so it is reported as a warning, not swallowed.
+        missing_panels: list[str] = []
         for cell_type, genes in panels.items():
             present = [g for g in genes if g in scored.var_names]
+            if not present:
+                missing_panels.append(cell_type)
+                continue
             col = f"_score_{cell_type}"
-            if present:
-                sc.tl.score_genes(scored, present, score_name=col, random_state=random_state)
-            else:
-                scored.obs[col] = 0.0
+            sc.tl.score_genes(scored, present, score_name=col, random_state=random_state)
             score_cols[cell_type] = col
+
+        if not score_cols:
+            return self._skip(
+                "none of the configured marker_panels have any gene present in the data "
+                f"(checked: {sorted(panels)}). Check gene symbols and species convention."
+            )
 
         # Average each panel score per cluster, then argmax to assign a type.
         clusters = adata.obs[cluster_key].astype(str)
@@ -122,15 +137,24 @@ class MarkerVoteMethod(AnalysisMethod):
         # Write the per-cell assignment.
         adata.obs[key_added] = clusters.map(assignments).astype("category")
 
+        warnings = []
+        if missing_panels:
+            warnings.append(
+                f"{len(missing_panels)} marker panel(s) had zero genes present in the data "
+                f"and were excluded from voting (not scored as a fake neutral 0.0): "
+                f"{sorted(missing_panels)}. Check gene symbols and species convention."
+            )
+
         return StageResult(
             adata=adata,
             metrics={
-                "n_types": len(panels),
+                "n_types": len(score_cols),
                 "cluster_key": cluster_key,
                 "assignments": assignments,
                 "key_added": key_added,
             },
             notes=[f"marker_vote assigned {len(assignments)} clusters -> {key_added}."],
+            warnings=warnings,
         )
 
 

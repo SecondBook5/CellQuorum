@@ -89,11 +89,15 @@ class CellTypistMethod(AnalysisMethod):
             else "predicted_labels"
         )
 
-        # Write labels + a confidence column onto the REAL object.
-        adata.obs[key_added] = labels_df[label_col].to_numpy()
+        # Write labels + a confidence column onto the REAL object, realigned by cell
+        # name rather than trusted-by-row-position: celltypist currently preserves
+        # input order (verified empirically, including under majority_voting), but
+        # nothing here should silently depend on that never changing -- a reordered
+        # result would otherwise scramble every cell's label with no error at all.
+        adata.obs[key_added] = labels_df[label_col].reindex(adata.obs_names).to_numpy()
         adata.obs[key_added] = adata.obs[key_added].astype("category")
         try:
-            conf = predictions.probability_matrix.max(axis=1).to_numpy()
+            conf = predictions.probability_matrix.max(axis=1).reindex(adata.obs_names).to_numpy()
             adata.obs[f"{key_added}_conf"] = conf
         except Exception:  # noqa: BLE001
             pass
