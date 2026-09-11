@@ -179,9 +179,14 @@ def categorical_embedding(
     if hasattr(orig_col, "cat") and hasattr(orig_col.cat, "categories"):
         cats = [str(c) for c in orig_col.cat.categories]
     else:
-        cats = sorted(orig_col.astype(str).unique())
+        cats = sorted(orig_col.dropna().astype(str).unique())
     # Compare against the stringified column so int/categorical dtypes still match.
     groups = orig_col.astype(str)
+    missing_label = "Unassigned (missing)"
+    while missing_label in cats:
+        missing_label += " [missing]"
+    missing_groups = orig_col.isna()
+    groups = groups.where(~missing_groups, missing_label)
     # Per-group centroid (per-axis median: robust to trailing arcs/stragglers and
     # always sits inside the point cloud). Computed once and reused for the text
     # label, the PAGA node, and the palette sweep below, so every node sits exactly
@@ -206,6 +211,9 @@ def categorical_embedding(
     # Declared-but-absent categories still need a color for the PAGA node loop.
     for _i, _cat in enumerate(c for c in cats if c not in palette):
         palette[_cat] = colors[(len(sweep) + _i) % len(colors)]
+
+    if missing_groups.any():
+        palette[missing_label] = "#999999"
 
     # Counts drive three separate decisions below: draw order, the label floor, and
     # which PAGA nodes are worth drawing.

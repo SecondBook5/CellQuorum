@@ -67,3 +67,35 @@ def test_volcano_significant_counts_match_mask():
     # The stats box text records "2 up, 1 down".
     box_texts = [t.get_text() for t in fig.axes[0].texts]
     assert any("2 up" in t and "1 down" in t for t in box_texts)
+
+
+def test_volcano_includes_extreme_effects_and_nonsignificant_scale():
+    frame = pd.DataFrame({"gene": ["large", "small"], "logFC": [9.0, -8.0], "FDR": [1.0, 1.0]})
+    fig = plots.volcano(
+        frame,
+        fc_cut=1,
+        fdr_cut=0.05,
+        case_color="red",
+        control_color="blue",
+        x_label="Effect",
+        top_n_labels=0,
+    )
+    ax = fig.axes[0]
+    assert ax.get_xlim()[0] < -8 and ax.get_xlim()[1] > 9
+    assert ax.get_ylim()[1] > -np.log10(0.05)
+
+
+def test_volcano_rejects_invalid_probabilities_and_thresholds():
+    import pytest
+
+    defaults = dict(
+        fc_cut=1, fdr_cut=0.05, case_color="red", control_color="blue", x_label="Effect"
+    )
+    for value in (-0.1, 1.1):
+        frame = _demo_df()
+        frame.loc[0, "FDR"] = value
+        with pytest.raises(ValueError, match="FDR values"):
+            plots.volcano(frame, **defaults)
+    for override in ({"fc_cut": -1}, {"fdr_cut": 0}, {"fdr_cut": 1}):
+        with pytest.raises(ValueError):
+            plots.volcano(_demo_df(), **(defaults | override))

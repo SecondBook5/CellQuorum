@@ -159,3 +159,36 @@ def test_categorical_embedding_integer_categorical_renders_points():
     ax = fig.axes[0]
     total_points = sum(int(c.get_offsets().shape[0]) for c in ax.collections)
     assert total_points == 60, f"expected 60 plotted cells, got {total_points} (blank-figure bug)"
+
+
+def test_missing_displayed_category_cannot_silently_remove_cells():
+    import pandas as pd
+
+    data = ad.AnnData(np.ones((3, 1)))
+    data.obs["group"] = pd.Categorical(["A", "B", None])
+    data.obsm["X_umap"] = np.array([[0, 0], [1, 1], [2, 2]])
+    kwargs = dict(basis="X_umap", axis_labels=("UMAP1", "UMAP2"), paga_overlay=False)
+    fig = plots.categorical_embedding(data, "group", **kwargs)
+    assert sum(len(c.get_offsets()) for c in fig.axes[0].collections) == 3
+    assert any(
+        "Unassigned (missing)" in text.get_text() for text in fig.axes[0].get_legend().get_texts()
+    )
+    fig = plots.categorical_embedding(
+        data, "group", cell_mask=np.array([True, True, False]), **kwargs
+    )
+    assert isinstance(fig, Figure)
+
+
+def test_unassigned_display_keeps_paga_indices_and_source_labels():
+    import pandas as pd
+
+    data = ad.AnnData(np.ones((3, 1)))
+    data.obs["group"] = pd.Categorical(["B", "A", None], categories=["B", "A"])
+    data.obsm["X_umap"] = np.array([[0, 0], [1, 1], [5, 5]])
+    data.uns["paga"] = {"connectivities": np.array([[0, 1], [1, 0]])}
+    original = data.obs["group"].copy()
+    fig = plots.categorical_embedding(data, "group", basis="X_umap", axis_labels=("x", "y"))
+    pd.testing.assert_series_equal(data.obs["group"], original)
+    edges = [line for line in fig.axes[0].lines if len(line.get_xdata()) == 2]
+    assert any(set(line.get_xdata()) == {0, 1} for line in edges)
+    assert all(5 not in line.get_xdata() for line in edges)

@@ -31,6 +31,12 @@ def volcano(
     ambient_col: str = "likely_ambient",
 ) -> Figure:
     """Render a pseudobulk volcano from a (gene, logFC, FDR) frame."""
+    if not np.isfinite(fc_cut) or fc_cut < 0:
+        raise ValueError("fc_cut must be finite and nonnegative")
+    if not np.isfinite(fdr_cut) or not 0 < fdr_cut < 1:
+        raise ValueError("fdr_cut must be between zero and one")
+    if ((df["FDR"] < 0) | (df["FDR"] > 1)).any():
+        raise ValueError("FDR values must be probabilities between zero and one")
     figstyle.set_style()
     d = df.copy()
     d = d[np.isfinite(d["logFC"]) & np.isfinite(d["FDR"])].copy()
@@ -50,10 +56,11 @@ def volcano(
     fig = Figure(figsize=(8, 7))
     ax = fig.add_subplot(111)
 
-    x_lim = float(min(d["logFC"].abs().max() * 1.15, 3.2)) if len(d) else 1.0
-    x_lim = max(x_lim, fc_cut * 1.05)
+    x_lim = float(d["logFC"].abs().max() * 1.15) if len(d) else 1.0
+    x_lim = max(x_lim, fc_cut * 1.05, 0.1)
     y_lim = float(d["neg_log10fdr"].max() * 1.08) if len(d) else 1.0
     y_sig = -np.log10(fdr_cut)
+    y_lim = max(y_lim, y_sig * 1.08, 0.1)
 
     ax.fill_between([fc_cut, x_lim], y_sig, y_lim, color=_QUAD_RED, alpha=0.5, zorder=0)
     ax.fill_between([-x_lim, -fc_cut], y_sig, y_lim, color=_QUAD_BLUE, alpha=0.5, zorder=0)
