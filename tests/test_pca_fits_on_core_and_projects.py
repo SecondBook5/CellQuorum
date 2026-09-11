@@ -25,6 +25,7 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
+from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.stages.preprocessing.dimensionality.pca import (
     PCAMethod,
     project_onto_fitted_basis,
@@ -294,3 +295,22 @@ def test_the_run_records_how_many_cells_fitted_and_how_many_were_projected(
     assert len(scope_notes) == 1
     assert "200" in scope_notes[0]
     assert "40" in scope_notes[0]
+
+
+# ═══ 6. A missing figures directory must fail loudly, never write into cwd ═════
+
+
+def test_pca_without_a_figures_directory_raises_rather_than_writing_to_cwd(tmp_path):
+    """PCA always has a scree plot to write; a context with nowhere to put it is a
+    real wiring bug upstream, not a legitimate reason to guess a fallback location."""
+    adata = _cohort(n_core=50, n_outlier=0)
+    config = {
+        "input_layer": LAYER,
+        "n_pcs": 5,
+        "max_pcs": 5,
+        "random_state": 0,
+        "use_highly_variable": False,
+    }
+
+    with pytest.raises(CellQuorumStageError, match="figures"):
+        PCAMethod()._run(adata, config, context=None)

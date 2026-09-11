@@ -350,9 +350,18 @@ class PCAMethod(AnalysisMethod):
         # Truncate the embedding to the chosen number of components.
         adata.obsm["X_pca"] = adata.obsm["X_pca"][:, :chosen]
 
-        # Emit the scree artifact into the figures directory.
-        figures_dir = Path(getattr(getattr(context, "paths", None), "figures", "."))
-        scree_path = figures_dir / "dimensionality_scree.png"
+        # Emit the scree artifact into the figures directory. No fallback: PCA always has
+        # a scree curve to plot, so a missing figures directory is a real context-wiring
+        # bug upstream, not a legitimate reason to guess a location and write there.
+        figures_dir = getattr(getattr(context, "paths", None), "figures", None)
+        if figures_dir is None:
+            raise CellQuorumStageError(
+                "dimensionality",
+                "No figures directory available on the pipeline context; cannot write "
+                "the scree plot. This indicates the context was not built by the normal "
+                "pipeline bootstrap.",
+            )
+        scree_path = Path(figures_dir) / "dimensionality_scree.png"
         write_scree_plot(variance_ratio, chosen, scree_path)
 
         if gpu_fallback_note is not None:
