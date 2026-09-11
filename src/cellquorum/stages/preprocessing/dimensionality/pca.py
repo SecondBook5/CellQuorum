@@ -251,6 +251,20 @@ class PCAMethod(AnalysisMethod):
             else int(adata.var[mask_var].fillna(False).to_numpy(dtype=bool).sum())
         )
         n_comps = int(min(max_pcs, n_fit_cells - 1, n_genes_used - 1))
+        if n_comps < 1:
+            if n_fit_cells - 1 < 1:
+                raise CellQuorumStageError(
+                    "dimensionality",
+                    f"Only {n_fit_cells} fit-eligible cell(s) available; PCA needs at "
+                    "least 2 to fit a basis. Check the QC fit-eligibility mask -- most "
+                    "cells were likely quarantined or excluded from fitting.",
+                )
+            raise CellQuorumStageError(
+                "dimensionality",
+                f"Only {n_genes_used} gene(s) selected after the var['highly_variable'] "
+                "mask; PCA needs at least 2. Check feature_selection's n_top_genes and "
+                "exclude_gene_patterns, or set dimensionality.use_highly_variable=false.",
+            )
         scope_notes: list[str] = []
 
         # Route by normalization method: a scclr-normalized layer carries a

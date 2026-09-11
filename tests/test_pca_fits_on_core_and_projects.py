@@ -314,3 +314,23 @@ def test_pca_without_a_figures_directory_raises_rather_than_writing_to_cwd(tmp_p
 
     with pytest.raises(CellQuorumStageError, match="figures"):
         PCAMethod()._run(adata, config, context=None)
+
+
+# ═══ 7. A degenerate component budget must name its cause, not crash inside sklearn ═══
+
+
+def test_too_few_fit_cells_raises_naming_the_fit_population(tmp_path):
+    """Previously: sklearn's own ValueError, with no mention of QC eligibility at all."""
+    adata = _cohort(n_core=1, n_outlier=9)
+
+    with pytest.raises(CellQuorumStageError, match="fit-eligible cell"):
+        _run_pca(adata, tmp_path, n_pcs=5, max_pcs=5)
+
+
+def test_too_few_hvg_genes_raises_naming_the_gene_mask(tmp_path):
+    adata = _cohort(n_core=50, n_outlier=0, n_genes=20)
+    adata.var["highly_variable"] = False
+    adata.var.iloc[0, adata.var.columns.get_loc("highly_variable")] = True
+
+    with pytest.raises(CellQuorumStageError, match="highly_variable"):
+        _run_pca(adata, tmp_path, n_pcs=5, max_pcs=5, use_highly_variable=True)
