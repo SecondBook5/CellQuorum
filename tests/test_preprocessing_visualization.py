@@ -9,7 +9,11 @@ import anndata as ad
 import numpy as np
 import scipy.sparse as sp
 
-from cellquorum.stages.preprocessing.visualization import write_normalization_figures
+from cellquorum.stages.preprocessing.visualization import (
+    _plot_depth_correlation_before_after,
+    _plot_gene_mean_variance,
+    write_normalization_figures,
+)
 
 
 def make_test_adata_with_normalization() -> ad.AnnData:
@@ -129,6 +133,76 @@ def test_write_normalization_figures_different_formats() -> None:
             adata, output_dir, figure_format="pdf", dpi=100, overwrite=True
         )
         assert all(p.suffix == ".pdf" for p in result_pdf.figure_paths)
+
+
+def _large_adata(n_cells: int, n_genes: int = 50, seed: int = 0) -> ad.AnnData:
+    rng = np.random.default_rng(seed)
+    counts = rng.poisson(5, size=(n_cells, n_genes)).astype(np.float32)
+    cell_totals = counts.sum(axis=1, keepdims=True)
+    normalized = np.log1p(counts / np.maximum(cell_totals, 1))
+    adata = ad.AnnData(X=counts)
+    adata.layers["counts"] = counts.copy()
+    adata.layers["cellquorum_normalized"] = normalized
+    return adata
+
+
+def _captured_figure(monkeypatch, module, call):
+    """Capture the Figure passed to save_cellquorum_figure before the caller closes it."""
+    captured = {}
+
+    def fake_save(fig, path, **kwargs):
+        captured["fig"] = fig
+        return [Path(str(path))]
+
+    monkeypatch.setattr(module, "save_cellquorum_figure", fake_save)
+    call()
+    return captured["fig"]
+
+
+def test_depth_correlation_plot_uses_density_rendering_for_every_cell(
+    tmp_path, monkeypatch
+) -> None:
+    """A raw scatter saturates into an unreadable blob at cohort scale; density binning
+    must aggregate every cell, not a fixed subsample, so the plot never silently hides
+    most of the cohort."""
+    from matplotlib.collections import PolyCollection
+
+    from cellquorum.stages.preprocessing import visualization as viz_module
+
+    n_cells = 8000
+    adata = _large_adata(n_cells)
+
+    fig = _captured_figure(
+        monkeypatch,
+        viz_module,
+        lambda: _plot_depth_correlation_before_after(
+            adata, "counts", "cellquorum_normalized", tmp_path / "depth.png", dpi=72
+        ),
+    )
+
+    hexbins = [c for ax in fig.axes for c in ax.collections if isinstance(c, PolyCollection)]
+    assert len(hexbins) == 2  # before and after panels
+    for hexbin in hexbins:
+        assert int(hexbin.get_array().sum()) == n_cells
+
+
+def test_gene_mean_variance_plot_uses_hexbin(tmp_path, monkeypatch) -> None:
+    from matplotlib.collections import PolyCollection
+
+    from cellquorum.stages.preprocessing import visualization as viz_module
+
+    adata = _large_adata(2000, n_genes=500)
+
+    fig = _captured_figure(
+        monkeypatch,
+        viz_module,
+        lambda: _plot_gene_mean_variance(
+            adata, "cellquorum_normalized", tmp_path / "meanvar.png", dpi=72
+        ),
+    )
+
+    hexbins = [c for ax in fig.axes for c in ax.collections if isinstance(c, PolyCollection)]
+    assert len(hexbins) == 1
 
 
 def test_write_normalization_figures_with_many_cells() -> None:

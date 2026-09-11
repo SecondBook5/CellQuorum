@@ -240,6 +240,25 @@ def test_preprocessing_stage_disabled_normalization_includes_shape_metrics(tmp_p
     assert len(result.artifacts) == 0
 
 
+def test_preprocessing_stage_writes_normalization_figures_by_default(tmp_path):
+    result = PreprocessingStage().run(make_context(tmp_path))
+
+    figure_artifacts = [a for a in result.artifacts if a.kind == "figure"]
+    assert len(figure_artifacts) == 4
+    assert all(a.path.exists() for a in figure_artifacts)
+
+
+def test_preprocessing_stage_skips_figures_when_disabled(tmp_path):
+    config = _cp10k_config()
+    config = config.model_copy(
+        update={"preprocessing": config.preprocessing.model_copy(update={"write_figures": False})}
+    )
+
+    result = PreprocessingStage().run(make_context(tmp_path, config=config))
+
+    assert not any(a.kind == "figure" for a in result.artifacts)
+
+
 def test_cpu_normalization_does_not_require_rapids_in_gpu_workflow(tmp_path, monkeypatch):
     config = _cp10k_config()
     config.compute.backend = "gpu"

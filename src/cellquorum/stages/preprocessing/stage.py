@@ -37,6 +37,9 @@ from cellquorum.stages.preprocessing.normalization import (
     normalize_adata,
 )
 
+# Import normalization diagnostic figures.
+from cellquorum.stages.preprocessing.visualization import write_normalization_figures
+
 
 class PreprocessingStageError(CellQuorumDataError):
     """
@@ -170,6 +173,27 @@ class PreprocessingStage:
 
         # Combine warnings from all preprocessing layers.
         warnings = list(normalization_result.warnings)
+
+        # Write normalization diagnostic figures (config-gated, on by default).
+        if preprocessing_config.write_figures:
+            figure_result = write_normalization_figures(
+                normalization_result.adata,
+                output_dir / "figures",
+                counts_layer=normalization_result.preserve_counts_layer,
+                normalized_layer=normalization_result.output_layer,
+                dpi=preprocessing_config.figure_dpi,
+                figure_format=preprocessing_config.figure_format,
+            )
+            stage_artifacts.extend(
+                StageArtifact(
+                    name=path.stem,
+                    path=path,
+                    kind="figure",
+                    description="Preprocessing normalization diagnostic figure.",
+                )
+                for path in figure_result.figure_paths
+            )
+            warnings.extend(figure_result.warnings)
 
         # Build human-readable stage notes.
         notes = build_preprocessing_stage_notes(

@@ -88,6 +88,9 @@ def test_preprocessing_config_defaults():
 
     assert config.enabled is True
     assert isinstance(config.normalization, NormalizationConfig)
+    assert config.write_figures is True
+    assert config.figure_format == "png"
+    assert config.figure_dpi == 300
 
 
 def test_preprocessing_config_custom_normalization():

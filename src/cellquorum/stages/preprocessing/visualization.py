@@ -274,63 +274,61 @@ def _plot_expression_distribution_before_after(
 def _plot_depth_correlation_before_after(
     adata: AnnData, counts_layer: str, normalized_layer: str, output_path: Path, dpi: int
 ) -> None:
-    """Plot gene expression vs depth correlation before and after normalization."""
+    """Plot gene expression vs depth correlation before and after normalization.
+
+    Hexbin density rather than a point scatter: a scatter of tens of thousands of cells
+    saturates into a solid blob at any fixed alpha/size, which hides exactly the density
+    structure this diagnostic exists to show. Binning scales to the full cohort with no
+    subsampling, so a rare, sparse tail of cells cannot be silently dropped from the plot
+    the way a fixed-size random subsample would drop it.
+    """
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-    # Sample cells if too many
-    max_cells = 5000
     n_cells = adata.n_obs
-    if n_cells > max_cells:
-        cell_indices = np.random.choice(n_cells, max_cells, replace=False)
-    else:
-        cell_indices = np.arange(n_cells)
 
     # Calculate cell depths
     counts_matrix = adata.layers[counts_layer]
     if sp.issparse(counts_matrix):
         counts_depth = np.asarray(counts_matrix.sum(axis=1)).flatten()
     else:
-        counts_depth = counts_matrix.sum(axis=1)
-
-    # Sample cell depths
-    counts_depth_sample = counts_depth[cell_indices]
+        counts_depth = np.asarray(counts_matrix.sum(axis=1)).flatten()
 
     # Before: mean expression vs depth
     if sp.issparse(counts_matrix):
-        counts_mean = np.asarray(counts_matrix[cell_indices, :].mean(axis=1)).flatten()
+        counts_mean = np.asarray(counts_matrix.mean(axis=1)).flatten()
     else:
-        counts_mean = counts_matrix[cell_indices, :].mean(axis=1)
+        counts_mean = np.asarray(counts_matrix.mean(axis=1)).flatten()
 
-    sns.scatterplot(
-        x=counts_depth_sample,
-        y=counts_mean,
-        color=CELLQUORUM_GRAY,
-        alpha=0.3,
-        s=10,
-        edgecolor="none",
-        ax=ax1,
+    hb1 = ax1.hexbin(
+        counts_depth,
+        counts_mean,
+        gridsize=40,
+        cmap="Greys",
+        mincnt=1,
+        bins=None,
     )
+    fig.colorbar(hb1, ax=ax1, label="Cells")
     ax1.set_xlabel("Total Counts (Depth)")
     ax1.set_ylabel("Mean Expression")
-    ax1.set_title("Before: Depth vs Expression")
+    ax1.set_title(f"Before: Depth vs Expression (n={n_cells})")
     apply_cellquorum_axis_style(ax1)
 
     # After: mean expression vs original depth
     norm_matrix = adata.layers[normalized_layer]
     if sp.issparse(norm_matrix):
-        norm_mean = np.asarray(norm_matrix[cell_indices, :].mean(axis=1)).flatten()
+        norm_mean = np.asarray(norm_matrix.mean(axis=1)).flatten()
     else:
-        norm_mean = norm_matrix[cell_indices, :].mean(axis=1)
+        norm_mean = np.asarray(norm_matrix.mean(axis=1)).flatten()
 
-    sns.scatterplot(
-        x=counts_depth_sample,
-        y=norm_mean,
-        color=CELLQUORUM_BLUE,
-        alpha=0.3,
-        s=10,
-        edgecolor="none",
-        ax=ax2,
+    hb2 = ax2.hexbin(
+        counts_depth,
+        norm_mean,
+        gridsize=40,
+        cmap="Blues",
+        mincnt=1,
+        bins=None,
     )
+    fig.colorbar(hb2, ax=ax2, label="Cells")
     ax2.set_xlabel("Original Total Counts (Depth)")
     ax2.set_ylabel("Mean Normalized Expression")
     ax2.set_title("After: Independence from Depth")
@@ -360,19 +358,22 @@ def _plot_gene_mean_variance(
     gene_means_nz = gene_means[nonzero_mask]
     gene_vars_nz = gene_vars[nonzero_mask]
 
-    # Plot on log-log scale
-    sns.scatterplot(
-        x=gene_means_nz,
-        y=gene_vars_nz,
-        color=CELLQUORUM_BLUE,
-        alpha=0.3,
-        s=10,
-        edgecolor="none",
-        ax=ax,
+    # Density rather than a point scatter: a gene-level scatter still saturates into a
+    # blob on a typical cohort's tens of thousands of genes. Binning is done directly in
+    # log space (xscale/yscale here, not a post-hoc axis rescale) so hexagon area is
+    # proportional to log-log density rather than distorted by a linear-to-log remap.
+    hb = ax.hexbin(
+        gene_means_nz,
+        gene_vars_nz,
+        gridsize=40,
+        cmap="Blues",
+        mincnt=1,
+        xscale="log",
+        yscale="log",
+        bins=None,
     )
+    fig.colorbar(hb, ax=ax, label="Genes")
 
-    ax.set_xscale("log")
-    ax.set_yscale("log")
     ax.set_xlabel("Mean Normalized Expression (log)")
     ax.set_ylabel("Variance (log)")
     ax.set_title("Gene Mean-Variance Relationship")

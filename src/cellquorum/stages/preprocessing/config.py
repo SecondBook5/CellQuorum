@@ -151,6 +151,9 @@ class PreprocessingConfig(StrictBaseModel):
     Args:
         enabled: Whether preprocessing should run.
         normalization: Normalization method configuration.
+        write_figures: Whether to write the normalization diagnostic figures.
+        figure_format: Figure file format (png, pdf, svg).
+        figure_dpi: Figure resolution in dots per inch.
     """
 
     # Store whether preprocessing is enabled.
@@ -158,6 +161,15 @@ class PreprocessingConfig(StrictBaseModel):
 
     # Store normalization configuration.
     normalization: NormalizationConfig = Field(default_factory=NormalizationConfig)
+
+    # Store whether to write the normalization diagnostic figures.
+    write_figures: bool = True
+
+    # Store the figure file format.
+    figure_format: str = "png"
+
+    # Store the figure resolution.
+    figure_dpi: int = 300
 
 
 def validate_preprocessing_config_dict(config_dict: dict) -> PreprocessingConfig:
