@@ -18,6 +18,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumDataError, CellQuorumStageError
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.integration._embedding_collapse import check_embedding_collapse
 from cellquorum.stages.integration._fit_population import resolve_training_set
 
 #: Below this many highly variable genes a latent space is not worth fitting on them;
@@ -353,28 +354,9 @@ class ScVIMethod(AnalysisMethod):
             else model.get_latent_representation(work)
         )
 
-        # Validate the embedding is not degenerate before writing it.
-        stds = np.std(latent, axis=0)
-        n_variable = int((stds > 1e-6).sum())
-        if n_variable < 2:
-            raise CellQuorumStageError(
-                "integration",
-                f"scVI embedding collapsed: only {n_variable}/{latent.shape[1]} dimensions have "
-                f"variance (std > 1e-6). Training produced a degenerate manifold. "
-                f"First 10 stds: {stds[:10].tolist()}. Check: batch key has >1 batch, "
-                f"counts layer is not empty, HVG selection didn't fail.",
-            )
-        collapse_warning = None
-        if n_variable < n_latent // 2:
-            # Not fatal but suspicious. A plain warnings.warn here would not reach anything
-            # this pipeline's own reporting reads (StageResult.warnings, the run report, or
-            # provenance) -- it would only hit Python's default warning stream, which a batch
-            # run or notebook can easily never display, on top of being deduplicated per
-            # call site by default. Recorded as a stage warning instead, further down.
-            collapse_warning = (
-                f"scVI embedding has low effective dimensionality: only {n_variable}/{n_latent} "
-                f"dimensions have variance. This may indicate a problem with the data or training."
-            )
+        # Validate the embedding is not degenerate before writing it. Shared with scANVI
+        # so the two cannot drift on the thresholds or on how the result is surfaced.
+        collapse_warning = check_embedding_collapse(latent, n_latent, method_name="scVI")
 
         adata.obsm[output_rep] = latent
 

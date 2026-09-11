@@ -16,6 +16,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+from cellquorum.stages.integration._embedding_collapse import check_embedding_collapse
 from cellquorum.stages.integration._fit_population import resolve_training_set
 
 
@@ -136,11 +137,16 @@ class ScANVIMethod(AnalysisMethod):
         )
         scanvi.train(max_epochs=max_epochs)
 
-        adata.obsm[output_rep] = (
+        latent = (
             scanvi.get_latent_representation()
             if train is work
             else scanvi.get_latent_representation(work)
         )
+
+        # Same degenerate-embedding check as scVI, shared so the two cannot drift.
+        collapse_warning = check_embedding_collapse(latent, n_latent, method_name="scANVI")
+
+        adata.obsm[output_rep] = latent
 
         cq = adata.uns.setdefault("cellquorum", {})
         # Single-method provenance (backward-compatible path, last-wins).
@@ -172,6 +178,7 @@ class ScANVIMethod(AnalysisMethod):
                 f"conditioned on '{label_key}' -> {output_rep}.",
                 *([scope_note] if scope_note else []),
             ],
+            warnings=[collapse_warning] if collapse_warning else [],
         )
 
 
