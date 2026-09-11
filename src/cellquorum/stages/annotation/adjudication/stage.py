@@ -1,5 +1,4 @@
-# Pipeline step (order=145): adjudication — adjudicate competing cluster/state claims,
-# after qc_finalization (135) so qc_state_final is available as a technical-validity input.
+# Pipeline step (order=145): adjudication — after qc_finalization (135) resolves qc_state_final.
 """Pipeline stage for adjudicating cluster/state claims."""
 
 from __future__ import annotations

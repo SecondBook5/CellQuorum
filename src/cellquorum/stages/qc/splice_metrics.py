@@ -1,5 +1,4 @@
-# Pipeline step (order=15): qc_splice_metrics — optional, lightweight splice-QC
-# extraction from existing velocyto loom output, before qc_evidence (20) consumes it.
+# Pipeline step (order=15): qc_splice_metrics — optional splice-QC extraction, before qc (20).
 """Per-cell intronic fraction from reconciled spliced/unspliced loom counts.
 
 Optional and lightweight by design (docs/design/qc-graded-adjudication.md's stage
