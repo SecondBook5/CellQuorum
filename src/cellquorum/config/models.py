@@ -671,11 +671,17 @@ class DimensionalityConfig(StrictBaseModel):
     # Defaults to the preprocessing normalized output.
     input_layer: str = "cellquorum_normalized"
 
-    # Store the component count, or "auto" for knee-based selection.
-    n_pcs: int | str = "auto"
+    # Store the component count, or "auto" for knee-based selection. Constrained to the
+    # literal "auto" rather than any string: an unrecognized string (e.g. a typo) used to
+    # be accepted here and only failed later as int("atuo") deep inside PCA, with no
+    # indication the cause was a misspelled config value.
+    n_pcs: int | Literal["auto"] = "auto"
 
-    # Store the upper bound on components for auto selection.
-    max_pcs: int = 50
+    # Store the upper bound on components for auto selection. A non-positive value used to
+    # be accepted and silently forced n_comps to 0 or negative regardless of how many fit
+    # cells or HVG genes were available, which then surfaced as a component-budget error
+    # blaming the wrong cause entirely.
+    max_pcs: int = Field(default=50, ge=1)
 
     # Store whether PCA is restricted to highly-variable genes. None (the default) means
     # "follow feature_selection": use the HVGs when that stage flagged them, all genes
@@ -688,6 +694,13 @@ class DimensionalityConfig(StrictBaseModel):
     random_state: int = 0
 
     precision: Literal["input", "float32", "float64"] = "input"
+
+    @field_validator("n_pcs")
+    @classmethod
+    def _n_pcs_must_be_positive(cls, value: int | str) -> int | str:
+        if isinstance(value, int) and value < 1:
+            raise ValueError("n_pcs must be a positive integer, or the literal 'auto'.")
+        return value
 
 
 class ClusteringConfig(StrictBaseModel):
