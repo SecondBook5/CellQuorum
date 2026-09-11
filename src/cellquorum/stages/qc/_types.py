@@ -27,27 +27,15 @@ import scipy.sparse as sp
 
 from cellquorum.backends.base import BackendStatus
 
-#: A cells x genes expression matrix, dense or sparse. Says nothing about *which* values are in
-#: it — that is the layer contract's job (see :mod:`cellquorum.core.contracts`).
 type ExpressionMatrix = np.ndarray | sp.spmatrix | sp.sparray
 
-#: A backend that runs a helper script inside an isolated environment.
+
 __all__ = ["ExpressionMatrix", "IsolatedBackend"]
 
 
 @runtime_checkable
 class IsolatedBackend(Protocol):
-    """Structural type for an isolated-environment subprocess backend.
-
-    A ``Protocol`` rather than a base class so a test can pass a stub with just these two
-    methods — which the archetype audit's tests do, to exercise the "environment absent" path
-    without building a micromamba environment in CI.
-
-    The return types are the real ones rather than ``object``. That matters: annotating the
-    parameter as ``object`` type-checks but tells a checker nothing, so ``status().available``
-    and ``result.returncode`` go unverified, and those are exactly the attributes a caller
-    depends on.
-    """
+    """Structural type for an isolated-environment subprocess backend."""
 
     def status(self) -> BackendStatus:
         """Availability of the isolated environment."""

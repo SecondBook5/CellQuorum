@@ -26,25 +26,12 @@ from cellquorum.config.models import CellQuorumConfig
 
 # Import pipeline context and path contracts.
 from cellquorum.core.context import PipelineContext, PipelinePaths
-
-# Import QC stage utilities under test.
-from cellquorum.stages.qc._annotate import (
-    add_metric_columns_to_axis,
-    annotate_adata_with_qc_metrics,
-)
 from cellquorum.stages.qc._context import (
     coerce_qc_config,
     get_context_adata,
     get_qc_output_dir,
     is_qc_stage_enabled,
     resolve_qc_config,
-)
-from cellquorum.stages.qc._report import (
-    build_disabled_qc_stage_result,
-    build_qc_stage_summary_extra,
-    build_stage_artifacts_from_manifest,
-    describe_qc_artifact,
-    infer_artifact_kind,
 )
 
 # Import QC artifact manifest for artifact conversion tests.
@@ -53,6 +40,17 @@ from cellquorum.stages.qc.config import QCConfig
 
 # Import QC configuration.
 from cellquorum.stages.qc.floors import FloorResult
+
+# Import QC stage utilities under test.
+from cellquorum.stages.qc.reporting import (
+    add_metric_columns_to_axis,
+    annotate_adata_with_qc_metrics,
+    build_disabled_qc_stage_result,
+    build_qc_stage_summary_extra,
+    build_stage_artifacts_from_manifest,
+    describe_qc_artifact,
+    infer_artifact_kind,
+)
 
 # Import QC decision result container.
 from cellquorum.stages.qc.stage import (
@@ -113,6 +111,77 @@ def make_stage_qc_config() -> QCConfig:
             "write_figures": False,
         },
     )
+
+
+def test_requested_ambient_correction_cannot_silently_do_nothing(tmp_path):
+    config = QCConfig(ambient={"method": "soupx", "correction_enabled": True})
+    with pytest.raises(QCStageError, match="upstream.*ambient_correction"):
+        QCStage(config=config).run(make_context(tmp_path))
+
+
+def test_ambient_status_is_derived_from_provenance():
+    from cellquorum.stages.qc.reporting import summarize_ambient_correction
+
+    adata = make_stage_test_adata()
+    assert summarize_ambient_correction(adata)["status"] == "not_recorded"
+    adata.uns["cellquorum"] = {
+        "ambient_correction": {"method": "soupx", "contamination_fractions": {"A": 0.1}}
+    }
+    assert summarize_ambient_correction(adata) == {
+        "status": "upstream_recorded",
+        "method": "soupx",
+        "n_libraries": 1,
+    }
+
+
+def test_qc_stage_raw_gene_space_and_evidence_remain_consistent(tmp_path):
+    original = make_stage_test_adata()
+    original.raw = original.copy()
+    adata = original[:, ["ACTB", "MALAT1"]].copy()
+    adata.X[:] = 999.0
+    config = QCConfig(
+        metrics={"use_raw": True, "percent_top": [2]},
+        floors={"min_genes_per_cell": 1, "min_cells_per_gene": 1},
+        doublets={"enabled": False},
+        mito_mixture={"enabled": False},
+        graded={"archetype_audit": False, "self_check": False},
+        outputs={"write_h5ad": False, "write_figures": False},
+    )
+    result = QCStage(config=config).run(make_context(tmp_path, adata=adata))
+    assert result.adata.var_names.tolist() == ["ACTB", "MALAT1"]
+    np.testing.assert_allclose(result.adata.obs["total_counts"], original.X.sum(axis=1))
+    np.testing.assert_allclose(result.adata.X, 999.0)
+
+
+def test_equivalent_count_sources_produce_identical_qc_decisions(tmp_path):
+    """Exercise real lineage fitting and grading with decoy expression in unselected sources."""
+    rng = np.random.default_rng(19)
+    counts = rng.poisson(4.0, size=(80, 65)).astype(float)
+    names = ["MALAT1", "FOS", "MT-ND1", *[f"G{i}" for i in range(62)]]
+    observed = []
+    for source in ("X", "layer", "raw"):
+        adata = ad.AnnData(counts.copy(), var=pd.DataFrame(index=names))
+        metrics_config = {}
+        if source == "layer":
+            adata.layers["selected"] = counts.copy()
+            adata.X[:] = 999.0
+            metrics_config = {"layer": "selected"}
+        elif source == "raw":
+            adata.raw = adata.copy()
+            adata.X[:] = 999.0
+            metrics_config = {"use_raw": True}
+        config = QCConfig(
+            metrics=metrics_config,
+            floors={"min_genes_per_cell": 1, "min_cells_per_gene": 1},
+            doublets={"enabled": False},
+            mito_mixture={"enabled": False},
+            graded={"archetype_audit": False, "self_check": False},
+            outputs={"write_h5ad": False, "write_figures": False},
+        )
+        result = QCStage(config=config).run(make_context(tmp_path / source, adata=adata))
+        observed.append(result.adata.obs)
+    for alternative in observed[1:]:
+        pd.testing.assert_frame_equal(observed[0], alternative)
 
 
 def make_context(

@@ -37,7 +37,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-import numpy as np
 import pandas as pd
 
 from cellquorum.core.exceptions import CellQuorumDataError
@@ -45,7 +44,7 @@ from cellquorum.stages.qc._types import ExpressionMatrix
 
 logger = logging.getLogger(__name__)
 
-#: obs column recording why a barcode fell below the floor, or "" when it did not.
+
 FLOOR_REASON_COLUMN = "qc_floor_reason"
 
 
@@ -80,13 +79,7 @@ class FloorResult:
         return int((~self.gene_keep).sum())
 
     def cell_table(self) -> pd.DataFrame:
-        """Per-barcode outcome, for artifacts and reports.
-
-        Two columns, not one per rule. The threshold path emitted a boolean column per rule so a
-        reader could attribute an exclusion; under grading, attribution is by evidence family and
-        comes from :func:`cellquorum.visualization.qc.graded.graded_attribution_table`. A floor
-        has nothing to attribute — a barcode either cleared the detection limit or it did not.
-        """
+        """Per-barcode outcome, for artifacts and reports."""
         return pd.DataFrame({"keep": self.cell_keep, "floor_reason": self.reason})
 
     def gene_table(self) -> pd.DataFrame:
@@ -114,10 +107,6 @@ def apply_floors(
 ) -> FloorResult:
     """Identify barcodes and genes that cannot be analysed at all.
 
-    Deliberately computed from the matrix rather than from a precomputed metric table, so the
-    floor cannot disagree with the data it is filtering — a class of bug the old path had, where
-    a recomputed metric could silently differ from an inherited column of the same name.
-
     Args:
         matrix: Raw counts, cells x genes.
         obs_names: Barcode names.
@@ -129,18 +118,38 @@ def apply_floors(
     Returns:
         The masks, per-barcode reasons, and counts.
     """
-    import scipy.sparse as sp
+    from cellquorum.stages.qc.metrics import count_positive_axis, sum_axis
 
-    detected = matrix > 0
-    genes_per_cell = np.asarray(
-        detected.sum(axis=1) if sp.issparse(matrix) else np.asarray(detected).sum(axis=1)
-    ).ravel()
-    counts_per_cell = np.asarray(
-        matrix.sum(axis=1) if sp.issparse(matrix) else np.asarray(matrix).sum(axis=1)
-    ).ravel()
-    cells_per_gene = np.asarray(
-        detected.sum(axis=0) if sp.issparse(matrix) else np.asarray(detected).sum(axis=0)
-    ).ravel()
+    if matrix.shape != (len(obs_names), len(var_names)):
+        raise QCFloorError("Floor matrix shape does not match its cell and gene names.")
+    return floors_from_metrics(
+        pd.DataFrame(
+            {
+                "n_genes_by_counts": count_positive_axis(matrix, axis=1),
+                "total_counts": sum_axis(matrix, axis=1),
+            },
+            index=obs_names,
+        ),
+        pd.DataFrame({"n_cells_by_counts": count_positive_axis(matrix, axis=0)}, index=var_names),
+        min_genes_per_cell=min_genes_per_cell,
+        min_counts_per_cell=min_counts_per_cell,
+        min_cells_per_gene=min_cells_per_gene,
+    )
+
+
+def floors_from_metrics(
+    cell_metrics: pd.DataFrame,
+    gene_metrics: pd.DataFrame,
+    *,
+    min_genes_per_cell: int | None = 100,
+    min_counts_per_cell: int | None = None,
+    min_cells_per_gene: int | None = 3,
+) -> FloorResult:
+    """Apply floors to freshly computed QC metrics, without rescanning the counts."""
+    obs_names, var_names = cell_metrics.index, gene_metrics.index
+    genes_per_cell = cell_metrics["n_genes_by_counts"].to_numpy()
+    counts_per_cell = cell_metrics["total_counts"].to_numpy()
+    cells_per_gene = gene_metrics["n_cells_by_counts"].to_numpy()
 
     reason = pd.Series("", index=obs_names, dtype=object)
     cell_keep = pd.Series(True, index=obs_names, dtype=bool)
@@ -168,9 +177,7 @@ def apply_floors(
     }
 
     warnings: list[str] = []
-    # A floor that removes most of the data is a misconfiguration, not a result. Said loudly
-    # because the old path's equivalent failure shipped a "100% pass" figure from a run that
-    # had dropped 13% of its cells.
+
     if summary["n_cells"] and summary["n_cells_below_floor"] / summary["n_cells"] > 0.5:
         warnings.append(
             f"QC floors removed {summary['n_cells_below_floor']:,} of {summary['n_cells']:,} "
@@ -197,11 +204,6 @@ def apply_floors(
 
 def require_non_empty_qc_result(floors: FloorResult, *, n_genes: int) -> None:
     """Fail when the floors left nothing to analyse, naming the floor that did it.
-
-    Backs ``QCConfig.fail_on_empty_result``, which was declared and read by nothing. Without
-    it an over-strict floor produced an empty object that stayed empty until some downstream
-    reduction failed on a zero-size array — a stack trace several stages away from the cause,
-    on the most common first-run mistake there is.
 
     Args:
         floors: The applied floor result.
@@ -246,20 +248,6 @@ def build_qc_report_table(
     unassigned_label: str = "unassigned",
 ) -> pd.DataFrame:
     """Per-group counts of cells before removal, removed, and remaining.
-
-    The one table every QC run owes a reader, whatever decided the removals: how many cells
-    entered, how many left, and how many survived, per group with a cohort-wide total.
-
-    Counts are taken over the FULL input index, so ``cell_decisions`` must be indexed by every
-    input cell and never by the surviving subset — a report built from survivors reports 100%
-    retention by construction, which is how a "100% pass" table ships from a run that dropped
-    cells.
-
-    Carried over from the deleted decision path with its per-rule ``flagged_*`` breakdown
-    removed. Those columns attributed a removal to a threshold rule, and there are no rules now;
-    attribution is by evidence family and lives in
-    :func:`cellquorum.visualization.qc.graded.graded_attribution_table`, which can say *which
-    family drove it* rather than which bound it crossed.
 
     Args:
         cell_decisions: Table indexed by every input cell with a boolean ``keep`` column —
@@ -321,6 +309,7 @@ __all__ = [
     "FloorResult",
     "QCFloorError",
     "apply_floors",
+    "floors_from_metrics",
     "build_qc_report_table",
     "require_non_empty_qc_result",
 ]

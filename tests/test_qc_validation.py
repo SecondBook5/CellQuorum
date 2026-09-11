@@ -34,6 +34,61 @@ from cellquorum.stages.qc.validation import (
 )
 
 
+@pytest.mark.parametrize("layout", ["c", "fortran", "strided", "csr", "csc"])
+@pytest.mark.parametrize("bad_value", [None, np.nan, np.inf, -np.inf])
+def test_finite_validation_bounds_scratch_space(monkeypatch, layout, bad_value):
+    """Scan every chunk without a matrix-sized finite-value temporary or mutation."""
+    from cellquorum.stages.qc import validation
+
+    values = np.ones((11, 14))
+    if layout == "fortran":
+        values = np.asfortranarray(values)
+    elif layout == "strided":
+        values = values[:, ::2]
+    if bad_value is not None:
+        values[-1, -1] = bad_value
+    matrix = {"csr": sp.csr_matrix, "csc": sp.csc_matrix}.get(layout, np.asarray)(values)
+    original = matrix.copy()
+    real_isfinite = np.isfinite
+    chunk_sizes = []
+
+    def bounded_isfinite(chunk):
+        chunk_sizes.append(chunk.size)
+        assert chunk.size <= 16
+        return real_isfinite(chunk)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(validation, "_FINITE_CHECK_CHUNK_SIZE", 16)
+        patch.setattr(validation.np, "isfinite", bounded_isfinite)
+        if bad_value is None:
+            assert validate_qc_matrix(matrix, expected_n_obs=11, matrix_source="X") == values.shape
+        else:
+            with pytest.raises(QCInputValidationError, match="NaN or infinite"):
+                validate_qc_matrix(matrix, expected_n_obs=11, matrix_source="X")
+
+    assert len(chunk_sizes) > 1
+    np.testing.assert_array_equal(
+        matrix.data if sp.issparse(matrix) else matrix,
+        original.data if sp.issparse(original) else original,
+    )
+
+
+@pytest.mark.parametrize("matrix_type", [np.asarray, sp.csr_matrix, sp.csc_matrix])
+def test_qc_rejects_complex_counts(matrix_type):
+    matrix = matrix_type(np.array([[1 + 2j, 3 + 0j]]))
+    with pytest.raises(QCInputValidationError, match="real-valued"):
+        validate_qc_matrix(matrix, expected_n_obs=1, matrix_source="X")
+
+
+@pytest.mark.parametrize("matrix_type", [sp.lil_matrix, sp.dok_matrix, sp.csr_array])
+def test_sparse_formats_share_the_count_validation_contract(matrix_type):
+    valid = matrix_type(np.array([[0.0, 1.0], [2.0, 0.0]]))
+    assert validate_qc_matrix(valid, expected_n_obs=2, matrix_source="X") == (2, 2)
+    valid[1, 0] = -1.0
+    with pytest.raises(QCInputValidationError, match="negative"):
+        validate_qc_matrix(valid, expected_n_obs=2, matrix_source="X")
+
+
 def make_test_adata() -> ad.AnnData:
     """
     Build a tiny valid AnnData object for QC validation tests.

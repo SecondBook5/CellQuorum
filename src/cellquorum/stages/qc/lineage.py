@@ -53,21 +53,25 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.stages.qc._types import ExpressionMatrix
+from cellquorum.stages.qc.validation import resolve_qc_matrix
 
 if TYPE_CHECKING:  # pragma: no cover - import cost
     import anndata as ad
 
 logger = logging.getLogger(__name__)
 
+
 #: obs column holding the provisional grouping, kept for provenance and figures. Named
 #: "provisional" in full because it must never be mistaken for the analysis clustering.
 LINEAGE_COLUMN = "qc_provisional_lineage"
 
-#: obs column recording which grouping level supplied each cell's null.
+
 NULL_LEVEL_COLUMN = "qc_null_group_level"
+
 
 #: Label for cells no provisional grouping could place.
 UNASSIGNED = "unassigned"
+
 
 #: obsm key holding the provisional embedding. Kept rather than discarded because the
 #: archetype audit and the QC figures both need an embedding, and recomputing one would be
@@ -79,6 +83,7 @@ def provisional_lineages(
     adata: ad.AnnData,
     *,
     layer: str | None = None,
+    use_raw: bool = False,
     resolution: float = 0.5,
     n_neighbors: int = 15,
     n_pcs: int = 30,
@@ -101,7 +106,8 @@ def provisional_lineages(
     Args:
         adata: The object being QC'd. Gains ``obsm[PROVISIONAL_EMBEDDING]``; nothing else
             is modified.
-        layer: Counts layer to group on. ``None`` uses ``X``.
+        layer: Counts layer to group on. ``None`` uses ``X`` unless use_raw is set.
+        use_raw: Group using raw.X and its gene names.
         resolution: Leiden resolution. Low on purpose.
         n_neighbors: Neighbours for the provisional graph.
         n_pcs: Components for the provisional PCA.
@@ -115,7 +121,7 @@ def provisional_lineages(
     """
     import scanpy as sc
 
-    matrix = adata.layers[layer] if layer and layer in adata.layers else adata.X
+    matrix, _ = resolve_qc_matrix(adata, layer=layer, use_raw=use_raw)
     genes_per_cell = np.asarray((matrix > 0).sum(axis=1)).ravel()
     groupable = genes_per_cell >= min_genes
 
@@ -129,7 +135,7 @@ def provisional_lineages(
         return labels
 
     # A throwaway object, so nothing here can touch the caller's layers or obs.
-    work = _provisional_object(adata, matrix, groupable)
+    work = _provisional_object(adata, matrix, groupable, use_raw=use_raw)
 
     # Per-cell normalization only. target_sum is a constant, so no cohort quantity is
     # estimated and this grouping cannot leak information between cells.
@@ -185,7 +191,7 @@ def provisional_lineages(
 
 
 def _provisional_object(
-    adata: ad.AnnData, matrix: ExpressionMatrix, groupable: np.ndarray
+    adata: ad.AnnData, matrix: ExpressionMatrix, groupable: np.ndarray, *, use_raw: bool = False
 ) -> ad.AnnData:
     """A minimal throwaway AnnData for the provisional embedding."""
     import anndata as ad_module
@@ -193,7 +199,7 @@ def _provisional_object(
     return ad_module.AnnData(
         X=matrix[groupable].copy(),
         obs=pd.DataFrame(index=adata.obs_names[groupable]),
-        var=pd.DataFrame(index=adata.var_names),
+        var=pd.DataFrame(index=adata.raw.var_names if use_raw else adata.var_names),
     )
 
 

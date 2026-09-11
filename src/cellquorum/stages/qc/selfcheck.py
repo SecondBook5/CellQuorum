@@ -95,15 +95,7 @@ def check_posterior_not_rescaled(
     *,
     tolerance: float = 0.05,
 ) -> Check:
-    """The metabolic axis must still *be* the mixture posterior, not a transform of it.
-
-    The posterior is a calibrated probability. Any monotone rescaling preserves the ordering, so
-    a rank-based check would pass; what breaks is the *scale*, and with it the meaning of every
-    bar in the policy. So the comparison is on the values.
-
-    This is the check that would have caught the 22,541-cell regression on the run that produced
-    it, instead of three sessions later.
-    """
+    """The metabolic axis must still *be* the mixture posterior, not a transform of it."""
     name = "posterior_not_rescaled"
     if metabolic_severity is None or mito_posterior is None:
         return Check(name, True, "no mixture posterior on this run; nothing to compare.", "warn")
@@ -130,15 +122,7 @@ def check_fallback_nulls_are_nested(
     level: pd.Series | None,
     keys: dict[str, pd.Series] | None,
 ) -> Check:
-    """A coarser reference class must be *wider* than the cells that fell back to it.
-
-    If a level's group contains only the cells assigned to that level, the fallback partitioned
-    rather than nested — and since cells fall back precisely when their own group is unusable,
-    which selects for damaged barcodes, their null then gets estimated from damage.
-
-    Checked by comparing group membership against level assignment, which is independent of the
-    severity those nulls produced.
-    """
+    """A coarser reference class must be *wider* than the cells that fell back to it."""
     name = "fallback_nulls_are_nested"
     if level is None or not keys:
         return Check(name, True, "no lineage-conditional grouping on this run.", "warn")
@@ -153,8 +137,7 @@ def check_fallback_nulls_are_nested(
         if not assigned.any():
             continue
         key = keys[value]
-        # Every cell assigned to this level must sit in a group that also contains cells
-        # assigned to a finer level; otherwise the group is exactly the fallback set.
+
         members = key.groupby(key).transform("size").to_numpy()
         own = pd.Series(assigned, index=key.index).groupby(key).transform("sum").to_numpy()
         partitioned = members[assigned] <= own[assigned]
@@ -176,12 +159,7 @@ def check_core_fraction_plausible(
     *,
     minimum_core: float = 0.50,
 ) -> Check:
-    """Most barcodes above the floor should survive as core, or something is miscalibrated.
-
-    A blunt check on purpose. Graded QC assigns permissions rather than deleting, so a cohort
-    where most cells cannot fit anything has produced a manifold defined by a minority — which
-    may be correct for a badly degraded experiment and is never correct silently.
-    """
+    """Most barcodes above the floor should survive as core, or something is miscalibrated."""
     name = "core_fraction_plausible"
     fraction = float((state.astype(str) == "core").mean())
     if fraction >= minimum_core:
@@ -202,34 +180,15 @@ def check_no_coherent_population_removed(
     minimum_cells: int = 50,
     minimum_cohort_share: float = 0.02,
 ) -> Check:
-    """No transcriptionally coherent group may be excluded wholesale for damage reasons.
-
-    The rare-population failure, as a gate. Multiplet-driven exclusion is already factored out
-    of ``vulnerable`` by the audit, so a flag here means damage severity removed a group that
-    looks like a real population.
-    """
+    """No transcriptionally coherent group may be excluded wholesale for damage reasons."""
     name = "no_coherent_population_removed"
     if lineage_audit is None or lineage_audit.empty or "vulnerable" not in lineage_audit.columns:
         return Check(name, True, "no lineage audit on this run.", "warn")
 
-    # The `unassigned` bucket is not a lineage and cannot be a lost population: it holds exactly
-    # the barcodes that failed the lineage gene floor, so they have no group to be coherent with
-    # and the clustering never placed them. It is the one label where "most of this group was
-    # excluded" is the expected result rather than a warning — the floor is 50 genes, below which
-    # a barcode carries too little to be anything, and the lowest-complexity real population
-    # measured in this tissue sits at 744.
-    #
-    # Left in, it fires on any run with real debris and at any size, which is how a check that
-    # gates the run becomes a check people switch off.
     flagged = lineage_audit[lineage_audit["vulnerable"]]
     flagged = flagged[flagged.index.astype(str) != UNASSIGNED]
     real = flagged
     if "n_cells" in flagged.columns:
-        # Two floors, because two different things make a flag untrustworthy. A handful of
-        # sub-floor barcodes is not a population — the floor already judged those. And a lineage
-        # that is a negligible share of the cohort has a noisy per-lineage null, which is how a
-        # two-library smoke subset flagged a lineage at 60% that sits at 28% on the full cohort.
-        # A gate that stops a run on noise is a gate people disable.
         total = float(lineage_audit["n_cells"].sum()) or 1.0
         share = flagged["n_cells"] / total
         real = flagged[(flagged["n_cells"] >= minimum_cells) & (share >= minimum_cohort_share)]
@@ -249,18 +208,14 @@ def check_masks_agree_with_state(
     state: pd.Series,
     fit_mask: pd.Series | None,
 ) -> Check:
-    """The eligibility mask must match the verdict it was derived from.
-
-    Cheap, and it catches the class of bug where a mask is written from a stale verdict — which
-    is how a careful decision ends up controlling nothing.
-    """
+    """The eligibility mask must match the verdict it was derived from."""
     name = "masks_agree_with_state"
     if fit_mask is None:
         return Check(name, True, "no eligibility masks on this run.", "warn")
 
     core = (state.astype(str) == "core").reindex(fit_mask.index)
     permitted = fit_mask.astype(bool)
-    # Core cells may lose FIT to a multiplet call, but a non-core cell may never hold it.
+
     violations = int((permitted & ~core.fillna(False)).sum())
     if violations == 0:
         return Check(name, True, "every cell permitted to fit is core.")

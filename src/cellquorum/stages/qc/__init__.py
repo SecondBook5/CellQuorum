@@ -21,14 +21,11 @@ code depends on belongs where the code is.
 
 from __future__ import annotations
 
-# Import QC artifact writing public objects.
 from cellquorum.stages.qc.artifacts import (
     QCArtifactError,
     QCArtifactManifest,
     write_qc_artifacts,
 )
-
-# Import QC configuration public objects.
 from cellquorum.stages.qc.config import (
     QCAmbientRNAConfig,
     QCConfig,
@@ -40,8 +37,6 @@ from cellquorum.stages.qc.config import (
     QCOutputConfig,
     validate_qc_config_dict,
 )
-
-# Import QC feature annotation public objects.
 from cellquorum.stages.qc.features import (
     CUSTOM_EXCLUDE_COLUMN,
     HEMOGLOBIN_COLUMN,
@@ -53,29 +48,21 @@ from cellquorum.stages.qc.features import (
     build_feature_masks,
     summarize_feature_masks,
 )
-
-# Import the floor path that replaced fixed-and-MAD thresholds.
 from cellquorum.stages.qc.floors import (
     FloorResult,
     QCFloorError,
     apply_floors,
     build_qc_report_table,
 )
-
-# Import QC metric calculation public objects.
 from cellquorum.stages.qc.metrics import (
     QCMetricsError,
     QCMetricsResult,
     calculate_qc_metrics,
 )
-
-# Import QC stage public objects.
 from cellquorum.stages.qc.stage import (
     QCStage,
     QCStageError,
 )
-
-# Import QC input validation public objects.
 from cellquorum.stages.qc.validation import (
     QCInputValidationError,
     QCInputValidationSummary,

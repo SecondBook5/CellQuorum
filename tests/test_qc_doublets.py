@@ -45,7 +45,9 @@ class _RecordingBackend:
     def run_script(self, script: Path, argv: list[str]) -> subprocess.CompletedProcess:
         self.calls.append(list(argv))
         self.samples_seen.append(
-            pd.read_csv(argv[3])["sample"].astype(str).tolist() if len(argv) >= 4 else None
+            pd.read_csv(argv[3])["sample"].astype(str).tolist()
+            if len(argv) >= 4 and argv[3]
+            else None
         )
         mtx_path, out_path = Path(argv[0]), Path(argv[1])
         # Cell count from the Matrix Market header, so the fake result is the
@@ -53,9 +55,13 @@ class _RecordingBackend:
         with open(mtx_path, encoding="utf-8") as handle:
             dims = [line for line in handle if not line.startswith("%")][0].split()
         n_cells = int(dims[1])
-        pd.DataFrame({"score": np.zeros(n_cells), "class": ["singlet"] * n_cells}).to_csv(
-            out_path, index=False
-        )
+        pd.DataFrame(
+            {
+                "cell_id": np.arange(1, n_cells + 1),
+                "score": np.zeros(n_cells),
+                "class": ["singlet"] * n_cells,
+            }
+        ).to_csv(out_path, index=False)
         return subprocess.CompletedProcess(args=["Rscript"], returncode=0)
 
 
@@ -177,13 +183,15 @@ def test_scrublet_per_sample_still_loops_in_python():
     not r_package_available("scDblFinder"),
     reason="scDblFinder is not installed in this R library",
 )
-def test_scdblfinder_real_r_returns_scores_in_input_cell_order():
+@pytest.mark.parametrize("expected_rate", [None, 0.12])
+def test_scdblfinder_real_r_returns_scores_in_input_cell_order(expected_rate):
     """The R adapter's scores line up with the cells that were sent.
 
     With ``samples=``, scDblFinder splits the object, scores each part and rebinds,
-    so the column order of what comes back is its business. The adapter assigns the
-    returned rows to cells POSITIONALLY, so a reordered rebind would attach one
-    donor's doublet calls to another donor's cells and nothing would complain.
+    so the column order of what comes back is its business. The adapter verifies
+    the returned IDs and restores input order;
+    a reordered rebind must not attach one donor's doublet calls to another
+    donor's cells.
 
     Made detectable by planting the doublets: cells 80-119 are literal sums of a
     type-A and a type-B cell from the same capture, and everything else is a
@@ -216,7 +224,9 @@ def test_scdblfinder_real_r_returns_scores_in_input_cell_order():
     # "zz" first, "aa" second: sorting by label reverses the blocks.
     a.obs["sample_id"] = pd.Categorical(["zz"] * 120 + ["aa"] * 120)
 
-    scores, calls = run_scdblfinder(a, RscriptBackend(), random_state=0, sample_key="sample_id")
+    scores, calls = run_scdblfinder(
+        a, RscriptBackend(), random_state=0, sample_key="sample_id", expected_rate=expected_rate
+    )
 
     assert scores.shape == (240,)
     assert not np.isnan(scores).any(), "scDblFinder left cells unscored"
@@ -311,3 +321,155 @@ def test_consensus_any_vs_all_semantics():
     assert list(combine_consensus(calls, "any")) == [True, True, False]
     assert list(combine_consensus(calls, "all")) == [True, False, False]
     assert list(combine_consensus(calls, "majority")) == [True, False, False]
+
+
+@pytest.mark.parametrize("method", ["scrublet", "scdblfinder"])
+@pytest.mark.parametrize("per_sample", [False, True])
+def test_run_seed_reaches_each_detector(monkeypatch, method, per_sample):
+    import cellquorum.stages.qc.doublets as module
+
+    adata = _counts_adata(n=12, g=10)
+    adata.obs["sample"] = ["a"] * 6 + ["b"] * 6
+    seen = []
+
+    def detector(data, *args, random_state, **kwargs):
+        seen.append(random_state)
+        return np.zeros(data.n_obs), np.zeros(data.n_obs, dtype=bool)
+
+    monkeypatch.setattr(module, f"run_{method}", detector)
+    metrics = detect_doublets(
+        adata,
+        QCDoubletConfig(methods=[method], per_sample=per_sample),
+        backend=None,
+        sample_key="sample",
+        random_state=79,
+    )
+    assert seen == [79] * (2 if per_sample and method == "scrublet" else 1)
+    assert metrics["random_state"] == 79
+
+
+def test_explicit_threshold_overrides_native_calls(monkeypatch):
+    import cellquorum.stages.qc.doublets as module
+
+    adata = _counts_adata(n=4, g=10)
+    monkeypatch.setattr(
+        module,
+        "run_scrublet",
+        lambda *args, **kwargs: (
+            np.array([0.1, 0.2, 0.3, np.nan]),
+            np.array([True, False, False, True]),
+        ),
+    )
+    metrics = detect_doublets(
+        adata, QCDoubletConfig(methods=["scrublet"], score_threshold=0.2), backend=None
+    )
+    assert adata.obs["predicted_doublet"].tolist() == [False, True, True, False]
+    assert metrics["used_native_calls"] == {"scrublet": False}
+    assert metrics["threshold_policy"] == "explicit"
+    assert metrics["score_threshold"] == 0.2
+
+
+@pytest.mark.parametrize("per_sample", [False, True])
+def test_scdblfinder_receives_configured_rate(per_sample):
+    adata = _counts_adata(n=12, g=10)
+    adata.obs["sample"] = ["a"] * 6 + ["b"] * 6
+    backend = _RecordingBackend()
+    metrics = detect_doublets(
+        adata,
+        QCDoubletConfig(methods=["scdblfinder"], per_sample=per_sample, expected_doublet_rate=0.12),
+        backend=backend,
+        sample_key="sample",
+        random_state=79,
+    )
+    assert len(backend.calls) == 1
+    assert backend.calls[0][2] == "79"
+    assert backend.calls[0][5] == "0.12"
+    assert bool(backend.calls[0][3]) == per_sample
+    assert metrics["expected_doublet_rate"] == 0.12
+
+
+@pytest.mark.parametrize(
+    "scores,calls,reason",
+    [
+        (np.array([0.1]), None, "scores with shape"),
+        (np.array([np.inf, 0.1]), None, "outside"),
+        (np.array([-0.1, 0.1]), None, "outside"),
+        (np.array([0.1, 1.1]), None, "outside"),
+        (np.array([0.1, 0.2]), np.array([True]), "calls with shape"),
+        (np.array([0.1, 0.2]), np.array([0, 2]), "non-boolean"),
+    ],
+)
+def test_malformed_detector_output_rejected(monkeypatch, scores, calls, reason):
+    import cellquorum.stages.qc.doublets as module
+
+    monkeypatch.setattr(module, "run_scrublet", lambda *args, **kwargs: (scores, calls))
+    with pytest.raises(ValueError, match=reason):
+        detect_doublets(_counts_adata(n=2, g=10), QCDoubletConfig(methods=["scrublet"]), None)
+
+
+def test_native_call_without_score_is_not_a_positive(monkeypatch):
+    import cellquorum.stages.qc.doublets as module
+
+    monkeypatch.setattr(
+        module,
+        "run_scrublet",
+        lambda *args, **kwargs: (np.array([np.nan, 0.2]), np.array([True, False])),
+    )
+    adata = _counts_adata(n=2, g=10)
+    metrics = detect_doublets(adata, QCDoubletConfig(methods=["scrublet"]), None)
+    assert metrics["measured_cells"] == {"scrublet": 1}
+    assert any("left 1 cells unscored" in warning for warning in metrics["warnings"])
+    assert adata.obs["doublet_measured_scrublet"].tolist() == [False, True]
+    assert adata.obs["predicted_doublet"].tolist() == [False, False]
+    assert np.isnan(adata.obs["doublet_score"].iloc[0])
+
+
+@pytest.mark.parametrize(
+    "defect", ["unknown_class", "missing_class", "duplicate_id", "missing_id", "reversed"]
+)
+def test_r_output_schema_and_identity(defect):
+    class Backend:
+        def run_script(self, script, argv):
+            frame = pd.DataFrame(
+                {"cell_id": [1, 2], "score": [0.1, 0.8], "class": ["singlet", "doublet"]}
+            )
+            if defect == "unknown_class":
+                frame.loc[0, "class"] = "failed"
+            elif defect == "missing_class":
+                frame.loc[0, "class"] = None
+            elif defect == "duplicate_id":
+                frame["cell_id"] = [1, 1]
+            elif defect == "missing_id":
+                frame = frame.iloc[:1]
+            else:
+                frame = frame.iloc[::-1]
+            frame.to_csv(argv[1], index=False)
+            return subprocess.CompletedProcess(argv, 0)
+
+    adata = _counts_adata(n=2, g=10)
+    if defect == "reversed":
+        scores, calls = run_scdblfinder(adata, Backend(), random_state=7)
+        np.testing.assert_array_equal(scores, [0.1, 0.8])
+        np.testing.assert_array_equal(calls, [False, True])
+    else:
+        with pytest.raises(ValueError, match="scDblFinder output"):
+            run_scdblfinder(adata, Backend(), random_state=7)
+
+
+@pytest.mark.parametrize("labels", [["a", None], ["a", " "], [1, "1"]])
+@pytest.mark.parametrize("method", ["scrublet", "scdblfinder"])
+def test_invalid_library_ids_fail_before_detector(monkeypatch, labels, method):
+    adata = _counts_adata(n=2, g=10)
+    adata.obs["library"] = labels
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Detector ran on invalid library identities")
+
+    monkeypatch.setattr(dbl, f"run_{method}", unexpected)
+    with pytest.raises(ValueError, match="Doublet sample column"):
+        detect_doublets(adata, QCDoubletConfig(methods=[method]), None, sample_key="library")
+
+
+def test_explicit_missing_library_column_is_not_pooled():
+    with pytest.raises(ValueError, match="sample column 'library' is missing"):
+        detect_doublets(_counts_adata(n=2, g=10), QCDoubletConfig(), None, sample_key="library")

@@ -31,6 +31,20 @@ from cellquorum.stages.qc.evidence import (
 CELLS = pd.Index([f"cell_{i}" for i in range(5)])
 
 
+def test_detector_consensus_cannot_be_overridden_by_low_severity():
+    evidence = _table(_axis("doublet_score", EvidenceFamily.MULTIPLET, 0.0))
+    calls = pd.Series([True, False, False, False, False], index=CELLS)
+    result = adjudicate_initial(evidence, _policy(), called_doublets=calls.iloc[::-1])
+    pd.testing.assert_series_equal(result.probable_multiplet, calls, check_names=False)
+
+
+def test_doublet_calls_must_not_be_strings():
+    calls = pd.Series(["False"] * len(CELLS), index=CELLS)
+    evidence = _table(_axis("doublet_score", EvidenceFamily.MULTIPLET, 0.0))
+    with pytest.raises(QCEvidenceError, match="must be boolean"):
+        adjudicate_initial(evidence, _policy(), called_doublets=calls)
+
+
 def _axis(
     name: str,
     family: EvidenceFamily,

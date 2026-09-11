@@ -132,17 +132,17 @@ def test_all_cells_survive_hvg_selection() -> None:
     assert adata.n_obs == before
 
 
-def test_an_empty_fit_population_falls_back_rather_than_fitting_on_nothing() -> None:
-    """An all-False mask is a QC misconfiguration, not an instruction to fit on zero cells.
+def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:
+    """HVG selection must stop when QC permits no fitting cells."""
+    import pytest
 
-    Falling back to every cell would be a silent wrong answer, so the fallback restores the
-    prior behaviour instead of inventing one.
-    """
+    from cellquorum.core.exceptions import CellQuorumDataError
+
     adata = _cohort_with_a_distinct_damaged_signal()
     adata.obs[FIT_COLUMN] = False
 
-    selected = _select_hvgs(adata)
-    assert selected, "HVG produced nothing when the fit population was empty"
+    with pytest.raises(CellQuorumDataError, match="permits no cells"):
+        _select_hvgs(adata)
 
 
 def test_a_dataset_without_graded_qc_behaves_as_before() -> None:

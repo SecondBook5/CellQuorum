@@ -5,7 +5,9 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 
+from cellquorum.stages.qc.config import QCConfig
 from cellquorum.stages.qc.stage import QCStage
 
 
@@ -36,6 +38,88 @@ def _counts_adata(n=60):
     return a
 
 
+@pytest.mark.parametrize("source", ["X", "chosen", "raw"])
+def test_doublet_adapters_receive_selected_qc_source(source, monkeypatch, tmp_path):
+    import cellquorum.stages.qc.doublets as doublets_mod
+
+    adata = _counts_adata()
+    expected = adata.X.copy()
+    metrics_config = {}
+    if source == "chosen":
+        adata.layers["chosen"] = expected.copy()
+        adata.X[:] = 999
+        metrics_config = {"layer": "chosen"}
+    elif source == "raw":
+        adata.raw = adata.copy()
+        adata.X[:] = 999
+        metrics_config = {"use_raw": True}
+    adata.layers["counts"][:] = 555
+
+    def detect(work, *args, **kwargs):
+        assert kwargs["random_state"] == 79
+        np.testing.assert_array_equal(work.X, expected)
+        assert "counts" not in work.layers
+        work.obs["predicted_doublet"] = False
+        work.obs["doublet_score"] = np.arange(work.n_obs, dtype=float)
+        return {"n_doublets": 0}
+
+    monkeypatch.setattr(doublets_mod, "detect_doublets", detect)
+    config = QCConfig(metrics=metrics_config, doublets={"enabled": True})
+    metrics = {}
+    context = _Ctx(adata, {}, _Paths(tmp_path))
+    context.random_seed = 79
+    result = QCStage()._score_doublets(
+        adata,
+        qc_config=config,
+        addon_metrics=metrics,
+        context=context,
+    )
+    np.testing.assert_array_equal(result.obs["doublet_score"], np.arange(adata.n_obs))
+    assert (
+        metrics["doublets"]["matrix_source"]
+        == {"X": "X", "chosen": "layers[chosen]", "raw": "raw.X"}[source]
+    )
+
+
+def test_removed_doublets_are_not_counted_as_analysable():
+    from cellquorum.stages.qc.stage import _analysable_mask
+
+    original = _counts_adata(5)
+    survivors = original[2:].copy()
+    keep = pd.Series(True, index=original.obs_names)
+    assert _analysable_mask(original, survivors, keep).tolist() == [False, False, True, True, True]
+
+
+def test_retained_probable_doublets_are_not_counted_as_analysable():
+    from cellquorum.stages.qc.stage import _analysable_mask
+
+    original = _counts_adata(5)
+    output = original.copy()
+    output.obs["qc_probable_multiplet"] = [True, False, False, False, False]
+    keep = pd.Series(True, index=original.obs_names)
+    assert _analysable_mask(original, output, keep).tolist() == [False, True, True, True, True]
+
+
+def test_empty_doublet_result_fails_at_qc(monkeypatch, tmp_path):
+    import cellquorum.stages.qc.doublets as doublets_mod
+    from cellquorum.stages.qc.stage import QCStageError
+
+    adata = _counts_adata(5)
+
+    def detect(work, *args, **kwargs):
+        work.obs["predicted_doublet"] = True
+        return {"n_doublets": work.n_obs}
+
+    monkeypatch.setattr(doublets_mod, "detect_doublets", detect)
+    with pytest.raises(QCStageError, match="Doublet removal left no cells"):
+        QCStage()._score_doublets(
+            adata,
+            qc_config=QCConfig(doublets={"enabled": True, "remove": True}),
+            addon_metrics={},
+            context=_Ctx(adata, {}, _Paths(tmp_path)),
+        )
+
+
 def test_doublets_removed_when_remove_true(tmp_path):
     a = _counts_adata()
     config = {
@@ -62,7 +146,7 @@ def test_doublets_removed_when_remove_true(tmp_path):
     # detector result by monkeypatching detect_doublets to flag the first 5 cells.
     import cellquorum.stages.qc.doublets as doublets_mod
 
-    def _fake_detect(adata, cfg, backend, sample_key=None, n_jobs=1):
+    def _fake_detect(adata, cfg, backend, sample_key=None, n_jobs=1, random_state=0):
         flags = np.zeros(adata.n_obs, dtype=bool)
         flags[:5] = True
         adata.obs["predicted_doublet"] = flags
@@ -106,7 +190,7 @@ def test_doublets_kept_when_remove_false(tmp_path):
     ctx = _Ctx(a, config, _Paths(tmp_path))
     import cellquorum.stages.qc.doublets as doublets_mod
 
-    def _fake_detect(adata, cfg, backend, sample_key=None, n_jobs=1):
+    def _fake_detect(adata, cfg, backend, sample_key=None, n_jobs=1, random_state=0):
         flags = np.zeros(adata.n_obs, dtype=bool)
         flags[:5] = True
         adata.obs["predicted_doublet"] = flags
@@ -123,3 +207,7 @@ def test_doublets_kept_when_remove_false(tmp_path):
     # remove=False: all cells retained, flag preserved.
     assert result.adata.n_obs == 60
     assert int(result.adata.obs["predicted_doublet"].sum()) == 5
+    called = result.adata.obs["predicted_doublet"]
+    assert result.adata.obs.loc[called, "qc_probable_multiplet"].all()
+    assert not result.adata.obs.loc[called, "qc_fit_manifold"].any()
+    assert not result.adata.obs.loc[called, "qc_fit_clustering"].any()

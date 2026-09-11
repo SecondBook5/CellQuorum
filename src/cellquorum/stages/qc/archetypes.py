@@ -43,19 +43,10 @@ from cellquorum.stages.qc._types import ExpressionMatrix, IsolatedBackend
 
 logger = logging.getLogger(__name__)
 
-#: obs column holding each cell's dominant archetype.
+
 ARCHETYPE_COLUMN = "qc_archetype"
 
-#: How far above uniform a cell's weight must sit for it to count as *supporting* an archetype,
-#: as a multiple of ``1 / n_archetypes``. Relative rather than absolute because the weights are
-#: normalised across however many vertices were fitted: with eight archetypes a cell spread
-#: evenly carries 0.125 each, so a fixed bar of 0.5 demands four times uniform and effectively
-#: excludes everyone.
-#:
-#: That is not hypothetical — a fixed 0.5 produced an archetype with 6,482 dominant cells and
-#: zero supporting ones on the validation cohort, making its exclusion rate NaN and the audit
-#: silent about it. Twice uniform keeps the meaning ("distinctly nearer this vertex than an
-#: average cell") at any polytope size.
+
 SUPPORT_MULTIPLE_OF_UNIFORM = 2.0
 
 
@@ -166,7 +157,6 @@ def audit_archetypes(
     scratch = Path(scratch_dir) if scratch_dir is not None else Path(tempfile.gettempdir())
     scratch.mkdir(parents=True, exist_ok=True)
 
-    # Subsample for the fit. Deterministic, so a rerun audits the same cells.
     n_cells = int(embedding.shape[0])
     if n_cells > max_cells:
         picked = np.sort(
@@ -222,22 +212,15 @@ def audit_archetypes(
         meta = json.loads(meta_path.read_text())
 
     labels = [f"A{index}" for index in range(weights.shape[1])]
-    # Indexed by the fitted cells only. Cells outside the subsample carry no archetype, which
-    # the caller records as "unsampled" rather than inventing an assignment for them.
+
     dominant = pd.Series(
         [labels[index] for index in weights.argmax(axis=1)], index=fit_names, dtype=object
     )
 
-    # Only cells that genuinely sit near a vertex count toward it. An interior cell is a
-    # mixture and says nothing about any single extreme phenotype. The bar scales with the
-    # polytope size, since "near a vertex" means something different with 3 vertices than 10.
     support_bar = SUPPORT_MULTIPLE_OF_UNIFORM / float(weights.shape[1])
     supports = weights.max(axis=1) >= support_bar
     excluded = excluded_from_fit.reindex(fit_names).astype(bool).to_numpy()
 
-    # Coherence per archetype, not per lineage: a vertex is the unit being judged here.
-    # Consistency of *which* genes are detected is the only signal that separates a rare
-    # population from debris, since both are extreme and both are excluded.
     coherence_by_archetype = None
     if counts is not None:
         from cellquorum.stages.qc.lineage import lineage_coherence
@@ -264,17 +247,12 @@ def audit_archetypes(
     table = pd.DataFrame(rows).set_index("archetype")
     over_bar = table["excluded_fraction"] >= excluded_fraction_bar
 
-    # Coherence, when available, splits the flag in two. Debris is incoherent by nature, so an
-    # excluded-but-incoherent vertex is QC working; excluded-and-coherent is QC failing.
     if coherence_by_archetype is not None and table["coherence"].notna().any():
         median_coherence = float(table["coherence"].median())
         coherent = table["coherence"] >= 0.35 * median_coherence
     else:
         coherent = pd.Series(True, index=table.index)
 
-    # A polytope that does not describe the data has no meaningful vertices, so nothing is
-    # flagged. The table is still returned, so a reader can see what was measured and why it
-    # was disregarded.
     pvalue = meta.get("t_ratio_pvalue")
     supported = pvalue is None or float(pvalue) <= max_pvalue
     if not supported:

@@ -50,31 +50,22 @@ from enum import StrEnum
 
 import pandas as pd
 
+from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.stages.qc.evidence import QCStateInitial
-
-# ─── The permissions ────────────────────────────────────────────────────────────────
 
 
 class Permission(StrEnum):
     """What a cell may do in a given analysis."""
 
-    #: May determine parameters, statistics, or structure.
     FIT = "fit"
 
-    #: May receive a representation or output produced by a model it did not fit.
     TRANSFORM = "transform"
 
-    #: May contribute to a scientific conclusion.
     INFERENCE = "inference"
 
 
 class Analysis(StrEnum):
-    """Analyses whose eligibility is decided separately.
-
-    Separate because they have genuinely different sensitivity to a questionable cell. A
-    borderline cell can sit in an embedding for inspection while being excluded from a
-    differential test, and one boolean cannot express that.
-    """
+    """Analyses whose eligibility is decided separately."""
 
     MANIFOLD = "manifold"
     CLUSTERING = "clustering"
@@ -85,15 +76,6 @@ class Analysis(StrEnum):
     CELL_CELL_COMMUNICATION = "ccc"
 
 
-#: Which permissions each state carries, per analysis. The single source of truth for
-#: "what may this cell do", and deliberately a table rather than scattered conditionals.
-#:
-#: Reading the rows: ``core`` may do everything. ``borderline`` is projected into the
-#: manifold but never fits it, may be annotated by query transfer, contributes to
-#: composition only through a sensitivity universe, and never informs DE, trajectory, or
-#: communication — those are the inferences a questionable cell would most distort.
-#: ``quarantine`` may receive an embedding coordinate so figures can show what was
-#: excluded, and informs nothing.
 _ELIGIBILITY: dict[str, dict[Analysis, frozenset[Permission]]] = {
     str(QCStateInitial.CORE): {
         analysis: frozenset({Permission.FIT, Permission.TRANSFORM, Permission.INFERENCE})
@@ -103,15 +85,12 @@ _ELIGIBILITY: dict[str, dict[Analysis, frozenset[Permission]]] = {
         Analysis.MANIFOLD: frozenset({Permission.TRANSFORM}),
         Analysis.CLUSTERING: frozenset({Permission.TRANSFORM}),
         Analysis.ANNOTATION: frozenset({Permission.TRANSFORM, Permission.INFERENCE}),
-        # Sensitivity only: composition is recomputed with and without these cells rather
-        # than silently including them.
         Analysis.COMPOSITION: frozenset({Permission.TRANSFORM}),
         Analysis.DIFFERENTIAL_EXPRESSION: frozenset(),
         Analysis.TRAJECTORY: frozenset(),
         Analysis.CELL_CELL_COMMUNICATION: frozenset(),
     },
     str(QCStateInitial.QUARANTINE): {
-        # Transform-only on the manifold so a figure can show what was excluded and where.
         Analysis.MANIFOLD: frozenset({Permission.TRANSFORM}),
         Analysis.CLUSTERING: frozenset(),
         Analysis.ANNOTATION: frozenset(),
@@ -122,10 +101,7 @@ _ELIGIBILITY: dict[str, dict[Analysis, frozenset[Permission]]] = {
     },
 }
 
-#: A probable multiplet is not a damaged cell, so it keeps its damage-based permissions —
-#: except that it is not one biological cell, which disqualifies it from anything counting
-#: or comparing cells. It may still be annotated, because knowing *what* was doubleted is
-#: how you find out whether one population is being disproportionately called.
+
 _MULTIPLET_REVOKES: frozenset[Analysis] = frozenset(
     {
         Analysis.MANIFOLD,
@@ -158,19 +134,6 @@ class EligibilityMasks:
     def mask(self, analysis: Analysis, permission: Permission) -> pd.Series:
         """The mask for one permission on one analysis.
 
-        Two absences that look identical in ``masks`` are not the same thing, and conflating
-        them crashed a run: a pipeline on a degenerate input where **no cell reached core** asked
-        for ``qc_fit_manifold``, got ``KeyError``, and failed the stage. "Nobody may fit the
-        manifold" is a legitimate — if alarming — outcome that the caller should be able to read
-        and report, not an invalid request.
-
-        So the distinction is made against the eligibility table rather than against this run:
-
-        - the pair is grantable by some state, but no cell on this run holds it → all-False,
-          because that is the honest answer and the caller can act on it;
-        - the pair appears nowhere in the table, e.g. FIT on an analysis no state may ever fit →
-          ``KeyError``, because asking is a caller error at any input.
-
         Raises:
             KeyError: If no state grants that combination in :data:`_ELIGIBILITY`.
         """
@@ -190,12 +153,7 @@ class EligibilityMasks:
         return pd.Series(False, index=self.state.index, name=name)
 
     def is_empty(self, analysis: Analysis, permission: Permission) -> bool:
-        """Whether a grantable permission is held by no cell on this run.
-
-        The condition worth reporting rather than crashing on: ``is_empty(MANIFOLD, FIT)`` means
-        the biological reference cannot be built, which a caller should surface as a failed run
-        with a reason, not as a ``KeyError`` from an eligibility lookup.
-        """
+        """Whether a grantable permission is held by no cell on this run."""
         return not bool(self.mask(analysis, permission).any())
 
     def to_obs_frame(self) -> pd.DataFrame:
@@ -238,9 +196,10 @@ def build_eligibility_masks(
                 if permission in per_analysis.get(analysis, frozenset()):
                     granted |= text == state_value
 
-            # A permission no state grants is not written at all: an all-False column
-            # invites a reader to think the analysis exists and excluded everyone.
-            if not bool(granted.any()):
+            if not any(
+                permission in per_analysis.get(analysis, frozenset())
+                for per_analysis in _ELIGIBILITY.values()
+            ):
                 continue
 
             if analysis in _MULTIPLET_REVOKES:
@@ -252,13 +211,7 @@ def build_eligibility_masks(
 
 
 def fit_mask(state: pd.Series, analysis: Analysis) -> pd.Series:
-    """Cells permitted to fit ``analysis`` — the mask a cohort statistic must respect.
-
-    A convenience for the case that matters most and is easiest to get wrong: estimating a
-    normalization target, an HVG dispersion, or a PCA loading. Those are cohort-derived
-    quantities used to transform biological data, so they must come from fitting cells even
-    though none of them looks like a model.
-    """
+    """Cells permitted to fit ``analysis`` — the mask a cohort statistic must respect."""
     return build_eligibility_masks(state).mask(analysis, Permission.FIT)
 
 
@@ -268,11 +221,6 @@ def fitting_cells(
 ) -> pd.Series | None:
     """The fit population a stage must estimate cohort statistics from, or None.
 
-    This is the read side of the contract: :func:`build_eligibility_masks` writes the
-    columns during QC, and every stage that estimates a quantity across cells calls this to
-    find out whose cells it may learn from. It lives here, next to the writer, so a stage
-    cannot drift on the column name or on what an absent column means.
-
     Args:
         obs: The ``adata.obs`` frame to read the mask from.
         analysis: Which analysis's fit permission is being claimed. Defaults to
@@ -280,22 +228,24 @@ def fitting_cells(
 
     Returns:
         A boolean per-cell mask, or ``None`` when the stage should fit on every cell.
-
-    ``None`` is returned in two distinct situations, both meaning "fit on everything":
-
-    * **QC has not run.** Returning an all-True mask instead would make every downstream
-      stage silently depend on a column that need not exist; returning ``None`` keeps a
-      dataset that never ran graded QC behaving exactly as it did before.
-    * **The fit population is empty.** An all-False mask is a QC misconfiguration, not an
-      instruction to fit on zero cells. Fitting on nothing raises deep inside scanpy with
-      an unrelated-looking error, so the fallback is the prior behaviour.
     """
     column = EligibilityMasks.column_name(analysis, Permission.FIT)
     if column not in obs.columns:
+        if "qc_state_initial" in obs.columns:
+            raise CellQuorumDataError(
+                f"QC state is present but its fitting mask '{column}' is missing."
+            )
         return None
 
+    if not pd.api.types.is_bool_dtype(obs[column].dtype) or obs[column].isna().any():
+        raise CellQuorumDataError(f"QC fitting mask '{column}' must contain non-missing booleans.")
     mask = obs[column].astype(bool)
-    return mask if bool(mask.any()) else None
+    if not bool(mask.any()):
+        raise CellQuorumDataError(
+            f"QC fitting mask '{column}' permits no cells. Review QC decisions before fitting; "
+            "excluded cells cannot be used as a fallback."
+        )
+    return mask
 
 
 __all__ = [

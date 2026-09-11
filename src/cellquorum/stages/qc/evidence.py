@@ -1,5 +1,4 @@
-# Pipeline step (order=20): qc — graded technical evidence and initial adjudication.
-"""Graded QC evidence, and the initial core/borderline/quarantine decision built on it.
+"""QC evidence measurement, family aggregation, and graded adjudication.
 
 Read top to bottom; the file is ordered the way the logic flows.
 
@@ -30,14 +29,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 import pandas as pd
 
 from cellquorum.core.exceptions import CellQuorumDataError
-
-# ─── 1. Vocabulary ──────────────────────────────────────────────────────────────────
+from cellquorum.stages.qc.lineage import NullGrouping
+from cellquorum.stages.qc.validation import resolve_qc_matrix
 
 
 class QCEvidenceError(CellQuorumDataError):
@@ -49,11 +48,7 @@ class QCAdjudicationError(CellQuorumDataError):
 
 
 class EvidenceFamily(StrEnum):
-    """Independent axes of technical evidence. Membership defines what corroborates.
-
-    Multiplet is tracked here for bookkeeping but is *not* damage: a doublet can be an
-    excellent library that simply is not one cell.
-    """
+    """Independent axes of technical evidence. Membership defines what corroborates."""
 
     CAPTURE_COMPLEXITY = "capture_complexity"
     NUCLEAR_INTEGRITY = "nuclear_integrity"
@@ -64,13 +59,7 @@ class EvidenceFamily(StrEnum):
 
 
 class EvidenceAvailability(StrEnum):
-    """Why an axis does or does not inform a given cell.
-
-    Five states because they demand different responses. ``NOT_APPLICABLE`` (high
-    intronic fraction is expected in single-nucleus data) and ``COMPUTATION_FAILED``
-    (should have worked, did not) are the pair most often wrongly collapsed — the second
-    is a real blind spot, the first is not.
-    """
+    """Why an axis does or does not inform a given cell."""
 
     AVAILABLE_VALID = "available_valid"
     UNAVAILABLE_INPUT = "unavailable_input"
@@ -80,21 +69,12 @@ class EvidenceAvailability(StrEnum):
 
     @property
     def is_usable(self) -> bool:
-        """Whether a severity from this state may be used at all.
-
-        ``MODEL_UNSTABLE`` is usable but deserves less weight, which is why
-        :class:`AxisEvidence` carries ``weight`` separately.
-        """
+        """Whether a severity from this state may be used at all."""
         return self in {EvidenceAvailability.AVAILABLE_VALID, EvidenceAvailability.MODEL_UNSTABLE}
 
 
 class Direction(StrEnum):
-    """Which tail of a metric is concerning.
-
-    Two-sided bounds on every metric punish real biology: low detected genes may mean
-    capture failure, high usually means a doublet or a large cell. Different mechanisms,
-    different families — so a two-sided metric is split into two axes.
-    """
+    """Which tail of a metric is concerning."""
 
     LOWER_TAIL = "lower_tail"
     UPPER_TAIL = "upper_tail"
@@ -105,16 +85,9 @@ def _usable_mask(availability: pd.Series) -> pd.Series:
     return availability.map(lambda state: EvidenceAvailability(state).is_usable).astype(bool)
 
 
-# ─── 2. One axis ────────────────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class AxisEvidence:
     """Severity in ``[0, 1]`` for one measurement axis, with its availability.
-
-    Severity is produced elsewhere — a MAD z-score, a miQC posterior, an ambient model.
-    This class does not know how; it only guarantees severity is never readable without
-    the availability that qualifies it.
 
     Args:
         name: Metric name, matching the column that produced it.
@@ -148,8 +121,6 @@ class AxisEvidence:
                 f"Axis {self.name!r}: severity and availability must share an index."
             )
 
-        # A usable NaN is the contradiction this model exists to prevent: downstream code
-        # would read it as "no concern".
         contradictory = self.usable_mask() & self.severity.isna()
         if bool(contradictory.any()):
             raise QCEvidenceError(
@@ -165,7 +136,7 @@ class AxisEvidence:
                     f"Axis {self.name!r}: severity must lie in [0, 1], got [{low:.3f}, {high:.3f}]."
                 )
 
-        if self.weight <= 0.0:
+        if not np.isfinite(self.weight) or self.weight <= 0.0:
             raise QCEvidenceError(f"Axis {self.name!r}: weight must be positive.")
 
     def usable_mask(self) -> pd.Series:
@@ -189,11 +160,6 @@ def build_axis(
 ) -> AxisEvidence:
     """Construct an :class:`AxisEvidence`, broadcasting a scalar availability.
 
-    Most producers know one availability for the whole axis ("this dataset has no
-    intronic counts"), so requiring a full Series invites length mistakes. A per-cell
-    Series is still accepted where availability genuinely varies, such as a mixture model
-    that converged for some samples only.
-
     Args:
         name: Metric name.
         family: Evidence family.
@@ -208,8 +174,6 @@ def build_axis(
     else:
         availability = availability.astype(str)
 
-    # Blank unusable severity rather than trusting the caller to pass NaN — a leftover
-    # zero here would read as "no concern".
     severity = severity.where(_usable_mask(availability), other=np.nan)
 
     return AxisEvidence(
@@ -223,17 +187,9 @@ def build_axis(
     )
 
 
-# ─── 3. All axes ────────────────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class EvidenceTable:
     """Every evidence axis for one dataset, rolled up to family level.
-
-    Answers three questions and refuses others: how severe is each family, how much was
-    measurable, and — given a bar the *caller* supplies — how many independent families
-    corroborate a concern. There is deliberately no default bar; choosing one is
-    calibration, and a default would become policy nobody remembers deciding.
 
     Args:
         axes: Evidence axes, all sharing one cell index.
@@ -246,9 +202,6 @@ class EvidenceTable:
     axes: tuple[AxisEvidence, ...]
     obs_names: pd.Index
 
-    #: Families whose severity may, in concert, justify quarantine. Multiplet and
-    #: cell-calling are excluded: "this is two cells" and "this may be an empty droplet"
-    #: are different claims from "this cell is dying".
     DAMAGE_FAMILIES: ClassVar[tuple[EvidenceFamily, ...]] = (
         EvidenceFamily.CAPTURE_COMPLEXITY,
         EvidenceFamily.NUCLEAR_INTEGRITY,
@@ -273,13 +226,7 @@ class EvidenceTable:
         return [axis for axis in self.axes if axis.family is family]
 
     def family_severity(self) -> pd.DataFrame:
-        """Per-cell severity per family; NaN only where no axis in it was usable.
-
-        Aggregation is the **maximum** across usable axes, not the mean. A mean lets a
-        healthy correlated metric dilute a genuine signal — averaging normal MALAT1
-        against a severe intronic anomaly reports "mild", when the honest reading is "one
-        axis says this cell is damaged".
-        """
+        """Per-cell severity per family; NaN only where no axis in it was usable."""
         severity_by_family = {
             str(family): pd.concat(
                 [axis.effective_severity() for axis in self._axes_in(family)], axis=1
@@ -306,11 +253,7 @@ class EvidenceTable:
         return self.family_severity()[damage_columns]
 
     def evidence_coverage(self) -> pd.Series:
-        """Fraction of *present* families that were measurable, per cell.
-
-        Measured against the families this table has, not all six, so a pipeline that
-        never collects splice data does not report permanently degraded coverage.
-        """
+        """Fraction of *present* families that were measurable, per cell."""
         usable = self.family_usable()
         if usable.shape[1] == 0:
             return pd.Series(0.0, index=self.obs_names, dtype=float)
@@ -318,10 +261,6 @@ class EvidenceTable:
 
     def concordant_family_count(self, *, min_severity: float) -> pd.Series:
         """Count families reaching ``min_severity``, per cell.
-
-        Counts corroborating *mechanisms*, not correlated measurements of one mechanism.
-        NaN never counts — an unmeasured family is neither concerning nor reassuring, and
-        that asymmetry lives in :meth:`evidence_coverage`.
 
         Args:
             min_severity: Bar in ``[0, 1]``. Caller-supplied; there is no default.
@@ -334,19 +273,12 @@ class EvidenceTable:
         return (self.family_severity() >= min_severity).sum(axis=1).astype(int)
 
     def to_obs_frame(self) -> pd.DataFrame:
-        """Flatten to ``adata.obs`` columns, prefixed ``qc_ev_``.
-
-        Availability is written beside each severity because the pair is what carries
-        meaning; the prefix keeps evidence visually distinct from verdicts.
-        """
+        """Flatten to ``adata.obs`` columns, prefixed ``qc_ev_``."""
         columns: dict[str, pd.Series] = {}
         for axis in self.axes:
             columns[f"qc_ev_{axis.name}_severity"] = axis.severity
             columns[f"qc_ev_{axis.name}_availability"] = axis.availability.astype(str)
-            # The raw measurement, where the producer had one. Written because a severity
-            # cannot be checked against anything on its own: MALAT1 fraction and the
-            # dissociation-stress score were computed, converted to severity, and discarded,
-            # so neither the number nor the calibration figure the spec asks for existed.
+
             if axis.value is not None:
                 columns[f"qc_ev_{axis.name}_value"] = axis.value
         for family, severity in self.family_severity().items():
@@ -357,31 +289,16 @@ class EvidenceTable:
         return pd.DataFrame(columns, index=self.obs_names)
 
 
-# ─── 4. Adjudication ────────────────────────────────────────────────────────────────
-
-#: Families that may only ever *support* a damage case, never establish one alone. In
-#: inflamed or lesional tissue, elevated mitochondrial fraction and FOS/JUN/HSP stress
-#: programmes are genuinely biology.
 SUPPORTING_FAMILIES: frozenset[EvidenceFamily] = frozenset({EvidenceFamily.METABOLIC_STRESS})
 
 
 class QCStateInitial(StrEnum):
-    """Provisional state assigned before any biological reference exists.
+    """Provisional state assigned before any biological reference exists."""
 
-    Deliberately three values. ``rescued`` and ``unresolved_borderline`` are *post*
-    -reference conclusions belonging to ``qc_finalization``; emitting them here would
-    mean pretending to know which questionable cells are recoverable before there is
-    anything to recover them against.
-    """
-
-    #: Nothing reaches the concern bar. May fit the biological reference.
     CORE = "core"
 
-    #: Off, but not condemned. Retained and marked, excluded from reference fitting,
-    #: eligible for rescue at ``qc_finalization``. Not a soft delete.
     BORDERLINE = "borderline"
 
-    #: Uninformative, or severely damaged on concordant independent evidence.
     QUARANTINE = "quarantine"
 
 
@@ -400,10 +317,6 @@ class AdjudicationReason(StrEnum):
 @dataclass(frozen=True)
 class AdjudicationPolicy:
     """Calibrated bars controlling the initial adjudication.
-
-    Every field is required. These are properties of an assay and a tissue, read off
-    calibration figures; a default here would silently become the policy for every
-    dataset that never looked.
 
     Args:
         concern_severity: Family severity at or above which a family is *concerning*, so
@@ -449,8 +362,6 @@ class AdjudicationPolicy:
                 f"({self.concern_severity})."
             )
 
-        # Requiring one family is exactly the failure this design prevents: it would let a
-        # single model's posterior condemn a cell.
         if self.min_concordant_families < 2:
             raise QCAdjudicationError(
                 f"min_concordant_families must be >= 2, got {self.min_concordant_families}. "
@@ -509,37 +420,26 @@ class AdjudicationResult:
 def adjudicate_initial(
     evidence: EvidenceTable,
     policy: AdjudicationPolicy,
+    *,
+    called_doublets: pd.Series | None = None,
 ) -> AdjudicationResult:
     """Assign a provisional QC state to every cell.
 
-    There are exactly two routes to quarantine, and neither is "one axis was extreme":
-
-    1. **Uninformative barcode** — capture is so poor there is nothing to adjudicate. The
-       one single-family route, justified because the claim is "this barcode carries no
-       usable information", not "this cell is damaged".
-    2. **Concordant severe damage** — several *independent* damage families agree, at
-       least one of which can establish damage on its own terms.
-
-    Anything else abnormal becomes borderline. Low coverage makes the adjudicator more
-    conservative, never less: condemning a cell on evidence we mostly could not collect
-    is the worst available error.
-
     Args:
         evidence: Graded evidence for the dataset.
-        policy: Calibrated bars.
+        policy: Configured concern and exclusion thresholds.
+        called_doublets: Boolean detector-consensus calls indexed by every input cell.
+            These retain their exclusion even when score-based evidence is weak.
     """
     cells = evidence.obs_names
     damage_severity = evidence.damage_family_severity()
     coverage = evidence.evidence_coverage()
 
-    # NaN never counts either way; the asymmetry lives in coverage, which gates below.
     is_concerning = damage_severity >= policy.concern_severity
     is_severe = damage_severity >= policy.severe_severity
     n_concerning_families = is_concerning.sum(axis=1).astype(int)
     n_severe_families = is_severe.sum(axis=1).astype(int)
 
-    # Families that can establish damage alone, so "severe stress + severe mito" cannot
-    # reach quarantine by itself even though both are damage families.
     establishing_columns = [
         column
         for column in damage_severity.columns
@@ -547,7 +447,6 @@ def adjudicate_initial(
     ]
     n_severe_establishing = is_severe[establishing_columns].sum(axis=1)
 
-    # Route 1: no usable information in the barcode at all.
     capture_column = str(EvidenceFamily.CAPTURE_COMPLEXITY)
     is_uninformative = (
         (damage_severity[capture_column] >= policy.uninformative_capture_severity).fillna(False)
@@ -555,7 +454,6 @@ def adjudicate_initial(
         else pd.Series(False, index=cells)
     )
 
-    # Route 2: independent damage families agree, severely.
     is_concordant = (n_severe_families >= policy.min_concordant_families) & (
         n_severe_establishing >= 1
     )
@@ -570,7 +468,6 @@ def adjudicate_initial(
     state[is_withheld] = str(QCStateInitial.BORDERLINE)
     state[is_quarantined] = str(QCStateInitial.QUARANTINE)
 
-    # Reasons, most specific assigned last so it wins.
     reason = pd.Series(str(AdjudicationReason.NO_CONCERN), index=cells, dtype=object)
     supporting_columns = [
         column
@@ -592,7 +489,6 @@ def adjudicate_initial(
     reason[is_quarantined & is_concordant] = str(AdjudicationReason.CONCORDANT_SEVERE_DAMAGE)
     reason[is_quarantined & is_uninformative] = str(AdjudicationReason.UNINFORMATIVE_BARCODE)
 
-    # Multiplet, tracked entirely separately from damage.
     all_severity = evidence.family_severity()
     multiplet_column = str(EvidenceFamily.MULTIPLET)
     is_probable_multiplet = (
@@ -600,14 +496,20 @@ def adjudicate_initial(
         if multiplet_column in all_severity.columns
         else pd.Series(False, index=cells)
     )
-    # An otherwise unremarkable multiplet still deserves a reason, since "core" would
-    # misdescribe it — but it is not a damage state.
+    if called_doublets is not None:
+        if (
+            not pd.api.types.is_bool_dtype(called_doublets.dtype)
+            or not called_doublets.index.is_unique
+            or len(called_doublets) != len(cells)
+            or not cells.isin(called_doublets.index).all()
+        ):
+            raise QCEvidenceError("Doublet calls must be boolean and cover every evidence cell.")
+        is_probable_multiplet |= called_doublets.reindex(cells).fillna(False).astype(bool)
+
     reason[is_probable_multiplet & (n_concerning_families == 0) & ~is_quarantined] = str(
         AdjudicationReason.PROBABLE_MULTIPLET
     )
 
-    # Only ask idxmax about rows that have a concern. Calling it on all-NA rows is
-    # deprecated in pandas and will raise, and "" is the honest answer there anyway.
     has_concern = n_concerning_families > 0
     concerning_severity = damage_severity.where(is_concerning)
     primary_driver = pd.Series("", index=cells, dtype=object)
@@ -632,24 +534,442 @@ def _decision_confidence(
     coverage: pd.Series,
     policy: AdjudicationPolicy,
 ) -> pd.Series:
-    """Heuristic confidence in a cell's adjudication, in ``[0, 1]``.
-
-    Two things make a call trustworthy: how much of the evidence space was measurable,
-    and how far the deciding severity sits from the bar it did or did not cross. A cell
-    judged on two of six families, a hair above the concern bar, is the least trustworthy
-    call available and should sort to the top of a review queue.
-
-    Explicitly a triage aid, **not** a probability — it is calibrated against nothing and
-    must never be thresholded as though it were.
-    """
+    """Heuristic confidence in a cell's adjudication, in ``[0, 1]``."""
     strongest_severity = damage_severity.max(axis=1, skipna=True)
     concern_bar = policy.concern_severity
 
-    # Normalise by the wider side so both directions scale into [0, 1].
     bar_span = max(concern_bar, 1.0 - concern_bar) or 1.0
     distance_from_bar = ((strongest_severity - concern_bar).abs() / bar_span).fillna(0.0)
 
     return (coverage * distance_from_bar.clip(0.0, 1.0)).clip(0.0, 1.0)
+
+
+if TYPE_CHECKING:
+    from anndata import AnnData
+
+
+DEFAULT_HALF_SEVERITY_Z = 3.0
+
+
+MAD_TO_SIGMA = 1.4826
+
+
+QUANTILE_SCALE_FALLBACKS: tuple[tuple[float, float], ...] = (
+    (0.75, 0.6745),
+    (0.90, 1.2816),
+    (0.99, 2.3263),
+)
+
+
+MIN_CELLS_FOR_NULL = 25
+
+
+def _saturating_severity(z: pd.Series, half_severity_z: float) -> pd.Series:
+    """Map a one-sided robust z to severity in ``[0, 1)``.
+
+    Args:
+        z: One-sided robust z; negative means "not concerning".
+        half_severity_z: z at which severity is 0.5.
+    """
+    positive = z.clip(lower=0.0)
+    return positive / (positive + half_severity_z)
+
+
+@dataclass(frozen=True)
+class RobustNull:
+    """Per-cell location and scale of the healthy mode of its group.
+
+    Args:
+        location: Group median, broadcast per cell.
+        scale: Robust sigma of the group's healthy mode; NaN where inestimable.
+    """
+
+    location: pd.Series
+    scale: pd.Series
+
+    def z(self, values: pd.Series, *, direction: Direction) -> pd.Series:
+        """One-sided robust z, oriented so positive always means "concerning"."""
+        signed = (values - self.location) / self.scale
+        return signed if direction is Direction.UPPER_TAIL else -signed
+
+
+def fit_robust_null(values: pd.Series, groups: pd.Series | None) -> RobustNull:
+    """Estimate the healthy mode's location and scale, per group.
+
+    Args:
+        values: The metric, per cell.
+        groups: Grouping to fit within, normally the cohort sample key. None pools, which
+            is only correct for a single library.
+    """
+    if groups is None:
+        groups = pd.Series("__pooled__", index=values.index)
+
+    grouped = values.groupby(groups, observed=True)
+    location = grouped.transform("median")
+
+    absolute_deviation = (values - location).abs()
+    scale = absolute_deviation.groupby(groups, observed=True).transform("median") * MAD_TO_SIGMA
+
+    for quantile, normal_z in QUANTILE_SCALE_FALLBACKS:
+        if bool((scale > 0).all()):
+            break
+        upper: pd.Series = grouped.transform(
+            lambda group, q=quantile: float(group.quantile(q))  # type: ignore[arg-type,return-value]
+        )
+        scale = scale.where(scale > 0, (upper - location) / normal_z)
+
+    n_cells = grouped.transform("size")
+    scale = scale.where((scale > 0) & (n_cells >= MIN_CELLS_FOR_NULL))
+
+    return RobustNull(location=location, scale=scale)
+
+
+def tail_severity(
+    values: pd.Series,
+    groups: pd.Series | None,
+    *,
+    direction: Direction,
+    log_scale: bool = False,
+    half_severity_z: float = DEFAULT_HALF_SEVERITY_Z,
+) -> pd.Series:
+    """Severity for one metric: robust z against its healthy mode, saturated.
+
+    Args:
+        values: The metric, per cell.
+        groups: Grouping to fit the null within.
+        direction: Which tail is concerning.
+        log_scale: Fit the null on ``log1p`` values. Correct for count-like metrics, whose
+            healthy mode is right-skewed on the raw scale, so a symmetric robust z there
+            would systematically over-flag the low side.
+        half_severity_z: z at which severity is 0.5.
+    """
+    numeric = pd.to_numeric(values, errors="coerce").astype(float)
+
+    prepared = (
+        pd.Series(np.log1p(numeric.clip(lower=0.0).to_numpy()), index=numeric.index, dtype=float)
+        if log_scale
+        else numeric
+    )
+
+    null = fit_robust_null(prepared, groups)
+    return _saturating_severity(null.z(prepared, direction=direction), half_severity_z)
+
+
+def nested_tail_severity(
+    values: pd.Series,
+    grouping: NullGrouping,
+    *,
+    direction: Direction,
+    log_scale: bool = False,
+    half_severity_z: float = DEFAULT_HALF_SEVERITY_Z,
+) -> pd.Series:
+    """Severity where each cell is scored against the reference class it was assigned.
+
+    Args:
+        values: The metric, per cell.
+        grouping: Level assignment plus each level's keys for every cell.
+        direction: Which tail is concerning.
+        log_scale: Fit the null on ``log1p`` values, for count-like metrics.
+        half_severity_z: z at which severity is 0.5.
+
+    Returns:
+        Severity per cell, NaN where the assigned level could not support a null.
+    """
+    severity = pd.Series(np.nan, index=values.index, dtype=float)
+    for level in grouping.levels_used():
+        assigned = (grouping.level == level).reindex(values.index, fill_value=False)
+        if not bool(assigned.any()):
+            continue
+        at_level = tail_severity(
+            values,
+            grouping.keys[level].reindex(values.index),
+            direction=direction,
+            log_scale=log_scale,
+            half_severity_z=half_severity_z,
+        )
+        severity[assigned] = at_level[assigned]
+    return severity
+
+
+def axis_from_severity(
+    *,
+    name: str,
+    family: EvidenceFamily,
+    direction: Direction,
+    severity: pd.Series,
+    weight: float = 1.0,
+    value: pd.Series | None = None,
+) -> AxisEvidence:
+    """Build an axis whose availability follows from whether a severity was produced."""
+    usable = severity.notna()
+    return build_axis(
+        name=name,
+        family=family,
+        direction=direction,
+        severity=severity,
+        availability=pd.Series(
+            np.where(
+                usable,
+                str(EvidenceAvailability.AVAILABLE_VALID),
+                str(EvidenceAvailability.COMPUTATION_FAILED),
+            ),
+            index=severity.index,
+        ),
+        weight=weight,
+        value=value,
+    )
+
+
+NUCLEAR_RETAINED_GENE = "MALAT1"
+
+
+DISSOCIATION_STRESS_GENES: tuple[str, ...] = (
+    "FOS",
+    "FOSB",
+    "JUN",
+    "JUNB",
+    "JUND",
+    "EGR1",
+    "ATF3",
+    "IER2",
+    "HSPA1A",
+    "HSPA1B",
+    "HSPB1",
+    "HSPH1",
+    "DNAJB1",
+    "DNAJA1",
+    "SOCS3",
+    "ZFP36",
+    "DUSP1",
+    "KLF6",
+    "NR4A1",
+    "PPP1R15A",
+)
+
+
+DOUBLET_SCORE_COLUMNS: tuple[str, ...] = (
+    "doublet_score_scdblfinder",
+    "doublet_score_scrublet",
+    "doublet_score",
+)
+
+
+_CAPTURE_METRICS: tuple[str, ...] = ("n_genes_by_counts", "total_counts")
+
+
+def gene_fraction(
+    adata: AnnData,
+    genes: tuple[str, ...],
+    total: pd.Series,
+    *,
+    layer: str | None = None,
+    use_raw: bool = False,
+) -> pd.Series | None:
+    """Fraction of a cell's counts falling in ``genes``, or None if none are present."""
+    matrix, _ = resolve_qc_matrix(adata, layer=layer, use_raw=use_raw)
+    names = adata.raw.var_names if use_raw else adata.var_names
+    selected = names.isin(genes)
+    if not selected.any():
+        return None
+    indicator = selected.astype(np.float64).reshape(-1, 1)
+    summed = np.asarray(matrix @ indicator).ravel()
+
+    fraction = pd.Series(summed, index=adata.obs_names, dtype=float).reindex(total.index) / total
+    return fraction.replace([np.inf, -np.inf], np.nan)
+
+
+def multiplet_agreement_severity(
+    obs: pd.DataFrame,
+    groups: pd.Series | None,
+    *,
+    half_severity_z: float = DEFAULT_HALF_SEVERITY_Z,
+) -> pd.Series | None:
+    """Multiplet severity requiring detectors to agree, on comparable scales."""
+    present = [column for column in DOUBLET_SCORE_COLUMNS if column in obs.columns]
+
+    present = [column for column in present if not obs[column].isna().all()]
+    if not present:
+        return None
+
+    if len(present) > 1 and "doublet_score" in present:
+        present = [column for column in present if column != "doublet_score"]
+
+    severities = [
+        tail_severity(
+            obs[column],
+            groups,
+            direction=Direction.UPPER_TAIL,
+            half_severity_z=half_severity_z,
+        )
+        for column in present
+    ]
+
+    return pd.concat(severities, axis=1).min(axis=1, skipna=False)
+
+
+def build_evidence_table(
+    adata: AnnData,
+    cell_metrics: pd.DataFrame,
+    *,
+    group_key: str | None = None,
+    layer: str | None = None,
+    use_raw: bool = False,
+    mito_posterior: pd.Series | None = None,
+    nuclear_axis_applicable: bool = True,
+    half_severity_z: float = DEFAULT_HALF_SEVERITY_Z,
+    grouping: NullGrouping | None = None,
+    lineage_conditional: bool = False,
+    expression_adata: AnnData | None = None,
+) -> EvidenceTable:
+    """Assemble every evidence axis this dataset supports.
+
+    Args:
+        adata: The QC AnnData, used for gene-level axes.
+        cell_metrics: Per-cell QC metrics, indexed like ``adata.obs``.
+        group_key: ``obs`` column to fit nulls within, normally the cohort sample key. Used
+            only when ``grouping`` is not supplied.
+        layer: Layer holding the counts the gene-fraction axes should use.
+        use_raw: Read gene fractions from raw.X.
+        expression_adata: Unfiltered count source matching the metric denominator.
+            Observation metadata and doublet scores still come from adata.
+        mito_posterior: Per-cell compromised probability from the mixture model. Used
+            directly under the mixture model assumptions, without robust-tail rescaling.
+            This is a model posterior, not empirical calibration against damage labels.
+        nuclear_axis_applicable: False for single-nucleus assays.
+        half_severity_z: Robust z at which severity is 0.5.
+        grouping: Per-cell reference classes from
+            :func:`cellquorum.stages.qc.lineage.resolve_null_groups`, with each level's null
+            estimated over every cell at that level. Overrides ``group_key``.
+        lineage_conditional: True when ``grouping`` carries cell identity as well as library.
+            Recorded for provenance only — it deliberately changes no behaviour here. An earlier
+            version used it to re-scale the mitochondrial posterior within lineage, which
+            corrupted an already-calibrated probability; see the metabolic axis below. Calibrating
+            the posterior for cell identity is the mixture model's job, not this module's.
+    """
+    expression_adata = adata if expression_adata is None else expression_adata
+    obs = adata.obs
+    groups = obs[group_key] if group_key and group_key in obs.columns else None
+
+    def severity_of(
+        values: pd.Series,
+        *,
+        direction: Direction,
+        log_scale: bool = False,
+    ) -> pd.Series:
+        """Score one metric against each cell's reference class."""
+        if grouping is not None:
+            return nested_tail_severity(
+                values,
+                grouping,
+                direction=direction,
+                log_scale=log_scale,
+                half_severity_z=half_severity_z,
+            )
+        return tail_severity(
+            values,
+            groups,
+            direction=direction,
+            log_scale=log_scale,
+            half_severity_z=half_severity_z,
+        )
+
+    axes: list[AxisEvidence] = []
+
+    def add(
+        name: str,
+        family: EvidenceFamily,
+        direction: Direction,
+        severity: pd.Series,
+        weight: float = 1.0,
+        value: pd.Series | None = None,
+    ) -> None:
+        axes.append(
+            axis_from_severity(
+                name=name,
+                family=family,
+                direction=direction,
+                severity=severity,
+                weight=weight,
+                value=value,
+            )
+        )
+
+    for metric in _CAPTURE_METRICS:
+        if metric in cell_metrics:
+            add(
+                metric,
+                EvidenceFamily.CAPTURE_COMPLEXITY,
+                Direction.LOWER_TAIL,
+                severity_of(
+                    cell_metrics[metric],
+                    direction=Direction.LOWER_TAIL,
+                    log_scale=True,
+                ),
+            )
+
+    if mito_posterior is not None:
+        add(
+            "mito_mixture_posterior",
+            EvidenceFamily.METABOLIC_STRESS,
+            Direction.UPPER_TAIL,
+            mito_posterior.reindex(cell_metrics.index).astype(float),
+        )
+    elif "pct_counts_mito" in cell_metrics:
+        add(
+            "pct_counts_mito",
+            EvidenceFamily.METABOLIC_STRESS,
+            Direction.UPPER_TAIL,
+            severity_of(
+                cell_metrics["pct_counts_mito"],
+                direction=Direction.UPPER_TAIL,
+            ),
+        )
+
+    total_counts = cell_metrics.get("total_counts")
+    if total_counts is not None:
+        total_counts = total_counts.astype(float)
+
+        stress = gene_fraction(
+            expression_adata, DISSOCIATION_STRESS_GENES, total_counts, layer=layer, use_raw=use_raw
+        )
+        if stress is not None:
+            add(
+                "dissociation_stress",
+                EvidenceFamily.METABOLIC_STRESS,
+                Direction.UPPER_TAIL,
+                severity_of(
+                    stress,
+                    direction=Direction.UPPER_TAIL,
+                ),
+                weight=0.6,
+                value=stress,
+            )
+
+        if nuclear_axis_applicable:
+            nuclear = gene_fraction(
+                expression_adata,
+                (NUCLEAR_RETAINED_GENE,),
+                total_counts,
+                layer=layer,
+                use_raw=use_raw,
+            )
+            if nuclear is not None:
+                add(
+                    "malat1_fraction",
+                    EvidenceFamily.NUCLEAR_INTEGRITY,
+                    Direction.UPPER_TAIL,
+                    severity_of(
+                        nuclear,
+                        direction=Direction.UPPER_TAIL,
+                    ),
+                    value=nuclear,
+                )
+
+    multiplet = multiplet_agreement_severity(obs, groups, half_severity_z=half_severity_z)
+    if multiplet is not None:
+        add("doublet_agreement", EvidenceFamily.MULTIPLET, Direction.UPPER_TAIL, multiplet)
+
+    return EvidenceTable(axes=tuple(axes), obs_names=pd.Index(adata.obs_names))
 
 
 __all__ = [
@@ -667,4 +987,16 @@ __all__ = [
     "SUPPORTING_FAMILIES",
     "adjudicate_initial",
     "build_axis",
+    "DEFAULT_HALF_SEVERITY_Z",
+    "DISSOCIATION_STRESS_GENES",
+    "DOUBLET_SCORE_COLUMNS",
+    "MIN_CELLS_FOR_NULL",
+    "NUCLEAR_RETAINED_GENE",
+    "RobustNull",
+    "axis_from_severity",
+    "build_evidence_table",
+    "fit_robust_null",
+    "gene_fraction",
+    "multiplet_agreement_severity",
+    "tail_severity",
 ]

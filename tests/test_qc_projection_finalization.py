@@ -15,14 +15,76 @@ import pytest
 
 from cellquorum.stages.qc.finalization import QCFinalizationStage
 from cellquorum.stages.qc.projection import (
+    QueryProjectionStage,
     neighborhood_label_entropy,
     project_query_cells,
 )
-from cellquorum.stages.qc.query_projection_stage import QueryProjectionStage
 
 
 class _Paths:
     root = "/tmp"
+
+
+@pytest.mark.parametrize("k", [1, 2, 20])
+def test_ood_compares_equal_neighbor_counts(k):
+    reference = np.array([[0.0], [2.0], [4.0]])
+    query = np.array([[1.0], [20.0]])
+    projection = project_query_cells(reference, query, np.array(["A"] * 3), k=k)
+    np.testing.assert_array_equal(projection.ood_score, [0.0, 1.0])
+    np.testing.assert_array_equal(projection.effective_neighbor_count, [min(k, 2)] * 2)
+    np.testing.assert_array_equal(np.exp(projection.neighbor_label_entropy), [1.0, 1.0])
+
+
+def test_projection_rerun_replaces_columns():
+    adata = _toy_adata()
+    stage = QueryProjectionStage()
+    stage.run(_Ctx(adata))
+    first = adata.obs.copy()
+    stage.run(_Ctx(adata))
+    assert adata.obs.columns.is_unique
+    pd.testing.assert_frame_equal(adata.obs, first)
+
+
+def test_projection_prefers_pca_over_joint_harmony():
+    adata = _toy_adata()
+    adata.obsm["X_pca"] = adata.obsm.pop("X_scvi")
+    adata.obsm["X_pca_harmony"] = np.zeros_like(adata.obsm["X_pca"])
+    result = QueryProjectionStage().run(_Ctx(adata))
+    assert result.metrics["representation"] == "X_pca"
+
+
+@pytest.mark.parametrize("field", ["use_rep", "label_column"])
+def test_projection_does_not_substitute_for_explicit_missing_input(field):
+    with pytest.raises(ValueError, match="missing"):
+        QueryProjectionStage().run(_Ctx(_toy_adata(), {"query_projection": {field: "typo"}}))
+
+
+def test_projection_does_not_turn_missing_reference_labels_into_a_population():
+    adata = _toy_adata()
+    adata.obs.loc[adata.obs_names[0], "cell_type"] = np.nan
+    with pytest.raises(ValueError, match="missing core labels"):
+        QueryProjectionStage().run(_Ctx(adata))
+
+
+def test_finalization_does_not_replace_missing_ood_with_zero():
+    adata = _toy_adata()
+    adata.obs["query_top_label_probability"] = 1.0
+    result = QCFinalizationStage().run(_Ctx(adata))
+    assert result.metrics["n_rescued"] == 0
+    assert result.warnings
+
+
+@pytest.mark.parametrize("column", ["query_top_label_probability", "query_ood_score"])
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_finalization_requires_finite_evidence_even_at_permissive_bounds(column, value):
+    adata = _toy_adata()
+    adata.obs["query_top_label_probability"] = 1.0
+    adata.obs["query_ood_score"] = 0.0
+    adata.obs[column] = value
+    result = QCFinalizationStage().run(
+        _Ctx(adata, {"qc_finalization": {"min_neighborhood_support": 0.0, "max_ood_score": 1.0}})
+    )
+    assert result.metrics["n_rescued"] == 0
 
 
 class _Ctx:

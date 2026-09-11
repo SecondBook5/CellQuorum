@@ -1,11 +1,12 @@
-"""Query projection primitive: place query cells against a frozen reference manifold.
+# Pipeline step (order=105): query_projection — place borderline cells against core.
+"""Frozen-reference query projection and its pipeline stage.
 
 Built once, as an engine primitive, because the same neighbourhood question is asked in
 QC rescue, annotation, reference mapping and diagnostics, and the design forbids
-reimplementing it four times (``docs/design/qc-graded-adjudication.md`` §5). This module
+reimplementing it four times (``docs/design/qc-graded-adjudication.md`` §5). The primitive
 is deliberately biology-free and I/O-free: it takes coordinates and labels and returns
-per-query-cell metrics. The stage layer decides where the coordinates come from and where
-the results are written.
+per-query-cell metrics. The stage decides where the coordinates come from and where the
+results are written.
 
 ``marker_vote`` cannot answer this — it assigns labels by ``clusters.map(assignments)``,
 so a cell that never entered clustering has no path through it — and nothing resembling
@@ -28,6 +29,11 @@ import pandas as pd
 from scipy.stats import entropy
 from sklearn.neighbors import NearestNeighbors
 
+from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_catalog import register_stage
+from cellquorum.methods.context_access import resolve_stage_config
+from cellquorum.stages.qc.config import QueryProjectionConfig
+
 
 @dataclass(frozen=True)
 class QueryProjection:
@@ -49,8 +55,7 @@ class QueryProjection:
             distance as a quantile of the reference's own mean-neighbour-distance
             distribution. Near 1 means the cell sits further from the reference than
             almost any reference cell sits from its own neighbours — it fits nowhere.
-        effective_neighbor_count: ``exp(neighbor_label_entropy)`` — the number of labels
-            the neighbourhood effectively spans (1 = unanimous, k = maximally mixed).
+        effective_neighbor_count: Number of equally weighted reference neighbors used.
     """
 
     top_label: np.ndarray
@@ -79,8 +84,8 @@ def project_query_cells(
         query_coords: ``(n_query, d)`` coordinates of the query (e.g. borderline) cells
             in the SAME representation. Must share ``d`` with ``reference_coords``.
         reference_labels: ``(n_ref,)`` labels for the reference cells, in row order.
-        k: Neighbours per query cell. Clamped to ``n_ref`` when the reference is smaller,
-            so a tiny reference degrades gracefully instead of raising.
+        k: Neighbours per query cell. Clamped to ``n_ref - 1`` so the reference's
+            leave-one-out distances use the same number of neighbours as each query.
 
     Returns:
         A :class:`QueryProjection` whose arrays are aligned to ``query_coords`` rows.
@@ -98,33 +103,34 @@ def project_query_cells(
         raise ValueError("reference_coords and query_coords must both be 2-D.")
     if reference_coords.shape[0] == 0:
         raise ValueError("reference_coords is empty; nothing to project against.")
+    if reference_coords.shape[0] < 2:
+        raise ValueError("At least two reference cells are required to calibrate OOD distances.")
+    if isinstance(k, bool) or not isinstance(k, int | np.integer) or k < 1:
+        raise ValueError("k must be a positive integer.")
     if reference_coords.shape[1] != query_coords.shape[1]:
         raise ValueError(
             f"dimension mismatch: reference has {reference_coords.shape[1]} dims, "
             f"query has {query_coords.shape[1]}."
         )
-    if reference_labels.shape[0] != reference_coords.shape[0]:
+    if reference_labels.ndim != 1 or len(reference_labels) != reference_coords.shape[0]:
         raise ValueError(
-            f"reference_labels has {reference_labels.shape[0]} entries for "
-            f"{reference_coords.shape[0]} reference cells."
+            "reference_labels must be one-dimensional with one label per reference cell."
         )
+    if pd.isna(reference_labels).any():
+        raise ValueError("reference_labels contains missing labels.")
 
     n_query = query_coords.shape[0]
-    k_eff = int(min(k, reference_coords.shape[0]))
+    k_eff = int(min(k, reference_coords.shape[0] - 1))
 
     nn = NearestNeighbors(n_neighbors=k_eff)
     nn.fit(reference_coords)
 
-    # Reference-internal neighbour distances calibrate the OOD scale: a query cell is
-    # out-of-distribution relative to how far reference cells sit from THEIR neighbours,
-    # not against an absolute distance whose meaning changes with the representation.
-    ref_dist, _ = nn.kneighbors(reference_coords)
-    # Column 0 is the cell itself (distance 0); mean over the real neighbours.
-    ref_mean_neighbor = ref_dist[:, 1:].mean(axis=1) if k_eff > 1 else ref_dist[:, 0]
+    ref_dist, _ = nn.kneighbors()
+    ref_mean_neighbor = ref_dist.mean(axis=1)
     ref_scale_sorted = np.sort(ref_mean_neighbor)
 
     q_dist, q_idx = nn.kneighbors(query_coords)
-    neighbor_labels = reference_labels[q_idx]  # (n_query, k_eff)
+    neighbor_labels = reference_labels[q_idx]
 
     top_label = np.empty(n_query, dtype=reference_labels.dtype)
     top_prob = np.zeros(n_query)
@@ -142,9 +148,7 @@ def project_query_cells(
 
     nearest = q_dist[:, 0]
     mean_neighbor = q_dist.mean(axis=1)
-    # OOD score: quantile position of each query cell's mean-neighbour distance within
-    # the reference's own distribution. searchsorted gives the count of reference cells
-    # at least as close; dividing by n maps it to [0, 1].
+
     ood = np.searchsorted(ref_scale_sorted, mean_neighbor, side="right") / len(ref_scale_sorted)
 
     return QueryProjection(
@@ -156,7 +160,7 @@ def project_query_cells(
         nearest_reference_distance=nearest,
         mean_neighbor_distance=mean_neighbor,
         ood_score=ood,
-        effective_neighbor_count=np.exp(label_entropy),
+        effective_neighbor_count=np.full(n_query, k_eff, dtype=float),
     )
 
 
@@ -167,17 +171,6 @@ def neighborhood_label_entropy(
     k: int = 30,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Per-cell label mixing of each cell's own neighbourhood in a shared manifold.
-
-    A detector-independent doublet / low-information signal. A cell whose nearest
-    neighbours in the manifold are a jumble of *different* lineages — a fibroblast among
-    macrophages — either is a doublet or carries too little information to have an
-    identity. Both are what pool in the salt-and-pepper zone at the centre of a UMAP.
-    Unlike Scrublet/scDblFinder this needs no doublet model, so it still works when every
-    doublet detector has died (which is exactly when a backstop is wanted).
-
-    Computed in the MANIFOLD (scVI/PCA latent), never in the 2-D UMAP: the UMAP is a lossy
-    projection and its local mixing is partly an artefact of the layout. Identity lives in
-    the latent space, so mixing must be measured there.
 
     Args:
         coords: ``(n, d)`` cell coordinates in the manifold.
@@ -207,7 +200,7 @@ def neighborhood_label_entropy(
 
     codes, _ = pd.factorize(labels)
     n_labels = int(codes.max()) + 1 if codes.size and codes.max() >= 0 else 1
-    neighbour_codes = codes[idx]  # (n, k_eff)
+    neighbour_codes = codes[idx]
 
     ent = np.zeros(n, dtype=float)
     for i in range(n):
@@ -216,4 +209,176 @@ def neighborhood_label_entropy(
     return ent, np.exp(ent)
 
 
-__all__ = ["QueryProjection", "project_query_cells", "neighborhood_label_entropy"]
+_DEFAULT_REP_CANDIDATES = ("X_scvi", "X_pca")
+
+
+_DEFAULT_LABEL_CANDIDATES = ("cell_type", "qc_provisional_lineage", "leiden")
+
+_STATE_COLUMN = "qc_state_initial"
+
+
+@register_stage(
+    name="query_projection",
+    order=105,
+    config_flag="query_projection",
+    config_field="query_projection",
+)
+class QueryProjectionStage:
+    """Project borderline cells onto the frozen core manifold and record the evidence."""
+
+    def _resolve_rep(self, adata: object, config: dict) -> str | None:
+        requested = config.get("use_rep")
+        if requested and requested not in adata.obsm:
+            raise ValueError(f"Requested query-projection representation '{requested}' is missing.")
+        candidates = (requested,) if requested else _DEFAULT_REP_CANDIDATES
+        for key in candidates:
+            if key and key in adata.obsm:
+                return key
+        return None
+
+    def _resolve_label_column(self, adata: object, config: dict) -> str | None:
+        requested = config.get("label_column")
+        if requested and requested not in adata.obs.columns:
+            raise ValueError(f"Requested query-projection label column '{requested}' is missing.")
+        candidates = (requested,) if requested else _DEFAULT_LABEL_CANDIDATES
+        for col in candidates:
+            if col and col in adata.obs.columns:
+                return col
+        return None
+
+    def run(self, context: object) -> StageResult:
+        """Execute the query-projection stage."""
+        adata = context.require_adata()
+        config = QueryProjectionConfig.model_validate(
+            resolve_stage_config(context, "query_projection")
+        ).model_dump()
+
+        if _STATE_COLUMN not in adata.obs.columns:
+            return StageResult.skipped(
+                adata=adata,
+                reason=f"no {_STATE_COLUMN} column; QC graded adjudication did not run",
+                warnings=[
+                    f"query_projection needs obs['{_STATE_COLUMN}']; is the graded QC "
+                    "stage enabled?"
+                ],
+            )
+
+        state = adata.obs[_STATE_COLUMN].astype(str)
+        core_mask = (state == "core").to_numpy()
+        query_mask = (state == "borderline").to_numpy()
+
+        if not query_mask.any():
+            return StageResult.skipped(
+                adata=adata,
+                reason="no borderline cells to project",
+                metrics={"n_borderline": 0, "n_core": int(core_mask.sum())},
+            )
+        if core_mask.sum() < 2:
+            return StageResult.skipped(
+                adata=adata,
+                reason="fewer than 2 core cells to project against",
+                warnings=["query_projection: the core reference is too small to project onto."],
+                metrics={"n_borderline": int(query_mask.sum()), "n_core": int(core_mask.sum())},
+            )
+
+        rep = self._resolve_rep(adata, config)
+        if rep is None:
+            return StageResult.skipped(
+                adata=adata,
+                reason="no frozen representation in obsm (tried X_scvi/X_pca)",
+                warnings=[
+                    "query_projection needs a core-fit embedding; run integration or "
+                    "dimensionality first."
+                ],
+            )
+        label_column = self._resolve_label_column(adata, config)
+        if label_column is None:
+            return StageResult.skipped(
+                adata=adata,
+                reason="no reference label column (tried cell_type/qc_provisional_lineage/leiden)",
+                warnings=["query_projection needs core-cell labels; run annotation first."],
+            )
+
+        k = config["k"]
+        coords = np.asarray(adata.obsm[rep])
+        reference_labels = adata.obs.loc[core_mask, label_column]
+        if reference_labels.isna().any():
+            raise ValueError(
+                f"Reference label column '{label_column}' contains missing core labels."
+            )
+        labels = reference_labels.astype(str).to_numpy()
+
+        projection = project_query_cells(
+            reference_coords=coords[core_mask],
+            query_coords=coords[query_mask],
+            reference_labels=labels,
+            k=k,
+        )
+
+        n = adata.n_obs
+        qi = np.flatnonzero(query_mask)
+
+        def _fill_num(values: np.ndarray) -> np.ndarray:
+            out = np.full(n, np.nan, dtype=float)
+            out[qi] = values
+            return out
+
+        top_label_full = np.array([""] * n, dtype=object)
+        top_label_full[qi] = projection.top_label.astype(str)
+
+        new_cols = {
+            "query_top_label": top_label_full,
+            "query_top_label_probability": _fill_num(projection.top_label_probability),
+            "query_second_label_probability": _fill_num(projection.second_label_probability),
+            "query_label_margin": _fill_num(projection.margin),
+            "query_neighbor_label_entropy": _fill_num(projection.neighbor_label_entropy),
+            "query_nearest_reference_distance": _fill_num(projection.nearest_reference_distance),
+            "query_mean_neighbor_distance": _fill_num(projection.mean_neighbor_distance),
+            "query_ood_score": _fill_num(projection.ood_score),
+            "query_effective_neighbor_count": _fill_num(projection.effective_neighbor_count),
+            "query_effective_label_count": _fill_num(np.exp(projection.neighbor_label_entropy)),
+        }
+        adata.obs = pd.concat(
+            [
+                adata.obs.drop(columns=list(new_cols), errors="ignore"),
+                pd.DataFrame(new_cols, index=adata.obs_names),
+            ],
+            axis=1,
+        )
+
+        adata.uns.setdefault("cellquorum", {})["query_projection"] = {
+            "representation": rep,
+            "label_column": label_column,
+            "k": k,
+            "n_borderline": int(query_mask.sum()),
+            "n_core_reference": int(core_mask.sum()),
+        }
+
+        median_ood = float(np.median(projection.ood_score))
+        median_support = float(np.median(projection.top_label_probability))
+        return StageResult(
+            adata=adata,
+            notes=[
+                f"query_projection projected {int(query_mask.sum()):,} borderline cells onto "
+                f"{int(core_mask.sum()):,} core cells in '{rep}' (labels from "
+                f"'{label_column}', k={k}).",
+                f"median neighbourhood support={median_support:.2f}, median OOD={median_ood:.2f}.",
+            ],
+            metrics={
+                "representation": rep,
+                "label_column": label_column,
+                "k": k,
+                "n_borderline": int(query_mask.sum()),
+                "n_core": int(core_mask.sum()),
+                "median_top_label_probability": median_support,
+                "median_ood_score": median_ood,
+            },
+        )
+
+
+__all__ = [
+    "QueryProjection",
+    "project_query_cells",
+    "neighborhood_label_entropy",
+    "QueryProjectionStage",
+]

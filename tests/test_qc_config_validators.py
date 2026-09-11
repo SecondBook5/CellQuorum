@@ -12,7 +12,10 @@ import re
 
 import pytest
 
-from cellquorum.stages.qc.config_validators import (
+from cellquorum.stages.qc.config import (
+    QCConfig,
+    QCFinalizationConfig,
+    QueryProjectionConfig,
     coerce_float_in_range,
     coerce_non_negative_int,
     coerce_percent_top,
@@ -20,6 +23,29 @@ from cellquorum.stages.qc.config_validators import (
     coerce_string_list,
     coerce_stripped_string,
 )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_scientific_parameters_are_rejected(value):
+    with pytest.raises(ValueError):
+        QCConfig(doublets={"expected_doublet_rate": value})
+    with pytest.raises(ValueError):
+        QCConfig(mito_mixture={"tolerance": value})
+    with pytest.raises(ValueError):
+        QCFinalizationConfig(min_neighborhood_support=value)
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.5])
+def test_projection_neighbor_count_is_a_positive_integer(value):
+    with pytest.raises(ValueError):
+        QueryProjectionConfig(k=value)
+
+
+@pytest.mark.parametrize("field", ["min_neighborhood_support", "max_ood_score", "severe_severity"])
+@pytest.mark.parametrize("value", [-0.1, 1.1])
+def test_rescue_thresholds_are_bounded(field, value):
+    with pytest.raises(ValueError):
+        QCFinalizationConfig(**{field: value})
 
 
 class TestCoercePercentTop:

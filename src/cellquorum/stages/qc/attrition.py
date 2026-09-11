@@ -6,8 +6,6 @@ after the fact from the decisions (``audit_differential_attrition``). The pre-ho
 check catches the configurations that guarantee the problem; the post-hoc check
 measures whatever happened regardless of how the rules were written.
 
-Differential-attrition auditing.
-
 Why this module exists: every QC rule in this pipeline is chosen to be defensible
 on its own terms -- a mixture model rather than a guessed ceiling, a projection
 that makes the rule monotone in the metric it names. None of that guarantees the
@@ -58,51 +56,24 @@ ignore the warning.
 
 from __future__ import annotations
 
-# Import Mapping for the factor collection.
 from collections.abc import Mapping
-
-# Import dataclass helpers for structured audit records. ``replace`` is what lets
-# the multiplicity correction stamp an adjusted p-value onto a frozen record.
 from dataclasses import dataclass, field, replace
 
-# Import NumPy for the contingency arithmetic.
 import numpy as np
-
-# Import pandas for label handling and grouping.
 import pandas as pd
 
-# Set the significance level at which a difference in attrition is called real.
 ATTRITION_ALPHA = 0.05
 
-# Set the smallest difference in removal rate worth warning about, as a fraction.
-#
-# Two percentage points. Below that the difference is not something a methods
-# section can act on, and on any object above a few thousand cells it is reached
-# by noise alone. This gates the WARNING only; the measured difference is always
-# recorded, so a reader who cares about a smaller gap can find it in the table.
+
 ATTRITION_MIN_RATE_DIFFERENCE = 0.02
 
-# Set the smallest number of paired blocks that can produce a usable p-value.
-#
-# The exact Wilcoxon signed-rank test on n pairs cannot go below 2^-n one-sided,
-# so with five pairs the smallest attainable two-sided p is 0.0625 -- the test
-# cannot reject at 0.05 however consistent the effect. Running it anyway would
-# report a non-significant result that says nothing about the data.
+
 MIN_PAIRED_BLOCKS = 6
 
-# Set the multiple-testing procedure applied across subsets.
-#
-# Benjamini-Hochberg, matching every other multiplicity correction in the engine.
-# The subsets of one object are not independent tests of independent hypotheses,
-# but they are positively dependent, which is the regime BH controls under.
+
 ATTRITION_FDR_METHOD = "fdr_bh"
 
-# Name the columns of the audit table, so an empty audit still has a schema.
-#
-# ``subset`` is None on the two cohort-level rows and carries the subset label on
-# the stratified ones, which is what lets a reader filter the table down to the
-# pre-specified test. ``p_value_adjusted`` is populated only where a correction
-# was actually applied, so a populated cell always means "this was one of many".
+
 ATTRITION_COLUMNS: tuple[str, ...] = (
     "factor",
     "subset",
@@ -123,8 +94,7 @@ ATTRITION_COLUMNS: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class AttritionTest:
-    """
-    Store one test of whether QC removal is associated with a design factor.
+    """Store one test of whether QC removal is associated with a design factor.
 
     Args:
         factor: Design factor tested, named as its metadata column.
@@ -166,14 +136,12 @@ class AttritionTest:
     p_value_adjusted: float | None = None
 
     def to_dict(self) -> dict[str, object]:
-        """
-        Convert the record into a JSON-friendly dictionary.
+        """Convert the record into a JSON-friendly dictionary.
 
         Returns:
             Flat payload keyed by :data:`ATTRITION_COLUMNS`.
         """
 
-        # Return a flat payload suitable for a table row or JSON summary.
         return {
             "factor": self.factor,
             "subset": self.subset,
@@ -192,8 +160,7 @@ class AttritionTest:
         }
 
     def decisive_p_value(self) -> float | None:
-        """
-        Return the p-value this record should be judged on.
+        """Return the p-value this record should be judged on.
 
         Returns:
             The adjusted p-value when one was computed, otherwise the raw one, or
@@ -203,12 +170,10 @@ class AttritionTest:
             having to know which kind of record it holds.
         """
 
-        # Prefer the adjusted value, which exists only where it is required.
         return self.p_value if self.p_value_adjusted is None else self.p_value_adjusted
 
     def is_significant(self, alpha: float = ATTRITION_ALPHA) -> bool:
-        """
-        Report whether this record found an association at ``alpha``.
+        """Report whether this record found an association at ``alpha``.
 
         Args:
             alpha: Significance level.
@@ -218,15 +183,13 @@ class AttritionTest:
             records are judged on the adjusted value.
         """
 
-        # Treat a skipped record as finding nothing.
         p_value = self.decisive_p_value()
         return p_value is not None and p_value < alpha
 
 
 @dataclass(frozen=True)
 class AttritionAudit:
-    """
-    Store every attrition test run for one QC stage, plus what to warn about.
+    """Store every attrition test run for one QC stage, plus what to warn about.
 
     Args:
         tests: One record per (factor, unit) pair, including skipped ones.
@@ -238,23 +201,19 @@ class AttritionAudit:
     warnings: list[str] = field(default_factory=list)
 
     def to_dataframe(self) -> pd.DataFrame:
-        """
-        Convert the audit into a table.
+        """Convert the audit into a table.
 
         Returns:
             One row per record, with an explicit schema when there are none.
         """
 
-        # Return a schema-aware empty table when nothing was tested.
         if not self.tests:
             return pd.DataFrame(columns=list(ATTRITION_COLUMNS))
 
-        # Return one row per record, in the declared column order.
         return pd.DataFrame([record.to_dict() for record in self.tests])[list(ATTRITION_COLUMNS)]
 
     def to_summary_dict(self) -> dict[str, object]:
-        """
-        Convert the audit into a JSON-friendly summary.
+        """Convert the audit into a JSON-friendly summary.
 
         Returns:
             Records, warnings, the factors flagged at cohort level, and the
@@ -265,8 +224,6 @@ class AttritionAudit:
             and would be indistinguishable if both fed one list.
         """
 
-        # Select the records worth flagging: significant on whichever p-value
-        # applies to them, and large enough to act on.
         def flagged(record: AttritionTest) -> bool:
             return (
                 record.is_significant()
@@ -274,7 +231,6 @@ class AttritionAudit:
                 and record.rate_difference >= ATTRITION_MIN_RATE_DIFFERENCE
             )
 
-        # Return the payload used by stage metrics and provenance.
         return {
             "tests": [record.to_dict() for record in self.tests],
             "warnings": list(self.warnings),
@@ -305,8 +261,7 @@ def audit_differential_attrition(
     alpha: float = ATTRITION_ALPHA,
     min_rate_difference: float = ATTRITION_MIN_RATE_DIFFERENCE,
 ) -> AttritionAudit:
-    """
-    Test whether QC removal is associated with any design factor.
+    """Test whether QC removal is associated with any design factor.
 
     Args:
         keep: Boolean keep decision for every cell that ENTERED QC. Must be
@@ -340,37 +295,25 @@ def audit_differential_attrition(
         unit still gets the pre-specified test.
     """
 
-    # Normalize the decision to a boolean removal mask over the input cells.
     removed = ~keep.astype(bool)
 
-    # Resolve the blocking labels once, as strings, keeping missing as missing.
     block_name = str(block.name) if block is not None and block.name is not None else "block"
     block_labels = _as_labels(block, keep.index) if block is not None else None
 
-    # Resolve the subset labels the same way, so an unlabelled cell is excluded
-    # from the subset pass rather than forming a subset of its own.
     subset_labels = _as_labels(subset, keep.index) if subset is not None else None
 
-    # Resolve the contrast's labels once, when the caller named a factor that is
-    # actually present. A contrast named but absent is treated as unnamed rather
-    # than as an error: it only changes wording.
     contrast_labels = (
         _as_labels(factors[contrast], keep.index)
         if contrast is not None and contrast in factors
         else None
     )
 
-    # Collect records and warnings.
     records: list[AttritionTest] = []
     warnings: list[str] = []
 
-    # Audit each factor independently, in a stable order.
     for factor in sorted(factors):
-        # Align the factor's labels to the decision.
         labels = _as_labels(factors[factor], keep.index)
 
-        # Report and exclude cells with no label, rather than inventing a level
-        # for them or dropping them silently.
         unlabelled = int(labels.isna().sum())
         if unlabelled:
             warnings.append(
@@ -379,13 +322,11 @@ def audit_differential_attrition(
                 "unaudited: fill the column or drop those cells before analysis."
             )
 
-        # Restrict to labelled cells.
         usable = labels.notna()
         level_labels = labels[usable]
         level_removed = removed[usable]
         level_block = block_labels[usable] if block_labels is not None else None
 
-        # Run the pre-specified cohort tests.
         cohort_records = _test_factor(
             factor=factor,
             labels=level_labels,
@@ -396,10 +337,6 @@ def audit_differential_attrition(
         )
         records.extend(cohort_records)
 
-        # Establish what this factor is to the contrast, which decides whether an
-        # imbalance is a confounder or is capture quality. This is a property of the
-        # DESIGN, so it is measured once over the factor's labelled cells and reused
-        # for its subset warnings rather than re-derived per lineage.
         relation = _classify_against_contrast(
             factor=factor,
             labels=level_labels,
@@ -407,8 +344,6 @@ def audit_differential_attrition(
             contrast_labels=contrast_labels[usable] if contrast_labels is not None else None,
         )
 
-        # Warn on the cohort result using the p-value as computed: one factor, one
-        # question, nothing to correct for.
         warning = _describe_imbalance(
             cell_record=cohort_records[0],
             paired_record=cohort_records[1] if len(cohort_records) > 1 else None,
@@ -419,7 +354,6 @@ def audit_differential_attrition(
         if warning is not None:
             warnings.append(warning)
 
-        # Repeat within each subset, then correct across them.
         if subset_labels is not None:
             records.extend(
                 _audit_subsets(
@@ -436,7 +370,6 @@ def audit_differential_attrition(
                 )
             )
 
-    # Return the assembled audit.
     return AttritionAudit(tests=records, warnings=warnings)
 
 
@@ -449,8 +382,7 @@ def _test_factor(
     block_name: str,
     subset: str | None,
 ) -> list[AttritionTest]:
-    """
-    Run every test one factor supports over one population of cells.
+    """Run every test one factor supports over one population of cells.
 
     Args:
         factor: Design factor.
@@ -466,12 +398,10 @@ def _test_factor(
         element for the effect size and the second for the reviewer-facing test.
     """
 
-    # Run the cell-level test, stratified when a block was supplied.
     produced = [
         _test_cells(factor=factor, labels=labels, removed=removed, block=block, subset=subset)
     ]
 
-    # Add the paired block-level test when the design supports one.
     if block is not None:
         produced.append(
             _test_blocks(
@@ -499,8 +429,7 @@ def _audit_subsets(
     relation: _ContrastRelation,
     warnings: list[str],
 ) -> list[AttritionTest]:
-    """
-    Repeat one factor's tests within every subset, then correct across subsets.
+    """Repeat one factor's tests within every subset, then correct across subsets.
 
     Args:
         factor: Design factor.
@@ -520,7 +449,6 @@ def _audit_subsets(
         The subset records, adjusted, grouped by subset in label order.
     """
 
-    # Run the tests within each subset, in a stable order.
     produced: list[AttritionTest] = []
     for level in sorted(subsets.dropna().unique()):
         within = subsets == level
@@ -535,13 +463,8 @@ def _audit_subsets(
             )
         )
 
-    # Correct within each unit of analysis. The cell-level and block-level rows
-    # are separate families: they answer the same question with different n, and
-    # pooling them into one correction would let a long tail of cell-level rows
-    # inflate the threshold the reviewer-facing rows are judged against.
     adjusted = _adjust_within_units(produced)
 
-    # Warn per subset, on the adjusted p-value.
     by_subset: dict[str, list[AttritionTest]] = {}
     for record in adjusted:
         by_subset.setdefault(str(record.subset), []).append(record)
@@ -560,8 +483,7 @@ def _audit_subsets(
 
 
 def _adjust_within_units(records: list[AttritionTest]) -> list[AttritionTest]:
-    """
-    Benjamini-Hochberg adjust subset p-values, one family per unit of analysis.
+    """Benjamini-Hochberg adjust subset p-values, one family per unit of analysis.
 
     Args:
         records: Subset records, tested and skipped alike.
@@ -575,18 +497,13 @@ def _adjust_within_units(records: list[AttritionTest]) -> list[AttritionTest]:
 
     from statsmodels.stats.multitest import multipletests
 
-    # Group the positions of the tested records by unit.
     families: dict[str, list[int]] = {}
     for position, record in enumerate(records):
         if record.p_value is not None:
             families.setdefault(record.unit, []).append(position)
 
-    # Adjust each family in place, on a copy of the record list.
     adjusted = list(records)
     for positions in families.values():
-        # A record with no p_value is a test that did not run; feeding None to float() would
-        # crash the whole audit over one absent test, so those positions are dropped from the
-        # family rather than corrected.
         positions = [position for position in positions if records[position].p_value is not None]
         if not positions:
             continue
@@ -605,13 +522,7 @@ def audit_qc_stage_attrition(
     cohort: object = None,
     design: object = None,
 ) -> AttritionAudit:
-    """
-    Run the attrition audit for a QC stage, resolving factors from the config.
-
-    The factors are resolved from the cohort and design blocks rather than named
-    per dataset, which is the whole point: the check has to work on the next
-    cohort without anyone editing it. A dataset that declares no condition key
-    gets an empty audit and no warnings, not an error.
+    """Run the attrition audit for a QC stage, resolving factors from the config.
 
     Args:
         obs: Observation metadata for every cell that ENTERED QC. Must be the
@@ -631,24 +542,16 @@ def audit_qc_stage_attrition(
         cell-type annotation, within each cell type as well.
     """
 
-    # Read the audit settings, tolerating a config that predates the block.
     settings = getattr(config, "attrition_audit", None)
     if settings is not None and not getattr(settings, "enabled", True):
         return AttritionAudit()
 
-    # Resolve the factors to audit, in a deliberate order: the condition first
-    # because it is the factor every downstream contrast uses. It is also kept by
-    # name, because whether another factor's attrition can bias the study depends on
-    # how that factor sits relative to THIS one.
     condition_key = _first_present(
         obs, getattr(cohort, "condition_key", None), getattr(design, "condition_col", None)
     )
     factors: dict[str, pd.Series] = {}
     candidates: list[str | None] = [condition_key]
 
-    # Add the batch key unless it was turned off. Attrition tracking batch is the
-    # same defect as attrition tracking condition, and integration cannot fix it:
-    # integration aligns the cells that are present.
     if settings is None or getattr(settings, "audit_batch", True):
         candidates.append(
             _first_present(
@@ -658,20 +561,15 @@ def audit_qc_stage_attrition(
             )
         )
 
-    # Add whatever else the config named.
     candidates.extend(getattr(settings, "factors", None) or [])
 
-    # Keep the resolvable ones, de-duplicated, without losing the order.
     for candidate in candidates:
         if candidate and candidate in obs.columns and candidate not in factors:
             factors[candidate] = obs[candidate]
 
-    # Nothing to audit is a normal configuration -- a per-lineage single-arm run
-    # has no factor -- so return an empty audit rather than raising.
     if not factors:
         return AttritionAudit()
 
-    # Resolve the blocking column, normally the donor.
     block_key = _first_present(
         obs,
         getattr(settings, "block", None),
@@ -679,24 +577,18 @@ def audit_qc_stage_attrition(
         getattr(design, "donor_col", None),
     )
 
-    # Never block on a column that is also being tested: stratifying a factor on
-    # itself leaves every stratum with one level and no information.
     block = obs[block_key] if block_key and block_key not in factors else None
 
-    # Resolve the subset column, normally the cell-type annotation.
     subset_key = (
         _resolve_subset_key(obs, settings=settings) if _audit_subsets_on(settings) else None
     )
 
-    # Never subset on a column that is being tested or blocked on, for the same
-    # reason: a subset of one level, or one donor, carries no comparison.
     subset = (
         obs[subset_key]
         if subset_key and subset_key not in factors and subset_key != block_key
         else None
     )
 
-    # Run the audit with the configured thresholds.
     return audit_differential_attrition(
         keep=keep,
         factors=factors,
@@ -709,8 +601,7 @@ def audit_qc_stage_attrition(
 
 
 def _audit_subsets_on(settings: object) -> bool:
-    """
-    Report whether the per-subset pass should run.
+    """Report whether the per-subset pass should run.
 
     Args:
         settings: Attrition-audit config block, or None on a config predating it.
@@ -725,8 +616,7 @@ def _audit_subsets_on(settings: object) -> bool:
 
 
 def _resolve_subset_key(obs: pd.DataFrame, *, settings: object) -> str | None:
-    """
-    Resolve the obs column to stratify the audit by.
+    """Resolve the obs column to stratify the audit by.
 
     Args:
         obs: Observation metadata to search.
@@ -737,17 +627,10 @@ def _resolve_subset_key(obs: pd.DataFrame, *, settings: object) -> str | None:
         which is normal, because QC also runs before annotation.
     """
 
-    # Honour an explicitly named column, and say nothing when it is absent: a
-    # config that names a column the object does not have is a config error, and
-    # the audit is not the place to raise it.
     named = getattr(settings, "subset", None)
     if named:
         return named if named in obs.columns else None
 
-    # Otherwise fall back to the engine's annotation-column convention. Imported
-    # from the figure module rather than restated here so that the audit, the
-    # panels and the publication tables all group by the same column -- a table
-    # whose rows do not match the figure's rows is worse than no table.
     from cellquorum.visualization.qc.panels import resolve_cell_type_keys
 
     coarse, _granular = resolve_cell_type_keys(obs)
@@ -760,33 +643,7 @@ def audit_qc_design_leaks(
     cohort: object = None,
     design: object = None,
 ) -> list[str]:
-    """
-    Warn when an adaptive QC threshold is estimated per level of a design factor.
-
-    This is the pre-hoc half of this module. The attrition audit measures what a
-    rule did; this reads what the rule was asked to do, and refuses two
-    configurations that produce differential attrition by construction rather than
-    by accident:
-
-    A threshold fit separately per CONDITION cannot be a filter. Whatever the
-    metric, estimating the boundary within each arm makes the arms more alike than
-    the data are, and the part of the difference that gets absorbed is
-    unrecoverable afterwards -- it is not distinguishable from the biology in any
-    downstream test. This is wrong for every adaptive rule, unconditionally.
-
-    A threshold fit separately per SAMPLE or DONOR inverts with quality. Both
-    adaptive mitochondrial policies in this stage were measured doing it on the
-    skin atlas: per-sample MAD set a 2.0% ceiling on the cleanest sample and 11.2%
-    on the dirtiest, and adding ``sample_id`` to the mixture grouping made the
-    cleanest sample's fibroblasts lose 21.1% of cells at a median of 0.67%
-    mitochondrial content. Damage is an absolute state, so what varies between
-    samples is the PROPORTION of damaged cells, not the fraction at which damage
-    begins.
-
-    Batch is deliberately NOT checked. Grouping thresholds within batch is a
-    defensible response to technical variation, unlike grouping within arm, so the
-    question of whether it produced differential attrition is left to the
-    measurement rather than settled by a rule here.
+    """Warn when an adaptive QC threshold is estimated per level of a design factor.
 
     Args:
         config: QC config block exposing ``mad`` and ``mito_mixture``.
@@ -799,10 +656,6 @@ def audit_qc_design_leaks(
         Warning strings, empty when no adaptive grouping names a design factor.
     """
 
-    # Resolve the design keys by name. Unlike the attrition audit this cannot
-    # check obs, because the point is to catch the configuration before the run
-    # spends anything -- and a grouping column that is missing from obs is a
-    # separate error the grouping code itself raises.
     condition = _first_named(
         getattr(cohort, "condition_key", None), getattr(design, "condition_col", None)
     )
@@ -817,27 +670,14 @@ def audit_qc_design_leaks(
         if name
     }
 
-    # Collect every grouping an enabled adaptive rule will actually use, labelled
-    # by the config path a user would have to edit to change it.
     groupings: list[tuple[str, tuple[str, ...]]] = []
 
-    # The MAD block used to be read here too. It is gone with the threshold path, so the
-    # mixture below is the only adaptive rule whose grouping can absorb a design factor. With
-    # MAD went the metric-scoping condition — MAD carried both depth metrics, where per-sample
-    # grouping is defensible, and a mitochondrial metric, where it is not. The mixture is a
-    # mitochondrial rule by construction, so there is no longer a metric to scope on and every
-    # grouping it declares is checked.
-
-    # Read the mixture block, including its fallbacks: a fallback level is a
-    # grouping that gets used, so naming a design factor there is the same defect
-    # arriving later.
     mixture = getattr(config, "mito_mixture", None)
     if mixture is not None and getattr(mixture, "enabled", False):
         groupings.append(("mito_mixture.groupby", tuple(getattr(mixture, "groupby", None) or ())))
         for position, level in enumerate(getattr(mixture, "fallback_groupby", None) or ()):
             groupings.append((f"mito_mixture.fallback_groupby[{position}]", tuple(level or ())))
 
-    # Report each offending grouping once, naming the key and the reason.
     warnings: list[str] = []
     for path, columns in groupings:
         if condition and condition in columns:
@@ -864,8 +704,7 @@ def audit_qc_design_leaks(
 
 
 def _first_named(*candidates: str | None) -> str | None:
-    """
-    Pick the first candidate name that is a non-empty string.
+    """Pick the first candidate name that is a non-empty string.
 
     Args:
         candidates: Column names in preference order, possibly None or empty.
@@ -874,7 +713,6 @@ def _first_named(*candidates: str | None) -> str | None:
         The first usable name, or None.
     """
 
-    # Walk the candidates in the order the caller ranked them.
     for candidate in candidates:
         if candidate:
             return candidate
@@ -882,8 +720,7 @@ def _first_named(*candidates: str | None) -> str | None:
 
 
 def _first_present(obs: pd.DataFrame, *candidates: str | None) -> str | None:
-    """
-    Pick the first candidate column name that exists in ``obs``.
+    """Pick the first candidate column name that exists in ``obs``.
 
     Args:
         obs: Observation metadata.
@@ -893,7 +730,6 @@ def _first_present(obs: pd.DataFrame, *candidates: str | None) -> str | None:
         The first present name, or None.
     """
 
-    # Walk the candidates in the order the caller ranked them.
     for candidate in candidates:
         if candidate and candidate in obs.columns:
             return candidate
@@ -901,8 +737,7 @@ def _first_present(obs: pd.DataFrame, *candidates: str | None) -> str | None:
 
 
 def _as_labels(values: pd.Series, index: pd.Index) -> pd.Series:
-    """
-    Align a label series to the decision index and normalize it to strings.
+    """Align a label series to the decision index and normalize it to strings.
 
     Args:
         values: Per-cell labels.
@@ -915,30 +750,17 @@ def _as_labels(values: pd.Series, index: pd.Index) -> pd.Series:
         AttritionError: If the labels do not cover the decision index.
     """
 
-    # Reindex onto the decision's own index so a partial or reordered series
-    # cannot silently mismatch the decisions it is being crossed with.
     aligned = values.reindex(index)
 
-    # Drop the dtype before stringifying, not just the values. obs columns here
-    # are routinely categorical, and a categorical carries its full category list
-    # regardless of what is present -- a per-lineage object sliced out of an atlas
-    # keeps every condition and every donor the atlas had. Grouped on that dtype,
-    # pandas emits a row per ABSENT level, and its default for doing so is
-    # deprecated and changing. The counts below survive it only because each site
-    # happens to reach for `.unique()` or `dropna()`; normalizing once here means
-    # the audit's level and stratum counts follow the data rather than the dtype,
-    # and no future site has to remember.
     plain = aligned.astype(object)
 
-    # Stringify present values and keep absent ones absent.
     return plain.where(plain.isna(), plain.astype(str))
 
 
 def _level_counts(
     labels: pd.Series, removed: pd.Series
 ) -> tuple[tuple[str, ...], np.ndarray, np.ndarray]:
-    """
-    Count cells and removals per factor level.
+    """Count cells and removals per factor level.
 
     Args:
         labels: Per-cell factor labels, already restricted to labelled cells.
@@ -948,11 +770,8 @@ def _level_counts(
         Sorted levels, cells per level, and removals per level.
     """
 
-    # Take the levels in sorted order so a record's tuples are comparable
-    # between runs.
     levels = tuple(sorted(labels.unique()))
 
-    # Count per level.
     n_cells = np.array([int((labels == level).sum()) for level in levels], dtype=float)
     n_removed = np.array([int(removed[labels == level].sum()) for level in levels], dtype=float)
     return levels, n_cells, n_removed
@@ -969,8 +788,7 @@ def _skipped(
     n_strata: int | None = None,
     subset: str | None = None,
 ) -> AttritionTest:
-    """
-    Build a record for a comparison that could not be tested.
+    """Build a record for a comparison that could not be tested.
 
     Args:
         factor: Design factor.
@@ -986,8 +804,6 @@ def _skipped(
         Record carrying the counts, the reason, and no p-value.
     """
 
-    # Keep the counts: "nothing was tested" is far more useful next to "and here
-    # is what the cohort looked like".
     return AttritionTest(
         factor=factor,
         unit=unit,
@@ -1003,8 +819,7 @@ def _skipped(
 
 
 def _rates(n_removed: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
-    """
-    Divide removals by cells, treating an empty level as a zero rate.
+    """Divide removals by cells, treating an empty level as a zero rate.
 
     Args:
         n_removed: Removals per level.
@@ -1014,8 +829,6 @@ def _rates(n_removed: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
         Removal rate per level.
     """
 
-    # Guard the division so an empty level reports 0.0 rather than a NaN that
-    # would propagate into the effect size.
     return np.divide(
         n_removed,
         n_cells,
@@ -1032,8 +845,7 @@ def _test_cells(
     block: pd.Series | None,
     subset: str | None = None,
 ) -> AttritionTest:
-    """
-    Test the association between removal and a factor, with cells as the unit.
+    """Test the association between removal and a factor, with cells as the unit.
 
     Args:
         factor: Design factor.
@@ -1046,10 +858,8 @@ def _test_cells(
         One cell-level record, tested or skipped.
     """
 
-    # Count the cohort first, so even a skipped record carries the numbers.
     levels, n_cells, n_removed = _level_counts(labels, removed)
 
-    # Skip a factor that does not vary.
     if len(levels) < 2:
         return _skipped(
             factor=factor,
@@ -1064,7 +874,6 @@ def _test_cells(
             subset=subset,
         )
 
-    # Skip a decision that does not vary either.
     total_removed = float(n_removed.sum())
     total_cells = float(n_cells.sum())
     if total_removed == 0 or total_removed == total_cells:
@@ -1079,13 +888,9 @@ def _test_cells(
             subset=subset,
         )
 
-    # Measure the effect size the same way regardless of which test runs: the
-    # widest gap between any two levels' removal rates.
     rates = _rates(n_removed, n_cells)
     rate_difference = float(rates.max() - rates.min())
 
-    # Above two levels, stratification and an odds ratio stop being well defined,
-    # so fall back to the omnibus chi-square on the full contingency table.
     if len(levels) > 2:
         from scipy.stats import chi2_contingency
 
@@ -1103,9 +908,6 @@ def _test_cells(
             subset=subset,
         )
 
-    # With two levels and a blocking factor, stratify. Donor quality varies far
-    # more than QC thresholds do, and donors are rarely balanced across arms, so
-    # the pooled table can show an association no donor exhibits.
     if block is not None:
         stratified = _mantel_haenszel(levels=levels, labels=labels, removed=removed, block=block)
         if stratified is not None:
@@ -1125,7 +927,6 @@ def _test_cells(
                 subset=subset,
             )
 
-    # Otherwise test the pooled two-by-two table exactly.
     from scipy.stats import fisher_exact
 
     odds_ratio, p_value = fisher_exact(
@@ -1156,14 +957,7 @@ def _mantel_haenszel(
     removed: pd.Series,
     block: pd.Series,
 ) -> tuple[float, float, int] | None:
-    """
-    Run the Cochran-Mantel-Haenszel test of removal against a two-level factor.
-
-    Implemented directly rather than through a table object, because the whole
-    procedure is two sums and the formulae are worth having in front of the
-    reader. Per stratum ``i`` with removals ``a_i`` in the first level, the
-    statistic compares the observed total to its null expectation, continuity
-    corrected, and is chi-square on one degree of freedom.
+    """Run the Cochran-Mantel-Haenszel test of removal against a two-level factor.
 
     Args:
         levels: The two factor levels, in record order.
@@ -1177,7 +971,6 @@ def _mantel_haenszel(
         stratification to buy and the caller should test the pooled table.
     """
 
-    # Accumulate the four MH sums across strata.
     observed = 0.0
     expected = 0.0
     variance = 0.0
@@ -1185,14 +978,11 @@ def _mantel_haenszel(
     denominator = 0.0
     n_strata = 0
 
-    # Walk the strata in sorted order for reproducibility.
     for stratum in sorted(block.dropna().unique()):
-        # Restrict to this stratum.
         in_stratum = block == stratum
         stratum_labels = labels[in_stratum]
         stratum_removed = removed[in_stratum]
 
-        # Build the 2x2 table: rows are the levels, columns removed/kept.
         first = stratum_labels == levels[0]
         second = stratum_labels == levels[1]
         a = float(stratum_removed[first].sum())
@@ -1201,36 +991,25 @@ def _mantel_haenszel(
         d = float(second.sum() - c)
         total = a + b + c + d
 
-        # Skip strata that carry no information: a stratum missing either level,
-        # or in which nothing (or everything) was removed, contributes zero to
-        # both the numerator and the variance.
         if total < 2 or (a + b) == 0 or (c + d) == 0 or (a + c) == 0 or (b + d) == 0:
             continue
 
-        # Accumulate the observed count, its null expectation, and its
-        # hypergeometric variance.
         observed += a
         expected += (a + b) * (a + c) / total
         variance += (a + b) * (c + d) * (a + c) * (b + d) / (total**2 * (total - 1.0))
 
-        # Accumulate the Mantel-Haenszel odds-ratio sums.
         numerator += a * d / total
         denominator += b * c / total
         n_strata += 1
 
-    # Decline when stratification has nothing to work with.
     if n_strata < 2 or variance <= 0:
         return None
 
-    # Apply the continuity correction, which keeps the test conservative on the
-    # small strata a per-donor design produces.
     from scipy.stats import chi2
 
     statistic = max(abs(observed - expected) - 0.5, 0.0) ** 2 / variance
     p_value = float(chi2.sf(statistic, df=1))
 
-    # Report the pooled odds ratio, or infinity when no stratum has a discordant
-    # pair in the denominator.
     odds_ratio = float(numerator / denominator) if denominator > 0 else float("inf")
     return odds_ratio, p_value, n_strata
 
@@ -1244,14 +1023,8 @@ def _test_blocks(
     block: pd.Series,
     subset: str | None = None,
 ) -> AttritionTest:
-    """
-    Test the same association with the blocking unit, usually the donor, as the
+    """Test the same association with the blocking unit, usually the donor, as the
     unit of analysis.
-
-    One removal rate per (block, level), paired within block. This is the test
-    whose n is the number of donors rather than the number of cells, and so the
-    only one of the three whose p-value is not inflated by within-donor
-    correlation.
 
     Args:
         factor: Design factor.
@@ -1265,10 +1038,8 @@ def _test_blocks(
         One block-level record, tested or skipped.
     """
 
-    # Count the cohort so a skipped record still carries numbers.
     levels, n_cells, n_removed = _level_counts(labels, removed)
 
-    # A paired test needs exactly two levels to pair.
     if len(levels) != 2:
         return _skipped(
             factor=factor,
@@ -1283,16 +1054,11 @@ def _test_blocks(
             subset=subset,
         )
 
-    # Build the per-block, per-level removal rate table.
     frame = pd.DataFrame({"block": block, "level": labels, "removed": removed.astype(float)})
     rates = frame.pivot_table(index="block", columns="level", values="removed", aggfunc="mean")
 
-    # Keep only blocks that contributed both levels, which are the only ones a
-    # paired test can use.
     paired = rates.dropna()
 
-    # Refuse a paired test that could not reach significance regardless of the
-    # data, rather than reporting its foregone non-significance.
     if len(paired) < MIN_PAIRED_BLOCKS:
         return _skipped(
             factor=factor,
@@ -1309,12 +1075,8 @@ def _test_blocks(
             subset=subset,
         )
 
-    # Take the per-block mean rate for each level, which is what the paired test
-    # actually compares -- deliberately not the pooled cell rate, which weights
-    # by block size.
     mean_rates = np.array([float(paired[level].mean()) for level in levels], dtype=float)
 
-    # Run the exact paired test, unless every block moved by exactly zero.
     differences = paired[levels[0]].to_numpy() - paired[levels[1]].to_numpy()
     if not np.any(differences != 0):
         return _skipped(
@@ -1332,9 +1094,6 @@ def _test_blocks(
 
     result = wilcoxon(differences)
 
-    # Report the block-level record. n_cells and n_removed stay in cells so the
-    # row remains readable next to the cell-level one; removal_rate is the
-    # per-block mean, which is the quantity actually tested.
     return AttritionTest(
         factor=factor,
         unit=unit,
@@ -1352,22 +1111,11 @@ def _test_blocks(
 
 @dataclass(frozen=True)
 class _ContrastRelation:
-    """
-    How one design factor stands to the factor the analysis contrasts.
+    """How one design factor stands to the factor the analysis contrasts."""
 
-    This exists to answer a single question about a significant attrition gap: can
-    it move the comparison the study is actually making? For the contrast itself
-    the answer is yes by definition. For anything else it depends on whether the
-    factor's levels are crossed with the contrast or nested inside it, and the two
-    cases deserve opposite wording.
-    """
-
-    # Store the factor this describes and what it was compared against.
     factor: str
     contrast: str | None
 
-    # Store how many of the factor's levels lie entirely within one contrast
-    # level, out of how many levels it has. Both zero when there is no contrast.
     n_pure: int
     n_levels: int
 
@@ -1378,13 +1126,7 @@ class _ContrastRelation:
 
     @property
     def is_crossed(self) -> bool:
-        """
-        Whether every level spans more than one contrast level.
-
-        A fully crossed factor cannot carry the contrast: each of its levels
-        contributes cells to both arms, so losing cells unevenly between levels is
-        uneven capture quality and not a shift between the arms being compared.
-        """
+        """Whether every level spans more than one contrast level."""
         return (
             self.contrast is not None
             and not self.is_contrast
@@ -1400,8 +1142,7 @@ def _classify_against_contrast(
     contrast: str | None,
     contrast_labels: pd.Series | None,
 ) -> _ContrastRelation:
-    """
-    Measure whether a factor's levels are crossed with the contrast or nested in it.
+    """Measure whether a factor's levels are crossed with the contrast or nested in it.
 
     Args:
         factor: The factor being audited.
@@ -1415,13 +1156,9 @@ def _classify_against_contrast(
         nothing to cross a factor against but another factor.
     """
 
-    # Return early when there is nothing to compare against.
     if contrast is None or contrast_labels is None or factor == contrast:
         return _ContrastRelation(factor=factor, contrast=contrast, n_pure=0, n_levels=0)
 
-    # Count, per level of the factor, how many contrast levels it contains. A level
-    # holding exactly one is "pure": every cell in it belongs to one arm, so the
-    # level is nested inside the contrast and its attrition is that arm's attrition.
     spans = contrast_labels.groupby(labels, observed=True).nunique()
     return _ContrastRelation(
         factor=factor,
@@ -1439,8 +1176,7 @@ def _describe_imbalance(
     min_rate_difference: float,
     relation: _ContrastRelation | None = None,
 ) -> str | None:
-    """
-    Build the warning for a factor whose attrition is materially unbalanced.
+    """Build the warning for a factor whose attrition is materially unbalanced.
 
     Args:
         cell_record: The cell-level record for this factor.
@@ -1456,27 +1192,19 @@ def _describe_imbalance(
         One warning message, or None when there is nothing to warn about.
     """
 
-    # Gather the records that produced a p-value.
     tested = [record for record in (cell_record, paired_record) if record is not None]
 
-    # Require a significant result somewhere.
     if not any(record.is_significant(alpha) for record in tested):
         return None
 
-    # Require the gap to be large enough to act on. Significance alone is reached
-    # by noise once there are tens of thousands of cells.
     difference = cell_record.rate_difference
     if difference is None or difference < min_rate_difference:
         return None
 
-    # Name the levels that bound the gap, worst first.
     rates = dict(zip(cell_record.levels, cell_record.removal_rate, strict=True))
     ordered = sorted(rates, key=lambda level: rates[level], reverse=True)
     worst, best = ordered[0], ordered[-1]
 
-    # Summarise each test that ran, naming its unit of analysis and saying plainly
-    # which p-value is being quoted. A reader who cannot tell an adjusted value
-    # from a raw one cannot tell how much the subset pass corrected for.
     def quote(record: AttritionTest) -> str:
         statistic = (
             f"p={record.p_value:.3g}"
@@ -1488,14 +1216,8 @@ def _describe_imbalance(
 
     evidence = "; ".join(quote(record) for record in tested if record.p_value is not None)
 
-    # Name the population, so a subset warning cannot be read as a cohort one.
     where = "" if cell_record.subset is None else f" within '{cell_record.subset}'"
 
-    # Say what the gap MEANS for the comparison the study is making, which is not
-    # the same sentence for every factor. A cohort of a dozen captures of differing
-    # quality always has a significant best-to-worst attrition gap, so wording that
-    # calls every such gap a confounder fires on every real dataset and teaches a
-    # reader to skip the one warning that matters.
     if relation is not None and relation.is_crossed:
         consequence = (
             f"All {relation.n_levels} levels of '{cell_record.factor}' contain cells from "
@@ -1524,7 +1246,6 @@ def _describe_imbalance(
             "the methods either way."
         )
 
-    # Return the assembled message.
     return (
         f"Differential attrition by '{cell_record.factor}'{where}: QC removed "
         f"{100 * rates[worst]:.1f}% of '{worst}' cells but {100 * rates[best]:.1f}% of "

@@ -25,18 +25,16 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.qc._annotate import (
-    annotate_adata_with_qc_metrics,
-    build_qc_figure_adata,
-    build_qc_output_adata,
-)
-from cellquorum.stages.qc._report import (
-    resolve_publication_qc_keys,
-)
 from cellquorum.stages.qc.artifacts import write_qc_artifacts
 from cellquorum.stages.qc.config import QCConfig
 from cellquorum.stages.qc.floors import apply_floors
 from cellquorum.stages.qc.metrics import calculate_qc_metrics
+from cellquorum.stages.qc.reporting import (
+    annotate_adata_with_qc_metrics,
+    build_qc_figure_adata,
+    build_qc_output_adata,
+    resolve_publication_qc_keys,
+)
 
 
 def _cohort_adata(n_cells=90, n_genes=40):

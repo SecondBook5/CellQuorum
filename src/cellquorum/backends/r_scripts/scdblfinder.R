@@ -1,6 +1,6 @@
 # Read a genes-x-cells Matrix Market file, run scDblFinder, write per-cell
 # score AND scDblFinder's own singlet/doublet class call.
-# Usage: Rscript scdblfinder.R <counts.mtx> <out.csv> <seed> [samples.csv] [threads]
+# Usage: Rscript scdblfinder.R <counts.mtx> <out.csv> <seed> [samples.csv] [threads] [expected_rate]
 #
 # The optional 4th argument is a one-column CSV (header `sample`) with one row
 # per cell, in the same order as the matrix columns. When given it is passed to
@@ -17,6 +17,11 @@ args <- commandArgs(trailingOnly = TRUE)
 mtx_path <- args[1]; out_path <- args[2]; seed <- as.integer(args[3])
 samples_path <- if (length(args) >= 4 && nzchar(args[4])) args[4] else NULL
 threads <- if (length(args) >= 5 && nzchar(args[5])) as.integer(args[5]) else 1L
+expected_rate <- if (length(args) >= 6 && nzchar(args[6])) as.numeric(args[6]) else NULL
+if (!is.null(expected_rate) &&
+    (!is.finite(expected_rate) || expected_rate < 0 || expected_rate > 1)) {
+  stop("expected_rate must be a finite fraction between zero and one")
+}
 set.seed(seed)
 counts <- as(Matrix::readMM(mtx_path), "CsparseMatrix")   # genes x cells
 sce <- SingleCellExperiment(assays = list(counts = counts))
@@ -53,10 +58,9 @@ bpparam <- if (threads > 1L) {
 } else {
   BiocParallel::SerialParam(RNGseed = seed)
 }
-sce <- scDblFinder(sce, samples = samples, BPPARAM = bpparam)
+sce <- scDblFinder(sce, samples = samples, dbr = expected_rate, BPPARAM = bpparam)
 
-# Back to input order, and refuse to write a short table: the Python adapter
-# assigns these rows to cells positionally.
+# Restore input order. Export IDs so Python can independently verify alignment.
 if (ncol(sce) != n_cells_in) {
   stop(sprintf("scDblFinder returned %d of %d cells", ncol(sce), n_cells_in))
 }
@@ -67,6 +71,7 @@ sce <- sce[, order(as.integer(colnames(sce)))]
 # than re-thresholding the score at an arbitrary cut.
 write.csv(
   data.frame(
+    cell_id = colnames(sce),
     score = sce$scDblFinder.score,
     class = as.character(sce$scDblFinder.class)
   ),

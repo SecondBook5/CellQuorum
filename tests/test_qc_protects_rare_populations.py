@@ -29,14 +29,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.qc.evidence import AdjudicationPolicy, QCStateInitial, adjudicate_initial
+from cellquorum.stages.qc.evidence import (
+    AdjudicationPolicy,
+    QCStateInitial,
+    adjudicate_initial,
+    build_evidence_table,
+)
 from cellquorum.stages.qc.lineage import (
     UNASSIGNED,
     audit_lineages,
     provisional_lineages,
     resolve_null_groups,
 )
-from cellquorum.stages.qc.producers import build_evidence_table
 
 #: The production-calibrated policy from QCGradedConfig, not a test-bench one. Using the real
 #: bars is the point: the defect was reachable with the shipped configuration.

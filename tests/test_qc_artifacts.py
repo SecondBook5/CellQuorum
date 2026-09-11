@@ -283,7 +283,7 @@ def test_write_dataframe_artifact_writes_csv_atomically(tmp_path: Path) -> None:
     assert path.exists()
 
     # Confirm the temporary path was removed.
-    assert not build_temp_path(path).exists()
+    assert not list(path.parent.glob(f".{path.name}.*.tmp"))
 
     # Read the CSV back.
     observed = pd.read_csv(path, index_col=0)
@@ -333,7 +333,7 @@ def test_write_json_artifact_writes_sorted_json(tmp_path: Path) -> None:
     assert written_path == path
 
     # Confirm the temporary path was removed.
-    assert not build_temp_path(path).exists()
+    assert not list(path.parent.glob(f".{path.name}.*.tmp"))
 
     # Read the JSON payload back.
     observed = json.loads(path.read_text(encoding="utf-8"))
@@ -933,7 +933,10 @@ def test_build_temp_path_creates_hidden_sibling_path(tmp_path: Path) -> None:
     temp_path = build_temp_path(path)
 
     # Confirm the temp path is a hidden sibling.
-    assert temp_path == tmp_path / ".artifact.csv.tmp"
+    assert temp_path.parent == tmp_path
+    assert temp_path.name.startswith(".artifact.csv.")
+    assert temp_path.suffix == ".tmp"
+    assert temp_path != build_temp_path(path)
 
 
 def test_cleanup_temp_path_removes_existing_temp_file(tmp_path: Path) -> None:
@@ -1093,3 +1096,60 @@ def test_write_qc_artifacts_skips_figures_without_adata(tmp_path: Path) -> None:
 
     # Confirm a clear warning was emitted.
     assert any("no AnnData was provided" in warning for warning in manifest.warnings)
+
+
+def test_failed_csv_write_preserves_previous_result(tmp_path, monkeypatch):
+    path = tmp_path / "result.csv"
+    path.write_text("previous complete result\n", encoding="utf-8")
+
+    def partial_write(self, destination, **kwargs):
+        Path(destination).write_text("incomplete", encoding="utf-8")
+        raise OSError("disk write failed")
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", partial_write)
+    with pytest.raises(QCArtifactError, match="Failed to write QC table"):
+        write_dataframe_artifact(pd.DataFrame({"value": [1]}), path, index=False)
+    assert path.read_text(encoding="utf-8") == "previous complete result\n"
+    assert not list(tmp_path.glob(".result.csv.*.tmp"))
+
+
+def test_concurrent_csv_writers_use_independent_temporary_files(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    path = tmp_path / "result.csv"
+    barrier = Barrier(2)
+    original = pd.DataFrame.to_csv
+
+    def synchronized_write(self, destination, **kwargs):
+        original(self, destination, **kwargs)
+        barrier.wait(timeout=10)
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", synchronized_write)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                write_dataframe_artifact, pd.DataFrame({"value": [value]}), path, index=False
+            )
+            for value in (1, 2)
+        ]
+        assert [future.result() for future in futures] == [path, path]
+    assert pd.read_csv(path).value.tolist() in ([1], [2])
+    assert not list(tmp_path.glob(".result.csv.*.tmp"))
+
+
+def test_failed_json_replacement_preserves_previous_result(tmp_path, monkeypatch):
+    path = tmp_path / "summary.json"
+    path.write_text('{"complete": true}\n', encoding="utf-8")
+    original_replace = Path.replace
+
+    def failed_replace(source, target):
+        if Path(target) == path:
+            raise OSError("replacement denied")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", failed_replace)
+    with pytest.raises(QCArtifactError, match="Failed to write QC JSON"):
+        write_json_artifact({"complete": False}, path)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"complete": True}
+    assert not list(tmp_path.glob(".summary.json.*.tmp"))

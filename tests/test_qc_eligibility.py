@@ -20,6 +20,28 @@ from cellquorum.stages.qc.eligibility import (
 )
 from cellquorum.stages.qc.evidence import QCStateInitial
 
+
+@pytest.mark.parametrize("state", ["quarantine", "borderline"])
+def test_zero_eligible_cells_still_write_an_explicit_fit_mask(state):
+    from cellquorum.core.exceptions import CellQuorumDataError
+    from cellquorum.stages.qc.eligibility import fitting_cells
+
+    masks = build_eligibility_masks(pd.Series([state, state], index=["a", "b"]))
+    obs = masks.to_obs_frame()
+    assert "qc_fit_manifold" in obs
+    assert not obs["qc_fit_manifold"].any()
+    with pytest.raises(CellQuorumDataError, match="permits no cells"):
+        fitting_cells(obs)
+
+
+def test_recorded_qc_state_requires_its_fit_mask():
+    from cellquorum.core.exceptions import CellQuorumDataError
+    from cellquorum.stages.qc.eligibility import fitting_cells
+
+    with pytest.raises(CellQuorumDataError, match="fitting mask.*missing"):
+        fitting_cells(pd.DataFrame({"qc_state_initial": ["quarantine"]}))
+
+
 CELLS = pd.Index(["core_a", "core_b", "borderline_a", "borderline_b", "quarantine_a"])
 STATE = pd.Series(
     [

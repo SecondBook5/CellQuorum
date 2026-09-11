@@ -35,85 +35,61 @@ interpreter and a Bioconductor tree in the critical path of every pipeline.
 
 from __future__ import annotations
 
-# Import Iterator for the group-iteration helper.
 from collections.abc import Iterator
-
-# Import dataclass helpers for structured model records.
 from dataclasses import dataclass, field
 
-# Import NumPy for the expectation-maximisation numerics.
 import numpy as np
-
-# Import numpy typing so the position arrays used with `.iloc` are typed as integer arrays.
 import numpy.typing as npt
-
-# Import pandas for metric table handling.
 import pandas as pd
 
-# Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
-
-# Import the mixture configuration model.
 from cellquorum.stages.qc.config import QCMitoMixtureConfig
 
-# Name the derived per-cell metric column this module contributes.
-#
-# It is a real column in the persisted cell metric table, not a transient, so a
-# finished run can be re-decided later without refitting the model, and so a
-# reviewer can see the probability attached to every individual cell.
 MIQC_PROBABILITY_COLUMN = "miqc_prob_compromised"
 
-# Name the derived column holding the model's UN-HARDENED posterior.
-#
-# Published for the record and never thresholded. The column above has had the
-# two post-processing rules folded into it as 0.0 and 1.0 values, and under
-# projection is a step function of mitochondrial percentage, so it cannot show
-# what the mixture actually believed about a cell. This one can: it is the only
-# column that still varies with library complexity, which is the entire reason
-# for preferring a mixture model to a ceiling in the first place.
+
+# Published for the record and never thresholded. MIQC_PROBABILITY_COLUMN has had the
+# two post-processing rules folded into it as 0.0 and 1.0 values, and under projection is
+# a step function of mitochondrial percentage, so it cannot show what the mixture actually
+# believed about a cell. This one can: it is the only column that still varies with
+# library complexity, which is the entire reason for preferring a mixture model to a
+# ceiling in the first place.
 MIQC_POSTERIOR_COLUMN = "miqc_posterior_compromised"
 
-# Name the decision-table rule that thresholds the column above.
+
 MIQC_RULE_NAME = "mixture_mito_compromised"
 
-# Name the decision-table rule that applies a projected mitochondrial ceiling.
+
 MIQC_CEILING_RULE_NAME = "mixture_max_mito_percent"
 
-# Set the share of a group's cells that may be decided differently by the
-# projected ceiling than by the model itself before the projection is reported as
-# unfaithful.
-#
-# A faithful projection disagrees with the model on almost nothing, because the
-# model's decision is already essentially a mitochondrial cut. A large
-# disagreement is the diagnostic that matters: it means the mixture separated
-# that group on library complexity instead, so the ceiling is a poor summary AND
-# the underlying fit was not measuring viability. Two percent is a reporting
-# level, not a decision threshold -- nothing changes when it is crossed except
-# that a warning is emitted.
+
+# Share of a group's cells that may be decided differently by the projected ceiling than
+# by the model itself before the projection is reported as unfaithful. A faithful
+# projection disagrees with the model on almost nothing, because the model's decision is
+# already essentially a mitochondrial cut. A large disagreement means the mixture
+# separated that group on library complexity instead, so the ceiling is a poor summary AND
+# the underlying fit was not measuring viability. This is a reporting level, not a decision
+# threshold -- nothing changes when it is crossed except that a warning is emitted.
 PROJECTION_WARN_DISAGREEMENT = 0.02
 
-# Set the number of mixture components. The model is two-component by
-# construction -- intact and compromised -- so this is a readability constant,
-# not a tunable.
+
 N_COMPONENTS = 2
 
 
 class QCMixtureError(CellQuorumDataError):
-    """
-    Report mitochondrial mixture-model failures that cannot be worked around.
+    """Report mitochondrial mixture-model failures that cannot be worked around.
 
-    Fit failures are deliberately NOT routed here. A model that will not converge
-    is reported as a warning and the affected cells are kept, because deleting a
-    sample's worth of data on the strength of a numerical failure is never the
-    right response. This exception is reserved for inputs that make the request
-    itself incoherent, such as a missing metric column.
+    Fit failures are deliberately NOT routed here. A model that will not converge is
+    reported as a warning and the affected cells are kept, because deleting a sample's
+    worth of data on the strength of a numerical failure is never the right response. This
+    exception is reserved for inputs that make the request itself incoherent, such as a
+    missing metric column.
     """
 
 
 @dataclass(frozen=True)
 class MitoMixtureModel:
-    """
-    Store one fitted two-component mixture, for one group of cells.
+    """Store one fitted two-component mixture, for one group of cells.
 
     Args:
         group: Group label the model was fit on, or ``"all"`` when pooled.
@@ -159,9 +135,6 @@ class MitoMixtureModel:
     intact_slope: float
     n_compromised: int
 
-    # Store the per-component residual variances. Without these the recorded
-    # model cannot reproduce its own posterior, so a reader can see the two
-    # regression lines but not the boundary between them.
     compromised_variance: float = 0.0
     intact_variance: float = 0.0
     n_raw_compromised: int = 0
@@ -172,14 +145,12 @@ class MitoMixtureModel:
     fallback: str | None = None
 
     def to_dict(self) -> dict[str, object]:
-        """
-        Convert the model record into a JSON-friendly dictionary.
+        """Convert the model record into a JSON-friendly dictionary.
 
         Returns:
             Dictionary representation of the fitted model.
         """
 
-        # Return a flat payload suitable for a table row or JSON summary.
         return {
             "group": self.group,
             "n_cells": self.n_cells,
@@ -205,14 +176,7 @@ class MitoMixtureModel:
 
 @dataclass(frozen=True)
 class MitoCeiling:
-    """
-    Store the mitochondrial ceiling one group's fitted model reduces to.
-
-    The ceiling is the mitochondrial percentage that best reproduces the model's
-    own keep/discard calls for the group, so it is derived from the fit rather
-    than chosen. It is the number worth reporting: a reviewer can check "LEC were
-    filtered above 5.7% mitochondrial reads" in a way they cannot check a
-    posterior probability.
+    """Store the mitochondrial ceiling one group's fitted model reduces to.
 
     Args:
         groupby_columns: Columns defining the group, empty when pooled.
@@ -236,14 +200,12 @@ class MitoCeiling:
     disagreement_fraction: float
 
     def to_dict(self) -> dict[str, object]:
-        """
-        Convert the ceiling record into a JSON-friendly dictionary.
+        """Convert the ceiling record into a JSON-friendly dictionary.
 
         Returns:
             Dictionary representation of the projected ceiling.
         """
 
-        # Return a flat payload suitable for a table row or JSON summary.
         return {
             "group": self.group,
             "groupby_columns": list(self.groupby_columns),
@@ -258,8 +220,7 @@ class MitoCeiling:
 
 @dataclass(frozen=True)
 class MitoMixtureResult:
-    """
-    Store per-cell compromised probabilities and the models that produced them.
+    """Store per-cell compromised probabilities and the models that produced them.
 
     Args:
         probabilities: Adjusted probability of being compromised, per cell. This
@@ -279,22 +240,18 @@ class MitoMixtureResult:
 
     probabilities: pd.Series
 
-    # Store the un-hardened per-cell posteriors. Defaults to empty so a
-    # hand-constructed result stays valid.
     posterior: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     models: list[MitoMixtureModel] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     ceilings: list[MitoCeiling] = field(default_factory=list)
 
     def ceilings_to_dataframe(self) -> pd.DataFrame:
-        """
-        Convert the projected ceiling records into a table.
+        """Convert the projected ceiling records into a table.
 
         Returns:
             One row per projected group, with an explicit schema when empty.
         """
 
-        # Return a schema-aware empty table when no projection was performed.
         if not self.ceilings:
             return pd.DataFrame(
                 columns=[
@@ -309,18 +266,15 @@ class MitoMixtureResult:
                 ]
             )
 
-        # Return one row per projected group.
         return pd.DataFrame([ceiling.to_dict() for ceiling in self.ceilings])
 
     def to_dataframe(self) -> pd.DataFrame:
-        """
-        Convert the fitted model records into a table.
+        """Convert the fitted model records into a table.
 
         Returns:
             One row per group, with an explicit schema when no group was fit.
         """
 
-        # Return a schema-aware empty table when nothing was fit.
         if not self.models:
             return pd.DataFrame(
                 columns=[
@@ -346,14 +300,12 @@ class MitoMixtureResult:
                 ]
             )
 
-        # Return one row per fitted group.
         return pd.DataFrame([model.to_dict() for model in self.models])
 
 
 @dataclass(frozen=True)
 class _ComponentFit:
-    """
-    Store the raw output of one expectation-maximisation run.
+    """Store the raw output of one expectation-maximisation run.
 
     Args:
         coefficients: Per-component intercept and slope, shape (2, 2).
@@ -378,8 +330,7 @@ def fit_mito_mixture(
     cell_metrics: pd.DataFrame,
     config: QCMitoMixtureConfig,
 ) -> MitoMixtureResult:
-    """
-    Fit the miQC mixture model and return a compromised probability per cell.
+    """Fit the miQC mixture model and return a compromised probability per cell.
 
     The returned probability is *adjusted*: the two post-processing rules of miQC
     (``keep_all_below_boundary`` and ``enforce_left_cutoff``) are folded into it as
@@ -418,9 +369,6 @@ def fit_mito_mixture(
         QCMixtureError: If a required metric column is absent.
     """
 
-    # Validate that both modelled metrics are present, since neither has a
-    # sensible substitute and proceeding without them would silently disable the
-    # policy the config asked for.
     missing = [
         column
         for column in (config.mito_metric, config.complexity_metric)
@@ -433,28 +381,16 @@ def fit_mito_mixture(
             f"{sorted(cell_metrics.columns)[:10]}..."
         )
 
-    # Initialize the per-cell output at 0.0, so any cell that never receives a
-    # model is kept rather than dropped.
     probabilities = pd.Series(0.0, index=cell_metrics.index, dtype=float)
 
-    # Initialize the un-hardened posteriors alongside them. This is the model's
-    # own verdict, and it is the only version of the filter that can be plotted
-    # against complexity to show WHY a cell was cut; ``probabilities`` has been
-    # hardened to 0.0 and 1.0 by then, and after projection is a step function of
-    # mitochondrial percentage alone.
     posterior = pd.Series(0.0, index=cell_metrics.index, dtype=float)
 
-    # Initialize model records and warnings.
     models: list[MitoMixtureModel] = []
     warnings: list[str] = []
 
-    # Pull the two modelled metrics once, as arrays aligned to the table.
     mito = pd.to_numeric(cell_metrics[config.mito_metric], errors="coerce")
     complexity = pd.to_numeric(cell_metrics[config.complexity_metric], errors="coerce")
 
-    # Track which cells still need a model. Cells missing either metric are never
-    # eligible: they keep their 0.0 and stay subject to the fixed ceiling.
-    #
     # `copy=True` is required, not defensive. Under pandas 3 `.to_numpy()` returns a READ-ONLY
     # view of the Series' buffer, so the `pending[...] = False` that retires each fitted group
     # below raised `ValueError: assignment destination is read-only` — sixteen tests, one line.
@@ -462,24 +398,14 @@ def fit_mito_mixture(
     # developer environment may sit on 2.x, and the same code passes locally and fails there.
     pending = (np.isfinite(mito) & np.isfinite(complexity)).to_numpy(copy=True)
 
-    # Track the grouping the accepted models were actually fit at, which is what
-    # the projection below must group by. Defaults to the requested grouping so an
-    # all-unfittable dataset still reports one null ceiling per requested group.
     resolved_groupby = [column for column in config.groupby if column in cell_metrics.columns]
 
-    # Track which levels ended up scoring cells, to detect a mixed-level result.
     accepted_levels: set[int] = set()
 
-    # Walk the grouping hierarchy from most specific to least.
     for level, requested in enumerate([config.groupby, *config.fallback_groupby]):
-        # Stop as soon as every eligible cell has a model.
         if not pending.any():
             break
 
-        # Drop grouping columns the table does not carry. Pooling is a worse
-        # model, not a broken one, so a missing column is reported loudly rather
-        # than raised -- naming a column that some datasets lack should not make
-        # the whole policy unusable.
         groupby = [column for column in requested if column in cell_metrics.columns]
         if len(groupby) != len(requested):
             absent = [column for column in requested if column not in cell_metrics.columns]
@@ -491,7 +417,6 @@ def fit_mito_mixture(
                 "metadata before trusting the result."
             )
 
-        # Fit every group at this level without committing to any of it yet.
         fitted, unfittable = _fit_groups_at_level(
             cell_metrics,
             groupby=groupby,
@@ -502,11 +427,6 @@ def fit_mito_mixture(
             config=config,
         )
 
-        # Under the uniform policy a level is used only if EVERY group can be fit
-        # at it. Accepting the fittable ones and sending the rest to a coarser
-        # model is what makes the threshold vary with group size -- and therefore,
-        # in most cohorts, with the design factor. Discard the whole level and try
-        # the next instead.
         if unfittable and config.level_policy == "uniform":
             models.extend(outcome.model for outcome in unfittable)
             warnings.append(
@@ -519,10 +439,6 @@ def fit_mito_mixture(
             )
             continue
 
-        # Commit this level's successful fits.
-        # Positional array assignment is ordinary pandas, but the stubs only model a scalar or
-        # an indexed Series on the right-hand side, so both writes are ignored explicitly rather
-        # than by loosening the annotations that make `positions` an integer array.
         for outcome in fitted:
             probabilities.iloc[outcome.positions] = np.asarray(  # type: ignore[call-overload]
                 outcome.adjusted, dtype=float
@@ -536,18 +452,11 @@ def fit_mito_mixture(
             warnings.extend(outcome.warnings)
             accepted_levels.add(level)
 
-        # Record the groups that could not be fit, so their absence is explicit
-        # rather than a silent gap in the model table.
         models.extend(outcome.model for outcome in unfittable)
 
-        # Remember the grouping the committed models came from. Only meaningful
-        # under the uniform policy, which commits exactly one level; under
-        # per_group the finest requested grouping stays the reporting unit, since
-        # that is the level most cells were judged at.
         if fitted and config.level_policy == "uniform":
             resolved_groupby = groupby
 
-    # Report any cell left without a model, which is kept by construction.
     if pending.any():
         warnings.append(
             f"{int(pending.sum())} cell(s) received no mitochondrial mixture model "
@@ -556,7 +465,6 @@ def fit_mito_mixture(
             "mitochondrial ceiling. Add a coarser fallback_groupby to cover them."
         )
 
-    # Report a mixed-level result, which only the per_group policy can produce.
     if len(accepted_levels) > 1:
         warnings.append(
             f"Cells were judged by mitochondrial models fit at {len(accepted_levels)} "
@@ -567,8 +475,6 @@ def fit_mito_mixture(
             "audit before reporting these counts, or set level_policy='uniform'."
         )
 
-    # Reduce the fitted posteriors to one mitochondrial ceiling per group, unless
-    # the raw two-variable posterior was asked for explicitly.
     ceilings: list[MitoCeiling] = []
     if config.monotone_mito_projection:
         ceilings, probabilities, projection_warnings = _project_to_mito_ceilings(
@@ -580,7 +486,6 @@ def fit_mito_mixture(
         )
         warnings.extend(projection_warnings)
 
-    # Return the assembled result.
     return MitoMixtureResult(
         probabilities=probabilities,
         posterior=posterior,
@@ -592,12 +497,7 @@ def fit_mito_mixture(
 
 @dataclass(frozen=True)
 class _GroupOutcome:
-    """
-    Store one group's result at one grouping level, before it is committed.
-
-    The level's outcomes are assembled before any of them is applied, because
-    whether a level is used at all depends on how EVERY group fared at it -- see
-    ``level_policy`` in :class:`QCMitoMixtureConfig`.
+    """Store one group's result at one grouping level, before it is committed.
 
     Args:
         positions: Integer positions of the cells this outcome would score. Typed as an
@@ -628,11 +528,7 @@ def _fit_groups_at_level(
     complexity: pd.Series,
     config: QCMitoMixtureConfig,
 ) -> tuple[list[_GroupOutcome], list[_GroupOutcome]]:
-    """
-    Fit every group at one grouping level without applying any of the results.
-
-    Nothing is mutated. Separating the fitting from the committing is what lets
-    the caller reject a level wholesale, which is the uniform policy.
+    """Fit every group at one grouping level without applying any of the results.
 
     Args:
         cell_metrics: Cell-level QC metric table.
@@ -648,31 +544,21 @@ def _fit_groups_at_level(
         with no pending cells appear in neither.
     """
 
-    # Collect the two kinds of outcome separately.
     fitted: list[_GroupOutcome] = []
     unfittable: list[_GroupOutcome] = []
 
-    # Read the metric arrays once.
     mito_values = mito.to_numpy()
     complexity_values = complexity.to_numpy()
 
-    # Fit one model per group at this level.
     for group_label, _values, positions in _iterate_groups(cell_metrics, groupby):
-        # Select this group's cells that are still waiting for a model.
         assign_to = positions[pending[positions]]
 
-        # Skip groups with nothing to score: already handled at a finer level, or
-        # holding no cell with usable metrics. Neither is a fact about this level,
-        # so neither may count against it.
         if assign_to.size == 0:
             continue
 
-        # Estimate on every usable cell in the group, not just the waiting ones,
-        # so a fallback fit borrows all the strength available to it.
         usable = positions[np.isfinite(mito_values[positions])]
         usable = usable[np.isfinite(complexity_values[usable])]
 
-        # Defer groups too small to support a two-component fit.
         if usable.size < config.min_cells:
             unfittable.append(
                 _GroupOutcome(
@@ -689,14 +575,12 @@ def _fit_groups_at_level(
             )
             continue
 
-        # Fit the two-component mixture.
         fit = _fit_two_component_regression(
             complexity_values[usable],
             mito_values[usable],
             config=config,
         )
 
-        # Defer groups whose fit failed outright.
         if fit is None:
             unfittable.append(
                 _GroupOutcome(
@@ -713,13 +597,12 @@ def _fit_groups_at_level(
             )
             continue
 
-        # Identify which component describes the compromised cells. Following
-        # miQC, that is the component with the higher intercept: at equal library
-        # complexity a damaged cell carries the larger mitochondrial fraction.
+        # Identify which component describes the compromised cells. Following miQC, that
+        # is the component with the higher intercept: at equal library complexity a
+        # damaged cell carries the larger mitochondrial fraction.
         compromised = int(np.argmax(fit.coefficients[:, 0]))
         intact = 1 - compromised
 
-        # Score only the cells this level is responsible for.
         raw = fit.responsibilities[np.isin(usable, assign_to), compromised]
         hardening = _adjust_probabilities(
             raw=raw,
@@ -730,11 +613,8 @@ def _fit_groups_at_level(
         )
         adjusted = hardening.adjusted
 
-        # Collect the warnings that describe this particular fit.
         fit_warnings: list[str] = []
 
-        # Warn when the fit stopped on the iteration cap rather than the
-        # tolerance, since an unconverged fit is still being used.
         if not fit.converged:
             fit_warnings.append(
                 f"Mitochondrial mixture model for group '{group_label}' hit the "
@@ -742,10 +622,6 @@ def _fit_groups_at_level(
                 "parameters were used as-is."
             )
 
-        # Warn when the compromised component does not slope downwards. The
-        # model's whole justification is that mitochondrial fraction falls as
-        # complexity rises in damaged cells; a positive slope means the fit found
-        # two components that are not the two we are reasoning about.
         if fit.coefficients[compromised, 1] > 0:
             fit_warnings.append(
                 f"Mitochondrial mixture model for group '{group_label}' assigned "
@@ -755,7 +631,6 @@ def _fit_groups_at_level(
                 "trusting its filtering."
             )
 
-        # Record the fitted outcome.
         fitted.append(
             _GroupOutcome(
                 positions=assign_to,
@@ -785,7 +660,6 @@ def _fit_groups_at_level(
             )
         )
 
-    # Return both collections.
     return fitted, unfittable
 
 
@@ -796,8 +670,7 @@ def _describe_abandoned_level(
     unfittable: list[_GroupOutcome],
     has_next_level: bool,
 ) -> str:
-    """
-    Explain why a whole grouping level was discarded rather than partly used.
+    """Explain why a whole grouping level was discarded rather than partly used.
 
     Args:
         groupby: Grouping columns of the abandoned level.
@@ -809,15 +682,12 @@ def _describe_abandoned_level(
         One warning message naming the level, the blocking groups, and the reason.
     """
 
-    # Name the blocking groups and why each blocked, capped so one bad column
-    # cannot produce a warning nobody reads.
     blockers = "; ".join(
         f"{outcome.model.group}: {outcome.model.fallback}" for outcome in unfittable[:5]
     )
     if len(unfittable) > 5:
         blockers += f"; and {len(unfittable) - 5} more"
 
-    # Describe what happens next.
     consequence = (
         "so the whole dataset dropped to the next fallback_groupby level"
         if has_next_level
@@ -828,7 +698,6 @@ def _describe_abandoned_level(
         )
     )
 
-    # Return the assembled message.
     return (
         f"Mitochondrial mixture level {groupby or 'pooled'} could not fit "
         f"{len(unfittable)} of {n_groups} group(s) ({blockers}), {consequence}. "
@@ -845,22 +714,20 @@ def _project_to_mito_ceilings(
     groupby: list[str],
     config: QCMitoMixtureConfig,
 ) -> tuple[list[MitoCeiling], pd.Series, list[str]]:
-    """
-    Reduce each group's fitted posterior to a single mitochondrial ceiling.
+    """Reduce each group's fitted posterior to a single mitochondrial ceiling.
 
-    The posterior is a function of mitochondrial fraction *and* library
-    complexity, which means it can discard a cell at 1.7% mitochondrial reads
-    while keeping one at 2.5% -- it is then not a mitochondrial rule at all, but a
-    depth rule wearing one's clothes, and depth is already filtered separately.
-    Projecting removes that failure mode by construction: the rule becomes
-    "discard above X% mitochondrial reads", monotone in the metric it names.
+    The posterior is a function of mitochondrial fraction *and* library complexity, which
+    means it can discard a cell at 1.7% mitochondrial reads while keeping one at 2.5% -- it
+    is then not a mitochondrial rule at all, but a depth rule wearing one's clothes, and
+    depth is already filtered separately. Projecting removes that failure mode by
+    construction: the rule becomes "discard above X% mitochondrial reads", monotone in the
+    metric it names.
 
     The ceiling is the value that best reproduces the model's own calls, chosen by
-    minimising disagreement with them, with ties broken towards the larger
-    ceiling so the projection never removes more than the model asked for. The
-    minimising value is found in one pass over the sorted metric: for a candidate
-    ``t``, disagreement is ``2 * (removed at or below t) - (cells at or below t) +
-    (kept overall)``.
+    minimising disagreement with them, with ties broken towards the larger ceiling so the
+    projection never removes more than the model asked for. The minimising value is found
+    in one pass over the sorted metric: for a candidate ``t``, disagreement is
+    ``2 * (removed at or below t) - (cells at or below t) + (kept overall)``.
 
     Args:
         cell_metrics: Cell-level QC metric table.
@@ -876,30 +743,19 @@ def _project_to_mito_ceilings(
         Ceiling records, hardened per-cell probabilities, and warnings.
     """
 
-    # Work on arrays, and start from "keep everything" so any cell the projection
-    # cannot speak to stays kept.
     mito_values = mito.to_numpy(dtype=float)
     removed = probabilities.to_numpy(dtype=float) > config.posterior_cutoff
     projected = np.zeros(len(cell_metrics), dtype=float)
 
-    # Collect one ceiling record and any warnings per group.
     ceilings: list[MitoCeiling] = []
     warnings: list[str] = []
 
-    # Project each group independently.
     for group_label, values, positions in _iterate_groups(cell_metrics, groupby):
-        # Restrict to cells with a usable mitochondrial value. A cell without one
-        # cannot be placed relative to a ceiling, so it stays kept.
         usable = positions[np.isfinite(mito_values[positions])]
 
-        # Read this group's metric values and model calls.
         group_mito = mito_values[usable]
         group_removed = removed[usable]
 
-        # Record a null ceiling when the model flagged nothing, and filter
-        # nothing. This is the correct outcome for a group with no damaged
-        # population in it, and it is the outcome a two-component mixture cannot
-        # produce on its own -- the projection is what allows "no cut" to happen.
         if usable.size == 0 or not group_removed.any():
             ceilings.append(
                 MitoCeiling(
@@ -917,41 +773,28 @@ def _project_to_mito_ceilings(
             )
             continue
 
-        # Sort by the metric so candidate ceilings can be swept in one pass.
         order = np.argsort(group_mito, kind="stable")
         sorted_mito = group_mito[order]
         sorted_removed = group_removed[order]
 
-        # Count, for every position, how many cells lie at or below it and how
-        # many of those the model removed.
         cumulative_cells = np.arange(1, usable.size + 1, dtype=float)
         cumulative_removed = np.cumsum(sorted_removed, dtype=float)
 
-        # Score each candidate ceiling by how many cells it decides differently
-        # from the model.
         total_kept = float(usable.size) - float(sorted_removed.sum())
         disagreement = 2.0 * cumulative_removed - cumulative_cells + total_kept
 
-        # Restrict candidates to the last cell of each run of equal metric
-        # values, since a ceiling cannot split cells that share a value.
         last_of_value = np.append(np.diff(sorted_mito) > 0, True)
         candidates = np.flatnonzero(last_of_value)
 
-        # Take the minimising candidate, breaking ties towards the largest
-        # ceiling so the projection is never harsher than the model.
         reversed_scores = disagreement[candidates][::-1]
         best = candidates[len(candidates) - 1 - int(np.argmin(reversed_scores))]
         ceiling = float(sorted_mito[best])
 
-        # Apply the ceiling. The bound is inclusive, matching every other QC
-        # threshold: a cell fails only if it exceeds it.
         group_projected = group_mito > ceiling
         projected[usable] = group_projected.astype(float)
 
-        # Measure how faithfully the ceiling reproduces the model.
         n_disagreement = int((group_projected != group_removed).sum())
 
-        # Record the ceiling.
         ceilings.append(
             MitoCeiling(
                 groupby_columns=tuple(groupby),
@@ -965,8 +808,6 @@ def _project_to_mito_ceilings(
             )
         )
 
-        # Warn when the ceiling is a poor summary of the model, which means the
-        # model was not separating on mitochondrial content in this group.
         if n_disagreement / usable.size > PROJECTION_WARN_DISAGREEMENT:
             warnings.append(
                 f"Mitochondrial ceiling {ceiling:.4g}% for group '{group_label}' "
@@ -978,7 +819,6 @@ def _project_to_mito_ceilings(
                 "inspect the group directly."
             )
 
-    # Return the records, the hardened probabilities, and the warnings.
     return (
         ceilings,
         pd.Series(projected, index=cell_metrics.index, dtype=float),
@@ -989,12 +829,7 @@ def _project_to_mito_ceilings(
 def _iterate_groups(
     cell_metrics: pd.DataFrame, groupby: list[str]
 ) -> Iterator[tuple[str, tuple[str, ...], np.ndarray]]:
-    """
-    Iterate over fitting groups as (label, values, positional index) triples.
-
-    Positions are yielded rather than index labels because the fit works on NumPy
-    arrays and writes results back by position, and because a metric table with
-    duplicate observation names would make label-based assignment ambiguous.
+    """Iterate over fitting groups as (label, values, positional index) triples.
 
     Args:
         cell_metrics: Cell-level QC metric table.
@@ -1005,22 +840,15 @@ def _iterate_groups(
         that group's cells.
     """
 
-    # Yield every cell as one pooled group when no grouping is requested.
     if not groupby:
         yield "all", (), np.arange(len(cell_metrics))
         return
 
-    # Group once and read the positional indices pandas already computed.
     grouped = cell_metrics.groupby(groupby, observed=True, sort=True)
 
-    # Yield one group per distinct combination of the grouping columns.
     for key, positions in grouped.indices.items():
-        # Normalize scalar and tuple keys to a tuple of strings.
         values = tuple(str(part) for part in key) if isinstance(key, tuple) else (str(key),)
 
-        # Yield the label, the group values, and this group's positions in
-        # ascending order, which the caller relies on to align a fitted subset
-        # back to its cells.
         yield "|".join(values), values, np.sort(np.asarray(positions, dtype=int))
 
 
@@ -1032,8 +860,7 @@ def _unfiltered_model(
     level: int,
     n_assigned: int,
 ) -> MitoMixtureModel:
-    """
-    Build a model record for a group that could not be fit at this level.
+    """Build a model record for a group that could not be fit at this level.
 
     Args:
         group: Group label.
@@ -1046,8 +873,6 @@ def _unfiltered_model(
         Model record with NaN parameters and the reason recorded.
     """
 
-    # Return a record that makes the absence of a fit explicit rather than
-    # letting a group silently vanish from the model table.
     return MitoMixtureModel(
         group=group,
         n_cells=n_cells,
@@ -1068,13 +893,7 @@ def _unfiltered_model(
 
 @dataclass(frozen=True)
 class _HardeningOutcome:
-    """
-    Store the effect of the two post-processing rules on one group's posteriors.
-
-    The counts exist so a reader can separate the model's own verdict from the
-    policy layered on top of it. Those are different claims -- "the mixture says
-    these cells are damaged" and "our rule says discard them anyway" -- and only
-    the first is a statement about the data.
+    """Store the effect of the two post-processing rules on one group's posteriors.
 
     Args:
         adjusted: Adjusted probabilities, 0.0 forcing keep and 1.0 forcing removal.
@@ -1097,8 +916,7 @@ def _adjust_probabilities(
     intact_coefficients: np.ndarray,
     config: QCMitoMixtureConfig,
 ) -> _HardeningOutcome:
-    """
-    Apply the two miQC post-processing rules to raw posterior probabilities.
+    """Apply the two miQC post-processing rules to raw posterior probabilities.
 
     Args:
         raw: Posterior probability of the compromised component, per cell.
@@ -1112,50 +930,42 @@ def _adjust_probabilities(
         each rule moved.
     """
 
-    # Copy the raw posteriors so the caller's array is untouched.
     adjusted = np.asarray(raw, dtype=float).copy()
 
-    # Record the model's own verdict before any rule touches it.
     discarded_raw = adjusted > config.posterior_cutoff
     n_raw_compromised = int(discarded_raw.sum())
     n_rescued = 0
     n_swept = 0
 
-    # Keep every cell sitting below the intact population's own trend line.
-    #
-    # Without this, a cell can be assigned to the compromised component purely
-    # because it is far out along the complexity axis, even though its
-    # mitochondrial fraction is lower than the healthy model predicts for it.
-    # Nothing about such a cell is damaged.
+    # Keep every cell sitting below the intact population's own trend line. Without this,
+    # a cell can be assigned to the compromised component purely because it is far out
+    # along the complexity axis, even though its mitochondrial fraction is lower than the
+    # healthy model predicts for it. Nothing about such a cell is damaged.
     if config.keep_all_below_boundary:
         boundary = intact_coefficients[0] + intact_coefficients[1] * complexity
         below = mito < boundary
         n_rescued = int((discarded_raw & below).sum())
         adjusted[below] = 0.0
 
-    # Enforce monotonicity in the discard region.
-    #
-    # Having decided to discard some cell, it is incoherent to keep another cell
-    # that is BOTH shallower and higher in mitochondrial fraction. This finds the
-    # lowest mitochondrial percentage among the discarded cells and discards
-    # everything at or above it that is no more complex.
+    # Enforce monotonicity in the discard region. Having decided to discard some cell, it
+    # is incoherent to keep another cell that is BOTH shallower and higher in mitochondrial
+    # fraction. This finds the lowest mitochondrial percentage among the discarded cells
+    # and discards everything at or above it that is no more complex.
     if config.enforce_left_cutoff:
         discarded = adjusted > config.posterior_cutoff
         if bool(discarded.any()):
             # Find the lowest mitochondrial percentage that is being discarded.
             min_discarded_mito = float(mito[discarded].min())
 
-            # Take the least complex of the cells tied at that percentage, which
-            # extends the discard region as little as possible.
+            # Take the least complex of the cells tied at that percentage, which extends
+            # the discard region as little as possible.
             tied = discarded & (mito == min_discarded_mito)
             complexity_cutoff = float(complexity[tied].min())
 
-            # Discard everything no more complex and no less mitochondrial.
             swept = (complexity <= complexity_cutoff) & (mito >= min_discarded_mito)
             n_swept = int((swept & ~discarded).sum())
             adjusted[swept] = 1.0
 
-    # Return the adjusted probabilities and what each rule cost.
     return _HardeningOutcome(
         adjusted=adjusted,
         n_raw_compromised=n_raw_compromised,
@@ -1170,13 +980,7 @@ def _fit_two_component_regression(
     *,
     config: QCMitoMixtureConfig,
 ) -> _ComponentFit | None:
-    """
-    Fit a two-component mixture of linear regressions by expectation-maximisation.
-
-    Several restarts are run and the highest-likelihood fit is kept, because the
-    likelihood surface of a regression mixture is multimodal. The first restart is
-    deterministic and structure-aware, so the common case does not depend on the
-    random seed at all; the rest are seeded, so the whole procedure is reproducible.
+    """Fit a two-component mixture of linear regressions by expectation-maximisation.
 
     Args:
         complexity: Library complexity per cell, the regression predictor.
@@ -1187,30 +991,20 @@ def _fit_two_component_regression(
         The best fit found, or None when no restart produced a usable one.
     """
 
-    # Refuse to fit a response with no spread, which has no two components to
-    # find and would drive the variance estimates to zero.
     if not np.isfinite(np.var(mito)) or np.var(mito) <= 0:
         return None
 
-    # Build the design matrix once.
     design = np.column_stack([np.ones_like(complexity), complexity])
 
-    # Floor the component variances relative to the response scale, so a
-    # component cannot collapse onto a handful of collinear points and win the
-    # likelihood with a near-zero variance.
     variance_floor = max(float(np.var(mito)) * 1e-8, np.finfo(float).tiny)
 
-    # Track the best fit across restarts.
     best: _ComponentFit | None = None
 
-    # Try each restart.
     for restart in range(config.n_restarts):
-        # Initialize responsibilities for this restart.
         responsibilities = _initial_responsibilities(
             design, mito, restart=restart, random_state=config.random_state
         )
 
-        # Run expectation-maximisation from that start.
         fit = _run_em(
             design,
             mito,
@@ -1219,15 +1013,12 @@ def _fit_two_component_regression(
             variance_floor=variance_floor,
         )
 
-        # Skip restarts that degenerated.
         if fit is None:
             continue
 
-        # Keep the highest-likelihood fit.
         if best is None or fit.log_likelihood > best.log_likelihood:
             best = fit
 
-    # Return the best fit found.
     return best
 
 
@@ -1238,8 +1029,7 @@ def _initial_responsibilities(
     restart: int,
     random_state: int,
 ) -> np.ndarray:
-    """
-    Build starting responsibilities for one expectation-maximisation restart.
+    """Build starting responsibilities for one expectation-maximisation restart.
 
     Args:
         design: Regression design matrix.
@@ -1251,21 +1041,14 @@ def _initial_responsibilities(
         Starting responsibility matrix of shape (n_cells, 2).
     """
 
-    # Number of cells being fit.
     n_cells = response.shape[0]
 
-    # Use a deterministic, structure-aware start for the first restart: split the
-    # cells on the sign of their residual around a single pooled regression. Cells
-    # above the pooled line are the candidate compromised population. This makes
-    # the usual case independent of the seed entirely.
     if restart == 0:
         coefficients, *_ = np.linalg.lstsq(design, response, rcond=None)
         above = response > design @ coefficients
         responsibilities = np.where(above[:, None], [0.1, 0.9], [0.9, 0.1]).astype(float)
         return responsibilities
 
-    # Use a seeded random start for the remaining restarts, so the search covers
-    # more of a multimodal likelihood surface while staying reproducible.
     rng = np.random.default_rng(random_state + restart)
     first = rng.uniform(0.2, 0.8, size=n_cells)
     return np.column_stack([first, 1.0 - first])
@@ -1279,8 +1062,7 @@ def _run_em(
     config: QCMitoMixtureConfig,
     variance_floor: float,
 ) -> _ComponentFit | None:
-    """
-    Run expectation-maximisation for a two-component regression mixture.
+    """Run expectation-maximisation for a two-component regression mixture.
 
     Args:
         design: Regression design matrix.
@@ -1293,56 +1075,40 @@ def _run_em(
         The converged or iteration-capped fit, or None when a component collapsed.
     """
 
-    # Number of cells being fit.
     n_cells = response.shape[0]
 
-    # Initialize parameter containers.
     coefficients = np.zeros((N_COMPONENTS, design.shape[1]), dtype=float)
     variances = np.zeros(N_COMPONENTS, dtype=float)
     weights = np.zeros(N_COMPONENTS, dtype=float)
 
-    # Track the log-likelihood across iterations.
     previous_log_likelihood = -np.inf
     log_likelihood = -np.inf
     converged = False
     iteration = 0
 
-    # Iterate maximisation and expectation until the likelihood settles. The
-    # counter is bumped inside the body rather than bound by `for`, because its
-    # value has to outlive the loop (it is reported as n_iterations) and a loop
-    # variable never read inside the body reads like a leftover.
     for _ in range(config.max_iterations):
         iteration += 1
 
-        # Maximisation step: refit each component against its responsibilities.
         for component in range(N_COMPONENTS):
-            # Pull this component's weights.
             component_weights = responsibilities[:, component]
 
-            # Abandon the fit when a component loses essentially all its mass,
-            # which means this start collapsed to a one-component solution.
             if component_weights.sum() < config.min_component_weight * n_cells:
                 return None
 
-            # Solve the weighted least-squares problem by scaling both sides by
-            # the square root of the weights.
             root_weights = np.sqrt(component_weights)
             solution, *_ = np.linalg.lstsq(
                 design * root_weights[:, None], response * root_weights, rcond=None
             )
             coefficients[component] = solution
 
-            # Estimate the weighted residual variance, floored.
             residuals = response - design @ solution
             variances[component] = max(
                 float(np.average(residuals**2, weights=component_weights)),
                 variance_floor,
             )
 
-            # Update the mixing weight.
             weights[component] = float(component_weights.mean())
 
-        # Expectation step: score every cell under both components in log space.
         log_density = np.empty((n_cells, N_COMPONENTS), dtype=float)
         for component in range(N_COMPONENTS):
             residuals = response - design @ coefficients[component]
@@ -1352,32 +1118,24 @@ def _run_em(
                 - residuals**2 / (2.0 * variances[component])
             )
 
-        # Combine the components with a shift for numerical stability.
         shift = log_density.max(axis=1, keepdims=True)
         total = shift[:, 0] + np.log(np.exp(log_density - shift).sum(axis=1))
 
-        # Update the log-likelihood and responsibilities.
         log_likelihood = float(total.sum())
         responsibilities = np.exp(log_density - total[:, None])
 
-        # Stop once the relative improvement falls below the tolerance.
         improvement = abs(log_likelihood - previous_log_likelihood)
         if improvement <= config.tolerance * (abs(log_likelihood) + 1.0):
             converged = True
             break
 
-        # Carry the likelihood into the next iteration.
         previous_log_likelihood = log_likelihood
 
-    # Reject fits whose components ended up indistinguishable, since the
-    # higher-intercept rule cannot identify a compromised component without a
-    # real difference between the two.
     if not np.isfinite(log_likelihood) or np.allclose(
         coefficients[0], coefficients[1], rtol=1e-8, atol=1e-12
     ):
         return None
 
-    # Return the fit.
     return _ComponentFit(
         coefficients=coefficients,
         variances=variances,

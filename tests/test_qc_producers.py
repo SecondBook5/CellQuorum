@@ -21,16 +21,14 @@ import pandas as pd
 import pytest
 
 from cellquorum.stages.qc.evidence import (
+    DEFAULT_HALF_SEVERITY_Z,
+    MIN_CELLS_FOR_NULL,
     AdjudicationPolicy,
     Direction,
     EvidenceAvailability,
     EvidenceFamily,
     QCStateInitial,
     adjudicate_initial,
-)
-from cellquorum.stages.qc.producers import (
-    DEFAULT_HALF_SEVERITY_Z,
-    MIN_CELLS_FOR_NULL,
     build_evidence_table,
     fit_robust_null,
     multiplet_agreement_severity,
@@ -38,6 +36,47 @@ from cellquorum.stages.qc.producers import (
 )
 
 RNG_SEED = 0
+
+
+@pytest.mark.parametrize("source", ["X", "layer", "raw"])
+def test_gene_fraction_uses_selected_counts_and_all_matching_features(source):
+    from cellquorum.stages.qc.evidence import gene_fraction
+
+    counts = np.array([[2.0, 3.0, 5.0], [1.0, 2.0, 7.0]])
+    adata = ad.AnnData(counts.copy(), var=pd.DataFrame(index=["FOS", "FOS", "OTHER"]))
+    kwargs = {}
+    if source == "layer":
+        adata.layers["chosen"] = counts.copy()
+        adata.X[:] = 99
+        kwargs = {"layer": "chosen"}
+    elif source == "raw":
+        adata.raw = adata.copy()
+        adata = adata[:, [2]].copy()
+        adata.X[:] = 99
+        kwargs = {"use_raw": True}
+    total = pd.Series([10.0, 10.0], index=adata.obs_names)
+    fraction = gene_fraction(adata, ("FOS",), total.iloc[::-1], **kwargs)
+    np.testing.assert_allclose(fraction, [0.3, 0.5])
+    assert fraction.index.equals(total.iloc[::-1].index)
+
+
+def test_gene_evidence_preserves_prefilter_numerator():
+    counts = np.array([[2.0, 8.0], [0.0, 10.0]])
+    original = ad.AnnData(counts, var=pd.DataFrame(index=["MALAT1", "OTHER"]))
+    filtered = original[:, ["OTHER"]].copy()
+    metrics = pd.DataFrame({"total_counts": [10.0, 10.0]}, index=original.obs_names)
+    evidence = build_evidence_table(filtered, metrics, expression_adata=original)
+    nuclear = next(axis for axis in evidence.axes if axis.name == "malat1_fraction")
+    np.testing.assert_allclose(nuclear.value, [0.2, 0.0])
+
+
+def test_gene_fraction_rejects_missing_layer():
+    from cellquorum.stages.qc.evidence import gene_fraction
+    from cellquorum.stages.qc.validation import QCInputValidationError
+
+    adata = ad.AnnData(np.ones((2, 1)), var=pd.DataFrame(index=["FOS"]))
+    with pytest.raises(QCInputValidationError, match="missing"):
+        gene_fraction(adata, ("FOS",), pd.Series(1.0, index=adata.obs_names), layer="typo")
 
 
 def _policy(**overrides: float) -> AdjudicationPolicy:
