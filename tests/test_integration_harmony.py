@@ -165,3 +165,27 @@ def test_harmony_iteration_cap_is_a_config_knob():
     a = _adata_with_pca(seed=5)
     capped = _harmony_run(a, max_iter_harmony=2)
     assert capped.metrics["harmony_n_iter"] <= 2
+
+
+def test_harmony_refuses_a_mis_oriented_result_instead_of_silently_writing_it(monkeypatch):
+    """The exact silent-fallback bug the module docstring names: a Harmony build whose
+    Z_corr matches neither the input orientation nor its transpose must fail loudly, not
+    write a shape that happens to broadcast into something plausible-looking."""
+    from cellquorum.backends.harmonypy_backend import HarmonyDiagnostics
+
+    a = _adata_with_pca(n=40, n_pcs=6, seed=6)
+
+    def bogus_cpu(self, adata, embedding, batch_key, random_state, max_iter_harmony=10):
+        # Neither (40, 6) nor (6, 40): a third, wrong shape.
+        return np.zeros((40, 3), dtype=np.float32), HarmonyDiagnostics(
+            n_iter=1, converged=True, max_iter=max_iter_harmony
+        )
+
+    monkeypatch.setattr(HarmonyMethod, "_harmony_cpu", bogus_cpu)
+
+    with pytest.raises(ValueError, match="matches neither"):
+        HarmonyMethod()._run(
+            a,
+            {"batch_key": "patient_id", "input_rep": "X_pca", "output_rep": "X_pca_harmony"},
+            context=None,
+        )
