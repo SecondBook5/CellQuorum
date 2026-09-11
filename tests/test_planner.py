@@ -443,3 +443,25 @@ def test_pipeline_planner_does_not_warn_when_r_disabled() -> None:
 
     # Confirm no R warning was generated.
     assert not any("R-backed methods are enabled" in warning for warning in plan.warnings)
+
+
+def test_planner_accepts_rscript_only_registry():
+    registry = BackendRegistry()
+    registry.register(BaseBackend(name="python", kind="python"))
+    registry.register(BaseBackend(name="rscript", kind="rscript"))
+    config = CellQuorumConfig.model_validate(
+        {"r": {"enabled": True}, "compute": {"prefer_gpu": False}}
+    )
+    plan = build_pipeline_plan(config, backend_registry=registry)
+    assert not any("neither rpy2 nor Rscript" in warning for warning in plan.warnings)
+
+
+def test_missing_optional_backends_produce_warnings():
+    registry = BackendRegistry()
+    registry.register(BaseBackend(name="python", kind="python"))
+    config = CellQuorumConfig.model_validate(
+        {"r": {"enabled": True}, "compute": {"prefer_gpu": True}}
+    )
+    plan = build_pipeline_plan(config, backend_registry=registry)
+    assert any("neither rpy2 nor Rscript" in warning for warning in plan.warnings)
+    assert any("no GPU/RAPIDS" in warning for warning in plan.warnings)

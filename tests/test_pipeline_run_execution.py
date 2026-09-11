@@ -390,3 +390,65 @@ def test_execute_pipeline_run_rejects_non_config(tmp_path: Path) -> None:
             output_dir=tmp_path / "bad_run",
             backend_registry=build_test_backend_registry(),
         )
+
+
+@pytest.mark.parametrize("runner", [bootstrap_pipeline_run, execute_pipeline_run])
+def test_run_rejects_busy_directory_before_context_setup(tmp_path, monkeypatch, runner):
+    from cellquorum.core import pipeline
+    from cellquorum.core.context import PipelinePaths
+    from cellquorum.core.exceptions import CellQuorumExecutionError
+
+    def unexpected_setup(*args, **kwargs):
+        pytest.fail("A competing run must not initialize its context")
+
+    monkeypatch.setattr(pipeline, "build_pipeline_context", unexpected_setup)
+    paths = PipelinePaths.from_output_dir(tmp_path)
+    with paths.exclusive_run():
+        with pytest.raises(CellQuorumExecutionError, match="Another CellQuorum run"):
+            runner(CellQuorumConfig(), output_dir=tmp_path)
+    assert not (tmp_path / "provenance").exists()
+
+
+@pytest.mark.parametrize("runner", [bootstrap_pipeline_run, execute_pipeline_run])
+def test_run_releases_directory_after_setup_failure(tmp_path, monkeypatch, runner):
+    from cellquorum.core import pipeline
+    from cellquorum.core.context import PipelinePaths
+
+    def fail_setup(*args, **kwargs):
+        raise RuntimeError("injected setup failure")
+
+    monkeypatch.setattr(pipeline, "build_pipeline_context", fail_setup)
+    with pytest.raises(RuntimeError, match="injected setup failure"):
+        runner(CellQuorumConfig(), output_dir=tmp_path)
+    with PipelinePaths.from_output_dir(tmp_path).exclusive_run():
+        pass
+
+
+def test_output_lock_released_after_process_death(tmp_path):
+    import subprocess
+    import sys
+
+    from cellquorum.core.context import PipelinePaths
+    from cellquorum.core.exceptions import CellQuorumExecutionError
+
+    script = (
+        "import sys; from filelock import FileLock; "
+        "lock = FileLock(sys.argv[1]); lock.acquire(); "
+        "print('locked', flush=True); sys.stdin.read()"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", script, str(tmp_path / ".cellquorum.lock")],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert child.stdout.readline().strip() == "locked"
+        with pytest.raises(CellQuorumExecutionError, match="Another CellQuorum run"):
+            with PipelinePaths.from_output_dir(tmp_path).exclusive_run():
+                pass
+    finally:
+        child.kill()
+        child.communicate(timeout=10)
+    with PipelinePaths.from_output_dir(tmp_path).exclusive_run():
+        pass

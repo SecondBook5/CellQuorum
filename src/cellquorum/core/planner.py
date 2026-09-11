@@ -237,12 +237,13 @@ class PipelinePlanner:
 
         # Initialize planner warnings.
         warnings: list[str] = []
+        registered = set(self.backend_registry.names())
 
         # Warn if GPU is preferred but neither GPU nor RAPIDS is available.
         if self.config.compute.prefer_gpu:
             # Check generic GPU and RAPIDS backend availability.
-            gpu_available = self.backend_registry.available("gpu")
-            rapids_available = self.backend_registry.available("rapids")
+            gpu_available = "gpu" in registered and self.backend_registry.available("gpu")
+            rapids_available = "rapids" in registered and self.backend_registry.available("rapids")
 
             # Add a warning when GPU was preferred but no GPU backend is currently available.
             if not gpu_available and not rapids_available:
@@ -254,8 +255,10 @@ class PipelinePlanner:
         # Warn if R is enabled but neither rpy2 nor Rscript is available.
         if self.config.r.enabled:
             # Check rpy2 and Rscript backend availability.
-            r_available = self.backend_registry.available("r")
-            rscript_available = self.backend_registry.available("rscript")
+            r_available = "r" in registered and self.backend_registry.available("r")
+            rscript_available = "rscript" in registered and self.backend_registry.available(
+                "rscript"
+            )
 
             # Add a warning when R was enabled but no R backend is currently available.
             if not r_available and not rscript_available:

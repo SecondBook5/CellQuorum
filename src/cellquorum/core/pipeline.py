@@ -344,15 +344,46 @@ def _environment_stamp() -> dict[str, Any]:
     Capture a run-level environment stamp for reproducibility provenance.
 
     Records the CellQuorum version, the interpreter, the OS platform, and the
-    versions of key scientific dependencies. Each dependency import is guarded so
-    a missing (or broken) package records ``None`` instead of crashing the run.
+    versions of scientific, rendering, and GPU dependencies without importing
+    them. Missing metadata records ``None``; a version does not prove operability.
 
     Returns:
         Dict with keys: cellquorum_version, python_version, platform, and a
         nested "dependencies" map of package name to version (or None).
     """
     # Version-carrying scientific dependencies worth stamping into provenance.
-    dependency_packages = ("scanpy", "anndata", "numpy", "scipy", "pandas")
+    dependency_packages = (
+        "scanpy",
+        "anndata",
+        "numpy",
+        "scipy",
+        "pandas",
+        "scikit-learn",
+        "statsmodels",
+        "numba",
+        "h5py",
+        "umap-learn",
+        "igraph",
+        "leidenalg",
+        "matplotlib",
+        "seaborn",
+        "torch",
+        "scvi-tools",
+        "cupy",
+        "cupy-cuda12x",
+        "cupy-cuda13x",
+        "rapids-singlecell",
+        "rapids-singlecell-cu12",
+        "cuml",
+        "cuml-cu12",
+        "cuml-cu13",
+        "cuvs",
+        "cuvs-cu12",
+        "cuvs-cu13",
+        "cuda-python",
+        "nvidia-cuda-runtime-cu12",
+        "nvidia-cuda-runtime-cu13",
+    )
 
     # Resolve each dependency version from installed metadata, tolerating any that
     # are absent (records None) so a missing dep never crashes the run.
@@ -848,57 +879,59 @@ def bootstrap_pipeline_run(
         PipelineRunResult containing config, plan, context, and provenance artifacts.
     """
 
-    # Mark the start of the bootstrap lifecycle.
-    bootstrap_started_at = datetime.now(UTC)
+    paths = PipelinePaths.from_output_dir(resolve_output_dir(config, output_dir))
+    with paths.exclusive_run():
+        # Mark the start of the bootstrap lifecycle.
+        bootstrap_started_at = datetime.now(UTC)
 
-    # Build the initialized pipeline context.
-    context = build_pipeline_context(
-        config,
-        output_dir=output_dir,
-        backend_registry=backend_registry,
-    )
+        # Build the initialized pipeline context.
+        context = build_pipeline_context(
+            config,
+            output_dir=output_dir,
+            backend_registry=backend_registry,
+        )
 
-    # Build the pipeline plan using the context backend registry.
-    plan = build_pipeline_plan(
-        config,
-        backend_registry=context.backend_registry,
-    )
+        # Build the pipeline plan using the context backend registry.
+        plan = build_pipeline_plan(
+            config,
+            backend_registry=context.backend_registry,
+        )
 
-    # Mark the end of the bootstrap lifecycle before provenance writing.
-    bootstrap_ended_at = datetime.now(UTC)
+        # Mark the end of the bootstrap lifecycle before provenance writing.
+        bootstrap_ended_at = datetime.now(UTC)
 
-    # Build the bootstrap execution record.
-    bootstrap_record = StageExecutionRecord(
-        stage_name="bootstrap",
-        status="success",
-        started_at_utc=bootstrap_started_at,
-        ended_at_utc=bootstrap_ended_at,
-        duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
-        backend_used="python",
-        notes=["Initialized CellQuorum execution frame."],
-        warnings=list(plan.warnings),
-        metrics={
-            "n_planned_stages": len(plan.stages),
-            "n_enabled_stages": len(plan.enabled_stage_names()),
-            "n_backend_status_rows": len(plan.backend_status_table),
-        },
-    )
+        # Build the bootstrap execution record.
+        bootstrap_record = StageExecutionRecord(
+            stage_name="bootstrap",
+            status="success",
+            started_at_utc=bootstrap_started_at,
+            ended_at_utc=bootstrap_ended_at,
+            duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
+            backend_used="python",
+            notes=["Initialized CellQuorum execution frame."],
+            warnings=list(plan.warnings),
+            metrics={
+                "n_planned_stages": len(plan.stages),
+                "n_enabled_stages": len(plan.enabled_stage_names()),
+                "n_backend_status_rows": len(plan.backend_status_table),
+            },
+        )
 
-    # Write initial provenance artifacts.
-    artifacts = write_pipeline_provenance(
-        config=config,
-        plan=plan,
-        context=context,
-        stage_execution_records=[bootstrap_record],
-    )
+        # Write initial provenance artifacts.
+        artifacts = write_pipeline_provenance(
+            config=config,
+            plan=plan,
+            context=context,
+            stage_execution_records=[bootstrap_record],
+        )
 
-    # Return the pipeline run result.
-    return PipelineRunResult(
-        config=config,
-        plan=plan,
-        context=context,
-        artifacts=artifacts,
-    )
+        # Return the pipeline run result.
+        return PipelineRunResult(
+            config=config,
+            plan=plan,
+            context=context,
+            artifacts=artifacts,
+        )
 
 
 def _restrict_plan_from_stage(plan: PipelinePlan, from_stage: str) -> PipelinePlan:
@@ -1039,202 +1072,206 @@ def execute_pipeline_run(
             f"Received: {type(config).__name__}"
         )
 
-    # anndata >= 0.11 refuses to write pandas nullable / Arrow-backed string
-    # columns (common in externally annotated inputs) unless the caller opts
-    # in. Enable it once for the whole run so every stage's h5ad write
-    # succeeds. Older anndata lacks the setting and writes these dtypes
-    # unconditionally, so the guard is a no-op there.
-    if hasattr(ad.settings, "allow_write_nullable_strings"):
-        ad.settings.allow_write_nullable_strings = True
+    paths = PipelinePaths.from_output_dir(resolve_output_dir(config, output_dir))
+    with paths.exclusive_run():
+        # anndata >= 0.11 refuses to write pandas nullable / Arrow-backed string
+        # columns (common in externally annotated inputs) unless the caller opts
+        # in. Enable it once for the whole run so every stage's h5ad write
+        # succeeds. Older anndata lacks the setting and writes these dtypes
+        # unconditionally, so the guard is a no-op there.
+        if hasattr(ad.settings, "allow_write_nullable_strings"):
+            ad.settings.allow_write_nullable_strings = True
 
-    # Mark the start of execution-frame setup.
-    bootstrap_started_at = datetime.now(UTC)
+        # Mark the start of execution-frame setup.
+        bootstrap_started_at = datetime.now(UTC)
 
-    # Build the initialized pipeline context, loading AnnData when requested.
-    context = build_pipeline_context(
-        config,
-        output_dir=output_dir,
-        backend_registry=backend_registry,
-        load_input=load_input,
-    )
-
-    # Build the pipeline plan using the context backend registry.
-    plan = build_pipeline_plan(
-        config,
-        backend_registry=context.backend_registry,
-    )
-
-    # Mark the end of execution-frame setup before stage execution.
-    bootstrap_ended_at = datetime.now(UTC)
-
-    # Resolve the executor. Honor the run-level continue-on-failure switch so an
-    # unattended canary attempts every stage instead of halting on the first
-    # failure (a caller-supplied executor keeps its own policy).
-    resolved_executor = executor or PipelineExecutor(
-        stop_on_failure=not config.run.continue_on_stage_failure,
-        until_stage=until_stage,
-    )
-
-    # Resume from a checkpoint when asked to start mid-pipeline. Done here, after
-    # the plan exists, because the plan is what gets restricted — and it must fail
-    # loudly rather than silently starting from raw input, which would look like a
-    # resume while producing different numbers.
-    if from_stage:
-        from cellquorum.core.checkpoint import (
-            load_checkpoint,
-            resolve_start_checkpoint,
+        # Build the initialized pipeline context, loading AnnData when requested.
+        context = build_pipeline_context(
+            config,
+            output_dir=output_dir,
+            backend_registry=backend_registry,
+            load_input=load_input,
         )
-        from cellquorum.core.fingerprint import compute_upstream_fingerprint
-        from cellquorum.core.stages import stage_order_map
 
-        stage_order = stage_order_map()
-        start_record = resolve_start_checkpoint(
-            context.paths, from_stage=from_stage, stage_order=stage_order
+        # Build the pipeline plan using the context backend registry.
+        plan = build_pipeline_plan(
+            config,
+            backend_registry=context.backend_registry,
         )
-        # Refuse a checkpoint written under settings this run is not using. Without
-        # this the run would resume happily and report success while its numbers came
-        # from a config nobody chose, and resolved_config.json would disagree with the
-        # object on disk.
-        context = context.with_adata(
-            load_checkpoint(
-                start_record,
-                expected_upstream_fingerprint=compute_upstream_fingerprint(
-                    config=config.model_dump(),
-                    stage_order=stage_order,
-                    through_stage=start_record.stage,
-                ),
+
+        # Mark the end of execution-frame setup before stage execution.
+        bootstrap_ended_at = datetime.now(UTC)
+
+        # Resolve the executor. Honor the run-level continue-on-failure switch so an
+        # unattended canary attempts every stage instead of halting on the first
+        # failure (a caller-supplied executor keeps its own policy).
+        resolved_executor = executor or PipelineExecutor(
+            stop_on_failure=not config.run.continue_on_stage_failure,
+            until_stage=until_stage,
+        )
+
+        # Resume from a checkpoint when asked to start mid-pipeline. Done here, after
+        # the plan exists, because the plan is what gets restricted — and it must fail
+        # loudly rather than silently starting from raw input, which would look like a
+        # resume while producing different numbers.
+        if from_stage:
+            from cellquorum.core.checkpoint import (
+                load_checkpoint,
+                resolve_start_checkpoint,
             )
+            from cellquorum.core.fingerprint import compute_upstream_fingerprint
+            from cellquorum.core.stages import stage_order_map
+
+            stage_order = stage_order_map()
+            start_record = resolve_start_checkpoint(
+                context.paths, from_stage=from_stage, stage_order=stage_order
+            )
+            # Refuse a checkpoint written under settings this run is not using. Without
+            # this the run would resume happily and report success while its numbers came
+            # from a config nobody chose, and resolved_config.json would disagree with the
+            # object on disk.
+            context = context.with_adata(
+                load_checkpoint(
+                    start_record,
+                    expected_upstream_fingerprint=compute_upstream_fingerprint(
+                        config=config.model_dump(),
+                        stage_order=stage_order,
+                        through_stage=start_record.stage,
+                    ),
+                )
+            )
+            plan = _restrict_plan_from_stage(plan, from_stage)
+
+        # Build the run reporter from config verbosity settings.
+        reporter = RunReporter(verbose=config.run.verbose, level=config.run.log_level)
+
+        # Print startup banner with version and project metadata.
+        run_id = context.paths.root.name
+        reporter.banner(__version__, config.project.name, run_id)
+
+        # Compute which stages will actually run (planned + registered + per-stage
+        # enabled). A stage runs only if: in plan, registered, AND its sub-config
+        # .enabled is True (when present).
+        planned_stage_names = []
+        config_dict = config.model_dump()
+        for stage in plan.stages:
+            # Check plan gate and registration.
+            if not stage.enabled or resolved_executor.registry.get(stage.name) is None:
+                continue
+            # Check per-stage sub-config .enabled field.
+            stage_config = config_dict.get(stage.name, {})
+            if isinstance(stage_config, dict):
+                per_stage_enabled = stage_config.get("enabled", True)
+            else:
+                per_stage_enabled = True
+            if per_stage_enabled:
+                planned_stage_names.append(stage.name)
+
+        # Echo the resolved configuration showing only runnable stages.
+        reporter.config_echo(config, planned_stage_names=planned_stage_names)
+
+        # Refuse to write into a directory that already holds outputs of a stage this
+        # config DISABLES. Those files cannot have come from this run, and nothing on
+        # disk says so, which is how a manuscript ends up citing QC thresholds that were
+        # never applied. Read the disabled set from the CONFIG rather than from the plan:
+        # a --from-stage resume legitimately narrows the plan, and treating those earlier
+        # stages as disabled would break resume on its own inherited outputs.
+        assert_output_dir_matches_config(
+            context.paths.root,
+            disabled_stages=_config_disabled_stage_names(config, config_dict),
         )
-        plan = _restrict_plan_from_stage(plan, from_stage)
 
-    # Build the run reporter from config verbosity settings.
-    reporter = RunReporter(verbose=config.run.verbose, level=config.run.log_level)
+        # Measure wall-clock time around stage execution.
+        execution_start = time.perf_counter()
 
-    # Print startup banner with version and project metadata.
-    run_id = context.paths.root.name
-    reporter.banner(__version__, config.project.name, run_id)
+        # Execute registered stages from the plan with progress reporting.
+        execution_result = resolved_executor.run(
+            context=context,
+            plan=plan,
+            reporter=reporter,
+        )
 
-    # Compute which stages will actually run (planned + registered + per-stage
-    # enabled). A stage runs only if: in plan, registered, AND its sub-config
-    # .enabled is True (when present).
-    planned_stage_names = []
-    config_dict = config.model_dump()
-    for stage in plan.stages:
-        # Check plan gate and registration.
-        if not stage.enabled or resolved_executor.registry.get(stage.name) is None:
-            continue
-        # Check per-stage sub-config .enabled field.
-        stage_config = config_dict.get(stage.name, {})
-        if isinstance(stage_config, dict):
-            per_stage_enabled = stage_config.get("enabled", True)
-        else:
-            per_stage_enabled = True
-        if per_stage_enabled:
-            planned_stage_names.append(stage.name)
+        # Measure elapsed wall-clock time.
+        execution_elapsed = time.perf_counter() - execution_start
 
-    # Echo the resolved configuration showing only runnable stages.
-    reporter.config_echo(config, planned_stage_names=planned_stage_names)
+        # Print the final run summary.
+        reporter.run_summary(
+            execution_result.stage_execution_records,
+            str(context.paths.root),
+            execution_elapsed,
+        )
 
-    # Refuse to write into a directory that already holds outputs of a stage this
-    # config DISABLES. Those files cannot have come from this run, and nothing on
-    # disk says so, which is how a manuscript ends up citing QC thresholds that were
-    # never applied. Read the disabled set from the CONFIG rather than from the plan:
-    # a --from-stage resume legitimately narrows the plan, and treating those earlier
-    # stages as disabled would break resume on its own inherited outputs.
-    assert_output_dir_matches_config(
-        context.paths.root,
-        disabled_stages=_config_disabled_stage_names(config, config_dict),
-    )
+        # Inventory files in the output tree that this run did not write. The gate above
+        # already refused outputs of a DISABLED stage; this catches the narrower case it
+        # cannot see -- a stage that ran fine but no longer produces some group, cluster
+        # or pathway, leaving the previous run's artifact for it behind looking current.
+        # It reports and never fails: a --from-stage resume inherits earlier outputs
+        # legitimately, and timestamps alone cannot tell that apart from a leftover.
+        inherited = find_inherited_artifacts(
+            context.paths.root, run_started_at=bootstrap_started_at
+        )
+        inherited_warning = format_inherited_artifacts(inherited)
+        if inherited_warning:
+            logger.warning(inherited_warning)
+            _write_inherited_artifacts_report(context=context, artifacts=inherited)
 
-    # Measure wall-clock time around stage execution.
-    execution_start = time.perf_counter()
+        # Build the bootstrap execution record.
+        bootstrap_record = StageExecutionRecord(
+            stage_name="bootstrap",
+            status="success",
+            started_at_utc=bootstrap_started_at,
+            ended_at_utc=bootstrap_ended_at,
+            duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
+            backend_used="python",
+            notes=["Initialized CellQuorum execution frame."],
+            warnings=[*plan.warnings, *([inherited_warning] if inherited_warning else [])],
+            metrics={
+                "n_planned_stages": len(plan.stages),
+                "n_enabled_stages": len(plan.enabled_stage_names()),
+                "n_backend_status_rows": len(plan.backend_status_table),
+                "input_loaded": execution_result.context.adata is not None,
+                "n_successful_stages": len(execution_result.succeeded_stage_names()),
+                "n_skipped_stages": len(execution_result.skipped_stage_names()),
+                "n_failed_stages": len(execution_result.failed_stage_names()),
+                "n_inherited_artifacts": len(inherited),
+                "inherited_artifact_bytes": sum(item.size_bytes for item in inherited),
+            },
+        )
 
-    # Execute registered stages from the plan with progress reporting.
-    execution_result = resolved_executor.run(
-        context=context,
-        plan=plan,
-        reporter=reporter,
-    )
+        # Write provenance with bootstrap and real stage execution records.
+        all_records = [
+            bootstrap_record,
+            *execution_result.stage_execution_records,
+        ]
+        artifacts = write_pipeline_provenance(
+            config=config,
+            plan=plan,
+            context=execution_result.context,
+            stage_execution_records=all_records,
+        )
 
-    # Measure elapsed wall-clock time.
-    execution_elapsed = time.perf_counter() - execution_start
+        # Persist the final in-memory AnnData so a from-scratch run leaves a real
+        # annotated deliverable on disk (not just per-stage snapshots/provenance).
+        _write_final_object(config=config, context=execution_result.context)
 
-    # Print the final run summary.
-    reporter.run_summary(
-        execution_result.stage_execution_records,
-        str(context.paths.root),
-        execution_elapsed,
-    )
+        # Render the human-readable run report AFTER provenance is written, so it
+        # sees the complete record set. Report failures never fail the run unless
+        # the user opts in via report.fail_on_report_error.
+        _write_run_report_after_provenance(
+            config=config,
+            context=execution_result.context,
+            records=all_records,
+            artifact_manager=artifacts,
+        )
 
-    # Inventory files in the output tree that this run did not write. The gate above
-    # already refused outputs of a DISABLED stage; this catches the narrower case it
-    # cannot see -- a stage that ran fine but no longer produces some group, cluster
-    # or pathway, leaving the previous run's artifact for it behind looking current.
-    # It reports and never fails: a --from-stage resume inherits earlier outputs
-    # legitimately, and timestamps alone cannot tell that apart from a leftover.
-    inherited = find_inherited_artifacts(context.paths.root, run_started_at=bootstrap_started_at)
-    inherited_warning = format_inherited_artifacts(inherited)
-    if inherited_warning:
-        logger.warning(inherited_warning)
-        _write_inherited_artifacts_report(context=context, artifacts=inherited)
-
-    # Build the bootstrap execution record.
-    bootstrap_record = StageExecutionRecord(
-        stage_name="bootstrap",
-        status="success",
-        started_at_utc=bootstrap_started_at,
-        ended_at_utc=bootstrap_ended_at,
-        duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
-        backend_used="python",
-        notes=["Initialized CellQuorum execution frame."],
-        warnings=[*plan.warnings, *([inherited_warning] if inherited_warning else [])],
-        metrics={
-            "n_planned_stages": len(plan.stages),
-            "n_enabled_stages": len(plan.enabled_stage_names()),
-            "n_backend_status_rows": len(plan.backend_status_table),
-            "input_loaded": execution_result.context.adata is not None,
-            "n_successful_stages": len(execution_result.succeeded_stage_names()),
-            "n_skipped_stages": len(execution_result.skipped_stage_names()),
-            "n_failed_stages": len(execution_result.failed_stage_names()),
-            "n_inherited_artifacts": len(inherited),
-            "inherited_artifact_bytes": sum(item.size_bytes for item in inherited),
-        },
-    )
-
-    # Write provenance with bootstrap and real stage execution records.
-    all_records = [
-        bootstrap_record,
-        *execution_result.stage_execution_records,
-    ]
-    artifacts = write_pipeline_provenance(
-        config=config,
-        plan=plan,
-        context=execution_result.context,
-        stage_execution_records=all_records,
-    )
-
-    # Persist the final in-memory AnnData so a from-scratch run leaves a real
-    # annotated deliverable on disk (not just per-stage snapshots/provenance).
-    _write_final_object(config=config, context=execution_result.context)
-
-    # Render the human-readable run report AFTER provenance is written, so it
-    # sees the complete record set. Report failures never fail the run unless
-    # the user opts in via report.fail_on_report_error.
-    _write_run_report_after_provenance(
-        config=config,
-        context=execution_result.context,
-        records=all_records,
-        artifact_manager=artifacts,
-    )
-
-    # Return the executed pipeline run result.
-    return PipelineRunResult(
-        config=config,
-        plan=plan,
-        context=execution_result.context,
-        artifacts=artifacts,
-        execution_result=execution_result,
-    )
+        # Return the executed pipeline run result.
+        return PipelineRunResult(
+            config=config,
+            plan=plan,
+            context=execution_result.context,
+            artifacts=artifacts,
+            execution_result=execution_result,
+        )
 
 
 def bootstrap_pipeline_run_from_config_file(

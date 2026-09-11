@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import anndata as ad
 import pandas as pd
+from filelock import FileLock, Timeout
+
+from cellquorum.core.exceptions import CellQuorumExecutionError
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,28 @@ class PipelinePaths:
             logs=root / "logs",
             scratch=root / "scratch",
         )
+
+    @contextmanager
+    def exclusive_run(self) -> Iterator[None]:
+        """Hold the output directory for one run; fail immediately on contention.
+
+        The lock file remains after release. Its existence does not mean a run is
+        active; ownership is managed by the operating system. Do not delete it
+        while a process may hold it. Local filesystem locking is required.
+        """
+        self.root.mkdir(parents=True, exist_ok=True)
+        lock = FileLock(self.root / ".cellquorum.lock", timeout=0)
+        try:
+            lock.acquire()
+        except Timeout as exc:
+            raise CellQuorumExecutionError(
+                f"Another CellQuorum run is using output directory '{self.root}'. "
+                "Use a different directory or wait for that run to finish."
+            ) from exc
+        try:
+            yield
+        finally:
+            lock.release()
 
     def ensure_directories(self) -> None:
         """
