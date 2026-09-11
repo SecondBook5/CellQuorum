@@ -47,9 +47,8 @@ import cellquorum.stages.annotation.stage  # noqa: F401
 
 # query_projection (105) places borderline cells on the frozen core manifold; it must run
 # after annotation (90, so core labels exist) and before qc_finalization (135) consumes it.
-import cellquorum.stages.qc.query_projection_stage  # noqa: F401
+import cellquorum.stages.qc.projection  # noqa: F401
 import cellquorum.stages.clustering.subclustering.stage  # noqa: F401
-import cellquorum.stages.annotation.adjudication.stage  # noqa: F401
 import cellquorum.stages.annotation.reference_mapping.stage  # noqa: F401
 import cellquorum.stages.annotation.consensus.stage  # noqa: F401
 
@@ -59,6 +58,11 @@ import cellquorum.stages.qc.finalization  # noqa: F401
 
 # Diagnostics run after reference mapping so transferred labels can be audited.
 import cellquorum.stages.annotation.diagnostics.stage  # noqa: F401
+
+# Adjudication (145) treats qc_state_final as a technical-validity input, so it must run
+# after qc_finalization (135): biological cluster/state claims are only adjudicated once
+# QC's own final verdict exists.
+import cellquorum.stages.annotation.adjudication.stage  # noqa: F401
 
 # Population identity is evidence-driven (reference > annotation > clusters).
 import cellquorum.stages.annotation.population_identity.stage  # noqa: F401

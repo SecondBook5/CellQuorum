@@ -136,13 +136,16 @@ GOLDEN_STAGE_ORDER = [
     # order=105: place borderline cells on the frozen core manifold, after annotation
     # (labels exist) and before qc_finalization (consumes it).
     "query_projection",
-    "adjudication",
     "reference_mapping",
     "annotation_consensus",
     # order=135: per-cell rescue → qc_state_final, after reference_mapping/consensus so
     # atlas support is available as rescue evidence.
     "qc_finalization",
     "annotation_diagnostics",
+    # order=145, after qc_finalization (135): adjudication treats qc_state_final as a
+    # technical-validity input, so biological claims are only adjudicated once QC's own
+    # final verdict exists (docs/design/qc-graded-adjudication.md's stage layout).
+    "adjudication",
     "population_identity",
     # order=155, deliberately AFTER reference_mapping (120) and population_identity
     # (150): the atlas labels it focuses on have to exist, and the populations it

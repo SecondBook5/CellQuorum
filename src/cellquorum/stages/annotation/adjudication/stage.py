@@ -1,4 +1,5 @@
-# Pipeline step (order=110): adjudication — adjudicate competing cluster/state claims.
+# Pipeline step (order=145): adjudication — adjudicate competing cluster/state claims,
+# after qc_finalization (135) so qc_state_final is available as a technical-validity input.
 """Pipeline stage for adjudicating cluster/state claims."""
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from cellquorum.stages.annotation.adjudication.evidence import (
 
 
 @register_stage(
-    name="adjudication", order=110, config_flag="adjudication", config_field="adjudication"
+    name="adjudication", order=145, config_flag="adjudication", config_field="adjudication"
 )
 class AdjudicationStage:
     """Build cluster evidence, adjudicate claims, and write audit artifacts."""

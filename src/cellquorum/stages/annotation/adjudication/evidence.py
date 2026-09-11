@@ -48,6 +48,11 @@ def build_cluster_evidence_table(
     marker_key = _resolve_marker_support_key(obs, config)
     technical_score_key = config.technical_score_key
     technical_flag_key = config.technical_flag_key
+    # qc_state_final (written by qc_finalization, order=135) is QC's own final verdict —
+    # a cluster dominated by cells that verdict never established as valid is exactly what
+    # "technical validity" should mean here, so it outranks the cruder predicted_doublet
+    # proxy whenever it is present and the caller has not asked for a specific column.
+    use_qc_state_final = technical_score_key is None and "qc_state_final" in obs.columns
 
     evidence_rows: list[ClusterEvidence] = []
     for cluster_id, cluster_obs in obs.groupby(config.cluster_key, observed=False):
@@ -56,8 +61,13 @@ def build_cluster_evidence_table(
         condition_counts = _value_counts(cluster_obs[condition_key])
 
         marker_support = _mean_optional_numeric(cluster_obs, marker_key)
+        qc_state_final_fraction = (
+            _qc_technical_fraction(cluster_obs["qc_state_final"]) if use_qc_state_final else None
+        )
         technical_score = _mean_optional_numeric(cluster_obs, technical_score_key)
         technical_flag_fraction = _mean_optional_boolean(cluster_obs, technical_flag_key)
+        if technical_score is None:
+            technical_score = qc_state_final_fraction
         if technical_score is None:
             technical_score = technical_flag_fraction
 
@@ -73,6 +83,8 @@ def build_cluster_evidence_table(
                     marker_key=marker_key,
                     technical_score_key=technical_score_key,
                     technical_flag_key=technical_flag_key,
+                    used_qc_state_final=qc_state_final_fraction is not None
+                    and technical_score == qc_state_final_fraction,
                     used_technical_flag=technical_score is not None
                     and technical_score == technical_flag_fraction,
                 ),
@@ -80,6 +92,21 @@ def build_cluster_evidence_table(
         )
 
     return evidence_rows
+
+
+def _qc_technical_fraction(qc_state_final: pd.Series) -> float | None:
+    """Fraction of a cluster's cells QC's final verdict never established as valid.
+
+    ``core`` and ``rescued`` cells passed QC's own check; ``quarantine`` and
+    ``unresolved_borderline`` did not. Neither ``predicted_doublet`` alone (a raw
+    detector call the adjudication rules already treat as a technical proxy) nor an
+    empty column can express this, so it needs a dedicated reduction.
+    """
+
+    if qc_state_final.empty:
+        return None
+    states = qc_state_final.astype(str)
+    return float(states.isin(["quarantine", "unresolved_borderline"]).mean())
 
 
 def cluster_evidence_to_dataframe(evidence_rows: list[ClusterEvidence]) -> pd.DataFrame:
@@ -169,6 +196,7 @@ def _cluster_notes(
     marker_key: str | None,
     technical_score_key: str | None,
     technical_flag_key: str | None,
+    used_qc_state_final: bool,
     used_technical_flag: bool,
 ) -> list[str]:
     """Build context notes describing which optional evidence columns were used."""
@@ -178,6 +206,11 @@ def _cluster_notes(
         notes.append(f"marker_support derived from obs['{marker_key}'].")
     if technical_score_key is not None:
         notes.append(f"technical_score derived from obs['{technical_score_key}'].")
+    elif used_qc_state_final:
+        notes.append(
+            "technical_score derived from obs['qc_state_final'] "
+            "(quarantine + unresolved_borderline fraction)."
+        )
     elif used_technical_flag and technical_flag_key is not None:
         notes.append(f"technical_score derived from obs['{technical_flag_key}'] fraction.")
     return notes

@@ -46,6 +46,61 @@ def test_build_cluster_evidence_table_from_obs():
     assert cluster_0.marker_support == pytest.approx(0.8)
 
 
+def test_build_cluster_evidence_table_uses_qc_state_final_for_technical_score():
+    obs = pd.DataFrame(
+        {
+            "leiden": ["0", "0", "0", "1", "1", "1"],
+            "patient_id": ["d1", "d2", "d3", "d1", "d1", "d2"],
+            "condition": ["case", "case", "control", "case", "case", "control"],
+            # No detector ever flagged a doublet, so the old predicted_doublet-only
+            # proxy would score both clusters technical_score=0.0.
+            "predicted_doublet": [False, False, False, False, False, False],
+            # Cluster "0" is mostly quarantined/unresolved by QC's final verdict;
+            # cluster "1" is clean.
+            "qc_state_final": ["quarantine", "quarantine", "core", "core", "core", "rescued"],
+        },
+        index=[f"cell_{i}" for i in range(6)],
+    )
+    adata = ad.AnnData(X=np.ones((6, 3)), obs=obs)
+
+    evidence = build_cluster_evidence_table(
+        adata,
+        config=AdjudicationConfig(),
+        donor_key="patient_id",
+        condition_key="condition",
+    )
+
+    cluster_0 = next(row for row in evidence if row.cluster_id == "0")
+    cluster_1 = next(row for row in evidence if row.cluster_id == "1")
+    assert cluster_0.technical_score == pytest.approx(2 / 3)
+    assert cluster_1.technical_score == pytest.approx(0.0)
+
+
+def test_build_cluster_evidence_table_explicit_technical_score_key_outranks_qc_state_final():
+    obs = pd.DataFrame(
+        {
+            "leiden": ["0", "0"],
+            "patient_id": ["d1", "d2"],
+            "condition": ["case", "control"],
+            "qc_state_final": ["quarantine", "quarantine"],
+            "custom_technical": [0.1, 0.1],
+        },
+        index=["cell_0", "cell_1"],
+    )
+    adata = ad.AnnData(X=np.ones((2, 3)), obs=obs)
+
+    evidence = build_cluster_evidence_table(
+        adata,
+        config=AdjudicationConfig(technical_score_key="custom_technical"),
+        donor_key="patient_id",
+        condition_key="condition",
+    )
+
+    # qc_state_final alone would score this cluster technical_score=1.0; the explicit
+    # override must win.
+    assert evidence[0].technical_score == pytest.approx(0.1)
+
+
 def test_adjudication_stage_writes_artifacts_and_uns_payload(tmp_path):
     config = CellQuorumConfig(
         compute={"prefer_gpu": False},
