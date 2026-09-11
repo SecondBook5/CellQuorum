@@ -304,3 +304,39 @@ def test_transfer_caps_k_at_the_reference_size() -> None:
 
     got = transfer_cluster_labels(reference, labels, np.array([[0.1, 0.1]]), n_neighbors=50)
     assert len(got) == 1
+
+
+def test_category_order_stays_numeric_with_eleven_or_more_clusters() -> None:
+    """The transfer path must not silently reorder categories to string-lexicographic.
+
+    ``_transfer_and_graph`` rebuilds the categorical via ``sorted(set(labels))``, and a plain
+    string sort of Leiden's own "0","1",...,"9","10"... labels puts "10" before "2" -- correct
+    for cluster IDENTITY (transfer only reads/writes label values, never touches ordering) but
+    wrong for category ORDER, which drives legend and color ordering in every figure that reads
+    this column. Without the fit-population split active, scanpy's own natural (size/discovery)
+    order is left untouched and happens to already be numeric for a small cluster count, so this
+    only surfaces once a QC-excluded cohort forces the transfer path -- exactly the scenario
+    graded QC makes routine.
+    """
+    rng = np.random.default_rng(0)
+    n_per_cluster, n_clusters = 30, 11
+    n = n_per_cluster * n_clusters
+    pca = rng.normal(scale=0.5, size=(n, 5)).astype(np.float32)
+    for i in range(n_clusters):
+        pca[i * n_per_cluster : (i + 1) * n_per_cluster, :2] += rng.normal(
+            loc=i * 20.0, scale=0.5, size=2
+        )
+    adata = ad.AnnData(X=rng.normal(size=(n, 10)).astype(np.float32))
+    adata.obsm[REP] = pca
+    # Exclude a few cells from the fit population so the transfer path (and its category
+    # rebuild) actually runs, rather than leaving scanpy's own natural label order untouched.
+    fit = np.ones(n, dtype=bool)
+    fit[:10] = False
+    adata.obs[FIT_COLUMN] = fit
+
+    result = _cluster(adata, n_neighbors=10)
+
+    categories = list(result.adata.obs["leiden"].cat.categories)
+    assert categories == sorted(
+        categories, key=int
+    ), f"Categories are not in numeric order: {categories}"

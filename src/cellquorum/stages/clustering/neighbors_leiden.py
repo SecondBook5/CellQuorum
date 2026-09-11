@@ -210,8 +210,9 @@ class LeidenMethod(AnalysisMethod):
         # Count clusters for provenance.
         n_clusters = int(adata.obs[key_added].nunique())
         notes.insert(0, f"Leiden found {n_clusters} clusters at resolution {resolution}.")
-        if gpu_fallback_note:
-            notes.append(gpu_fallback_note)
+        # gpu_fallback_note goes into warnings below, not here -- warnings already print
+        # unconditionally, so duplicating the same line into notes would only repeat it
+        # in verbose runs.
 
         return StageResult(
             adata=adata,
@@ -263,7 +264,11 @@ class LeidenMethod(AnalysisMethod):
                 n_neighbors,
             )
 
-        categories = sorted(set(fitted.obs[key_added].astype(str)))
+        # Sorted numerically, not lexicographically: Leiden's own labels are "0","1",...,"9",
+        # "10",... and a plain string sort puts "10" before "2", scrambling legend/color order
+        # in every figure that reads this column. Safe because these values are always
+        # scanpy's own integer-string cluster IDs, never a caller-supplied labelling scheme.
+        categories = sorted(set(fitted.obs[key_added].astype(str)), key=int)
         adata.obs[key_added] = pd.Categorical(labels, categories=categories)
         adata.obs[LABEL_SOURCE_COLUMN] = np.where(mask, "fitted", "transferred")
 
