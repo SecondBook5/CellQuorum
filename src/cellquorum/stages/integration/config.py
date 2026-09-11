@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from cellquorum.backends.harmonypy_backend import DEFAULT_MAX_ITER_HARMONY
 from cellquorum.config.base import StrictBaseModel
 
@@ -32,7 +34,7 @@ class IntegrationConfig(StrictBaseModel):
     output_rep: str = "X_pca_harmony"
 
     # scVI latent dimensionality.
-    n_latent: int = 30
+    n_latent: int = Field(default=30, ge=1)
 
     # Whether scVI trains on highly variable genes only. None (the default) follows the
     # feature-selection stage: its flag if present, all genes if not. `true` requires the
@@ -42,7 +44,7 @@ class IntegrationConfig(StrictBaseModel):
     use_highly_variable: bool | None = None
 
     # scVI max training epochs (None => scvi-tools default / early stop).
-    max_epochs: int | None = None
+    max_epochs: int | None = Field(default=None, gt=0)
 
     # Random seed for deterministic integration.
     random_state: int = 0
@@ -55,7 +57,7 @@ class IntegrationConfig(StrictBaseModel):
     # `DEFAULT_MAX_ITER_HARMONY = 10` in the backend, so raising one would have left the other
     # silently governing every config that does not name the field — the same two-places-one-
     # decision problem that made `stages.feature_selection: true` skip its own stage.
-    max_iter_harmony: int = DEFAULT_MAX_ITER_HARMONY
+    max_iter_harmony: int = Field(default=DEFAULT_MAX_ITER_HARMONY, ge=1)
 
     # Multi-method dispatch: list of per-method sub-configs (each entry is a full
     # method config with its own `method`, `output_rep`, etc.). An empty list (the
