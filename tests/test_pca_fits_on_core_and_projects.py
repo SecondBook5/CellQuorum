@@ -192,6 +192,32 @@ def test_projected_coordinates_match_what_a_core_only_fit_computed(tmp_path: Pat
     np.testing.assert_allclose(full.obsm["X_pca"][core_rows], core_only.obsm["X_pca"], atol=1e-4)
 
 
+def test_fit_then_project_and_the_hvg_mask_combine_correctly(tmp_path: Path) -> None:
+    """The two features are only ever tested separately elsewhere in this file.
+
+    Each has its own test above; neither exercises the other. This is the one place that
+    checks a masked fit-then-project run still reproduces a core-only masked fit exactly --
+    the same claim as test_projected_coordinates_match_what_a_core_only_fit_computed, but
+    with mask_var not None, which is what routes through project_onto_fitted_basis's
+    zero-filled-outside-the-mask codepath instead of the unmasked one.
+    """
+    full = _cohort()
+    full.var["highly_variable"] = False
+    full.var.iloc[:30, full.var.columns.get_loc("highly_variable")] = True
+    _run_pca(full, tmp_path, use_highly_variable=True)
+
+    assert full.varm["PCs"].shape[0] == full.n_vars
+    assert np.all(full.varm["PCs"][30:] == 0), "PCs must be zero outside the HVG mask"
+
+    core_only = full[full.obs[FIT_COLUMN].to_numpy(bool)].copy()
+    del core_only.obs[FIT_COLUMN]
+    _run_pca(core_only, tmp_path, use_highly_variable=True)
+
+    core_rows = full.obs[FIT_COLUMN].to_numpy(bool)
+    np.testing.assert_allclose(full.obsm["X_pca"][core_rows], core_only.obsm["X_pca"], atol=1e-4)
+    assert np.isfinite(full.obsm["X_pca"]).all(), "every cell, including outliers, must project"
+
+
 def test_outliers_land_far_from_the_core_in_the_embedding(tmp_path: Path) -> None:
     """Projection must still place them where they belong — visibly apart.
 
