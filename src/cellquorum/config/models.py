@@ -80,6 +80,9 @@ from cellquorum.stages.comparative.module_remodeling.config import ModuleRemodel
 # Import the multicellular-programs configuration model.
 from cellquorum.stages.comparative.multicellular_programs.config import MulticellularProgramsConfig
 
+# Import the composition (cell-type composition summary) configuration model.
+from cellquorum.stages.composition.config import CompositionConfig
+
 # Import the discovery (consensus-NMF) configuration model.
 from cellquorum.stages.discovery.config import DiscoveryConfig
 
@@ -1102,6 +1105,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store de-novo program discovery (consensus-NMF) settings.
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
+
+    # Store cell-type composition summary settings.
+    composition: CompositionConfig = Field(default_factory=CompositionConfig)
 
     # Store embeddings settings.
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)

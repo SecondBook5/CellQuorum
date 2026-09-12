@@ -119,7 +119,7 @@ def test_empty_catalog_has_no_specs():
     assert len(catalog) == 0
 
 
-PLANNED = {"integration_gate", "composition", "molecular_inference"}
+PLANNED = {"integration_gate", "molecular_inference"}
 
 # The canonical 36-stage order, frozen. Any reorder/add/remove is a deliberate
 # change that must update this list together with the config models.
@@ -221,7 +221,7 @@ def test_catalog_order_matches_golden():
 def test_catalog_implemented_set_matches_golden():
     impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
     assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 36
+    assert len(GOLDEN_IMPLEMENTED_SORTED) == 37
 
 
 def test_orders_are_unique_and_ascending():

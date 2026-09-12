@@ -226,7 +226,7 @@ def test_config_echo_with_planned_stage_names_shows_only_runnable_stages():
             "project": {"name": "test"},
             "stages": {
                 "reference_mapping": True,
-                "composition": True,  # RESERVED (not implemented).
+                "molecular_inference": True,  # RESERVED (not implemented).
             },
         }
     )
@@ -244,5 +244,5 @@ def test_config_echo_with_planned_stage_names_shows_only_runnable_stages():
     # Check that reference_mapping appears.
     assert "reference_mapping" in output
 
-    # Check that composition does NOT appear (reserved, unimplemented).
-    assert "composition" not in output
+    # Check that molecular_inference does NOT appear (reserved, unimplemented).
+    assert "molecular_inference" not in output

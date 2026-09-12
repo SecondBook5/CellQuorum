@@ -11,6 +11,22 @@ public API and the configuration schema.
 
 ### Added
 
+- **`composition` (order=190) is implemented**, filling one of the three reserved
+  planner slots. Purely descriptive (statistical testing of compositional shifts stays
+  `differential_abundance`'s job): overall, per-condition, and per-sample cell-type
+  proportion tables and stacked-bar figures, QC-state-aware via the same
+  `qc_state_column` auto-detect convention as `embeddings`. `integration_gate` and
+  `molecular_inference` remain the two still-reserved slots.
+- **An optional cross-compartment ambient-gene filter** for `differential_expression`
+  (`ambient_filter` config block, off by default). SoupX (`ambient_correction`) runs per
+  library before any cell-type label exists, so it cannot catch a gene that peaks in one
+  cell type and leaks into another at low, non-specific levels; pseudobulk DE then
+  amplifies that residual into disease-correlated false positives. The new
+  `cellquorum.stats.ambient_specificity.ambient_gene_mask` flags a gene as ambient for a
+  target group only when it both peaks in a foreign group and is weakly expressed there,
+  so genuinely shared biology (a marker peaking in a related cell type but real in both)
+  survives the specificity gate on its own, with an optional `group_map` for
+  deliberately-curated coarser compartments.
 - **`tests/test_no_hardcoded_machine_paths.py`** keeps machine-specific paths from
   coming back (see *Changed* below for the removal itself). It scans
   every git-tracked file under `configs/`, `src/`, `tests/`, and `scripts/` for absolute

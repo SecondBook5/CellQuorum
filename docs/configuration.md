@@ -138,10 +138,10 @@ Notes:
 
 - **`network_analysis` toggles the `ccc_network` stage** (topology + curvature). This
   is the one place where the config flag name differs from the stage name.
-- **Reserved slots.** The flags `integration_gate`, `composition`, and
-  `molecular_inference` are accepted for forward compatibility, but those stages are
-  not yet implemented — enabling them results in a planned stage that is skipped as
-  "not yet implemented", visible in the plan and provenance.
+- **Reserved slots.** The flags `integration_gate` and `molecular_inference` are
+  accepted for forward compatibility, but those stages are not yet implemented —
+  enabling them results in a planned stage that is skipped as "not yet implemented",
+  visible in the plan and provenance. `composition` (order=190) is implemented.
 
 ## Selecting a method per stage
 

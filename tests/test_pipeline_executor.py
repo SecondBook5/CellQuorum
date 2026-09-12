@@ -320,6 +320,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "cell_cell_communication",
         "clustering",
         "coexpression",
+        "composition",
         "de_viz",
         "differential_abundance",
         "differential_expression",
@@ -487,15 +488,16 @@ def test_executor_records_unimplemented_enabled_stage_as_skipped(tmp_path: Path)
     # Build context containing AnnData.
     context = build_test_context(tmp_path)
 
-    # Build a plan with an enabled future stage (composition not yet implemented).
-    plan = make_plan(make_enabled_stage("composition"))
+    # Build a plan with an enabled future stage (molecular_inference not yet
+    # implemented; composition WAS this fixture's example until it shipped).
+    plan = make_plan(make_enabled_stage("molecular_inference"))
 
     # Execute the plan.
     execution_result = PipelineExecutor().run(context=context, plan=plan)
 
-    # Confirm composition was skipped, not silently ignored.
+    # Confirm molecular_inference was skipped, not silently ignored.
     assert execution_result.succeeded_stage_names() == []
-    assert execution_result.skipped_stage_names() == ["composition"]
+    assert execution_result.skipped_stage_names() == ["molecular_inference"]
 
     # Confirm skip reason explains missing implementation.
     record = execution_result.stage_execution_records[0]

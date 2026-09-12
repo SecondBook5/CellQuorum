@@ -31,7 +31,7 @@ that have no module yet.
 | 160 | `integration_benchmark` | implemented |
 | 170 | `state_scoring` | implemented |
 | 180 | `discovery` | implemented |
-| 190 | `composition` | planned |
+| 190 | `composition` | implemented |
 | 200 | `embeddings` | implemented |
 | 210 | `differential_expression` | implemented |
 | 220 | `differential_abundance` | implemented |

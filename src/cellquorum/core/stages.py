@@ -76,6 +76,7 @@ import cellquorum.stages.integration.benchmark.stage  # noqa: F401
 # State scoring and de-novo discovery run on the annotated object, before embeddings.
 import cellquorum.stages.state_scoring.stage  # noqa: F401
 import cellquorum.stages.discovery.stage  # noqa: F401
+import cellquorum.stages.composition.stage  # noqa: F401
 import cellquorum.stages.integration.embeddings.stage  # noqa: F401
 
 # Comparison + discovery-tail tracks.
@@ -106,7 +107,6 @@ import cellquorum.stages.comparative.module_remodeling.stage  # noqa: F401
 # --- Planned-but-unimplemented stages (no class to decorate) ---
 # integration_gate ranks embeddings BEFORE committing expensive clustering.
 register_planned_stage(name="integration_gate", order=70, config_flag="integration_gate")
-register_planned_stage(name="composition", order=190, config_flag="composition")
 register_planned_stage(name="molecular_inference", order=290, config_flag="molecular_inference")
 
 
