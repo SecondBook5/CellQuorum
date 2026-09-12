@@ -163,3 +163,44 @@ def test_success_path_builds_artifacts_and_metrics(tmp_path: Path) -> None:
     artifact_names = {a.name for a in res.artifacts}
     assert "regulons" in artifact_names
     assert "auc_mtx" in artifact_names
+
+
+def test_scratch_h5ad_does_not_carry_unrelated_layers_and_obsm(tmp_path: Path) -> None:
+    """Writing the scratch h5ad must not duplicate the WHOLE cohort.
+
+    adata.copy() (the old code) deep-copies every layer and obsm entry to change
+    which matrix is X -- the same "12 GB in a minute, VM died" failure mode
+    already fixed once in this exact stage category (coexpression/
+    hdwgcna_method.py). The GRN script only ever reads /obs and /var axis names
+    plus the requested matrix (verified directly against
+    pyscenic_scripts/pyscenic_grn.py), so an unrelated large layer/obsm entry
+    must not be serialized into the scratch h5ad at all.
+    """
+
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            # Fail fast (a MethodSkip) once the h5ad is written -- this test only
+            # cares about what was written to scratch, not the rest of the run.
+            return SimpleNamespace(returncode=1, stderr="stop after write")
+
+    a = _adata()
+    # An unrelated, sizeable extra layer/obsm the scratch h5ad has no business
+    # carrying -- large enough that duplicating it would be the real-world
+    # multi-GB waste, small enough to keep the test fast.
+    a.layers["huge_unrelated_layer"] = np.zeros((a.n_obs, a.n_vars * 20), dtype="float32")[
+        :, : a.n_vars
+    ]
+    a.obsm["X_huge_unrelated"] = np.zeros((a.n_obs, 50), dtype="float32")
+
+    cfg = {"launcher": "python", "layer": "counts", **_db_config(tmp_path)}
+    m = PyscenicMethod()
+    res = m._run(a, cfg, _ctx(tmp_path, FakeBackend()))
+    assert isinstance(res, MethodSkip)
+
+    written = ad.read_h5ad(tmp_path / "scr" / "grn_input.h5ad")
+    assert "huge_unrelated_layer" not in written.layers
+    assert "X_huge_unrelated" not in written.obsm
+    assert written.X.shape == (a.n_obs, a.n_vars)

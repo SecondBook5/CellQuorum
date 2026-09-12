@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import anndata as ad
 import pandas as pd
 
 from cellquorum.backends.pyscenic_backend import PYSCENIC_AUCELL_PY, PYSCENIC_GRN_PY
@@ -121,10 +122,21 @@ class PyscenicMethod(AnalysisMethod):
         # than in pySCENIC. See cellquorum.core.h5ad_io.
         from cellquorum.core.h5ad_io import write_h5ad
 
+        # Genuinely shallow, matching the same fix already applied in this stage
+        # category (coexpression/hdwgcna_method.py): `adata.copy()` duplicates
+        # every layer and obsm entry just to change which matrix is X, and then
+        # write_h5ad serializes all of it to a file the GRN script never reads --
+        # verified directly against pyscenic_scripts/pyscenic_grn.py, which only
+        # ever reads /obs and /var axis names plus the requested matrix.
         if layer and layer != "X" and layer in adata.layers:
-            a2 = adata.copy()
-            a2.X = a2.layers[layer]
-            write_h5ad(a2, h5ad)
+            write_h5ad(
+                ad.AnnData(
+                    X=adata.layers[layer],
+                    obs=adata.obs.copy(),
+                    var=adata.var.copy(),
+                ),
+                h5ad,
+            )
         else:
             write_h5ad(adata, h5ad)
 
