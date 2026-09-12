@@ -18,9 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import anndata as ad
-import numpy as np
 import pandas as pd
-import scipy.sparse as sp
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -97,11 +95,14 @@ class ActivityCascadeVizMethod(AnalysisMethod):
         n_bins = int(config.get("cascade_n_bins") or 20)
         xlab = config.get("cascade_xlab") or ""
 
-        # Per-cell normalized expression as a cells × genes frame (decoupler's
-        # DataFrame path returns scores rather than mutating adata.obsm).
-        matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
-        dense = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
-        data = pd.DataFrame(dense, index=adata.obs_names, columns=adata.var_names)
+        # Passed to decoupler as AnnData + layer name, not a dense pandas DataFrame
+        # built from the FULL expression matrix: decoupler's AnnData-input path
+        # handles a sparse layer natively (internal batching via bsize), so manually
+        # densifying here would be the same "12 GB in a minute, VM died" failure
+        # mode already fixed twice elsewhere (state_scoring/aucell_method.py,
+        # comparative/enrichment/activity_method.py) -- a real cohort's full matrix
+        # (201,871 x 33,417) densified is ~54 GB.
+        activity_layer = layer if layer != "X" and layer in adata.layers else None
         pt_full = pd.to_numeric(adata.obs[pt_key], errors="coerce")
 
         from cellquorum.stages.trajectory.viz import activity_cascade as cascade
@@ -122,7 +123,15 @@ class ActivityCascadeVizMethod(AnalysisMethod):
             method = method_by_res.get(str(resource).lower(), "ulm")
             top = top_by_res.get(str(resource).lower(), 20)
             try:
-                es, _ = getattr(dc.mt, method)(data, net, tmin=min_size)
+                # decoupler mutates adata.obsm[f"score_{method}"] in place and
+                # returns None when no observations were dropped; when it drops
+                # all-zero observations it instead returns a NEW, smaller AnnData
+                # carrying the scores and leaves the original untouched (verified
+                # empirically, same behavior across aucell/ulm/mlm).
+                result = getattr(dc.mt, method)(adata, net, tmin=min_size, layer=activity_layer)
+                source = adata if result is None else result
+                es = source.obsm.pop(f"score_{method}")
+                source.obsm.pop(f"padj_{method}", None)
                 # decoupler may drop all-zero cells — realign pseudotime to the
                 # returned (possibly shortened) index before binning.
                 pt = pt_full.reindex(es.index).to_numpy(dtype=float)

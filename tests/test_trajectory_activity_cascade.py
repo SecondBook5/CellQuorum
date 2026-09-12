@@ -175,3 +175,79 @@ def test_activity_cascade_offline_glue(tmp_path, monkeypatch):
     assert suffixes == {".pdf", ".png"}
     for a in figs:
         assert Path(a.path).exists()
+
+
+def test_activity_cascade_works_from_a_sparse_layer_without_manual_densification(
+    tmp_path, monkeypatch
+):
+    """Per-cell activity scoring must pass the sparse layer straight to decoupler
+    rather than manually building a dense pandas DataFrame from the full
+    expression matrix first -- the same "12 GB in a minute, VM died" failure
+    mode already fixed twice elsewhere (state_scoring/aucell_method.py,
+    comparative/enrichment/activity_method.py). At real cohort scale
+    (201,871 x 33,417) a manual dense conversion is ~54 GB; decoupler's own
+    AnnData-input path handles a sparse layer natively via internal batching.
+
+    This fixture is far too small to observe that memory difference directly
+    (decoupler densifies small inputs internally regardless of caller intent --
+    confirmed empirically, and orthogonal to what this test can check), so this
+    checks the property that IS testable at this scale: the method never builds
+    its own dense copy of the full gene space before calling decoupler, and
+    still produces correct results from a sparse layer.
+    """
+    pytest.importorskip("decoupler")
+    import scipy.sparse as sp
+
+    n, n_genes = 200, 20
+    rng = np.random.default_rng(1)
+    pt = np.linspace(0, 1, n)
+    genes = [f"G{i}" for i in range(n_genes)]
+    X = (rng.random((n, n_genes)) + 0.1).astype(np.float32)
+    for j in range(5):
+        X[:, j] += pt
+    for j in range(5, 10):
+        X[:, j] += 1 - pt
+    sparse_X = sp.csr_matrix(X)
+
+    adata = ad.AnnData(
+        X=sparse_X.copy(),
+        obs=pd.DataFrame({"palantir_pseudotime": pt}, index=[f"c{i}" for i in range(n)]),
+        var=pd.DataFrame(index=genes),
+    )
+    adata.layers["cellquorum_normalized"] = sparse_X.copy()
+
+    net = pd.DataFrame(
+        {
+            "source": ["S_up"] * 5 + ["S_down"] * 5,
+            "target": genes[:5] + genes[5:10],
+            "weight": [1.0] * 10,
+        }
+    )
+    monkeypatch.setattr(
+        "cellquorum.stages.trajectory.viz._activity_cascade.get_net",
+        lambda *a, **k: net,
+    )
+
+    # The method itself must never call pd.DataFrame on a densified copy of the
+    # full gene space -- only decoupler's own internals may (and, at this
+    # fixture's scale, do).
+    import pandas as real_pd
+
+    original_dataframe_init = real_pd.DataFrame.__init__
+
+    def _guarded_init(self, data=None, *args, **kwargs):
+        if isinstance(data, np.ndarray) and data.shape == (n, n_genes):
+            raise AssertionError(
+                "activity_cascade built its own dense DataFrame from the FULL "
+                "expression matrix instead of passing the sparse layer straight "
+                "to decoupler."
+            )
+        return original_dataframe_init(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(real_pd.DataFrame, "__init__", _guarded_init)
+
+    config = {"activity_resources": ["myset"], "min_size": 5, "cascade_n_bins": 8}
+    result = ActivityCascadeVizMethod()._run(adata, config, _Ctx(tmp_path))
+
+    assert not isinstance(result, MethodSkip)
+    assert result.metrics["resources"] == ["myset"]
