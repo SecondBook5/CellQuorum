@@ -1,0 +1,20 @@
+{
+  "source_tree_sha256": "88a29adf92bc1a311466faf7b2ac8868b641bb8cd49ce2e0b622133e19999ef6",
+  "source_hash_method": "sorted relative Python paths, NUL, file bytes, NUL",
+  "packages": {
+    "cellquorum": "0.1.0",
+    "scanpy": "1.12.1",
+    "anndata": "0.12.10",
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scrublet": "0.2.3",
+    "scikit-learn": "1.8.0"
+  },
+  "scope": "QC-only CPU run on published metadata barcode subset; source checkout, not locked installed wheel",
+  "seed": 7,
+  "thread_environment": {
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "NUMBA_NUM_THREADS": "1"
+  }
+}

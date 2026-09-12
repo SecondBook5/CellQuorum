@@ -1,0 +1,7 @@
+sample,annotation,input_cells,fit_manifold,predicted_doublets
+CLL-pilot1_fresh,B cell,2315,2055,158
+CLL-pilot1_fresh,Macrophage,54,48,3
+CLL-pilot1_fresh,T cell,193,183,4
+CLL-pilot1_TST,B cell,2102,1815,212
+CLL-pilot1_TST,Macrophage,42,37,0
+CLL-pilot1_TST,T cell,195,187,3

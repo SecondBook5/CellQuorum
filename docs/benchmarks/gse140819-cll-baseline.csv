@@ -1,0 +1,3 @@
+sample,input_cells,output_cells,core,borderline,quarantine,fit_manifold,reference_doublets,predicted_doublets,doublet_overlap,qc_seconds,seconds,max_rss_kib
+CLL-pilot1_fresh,2562,2562,2447,113,2,2435,109,13,8,28.073007,41.43457661299999,2094896
+CLL-pilot1_TST,2339,2339,2253,86,0,2242,38,2,1,22.569991,32.07238921499993,2119460

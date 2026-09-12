@@ -1,0 +1,10 @@
+sample,accession,specimen,assay,protocol,reference
+HTAPP-656-SMP-3481_fresh-T1,GSM4186963,HTAPP-656-SMP-3481,scrna_whole_cell,NB-C4,Figure 1b and Figure 6
+HTAPP-656-SMP-3481_TST,GSM4186969,HTAPP-656-SMP-3481,snrna,TST,Figure 1b and Figure 6
+HTAPP-963-SMP-4741_fresh,GSM4186974,HTAPP-963-SMP-4741,scrna_whole_cell,LD,Figure 1b and Figure 6
+HTAPP-963-SMP-4741_CST,GSM4186979,HTAPP-963-SMP-4741,snrna,CST,Figure 1b and Figure 5
+HTAPP-963-SMP-4741_TST,GSM4186980,HTAPP-963-SMP-4741,snrna,TST,Figure 1b and Figure 6
+CLL-pilot1_fresh,GSM4186983,CLL1,scrna_whole_cell,thawed-no-dissociation,Figure 1b and Extended Data Figure 10
+CLL-pilot1_TST,GSM4186984,CLL1,snrna,TST,Figure 1b and Extended Data Figure 10
+HTAPP-StJude-SMP-PDX1_cell,GSM4186964,O-PDX1,scrna_whole_cell,papain-kit,Figure 1b and Extended Data Figure 10
+HTAPP-StJude-SMP-PDX1_nuclei,GSM4186970,O-PDX1,snrna,TST,Figure 1b and Extended Data Figure 10

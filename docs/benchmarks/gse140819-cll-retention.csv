@@ -1,0 +1,7 @@
+sample,annotation,input_cells,retained_cells,fit_manifold,quarantine
+CLL-pilot1_fresh,B cell,2315,2315,2202,1
+CLL-pilot1_fresh,Macrophage,54,54,50,1
+CLL-pilot1_fresh,T cell,193,193,183,0
+CLL-pilot1_TST,B cell,2102,2102,2016,0
+CLL-pilot1_TST,Macrophage,42,42,37,0
+CLL-pilot1_TST,T cell,195,195,189,0

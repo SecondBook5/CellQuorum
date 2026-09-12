@@ -1,0 +1,132 @@
+{
+  "enabled": true,
+  "metrics": {
+    "percent_top": [
+      20
+    ],
+    "log1p": true,
+    "layer": null,
+    "use_raw": false
+  },
+  "floors": {
+    "min_genes_per_cell": 200,
+    "min_counts_per_cell": null,
+    "min_cells_per_gene": 3
+  },
+  "graded": {
+    "enabled": true,
+    "concern_severity": 0.5,
+    "severe_severity": 0.667,
+    "min_concordant_families": 2,
+    "uninformative_capture_severity": 0.9,
+    "min_coverage_for_quarantine": 0.5,
+    "multiplet_severity": 0.6,
+    "nuclear_axis_applicable": false,
+    "lineage_conditional": true,
+    "lineage_resolution": 0.5,
+    "lineage_min_cells": 25,
+    "lineage_min_genes": 50,
+    "lineage_suspect_severity": 0.667,
+    "lineage_vulnerable_fraction": 0.5,
+    "archetype_audit": true,
+    "archetype_max": 10,
+    "archetype_bootstrap": 0,
+    "archetype_max_cells": 10000,
+    "archetype_restarts": 1,
+    "archetype_timeout_seconds": 900,
+    "self_check": true,
+    "self_check_fails_run": true,
+    "self_check_minimum_core": 0.5
+  },
+  "mito_mixture": {
+    "enabled": false,
+    "mito_metric": "pct_counts_mito",
+    "complexity_metric": "n_genes_by_counts",
+    "posterior_cutoff": 0.75,
+    "monotone_mito_projection": true,
+    "keep_all_below_boundary": true,
+    "enforce_left_cutoff": true,
+    "groupby": [],
+    "fallback_groupby": [],
+    "level_policy": "uniform",
+    "min_cells": 100,
+    "max_iterations": 500,
+    "tolerance": 1e-06,
+    "n_restarts": 5,
+    "random_state": 0,
+    "min_component_weight": 0.01
+  },
+  "sampleqc": {
+    "enabled": false,
+    "sample_key": "sample_id",
+    "n_components": null,
+    "alpha": 0.01,
+    "min_cells_per_sample": 25,
+    "random_state": 22,
+    "timeout_seconds": 600
+  },
+  "features": {
+    "mitochondrial_prefixes": [
+      "MT-"
+    ],
+    "ribosomal_prefixes": [
+      "RPS",
+      "RPL"
+    ],
+    "hemoglobin_regexes": [
+      "^HB[ABDEGMQZ]\\d*(?!\\w)"
+    ],
+    "custom_exclude_prefixes": []
+  },
+  "doublets": {
+    "enabled": true,
+    "method": "scrublet",
+    "methods": [
+      "scrublet"
+    ],
+    "consensus": "any",
+    "remove": false,
+    "expected_doublet_rate": 0.06,
+    "score_threshold": null,
+    "per_sample": true
+  },
+  "ambient": {
+    "enabled": true,
+    "method": "audit",
+    "correction_enabled": false,
+    "contamination_fraction": null,
+    "marker_genes": [],
+    "require_raw_droplets_for_correction": true
+  },
+  "duplicate_names": {
+    "var_names": "make_unique",
+    "obs_names": "warn"
+  },
+  "attrition_audit": {
+    "enabled": true,
+    "factors": [],
+    "block": null,
+    "audit_batch": true,
+    "audit_subsets": true,
+    "subset": null,
+    "alpha": 0.05,
+    "min_rate_difference": 0.02
+  },
+  "outputs": {
+    "write_metrics_table": true,
+    "write_filter_table": true,
+    "write_mixture_table": true,
+    "write_report_table": true,
+    "cell_labels": true,
+    "attrition_audit": true,
+    "write_summary_json": true,
+    "write_h5ad": true,
+    "write_figures": false,
+    "figure_format": "png",
+    "html_report": true,
+    "overview_figures": true,
+    "publication_tables": true,
+    "figure_dpi": 300
+  },
+  "fail_on_empty_result": true
+}

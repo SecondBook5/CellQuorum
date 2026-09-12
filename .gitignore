@@ -96,7 +96,6 @@ configs/le_global_clean_da_paired.yaml
 # study scripts and their outputs are not part of the reusable engine.
 lymphedema/
 
-# Test/tutorial datasets. The DATA is never tracked — GSE140819 alone is 1.2 GB — but the
-# recipe is: scripts/prepare_gse140819.py plus configs/gse140819.yaml reproduce this directory
-# from GEO. A reusable package ships the downloader, not the bytes.
+# Local benchmark datasets are not tracked. GSE140819 input coverage and label
+# provenance are documented in docs/benchmarks/gse140819.md.
 data/
