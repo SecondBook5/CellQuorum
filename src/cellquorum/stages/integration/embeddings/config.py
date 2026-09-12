@@ -88,7 +88,15 @@ class EmbeddingsConfig(StrictBaseModel):
         color_by: obs columns to colour the atlas by, one panel each. Its own switch:
             empty FOLLOWS the PAGA grouping rather than restating it, but setting it
             stops ``paga_groupby`` from doubling as the atlas's colour decision.
-        qc_state_column: obs column holding the QC state (core/borderline/quarantine).
+        qc_state_column: obs column holding the QC state. None (the default) auto-detects:
+            ``qc_state_final`` (written by qc_finalization, order=135 -- core/rescued/
+            unresolved_borderline/quarantine) when present, else ``qc_state_initial``
+            (core/borderline/quarantine, pre-rescue). A hardcoded default naming the
+            initial column would go stale the moment a config turns qc_finalization on
+            without separately remembering to update this column too -- and silently
+            so: ``atlas_states: [core, rescued]`` filtered against ``qc_state_initial``
+            would match zero "rescued" cells, since that state does not exist pre-rescue,
+            dropping every rescued cell from the atlas rather than including it as asked.
         atlas_states: QC states the atlas panel is restricted to, e.g. ``[core]``. Empty
             draws every cell (the historical behaviour). When set, BOTH the restricted
             panel and an ``_allcells`` panel are written, so what the restriction removed
@@ -120,7 +128,7 @@ class EmbeddingsConfig(StrictBaseModel):
     legend: bool = True
     figure_title: str = ""
     color_by: list[str] = []
-    qc_state_column: str = "qc_state_initial"
+    qc_state_column: str | None = None
     atlas_states: list[str] = []
     # Drop probable multiplets from the restricted atlas panel (they stay in _allcells).
     # A flagged doublet is not one biological cell; it pools in the central mixing zone

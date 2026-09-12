@@ -206,7 +206,17 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         precisely to show what the restriction removed.
         """
         states = [str(s) for s in (config.get("atlas_states") or [])]
-        column = str(config.get("qc_state_column") or "qc_state_initial")
+        configured_column = config.get("qc_state_column")
+        # None (the default) auto-detects: qc_state_final (qc_finalization's own final
+        # verdict) when present, else qc_state_initial. A hardcoded default naming the
+        # initial column would go silently stale the moment qc_finalization is enabled
+        # without separately updating this column too -- see the config docstring.
+        if configured_column:
+            column = str(configured_column)
+        elif "qc_state_final" in adata.obs.columns:
+            column = "qc_state_final"
+        else:
+            column = "qc_state_initial"
         if not states or column not in adata.obs.columns:
             return [("", None)]
         mask = adata.obs[column].astype(str).isin(states).to_numpy()

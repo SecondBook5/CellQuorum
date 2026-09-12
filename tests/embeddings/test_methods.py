@@ -136,6 +136,53 @@ def test_categorical_method_skips_without_embedding(tmp_path):
     assert isinstance(res, MethodSkip)
 
 
+def test_resolve_subsets_auto_detects_qc_state_final_when_present():
+    """qc_state_column defaults to None (auto-detect), not a hardcoded stale column.
+
+    A config that turns on qc_finalization (order=135) gets qc_state_final
+    (core/rescued/unresolved_borderline/quarantine) instead of the pre-rescue
+    qc_state_initial (core/borderline/quarantine) -- and "rescued" does not
+    exist as a value in qc_state_initial at all, so filtering against the wrong
+    column would silently match zero rescued cells instead of including them.
+    """
+    a = _adata()
+    a.obs["qc_state_final"] = ["core"] * 10 + ["rescued"] * 15 + ["quarantine"] * 25
+    cfg = _cfg(atlas_states=["core", "rescued"])
+
+    subsets = CategoricalEmbeddingMethod()._resolve_subsets(a, cfg)
+
+    named = dict(subsets)
+    mask = named["_core_rescued"]
+    assert int(mask.sum()) == 25
+
+
+def test_resolve_subsets_falls_back_to_qc_state_initial_when_final_absent():
+    """Older configs (no qc_finalization) keep working via the original column."""
+    a = _adata()
+    a.obs["qc_state_initial"] = ["core"] * 20 + ["borderline"] * 30
+    cfg = _cfg(atlas_states=["core"])
+
+    subsets = CategoricalEmbeddingMethod()._resolve_subsets(a, cfg)
+
+    named = dict(subsets)
+    mask = named["_core"]
+    assert int(mask.sum()) == 20
+
+
+def test_resolve_subsets_respects_an_explicit_qc_state_column():
+    """An explicit config value must still win over auto-detection."""
+    a = _adata()
+    a.obs["qc_state_final"] = ["core"] * 50
+    a.obs["custom_qc_col"] = ["keep"] * 30 + ["drop"] * 20
+    cfg = _cfg(atlas_states=["keep"], qc_state_column="custom_qc_col")
+
+    subsets = CategoricalEmbeddingMethod()._resolve_subsets(a, cfg)
+
+    named = dict(subsets)
+    mask = named["_keep"]
+    assert int(mask.sum()) == 30
+
+
 def test_overlay_filename_collision_deduplicates(tmp_path):
     """Two features sanitizing to the same stem produce distinct files + warning."""
     a = _adata_rendered()
