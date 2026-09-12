@@ -37,6 +37,70 @@ _SYMBOL_COLUMNS: tuple[str, ...] = (
     "gene_ids",
 )
 
+#: HVG flavors that scanpy documents as expecting raw counts. Every other flavor
+#: (seurat, cell_ranger) is dispersion-based and expects log-normalized data --
+#: the same distinction already handled correctly in feature_selection/hvg.py.
+_COUNT_HVG_FLAVORS = {"seurat_v3", "seurat_v3_paper"}
+
+
+def _select_hvg_genes(
+    atlas_train: ad.AnnData,
+    *,
+    n_top_genes: int,
+    hvg_flavor: str,
+    force_genes: Sequence[str],
+    counts_layer: str,
+) -> list[str]:
+    """Return the ordered HVG gene list, feeding each flavor the input it expects.
+
+    ``seurat_v3``/``seurat_v3_paper`` operate on raw counts; ``seurat`` and
+    ``cell_ranger`` are dispersion-based and expect log-normalized data (scanpy's own
+    documented contract). Feeding raw counts to a dispersion-based flavor is not an
+    error -- it silently produces a near-random gene set that scVI/scANVI then train
+    on. Confirmed empirically: 0/50 true-variable genes recovered from raw counts vs
+    7/50 from correctly log-normalized data on the same synthetic fixture.
+
+    Args:
+        atlas_train: Atlas already subset to genes shared with the query. Mutated in
+            place (``var['highly_variable']`` and friends); any temporary
+            log-normalized layer added for a non-count flavor is removed again
+            before returning, since ``counts_layer`` is read again later for scVI.
+        n_top_genes: HVG count to select.
+        hvg_flavor: scanpy ``highly_variable_genes`` flavor.
+        force_genes: Genes forced into the HVG set regardless of score.
+        counts_layer: Layer holding raw counts.
+
+    Returns:
+        Gene names in ``atlas_train.var_names`` order (HVGs plus any force_genes).
+    """
+
+    if hvg_flavor in _COUNT_HVG_FLAVORS:
+        hvg_layer = counts_layer
+    else:
+        # Computed into a throwaway layer so the raw counts used later for scVI
+        # training are untouched.
+        hvg_layer = "_hvg_lognorm"
+        atlas_train.layers[hvg_layer] = atlas_train.layers[counts_layer].copy()
+        sc.pp.normalize_total(atlas_train, target_sum=1e4, layer=hvg_layer)
+        sc.pp.log1p(atlas_train, layer=hvg_layer)
+
+    try:
+        sc.pp.highly_variable_genes(
+            atlas_train, n_top_genes=n_top_genes, flavor=hvg_flavor, layer=hvg_layer
+        )
+    finally:
+        if hvg_layer == "_hvg_lognorm":
+            del atlas_train.layers[hvg_layer]
+
+    hvg_mask = atlas_train.var["highly_variable"].values
+    hvg_set = set(atlas_train.var_names[hvg_mask])
+    for gene in force_genes:
+        if gene in atlas_train.var_names:
+            hvg_set.add(gene)
+
+    # Preserve order.
+    return [g for g in atlas_train.var_names if g in hvg_set]
+
 
 def _align_atlas_gene_space(
     atlas: ad.AnnData,
@@ -493,23 +557,15 @@ class ScArchesMethod(AnalysisMethod):
         del atlas
         query_train = adata[:, shared].copy()
 
-        # HVG selection.
-        sc.pp.highly_variable_genes(
+        # HVG selection. See `_select_hvg_genes` for why this dispatches on flavor
+        # rather than always using counts_layer.
+        hvg_list = _select_hvg_genes(
             atlas_train,
             n_top_genes=n_top_genes,
-            flavor=hvg_flavor,
-            layer=counts_layer,
+            hvg_flavor=hvg_flavor,
+            force_genes=force_genes,
+            counts_layer=counts_layer,
         )
-        hvg_mask = atlas_train.var["highly_variable"].values
-        hvg_set = set(atlas_train.var_names[hvg_mask])
-
-        # Add force_genes to HVG set.
-        for gene in force_genes:
-            if gene in atlas_train.var_names:
-                hvg_set.add(gene)
-
-        # Preserve order.
-        hvg_list = [g for g in atlas_train.var_names if g in hvg_set]
         atlas_train = atlas_train[:, hvg_list].copy()
         query_train = query_train[:, hvg_list].copy()
 
