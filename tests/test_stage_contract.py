@@ -626,24 +626,58 @@ def test_stage_execution_record_to_dict_serializes_all_fields() -> None:
     assert payload["error"] is None
 
 
-def test_stage_execution_record_rejects_negative_duration() -> None:
+def test_stage_execution_record_clamps_small_negative_duration_to_zero() -> None:
     """
-    Verify that execution records reject impossible negative durations.
+    A small backward jump is treated as a wall-clock artifact, not a bug.
 
-    Negative durations indicate a clock or lifecycle bug and should fail during
-    record construction.
+    `datetime.now(UTC)` is a wall clock, not monotonic: an NTP step correction
+    (or a VM pause/resume) can legitimately move it backward mid-stage. Confirmed
+    empirically -- a real full-suite run hit a 1.33s backward step and crashed
+    two otherwise-passing end-to-end pipeline tests over it. Crashing an
+    hours-long real pipeline run over a monitoring metric is disproportionate,
+    so this clamps to 0.0 instead of raising.
     """
 
     # Define a start time.
     started_at = datetime(2026, 1, 1, 12, 0, 1, tzinfo=UTC)
 
-    # Define an impossible end time before the start.
+    # Define an end time 1 second before the start -- within clock-skew tolerance.
     ended_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     # Create a stage result.
     result = StageResult(adata=ad.AnnData(X=np.ones((1, 1))))
 
-    # Confirm negative durations are rejected.
+    record = StageExecutionRecord.success(
+        stage_name="qc",
+        result=result,
+        started_at_utc=started_at,
+        ended_at_utc=ended_at,
+    )
+    assert record.duration_seconds == 0.0
+    # The raw, unaltered timestamps stay inspectable even though duration is clamped.
+    assert record.started_at_utc == started_at
+    assert record.ended_at_utc == ended_at
+
+
+def test_stage_execution_record_rejects_implausibly_large_negative_duration() -> None:
+    """
+    A multi-minute backward jump is not a plausible clock artifact.
+
+    Nothing legitimately steps the wall clock back by whole minutes, so this
+    remains a real lifecycle bug (e.g. swapped start/end arguments) and should
+    still fail loudly during record construction.
+    """
+
+    # Define a start time.
+    started_at = datetime(2026, 1, 1, 12, 5, 0, tzinfo=UTC)
+
+    # Define an end time 5 minutes before the start -- far beyond clock-skew tolerance.
+    ended_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    # Create a stage result.
+    result = StageResult(adata=ad.AnnData(X=np.ones((1, 1))))
+
+    # Confirm implausibly large negative durations are still rejected.
     with pytest.raises(ValueError, match="end time cannot be earlier"):
         StageExecutionRecord.success(
             stage_name="qc",

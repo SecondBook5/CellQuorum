@@ -718,6 +718,20 @@ def _ensure_utc_datetime(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+#: Largest backward wall-clock jump tolerated as a clock artifact rather than a
+#: lifecycle bug. `datetime.now(UTC)` is a wall clock, not a monotonic one, so an
+#: NTP step correction (or a VM pause/resume) can legitimately move it backward
+#: mid-stage -- confirmed empirically: a real full-suite run hit a 1.33s backward
+#: step and crashed two otherwise-passing end-to-end pipeline tests over it. A
+#: multi-hour real pipeline run (this engine's actual workload) is far more
+#: likely to encounter exactly this than a genuine swapped-timestamp bug is, so
+#: crashing hours of completed work over a monitoring metric is disproportionate.
+#: Chosen generously above the observed 1.33s while still well below anything a
+#: real logic bug (e.g. swapped start/end arguments spanning a stage's actual
+#: runtime) would produce.
+_CLOCK_SKEW_TOLERANCE_SECONDS = 5.0
+
+
 def _duration_seconds(started_at_utc: datetime, ended_at_utc: datetime) -> float:
     """
     Compute a non-negative duration in seconds.
@@ -727,24 +741,30 @@ def _duration_seconds(started_at_utc: datetime, ended_at_utc: datetime) -> float
         ended_at_utc: Stage end timestamp.
 
     Returns:
-        Duration in seconds.
+        Duration in seconds. Clamped to 0.0 (not raised) when the end timestamp
+        precedes the start by no more than `_CLOCK_SKEW_TOLERANCE_SECONDS` -- see
+        that constant for why. The raw start/end timestamps stored alongside this
+        value are never altered, so the underlying clock anomaly stays visible to
+        anyone inspecting provenance directly; only the derived duration reads 0.
 
     Raises:
-        ValueError: If the end timestamp occurs before the start timestamp.
+        ValueError: If the end timestamp precedes the start by more than
+            `_CLOCK_SKEW_TOLERANCE_SECONDS` -- implausible for a clock artifact,
+            so still treated as a lifecycle bug.
     """
 
-    # Normalize the start timestamp to UTC.
+    # Normalize both timestamps to UTC.
     start = _ensure_utc_datetime(started_at_utc)
-
-    # Normalize the end timestamp to UTC.
     end = _ensure_utc_datetime(ended_at_utc)
 
-    # Reject impossible negative durations.
-    if end < start:
+    delta = (end - start).total_seconds()
+    if delta < 0:
+        if -delta <= _CLOCK_SKEW_TOLERANCE_SECONDS:
+            return 0.0
         raise ValueError(
             "Stage execution end time cannot be earlier than start time. "
             f"Start: {start.isoformat()}, end: {end.isoformat()}."
         )
 
     # Return the duration in seconds.
-    return (end - start).total_seconds()
+    return delta
