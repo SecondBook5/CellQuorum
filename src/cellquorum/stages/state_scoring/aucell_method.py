@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import anndata as ad
-import numpy as np
 import pandas as pd
-import scipy.sparse as sp
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -93,18 +91,36 @@ class AucellMethod(AnalysisMethod):
         net = pd.DataFrame(rows, columns=["source", "target"])
         net["weight"] = 1.0
 
-        matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
-        dense = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
-        data = pd.DataFrame(dense, index=adata.obs_names, columns=adata.var_names)
-
-        # AUCell can drop all-zero cells, so realign to the full obs index and
-        # backfill dropped cells with 0.0 (no expression → no enrichment).
+        # Pass the AnnData + layer name straight through rather than building a
+        # dense pandas DataFrame from the FULL expression matrix ourselves.
+        # decoupler's AnnData-input path handles a sparse layer natively (with
+        # internal batching via `bsize`); manually densifying here is the same
+        # "12 GB in a minute, VM died" failure mode already fixed once elsewhere
+        # in this stage (score_genes_method.py's adata.copy() bug), just much
+        # bigger: a real cohort's full matrix (201,871 x 33,417) densified is
+        # ~54 GB, dwarfing the handful of program genes actually being scored.
+        #
+        # decoupler mutates adata.obsm["score_aucell"] in place and returns None
+        # when no observations were dropped; when it drops all-zero observations
+        # it instead returns a NEW, smaller AnnData carrying the scores and
+        # leaves the original `adata` untouched (verified empirically -- this is
+        # not documented behavior). So the source of the per-cell AUCs depends
+        # on which happened, and the result is realigned to the full obs index
+        # with dropped cells backfilled to 0.0 (no expression -> no enrichment)
+        # exactly as the dense-DataFrame path did before this fix.
         try:
-            es, _ = dc.mt.aucell(data, net, tmin=min_genes)
-            es = es.copy()
-            aligned = es.reindex(adata.obs_names)
+            result = dc.mt.aucell(
+                adata, net, tmin=min_genes, layer=(layer if layer != "X" else None)
+            )
         except Exception as exc:
             return self._skip("AUCell failed", error=str(exc)[:300])
+
+        source = adata if result is None else result
+        try:
+            es = source.obsm.pop("score_aucell")
+        except KeyError:
+            return self._skip("AUCell produced no program columns")
+        aligned = es.reindex(adata.obs_names)
 
         if aligned.shape[1] == 0:
             return self._skip("AUCell produced no program columns")

@@ -196,6 +196,79 @@ def test_aucell_skips_when_decoupler_absent(tmp_path, monkeypatch):
     assert "decoupler" in out.reason.lower()
 
 
+def _sparse_adata(n_cells: int = 40, *, zero_cell: bool = False) -> ad.AnnData:
+    """Sparse variant of ``_adata``, matching a real cohort's layer dtype.
+
+    A production run's ``cellquorum_normalized`` layer is sparse; densifying the
+    FULL expression matrix (not just the scored genes) to hand it to AUCell is
+    the same class of memory blowup already fixed once in score_genes_method.py
+    ("12 GB in about a minute... the VM died" on a much smaller allocation than a
+    full dense 201,871 x 33,417 matrix would be). This fixture exercises that path.
+    """
+    import scipy.sparse as sp
+
+    a = _adata(n_cells=n_cells)
+    dense = np.asarray(a.layers[LAYER])
+    if zero_cell:
+        dense = dense.copy()
+        dense[0, :] = 0.0
+    sparse = sp.csr_matrix(dense)
+    a.X = sparse.copy()
+    a.layers[LAYER] = sparse.copy()
+    return a
+
+
+def test_aucell_does_not_densify_the_full_expression_matrix(tmp_path, monkeypatch):
+    """AUCell must not materialize a dense copy of the WHOLE expression matrix.
+
+    decoupler's own AnnData-input path handles a sparse layer natively (with
+    internal batching via ``bsize``), so nothing here should ever call
+    ``.toarray()``/``np.asarray()`` on the full sparse layer -- doing so is
+    exactly the "12 GB in a minute, VM died" failure mode already fixed once
+    elsewhere in this stage (score_genes_method.py), just bigger: a real cohort's
+    full matrix (201,871 x 33,417) densified is ~54 GB.
+    """
+    pytest.importorskip("decoupler")
+    import scipy.sparse as sp
+
+    a = _sparse_adata()
+    cfg = _config()
+
+    original_toarray = sp.csr_matrix.toarray
+
+    def _guarded_toarray(self, *args, **kwargs):
+        if self.shape == a.layers[LAYER].shape:
+            raise AssertionError(
+                "AUCell densified the FULL expression matrix instead of letting "
+                "decoupler handle the sparse layer natively."
+            )
+        return original_toarray(self, *args, **kwargs)
+
+    monkeypatch.setattr(sp.csr_matrix, "toarray", _guarded_toarray)
+
+    out = AucellMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
+    assert not isinstance(out, MethodSkip)
+    assert "X_state_aucell" in a.obsm
+
+
+def test_aucell_backfills_an_all_zero_cell_from_sparse_input(tmp_path):
+    """decoupler drops empty observations and returns a NEW smaller AnnData
+    instead of mutating the original in place -- confirmed empirically: passing
+    an AnnData with an all-zero row does not populate the original object's
+    obsm at all. The method must still deliver one row per input cell, with the
+    dropped cell backfilled to 0.0, exactly as the dense-DataFrame path already
+    did before this fix.
+    """
+    pytest.importorskip("decoupler")
+    a = _sparse_adata(zero_cell=True)
+    cfg = _config()
+
+    out = AucellMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
+    assert not isinstance(out, MethodSkip)
+    assert a.obsm["X_state_aucell"].shape == (a.n_obs, 2)
+    assert np.allclose(a.obsm["X_state_aucell"][0], 0.0)
+
+
 # --------------------------------------------------------------------------- #
 # StateScoringStage dispatch
 # --------------------------------------------------------------------------- #
