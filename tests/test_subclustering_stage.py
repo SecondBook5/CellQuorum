@@ -15,6 +15,8 @@ report success while silently delivering none of the subtypes it was configured 
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import anndata as ad
@@ -22,7 +24,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cellquorum.stages.clustering.subclustering.config import SubclusteringConfig
+from cellquorum.stages.clustering.subclustering.config import FormalTestConfig, SubclusteringConfig
 from cellquorum.stages.clustering.subclustering.stage import (
     SubclusteringFocusError,
     SubclusteringStage,
@@ -131,6 +133,71 @@ def test_a_run_with_nothing_to_correct_for_says_so_out_loud():
     result = SubclusteringStage().run(ctx)
 
     assert any("no batch/donor key" in w for w in result.warnings)
+
+
+@dataclass
+class _ChoirCapturingBackend:
+    """Stands in for the Rscript backend: returns real cluster labels for CHOIR,
+    without running R, so has_cluster_labels becomes True and the donor gate
+    actually runs.
+    """
+
+    captured: list = None
+    returncode: int = 0
+
+    def __post_init__(self):
+        self.captured = []
+
+    def _r_package_available(self, name: str) -> bool:
+        return True
+
+    def run_script(self, script, args, timeout=None):
+        self.captured.append((Path(script).name, list(args)))
+        out_csv = Path(args[1])
+        in_h5ad = Path(args[0])
+        written = ad.read_h5ad(in_h5ad)
+        labels = ["1" if i % 2 == 0 else "2" for i in range(written.n_obs)]
+        pd.DataFrame({"barcode": written.obs_names, "subcluster": labels}).to_csv(
+            out_csv, index=False
+        )
+
+        @dataclass
+        class _Result:
+            returncode: int
+            stdout: str = ""
+            stderr: str = ""
+
+        return _Result(returncode=self.returncode)
+
+
+def test_donor_gate_reuses_choirs_batch_corrected_embedding(monkeypatch, tmp_path):
+    """The donor gate must test on the SAME corrected space CHOIR partitioned on.
+
+    CHOIR gets a batch-corrected embedding (X_pca_harmony) precisely so its
+    permutation-tested cluster count is not a donor artifact wearing a subtype's
+    name (see test_subclustering_choir_reduction.py). The donor gate's
+    classifier-separability / LODO tests exist for the exact same reason -- to
+    detect a cluster that is really just donor identity -- so testing them on a
+    freshly-derived UNCORRECTED PCA instead defeats the purpose: an uncorrected
+    embedding still encodes the very donor signal the gate is supposed to catch.
+    """
+    from cellquorum.stages.clustering.subclustering import partition as partition_module
+
+    monkeypatch.setattr(partition_module.shutil, "which", lambda name: "/usr/bin/Rscript")
+
+    parent = _parent_adata()
+    ctx = _context(parent, focus_labels=["Fibroblasts"])
+    ctx.config.subclustering = ctx.config.subclustering.model_copy(
+        update={"formal_test": FormalTestConfig(method="none")}
+    )
+    backend = _ChoirCapturingBackend()
+    ctx.backend_registry = SimpleNamespace(get=lambda name: backend)
+    ctx.paths = SimpleNamespace(figures=str(tmp_path), scratch=str(tmp_path), root=str(tmp_path))
+
+    result = SubclusteringStage().run(ctx)
+
+    assert result.metrics.get("choir_reduction") == "X_pca_harmony"
+    assert result.metrics.get("donor_gate_embedding_key") == "X_pca_harmony"
 
 
 def test_subclustering_zero_cell_focus_is_refused():

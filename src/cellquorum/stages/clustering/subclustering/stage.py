@@ -233,11 +233,15 @@ class SubclusteringStage:
             notes.append(f"Batch correction / conditioning key: {nuisance_key}")
             metrics["nuisance_key"] = nuisance_key
 
-        # Run partition (CHOIR or fallback).
+        # Run partition (CHOIR or fallback). Initialized here (not just inside the
+        # "choir" branch) so the donor gate below can look at it regardless of
+        # which partition method ran, without a NameError.
+        choir_reduction_key: str | None = None
         if sc_config.partition.method == "choir":
             # Batch-aware re-embedding must happen BEFORE partitioning: CHOIR
-            # needs it to cluster on a corrected space, and the donor-gate
-            # embedding below is computed too late (and uncorrected) to serve.
+            # needs it to cluster on a corrected space, and the donor gate
+            # reuses this SAME corrected embedding below rather than deriving
+            # its own uncorrected one -- see the donor-gate section.
             choir_reduction_key = reembed_focus_batch_aware(
                 filtered,
                 counts_layer=sc_config.counts_layer,
@@ -373,17 +377,25 @@ class SubclusteringStage:
             cluster_key in filtered.obs.columns and filtered.obs[cluster_key].notna().any()
         )
 
-        # The donor gate needs an embedding, but extract_focus deleted the
-        # parent object's X_* embeddings and no full re-embedding runs yet.
-        # Derive a minimal PCA on the focus subset so the gate is meaningful;
-        # if the subset is too small/degenerate to embed, skip the gate with a
-        # recorded note instead of crashing.
+        # The donor gate tests whether a cluster's identity is really just donor
+        # identity -- the exact same question CHOIR's batch-corrected reduction
+        # exists to answer honestly (see the "choir" branch above: an uncorrected
+        # embedding still encodes the donor signal the gate is supposed to catch,
+        # which is how one LEC partition was 98% a single donor and still
+        # "passed"). So reuse CHOIR's corrected reduction when one was computed,
+        # rather than silently deriving a separate UNCORRECTED PCA for a test
+        # whose whole purpose is detecting donor-driven clusters. Only when no
+        # corrected reduction exists (a non-CHOIR partition method, or CHOIR's
+        # reduction was unavailable) does this fall back to deriving a fresh
+        # "X_pca" -- extract_focus deleted the parent's X_* embeddings, so
+        # something must exist for the gate to test on.
+        donor_gate_embedding_key = choir_reduction_key or "X_pca"
         embedding_ready = False
         if group_key is not None and has_cluster_labels:
             embedding_ready = ensure_focus_embedding(
                 filtered,
                 counts_layer=sc_config.counts_layer,
-                embedding_key="X_pca",
+                embedding_key=donor_gate_embedding_key,
                 reembed=sc_config.reembed,
                 random_state=0,
             )
@@ -405,9 +417,10 @@ class SubclusteringStage:
                 max_group_frac=sc_config.donor_gate.max_group_frac,
                 do_lodo=sc_config.donor_gate.leave_one_donor_out,
                 do_classifier=sc_config.donor_gate.classifier_separability,
-                embedding_key="X_pca",
+                embedding_key=donor_gate_embedding_key,
                 random_state=0,
             )
+            metrics["donor_gate_embedding_key"] = donor_gate_embedding_key
 
             # Record summary metrics.
             n_pass = gate_result["summary"]["n_pass"]
