@@ -1,9 +1,12 @@
 VERSION := $(shell python -c "import cellquorum; print(cellquorum.__version__)")
 IMAGE := cellquorum:$(VERSION)
 IMAGE_GPU := cellquorum:$(VERSION)-gpu
-REQUIRED_ENVS := cellquorum-core celloracle_env pyscenic_env hdwgcna_env scclr sccoda_env cellquorum-r
+REQUIRED_ENVS ?= cellquorum-core cellquorum-r
+RUNTIME_ENV ?= cellquorum-core
+DOCKER_RUN_ARGS ?=
+LOCK_PYTHON ?= python
 
-.PHONY: image image-gpu lock smoke matrix docs docs-serve \
+.PHONY: image image-gpu lock smoke smoke-gpu matrix docs docs-serve \
         help lint format typecheck test test-fast test-cov check
 
 # Default target: list what is available rather than doing something surprising.
@@ -26,6 +29,7 @@ help:
 	@echo "  make image-gpu  - build the GPU Docker image"
 	@echo "  make lock       - regenerate conda-lock files for envs/"
 	@echo "  make smoke      - smoke-test the built image"
+	@echo "  make smoke-gpu  - check GPU image startup and RAPIDS/scVI device operations"
 	@echo "  make matrix     - run the Snakemake matrix inside the image"
 
 # Mirror the CI lint job exactly, so a green `make lint` means a green CI lint.
@@ -87,20 +91,24 @@ image-gpu:
 # unpinned multi-platform solve would fail on those envs. linux-64 is the only
 # platform we ship, so it is the only platform we lock.
 lock:
-	@command -v conda-lock >/dev/null || { echo "install conda-lock first"; exit 1; }
 	for f in envs/*.yml; do \
+	  case "$$f" in *.conda-lock.yml) continue ;; esac; \
 	  [ -s "$$f" ] || continue; \
-	  conda-lock lock -p linux-64 -f "$$f" --lockfile "$${f%.yml}.conda-lock.yml" || exit 1; \
+	  $(LOCK_PYTHON) scripts/lock_environments.py lock -p linux-64 -f "$$f" --lockfile "$${f%.yml}.conda-lock.yml" || exit 1; \
 	done
 
 smoke:
-	docker run --rm $(IMAGE) --version
-	docker run --rm --entrypoint micromamba $(IMAGE) run -n cellquorum-core cellquorum plan --config docker/smoke/smoke.yaml --json
+	docker run --rm $(DOCKER_RUN_ARGS) $(IMAGE) --version
+	docker run --rm $(DOCKER_RUN_ARGS) --entrypoint micromamba $(IMAGE) run -n $(RUNTIME_ENV) cellquorum plan --config docker/smoke/smoke.yaml --json
 	@for env in $(REQUIRED_ENVS); do \
 	  docker run --rm --entrypoint micromamba $(IMAGE) env list | grep -qw $$env \
 	    || { echo "MISSING ENV: $$env"; exit 1; }; \
 	done
 	@echo "smoke OK"
+
+smoke-gpu:
+	$(MAKE) smoke IMAGE=$(IMAGE_GPU) RUNTIME_ENV=cellquorum-gpu REQUIRED_ENVS="cellquorum-core cellquorum-r cellquorum-gpu" DOCKER_RUN_ARGS="--gpus all"
+	docker run --rm --gpus all --entrypoint micromamba $(IMAGE_GPU) run -n cellquorum-gpu python scripts/verify_gpu.py --profile all
 
 matrix:
 	docker run --rm -v $(PWD):/work -w /work --entrypoint micromamba $(IMAGE) \

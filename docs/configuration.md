@@ -260,3 +260,44 @@ gen-configs run --manifest hypotheses.yaml --template template.yaml --out-dir ge
 
 It writes one `generated/configs/<key>.yaml` per combination plus an
 `accounting.json` recording what was produced.
+
+## PCA precision and GPU execution
+
+Standard PCA accepts `dimensionality.precision`: `input` (default), `float32`, or
+`float64`. The default retains the normalized layer's dtype. Float64 uses more
+working memory but improved repeatability in the tested RAPIDS workflow. It does
+not guarantee identical results across hardware or library versions.
+
+```yaml
+compute:
+  backend: gpu
+  prefer_gpu: true
+  fallback_to_cpu: false
+
+dimensionality:
+  precision: float64
+```
+
+This configuration requires working GPU capability for GPU-routed stages and
+refuses CPU fallback there. CPU-only normalization recipes still execute on CPU;
+scclr runs in its separate environment. The scclr PCA implementation rejects
+explicit precision values other than `input`.
+
+PCA restores the source expression layer after computation, including on failure.
+Its actual arithmetic dtype is saved in `uns['pca']['params']['arithmetic_dtype']`.
+Run records also identify whether PCA and clustering used CPU or GPU. Inspect
+these records when verifying acceleration; a configuration flag alone does not
+prove that computation ran on a GPU.
+
+## Concurrent runs
+
+Execution and bootstrap reserve their output directory for the duration of the
+run. A second CellQuorum run targeting the same resolved directory fails before
+initializing its context. Use separate output directories for parallel analyses.
+
+The `.cellquorum.lock` file can remain after a run ends; file existence does not
+indicate ownership. Do not delete it while a run may be active. The operating
+system releases ownership when the process exits, including after a crash.
+This protection requires working local filesystem locks and does not cover
+external writers or direct calls to individual stage functions. It does not
+provide transactional recovery across all output files.

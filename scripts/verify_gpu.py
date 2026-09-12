@@ -1,15 +1,35 @@
-"""Verify the cellquorum-gpu env can actually use the GPU for scVI/scArches.
+"""Verify GPU operations for the selected execution profile.
 
 Usage:
-    python scripts/verify_gpu.py
-Exits non-zero (and explains) if PyTorch cannot see CUDA — the condition that
-would make scVI/scArches fail under compute.backend: gpu.
+    python scripts/verify_gpu.py --profile rapids
+    python scripts/verify_gpu.py --profile scvi
+
+These environment probes do not replace installed-workflow acceptance tests.
 """
 
 from __future__ import annotations
 
+import argparse
 
-def main() -> int:
+
+def verify_rapids() -> int:
+    try:
+        import cupy as cp
+        import rapids_singlecell
+
+        value = (cp.arange(8, dtype=cp.float32) + 1).sum().item()
+        if value != 36:
+            raise RuntimeError(f"Unexpected device result: {value}")
+        cp.cuda.get_current_stream().synchronize()
+        print(f"OK: CuPy {cp.__version__}, RAPIDS single-cell {rapids_singlecell.__version__}")
+        print("OK: CUDA allocation, kernel compilation, and reduction succeeded.")
+    except Exception as exc:
+        print("FAIL: RAPIDS GPU probe:", repr(exc))
+        return 1
+    return 0
+
+
+def verify_scvi() -> int:
     try:
         import torch
     except Exception as e:  # pragma: no cover - env probe
@@ -48,8 +68,21 @@ def main() -> int:
 
         print("OK: scvi-tools importable.")
     except Exception as e:  # pragma: no cover - env probe
-        print("WARN: scvi-tools import failed:", repr(e))
+        print("FAIL: scvi-tools import failed:", repr(e))
+        return 1
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", choices=("scvi", "rapids", "all"), default="scvi")
+    args = parser.parse_args()
+    results = []
+    if args.profile in ("rapids", "all"):
+        results.append(verify_rapids())
+    if args.profile in ("scvi", "all"):
+        results.append(verify_scvi())
+    return int(any(results))
 
 
 if __name__ == "__main__":

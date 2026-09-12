@@ -1,6 +1,8 @@
 # Docker Image Build and Usage
 
-The CellQuorum Docker image packages the full analysis stack (cellquorum-core + all isolated backend environments) into a reproducible container. This document covers building, validating, and running analyses inside the image.
+The CPU target contains the core and R environments. The GPU target adds the GPU
+environment. Optional subprocess backends use separate build targets; neither
+default image contains every backend. Environment recipes are not yet fully locked.
 
 ## Building the Image
 
@@ -21,6 +23,10 @@ The version is read from `cellquorum.__version__`.
 
 ### GPU Image
 
+The GPU recipe is undergoing compatibility validation; see the
+[deployment status](design/deployment-goal.md). A successful image build alone does not
+prove that GPU kernels or complete analyses run.
+
 Build the GPU-enabled image (includes CUDA-enabled PyTorch and scvi-tools):
 
 ```bash
@@ -36,15 +42,20 @@ docker build --target gpu -t cellquorum:<version>-gpu -f docker/Dockerfile .
 
 #### `SCCLR_SRC`
 
-By default, the Dockerfile bakes only the scclr toolchain (Rust, maturin, Python 3.13) into the `scclr` environment, but does NOT install scclr itself. To bake scclr from source:
+The optional `backends` target creates the scclr toolchain environment. It installs
+scclr only when `SCCLR_SRC` names a source location available inside that build:
 
 ```bash
-docker build --target cpu -t cellquorum:<version> \
-  --build-arg SCCLR_SRC=/path/to/scclr \
+docker build --target backends -t cellquorum:<version>-backends \
+  --build-arg SCCLR_SRC=/opt/cellquorum/vendor/scclr \
   -f docker/Dockerfile .
 ```
 
-This copies the scclr source tree into the image and installs it via `pip install -e` inside the `scclr` environment.
+For this example, place the source in `vendor/scclr` in the build context and
+ensure it is not excluded by `.dockerignore`. The argument itself does not copy a
+host path. The Dockerfile uses `pip install` in the scclr environment. The
+`backends` target has an unresolved hdWGCNA solve issue and is not validated for
+deployment.
 
 ## Validating the Image
 
@@ -60,16 +71,32 @@ This performs:
 
 1. **Version check:** Confirms `cellquorum --version` runs.
 2. **Plan dry-run:** Confirms `cellquorum plan --config docker/smoke/smoke.yaml --json` runs without error on the bundled smoke config.
-3. **Environment inventory:** Confirms all seven required environments are present in the image:
+3. **Environment inventory:** Confirms the CPU target's required environments are present:
    - `cellquorum-core`
    - `cellquorum-r`
-   - `celloracle_env`
-   - `pyscenic_env`
-   - `hdwgcna_env`
-   - `scclr`
-   - `sccoda_env`
 
-If the smoke test passes, the image is ready for use.
+This checks startup and planning. Installed analysis, checkpoint recovery, and
+backend execution still need separate validation.
+
+### GPU device checks
+
+After building the GPU target, run `make smoke-gpu`. It checks the three required
+environments, runs the CLI in `cellquorum-gpu`, and probes both RAPIDS and
+PyTorch/scVI with real device operations. Missing capabilities fail the command.
+This target requires a Docker installation with NVIDIA GPU access; on Windows,
+Docker Desktop must also expose its engine to the WSL distribution.
+
+For a GPU analysis, pass GPU access explicitly:
+
+```bash
+docker run --rm --gpus all \
+  -v /path/to/data:/data \
+  cellquorum:<version>-gpu \
+  run --config /data/my_config.yaml --output-dir /data/results
+```
+
+The analysis configuration must select the GPU backend for supported methods.
+Device probes do not replace installed-workflow acceptance or memory benchmarks.
 
 ## Running Analyses in the Image
 
@@ -78,7 +105,7 @@ If the smoke test passes, the image is ready for use.
 Enter an interactive shell inside the image:
 
 ```bash
-docker run --rm -it cellquorum:<version> /bin/bash
+docker run --rm -it --entrypoint micromamba cellquorum:<version> run -n cellquorum-core /bin/bash
 ```
 
 Once inside, the `cellquorum` CLI is available:
@@ -93,7 +120,7 @@ cellquorum plan --help
 Run a single cellquorum command:
 
 ```bash
-docker run --rm cellquorum:<version> cellquorum --version
+docker run --rm cellquorum:<version> --version
 ```
 
 ### Mounting Data
@@ -104,7 +131,7 @@ To analyze data on the host, mount the data directory into the container:
 docker run --rm \
   -v /path/to/data:/data \
   cellquorum:<version> \
-  cellquorum run --config /data/my_config.yaml --output /data/results
+  run --config /data/my_config.yaml --output-dir /data/results
 ```
 
 ### Running R-backed methods (pseudobulk DE, Milo, propeller, NicheNet, SoupX)
@@ -129,7 +156,7 @@ r:
 confirm the exact path for your build with:
 
 ```bash
-docker run --rm cellquorum:<version> micromamba run -n cellquorum-r which Rscript
+docker run --rm --entrypoint micromamba cellquorum:<version> run -n cellquorum-r which Rscript
 ```
 
 Invoking that env's `Rscript` binary directly loads the `cellquorum-r` R library,

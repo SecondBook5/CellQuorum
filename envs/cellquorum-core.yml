@@ -8,17 +8,19 @@ dependencies:
   # Python runtime.
   - python=3.12
   - pip
+  - git
+  - cython
 
   # Core numerical and statistical stack.
   - numpy>=1.24
-  - scipy>=1.11
+  - scipy=1.16.3
   - pandas>=2.1
   - scikit-learn>=1.4
   - statsmodels>=0.14
   - numba>=0.59
 
   # Single-cell data structures and analysis.
-  - anndata>=0.11
+  - anndata>=0.12,<0.13
   - scanpy>=1.10
   - h5py>=3.10
   - zarr>=2.17
@@ -91,6 +93,9 @@ dependencies:
   # (tensor_c2c GPU + CellRank trajectory). torch is the CPU-capable build in
   # this env; the cellquorum-gpu env installs the CUDA build.
   - pip:
+      - torch @ https://download-r2.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl#sha256=cb9a8ba8137ab24e36bf1742cb79a1294bd374db570f09fc15a5e1318160db4e
+      - anndata==0.12.19
+      - pygpcca @ git+https://github.com/msmdev/pygpcca.git@773c463cc5043a5d40e6f31bbbc20f4e49587008
       # NOTE: the editable install of the repo (`pip install -e .`) is NOT done
       # here — at env-create time the source is not yet copied into the image,
       # and conda resolves a pip local path relative to this file's dir (/tmp in
@@ -102,7 +107,7 @@ dependencies:
       - tensorly==0.9.0
       # Trajectory / RNA velocity / potency (in-process).
       - scvelo==0.3.4
-      - cellrank==2.2.0
+      - cellrank==2.3.2
       - palantir==1.4.4
       # Deep generative models (scVI/scArches); pulls torch.
       - scvi-tools==1.4.3
