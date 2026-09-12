@@ -1,0 +1,4 @@
+# Reference PNG renderer pins; this is not a complete environment lock.
+matplotlib==3.10.8
+numpy==2.3.5
+pillow==11.0.0

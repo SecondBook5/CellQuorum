@@ -73,6 +73,7 @@ nav:
   - Architecture: architecture.md
   - How it works: how-it-works.md
   - Configuration: configuration.md
+  - Figure gallery: gallery/index.md
   - Backends & environments: backends.md
   - Python API: api.md
   - Docker: docker.md

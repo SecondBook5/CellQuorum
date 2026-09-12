@@ -1,0 +1,27 @@
+{
+  "p_value": 0.09375,
+  "test": "wilcoxon_signed_rank",
+  "n_group1": 6,
+  "n_group2": 6,
+  "group1": "Control",
+  "group2": "Case",
+  "donors_group1": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6"
+  ],
+  "donors_group2": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6"
+  ],
+  "effect": 1.0,
+  "n_excluded_rows": 0,
+  "n_unmatched_donors": 0
+}

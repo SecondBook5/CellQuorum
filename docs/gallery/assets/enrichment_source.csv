@@ -1,0 +1,7 @@
+source,score,raw_es,padj,leading_edge_size
+Matrix organization,2.3,0.65,0.001,35
+Interferon response,1.8,0.51,0.012,24
+Cell adhesion,1.2,0.34,0.08,18
+Oxidative metabolism,-2.1,-0.6,0.004,30
+Ribosome assembly,-1.5,-0.42,0.03,20
+Vesicle transport,-0.8,-0.23,0.2,12

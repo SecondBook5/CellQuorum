@@ -1,0 +1,13 @@
+donor,condition,value
+D1,Control,4.0
+D2,Control,5.2
+D3,Control,6.0
+D4,Control,3.5
+D5,Control,7.1
+D6,Control,5.8
+D1,Case,5.2
+D2,Case,6.8
+D3,Case,5.5
+D4,Case,4.3
+D5,Case,9.1
+D6,Case,6.1
