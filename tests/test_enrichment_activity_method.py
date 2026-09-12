@@ -84,6 +84,55 @@ def test_activity_survives_dropped_empty_cell(tmp_path, monkeypatch):
     assert df["mean_score"].notna().all()
 
 
+def _sparse_adata_with_zero_cell():
+    """Sparse variant of _adata_with_zero_cell, matching a real cohort's layer dtype."""
+    import scipy.sparse as sp
+
+    a = _adata_with_zero_cell()
+    sparse = sp.csr_matrix(np.asarray(a.layers["cellquorum_normalized"]))
+    a.X = sparse.copy()
+    a.layers["cellquorum_normalized"] = sparse.copy()
+    return a
+
+
+def test_activity_does_not_densify_the_full_expression_matrix(tmp_path, monkeypatch):
+    """Activity (ulm) must not materialize a dense copy of the WHOLE expression
+    matrix -- the same "12 GB in a minute, VM died" failure mode already fixed
+    once in state_scoring/aucell_method.py, just for decoupler's ulm instead of
+    aucell. decoupler's AnnData-input path handles a sparse layer natively, so
+    nothing here should ever call .toarray()/np.asarray() on the full sparse
+    layer -- a real cohort's full matrix (201,871 x 33,417) densified is ~54 GB.
+    """
+    import scipy.sparse as sp
+
+    a = _sparse_adata_with_zero_cell()
+    _patch_get_net(monkeypatch, _weighted_net())
+    cfg = {
+        "activity_resources": ["collectri"],
+        "cell_type_col": "cell_type",
+        "layer": "cellquorum_normalized",
+        "min_size": 3,
+    }
+
+    original_toarray = sp.csr_matrix.toarray
+
+    def _guarded_toarray(self, *args, **kwargs):
+        if self.shape == a.layers["cellquorum_normalized"].shape:
+            raise AssertionError(
+                "Activity densified the FULL expression matrix instead of letting "
+                "decoupler handle the sparse layer natively."
+            )
+        return original_toarray(self, *args, **kwargs)
+
+    monkeypatch.setattr(sp.csr_matrix, "toarray", _guarded_toarray)
+
+    out = ActivityMethod()._run(a, cfg, _Ctx(tmp_path))
+    assert not isinstance(out, MethodSkip)
+    df = pd.read_csv(tmp_path / "results" / "enrichment_activity_collectri.csv")
+    assert set(df["cell_type"]) == {"T0", "T1"}
+    assert df["mean_score"].notna().all()
+
+
 def test_activity_skips_when_decoupler_absent(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "decoupler", None)
     cfg = {

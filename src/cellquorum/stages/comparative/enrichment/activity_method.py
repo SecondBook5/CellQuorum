@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import anndata as ad
-import numpy as np
-import pandas as pd
-import scipy.sparse as sp
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -49,14 +46,12 @@ class ActivityMethod(AnalysisMethod):
         license = config.get("license", "academic")
         min_size = int(config.get("min_size", 5))
 
-        matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
-        dense = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
-        data = pd.DataFrame(dense, index=adata.obs_names, columns=adata.var_names)
         # Keep labels as a Series indexed by obs name so we can realign to
         # decoupler's returned (possibly shortened) index — decoupler drops any
         # cell that is all-zero over the net's targets, so a positional label
         # array would mismatch the returned frame's length.
         labels = adata.obs[cell_type_col].astype(str)
+        ulm_layer = layer if layer != "X" and layer in adata.layers else None
 
         try:
             import decoupler as dc
@@ -77,9 +72,22 @@ class ActivityMethod(AnalysisMethod):
             # guarded: decoupler may drop all-zero cells (returning a shorter
             # frame), so any residual length/index mismatch degrades to a recorded
             # skip rather than aborting the stage and every sibling method.
+            #
+            # Passed as AnnData + layer name, not a dense pandas DataFrame built from
+            # the FULL expression matrix: decoupler's AnnData-input path handles a
+            # sparse layer natively (internal batching via bsize), so manually
+            # densifying here would be the same "12 GB in a minute, VM died" failure
+            # mode already fixed once in state_scoring/aucell_method.py -- a real
+            # cohort's full matrix (201,871 x 33,417) densified is ~54 GB. decoupler
+            # mutates adata.obsm["score_ulm"] in place and returns None when no
+            # observations were dropped; when it drops all-zero observations it
+            # instead returns a NEW, smaller AnnData and leaves the original
+            # untouched (verified empirically, same as aucell's behavior).
             try:
-                es, _ = dc.mt.ulm(data, net, tmin=min_size)
-                es = es.copy()
+                result = dc.mt.ulm(adata, net, tmin=min_size, layer=ulm_layer)
+                source = adata if result is None else result
+                es = source.obsm.pop("score_ulm")
+                source.obsm.pop("padj_ulm", None)
                 # decoupler preserves obs names on the returned index, so realign
                 # the cell-type labels to that (possibly shortened) index instead
                 # of assigning the full-length original label array.
