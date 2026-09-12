@@ -157,6 +157,37 @@ def test_graceful_skip_marker_returns_methodskip(tmp_path: Path) -> None:
     assert "skipped" in res.reason.lower()
 
 
+def test_scratch_h5ad_keeps_obsm_but_not_unrelated_layers(tmp_path: Path) -> None:
+    """Writing the scratch h5ad must not duplicate the WHOLE cohort.
+
+    adata.copy() (the old code) deep-copies every layer to change which matrix
+    is X -- the same "12 GB in a minute, VM died" failure mode already fixed
+    once in this exact stage category (grn/pyscenic_method.py,
+    coexpression/hdwgcna_method.py). Unlike those two, celloracle_ko.py DOES
+    read adata.obsm[embedding_key] (verified directly against the script), so
+    obsm must be preserved even while unrelated LAYERS -- the actual multi-GB
+    cost, since each is a full gene-space matrix -- are not.
+    """
+
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            return SimpleNamespace(returncode=1, stderr="stop after write")
+
+    a = _adata()
+    a.layers["huge_unrelated_layer"] = np.zeros_like(a.layers["counts"])
+
+    res = CellOracleMethod()._run(a, {"launcher": "python"}, _ctx(tmp_path, FakeBackend()))
+    assert isinstance(res, MethodSkip)
+
+    written = ad.read_h5ad(tmp_path / "scr" / "perturbation_input.h5ad")
+    assert "huge_unrelated_layer" not in written.layers
+    assert "X_umap" in written.obsm
+    assert written.obsm["X_umap"].shape == a.obsm["X_umap"].shape
+
+
 def test_fate_summary_figure_produced(tmp_path: Path) -> None:
     """The in-process fate summary (FIX 4) is computed and wired into artifacts."""
     res = CellOracleMethod()._run(

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import anndata as ad
 import numpy as np
 import pandas as pd
 
@@ -104,10 +105,24 @@ class CellOracleMethod(AnalysisMethod):
         scratch = Path(getattr(context.paths, "scratch", "."))
         scratch.mkdir(parents=True, exist_ok=True)
         h5ad = scratch / "perturbation_input.h5ad"
+        # Genuinely shallow, matching the same fix already applied in this stage
+        # category (grn/pyscenic_method.py, coexpression/hdwgcna_method.py):
+        # adata.copy() duplicates every LAYER (each a full gene-space matrix) just
+        # to change which one is X, then write_h5ad serializes all of it. Unlike
+        # those two methods' scripts, celloracle_ko.py DOES read
+        # adata.obsm[embedding_key] (verified directly), so obsm is preserved here
+        # -- it is cheap (a handful of dimensions per cell) next to the layers,
+        # which are the actual multi-GB cost.
         if layer and layer != "X" and layer in adata.layers:
-            a2 = adata.copy()
-            a2.X = a2.layers[layer]
-            write_h5ad(a2, h5ad)
+            write_h5ad(
+                ad.AnnData(
+                    X=adata.layers[layer],
+                    obs=adata.obs.copy(),
+                    var=adata.var.copy(),
+                    obsm=dict(adata.obsm),
+                ),
+                h5ad,
+            )
         else:
             write_h5ad(adata, h5ad)
 
