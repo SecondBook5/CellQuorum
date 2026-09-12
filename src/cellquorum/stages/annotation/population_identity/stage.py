@@ -445,9 +445,25 @@ def add_dominant_label_columns(
 
 
 def add_qc_columns(row: dict[str, object], group: pd.DataFrame) -> None:
-    """Add QC/doublet enrichment evidence columns when available."""
+    """Add QC/doublet enrichment evidence columns when available.
 
-    if "cellquorum_qc_keep" in group.columns:
+    ``qc_state_final`` (written by qc_finalization, order=135) is QC's own final
+    verdict per cell -- a population dominated by cells that verdict never
+    established as valid is exactly what "QC/doublet enrichment" should mean here,
+    so it outranks the older ``cellquorum_qc_keep`` boolean whenever present. A
+    pipeline running qc_finalization does not necessarily carry
+    ``cellquorum_qc_keep`` at all (confirmed on the real lymphedema atlas run: it
+    has qc_state_final with 832 quarantine + 16,572 unresolved_borderline cells and
+    no cellquorum_qc_keep column), so falling through to the 0.0 default made every
+    population look QC-clean regardless of real quarantine/borderline content. This
+    mirrors the same gap already closed for adjudication's technical_score (see
+    adjudication/evidence.py::_qc_technical_fraction).
+    """
+
+    if "qc_state_final" in group.columns:
+        states = group["qc_state_final"].astype(str)
+        row["qc_fail_fraction"] = float(states.isin(["quarantine", "unresolved_borderline"]).mean())
+    elif "cellquorum_qc_keep" in group.columns:
         keep = group["cellquorum_qc_keep"].fillna(True).astype(bool)
         row["qc_fail_fraction"] = float((~keep).mean())
     else:

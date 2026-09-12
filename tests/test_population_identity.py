@@ -7,12 +7,16 @@ from pathlib import Path
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 
 from cellquorum.backends.base import BaseBackend
 from cellquorum.backends.registry import BackendRegistry
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.pipeline import build_pipeline_context
-from cellquorum.stages.annotation.population_identity.stage import PopulationIdentityStage
+from cellquorum.stages.annotation.population_identity.stage import (
+    PopulationIdentityStage,
+    add_qc_columns,
+)
 
 
 def build_backend_registry() -> BackendRegistry:
@@ -165,3 +169,44 @@ def test_population_identity_handles_empty_summary_without_crash(tmp_path: Path)
 
     assert result.status == "skipped"
     assert result.metrics["n_populations"] == 0
+
+
+def test_add_qc_columns_prefers_qc_state_final_when_cellquorum_qc_keep_absent() -> None:
+    """A pipeline running qc_finalization (order=135) writes qc_state_final, not the
+    older cellquorum_qc_keep boolean. Confirmed on the real lymphedema atlas run:
+    it has qc_state_final (832 quarantine + 16,572 unresolved_borderline of 201,871
+    cells) and NO cellquorum_qc_keep column at all. Falling through to the 0.0
+    default made every population look QC-clean there regardless of real
+    quarantine/borderline content -- exactly the gap already closed once for
+    adjudication's technical_score (see adjudication/evidence.py).
+    """
+
+    group = pd.DataFrame(
+        {"qc_state_final": ["core"] * 6 + ["quarantine"] * 2 + ["unresolved_borderline"] * 2}
+    )
+    row: dict = {}
+    add_qc_columns(row, group)
+    assert row["qc_fail_fraction"] == pytest.approx(0.4)
+
+
+def test_add_qc_columns_falls_back_to_cellquorum_qc_keep_when_qc_state_final_absent() -> None:
+    """Older configs (no qc_finalization) keep working via the original signal."""
+
+    group = pd.DataFrame({"cellquorum_qc_keep": [True, True, False, False]})
+    row: dict = {}
+    add_qc_columns(row, group)
+    assert row["qc_fail_fraction"] == pytest.approx(0.5)
+
+
+def test_add_qc_columns_prefers_qc_state_final_over_cellquorum_qc_keep_when_both_present() -> None:
+    """qc_state_final is the newer, richer verdict and should win when both exist."""
+
+    group = pd.DataFrame(
+        {
+            "qc_state_final": ["quarantine"] * 3 + ["core"] * 7,
+            "cellquorum_qc_keep": [True] * 10,  # would say 0% fail if used instead
+        }
+    )
+    row: dict = {}
+    add_qc_columns(row, group)
+    assert row["qc_fail_fraction"] == pytest.approx(0.3)
