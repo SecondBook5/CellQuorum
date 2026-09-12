@@ -79,5 +79,9 @@ nav:
   - Docker: docker.md
   - Snakemake: snakemake.md
   - Developer smoke tests: dev_smoke.md
+  - Engineering readiness:
+      - Deployment requirements and validation: design/deployment-goal.md
+      - Baseline readiness assessment: design/production-readiness-audit.md
+      - GSE140819 benchmark: benchmarks/gse140819.md
   - Roadmap: ROADMAP.md
   - Changelog: changelog.md
