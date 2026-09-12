@@ -18,6 +18,10 @@ from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
+from cellquorum.stages.comparative.differential_expression.ambient_filter import (
+    filter_ambient_genes,
+    load_expression_profile,
+)
 from cellquorum.stages.comparative.differential_expression.pseudobulk import (
     aggregate_pseudobulk,
     resolve_donor_pairing,
@@ -227,6 +231,34 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
         if skip is not None:
             return skip
 
+        # Optional cross-compartment ambient-gene filter, applied before
+        # aggregation so a flagged gene never reaches edgeR at all (not merely
+        # flagged in the output). Off by default; see AmbientSpecificityFilterConfig.
+        ambient_cfg = config.get("ambient_filter") or {}
+        ambient_metrics: dict | None = None
+        if ambient_cfg.get("enabled"):
+            reference_path = ambient_cfg.get("reference_path")
+            target_group = ambient_cfg.get("target_group")
+            if not reference_path or not target_group:
+                raise CellQuorumConfigError(
+                    "differential_expression.ambient_filter.enabled requires both "
+                    "reference_path and target_group (the filter needs a reference "
+                    "profile built from a cohort wider than the one being tested)."
+                )
+            try:
+                profile = load_expression_profile(reference_path)
+                adata, ambient_metrics = filter_ambient_genes(
+                    adata,
+                    profile=profile,
+                    target_group=target_group,
+                    spec_threshold=float(ambient_cfg.get("spec_threshold", 0.25)),
+                    group_map=ambient_cfg.get("group_map") or None,
+                )
+            except Exception as exc:  # noqa: BLE001 — a broken reference must not
+                # silently proceed unfiltered: that would reproduce the exact
+                # false-positive class this filter exists to prevent.
+                return self._skip(f"ambient_filter failed: {str(exc)[:300]}")
+
         # Aggregate to donor x condition pseudobulk counts.
         pb = aggregate_pseudobulk(
             adata,
@@ -313,6 +345,27 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
             tested_effect = f"{case} vs {control}"
 
         # Return the DE table as an artifact plus provenance metrics.
+        notes = [f"Pseudobulk edgeR DE: {tested_effect}, design ~ {design_rhs}.", *design_notes]
+        metrics = {
+            "case": case,
+            "control": control,
+            "paired": paired,
+            "design_rhs": design_rhs,
+            "covariates": covariates,
+            "interactions": [list(pair) for pair in interactions],
+            "tested_effect": tested_effect,
+            "n_complete_donor_pairs": decision.n_complete_pairs,
+            "design_notes": design_notes,
+            "n_pseudosamples": int(counts_df.shape[0]),
+            "n_genes_input": int(counts_df.shape[1]),
+        }
+        if ambient_metrics is not None:
+            notes.append(
+                f"ambient_filter: dropped {ambient_metrics['n_dropped']} of "
+                f"{ambient_metrics['n_genes_before']} genes foreign+low-specificity "
+                f"for '{ambient_cfg.get('target_group')}'."
+            )
+            metrics["ambient_filter"] = ambient_metrics
         return StageResult(
             adata=adata,
             artifacts=[
@@ -323,23 +376,8 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
                     description=f"Pseudobulk edgeR DE ({tested_effect}), ~ {design_rhs}.",
                 )
             ],
-            notes=[
-                f"Pseudobulk edgeR DE: {tested_effect}, design ~ {design_rhs}.",
-                *design_notes,
-            ],
-            metrics={
-                "case": case,
-                "control": control,
-                "paired": paired,
-                "design_rhs": design_rhs,
-                "covariates": covariates,
-                "interactions": [list(pair) for pair in interactions],
-                "tested_effect": tested_effect,
-                "n_complete_donor_pairs": decision.n_complete_pairs,
-                "design_notes": design_notes,
-                "n_pseudosamples": int(counts_df.shape[0]),
-                "n_genes_input": int(counts_df.shape[1]),
-            },
+            notes=notes,
+            metrics=metrics,
             backend="rscript",
         )
 

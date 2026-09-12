@@ -222,6 +222,97 @@ def test_min_donors_per_arm_override_allows_pilot(tmp_path, monkeypatch):
     assert "rscript" in out.reason.lower() or "edger" in out.reason.lower()
 
 
+def test_ambient_filter_enabled_without_reference_or_target_raises(tmp_path):
+    """enabled=True with no reference_path/target_group is a misconfiguration,
+    not a silent no-op: the filter needs a reference from a WIDER cohort than
+    the one being tested, so there is nothing sensible to fall back to."""
+    from cellquorum.core.exceptions import CellQuorumConfigError
+
+    method = PseudobulkEdgeRMethod()
+    with pytest.raises(CellQuorumConfigError, match="ambient_filter"):
+        method._run(
+            _paired_adata(),
+            {
+                "layer": "counts",
+                "condition_col": "condition",
+                "donor_col": "patient_id",
+                "case": "LE",
+                "control": "Normal",
+                "covariates": [],
+                "paired": True,
+                "ambient_filter": {"enabled": True},
+            },
+            _Ctx(tmp_path),
+        )
+
+
+def test_ambient_filter_skips_method_when_reference_file_missing(tmp_path):
+    """A configured-but-unreadable reference must skip the WHOLE method, not
+    silently proceed unfiltered (that would reproduce the exact false-positive
+    the filter exists to prevent, without recording anything was wrong)."""
+    method = PseudobulkEdgeRMethod()
+    out = method._run(
+        _paired_adata(),
+        {
+            "layer": "counts",
+            "condition_col": "condition",
+            "donor_col": "patient_id",
+            "case": "LE",
+            "control": "Normal",
+            "covariates": [],
+            "paired": True,
+            "ambient_filter": {
+                "enabled": True,
+                "reference_path": str(tmp_path / "does_not_exist.csv"),
+                "target_group": "Fibroblasts",
+            },
+        },
+        _Ctx(tmp_path),
+    )
+    assert isinstance(out, MethodSkip)
+    assert "ambient_filter" in out.reason.lower()
+
+
+@pytest.mark.skipif(not _edger_available(), reason="Rscript+edgeR not available")
+def test_ambient_filter_drops_the_flagged_gene_before_de(tmp_path):
+    """The ambient gene must never reach edgeR at all — not merely be flagged
+    afterward — so it cannot appear anywhere in the DE output table."""
+    reference = pd.DataFrame(
+        {"Keratinocytes": [50.0, 0.2], "Fibroblasts": [0.5, 3.0]},
+        index=["G1", "G2"],
+    )
+    ref_path = tmp_path / "reference.csv"
+    reference.to_csv(ref_path)
+
+    method = PseudobulkEdgeRMethod()
+    result = method._run(
+        _paired_adata(),
+        {
+            "layer": "counts",
+            "condition_col": "condition",
+            "donor_col": "patient_id",
+            "case": "LE",
+            "control": "Normal",
+            "covariates": [],
+            "paired": True,
+            "ambient_filter": {
+                "enabled": True,
+                "reference_path": str(ref_path),
+                "target_group": "Fibroblasts",
+                "spec_threshold": 0.25,
+            },
+        },
+        _Ctx(tmp_path),
+    )
+    artifact_paths = [a.path for a in result.artifacts if a.name == "de_results"]
+    de = pd.read_csv(artifact_paths[0])
+    # G1 (up in LE in the fixture) peaks in Keratinocytes at low specificity in
+    # Fibroblasts (0.5/50 = 0.01) -> ambient -> must be entirely absent, not
+    # merely non-significant.
+    assert "G1" not in set(de["gene"])
+    assert result.metrics["ambient_filter"]["n_dropped"] == 1
+
+
 @pytest.mark.skipif(not _edger_available(), reason="Rscript+edgeR not available")
 def test_paired_de_detects_upregulated_gene(tmp_path):
     method = PseudobulkEdgeRMethod()

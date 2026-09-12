@@ -5,6 +5,39 @@ from __future__ import annotations
 from cellquorum.config.base import StrictBaseModel
 
 
+class AmbientSpecificityFilterConfig(StrictBaseModel):
+    """Optional cross-compartment ambient-gene filter, applied before pseudobulk
+    aggregation (see ``cellquorum.stats.ambient_specificity``).
+
+    Off by default: SoupX (``ambient_correction``) already runs per library before
+    any cell-type label exists, so this is a second, later-stage correction for the
+    contamination it structurally cannot see (a gene that peaks in one cell type and
+    leaks into another at low, non-specific levels). It requires a reference profile
+    built from a WIDER cohort than the one being tested — a single-lineage run has no
+    other lineage's expression to compare against — so enabling it without a
+    ``reference_path``/``target_group`` is a configuration error, not a silent no-op.
+
+    Attributes:
+        enabled: Whether the filter runs. Off by default.
+        reference_path: Path to a genes x groups mean-expression CSV/parquet, built
+            from a cohort wider than the one this DE run analyzes.
+        target_group: The group (as named in ``reference_path``'s columns) this DE
+            run's cells belong to.
+        spec_threshold: A foreign-peaking gene is ambient only when its value here is
+            strictly below this fraction of its peak elsewhere.
+        group_map: Optional raw-group -> coarse-group mapping so a gene peaking in a
+            biologically related group is never treated as foreign. No default
+            grouping is provided; which groups are "related" is a domain judgment.
+    """
+
+    enabled: bool = False
+    reference_path: str | None = None
+    group_col: str = "cell_type"
+    target_group: str | None = None
+    spec_threshold: float = 0.25
+    group_map: dict[str, str] = {}
+
+
 class DifferentialExpressionConfig(StrictBaseModel):
     """Pseudobulk differential-expression analysis via edgeR.
 
@@ -60,5 +93,8 @@ class DifferentialExpressionConfig(StrictBaseModel):
     # R package required for the fit.
     r_package: str = "edgeR"
 
+    # Optional cross-compartment ambient-gene filter (off by default).
+    ambient_filter: AmbientSpecificityFilterConfig = AmbientSpecificityFilterConfig()
 
-__all__ = ["DifferentialExpressionConfig"]
+
+__all__ = ["AmbientSpecificityFilterConfig", "DifferentialExpressionConfig"]
