@@ -175,11 +175,17 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
 
         corr_cut = float(config.get("heatmap_corr_cut", 0.1))
         max_genes = int(config.get("heatmap_max_genes", 60))
-        X = _dense(adata.X)
+        # One gene column at a time, not the whole matrix: `_dense(adata.X)` on a
+        # real cohort's full matrix (201,871 x 33,417) is ~54 GB, to compute a
+        # per-gene correlation that only ever needs one n_cells-length column at
+        # once.
+        matrix = adata.X
         finite = np.isfinite(pt)
-        rhos = np.zeros(X.shape[1])
-        for j in range(X.shape[1]):
-            r, _ = spearmanr(X[finite, j], pt[finite])
+        n_genes = adata.n_vars
+        rhos = np.zeros(n_genes)
+        for j in range(n_genes):
+            col = _dense(matrix[:, j]).ravel()
+            r, _ = spearmanr(col[finite], pt[finite])
             rhos[j] = 0.0 if np.isnan(r) else abs(r)
         idx = np.where(rhos > corr_cut)[0]
         idx = idx[np.argsort(-rhos[idx])][:max_genes]
@@ -198,7 +204,13 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             if not genes:
                 return self._skip("no genes resolved")
             gi = [adata.var_names.get_loc(g) for g in genes]
-            M = _dense(adata.layers["magic"] if "magic" in adata.layers else adata.X)[:, gi]
+            # Subset to the selected genes BEFORE densifying, not after: densifying
+            # the full matrix first (201,871 x 33,417 on a real cohort, ~54 GB) to
+            # then throw away all but `len(gi)` (<= heatmap_max_genes, default 60)
+            # columns is the same class of waste as _select_genes' correlation loop
+            # above.
+            source = adata.layers["magic"] if "magic" in adata.layers else adata.X
+            M = _dense(source[:, gi])
 
             score_key = self._resolve_key(adata, config.get("heatmap_score_key"), _SCORE_FALLBACKS)
             state_key = self._resolve_key(adata, config.get("heatmap_state_key"), _STATE_FALLBACKS)
