@@ -56,9 +56,14 @@ jobs:
             exit 1
           fi
 
+  quality:
+    name: Release quality gates
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+
   build:
     name: Build & verify distributions
-    needs: verify
+    needs: [verify, quality]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -119,6 +124,20 @@ jobs:
           /tmp/relcheck/bin/pip install --quiet dist/*.whl
           /tmp/relcheck/bin/cellquorum --version
           /tmp/relcheck/bin/python -c "import cellquorum; print('import OK', cellquorum.__version__)"
+
+      - name: Validate the release wheel analysis and checkpoint recovery
+        env:
+          CELLQUORUM_REQUIRE_WHEEL: "1"
+          CELLQUORUM_ACCEPTANCE_BACKEND: "cpu"
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          NUMBA_NUM_THREADS: "1"
+        run: |
+          /tmp/relcheck/bin/pip install "pytest==9.0.2"
+          mkdir -p /tmp/relcheck/acceptance
+          cp tests/acceptance/test_installed_workflow.py /tmp/relcheck/acceptance/
+          cd /tmp/relcheck
+          /tmp/relcheck/bin/python -m pytest acceptance -q -o 'markers=integration: installed workflow acceptance' --strict-markers
 
       - uses: actions/upload-artifact@v4
         with:

@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_call:
 
 # Cancel superseded runs on the same ref. Pushing three times to a PR should not
 # leave three full matrices running.
@@ -14,6 +15,17 @@ permissions:
   contents: read
 
 jobs:
+  environment-locks:
+    name: CPU and GPU lock integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest==9.0.2 PyYAML packaging
+      - run: python -m pytest tests/test_environment_locks.py
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -56,6 +68,11 @@ jobs:
 
       - name: Ruff format check
         run: ruff format --check src tests
+
+      - name: Check maintained scripts
+        run: |
+          ruff check scripts
+          ruff format --check scripts
 
   typecheck:
     name: Typecheck (engine spine)
@@ -127,6 +144,32 @@ jobs:
         with:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
+          if-no-files-found: warn
+
+  figures:
+    name: Publication figure comparisons
+    runs-on: ubuntu-latest
+    env:
+      CELLQUORUM_CHECK_FIGURE_BASELINES: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install reference renderer
+        run: pip install -e '.[dev]' -c envs/figure-constraints.txt
+      - name: Compare rendered figures with reviewed references
+        run: pytest tests/test_figure_gallery.py --basetemp=/tmp/figure-comparisons -q
+      - name: Upload comparison artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: figure-comparisons
+          path: /tmp/figure-comparisons
           if-no-files-found: warn
 
   docs:
@@ -202,3 +245,17 @@ jobs:
           /tmp/wheelcheck/bin/pip install --quiet dist/*.whl
           /tmp/wheelcheck/bin/cellquorum --version
           /tmp/wheelcheck/bin/python -c "import cellquorum; print('import OK', cellquorum.__version__)"
+
+      - name: Run installed-wheel analysis and checkpoint acceptance
+        env:
+          CELLQUORUM_REQUIRE_WHEEL: "1"
+          CELLQUORUM_ACCEPTANCE_BACKEND: "cpu"
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          NUMBA_NUM_THREADS: "1"
+        run: |
+          /tmp/wheelcheck/bin/pip install "pytest==9.0.2"
+          mkdir -p /tmp/wheelcheck/acceptance
+          cp tests/acceptance/test_installed_workflow.py /tmp/wheelcheck/acceptance/
+          cd /tmp/wheelcheck
+          /tmp/wheelcheck/bin/python -m pytest acceptance -q -o 'markers=integration: installed workflow acceptance' --strict-markers
