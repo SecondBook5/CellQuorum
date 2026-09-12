@@ -49,7 +49,26 @@ class CellRankMethod(AnalysisMethod):
             subsampled = True
             notes.append(f"subsampled to {int(max_cells)} cells for GPCCA")
         else:
-            work = adata.copy()
+            # Share the underlying arrays instead of a full deep copy: nothing
+            # downstream (build_kernel/run_gpcca) mutates an EXISTING X/layer/obsp
+            # value in place, only adds new obs columns, new obsm entries (fate
+            # probabilities), and a new obsp entry (a freshly computed neighbors
+            # graph) -- verified directly against _cellrank.py. adata.copy() here
+            # duplicated counts, the normalized layer, the denoised layer,
+            # spliced/unspliced velocyto looms and four embeddings for the WHOLE
+            # cohort, on this DEFAULT (max_cells=None) path -- the same fix
+            # already applied once in this exact file's realtime-kernel helper
+            # (_cellrank.py's moscot TemporalProblem construction), whose comment
+            # calls this "the largest [copy] in the pipeline".
+            work = ad.AnnData(
+                X=adata.X,
+                obs=adata.obs.copy(),
+                var=adata.var,
+                obsm=dict(adata.obsm),
+                obsp=dict(adata.obsp),
+                layers=dict(adata.layers),
+                uns=adata.uns,
+            )
 
         # Optionally load the whole-object velocity h5ad for a VelocityKernel.
         velocity_adata = self._load_velocity_adata(config, context, work, warnings)

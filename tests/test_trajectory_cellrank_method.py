@@ -76,6 +76,41 @@ def test_method_runs_and_writes_back(tmp_path):
     assert any(art.kind == "h5ad" for art in result.artifacts)
 
 
+def test_method_shares_arrays_instead_of_deep_copying_the_whole_cohort(tmp_path):
+    """The default (max_cells=None, no subsample) path must not adata.copy() the
+    WHOLE cohort just to add new obs/obsm/obsp keys.
+
+    _cellrank.py already fixed this exact pattern once, for the realtime-kernel
+    helper, with the comment: "adata.copy() bought it by duplicating every
+    matrix, layer, embedding and graph to add ONE column... the copy is the
+    largest in the pipeline." Nothing downstream (build_kernel/run_gpcca)
+    mutates an EXISTING X/layer/obsp value in place -- verified directly
+    against _cellrank.py -- it only adds new obs columns, new obsm entries
+    (fate probabilities), and a new obsp entry (a freshly computed neighbors
+    graph), so sharing the underlying arrays is safe.
+    """
+    a = _make_adata()
+    original_copy = ad.AnnData.copy
+
+    def _guarded_copy(self, *args, **kwargs):
+        if self.n_obs == a.n_obs and self.n_vars == a.n_vars:
+            raise AssertionError(
+                "cellrank_method deep-copied the WHOLE un-subsampled cohort "
+                "instead of sharing the underlying arrays."
+            )
+        return original_copy(self, *args, **kwargs)
+
+    ad.AnnData.copy = _guarded_copy
+    try:
+        ctx = _context(a, tmp_path)
+        result = CellRankMethod().run(a, _config(), ctx, donor_col=None)
+    finally:
+        ad.AnnData.copy = original_copy
+
+    assert not isinstance(result, MethodSkip)
+    assert "cellrank_macrostates" in result.adata.obs
+
+
 def test_method_skips_when_cluster_key_absent(tmp_path):
     a = _make_adata()
     ctx = _context(a, tmp_path)
