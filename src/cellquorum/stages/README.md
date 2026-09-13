@@ -34,6 +34,7 @@ that have no module yet.
 | 190 | `composition` | implemented |
 | 200 | `embeddings` | implemented |
 | 210 | `differential_expression` | implemented |
+| 215 | `differential_state` | implemented |
 | 220 | `differential_abundance` | implemented |
 | 230 | `enrichment` | implemented |
 | 240 | `enrichment_viz` | implemented |

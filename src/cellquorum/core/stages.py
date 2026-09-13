@@ -81,6 +81,7 @@ import cellquorum.stages.integration.embeddings.stage  # noqa: F401
 
 # Comparison + discovery-tail tracks.
 import cellquorum.stages.comparative.differential_expression.stage  # noqa: F401
+import cellquorum.stages.comparative.differential_state.stage  # noqa: F401
 import cellquorum.stages.comparative.differential_abundance.stage  # noqa: F401
 import cellquorum.stages.comparative.enrichment.stage  # noqa: F401
 import cellquorum.stages.comparative.enrichment.viz.stage  # noqa: F401

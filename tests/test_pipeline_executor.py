@@ -324,6 +324,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "de_viz",
         "differential_abundance",
         "differential_expression",
+        "differential_state",
         "dimensionality",
         "discovery",
         "embeddings",

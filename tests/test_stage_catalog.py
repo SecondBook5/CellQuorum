@@ -160,6 +160,7 @@ GOLDEN_STAGE_ORDER = [
     "composition",
     "embeddings",
     "differential_expression",
+    "differential_state",
     "differential_abundance",
     "enrichment",
     "enrichment_viz",
@@ -221,7 +222,7 @@ def test_catalog_order_matches_golden():
 def test_catalog_implemented_set_matches_golden():
     impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
     assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 37
+    assert len(GOLDEN_IMPLEMENTED_SORTED) == 38
 
 
 def test_orders_are_unique_and_ascending():

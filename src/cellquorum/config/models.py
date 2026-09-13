@@ -68,6 +68,9 @@ from cellquorum.stages.comparative.differential_expression.config import (
 # Import the differential-expression-visualization configuration model.
 from cellquorum.stages.comparative.differential_expression.viz.config import DeVizConfig
 
+# Import the differential-state configuration model.
+from cellquorum.stages.comparative.differential_state.config import DifferentialStateConfig
+
 # Import the enrichment configuration model.
 from cellquorum.stages.comparative.enrichment.config import EnrichmentConfig
 
@@ -821,6 +824,8 @@ class StageSelectionConfig(StrictBaseModel):
         adjudication: Whether cluster/state adjudication is enabled.
         composition: Whether composition analysis is enabled.
         differential_expression: Whether differential expression is enabled.
+        differential_state: Whether donor-paired testing of per-cell state/program
+            scores between conditions is enabled.
         coexpression: Whether co-expression (hdWGCNA) is enabled.
         grn: Whether GRN (pySCENIC) regulon inference is enabled.
         perturbation: Whether in-silico perturbation (CellOracle) is enabled.
@@ -911,6 +916,9 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether differential expression is enabled.
     differential_expression: bool = True
+
+    # Store whether donor-paired testing of per-cell state/program scores is enabled.
+    differential_state: bool = True
 
     # Store whether co-expression (hdWGCNA) is enabled.
     coexpression: bool = True
@@ -1078,6 +1086,9 @@ class CellQuorumConfig(StrictBaseModel):
     differential_expression: DifferentialExpressionConfig = Field(
         default_factory=DifferentialExpressionConfig
     )
+
+    # Store differential-state settings.
+    differential_state: DifferentialStateConfig = Field(default_factory=DifferentialStateConfig)
 
     # Store co-expression (hdWGCNA) settings.
     coexpression: CoexpressionConfig = Field(default_factory=CoexpressionConfig)

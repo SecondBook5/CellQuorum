@@ -11,6 +11,16 @@ public API and the configuration schema.
 
 ### Added
 
+- **`differential_state` (order=215) is a new stage**: donor-paired testing of
+  per-cell state/program scores between conditions, reusing the engine's own
+  validated `cellquorum.stats.donor_comparison.two_group_test_on_donor_medians`
+  rather than a new statistical implementation. `state_scoring` computes per-cell
+  program scores but never tested whether they differ between conditions — four
+  separate scripts in the Mehrara manuscript (`plot_programs_percell.py`,
+  `plot_program_deepdive.py`, `plot_alarmins.py`, `plot_postn_axis.py`) each
+  reinvented that missing test with slightly different donor-aggregation and FDR
+  choices. Auto-detects `state_*` obs columns by default; BH-FDR across the whole
+  tested family.
 - **`composition` (order=190) is implemented**, filling one of the three reserved
   planner slots. Purely descriptive (statistical testing of compositional shifts stays
   `differential_abundance`'s job): overall, per-condition, and per-sample cell-type

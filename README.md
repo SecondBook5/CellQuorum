@@ -228,6 +228,7 @@ dedicated environment; *R* methods run over the Rscript/rpy2 bridge.
 | `composition` | descriptive cell-type composition — overall, per-condition, per-sample proportions + stacked-bar figures | Python |
 | `embeddings` | UMAP + PHATE + PAGA (incl. PAGA-on-UMAP); feature/score overlays with opt-in MAGIC | Python |
 | `differential_expression` (+ `de_viz`) | donor-aware pseudobulk (edgeR); volcano | R |
+| `differential_state` | donor-paired testing of per-cell state/program scores between conditions | Python |
 | `differential_abundance` | paired arcsin-sqrt t-test; Milo; scCODA; propeller | Python + R + isolated env |
 | `enrichment` (+ `enrichment_viz`) | GSEA; ORA; GSVA; decoupler activity (CollecTRI/PROGENy) | Python |
 | `coexpression` | hdWGCNA co-expression modules | isolated R env |
