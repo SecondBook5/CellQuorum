@@ -599,6 +599,13 @@ class RConfig(StrictBaseModel):
             yet honored — Rscript is always used).
         rscript_path: Rscript executable name or path (honored).
         timeout_seconds: Timeout for lightweight R checks.
+        max_memory_gb: RLIMIT_AS ceiling for Rscript subprocesses (honored;
+            threaded to RscriptBackend). The 12GB default is sized for the
+            common case (every script measured needs at most 889MB); a
+            whole-atlas-scale call (e.g. scDblFinder across every capture in
+            one R session) can legitimately need more, and previously had no
+            way to raise it -- it was silently killed and reported identically
+            to the R package being unavailable.
     """
 
     # Store whether R-backed methods are allowed.
@@ -615,6 +622,9 @@ class RConfig(StrictBaseModel):
 
     # Store timeout for lightweight R backend checks.
     timeout_seconds: int = Field(default=30, ge=1)
+
+    # Store the RLIMIT_AS ceiling for Rscript subprocesses, in GB. None disables it.
+    max_memory_gb: float | None = 12.0
 
 
 class ReportConfig(StrictBaseModel):

@@ -591,3 +591,30 @@ def test_build_default_backend_registry_threads_configured_rscript_path() -> Non
         req for req in rscript_backend.requirements() if req.requirement_type == "executable"
     ]
     assert executable_reqs and executable_reqs[0].name == custom
+
+
+def test_build_default_backend_registry_defaults_max_memory_gb() -> None:
+    """The 12GB RLIMIT_AS cap is the default when no override is threaded.
+
+    This is the baseline every current config relies on -- the safety cap that
+    turns an R subprocess exceeding memory into an ordinary recorded failure
+    instead of crashing the host (see RscriptBackend._memory_limit_preexec).
+    """
+
+    registry = build_default_backend_registry()
+
+    assert registry.get("rscript").max_memory_gb == 12.0
+
+
+def test_build_default_backend_registry_threads_configured_max_memory_gb() -> None:
+    """A configured memory ceiling reaches the registered Rscript backend.
+
+    Regression guard: a whole-atlas-scale R call (scDblFinder across ~200,000
+    cells in 18 captures) legitimately needs more than the 12GB default -- it
+    was silently RLIMIT_AS-killed and reported identically to the library being
+    unavailable, with no way to raise the ceiling from config at all.
+    """
+
+    registry = build_default_backend_registry(max_memory_gb=32.0)
+
+    assert registry.get("rscript").max_memory_gb == 32.0

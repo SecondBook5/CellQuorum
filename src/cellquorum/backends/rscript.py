@@ -389,6 +389,7 @@ def build_rscript_backend(
     rscript_path: str = "Rscript",
     timeout_seconds: int = 30,
     r_packages: list[str] | None = None,
+    max_memory_gb: float | None = 12.0,
 ) -> RscriptBackend:
     """
     Build an Rscript backend with optional R package checks.
@@ -397,6 +398,8 @@ def build_rscript_backend(
         rscript_path: Executable name or path used to call Rscript.
         timeout_seconds: Maximum time allowed for Rscript checks.
         r_packages: Optional list of R packages that should be checked.
+        max_memory_gb: RLIMIT_AS ceiling for R subprocesses (see
+            RscriptBackend._memory_limit_preexec).
 
     Returns:
         Configured RscriptBackend instance.
@@ -429,4 +432,5 @@ def build_rscript_backend(
         rscript_path=rscript_path,
         timeout_seconds=timeout_seconds,
         requirement_list=requirements,
+        max_memory_gb=max_memory_gb,
     )

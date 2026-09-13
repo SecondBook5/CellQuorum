@@ -277,7 +277,9 @@ class BackendRegistry:
         return rows
 
 
-def build_default_backend_registry(*, rscript_path: str = "Rscript") -> BackendRegistry:
+def build_default_backend_registry(
+    *, rscript_path: str = "Rscript", max_memory_gb: float | None = 12.0
+) -> BackendRegistry:
     """
     Build the default CellQuorum backend registry.
 
@@ -292,6 +294,12 @@ def build_default_backend_registry(*, rscript_path: str = "Rscript") -> BackendR
             batch Rscript backend. Threaded from ``config.r.rscript_path`` so a
             container/HPC image that provisions R outside the default PATH is
             actually reachable. Defaults to the bare ``"Rscript"`` on PATH.
+        max_memory_gb: RLIMIT_AS ceiling for Rscript subprocesses. Threaded from
+            ``config.r.max_memory_gb``. The 12GB default is a safety cap sized
+            for a lineage-scale run; a whole-atlas cohort (e.g. scDblFinder
+            across every capture in one R session) can legitimately need more,
+            and there was previously no way to raise it — it failed identically
+            to the R package being unavailable.
 
     Returns:
         BackendRegistry containing Python, R, Rscript, GPU, and RAPIDS backends.
@@ -307,8 +315,9 @@ def build_default_backend_registry(*, rscript_path: str = "Rscript") -> BackendR
     # Register the in-process rpy2 backend.
     registry.register(build_r_backend())
 
-    # Register the batch/HPC-friendly Rscript backend at the configured path.
-    registry.register(build_rscript_backend(rscript_path=rscript_path))
+    # Register the batch/HPC-friendly Rscript backend at the configured path
+    # and memory ceiling.
+    registry.register(build_rscript_backend(rscript_path=rscript_path, max_memory_gb=max_memory_gb))
 
     # Register the general GPU backend.
     registry.register(build_gpu_backend())
