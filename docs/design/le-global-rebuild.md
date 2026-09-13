@@ -81,31 +81,40 @@ row count — before extending to the next stage. Order:
    `feature_selection` → `dimensionality` → `integration` (scVI/Harmony).
    Mechanically the same as before; the difference this time is actually
    looking at each stage's output.
-2. `clustering` → `annotation` (marker genes + CellTypist) → `reference_mapping`
-   (scArches vs the atopic-dermatitis atlas, `label_key: Cell_type` → `ref_state`,
-   same config as the original: `atlas_h5ad:
-   /mnt/e/atopic_dermatitis_singlecell_atlas/data/Broad/SCP2613/anndata/scp.h5ad`,
-   `reference_filters: [{column: disease_lesional, keep: [Healthy, Non-lesional]}]`,
-   seeds `[0,1,2]`) → `annotation_consensus` (marker + CellTypist + `ref_state` →
-   `cell_type`, `annotation_confidence`, `needs_review` — same
-   `backbone_aliases` as before).
-3. **New, tracked stage**: a second reference-mapping pass, same atlas file,
-   same reference filters, but `label_key: Cell_type_granular` (confirmed
-   present in the atlas, 86 categories, verbatim match to what's currently in
-   `cell_type_granular` — e.g. "Fibroblast SLPI+", "DC MMP9+CCR7+") →
-   `key_added: cell_type_granular`. This replaces the lost, unrecoverable
-   script with a real, reproducible, provenance-tracked run.
+2. `clustering` → `annotation` (marker genes + CellTypist).
+3. **One reference-mapping pass, not two** — `label_key: Cell_type_granular`,
+   `coarse_label_key: Cell_type` (both confirmed present in
+   `/mnt/e/atopic_dermatitis_singlecell_atlas/data/Broad/SCP2613/anndata/scp.h5ad`;
+   granular has 86 categories, verbatim match to what's currently in
+   `cell_type_granular` — e.g. "Fibroblast SLPI+", "DC MMP9+CCR7+"),
+   `key_added: cell_type_granular`, same `reference_filters:
+   [{column: disease_lesional, keep: [Healthy, Non-lesional]}]` and seeds
+   `[0,1,2]` as the original run. `reference_mapping` trains scArches once on
+   the fine (`Cell_type_granular`) column and *deterministically collapses* it
+   to `cell_type_granular_coarse` via a fine→coarse hierarchy it derives from
+   the atlas itself (`_label_hierarchy` in `scarches.py`) — refusing to run if
+   that hierarchy is ambiguous. This is the engine's existing, correct answer
+   to "map twice and reconcile": don't map twice, map once and read the same
+   prediction at two depths, so the two readouts cannot contradict each other.
+   Replaces both the untracked, unrecoverable granular script *and* the
+   original separate `ref_state` mapping pass with one tracked run.
    (Note: the atlas also has a `Cell_type_granular_v2` variant with abbreviated
    names — using the non-`_v2` column since it matches the existing object;
    flag if `_v2` was actually intended.)
-4. **New cross-check**: before the object is treated as final, verify
-   `cell_type` / `ref_state` / `cell_type_granular` agree, using an explicit
-   alias table (granular value → coarse category, e.g. `"Fibroblast SLPI+" →
-   "Fibroblasts"`) in the same style as `annotation_consensus`'s existing
-   `backbone_aliases`. Cells where the granular call disagrees with the coarse
-   consensus get flagged (and excluded from lineage slices), the same
-   `needs_review` mechanism extended to cover the third classifier instead of
-   just two.
+4. `annotation_consensus` — `method_label_keys: [cell_type_markers,
+   cell_type_celltypist, cell_type_granular_coarse]` (the reference-mapping
+   vote is now the coarse collapse, not a separately-trained `ref_state`),
+   `granular_source_key: null` (do **not** let consensus overwrite
+   `cell_type_granular` with a copy of the coarse vote — it already holds the
+   real fine-grained prediction from step 3), same `backbone_aliases` as
+   before → produces `cell_type`, `annotation_confidence`, `needs_review`.
+   Because all three votes (2 direct classifiers + 1 hierarchy-collapsed
+   reference-mapping vote) go through this one existing mechanism,
+   `needs_review`/`annotation_confidence` already *is* the three-way
+   agreement check — no new alias-table script needed. Lineage manifests
+   should gate inclusion on `needs_review == False` (or
+   `annotation_confidence == "high"`) going forward, not a bespoke
+   `require_agreement` column pair.
 5. `adjudication` → `population_identity` → final object.
 
 ## Verification approach
@@ -129,10 +138,13 @@ in the first place.
 
 ## Success criteria
 
-- Every stage's config, including the granular reference-mapping pass, is
-  present in `provenance/resolved_config.json` — nothing about how the atlas
-  was built is unrecoverable, unlike today.
-- `cell_type` / `ref_state` / `cell_type_granular` agreement is checked and
-  enforced once, at the global level, before any lineage ever sees the object.
+- Every stage's config, including the reference-mapping pass, is present in
+  `provenance/resolved_config.json` — nothing about how the atlas was built
+  is unrecoverable, unlike today.
+- `cell_type_granular` and its coarse collapse `cell_type_granular_coarse`
+  cannot disagree with each other (enforced by construction via
+  `coarse_label_key`), and `cell_type`'s consensus already incorporates that
+  coarse vote alongside marker-genes and CellTypist — so `needs_review` is a
+  real three-way check, not a two-way one, with no separate script required.
 - The new object lives in its own project directory with a real manifest,
   not inside the engine repo.
