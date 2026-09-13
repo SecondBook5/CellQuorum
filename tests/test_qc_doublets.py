@@ -41,9 +41,15 @@ class _RecordingBackend:
     #: Captured HERE rather than read back from ``calls``: the adapter writes its
     #: inputs into a TemporaryDirectory that is gone by the time a test looks.
     samples_seen: list[list[str] | None] = field(default_factory=list)
+    #: The `timeout` kwarg each call was made with, or None when the caller left it
+    #: unset (matching RscriptBackend.run_script's own `timeout: int | None = None`).
+    timeouts_seen: list[int | None] = field(default_factory=list)
 
-    def run_script(self, script: Path, argv: list[str]) -> subprocess.CompletedProcess:
+    def run_script(
+        self, script: Path, argv: list[str], *, timeout: int | None = None
+    ) -> subprocess.CompletedProcess:
         self.calls.append(list(argv))
+        self.timeouts_seen.append(timeout)
         self.samples_seen.append(
             pd.read_csv(argv[3])["sample"].astype(str).tolist()
             if len(argv) >= 4 and argv[3]
@@ -150,6 +156,48 @@ def test_scdblfinder_pooled_passes_no_samples_file():
     assert metrics["scored_scope"] == "pooled"
     assert len(backend.calls) == 1
     assert backend.samples_seen == [None], f"unexpected samples argument: {backend.calls[0]}"
+
+
+def test_scdblfinder_timeout_is_configurable():
+    """A configured timeout reaches the Rscript backend, not just the 600s default.
+
+    scDblFinder on a whole-atlas cohort (hundreds of thousands of cells across many
+    captures) legitimately takes longer than RscriptBackend's generic 600s default —
+    confirmed directly: 24,629 real cells across 2 captures took 38s, and the real
+    lymphedema global-atlas cohort is ~202,000 cells across 18 captures. Without a
+    way to raise it, the call silently times out and the whole method is dropped
+    with 'unavailable (skipped)' — indistinguishable from the library actually being
+    missing, which it is not.
+    """
+
+    a = _counts_adata(n=120, g=300)
+    a.obs["sample_id"] = pd.Categorical(["libA"] * 60 + ["libB"] * 60)
+    backend = _RecordingBackend()
+    cfg = QCDoubletConfig(
+        enabled=True,
+        methods=["scdblfinder"],
+        consensus="any",
+        per_sample=True,
+        timeout_seconds=3600,
+    )
+
+    detect_doublets(a, cfg, backend=backend, sample_key="sample_id")
+
+    assert len(backend.calls) == 1
+    assert backend.timeouts_seen == [3600]
+
+
+def test_scdblfinder_timeout_defaults_to_backend_default_when_unset():
+    """Leaving timeout_seconds unset must not change existing behavior."""
+
+    a = _counts_adata(n=120, g=300)
+    a.obs["sample_id"] = pd.Categorical(["libA"] * 60 + ["libB"] * 60)
+    backend = _RecordingBackend()
+    cfg = QCDoubletConfig(enabled=True, methods=["scdblfinder"], consensus="any", per_sample=True)
+
+    detect_doublets(a, cfg, backend=backend, sample_key="sample_id")
+
+    assert backend.timeouts_seen == [None]
 
 
 def test_scrublet_per_sample_still_loops_in_python():
@@ -429,7 +477,7 @@ def test_native_call_without_score_is_not_a_positive(monkeypatch):
 )
 def test_r_output_schema_and_identity(defect):
     class Backend:
-        def run_script(self, script, argv):
+        def run_script(self, script, argv, *, timeout=None):
             frame = pd.DataFrame(
                 {"cell_id": [1, 2], "score": [0.1, 0.8], "class": ["singlet", "doublet"]}
             )

@@ -71,6 +71,7 @@ def run_scdblfinder(
     expected_rate: float | None = None,
     sample_key: str | None = None,
     n_jobs: int = 1,
+    timeout: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray | None]:
     """Run scDblFinder once, verify cell IDs, and return scores and native calls.
 
@@ -112,7 +113,7 @@ def run_scdblfinder(
             while len(argv) < 5:
                 argv.append("")
             argv.append(str(expected_rate))
-        result = backend.run_script(_SCDBLFINDER_R, argv)
+        result = backend.run_script(_SCDBLFINDER_R, argv, timeout=timeout)
         if result.returncode != 0 or not out.is_file():
             # R failed — skip with NaN (caller records the note).
             return np.full(adata.n_obs, np.nan, dtype=float), None
@@ -163,6 +164,7 @@ def _score_method(
     random_state: int = 0,
     sample_key: str | None = None,
     n_jobs: int = 1,
+    timeout: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     """Run one detector and return ``(scores, native_calls)`` (None if unknown method).
 
@@ -184,6 +186,7 @@ def _score_method(
             expected_rate=expected_rate,
             sample_key=sample_key,
             n_jobs=n_jobs,
+            timeout=timeout,
         )
     else:
         return None
@@ -307,6 +310,7 @@ def detect_doublets(
                 random_state=random_state,
                 sample_key=sample_key if per_sample else None,
                 n_jobs=n_jobs,
+                timeout=config.timeout_seconds,
             )
             if per_sample and method in _NATIVE_PER_SAMPLE:
                 notes.append(

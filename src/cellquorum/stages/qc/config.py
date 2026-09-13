@@ -574,6 +574,15 @@ class QCDoubletConfig(StrictBaseModel):
         expected_doublet_rate: Expected doublet fraction for both detectors (scDblFinder dbr).
         score_threshold: Optional manual doublet score threshold.
         per_sample: Whether doublets should be evaluated per sample.
+        timeout_seconds: Rscript timeout override for scDblFinder, one native call
+            covering every sample. None defers to RscriptBackend's own
+            script_timeout_seconds (600s), which a whole-atlas cohort can legitimately
+            exceed -- confirmed directly on this project's own data: 24,629 real
+            cells across 2 captures took 38s, and a ~200,000-cell, 18-capture cohort
+            scales well past 600s. A timeout is silent: the call returns a non-zero
+            exit and every cell gets NaN, surfacing only as "doublet method
+            'scdblfinder' unavailable (skipped)" -- indistinguishable from the
+            library actually being missing, which it is not.
     """
 
     enabled: bool = True
@@ -585,6 +594,7 @@ class QCDoubletConfig(StrictBaseModel):
     expected_doublet_rate: float = 0.06
     score_threshold: float | None = None
     per_sample: bool = True
+    timeout_seconds: int | None = None
 
     @field_validator("expected_doublet_rate", "score_threshold", mode="before")
     @classmethod
