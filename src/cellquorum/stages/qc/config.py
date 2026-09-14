@@ -722,6 +722,16 @@ class QCOutputConfig(StrictBaseModel):
             differential-attrition tests. One row per (factor, unit of analysis),
             including the tests that were skipped and why, so the table answers
             "was this checked" and not only "was anything found".
+        removed_cells: Whether to write ``removed_cells.csv`` -- one row per
+            barcode QC actually dropped (by floor, quarantine, or the multiplet
+            flag), with its cohort labels, provisional lineage, and the specific
+            reason. ``cell_labels.csv`` records who entered QC; this records who
+            left and why. Without it, "what cell type did QC discard" is
+            unanswerable after the fact, because a dropped row's provisional
+            lineage leaves with it -- the graded quarantine outcome (usually the
+            majority of what's removed) exists only transiently on the
+            floor-surviving object, before those rows are ever cut, and is
+            recorded nowhere else once the run finishes.
         write_summary_json: Whether to write a JSON QC summary.
         write_h5ad: Whether to write a QC AnnData object.
         write_figures: Master switch for every QC figure. False writes no
@@ -750,6 +760,7 @@ class QCOutputConfig(StrictBaseModel):
     write_report_table: bool = True
     cell_labels: bool = True
     attrition_audit: bool = True
+    removed_cells: bool = True
     write_summary_json: bool = True
     write_h5ad: bool = True
     write_figures: bool = True

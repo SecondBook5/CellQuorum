@@ -112,6 +112,94 @@ def _analysable_mask(
     return analysable & ~quarantined
 
 
+def _removed_cells_table(
+    input_adata: ad.AnnData,
+    output_adata: ad.AnnData,
+    cell_keep: pd.Series,
+    floor_reason: pd.Series,
+    cell_metrics: pd.DataFrame,
+) -> pd.DataFrame:
+    """Per-barcode record of every cell QC actually dropped, and why.
+
+    ``_analysable_mask`` says WHETHER a barcode survived; this says WHY it
+    didn't, for every barcode that entered QC but is not analysable. A floor
+    rejection's reason lives on ``floor_reason``; a quarantine's driver lives
+    on ``output_adata`` only for as long as that barcode's row is still
+    there, before quarantine ever cuts it. Once the run finishes, a filtered
+    object retains none of this for a barcode that isn't in it, and neither
+    does the barcode's provisional lineage -- both leave with the row.
+
+    Args:
+        input_adata: The object as it entered QC.
+        output_adata: The post-floor object, carrying the graded verdict
+            columns (``qc_state_initial``, ``qc_primary_driver``,
+            ``qc_probable_multiplet``) for every floor-surviving barcode,
+            including ones about to be quarantined.
+        cell_keep: Per-barcode floor mask over the input index.
+        floor_reason: Per-barcode floor rejection reason over the input
+            index (``floors.reason``); empty string where the floor did not
+            reject the barcode.
+        cell_metrics: Per-barcode QC metrics over the input index; only its
+            provisional-lineage column is used here.
+
+    Returns:
+        One row per removed barcode: ``removal_stage`` (``floor`` |
+        ``quarantine`` | ``probable_multiplet`` | ``unknown``),
+        ``removal_reason`` (the specific reason string, blank where none is
+        recorded), and the provisional lineage. Empty, but with the same
+        three columns, when nothing was removed.
+    """
+
+    columns = ["removal_stage", "removal_reason", LINEAGE_COLUMN]
+    analysable = _analysable_mask(input_adata, output_adata, cell_keep)
+    removed_names = input_adata.obs_names[~analysable.to_numpy()]
+    if len(removed_names) == 0:
+        return pd.DataFrame(columns=columns)
+
+    floor_removed = (~cell_keep.reindex(input_adata.obs_names).fillna(False).astype(bool)).reindex(
+        removed_names
+    )
+
+    state = output_adata.obs.get("qc_state_initial")
+    quarantined = (
+        state.astype(str).eq("quarantine").reindex(removed_names).fillna(False)
+        if state is not None
+        else pd.Series(False, index=removed_names)
+    )
+    multiplet = output_adata.obs.get("qc_probable_multiplet")
+    is_multiplet = (
+        multiplet.reindex(removed_names).fillna(False).astype(bool)
+        if multiplet is not None
+        else pd.Series(False, index=removed_names)
+    )
+
+    stage = pd.Series("unknown", index=removed_names, dtype=object)
+    stage[floor_removed] = "floor"
+    stage[~floor_removed & quarantined] = "quarantine"
+    stage[~floor_removed & ~quarantined & is_multiplet] = "probable_multiplet"
+
+    reason = pd.Series("", index=removed_names, dtype=object)
+    reason[floor_removed] = (
+        floor_reason.reindex(removed_names)[floor_removed].fillna("").astype(str)
+    )
+    driver = output_adata.obs.get("qc_primary_driver")
+    if driver is not None:
+        driver_mask = ~floor_removed & quarantined
+        reason[driver_mask] = driver.reindex(removed_names)[driver_mask].fillna("").astype(str)
+    reason[~floor_removed & ~quarantined & is_multiplet] = "probable_multiplet"
+
+    lineage = (
+        cell_metrics[LINEAGE_COLUMN].reindex(removed_names)
+        if LINEAGE_COLUMN in cell_metrics.columns
+        else pd.Series(pd.NA, index=removed_names)
+    )
+
+    return pd.DataFrame(
+        {"removal_stage": stage, "removal_reason": reason, LINEAGE_COLUMN: lineage},
+        index=removed_names,
+    )
+
+
 @register_stage(name="qc", order=20, config_flag="qc", config_field="qc")
 @dataclass(frozen=True)
 class QCStage:
@@ -339,6 +427,10 @@ class QCStage:
             design=design,
         )
 
+        removed_cells = _removed_cells_table(
+            adata, output_adata, floors.cell_keep, floors.reason, metrics_result.cell_metrics
+        )
+
         design_leak_warnings = audit_qc_design_leaks(
             config=qc_config,
             cohort=cohort,
@@ -392,6 +484,7 @@ class QCStage:
             publication_keys=publication_keys,
             attrition_audit=attrition_audit,
             donor_comparisons=donor_comparisons,
+            removed_cells=removed_cells,
         )
 
         stage_artifacts = build_stage_artifacts_from_manifest(artifact_manifest)

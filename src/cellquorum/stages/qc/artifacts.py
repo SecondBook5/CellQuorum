@@ -136,6 +136,7 @@ def write_qc_artifacts(
     publication_keys: dict[str, str] | None = None,
     attrition_audit: AttritionAudit | None = None,
     donor_comparisons: dict[str, TwoGroupTest] | None = None,
+    removed_cells: pd.DataFrame | None = None,
 ) -> QCArtifactManifest:
     """Write QC module artifacts to disk.
 
@@ -172,6 +173,10 @@ def write_qc_artifacts(
             ``qc_attrition.csv``. None writes nothing and records the skip, so a
             run predating the audit is distinguishable from one where it found
             nothing to test.
+        removed_cells: Optional per-barcode record of every cell QC actually
+            dropped, written as ``removed_cells.csv`` -- stage, reason, and
+            provisional lineage for each. None writes nothing and records the
+            skip; an empty (but present) table means QC ran and kept everyone.
 
     Returns:
         QCArtifactManifest describing written, skipped, and warned artifacts.
@@ -271,6 +276,16 @@ def write_qc_artifacts(
 
     else:
         skipped.append("attrition")
+
+    if qc_config.outputs.removed_cells and removed_cells is not None:
+        artifacts["removed_cells"] = write_dataframe_artifact(
+            removed_cells,
+            output_path / "removed_cells.csv",
+            index=True,
+        )
+
+    else:
+        skipped.append("removed_cells")
 
     figure_source = figure_adata if figure_adata is not None else adata
 

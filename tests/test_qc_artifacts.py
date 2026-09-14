@@ -602,11 +602,12 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
     # Confirm nothing was skipped except the label table, which has nothing to
     # record (this fixture's obs carries QC metrics and no cohort or cell-type
     # column, so there are no labels a re-render could need), and the attrition
-    # audit, which the writer cannot invent -- the stage runs it and passes the
-    # result in, so a direct writer call has nothing to write.
+    # audit and removed-cells table, neither of which the writer can invent --
+    # the stage computes both and passes them in, so a direct writer call has
+    # nothing to write for either.
     # The writer cannot invent the audit, and this fixture uses plain floors
     # rather than the mitochondrial mixture, so there is no fitted model to write.
-    assert manifest.skipped == ["mito_mixture", "attrition", "cell_labels"]
+    assert manifest.skipped == ["mito_mixture", "attrition", "removed_cells", "cell_labels"]
 
     # Confirm all written artifact paths exist.
     for artifact_name, artifact_value in manifest.artifacts.items():
@@ -645,6 +646,52 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
 
     # Confirm h5ad dimensions.
     assert observed_adata.shape == (2, 2)
+
+
+def test_write_qc_artifacts_writes_removed_cells_table_when_provided(tmp_path: Path) -> None:
+    """A removed-cells table passed in gets written and round-trips, matching
+    every other QC table that the stage computes and hands to the writer
+    rather than the writer deriving itself (attrition, donor comparisons)."""
+
+    removed_cells = pd.DataFrame(
+        {
+            "removal_stage": ["floor"],
+            "removal_reason": ["fewer_than_100_genes"],
+            "qc_provisional_lineage": ["L3"],
+        },
+        index=pd.Index(["cell_2"], name="cell"),
+    )
+
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        floors=make_floor_result(),
+        config=QCConfig(outputs={"write_figures": False}),
+        adata=make_test_adata(),
+        removed_cells=removed_cells,
+    )
+
+    assert "removed_cells" in manifest.artifacts
+    assert "removed_cells" not in manifest.skipped
+
+    written = pd.read_csv(manifest.get_path("removed_cells"), index_col=0)
+    pdt.assert_frame_equal(written, removed_cells, check_dtype=False)
+
+
+def test_write_qc_artifacts_skips_removed_cells_when_not_provided(tmp_path: Path) -> None:
+    """Omitting removed_cells (e.g. an older call site, or QC finding nothing to
+    remove) must record a skip, not silently write nothing with no trace."""
+
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        floors=make_floor_result(),
+        config=QCConfig(outputs={"write_figures": False}),
+        adata=make_test_adata(),
+    )
+
+    assert "removed_cells" not in manifest.artifacts
+    assert "removed_cells" in manifest.skipped
 
 
 def test_write_qc_artifacts_skips_h5ad_when_no_anndata_provided(tmp_path: Path) -> None:
@@ -761,6 +808,7 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
         "cell_floors",
         "gene_floors",
         "attrition",
+        "removed_cells",
         "cell_labels",
         "report",
         "qc_h5ad",

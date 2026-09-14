@@ -100,6 +100,90 @@ def test_retained_probable_doublets_are_not_counted_as_analysable():
     assert _analysable_mask(original, output, keep).tolist() == [False, True, True, True, True]
 
 
+def test_removed_cells_table_records_floor_removed_cells_with_reason_and_lineage():
+    """A floor-removed barcode never reaches graded adjudication -- its record must
+    come entirely from the floor + metrics tables, since output_adata never saw it."""
+    from cellquorum.stages.qc.lineage import LINEAGE_COLUMN
+    from cellquorum.stages.qc.stage import _removed_cells_table
+
+    original = _counts_adata(5)
+    survivors = original[2:].copy()  # floor dropped barcodes 0, 1
+    keep = pd.Series([False, False, True, True, True], index=original.obs_names)
+    floor_reason = pd.Series(
+        ["min_genes_per_cell", "min_genes_per_cell", "", "", ""], index=original.obs_names
+    )
+    cell_metrics = pd.DataFrame(
+        {LINEAGE_COLUMN: ["L1", "L2", "L3", "L4", "L5"]}, index=original.obs_names
+    )
+
+    table = _removed_cells_table(original, survivors, keep, floor_reason, cell_metrics)
+
+    assert list(table.index) == list(original.obs_names[:2])
+    assert table["removal_stage"].tolist() == ["floor", "floor"]
+    assert table["removal_reason"].tolist() == ["min_genes_per_cell", "min_genes_per_cell"]
+    assert table[LINEAGE_COLUMN].tolist() == ["L1", "L2"]
+
+
+def test_removed_cells_table_records_quarantined_cells_with_driver_and_lineage():
+    """A quarantined barcode survived floors (present in output_adata) but is not
+    analysable -- its reason must come from the graded verdict, not the floor table."""
+    from cellquorum.stages.qc.lineage import LINEAGE_COLUMN
+    from cellquorum.stages.qc.stage import _removed_cells_table
+
+    original = _counts_adata(5)
+    output = original.copy()
+    output.obs["qc_state_initial"] = ["core", "quarantine", "core", "core", "core"]
+    output.obs["qc_primary_driver"] = ["", "metabolic_stress", "", "", ""]
+    keep = pd.Series(True, index=original.obs_names)
+    floor_reason = pd.Series("", index=original.obs_names)
+    cell_metrics = pd.DataFrame(
+        {LINEAGE_COLUMN: ["L1", "L2", "L3", "L4", "L5"]}, index=original.obs_names
+    )
+
+    table = _removed_cells_table(original, output, keep, floor_reason, cell_metrics)
+
+    assert list(table.index) == [original.obs_names[1]]
+    assert table["removal_stage"].tolist() == ["quarantine"]
+    assert table["removal_reason"].tolist() == ["metabolic_stress"]
+    assert table[LINEAGE_COLUMN].tolist() == ["L2"]
+
+
+def test_removed_cells_table_records_probable_multiplets():
+    from cellquorum.stages.qc.lineage import LINEAGE_COLUMN
+    from cellquorum.stages.qc.stage import _removed_cells_table
+
+    original = _counts_adata(5)
+    output = original.copy()
+    output.obs["qc_probable_multiplet"] = [True, False, False, False, False]
+    keep = pd.Series(True, index=original.obs_names)
+    floor_reason = pd.Series("", index=original.obs_names)
+    cell_metrics = pd.DataFrame(
+        {LINEAGE_COLUMN: ["L1", "L2", "L3", "L4", "L5"]}, index=original.obs_names
+    )
+
+    table = _removed_cells_table(original, output, keep, floor_reason, cell_metrics)
+
+    assert list(table.index) == [original.obs_names[0]]
+    assert table["removal_stage"].tolist() == ["probable_multiplet"]
+    assert table[LINEAGE_COLUMN].tolist() == ["L1"]
+
+
+def test_removed_cells_table_empty_when_nothing_removed():
+    from cellquorum.stages.qc.lineage import LINEAGE_COLUMN
+    from cellquorum.stages.qc.stage import _removed_cells_table
+
+    original = _counts_adata(3)
+    output = original.copy()
+    keep = pd.Series(True, index=original.obs_names)
+    floor_reason = pd.Series("", index=original.obs_names)
+    cell_metrics = pd.DataFrame({LINEAGE_COLUMN: ["L1", "L2", "L3"]}, index=original.obs_names)
+
+    table = _removed_cells_table(original, output, keep, floor_reason, cell_metrics)
+
+    assert table.empty
+    assert list(table.columns) == ["removal_stage", "removal_reason", LINEAGE_COLUMN]
+
+
 def test_empty_doublet_result_fails_at_qc(monkeypatch, tmp_path):
     import cellquorum.stages.qc.doublets as doublets_mod
     from cellquorum.stages.qc.stage import QCStageError
