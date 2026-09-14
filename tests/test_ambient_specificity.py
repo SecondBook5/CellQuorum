@@ -14,7 +14,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from cellquorum.stats.ambient_specificity import ambient_gene_mask
+from cellquorum.stats.ambient_specificity import ambient_gene_mask, cross_compartment_panel_scores
 
 
 def _profile() -> pd.DataFrame:
@@ -99,3 +99,96 @@ def test_mask_is_a_boolean_series_indexed_like_the_profile():
     mask = ambient_gene_mask(_profile(), target_group="Fibroblasts")
     assert list(mask.index) == list(_profile().index)
     assert mask.dtype == bool
+
+
+# --------------------------------------------------------------------------- #
+# cross_compartment_panel_scores: a before/after per-cell panel score, reusing
+# ambient_gene_mask per foreign group instead of a hand-wavy compartment zero-out.
+# --------------------------------------------------------------------------- #
+
+
+def _panel_profile() -> pd.DataFrame:
+    """KRT10/KRT_WEAK: keratin panel genes, real+strong in Keratinocytes, foreign
+    everywhere else. KRT_WEAK is additionally weak (ambient) in Fibroblasts but
+    NOT in Pericyte_SMC (shared real biology there, e.g. a barrier-adjacent gene).
+    """
+    return pd.DataFrame(
+        {
+            "Keratinocytes": [5.0, 4.0],
+            "Fibroblasts": [0.5, 0.2],
+            "Pericyte_SMC": [0.1, 3.0],
+        },
+        index=["KRT10", "KRT_WEAK"],
+    )
+
+
+def _panel_expression() -> pd.DataFrame:
+    # 4 cells: 2 Keratinocytes (home), 1 Fibroblast (foreign, both genes ambient),
+    # 1 Pericyte_SMC (foreign, KRT_WEAK is real/shared there).
+    return pd.DataFrame(
+        {"KRT10": [5.0, 6.0, 0.5, 0.1], "KRT_WEAK": [4.0, 3.0, 0.2, 3.0]},
+        index=["kc1", "kc2", "fib1", "peri1"],
+    )
+
+
+def _panel_cell_type() -> pd.Series:
+    return pd.Series(
+        ["Keratinocytes", "Keratinocytes", "Fibroblasts", "Pericyte_SMC"],
+        index=["kc1", "kc2", "fib1", "peri1"],
+    )
+
+
+def test_home_group_cells_are_unchanged_before_and_after():
+    result = cross_compartment_panel_scores(
+        _panel_expression(),
+        _panel_cell_type(),
+        _panel_profile(),
+        ["KRT10", "KRT_WEAK"],
+        home_groups=["Keratinocytes"],
+    )
+    pd.testing.assert_series_equal(
+        result.loc[["kc1", "kc2"], "before"], result.loc[["kc1", "kc2"], "after"], check_names=False
+    )
+    assert result.loc["kc1", "before"] == pytest.approx((5.0 + 4.0) / 2)
+
+
+def test_foreign_cell_loses_ambient_genes_from_the_after_score():
+    """fib1: both panel genes are ambient in Fibroblasts (foreign + weak) ->
+    'after' drops to 0, unlike 'before' which is the full panel mean."""
+    result = cross_compartment_panel_scores(
+        _panel_expression(),
+        _panel_cell_type(),
+        _panel_profile(),
+        ["KRT10", "KRT_WEAK"],
+        home_groups=["Keratinocytes"],
+    )
+    assert result.loc["fib1", "before"] == pytest.approx((0.5 + 0.2) / 2)
+    assert result.loc["fib1", "after"] == pytest.approx(0.0)
+
+
+def test_foreign_cell_keeps_a_gene_that_is_real_shared_biology_there():
+    """peri1: KRT10 is ambient in Pericyte_SMC (foreign+weak) but KRT_WEAK is
+    real there (foreign but strong, per the profile) -> 'after' keeps only
+    KRT_WEAK's value, not zero and not the full two-gene mean."""
+    result = cross_compartment_panel_scores(
+        _panel_expression(),
+        _panel_cell_type(),
+        _panel_profile(),
+        ["KRT10", "KRT_WEAK"],
+        home_groups=["Keratinocytes"],
+        spec_threshold=0.25,
+    )
+    assert result.loc["peri1", "before"] == pytest.approx((0.1 + 3.0) / 2)
+    assert result.loc["peri1", "after"] == pytest.approx(3.0)
+
+
+def test_result_has_before_and_after_columns_indexed_like_expression():
+    result = cross_compartment_panel_scores(
+        _panel_expression(),
+        _panel_cell_type(),
+        _panel_profile(),
+        ["KRT10", "KRT_WEAK"],
+        home_groups=["Keratinocytes"],
+    )
+    assert list(result.columns) == ["before", "after"]
+    assert list(result.index) == list(_panel_expression().index)

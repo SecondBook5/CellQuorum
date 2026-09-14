@@ -27,7 +27,7 @@ caller to supply, never a hardcoded biology.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -94,4 +94,62 @@ def ambient_gene_mask(
     return ~ambient
 
 
-__all__ = ["ambient_gene_mask"]
+def cross_compartment_panel_scores(
+    expression: pd.DataFrame,
+    cell_type: pd.Series,
+    profile: pd.DataFrame,
+    panel_genes: Sequence[str],
+    *,
+    home_groups: Sequence[str],
+    spec_threshold: float = 0.25,
+    group_map: Mapping[str, str] | None = None,
+) -> pd.DataFrame:
+    """
+    Per-cell before/after score for a marker panel, real biology kept.
+
+    "Before" is the plain panel mean everywhere. "After" makes the same
+    ambient-vs-real judgment per gene that a DE-stage ambient filter would:
+    for each group NOT in ``home_groups``, ``ambient_gene_mask`` decides which
+    panel genes are foreign-and-weak (ambient) there specifically, and only
+    those are dropped from that group's own cells -- a gene the panel shares
+    with a foreign group at REAL strength (e.g. ACTA2 in pericytes) survives
+    in ``after`` exactly as it should. Home-group cells are never touched:
+    the panel is real there by construction, so before == after for them.
+
+    Args:
+        expression: Cells (rows) x panel genes (columns) expression values.
+        cell_type: Per-cell group label, indexed like ``expression``.
+        profile: Genes x groups mean-expression profile, passed straight
+            through to :func:`ambient_gene_mask` (must cover every group in
+            ``cell_type`` and every gene in ``panel_genes``).
+        panel_genes: Marker genes making up the panel (e.g. epidermal keratins).
+        home_groups: Groups the panel is real, undiluted biology in.
+        spec_threshold: Passed through to :func:`ambient_gene_mask`.
+        group_map: Passed through to :func:`ambient_gene_mask`.
+
+    Returns:
+        DataFrame indexed like ``expression`` with ``before``/``after`` columns.
+    """
+    panel_genes = list(panel_genes)
+    before = expression[panel_genes].mean(axis=1)
+    after = before.copy()
+
+    for group in cell_type.unique():
+        if group in home_groups:
+            continue
+        in_group = (cell_type == group).to_numpy()
+        if not in_group.any():
+            continue
+        keep_mask = ambient_gene_mask(
+            profile, target_group=group, spec_threshold=spec_threshold, group_map=group_map
+        )
+        keep_genes = [g for g in panel_genes if keep_mask.get(g, True)]
+        if keep_genes:
+            after.loc[in_group] = expression.loc[in_group, keep_genes].mean(axis=1)
+        else:
+            after.loc[in_group] = 0.0
+
+    return pd.DataFrame({"before": before, "after": after})
+
+
+__all__ = ["ambient_gene_mask", "cross_compartment_panel_scores"]

@@ -18,12 +18,14 @@ rho says how much was removed, and only this says whether the right counts were.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 from matplotlib.figure import Figure
 
-from cellquorum.visualization.figstyle import apply_cellquorum_theme
+from cellquorum.stages.integration.embeddings.plots import continuous_overlay
+from cellquorum.visualization.figstyle import apply_cellquorum_theme, save_figure
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -226,9 +228,72 @@ def apply_theme() -> None:
     apply_cellquorum_theme()
 
 
+def plot_panel_before_after(
+    coords: np.ndarray,
+    before: pd.Series,
+    after: pd.Series,
+    *,
+    title_before: str,
+    title_after: str,
+    out_dir: Path,
+    cmap: str = "magma",
+) -> dict[str, Path]:
+    """
+    Write standalone before/after embedding panels for a marker-panel score.
+
+    One plot per file, not a combined grid -- a standing preference over a
+    multi-panel figure. ``before``/``after`` share ONE color scale (the
+    higher of the two 99.9th-percentile values), so a panel that visually
+    lightens between the two files is directly comparable rather than each
+    being auto-scaled to its own max, which would make a large real removal
+    look unchanged.
+
+    Args:
+        coords: Cells x 2 embedding coordinates (e.g. ``obsm["X_umap"]``).
+        before: Per-cell panel score before correction, same length as ``coords``.
+        after: Per-cell panel score after correction, same length as ``coords``.
+        title_before: Title for the "before" panel.
+        title_after: Title for the "after" panel.
+        out_dir: Directory to write figures into (created if needed).
+        cmap: Colormap shared by both panels.
+
+    Returns:
+        ``{"before": path, "after": path}`` -- PNG paths (a ``.pdf`` twin is
+        written beside each).
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    apply_theme()
+
+    before_arr = np.asarray(before, dtype=float)
+    after_arr = np.asarray(after, dtype=float)
+    finite = np.concatenate(
+        [before_arr[np.isfinite(before_arr)], after_arr[np.isfinite(after_arr)]]
+    )
+    shared_vmax = float(np.quantile(finite, 0.999)) if finite.size else 1.0
+
+    written: dict[str, Path] = {}
+    panels = [("before", title_before, before_arr), ("after", title_after, after_arr)]
+    for key, title, values in panels:
+        fig = continuous_overlay(
+            coords,
+            values,
+            title=title,
+            axis_labels=("UMAP1", "UMAP2"),
+            cmap=cmap,
+            vmin=0.0,
+            vmax=shared_vmax,
+        )
+        paths = save_figure(fig, out_dir, f"panel_{key}")
+        written[key] = next(p for p in paths if p.suffix == ".png")
+
+    return written
+
+
 __all__ = [
     "apply_theme",
     "marker_detection_matrix",
     "off_diagonal_summary",
+    "plot_panel_before_after",
     "specificity_figure",
 ]
