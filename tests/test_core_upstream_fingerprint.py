@@ -182,6 +182,25 @@ def test_a_falsy_setting_is_not_treated_as_unset():
     assert _fp(_config(qc={"mode": ""})) != _fp(_config(qc={}))
 
 
+def test_adding_an_output_writing_toggle_does_not_change_the_fingerprint():
+    """The exact shape of the real regression: qc.outputs gained a new field
+    (removed_cells) between when a checkpoint was written and when a later run
+    tried to resume onto it. The block only controls what gets WRITTEN, never what
+    QC computes -- same reasoning already applied to the run block's non-seed
+    fields -- so a resolved config that newly carries it must fingerprint the same
+    as one that does not.
+    """
+    before = _config(qc={"mode": "filter", "min_genes": 200})
+    after = _config(qc={"mode": "filter", "min_genes": 200, "outputs": {"removed_cells": True}})
+    assert _fp(after) == _fp(before)
+
+
+def test_changing_a_value_inside_an_outputs_block_does_not_change_the_fingerprint():
+    before = _config(qc={"mode": "filter", "outputs": {"removed_cells": True}})
+    after = _config(qc={"mode": "filter", "outputs": {"removed_cells": False}})
+    assert _fp(after) == _fp(before)
+
+
 def test_a_stage_block_that_specifies_nothing_matches_having_no_block():
     # Enablement is hashed separately, so an empty config block adds no information.
     assert _fp(_config(qc={})) == _fp({k: v for k, v in _config().items() if k != "qc"})

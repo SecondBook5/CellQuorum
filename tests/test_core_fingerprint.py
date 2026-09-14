@@ -90,6 +90,33 @@ def test_an_unset_config_field_does_not_flip_the_fingerprint() -> None:
     assert after == before
 
 
+def test_an_outputs_block_change_does_not_flip_the_fingerprint() -> None:
+    """An `outputs` sub-block only controls what gets written to disk, never what a
+    stage computes. Adding a new output-writing toggle (e.g. qc.outputs.removed_cells)
+    resolves to a new key in every run that never mentions it, which would otherwise
+    invalidate every prior checkpoint the same way an unset field would if it weren't
+    pruned -- except the value here is not None, so the None-only rule cannot catch it.
+    """
+
+    a = _adata()
+    before = compute_input_fingerprint(
+        stage_name="qc",
+        stage_config={"mode": "filter", "outputs": {"write_h5ad": True}},
+        adata=a,
+        random_seed=1337,
+    )
+    after = compute_input_fingerprint(
+        stage_name="qc",
+        stage_config={
+            "mode": "filter",
+            "outputs": {"write_h5ad": True, "removed_cells": True},
+        },
+        adata=a,
+        random_seed=1337,
+    )
+    assert after == before
+
+
 def test_a_set_config_field_still_flips_the_fingerprint() -> None:
     """The None rule must not weaken into ignoring the setting itself."""
 

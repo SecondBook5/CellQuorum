@@ -27,7 +27,14 @@ if TYPE_CHECKING:
 # Checkpoints written under v1 therefore cannot be compared against v2
 # fingerprints; the version is recorded in each checkpoint sidecar so a resume can
 # say *that* rather than blaming a setting nobody changed.
-FINGERPRINT_SCHEMA_VERSION = 2
+#
+# v3 stopped hashing any ``outputs`` sub-block (see ``_without_outputs``). A new
+# output-writing toggle (e.g. ``qc.outputs.removed_cells``) is a deliberate,
+# non-None default, so v2's None-only rule could not catch it: adding the field
+# flipped every downstream checkpoint's fingerprint on upgrade even though nothing
+# QC computed changed. Checkpoints written under v2 cannot be compared against v3
+# fingerprints for the same reason v1-vs-v2 couldn't.
+FINGERPRINT_SCHEMA_VERSION = 3
 
 
 def _stable_json(payload: object) -> str:
@@ -78,6 +85,30 @@ def _without_unset(value: object) -> object:
         }
     if isinstance(value, list | tuple):
         return [_without_unset(item) for item in value]
+    return value
+
+
+def _without_outputs(value: object) -> object:
+    """Drop every ``outputs`` sub-block, recursively.
+
+    Why a fingerprint must not see it
+    ----------------------------------
+    An ``outputs`` block (e.g. ``QCOutputConfig``) controls what gets WRITTEN to
+    disk -- tables, figures, an extra CSV -- never what a stage COMPUTES. That is
+    the same reasoning ``compute_upstream_fingerprint`` already applies to the run
+    block's non-seed fields ("output paths, verbosity, the checkpoint flags
+    themselves -- cannot change any result"). It applies just as much to a stage's
+    own output toggles, and unlike ``_without_unset`` it cannot be satisfied by
+    pruning None: a new output toggle is a deliberate, non-None default (adding
+    ``qc.outputs.removed_cells: bool = True`` is what exposed this), so it survives
+    the None-only rule and still flips every downstream checkpoint on upgrade even
+    though nothing QC computed changed.
+    """
+
+    if isinstance(value, dict):
+        return {key: _without_outputs(item) for key, item in value.items() if key != "outputs"}
+    if isinstance(value, list | tuple):
+        return [_without_outputs(item) for item in value]
     return value
 
 
@@ -139,7 +170,7 @@ def compute_input_fingerprint(
         "schema_version": FINGERPRINT_SCHEMA_VERSION,
         "stage_name": stage_name,
         "random_seed": random_seed,
-        "config": _without_unset(stage_config or {}),
+        "config": _without_outputs(_without_unset(stage_config or {})),
         "adata": _adata_signature(adata),
     }
     return _hash_str(_stable_json(payload))
@@ -201,7 +232,9 @@ def compute_upstream_fingerprint(
                 "random_seed": run_block.get("random_seed"),
                 "input": _input_signature(config.get("input")),
                 "stage_enablement": _without_unset(enablement),
-                "stage_config": _without_unset({n: config.get(n) for n in upstream if n in config}),
+                "stage_config": _without_outputs(
+                    _without_unset({n: config.get(n) for n in upstream if n in config})
+                ),
             }
         )
     )
