@@ -294,6 +294,88 @@ def test_load_adata_subset_keeps_only_matching_rows(tmp_path: Path) -> None:
     assert observed.obs["cell_type"].tolist() == ["Fibroblasts", "Fibroblasts"]
 
 
+def make_celltype_adata_with_atlas_embeddings() -> ad.AnnData:
+    """A shared-atlas object carrying population-scope derived structure.
+
+    Mirrors the real shape a per-lineage manifest subsets from: obsm holding a
+    whole-atlas PCA/Harmony/UMAP fit across every cell type, an obsp neighbor
+    graph fit on the same whole population, and per-cell reference-mapping
+    probabilities that remain meaningful at any subset scope.
+    """
+
+    adata = make_celltype_adata()
+    n = adata.n_obs
+    adata.obsm["X_pca"] = np.ones((n, 5))
+    adata.obsm["X_pca_harmony"] = np.ones((n, 5))
+    adata.obsm["X_umap"] = np.ones((n, 2))
+    adata.obsm["X_scVI"] = np.ones((n, 5))
+    adata.obsm["ref_state_probabilities"] = np.ones((n, 3))
+    adata.obsp["connectivities"] = np.eye(n)
+    adata.obsp["distances"] = np.eye(n)
+    adata.uns["pca"] = {"variance_ratio": [0.1, 0.2]}
+    adata.uns["neighbors"] = {"params": {"n_neighbors": 15}}
+    return adata
+
+
+def test_load_adata_subset_strips_whole_atlas_derived_embeddings(tmp_path: Path) -> None:
+    """A lineage subset must not silently inherit the parent atlas's PCA/graph.
+
+    Real bug, reproduced from a live run: dimensionality (PCA) failed to
+    recompute for a fibroblast-only slice, but nothing removed the SHARED
+    atlas object's own whole-cohort X_pca/X_pca_harmony from the subset, so
+    integration and clustering silently proceeded on embeddings fit across
+    all 13 cell types instead of skipping for a missing input. Any "fibroblast
+    substate" clustering built on that embedding mostly separates fibroblasts
+    from other cell types (already true of every cell in the slice) rather
+    than reflecting real fibroblast-specific structure -- a plausible-looking,
+    silently wrong answer.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata_with_atlas_embeddings().write_h5ad(path)
+
+    observed = load_adata(path, subset_column="cell_type", subset_values=["Fibroblasts"])
+
+    assert "X_pca" not in observed.obsm
+    assert "X_pca_harmony" not in observed.obsm
+    assert "X_umap" not in observed.obsm
+    assert "X_scVI" not in observed.obsm
+    assert "connectivities" not in observed.obsp
+    assert "distances" not in observed.obsp
+    assert "pca" not in observed.uns
+    assert "neighbors" not in observed.uns
+
+
+def test_load_adata_subset_keeps_per_cell_reference_mapping_scores(tmp_path: Path) -> None:
+    """Per-cell reference-classification confidences stay valid at any subset
+    scope (they come from a model fit on a SEPARATE reference atlas, not a
+    joint fit on this cohort) and must survive the strip."""
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata_with_atlas_embeddings().write_h5ad(path)
+
+    observed = load_adata(path, subset_column="cell_type", subset_values=["Fibroblasts"])
+
+    assert "ref_state_probabilities" in observed.obsm
+
+
+def test_load_adata_full_object_load_keeps_embeddings(tmp_path: Path) -> None:
+    """No subset requested -> nothing was restricted, so nothing is stripped.
+
+    Stripping only makes sense when the population actually changed; a plain
+    whole-object load (the first, global run) must return its embeddings
+    untouched.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata_with_atlas_embeddings().write_h5ad(path)
+
+    observed = load_adata(path)
+
+    assert "X_pca" in observed.obsm
+    assert "connectivities" in observed.obsp
+
+
 def test_load_adata_subset_records_provenance(tmp_path: Path) -> None:
     """
     Verify the applied subset is recorded on uns for run provenance.

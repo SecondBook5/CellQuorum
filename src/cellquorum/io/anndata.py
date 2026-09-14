@@ -29,6 +29,45 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 
+# obsm keys that stay meaningful after subsetting to a lineage: each is a per-cell
+# score against something computed OUTSIDE this cohort (a separate reference atlas),
+# not a joint fit over which other cells happen to be in the object. Everything else
+# in obsm -- PCA, batch-corrected embeddings, VAE latents, 2D projections, de-novo
+# program usage -- is a joint fit whose values are only valid for the population it
+# was fit on; keeping them across a subset is how a fibroblast-only run silently
+# clustered on a whole-atlas PCA instead of skipping for a missing input (dimensionality
+# had failed to recompute one, but the parent atlas's own X_pca/X_pca_harmony were
+# still sitting in obsm and looked like valid input to every downstream stage).
+_OBSM_SURVIVES_SUBSET: frozenset[str] = frozenset(
+    {"ref_state_probabilities", "cell_type_granular_probabilities"}
+)
+
+# obsp (neighbor graphs) and varm (gene loadings) are ALWAYS a joint fit over the
+# object's own cells/genes -- there is no per-edge or per-gene score here that stays
+# valid when the row set changes, so both are dropped unconditionally on subset.
+# uns blocks that record a stage's own population-level fit provenance are dropped
+# for the same reason: a stale copy reads as "this was computed on this cohort" when
+# it was computed on a different, larger one.
+_UNS_DROPPED_ON_SUBSET: frozenset[str] = frozenset({"pca", "neighbors", "leiden"})
+
+
+def _strip_population_scope_artifacts(adata: ad.AnnData) -> None:
+    """Drop obsm/obsp/varm/uns entries that are only valid for the population
+    they were fit on, in place, after restricting an object to a subset of its
+    rows. See ``_OBSM_SURVIVES_SUBSET`` for what is deliberately kept.
+    """
+
+    for key in list(adata.obsm.keys()):
+        if key not in _OBSM_SURVIVES_SUBSET:
+            del adata.obsm[key]
+    for key in list(adata.obsp.keys()):
+        del adata.obsp[key]
+    for key in list(adata.varm.keys()):
+        del adata.varm[key]
+    for key in _UNS_DROPPED_ON_SUBSET:
+        adata.uns.pop(key, None)
+
+
 class AnnDataLoadError(CellQuorumDataError):
     """
     Report AnnData loading failures.
@@ -305,6 +344,11 @@ def _load_adata_subset(
 
         # Materialize only the matching rows from the still-open backed file.
         subset_adata = backed[mask].to_memory()
+
+        # A row restriction changes the population every joint fit (PCA, batch
+        # correction, neighbor graph, ...) was computed over, so those fits no
+        # longer describe this object -- see _strip_population_scope_artifacts.
+        _strip_population_scope_artifacts(subset_adata)
 
     finally:
         # Release the backed file handle regardless of success.
