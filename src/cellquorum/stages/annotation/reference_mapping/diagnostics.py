@@ -24,7 +24,10 @@ def plot_loss_curves(loss_history: dict[str, dict[str, list[float]]], out_path: 
     apply_cellquorum_theme()
 
     phases = ["scvi", "scanvi", "query_surgery"]
-    fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
+    # Widened, with extra gutter between panels: each panel's legend sits outside
+    # its own axes (see below), and needs room in that gutter so it doesn't land
+    # on top of the next panel's curves.
+    fig, axes = plt.subplots(1, 3, figsize=(17, 3.5), gridspec_kw={"wspace": 0.75})
 
     for i, phase in enumerate(phases):
         ax = axes[i]
@@ -43,7 +46,10 @@ def plot_loss_curves(loss_history: dict[str, dict[str, list[float]]], out_path: 
         ax.set_title(phase, fontsize=10, weight="bold")
         ax.tick_params(labelsize=8)
         if phase_data:
-            ax.legend(fontsize=7, loc="best")
+            # Outside the axes, not "best": a phase can carry a dozen metrics
+            # (scvi), and an in-axes legend of that size has nowhere to sit
+            # without covering the curves it is labeling.
+            ax.legend(fontsize=7, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
         ax.grid(alpha=0.3, linewidth=0.5)
 
     # The shared writer supplies the atomic rename and the vector twin; these two
