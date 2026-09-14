@@ -7,7 +7,10 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.stats.reference_identity import ambiguous_identity_mask, top_reference_probabilities
-from cellquorum.visualization.reference_identity import plot_identity_diagnostic_embeddings
+from cellquorum.visualization.reference_identity import (
+    plot_identity_diagnostic_embeddings,
+    plot_lineage_confidence_bar,
+)
 
 
 def _adata() -> ad.AnnData:
@@ -114,3 +117,42 @@ def test_end_to_end_stats_into_viz_on_a_real_refprob_matrix(tmp_path):
     assert len(written) == 4
     for path in written.values():
         assert path.stat().st_size > 0
+
+
+def test_plot_lineage_confidence_bar_writes_png_and_a_vector_twin(tmp_path):
+    entropy = pd.Series([0.1, 0.2, 0.8, 0.9, 0.5], index=[f"c{i}" for i in range(5)])
+    cell_type = pd.Series(
+        ["Fibroblasts", "Fibroblasts", "DC", "DC", "T/NK"],
+        index=entropy.index,
+    )
+
+    out = plot_lineage_confidence_bar(entropy, cell_type, tmp_path / "confidence_bar.png")
+
+    assert out == tmp_path / "confidence_bar.png"
+    assert out.exists()
+    assert out.with_suffix(".pdf").exists()
+
+
+def test_plot_lineage_confidence_bar_orders_bars_by_ascending_mean_entropy(tmp_path, monkeypatch):
+    """Most-confident (lowest entropy) lineage first, matching the reference figure."""
+    from cellquorum.visualization import reference_identity as viz_module
+
+    captured = {}
+
+    def fake_save(fig, out_dir, stem, **kwargs):
+        captured["fig"] = fig
+        return [out_dir / f"{stem}.png", out_dir / f"{stem}.pdf"]
+
+    monkeypatch.setattr(viz_module, "save_figure", fake_save)
+
+    entropy = pd.Series([0.9, 0.9, 0.1, 0.1, 0.5], index=[f"c{i}" for i in range(5)])
+    cell_type = pd.Series(
+        ["Fibroblasts", "Fibroblasts", "DC", "DC", "T/NK"],
+        index=entropy.index,
+    )
+
+    plot_lineage_confidence_bar(entropy, cell_type, tmp_path / "bar.png")
+
+    ax = captured["fig"].axes[0]
+    labels = [t.get_text() for t in ax.get_yticklabels()]
+    assert labels == ["DC", "T/NK", "Fibroblasts"]
