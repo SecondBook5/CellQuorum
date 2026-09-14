@@ -100,10 +100,16 @@ def plot_granular_panels_per_coarse_type(
                 label=f"{label} ({int(label_mask.sum()):,})",
             )
 
-        pad = 0.08 * (type_coords[:, 0].max() - type_coords[:, 0].min() + 1e-9)
-        ax.set_xlim(type_coords[:, 0].min() - pad, type_coords[:, 0].max() + pad)
-        pad_y = 0.08 * (type_coords[:, 1].max() - type_coords[:, 1].min() + 1e-9)
-        ax.set_ylim(type_coords[:, 1].min() - pad_y, type_coords[:, 1].max() + pad_y)
+        # Percentile bounding box, not true min/max: a handful of far-flung
+        # outlier cells (often real signal -- e.g. cells whose expression
+        # doesn't match their label) must not blow out the zoom for everyone
+        # else. Outliers still plot; they just may sit outside the crop.
+        x_lo, x_hi = np.percentile(type_coords[:, 0], [1, 99])
+        y_lo, y_hi = np.percentile(type_coords[:, 1], [1, 99])
+        pad = 0.08 * (x_hi - x_lo + 1e-9)
+        ax.set_xlim(x_lo - pad, x_hi + pad)
+        pad_y = 0.08 * (y_hi - y_lo + 1e-9)
+        ax.set_ylim(y_lo - pad_y, y_hi + pad_y)
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
