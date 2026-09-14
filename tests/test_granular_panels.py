@@ -42,10 +42,12 @@ def test_returns_empty_when_no_coarse_type_has_subdivision(tmp_path):
     assert written == {}
 
 
-def test_crop_is_percentile_based_not_min_max(tmp_path, monkeypatch):
-    """A handful of far-flung outlier cells (real signal -- e.g. cells whose
-    expression doesn't match their label) must not blow out the zoom for
-    everyone else in the same coarse type."""
+def test_crop_is_robust_to_a_realistic_outlier_fraction(tmp_path, monkeypatch):
+    """A real coarse type can have ~10% of its cells scattered near OTHER
+    clusters (genuine signal -- e.g. cells whose expression doesn't match
+    their label), confirmed on the real atlas. A plain 1st/99th-percentile
+    crop is not aggressive enough to stay tight against that much
+    contamination; the crop must not stretch out to accommodate it."""
     from cellquorum.visualization import granular_panels as panels_module
 
     captured = {}
@@ -56,24 +58,26 @@ def test_crop_is_percentile_based_not_min_max(tmp_path, monkeypatch):
 
     monkeypatch.setattr(panels_module, "save_figure", fake_save)
 
-    n_main = 200
+    n_main = 180
+    n_outliers = 20  # 10% of the type, matching the real atlas's scattered fraction
     rng = np.random.default_rng(0)
     main_cluster = rng.normal(loc=0.0, scale=0.5, size=(n_main, 2))
-    outliers = np.array([[50.0, 50.0], [-50.0, -50.0]])
+    # Scattered near several OTHER (far-apart) clusters, not one single point.
+    outliers = rng.normal(loc=0.0, scale=1.0, size=(n_outliers, 2)) + rng.choice(
+        [[-50.0, -50.0], [50.0, 50.0], [50.0, -50.0]], size=n_outliers
+    )
     coords = np.vstack([main_cluster, outliers])
 
-    coarse = pd.Series(["Fibroblasts"] * (n_main + 2))
-    fine = pd.Series(
-        (["Fibroblast_A"] * (n_main // 2) + ["Fibroblast_B"] * (n_main // 2))
-        + ["Fibroblast_A", "Fibroblast_B"]
-    )
+    coarse = pd.Series(["Fibroblasts"] * (n_main + n_outliers))
+    half = (n_main + n_outliers) // 2
+    fine = pd.Series((["Fibroblast_A"] * half) + (["Fibroblast_B"] * (n_main + n_outliers - half)))
 
     plot_granular_panels_per_coarse_type(coords, fine, coarse, out_dir=tmp_path)
 
     ax = captured["fig"].axes[0]
     xlim = ax.get_xlim()
     # The crop must stay near the dense main cluster (scale ~1), not stretch
-    # out to accommodate the far outliers at +/-50.
+    # out to accommodate 10% of the type sitting near +/-50.
     assert xlim[1] - xlim[0] < 10
 
 
