@@ -103,7 +103,12 @@ def plot_lineage_confidence_bar(
     out_path: Path,
 ) -> Path:
     """
-    Plot mean reference-mapping label entropy per cell type, most confident first.
+    Plot mean reference-mapping label entropy per cell type, ascending.
+
+    Bars are ordered by ascending mean entropy (index 0 = lowest = most
+    confident); matplotlib's default ``barh`` axis draws index 0 at the
+    bottom, so the least-ambiguous cell type renders at the bottom of the
+    chart and the most-ambiguous at the top.
 
     Args:
         entropy: Per-cell kNN label entropy (e.g. ``cell_type_granular_knn_entropy``;
