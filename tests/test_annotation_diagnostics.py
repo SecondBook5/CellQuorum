@@ -157,6 +157,79 @@ def test_scdiagnostics_entropy_from_soft_scores_without_r(
     assert (tmp_path / "scdiag_results.csv").exists()
 
 
+def test_scdiagnostics_entropy_path_writes_figures_when_paths_and_flag_allow(
+    minimal_annotated_adata: ad.AnnData,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The entropy-only (R-free) path must also render figures, gated by the
+    same outputs.write_figures flag as the reference-based path."""
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    monkeypatch.setattr("shutil.which", lambda x: None)
+    adata = minimal_annotated_adata.copy()
+    adata.obsm["soft_scores"] = np.array(
+        [[1.0, 0.0], [0.5, 0.5], [0.25, 0.75], *([[0.9, 0.1]] * 97)]
+    )
+    ctx = MagicMock()
+    ctx.paths.scratch = tmp_path
+    figures_dir = tmp_path / "figures"
+    figures_dir.mkdir()
+    ctx.paths.figures = figures_dir
+
+    result = ScdiagnosticsMethod()._run(
+        adata,
+        {
+            "cell_type_col": "cell_type",
+            "reference_h5ad": None,
+            "soft_scores_obsm": "soft_scores",
+            "outputs": {"write_figures": True},
+        },
+        ctx,
+    )
+
+    assert (figures_dir / "scdiagnostics_entropy.png").exists()
+    figure_artifacts = [a for a in result.artifacts if a.kind == "figure"]
+    assert figure_artifacts, "expected at least one figure StageArtifact"
+
+
+def test_scdiagnostics_entropy_path_skips_figures_when_flag_is_off(
+    minimal_annotated_adata: ad.AnnData,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    monkeypatch.setattr("shutil.which", lambda x: None)
+    adata = minimal_annotated_adata.copy()
+    adata.obsm["soft_scores"] = np.array(
+        [[1.0, 0.0], [0.5, 0.5], [0.25, 0.75], *([[0.9, 0.1]] * 97)]
+    )
+    ctx = MagicMock()
+    ctx.paths.scratch = tmp_path
+    figures_dir = tmp_path / "figures"
+    figures_dir.mkdir()
+    ctx.paths.figures = figures_dir
+
+    result = ScdiagnosticsMethod()._run(
+        adata,
+        {
+            "cell_type_col": "cell_type",
+            "reference_h5ad": None,
+            "soft_scores_obsm": "soft_scores",
+            "outputs": {"write_figures": False},
+        },
+        ctx,
+    )
+
+    assert not (figures_dir / "scdiagnostics_entropy.png").exists()
+    assert not any(a.kind == "figure" for a in result.artifacts)
+
+
 @pytest.mark.skipif(
     shutil.which("Rscript") is None,
     reason="Rscript unavailable",

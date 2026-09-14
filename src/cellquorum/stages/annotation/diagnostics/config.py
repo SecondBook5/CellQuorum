@@ -2,7 +2,28 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from cellquorum.config.base import StrictBaseModel
+
+
+class AnnotationDiagnosticsOutputConfig(StrictBaseModel):
+    """Store annotation_diagnostics output settings.
+
+    A nested block, not flat fields on ``AnnotationDiagnosticsConfig`` --
+    ``compute_upstream_fingerprint`` excludes any sub-block literally named
+    ``outputs`` (see ``cellquorum.core.fingerprint._without_outputs``), since an
+    output-writing toggle can never change what a stage computes. Nesting future
+    output settings here keeps that guarantee automatic instead of relying on
+    someone remembering it per field.
+
+    Attributes:
+        write_figures: Whether to write the anomaly/entropy/kNN-confidence
+            figures. Read-only diagnostics either way; this only controls
+            whether they are also rendered.
+    """
+
+    write_figures: bool = True
 
 
 class AnnotationDiagnosticsConfig(StrictBaseModel):
@@ -25,6 +46,7 @@ class AnnotationDiagnosticsConfig(StrictBaseModel):
         n_tree: Number of trees for isolation forest anomaly detection.
         n_neighbor: Number of neighbors for kNN probability calculation.
         timeout_seconds: R script timeout in seconds.
+        outputs: Output settings (currently just the figures switch).
     """
 
     # Whether the annotation-diagnostics stage runs (opt-in; off by default).
@@ -63,5 +85,10 @@ class AnnotationDiagnosticsConfig(StrictBaseModel):
     # R script timeout in seconds.
     timeout_seconds: int = 1800
 
+    # Output settings (currently just the figures switch).
+    outputs: AnnotationDiagnosticsOutputConfig = Field(
+        default_factory=AnnotationDiagnosticsOutputConfig
+    )
 
-__all__ = ["AnnotationDiagnosticsConfig"]
+
+__all__ = ["AnnotationDiagnosticsConfig", "AnnotationDiagnosticsOutputConfig"]

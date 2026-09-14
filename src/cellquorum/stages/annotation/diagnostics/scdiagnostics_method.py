@@ -25,6 +25,49 @@ if TYPE_CHECKING:
 _SCDIAGNOSTICS_R = r_script_path("scdiagnostics.R")
 
 
+def _write_figures(
+    *,
+    obs: pd.DataFrame,
+    cell_type_col: str,
+    context: object,
+    config: dict,
+) -> list[StageArtifact]:
+    """Render the scDiagnostics figures when configured and possible.
+
+    Mirrors the reference_mapping diagnostics convention: gated by an
+    outputs flag, silent no-op when ``context.paths.figures`` isn't
+    available (unit tests routinely stub a bare context).
+    """
+    outputs = config.get("outputs") or {}
+    if not outputs.get("write_figures", True):
+        return []
+    if not hasattr(context.paths, "figures"):
+        return []
+    figures_path = Path(context.paths.figures)
+    if not figures_path.exists():
+        return []
+
+    from cellquorum.stages.annotation.diagnostics.viz import (
+        write_annotation_diagnostics_figures,
+    )
+
+    written = write_annotation_diagnostics_figures(obs, cell_type_col, figures_path)
+    descriptions = {
+        "anomaly": "scDiagnostics anomaly score by cell type.",
+        "entropy": "scDiagnostics annotation entropy by cell type.",
+        "knn_confidence": "scDiagnostics per-cell-type kNN confidence vs. reference.",
+    }
+    return [
+        StageArtifact(
+            name=f"scdiagnostics_{name}_figure",
+            path=path,
+            kind="figure",
+            description=descriptions[name],
+        )
+        for name, path in written.items()
+    ]
+
+
 def _first_r_error(stderr: str) -> str | None:
     """Pull the actual failure line out of R's stderr.
 
@@ -144,6 +187,9 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 adata=adata,
                 soft_scores_obsm=soft_scores_obsm,
                 scratch=scratch,
+                cell_type_col=cell_type_col,
+                context=context,
+                config=config,
             )
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
@@ -345,7 +391,10 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 path=out_csv,
                 kind="csv",
                 description="Per-cell scDiagnostics confidence metrics.",
-            )
+            ),
+            *_write_figures(
+                obs=result_adata.obs, cell_type_col=cell_type_col, context=context, config=config
+            ),
         ]
 
         return StageResult(
@@ -365,6 +414,9 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         adata: ad.AnnData,
         soft_scores_obsm: str,
         scratch: Path,
+        cell_type_col: str,
+        context: object,
+        config: dict,
     ) -> StageResult:
         """Compute per-cell annotation entropy from an obsm probability matrix."""
 
@@ -393,6 +445,10 @@ class ScdiagnosticsMethod(RAnalysisMethod):
             }
         ).to_csv(out_csv, index=False)
 
+        figure_artifacts = _write_figures(
+            obs=result_adata.obs, cell_type_col=cell_type_col, context=context, config=config
+        )
+
         return StageResult(
             adata=result_adata,
             artifacts=[
@@ -401,7 +457,8 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                     path=out_csv,
                     kind="csv",
                     description="Per-cell annotation entropy from soft label probabilities.",
-                )
+                ),
+                *figure_artifacts,
             ],
             notes=[
                 "Computed scdiag_entropy from soft label probabilities " f"('{soft_scores_obsm}')."
