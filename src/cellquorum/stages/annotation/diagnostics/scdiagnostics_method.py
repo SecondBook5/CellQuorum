@@ -292,7 +292,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 str(out_csv),
                 cell_type_col,
                 ref_arg,
-                str(soft_scores_path) if soft_scores_path and index == 0 else "NONE",
+                str(soft_scores_path) if soft_scores_path else "NONE",
                 ",".join(map(str, pc_subset)),
                 str(n_tree),
                 str(n_neighbor),
