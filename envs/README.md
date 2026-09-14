@@ -141,10 +141,12 @@ The promoter base GRN (hg38/mm10) ships with CellOracle.
 ### `hdwgcna_env` (hdWGCNA hierarchical co-expression)
 **Isolation rationale:** hdWGCNA is an R package with Seurat/WGCNA dependencies that cannot be direct dependencies of the Python-centric cellquorum-core environment.
 
-**Install:**
+**Install:** hdWGCNA has no conda package (`r-hdwgcna` does not exist on
+conda-forge/bioconda) -- it ships only via GitHub, so creation is two steps:
 ```bash
-micromamba create -n hdwgcna_env -c conda-forge -c bioconda \
-  r-seurat r-hdwgcna r-wgcna bioconductor-zellkonverter
+micromamba create -f envs/hdwgcna_env.yml
+micromamba run -n hdwgcna_env Rscript -e \
+  'remotes::install_github("smorabit/hdWGCNA", upgrade = "never")'
 ```
 
 ## Locking Environments

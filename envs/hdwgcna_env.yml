@@ -3,9 +3,14 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  # hdWGCNA itself is NOT a conda package (there is no r-hdwgcna on
+  # conda-forge/bioconda -- it 404s the solver). It ships only via GitHub, so
+  # r-remotes installs it as a second step after this env is created:
+  #   micromamba run -n hdwgcna_env Rscript -e \
+  #     'remotes::install_github("smorabit/hdWGCNA", upgrade = "never")'
   - r-seurat
-  - r-hdwgcna
   - r-wgcna
+  - r-remotes
   - bioconductor-zellkonverter
   - bioconductor-singlecellexperiment
   - bioconductor-summarizedexperiment
