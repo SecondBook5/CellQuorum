@@ -6,6 +6,12 @@ palette. A coarse type whose fine label never differs from its own coarse
 label (no real subdivision exists in the reference atlas for it) is skipped
 rather than drawn as a single flat color, and reported separately so the gap
 itself is visible instead of silently absent.
+
+Reuses the embeddings stage's own categorical_embedding (house style, PAGA
+overlay, count-labeled legend) rather than a bespoke scatter loop -- a
+local PAGA computed on just this coarse type's own cells shows whether its
+fine subtypes are genuinely continuous/connected or discrete, the same way
+the global atlas's own PAGA does at the coarse level.
 """
 
 from __future__ import annotations
@@ -15,11 +21,24 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cellquorum.stages.integration.embeddings.plots import apply_theme
-from cellquorum.visualization.figstyle import cell_type_palette, save_figure
+from cellquorum.stages.integration.embeddings.plots import apply_theme, categorical_embedding
+from cellquorum.visualization.figstyle import save_figure
 
 if TYPE_CHECKING:
     import pandas as pd
+
+
+def _robust_bounds(values: np.ndarray, k: float = 6.0) -> tuple[float, float]:
+    """Median +/- k*MAD -- stays tight even with ~10%+ outlier contamination.
+
+    A handful of far-flung cells (often real signal -- e.g. cells whose
+    expression doesn't match their label) must not blow out the crop for
+    everyone else. A percentile bound is not aggressive enough once the
+    outlier fraction is much above 1%; MAD's breakdown point is 50%.
+    """
+    center = float(np.median(values))
+    mad = float(np.median(np.abs(values - center))) or float(np.std(values)) or 1.0
+    return center - k * mad, center + k * mad
 
 
 def plot_granular_panels_per_coarse_type(
@@ -29,7 +48,8 @@ def plot_granular_panels_per_coarse_type(
     *,
     out_dir: Path,
     return_skipped: bool = False,
-    point_size: float = 2.0,
+    paga_overlay: bool = True,
+    paga_threshold: float = 0.2,
 ) -> dict[str, Path] | tuple[dict[str, Path], list[str]]:
     """
     Plot one embedding panel per coarse type, colored by its own fine subtypes.
@@ -43,7 +63,9 @@ def plot_granular_panels_per_coarse_type(
         out_dir: Directory to write figures into (created if needed).
         return_skipped: When True, also return the list of coarse types
             skipped for having no real fine subdivision.
-        point_size: Marker size for the foreground (in-type) scatter.
+        paga_overlay: Whether to compute and draw PAGA connectivity between
+            this coarse type's own fine subtypes.
+        paga_threshold: Minimum connectivity for a drawn PAGA edge.
 
     Returns:
         ``{coarse_type: png_path}`` for every coarse type with more than one
@@ -51,7 +73,9 @@ def plot_granular_panels_per_coarse_type(
         ``(written, no_resolution)`` instead, where ``no_resolution`` lists
         coarse types skipped for lacking real subdivision (sorted).
     """
+    import anndata as ad
     import pandas as pd
+    import scanpy as sc
 
     out_dir = Path(out_dir)
     coords = np.asarray(coords)[:, :2]
@@ -72,50 +96,36 @@ def plot_granular_panels_per_coarse_type(
         out_dir.mkdir(parents=True, exist_ok=True)
         apply_theme()
 
-        import matplotlib.pyplot as plt
-
-        palette = cell_type_palette(distinct)
-        fig, ax = plt.subplots(figsize=(6.5, 6.0))
-
-        # Grey context: every other cell, so the panel still reads as "where
-        # in the atlas is this" rather than a population floating in a void.
-        ax.scatter(
-            coords[~mask, 0],
-            coords[~mask, 1],
-            c="#e8e9eb",
-            s=point_size * 0.6,
-            lw=0,
-            rasterized=True,
+        sub = ad.AnnData(
+            X=np.zeros((int(mask.sum()), 1), dtype="float32"),
+            obs=pd.DataFrame(
+                {"fine": pd.Categorical(fine_in_type.to_numpy(), categories=distinct)}
+            ),
         )
-        type_coords = coords[mask]
-        for label in distinct:
-            label_mask = (fine_in_type == label).to_numpy()
-            ax.scatter(
-                type_coords[label_mask, 0],
-                type_coords[label_mask, 1],
-                c=[palette[label]],
-                s=point_size,
-                lw=0,
-                rasterized=True,
-                label=f"{label} ({int(label_mask.sum()):,})",
-            )
+        sub.obsm["X_panel"] = coords[mask]
 
-        # Percentile bounding box, not true min/max: a handful of far-flung
-        # outlier cells (often real signal -- e.g. cells whose expression
-        # doesn't match their label) must not blow out the zoom for everyone
-        # else. Outliers still plot; they just may sit outside the crop.
-        x_lo, x_hi = np.percentile(type_coords[:, 0], [1, 99])
-        y_lo, y_hi = np.percentile(type_coords[:, 1], [1, 99])
+        if paga_overlay and len(distinct) >= 2:
+            try:
+                sc.tl.paga(sub, groups="fine")
+            except Exception:  # noqa: BLE001 -- PAGA is a bonus overlay, never fatal here
+                pass
+
+        fig = categorical_embedding(
+            sub,
+            "fine",
+            basis="X_panel",
+            axis_labels=("UMAP1", "UMAP2"),
+            title=f"{coarse_type} -- fine subtypes",
+            paga_overlay=paga_overlay,
+            paga_threshold=paga_threshold,
+        )
+        ax = fig.axes[0]
+        x_lo, x_hi = _robust_bounds(sub.obsm["X_panel"][:, 0])
+        y_lo, y_hi = _robust_bounds(sub.obsm["X_panel"][:, 1])
         pad = 0.08 * (x_hi - x_lo + 1e-9)
-        ax.set_xlim(x_lo - pad, x_hi + pad)
         pad_y = 0.08 * (y_hi - y_lo + 1e-9)
+        ax.set_xlim(x_lo - pad, x_hi + pad)
         ax.set_ylim(y_lo - pad_y, y_hi + pad_y)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        ax.set_title(f"{coarse_type} -- fine subtypes", fontsize=11, weight="bold")
-        ax.legend(fontsize=7, loc="upper left", bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
 
         safe_name = coarse_type.replace("/", "_").replace(" ", "_")
         paths = save_figure(fig, out_dir, f"granular_{safe_name}")
