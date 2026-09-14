@@ -12,7 +12,7 @@ from cellquorum.core.executor import build_default_stage_registry
 from cellquorum.core.pipeline import build_pipeline_context
 from cellquorum.stages.annotation.adjudication.config import AdjudicationConfig
 from cellquorum.stages.annotation.adjudication.evidence import build_cluster_evidence_table
-from cellquorum.stages.annotation.adjudication.stage import AdjudicationStage
+from cellquorum.stages.annotation.adjudication.stage import AdjudicationStage, resolve_design_keys
 
 
 def _adata_with_metadata() -> ad.AnnData:
@@ -144,6 +144,53 @@ def test_adjudication_stage_skips_when_required_metadata_missing(tmp_path):
     assert result.status == "skipped"
     assert "patient_id" in result.skip_reason
     assert "condition" in result.skip_reason
+
+
+def test_resolve_design_keys_prefers_the_cohort_blocks_donor_and_condition_keys(tmp_path):
+    """population_identity's resolve_design_keys already prefers cohort.donor_key
+    over the "patient_id" fallback (via resolve_cohort_key); this stage's own
+    copy of the same logic did not, and would silently look for a column named
+    "patient_id" on a real cohort whose donor column is actually "donor_id"."""
+    config = CellQuorumConfig(
+        compute={"prefer_gpu": False},
+        r={"enabled": False},
+        cohort={"donor_key": "donor_id", "condition_key": "disease_state"},
+        adjudication={"cluster_key": "leiden"},
+    )
+    context = build_pipeline_context(config, output_dir=tmp_path / "run").with_adata(
+        _adata_with_metadata()
+    )
+
+    donor_key, condition_key = resolve_design_keys(context, config.adjudication)
+
+    assert donor_key == "donor_id"
+    assert condition_key == "disease_state"
+
+
+def test_adjudication_stage_uses_the_real_donor_column_named_via_cohort(tmp_path):
+    """End-to-end: a cohort whose donor column is 'donor_id', not 'patient_id',
+    must not skip adjudication for a 'missing' column that was never the real
+    one to begin with."""
+    config = CellQuorumConfig(
+        compute={"prefer_gpu": False},
+        r={"enabled": False},
+        cohort={"donor_key": "donor_id"},
+        adjudication={"cluster_key": "leiden"},
+    )
+    obs = pd.DataFrame(
+        {
+            "leiden": ["0", "0", "0", "1", "1", "1"],
+            "donor_id": ["d1", "d2", "d3", "d1", "d1", "d2"],
+            "condition": ["case", "case", "control", "case", "case", "control"],
+        },
+        index=[f"cell_{i}" for i in range(6)],
+    )
+    adata = ad.AnnData(X=np.ones((6, 3)), obs=obs)
+    context = build_pipeline_context(config, output_dir=tmp_path / "run").with_adata(adata)
+
+    result = AdjudicationStage().run(context)
+
+    assert result.status == "success"
 
 
 def test_default_stage_registry_includes_adjudication():

@@ -231,12 +231,22 @@ def resolve_design_keys(
         return config.donor_key, config.condition_key
 
     context_config = getattr(context, "config", None)
+
+    # Cohort schema wins when it declares the structural keys (declare-once),
+    # matching population_identity's resolve_design_keys -- otherwise a real
+    # cohort whose donor column is e.g. "donor_id" silently falls through to
+    # the "patient_id" default below instead of the column that actually exists.
+    from cellquorum.config.cohort import resolve_cohort_key
+
+    donor_key = resolve_cohort_key(context_config, attr="donor_key", stage_value=config.donor_key)
+    condition_key = resolve_cohort_key(
+        context_config, attr="condition_key", stage_value=config.condition_key
+    )
+
     design = getattr(context_config, "design", None)
     if isinstance(context_config, Mapping):
         design = context_config.get("design", {})
 
-    donor_key = config.donor_key
-    condition_key = config.condition_key
     if donor_key is None:
         donor_key = (
             design.get("donor_col", "patient_id")
