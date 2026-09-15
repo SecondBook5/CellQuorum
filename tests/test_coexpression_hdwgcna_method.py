@@ -196,6 +196,41 @@ def test_metrics_exclude_grey_module(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert res.metrics["n_genes_assigned"] == 3
 
 
+def test_success_path_renders_module_curvature_figure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When modules.csv carries real kME_<module> columns, the stage must
+    render and attach a module curvature network figure alongside the module
+    UMAP -- not just the UMAP, which was the only figure wired up before."""
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(
+                {
+                    "gene": ["G0", "G1", "G2", "G3", "G4", "G5"],
+                    "module": ["M1", "M1", "M1", "M2", "M2", "M2"],
+                    "kME_M1": [0.9, 0.8, 0.7, 0.1, 0.2, 0.15],
+                    "kME_M2": [0.1, 0.15, 0.2, 0.85, 0.75, 0.6],
+                }
+            ).to_csv(out_dir / "modules.csv", index=False)
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr="")
+
+    m = HdwgcnaMethod()
+    res = m._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    from cellquorum.core.stage import StageResult
+
+    assert isinstance(res, StageResult)
+    curvature_figs = [a for a in res.artifacts if "curvature" in a.name]
+    assert len(curvature_figs) > 0
+    assert all(a.path.exists() for a in curvature_figs)
+
+
 def test_input_contract_does_not_require_group_by() -> None:
     """A configured-but-absent group_by must not hard-fail the contract.
 

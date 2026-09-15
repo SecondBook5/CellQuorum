@@ -14,6 +14,9 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.gene_regulation.coexpression.module_curvature import (
+    plot_module_curvature,
+)
 from cellquorum.stages.gene_regulation.coexpression.module_umap_plot import (
     plot_module_umap,
 )
@@ -201,6 +204,12 @@ class HdwgcnaMethod(AnalysisMethod):
                 figures=figs,
                 warnings=warnings,
             )
+        render_figure(
+            "module curvature",
+            lambda: plot_module_curvature(modules_df, figures_dir),
+            figures=figs,
+            warnings=warnings,
+        )
 
         # 10. Build artifacts list (only for files that exist)
         artifacts = []
@@ -248,14 +257,14 @@ class HdwgcnaMethod(AnalysisMethod):
                 )
             )
 
-        # Add figure artifacts
+        # Add figure artifacts (module UMAP + module curvature network)
         for fig_path in figs:
             artifacts.append(
                 StageArtifact(
-                    name=f"module_umap_figure_{fig_path.suffix[1:]}",
+                    name=f"figure_{fig_path.stem}",
                     path=fig_path,
                     kind="figure",
-                    description="Module UMAP visualization",
+                    description="hdWGCNA co-expression figure",
                 )
             )
 
