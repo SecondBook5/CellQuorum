@@ -128,6 +128,11 @@ class CellOracleMethod(AnalysisMethod):
 
         out_dir = Path(getattr(context.paths, "results", ".")) / "perturbation"
         out_dir.mkdir(parents=True, exist_ok=True)
+        # Figures belong under figures/, not results/ -- out_dir above stays
+        # results-rooted because it's also the KO subprocess's own --out-dir
+        # for its raw data outputs (ranking/grn_summary/shift_vectors).
+        figures_dir = Path(getattr(context.paths, "figures", ".")) / "perturbation"
+        figures_dir.mkdir(parents=True, exist_ok=True)
         tag = "perturbation"
 
         # 5. Run the in-env KO script
@@ -194,7 +199,7 @@ class CellOracleMethod(AnalysisMethod):
         if len(ranking) > 0:
             render_figure(
                 "target-ranking",
-                lambda: pfig.plot_target_ranking(ranking, out_dir, n_top=n_top_targets),
+                lambda: pfig.plot_target_ranking(ranking, figures_dir, n_top=n_top_targets),
                 figures=figs,
                 warnings=warnings,
             )
@@ -203,7 +208,7 @@ class CellOracleMethod(AnalysisMethod):
                 render_figure(
                     "grn-connectivity",
                     lambda: pfig.plot_grn_connectivity(
-                        pd.read_csv(grn_summary), out_dir, n_top=n_top_targets
+                        pd.read_csv(grn_summary), figures_dir, n_top=n_top_targets
                     ),
                     figures=figs,
                     warnings=warnings,
@@ -234,7 +239,7 @@ class CellOracleMethod(AnalysisMethod):
                             else None
                         )
                         return pfig.plot_ko_shift_field(
-                            shift_df, emb, out_dir, tf=top_tf, groups=groups
+                            shift_df, emb, figures_dir, tf=top_tf, groups=groups
                         )
 
                     if shift_df is not None:
@@ -253,7 +258,7 @@ class CellOracleMethod(AnalysisMethod):
                             else None
                         )
                         return pfig.plot_ko_shift_grid(
-                            shift_df, emb_grid, out_dir, tf=top_tf, groups=groups_grid
+                            shift_df, emb_grid, figures_dir, tf=top_tf, groups=groups_grid
                         )
 
                     if shift_df is not None:
@@ -277,7 +282,7 @@ class CellOracleMethod(AnalysisMethod):
                             .groupby("cluster", as_index=False)["delta"]
                             .mean()
                         )
-                        return pfig.plot_ko_fate_summary(fate_df, out_dir, tf=top_tf)
+                        return pfig.plot_ko_fate_summary(fate_df, figures_dir, tf=top_tf)
 
                     if shift_df is not None and cluster_key in adata.obs.columns:
                         render_figure(

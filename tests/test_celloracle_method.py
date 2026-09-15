@@ -33,7 +33,9 @@ def _adata(n: int = 300, g: int = 40, condition: bool = False) -> ad.AnnData:
 
 
 def _ctx(tmp_path: Path, backend):
-    paths = SimpleNamespace(results=tmp_path / "res", scratch=tmp_path / "scr")
+    paths = SimpleNamespace(
+        results=tmp_path / "res", figures=tmp_path / "figs", scratch=tmp_path / "scr"
+    )
     reg = SimpleNamespace(get=lambda name: backend)
     return SimpleNamespace(paths=paths, backend_registry=reg, config=None)
 
@@ -196,5 +198,5 @@ def test_fate_summary_figure_produced(tmp_path: Path) -> None:
         _ctx(tmp_path, _fake_success_backend("directional")),
     )
     assert not isinstance(res, MethodSkip)
-    fate_figs = list((tmp_path / "res" / "perturbation").glob("perturbation_ko_fate_*"))
+    fate_figs = list((tmp_path / "figs" / "perturbation").glob("perturbation_ko_fate_*"))
     assert fate_figs, "expected a perturbation_ko_fate_* figure on disk"
