@@ -211,6 +211,46 @@ def test_load_input_adata_from_config_loads_h5ad(tmp_path: Path) -> None:
     assert "counts" in loaded.layers
 
 
+def test_load_input_adata_from_config_threads_preserve_population_fits(
+    tmp_path: Path,
+) -> None:
+    """
+    Verify input.subset.preserve_population_fits reaches the AnnData I/O layer.
+
+    A downstream-only rerun manifest points input.h5ad straight at a file that
+    already IS the target population (PCA/Harmony/neighbors fit on exactly
+    these cells), but still declares subset/require_agreement for provenance
+    continuity with the run that originally sliced it. Without this flag
+    reaching load_adata, every such rerun silently loses its embeddings and
+    neighbor graph even though nothing here was actually a joint fit over a
+    bigger, now-irrelevant population.
+    """
+
+    path = tmp_path / "input.h5ad"
+    obs = pd.DataFrame(
+        {"cell_type": ["Fibroblasts", "Fibroblasts"]},
+        index=["cell_1", "cell_2"],
+    )
+    var = pd.DataFrame(index=["gene_1", "gene_2", "gene_3"])
+    adata = ad.AnnData(X=np.arange(6, dtype=float).reshape(2, 3), obs=obs, var=var)
+    adata.obsm["X_pca_harmony"] = np.ones((2, 5))
+    adata.write_h5ad(path)
+
+    config = build_test_config(
+        h5ad_path=path,
+        subset={
+            "column": "cell_type",
+            "values": ["Fibroblasts"],
+            "preserve_population_fits": True,
+        },
+    )
+
+    loaded = load_input_adata_from_config(config)
+
+    assert loaded is not None
+    assert "X_pca_harmony" in loaded.obsm
+
+
 def write_clustered_h5ad(tmp_path: Path, *, filename: str = "clustered.h5ad") -> Path:
     """
     Write an h5ad carrying a lineage label and a clustering, one cluster artifactual.

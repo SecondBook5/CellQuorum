@@ -359,6 +359,42 @@ def test_load_adata_subset_keeps_per_cell_reference_mapping_scores(tmp_path: Pat
     assert "ref_state_probabilities" in observed.obsm
 
 
+def test_load_adata_subset_can_preserve_population_fits_when_already_scoped(
+    tmp_path: Path,
+) -> None:
+    """A manifest can opt out of stripping when the input file already IS the
+    target population, not a slice of something bigger.
+
+    Real bug: a downstream-only rerun manifest points `input.h5ad` straight at
+    a pre-computed, already-fibroblast-only object (PCA/Harmony/neighbors all
+    fit ON that exact 68k-cell population), but still declares
+    `subset_on`/`require_agreement` for provenance/consistency with the
+    original slicing run. The loader cannot tell that case apart from the
+    normal one (a slice of a larger shared atlas) and strips the fits
+    unconditionally, so every downstream stage silently lost PCA/Harmony/the
+    neighbor graph even though nothing here was actually a joint fit over a
+    bigger, now-irrelevant population. `preserve_population_fits=True` is the
+    explicit opt-out for exactly that case.
+    """
+
+    path = tmp_path / "input.h5ad"
+    make_celltype_adata_with_atlas_embeddings().write_h5ad(path)
+
+    observed = load_adata(
+        path,
+        subset_column="cell_type",
+        subset_values=["Fibroblasts"],
+        preserve_population_fits=True,
+    )
+
+    assert "X_pca" in observed.obsm
+    assert "X_pca_harmony" in observed.obsm
+    assert "connectivities" in observed.obsp
+    assert "distances" in observed.obsp
+    assert "pca" in observed.uns
+    assert "neighbors" in observed.uns
+
+
 def test_load_adata_full_object_load_keeps_embeddings(tmp_path: Path) -> None:
     """No subset requested -> nothing was restricted, so nothing is stripped.
 

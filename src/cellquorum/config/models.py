@@ -248,6 +248,17 @@ class InputSubsetConfig(StrictBaseModel):
             loader refuses to apply it when a requested value is missing from that
             column's vocabulary, because "no cell agrees" and "this column has no
             word for this label" are different facts with the same cell count.
+        preserve_population_fits: Skip the default stripping of PCA/Harmony/
+            neighbors/etc. after this restriction is applied. Only correct
+            when ``input.h5ad`` already IS the target population -- its own
+            joint fits were computed on exactly these cells -- rather than a
+            slice of a larger shared atlas. A downstream-only rerun manifest
+            that points straight at a previously exported, already-scoped
+            per-lineage object (but still declares this block for provenance
+            continuity with the original slicing run) sets this to True.
+            Default False keeps the safe behavior: a row restriction normally
+            changes the population every joint fit was computed over, so
+            those fits are stripped rather than silently kept.
     """
 
     # Store the obs column to filter rows on.
@@ -258,6 +269,9 @@ class InputSubsetConfig(StrictBaseModel):
 
     # Store an optional second annotation column that must agree with `column`.
     require_agreement: str | None = None
+
+    # Store whether to skip stripping population-level fits after restriction.
+    preserve_population_fits: bool = False
 
     @field_validator("column", "require_agreement")
     @classmethod

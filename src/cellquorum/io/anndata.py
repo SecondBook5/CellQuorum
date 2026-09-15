@@ -210,6 +210,7 @@ def _load_adata_subset(
     agreement_column: str | None = None,
     exclude_column: str | None = None,
     exclude_values: list[str] | None = None,
+    preserve_population_fits: bool = False,
 ) -> ad.AnnData:
     """
     Load only the rows of an h5ad an inclusion and/or exclusion rule keeps.
@@ -241,6 +242,12 @@ def _load_adata_subset(
             categories the object does not have removes nothing while reading in
             the config as though it had -- the failure mode when a cluster id set
             is carried across two different clusterings of the same cells.
+        preserve_population_fits: Skip stripping PCA/Harmony/neighbors/etc.
+            after restricting rows. Only correct when this h5ad already IS the
+            target population (its own joint fits were computed on exactly
+            these cells, e.g. a downstream-only rerun pointed at a previously
+            exported per-lineage object) rather than a slice of a larger
+            shared atlas. Default False keeps the safe behavior.
 
     Returns:
         In-memory AnnData holding only the matching rows.
@@ -348,7 +355,10 @@ def _load_adata_subset(
         # A row restriction changes the population every joint fit (PCA, batch
         # correction, neighbor graph, ...) was computed over, so those fits no
         # longer describe this object -- see _strip_population_scope_artifacts.
-        _strip_population_scope_artifacts(subset_adata)
+        # Skipped only when the caller has told us this file already IS the
+        # target population and its fits are valid here.
+        if not preserve_population_fits:
+            _strip_population_scope_artifacts(subset_adata)
 
     finally:
         # Release the backed file handle regardless of success.
@@ -382,6 +392,7 @@ def load_adata(
     agreement_column: str | None = None,
     exclude_column: str | None = None,
     exclude_values: list[str] | None = None,
+    preserve_population_fits: bool = False,
 ) -> ad.AnnData:
     """
     Load an AnnData object from an h5ad file, optionally restricted to a slice.
@@ -397,6 +408,9 @@ def load_adata(
             subset and composable with it.
         exclude_values: Values of ``exclude_column`` whose rows are dropped;
             required when it is given.
+        preserve_population_fits: See ``_load_adata_subset``. Only meaningful
+            alongside a subset/exclude rule; ignored on a plain whole-object
+            load (nothing was restricted, so nothing would be stripped anyway).
 
     Returns:
         Loaded AnnData object.
@@ -442,6 +456,7 @@ def load_adata(
                 agreement_column=agreement_column,
                 exclude_column=exclude_column,
                 exclude_values=exclude_values,
+                preserve_population_fits=preserve_population_fits,
             )
 
     # Preserve CellQuorum-specific errors (e.g. bad subset) without re-wrapping.

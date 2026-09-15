@@ -207,6 +207,7 @@ def load_input_adata_from_config(config: CellQuorumConfig) -> ad.AnnData | None:
         agreement_column=subset.require_agreement if subset else None,
         exclude_column=exclude.column if exclude else None,
         exclude_values=exclude.values if exclude else None,
+        preserve_population_fits=subset.preserve_population_fits if subset else False,
     )
 
 
