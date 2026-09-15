@@ -200,6 +200,45 @@ def test_donor_gate_reuses_choirs_batch_corrected_embedding(monkeypatch, tmp_pat
     assert result.metrics.get("donor_gate_embedding_key") == "X_pca_harmony"
 
 
+def test_technical_qc_consistency_flags_a_qc_confounded_cluster(monkeypatch, tmp_path):
+    """A subcluster built disproportionately from degraded/probable-multiplet
+    cells must be flagged against its siblings, and the flag must reach the
+    stage's own metrics/warnings/artifacts -- not just the underlying
+    computation (already unit-tested in test_subclustering_qc_consistency.py).
+
+    _ChoirCapturingBackend assigns cluster "1" to even-indexed cells and "2"
+    to odd; QC columns are set the same way so cluster "1" is real degraded
+    cells, not noise.
+    """
+    from cellquorum.stages.clustering.subclustering import partition as partition_module
+
+    monkeypatch.setattr(partition_module.shutil, "which", lambda name: "/usr/bin/Rscript")
+
+    parent = _parent_adata()
+    n = parent.n_obs
+    even = np.arange(n) % 2 == 0
+    parent.obs["pct_counts_mito"] = np.where(even, 6.0, 2.0)
+    parent.obs["total_counts"] = np.where(even, 1500.0, 8000.0)
+    parent.obs["n_genes_by_counts"] = np.where(even, 900.0, 2800.0)
+    parent.obs["qc_probable_multiplet"] = even
+
+    ctx = _context(parent, focus_labels=["Fibroblasts"])
+    ctx.config.subclustering = ctx.config.subclustering.model_copy(
+        update={"formal_test": FormalTestConfig(method="none")}
+    )
+    ctx.backend_registry = SimpleNamespace(get=lambda name: _ChoirCapturingBackend())
+    ctx.paths = SimpleNamespace(
+        figures=str(tmp_path), scratch=str(tmp_path), root=str(tmp_path), results=str(tmp_path)
+    )
+
+    result = SubclusteringStage().run(ctx)
+
+    assert result.metrics.get("technical_qc_n_fail") == 1
+    assert any("1" in w and "QC-confounded" in w for w in result.warnings)
+    assert (tmp_path / "subclustering_technical_qc_consistency.png").exists()
+    assert (tmp_path / "subclustering_technical_qc_consistency.csv").exists()
+
+
 def test_subclustering_zero_cell_focus_is_refused():
     """Focus matches 0 cells: fail, rather than pass the parent through.
 

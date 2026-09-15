@@ -278,4 +278,73 @@ def plot_subcluster_qc_panel(
     return out_path
 
 
-__all__ = ["plot_group_recovery", "plot_stability_curve", "plot_subcluster_qc_panel"]
+def plot_technical_qc_consistency(
+    result: dict,
+    out_path: Path | str,
+) -> Path:
+    """
+    Plot each subcluster's worst technical-QC z-score vs. its siblings.
+
+    One bar per cluster: the largest-magnitude z-score across the metrics
+    checked (mito%, counts, complexity, multiplet rate), signed so a bad
+    direction is always positive height. PASS clusters are blue, FAIL
+    (|z| > threshold on at least one metric) are red. See
+    ``qc_consistency.subcluster_qc_consistency`` for how these are computed.
+
+    Args:
+        result: output of subcluster_qc_consistency().
+        out_path: output file path.
+
+    Returns:
+        Path to saved figure (unsaved, non-existent path when there is
+        nothing to plot -- the check was skipped or found no clusters).
+    """
+    out_path = Path(out_path)
+
+    clusters_dict = result.get("clusters") or {}
+    if not clusters_dict:
+        return out_path
+
+    apply_cellquorum_theme()
+
+    cluster_ids = list(clusters_dict.keys())
+    worst_z = []
+    qc_pass = []
+    for cid in cluster_ids:
+        metrics = clusters_dict[cid].get("metrics", {})
+        # Largest-magnitude z, signed toward the bad direction (a flagged
+        # metric's z is already signed so "bad" is the sign it tripped on).
+        z_values = [m["z"] for m in metrics.values()]
+        worst = max(z_values, key=abs) if z_values else 0.0
+        worst_z.append(abs(worst))
+        qc_pass.append(clusters_dict[cid]["qc_pass"])
+
+    colors = [CELLQUORUM_BLUE if p else CELLQUORUM_RED for p in qc_pass]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    x_pos = range(len(cluster_ids))
+    ax.bar(x_pos, worst_z, color=colors, alpha=0.7, edgecolor="none")
+    ax.set_xlabel("Subcluster", fontsize=11)
+    ax.set_ylabel("Worst |z| vs. sibling subclusters", fontsize=11)
+    ax.set_title(
+        "Technical-QC consistency across subclusters",
+        fontsize=12,
+        fontweight="bold",
+    )
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(cluster_ids, rotation=45, ha="right")
+    apply_cellquorum_axis_style(ax)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    save_cellquorum_figure(fig, out_path)
+    plt.close(fig)
+
+    return out_path
+
+
+__all__ = [
+    "plot_group_recovery",
+    "plot_stability_curve",
+    "plot_subcluster_qc_panel",
+    "plot_technical_qc_consistency",
+]

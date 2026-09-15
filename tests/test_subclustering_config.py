@@ -50,6 +50,14 @@ def test_subclustering_config_defaults() -> None:
     assert config.diagnostics.clustree is True
     assert config.diagnostics.stability_curve is True
 
+    # Verify technical_qc sub-block exists and is on by default: it's cheap
+    # (per-cluster medians, no model fitting) and catches a real failure mode
+    # (a QC-confounded subcluster masquerading as a biological state) that a
+    # user has no reason to opt into after the fact.
+    assert hasattr(config, "technical_qc")
+    assert config.technical_qc.enabled is True
+    assert config.technical_qc.z_threshold == 2.5
+
     # Verify action defaults to flag (not drop).
     assert config.action == "flag"
 

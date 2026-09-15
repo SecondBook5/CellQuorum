@@ -119,6 +119,29 @@ class DonorGateConfig(StrictBaseModel):
     classifier_separability: bool = True
 
 
+class TechnicalQcConfig(StrictBaseModel):
+    """
+    Technical-QC consistency check configuration.
+
+    Compares each subcluster's QC evidence (mito%, counts, complexity,
+    probable-multiplet rate) against its OWN lineage's other subclusters --
+    not a re-threshold of anything, just using QC evidence the global QC
+    pass already computed. Catches a subcluster built disproportionately
+    from cells the global pass already distrusts but didn't delete (a global
+    threshold calibrated across every cell type is too permissive for
+    lineage-specific degradation). See ``qc_consistency.py`` for the real
+    case this was built for.
+
+    Args:
+        enabled: whether to run the check.
+        z_threshold: robust z-score magnitude (vs. sibling subclusters) that
+            trips a flag on a metric.
+    """
+
+    enabled: bool = True
+    z_threshold: float = 2.5
+
+
 class DiagnosticsConfig(StrictBaseModel):
     """
     Subclustering diagnostics configuration.
@@ -149,6 +172,7 @@ class SubclusteringConfig(StrictBaseModel):
         partition: partition configuration (CHOIR + fallback, Task 2).
         formal_test: formal significance test configuration (sc-SHC, Task 2).
         donor_gate: donor-reproducibility gatekeeper (Task 3).
+        technical_qc: technical-QC consistency check (siblings vs. siblings).
         diagnostics: diagnostic plot configuration.
         action: action when clusters fail gate (flag or drop).
         key_added: obs column for subcluster labels.
@@ -162,6 +186,7 @@ class SubclusteringConfig(StrictBaseModel):
     partition: PartitionConfig = PartitionConfig()
     formal_test: FormalTestConfig = FormalTestConfig()
     donor_gate: DonorGateConfig = DonorGateConfig()
+    technical_qc: TechnicalQcConfig = TechnicalQcConfig()
     diagnostics: DiagnosticsConfig = DiagnosticsConfig()
     action: str = "flag"
     key_added: str = "subcluster"

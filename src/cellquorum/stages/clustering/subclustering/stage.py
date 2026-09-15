@@ -19,6 +19,7 @@ from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.clustering.subclustering.diagnostics import (
     plot_group_recovery,
     plot_subcluster_qc_panel,
+    plot_technical_qc_consistency,
 )
 from cellquorum.stages.clustering.subclustering.donor_gate import (
     apply_qc_flags,
@@ -34,6 +35,9 @@ from cellquorum.stages.clustering.subclustering.partition import (
     run_choir,
     run_leiden_stability,
     run_scshc_test,
+)
+from cellquorum.stages.clustering.subclustering.qc_consistency import (
+    subcluster_qc_consistency,
 )
 
 
@@ -530,6 +534,95 @@ class SubclusteringStage:
             notes.append("Donor gate: skipped (no cluster labels)")
         # The embedding-failed case (group_key set + labels present but
         # embedding_ready is False) already recorded its own skip note above.
+
+        # Technical-QC consistency: does any subcluster's QC evidence (mito%,
+        # counts, complexity, multiplet rate) look like an outlier against its
+        # OWN lineage's other subclusters? Global QC runs once, across every
+        # cell type, in filter mode -- a threshold permissive enough for a
+        # naturally small/RNA-poor cell type will let a degraded cell of a
+        # normally RNA-rich lineage (e.g. fibroblasts) through uncaught. This
+        # does not re-threshold anything (a per-lineage `report_only` QC pass
+        # was tried and rejected for exactly that reason); it only compares a
+        # lineage's own subclusters to each other using evidence the global
+        # pass already computed. See qc_consistency.py.
+        if sc_config.technical_qc.enabled and has_cluster_labels:
+            qc_result = subcluster_qc_consistency(
+                filtered,
+                cluster_key=cluster_key,
+                z_threshold=sc_config.technical_qc.z_threshold,
+            )
+            if qc_result["summary"]["skipped"]:
+                notes.append("Technical-QC consistency: skipped (no QC evidence columns present)")
+            else:
+                n_pass = qc_result["summary"]["n_pass"]
+                n_fail = qc_result["summary"]["n_fail"]
+                notes.append(
+                    f"Technical-QC consistency: {n_pass} subclusters within normal range, "
+                    f"{n_fail} flagged as outliers vs. their siblings "
+                    f"(z_threshold={sc_config.technical_qc.z_threshold})"
+                )
+                metrics["technical_qc_n_pass"] = n_pass
+                metrics["technical_qc_n_fail"] = n_fail
+
+                if "subclustering" not in filtered.uns:
+                    filtered.uns["subclustering"] = {}
+                filtered.uns["subclustering"]["technical_qc_consistency"] = qc_result
+
+                if n_fail:
+                    failed = {
+                        cid: c["qc_reason"]
+                        for cid, c in qc_result["clusters"].items()
+                        if not c["qc_pass"]
+                    }
+                    warnings.append(
+                        "Technical-QC consistency: subcluster(s) "
+                        f"{sorted(failed)} look like QC-confounded populations, not "
+                        f"necessarily real biological states -- {failed}"
+                    )
+
+                paths = getattr(context, "paths", None)
+                if paths is not None:
+                    figures_dir = Path(getattr(paths, "figures", "."))
+                    qc_consistency_path = figures_dir / "subclustering_technical_qc_consistency.png"
+                    plot_technical_qc_consistency(qc_result, qc_consistency_path)
+                    if qc_consistency_path.exists():
+                        artifacts.append(
+                            StageArtifact(
+                                name="subclustering_technical_qc_consistency",
+                                path=qc_consistency_path,
+                                kind="png",
+                                description=(
+                                    "Per-subcluster technical-QC consistency vs. siblings"
+                                ),
+                            )
+                        )
+
+                    results_dir = Path(getattr(paths, "results", "."))
+                    rows = []
+                    for cid, c in qc_result["clusters"].items():
+                        row = {"cluster": cid, "n_cells": c["n_cells"], "qc_pass": c["qc_pass"]}
+                        for metric_name, metric_vals in c["metrics"].items():
+                            row[f"{metric_name}_value"] = metric_vals["value"]
+                            row[f"{metric_name}_z"] = metric_vals["z"]
+                        rows.append(row)
+                    if rows:
+                        import pandas as pd
+
+                        table_path = results_dir / "subclustering_technical_qc_consistency.csv"
+                        table_path.parent.mkdir(parents=True, exist_ok=True)
+                        pd.DataFrame(rows).to_csv(table_path, index=False)
+                        artifacts.append(
+                            StageArtifact(
+                                name="subclustering_technical_qc_consistency_table",
+                                path=table_path,
+                                kind="csv",
+                                description=(
+                                    "Per-subcluster QC evidence values and z-scores vs. siblings"
+                                ),
+                            )
+                        )
+        elif sc_config.technical_qc.enabled and not has_cluster_labels:
+            notes.append("Technical-QC consistency: skipped (no cluster labels)")
 
         # Generate clustree plot (if leiden_grid labels present).
         # Note: clustree expects multiple cluster columns with a common prefix.
