@@ -18,6 +18,8 @@ def test_defaults() -> None:
     assert c.launcher == "micromamba"
     assert c.timeout_seconds == 3600
     assert "hdWGCNA" in c.r_packages
+    assert c.curvature_top_k_per_module == 15
+    assert c.curvature_ricci_alpha == 0.5
 
 
 def test_overrides() -> None:
@@ -25,3 +27,9 @@ def test_overrides() -> None:
     assert c.group_by == "leiden"
     assert c.soft_power == 6
     assert c.n_hvg == 2000
+
+
+def test_curvature_overrides() -> None:
+    c = CoexpressionConfig(curvature_top_k_per_module=8, curvature_ricci_alpha=0.7)
+    assert c.curvature_top_k_per_module == 8
+    assert c.curvature_ricci_alpha == 0.7

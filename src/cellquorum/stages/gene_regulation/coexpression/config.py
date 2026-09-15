@@ -28,6 +28,9 @@ class CoexpressionConfig(StrictBaseModel):
         launcher: Environment launcher (micromamba).
         timeout_seconds: R execution timeout in seconds.
         r_packages: List of R packages required for hdWGCNA.
+        curvature_top_k_per_module: Hub genes kept per module (by kME) for
+            the curvature network figure.
+        curvature_ricci_alpha: Ollivier-Ricci alpha for the curvature figure.
     """
 
     # Whether this stage runs.
@@ -79,6 +82,12 @@ class CoexpressionConfig(StrictBaseModel):
 
     # R packages required for hdWGCNA.
     r_packages: list[str] = ["hdWGCNA", "Seurat", "WGCNA", "zellkonverter"]
+
+    # Hub genes kept per module (by kME) for the curvature network figure.
+    curvature_top_k_per_module: int = 15
+
+    # Ollivier-Ricci alpha for the module curvature figure.
+    curvature_ricci_alpha: float = 0.5
 
 
 __all__ = ["CoexpressionConfig"]

@@ -77,6 +77,8 @@ class HdwgcnaMethod(AnalysisMethod):
         seed = int(config.get("seed", 0))
         launcher = config.get("launcher", "micromamba")
         timeout_seconds = int(config.get("timeout_seconds", 3600))
+        curvature_top_k_per_module = int(config.get("curvature_top_k_per_module", 15))
+        curvature_ricci_alpha = float(config.get("curvature_ricci_alpha", 0.5))
 
         # 2. Resolve group_by: config OR first-present of (cell_type, leiden) OR "cell_type"
         if group_by_cfg:
@@ -206,7 +208,12 @@ class HdwgcnaMethod(AnalysisMethod):
             )
         render_figure(
             "module curvature",
-            lambda: plot_module_curvature(modules_df, figures_dir),
+            lambda: plot_module_curvature(
+                modules_df,
+                figures_dir,
+                top_k_per_module=curvature_top_k_per_module,
+                ricci_alpha=curvature_ricci_alpha,
+            ),
             figures=figs,
             warnings=warnings,
         )
