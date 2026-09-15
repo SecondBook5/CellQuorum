@@ -63,7 +63,7 @@ def _empty_fig(msg: str = "no data") -> Figure:
     return fig
 
 
-def interaction_dotplot(
+def _interaction_dotplot_data(
     lr: pd.DataFrame,
     *,
     source_col: str = "source",
@@ -73,10 +73,20 @@ def interaction_dotplot(
     weight_col: str = "weight",
     sample_col: str = "sample",
     top_k: int = 15,
-) -> Figure:
-    """Top-N LR pairs by summed weight; x=source->target; color=mean, size=#samples."""
+    max_pairs: int = 30,
+) -> dict:
+    """Curate rows (LR pairs) AND columns (source->target combos) to a
+    readable size, then aggregate for plotting.
+
+    Curating only the rows and leaving every distinct source->target combo
+    on the x-axis is how dotplot_liana.png ended up 12,664px wide on a real
+    9-subcluster run: 9 clusters is up to 72 combos, and even a handful of
+    kept LR pairs routinely touches most of them. max_pairs caps that axis
+    the same way top_k caps the LR-pair axis, keeping the top combos by
+    total weight across the kept LR pairs.
+    """
     if lr is None or lr.empty:
-        return _empty_fig()
+        return {"xs": [], "ys": [], "agg": pd.DataFrame(), "x_pos": {}, "y_pos": {}}
     df = lr.copy()
     df["__lr"] = df[ligand_col].astype(str) + "->" + df[receptor_col].astype(str)
     df["__st"] = df[source_col].astype(str) + "->" + df[target_col].astype(str)
@@ -86,7 +96,12 @@ def interaction_dotplot(
     keep = list(pair_weight.head(top_k).index)
     df = df[df["__lr"].isin(keep)]
     if df.empty:
-        return _empty_fig()
+        return {"xs": [], "ys": [], "agg": pd.DataFrame(), "x_pos": {}, "y_pos": {}}
+
+    st_weight = df.groupby("__st")[weight_col].sum().sort_values(kind="mergesort", ascending=False)
+    keep_st = set(st_weight.head(max_pairs).index)
+    df = df[df["__st"].isin(keep_st)]
+
     ys = sorted(keep)  # deterministic
     xs = sorted(df["__st"].unique())
     y_pos = {v: i for i, v in enumerate(ys)}
@@ -99,6 +114,38 @@ def interaction_dotplot(
         )
         .reset_index()
     )
+    return {"xs": xs, "ys": ys, "agg": agg, "x_pos": x_pos, "y_pos": y_pos}
+
+
+def interaction_dotplot(
+    lr: pd.DataFrame,
+    *,
+    source_col: str = "source",
+    target_col: str = "target",
+    ligand_col: str = "ligand",
+    receptor_col: str = "receptor",
+    weight_col: str = "weight",
+    sample_col: str = "sample",
+    top_k: int = 15,
+    max_pairs: int = 30,
+) -> Figure:
+    """Top-N LR pairs x top-N source->target combos; color=mean, size=#samples."""
+    if lr is None or lr.empty:
+        return _empty_fig()
+    data = _interaction_dotplot_data(
+        lr,
+        source_col=source_col,
+        target_col=target_col,
+        ligand_col=ligand_col,
+        receptor_col=receptor_col,
+        weight_col=weight_col,
+        sample_col=sample_col,
+        top_k=top_k,
+        max_pairs=max_pairs,
+    )
+    xs, ys, agg, x_pos, y_pos = data["xs"], data["ys"], data["agg"], data["x_pos"], data["y_pos"]
+    if not xs or not ys:
+        return _empty_fig()
     fig, ax = plt.subplots(figsize=(max(4, 0.6 * len(xs)), max(4, 0.4 * len(ys))))
     w = agg["mean_w"].to_numpy(dtype=float)
     finite_w = w[np.isfinite(w)]

@@ -64,6 +64,52 @@ def test_interaction_dotplot_returns_figure():
     assert isinstance(interaction_dotplot(_lr(4), top_k=2), Figure)
 
 
+def _dense_lr_many_pairs(n_clusters: int, n_lr_pairs: int) -> pd.DataFrame:
+    """Every cluster pair carries every LR pair -- the real shape of a
+    9-subcluster LIANA run (72 source-target combos), which is what made
+    dotplot_liana.png 12,664px wide: it curates LR pairs (rows) but never
+    curates source-target combos (columns), so a handful of kept LR pairs
+    can still spray across all 72 columns."""
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    clusters = [str(i) for i in range(n_clusters)]
+    rows = []
+    for s in clusters:
+        for t in clusters:
+            if s == t:
+                continue
+            for i in range(n_lr_pairs):
+                rows.append(
+                    {
+                        "source": s,
+                        "target": t,
+                        "ligand": f"L{i}",
+                        "receptor": f"R{i}",
+                        "weight": float(rng.uniform(0.1, 1.0)),
+                        "sample": "s0",
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def test_interaction_dotplot_caps_source_target_columns_too():
+    """Real bug, confirmed live: interaction_dotplot curates LR pairs (rows,
+    via top_k) but drew a column for EVERY distinct source->target combo
+    that survived, uncapped. On a real 9-subcluster CCC run that meant 72
+    columns even with only a handful of LR pairs kept -- a 12,664px-wide,
+    practically unreadable figure. Columns must be curated the same way
+    rows are.
+    """
+    from cellquorum.stages.cell_cell_communication.viz._plots import _interaction_dotplot_data
+
+    lr = _dense_lr_many_pairs(9, 3)
+    data = _interaction_dotplot_data(lr, top_k=3, max_pairs=20)
+
+    assert len(data["xs"]) <= 20
+    assert len(data["ys"]) <= 3
+
+
 def test_interaction_dotplot_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import interaction_dotplot
 
