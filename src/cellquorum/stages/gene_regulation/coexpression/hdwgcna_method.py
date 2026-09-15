@@ -14,6 +14,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.gene_regulation._shared import resolve_group_by
 from cellquorum.stages.gene_regulation.coexpression.module_curvature import (
     plot_module_curvature,
 )
@@ -81,14 +82,7 @@ class HdwgcnaMethod(AnalysisMethod):
         curvature_ricci_alpha = float(config.get("curvature_ricci_alpha", 0.5))
 
         # 2. Resolve group_by: config OR first-present of (cell_type, leiden) OR "cell_type"
-        if group_by_cfg:
-            group_by = group_by_cfg
-        elif "cell_type" in adata.obs.columns:
-            group_by = "cell_type"
-        elif "leiden" in adata.obs.columns:
-            group_by = "leiden"
-        else:
-            group_by = "cell_type"
+        group_by = resolve_group_by(adata, group_by_cfg, default="cell_type")
 
         # 3. Eligibility guards (each → MethodSkip)
         # a. Check minimum cell count

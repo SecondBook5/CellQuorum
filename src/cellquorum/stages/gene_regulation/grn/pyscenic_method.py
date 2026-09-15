@@ -16,6 +16,7 @@ from cellquorum.core.context import resolve_n_jobs
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.gene_regulation._shared import resolve_group_by
 from cellquorum.stages.gene_regulation.grn import regulon_figures as rf
 from cellquorum.stages.gene_regulation.grn.regulon_curvature import (
     load_regulons_csv,
@@ -70,14 +71,7 @@ class PyscenicMethod(AnalysisMethod):
         curvature_plot_top_k = int(config.get("curvature_plot_top_k", 30))
 
         # 2. Resolve group_by generically
-        if group_by_cfg:
-            group_by = group_by_cfg
-        elif "cell_type" in adata.obs.columns:
-            group_by = "cell_type"
-        elif "leiden" in adata.obs.columns:
-            group_by = "leiden"
-        else:
-            group_by = "all"
+        group_by = resolve_group_by(adata, group_by_cfg, default="all")
 
         # 3. Guards -> MethodSkip
         if adata.n_obs < min_cells_total:
