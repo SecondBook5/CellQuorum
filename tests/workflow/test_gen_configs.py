@@ -125,6 +125,41 @@ def test_require_agreement_rides_along_on_the_subset_block(manifest, template) -
     validate_config_dict(out["emt_krt__KC"])  # raises if the schema rejects it
 
 
+def test_preserve_population_fits_rides_along_on_the_subset_block(manifest, template) -> None:
+    # A downstream-only rerun manifest points `inputs` straight at a file that
+    # already IS the target population (its own PCA/Harmony/neighbors, not a
+    # slice of a bigger shared atlas) but still declares subset_on for
+    # provenance continuity with the run that originally sliced it. Without
+    # this flag riding along, the loader strips those fits as though this
+    # were the normal whole-atlas-subset case.
+    subset_manifest = copy.deepcopy(manifest)
+    entry = subset_manifest["emt_krt"]
+    entry["subset_on"] = "cell_type"
+    entry["preserve_population_fits"] = True
+    entry["inputs"] = {"KC": "/data/global.h5ad"}
+
+    out = gen_configs(subset_manifest, template)
+
+    assert out["emt_krt__KC"]["input"]["subset"] == {
+        "column": "cell_type",
+        "values": ["KC"],
+        "preserve_population_fits": True,
+    }
+    validate_config_dict(out["emt_krt__KC"])  # raises if the schema rejects it
+
+
+def test_preserve_population_fits_without_subset_on_emits_nothing(manifest, template) -> None:
+    # Same reasoning as require_agreement: it is a modifier on the subset, so
+    # without one there is nothing for it to modify.
+    subset_manifest = copy.deepcopy(manifest)
+    subset_manifest["emt_krt"]["preserve_population_fits"] = True
+
+    out = gen_configs(subset_manifest, template)
+
+    assert "subset" not in out["emt_krt__KC"]["input"]
+    assert "preserve_population_fits" not in out["emt_krt__KC"]["input"]
+
+
 def test_require_agreement_without_subset_on_emits_nothing(manifest, template) -> None:
     # require_agreement is a modifier on the subset. With no subset there is no
     # selected label to agree with, and a stray input.require_agreement would be

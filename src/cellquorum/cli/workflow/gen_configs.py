@@ -196,6 +196,14 @@ def gen_configs(
         # equally, so applying it unevenly across the cell types of one manifest is
         # exactly the confound it exists to remove.
         require_agreement = entry.get("require_agreement")
+        # ``preserve_population_fits`` opts a hypothesis out of the default strip of
+        # PCA/Harmony/neighbors after the subset restriction. Only correct when
+        # ``inputs`` already points at a file that IS the target population (its own
+        # joint fits, not a slice of a bigger shared atlas) -- e.g. a downstream-only
+        # rerun manifest pointed at a previously exported per-lineage object that
+        # still declares subset_on for provenance continuity with the run that
+        # originally sliced it.
+        preserve_population_fits = entry.get("preserve_population_fits")
         # ``exclude_on`` + ``exclude_values`` DROP rows, which a subset cannot express:
         # a subset says which values to keep, so leaving out one artifact cluster of a
         # 39-cluster partition would mean naming the other 38 — unreadable, and silently
@@ -220,6 +228,8 @@ def gen_configs(
                 subset_block: dict[str, Any] = {"column": subset_on, "values": [cell_type]}
                 if require_agreement is not None:
                     subset_block["require_agreement"] = require_agreement
+                if preserve_population_fits:
+                    subset_block["preserve_population_fits"] = True
                 input_block["subset"] = subset_block
             if exclude_on is not None:
                 input_block["exclude"] = {
