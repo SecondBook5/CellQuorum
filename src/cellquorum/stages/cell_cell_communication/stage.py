@@ -51,6 +51,28 @@ class CellCellCommunicationStage(MethodDispatchStage):
             if resolved:
                 augmented["sample_col"] = resolved
 
+        # Bridge config.design into multinichenet's case/control/condition_col,
+        # the same declare-the-question-once contract differential_expression
+        # already has. Without this, multinichenet's own config.get("case")/
+        # get("control") are always None and the method always skips with "no
+        # contrast declared" -- even when design.case/control name exactly the
+        # contrast the run was built around. Precedence: an explicit value
+        # already in this stage's own config wins, then the central cohort
+        # key (structural columns only), then design, then the method's own
+        # default -- identical to DifferentialExpressionStage._augment_config.
+        design = getattr(config, "design", None)
+        if design is not None:
+            if not augmented.get("condition_col"):
+                augmented["condition_col"] = resolve_cohort_key(
+                    config,
+                    attr="condition_key",
+                    stage_value=getattr(design, "condition_col", "condition"),
+                )
+            if not augmented.get("case"):
+                augmented["case"] = getattr(design, "case", None)
+            if not augmented.get("control"):
+                augmented["control"] = getattr(design, "control", None)
+
         return augmented
 
     def _validate_output(self, result: StageResult) -> None:
