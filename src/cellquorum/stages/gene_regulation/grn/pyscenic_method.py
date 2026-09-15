@@ -65,6 +65,8 @@ class PyscenicMethod(AnalysisMethod):
         tfs_path = config.get("tfs_path")
         motifs_path = config.get("motifs_path")
         rankings_glob = config.get("rankings_glob")
+        curvature_top_k_targets = int(config.get("curvature_top_k_targets", 15))
+        curvature_ricci_alpha = float(config.get("curvature_ricci_alpha", 0.5))
 
         # 2. Resolve group_by generically
         if group_by_cfg:
@@ -230,7 +232,12 @@ class PyscenicMethod(AnalysisMethod):
         # itself (not AUC), so it renders even when AUCell above failed.
         render_figure(
             "regulon curvature",
-            lambda: plot_regulon_curvature(regulons_df, figures_dir),
+            lambda: plot_regulon_curvature(
+                regulons_df,
+                figures_dir,
+                top_k_targets=curvature_top_k_targets,
+                ricci_alpha=curvature_ricci_alpha,
+            ),
             figures=figs,
             warnings=warnings,
         )

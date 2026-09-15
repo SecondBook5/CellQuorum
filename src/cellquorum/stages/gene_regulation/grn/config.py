@@ -36,6 +36,9 @@ class GrnConfig(StrictBaseModel):
         env_name: Name of the isolated micromamba environment.
         launcher: Environment launcher (micromamba).
         timeout_seconds: pySCENIC execution timeout in seconds.
+        curvature_top_k_targets: Targets kept per TF (by importance) for the
+            curvature network figure.
+        curvature_ricci_alpha: Ollivier-Ricci alpha for the curvature figure.
     """
 
     # Whether this stage runs.
@@ -90,6 +93,12 @@ class GrnConfig(StrictBaseModel):
 
     # pySCENIC execution timeout (seconds).
     timeout_seconds: int = 7200
+
+    # Targets kept per TF (by importance) for the curvature network figure.
+    curvature_top_k_targets: int = 15
+
+    # Ollivier-Ricci alpha for the regulon curvature figure.
+    curvature_ricci_alpha: float = 0.5
 
 
 __all__ = ["GrnConfig"]

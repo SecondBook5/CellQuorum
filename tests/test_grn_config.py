@@ -28,6 +28,8 @@ def test_grn_config_defaults() -> None:
     assert cfg.env_name == "pyscenic_env"
     assert cfg.launcher == "micromamba"
     assert cfg.timeout_seconds == 7200
+    assert cfg.curvature_top_k_targets == 15
+    assert cfg.curvature_ricci_alpha == 0.5
 
 
 def test_grn_config_rejects_unknown_keys() -> None:
