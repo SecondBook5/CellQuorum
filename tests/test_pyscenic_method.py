@@ -106,10 +106,19 @@ def test_success_path_builds_artifacts_and_metrics(tmp_path: Path) -> None:
                 tag_idx = args.index("--tag") + 1
                 tag = args[tag_idx]
 
-                # Write stub regulons CSV (at least one data row so non-empty guard passes)
+                # Write stub regulons CSV matching pySCENIC's REAL shape: a
+                # 2-row column MultiIndex (Enrichment/<metric>) over a 2-level
+                # row index (TF, MotifID) -- a flat 2-column CSV does not
+                # reproduce what the production reader must parse.
                 out_dir.mkdir(parents=True, exist_ok=True)
                 regulons_csv = out_dir / f"scenic_regulons_{tag}.csv"
-                regulons_csv.write_text("TF,TargetGenes\nSTAT1,GENE1;GENE2\nIRF1,GENE3;GENE4\n")
+                regulons_csv.write_text(
+                    ",,Enrichment,Enrichment\n"
+                    ",,AUC,TargetGenes\n"
+                    "TF,MotifID,,\n"
+                    "STAT1,m1,0.1,\"[('GENE1', 0.9), ('GENE2', 0.5)]\"\n"
+                    "IRF1,m1,0.2,\"[('GENE3', 0.8), ('GENE4', 0.4)]\"\n"
+                )
 
                 # Write stub adjacencies
                 adjacencies_tsv = out_dir / f"scenic_adjacencies_{tag}.tsv"
@@ -155,6 +164,7 @@ def test_success_path_builds_artifacts_and_metrics(tmp_path: Path) -> None:
 
     # Check metrics
     assert res.metrics["n_regulons"] == 2  # 2 AUC columns
+    assert res.metrics["n_tfs"] == 2  # STAT1, IRF1 -- from the real TF column, not row 0
     assert res.metrics["n_cells_scored"] == 300
     assert res.metrics["group_by"] == "cell_type"
     assert res.metrics["n_obs"] == 300

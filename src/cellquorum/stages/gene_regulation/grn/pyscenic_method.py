@@ -17,6 +17,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.gene_regulation.grn import regulon_figures as rf
+from cellquorum.stages.gene_regulation.grn.regulon_curvature import load_regulons_csv
 from cellquorum.visualization.figstyle import render_figure
 
 
@@ -189,7 +190,7 @@ class PyscenicMethod(AnalysisMethod):
             )
             return self._skip(reason)
         try:
-            regulons_df = pd.read_csv(regulons_csv)
+            regulons_df = load_regulons_csv(regulons_csv)
         except Exception as exc:
             return self._skip("could not read regulons CSV", error=str(exc)[:500])
         if len(regulons_df) == 0:
@@ -300,7 +301,7 @@ class PyscenicMethod(AnalysisMethod):
             )
 
         # 9. Metrics
-        n_tfs = int(regulons_df.iloc[:, 0].nunique()) if len(regulons_df.columns) else 0
+        n_tfs = int(regulons_df["TF"].nunique()) if "TF" in regulons_df.columns else 0
         metrics = {
             "n_regulons": int(auc.shape[1]) if auc is not None else int(len(regulons_df)),
             "n_tfs": n_tfs,
