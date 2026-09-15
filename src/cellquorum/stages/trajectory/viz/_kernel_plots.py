@@ -10,6 +10,7 @@ Combines:
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 
 import anndata as ad
@@ -21,6 +22,38 @@ from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory.viz import _helpers
 
 _FATE_KEYS = ("cellrank_fate_probabilities", "palantir_fate_probabilities")
+
+# Matches the "_1"/"_2"/... CellRank appends when one cluster seeds more than
+# one macrostate (e.g. "8_1", "8_2" both from cluster "8").
+_MACROSTATE_SPLIT_SUFFIX = re.compile(r"_\d+$")
+
+
+def _resolve_fate_label(name: str, fate_labels: dict[str, str] | None) -> str:
+    """Append a human-readable identity label to a bare macrostate/lineage id.
+
+    CellRank names a macrostate after the dominant cluster id it was seeded
+    from, optionally "_1"/"_2" suffixed when that cluster split into more
+    than one macrostate -- so a bare title like "1 drivers" or "8_1 drivers"
+    carries no biological meaning on its own, only by cross-referencing a
+    separate table. ``fate_labels`` maps a cluster's BASE id (suffix
+    stripped) to a project-declared identity label; when the base id has an
+    entry, the label is appended in parentheses. Unset, or no entry for this
+    id: the bare name is returned unchanged, so the engine never invents or
+    defaults biology that only a manifest can declare.
+
+    Args:
+        name: The macrostate/lineage name as CellRank produced it (e.g. "1",
+            "8_1").
+        fate_labels: Optional {base cluster id: label} mapping.
+
+    Returns:
+        ``name`` unchanged, or ``"{name} ({label})"`` when a label is found.
+    """
+    if not fate_labels:
+        return name
+    base = _MACROSTATE_SPLIT_SUFFIX.sub("", name)
+    label = fate_labels.get(base)
+    return f"{name} ({label})" if label else name
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -370,6 +403,7 @@ class DriverVizMethod(AnalysisMethod):
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
         genes = np.asarray(adata.var_names)
+        fate_labels = config.get("fate_labels")
 
         _helpers.apply_theme()
         artifacts, warnings, n = [], [], 0
@@ -382,7 +416,8 @@ class DriverVizMethod(AnalysisMethod):
                 for gname in sel_genes:
                     if gname not in top_gene_set:
                         top_gene_set.append(gname)
-                fig = _helpers.signed_diverging_bar(sel_genes, vals[order], title=f"{name} drivers")
+                title = f"{_resolve_fate_label(name, fate_labels)} drivers"
+                fig = _helpers.signed_diverging_bar(sel_genes, vals[order], title=title)
                 paths = _helpers.save_figure(
                     fig, figures_dir, f"drivers_bar_{name}", formats=formats, dpi=dpi
                 )
@@ -397,10 +432,11 @@ class DriverVizMethod(AnalysisMethod):
             if top_gene_set:
                 idx = {str(g): i for i, g in enumerate(genes)}
                 rows = [mat[idx[g], :] for g in top_gene_set]
+                labeled_names = [_resolve_fate_label(nm, fate_labels) for nm in names]
                 fig = _helpers.matrix_heatmap(
                     np.vstack(rows),
                     top_gene_set,
-                    names,
+                    labeled_names,
                     title="Lineage drivers",
                     cbar_label="correlation",
                 )

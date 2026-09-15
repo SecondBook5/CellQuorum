@@ -24,6 +24,17 @@ class TrajectoryVizConfig(StrictBaseModel):
     genes: list[str] | None = None
     cluster_key: str | None = None
 
+    # Optional cluster/subcluster id -> human-readable identity label, e.g.
+    # {"0": "Perivascular/FRC-like, Inflammatory/chemokine"}. CellRank names a
+    # macrostate/lineage after the dominant cluster id it was seeded from
+    # (optionally suffixed "_1"/"_2" when one cluster splits into more than
+    # one macrostate), so driver_viz strips that suffix and looks the base id
+    # up here, appending the label to the bare numeric title/axis tick rather
+    # than replacing it. None (default) leaves every title as the bare id --
+    # this is user-declared biology, never defaulted, so the engine stays
+    # biology-agnostic when a manifest doesn't supply it.
+    fate_labels: dict[str, str] | None = None
+
     # Condition-split pseudotime heatmap controls (all optional; biology via config).
     heatmap_genes: list[str] | None = None
     heatmap_score_key: str | None = None

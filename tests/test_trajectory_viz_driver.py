@@ -53,6 +53,50 @@ def test_renders_driver_bars_and_heatmap(tmp_path):
     assert len(heat) == 1
 
 
+def test_driver_bar_title_carries_the_fate_label_when_configured(tmp_path):
+    """Real complaint: a driver bar's title/filename is just the bare
+    macrostate id ("1 drivers"), and a reader has no way to tell what "1"
+    means without cross-referencing a separate table. CellRank names a
+    macrostate after the dominant cluster id it was seeded from (optionally
+    "_1"/"_2" suffixed when a cluster splits into more than one macrostate),
+    so a manifest-declared id->label mapping (fate_labels) should resolve
+    "1" -> "1 (Perivascular/FRC-like, Inflammatory)" in the figure TITLE,
+    without needing to guess or invent biology in the engine itself.
+    """
+    res = DriverVizMethod()._run(
+        _adata(lineages=("1", "8_1")),
+        {
+            "figure_formats": ["png"],
+            "dpi": 72,
+            "top_k": 5,
+            "fate_labels": {"1": "Perivascular/FRC-like, Inflammatory"},
+        },
+        _Ctx(tmp_path),
+    )
+    assert not isinstance(res, MethodSkip)
+    # Filenames stay stable/filesystem-safe on the bare id even when a label
+    # is configured -- only the in-figure title changes.
+    bars = sorted(p.name for p in (tmp_path / "f" / "trajectory").glob("drivers_bar_*.png"))
+    assert bars == ["drivers_bar_1.png", "drivers_bar_8_1.png"]
+
+    # The title-resolution contract itself: given this name and this config,
+    # what title text is produced. This is the actual behavior a reader
+    # depends on; a saved PNG's pixels aren't inspectable without OCR.
+    from cellquorum.stages.trajectory.viz._kernel_plots import _resolve_fate_label
+
+    assert _resolve_fate_label("1", {"1": "Perivascular/FRC-like, Inflammatory"}) == (
+        "1 (Perivascular/FRC-like, Inflammatory)"
+    )
+    assert _resolve_fate_label("8_1", {"8": "Papillary-like, Mechanosensory"}) == (
+        "8_1 (Papillary-like, Mechanosensory)"
+    )
+    # No entry for the base id: unchanged, not a crash or a blank label.
+    assert _resolve_fate_label("99", {"1": "x"}) == "99"
+    # No mapping at all: unchanged (bare-id behavior preserved by default).
+    assert _resolve_fate_label("1", None) == "1"
+    assert _resolve_fate_label("1", {}) == "1"
+
+
 def test_skips_without_drivers(tmp_path):
     res = DriverVizMethod()._run(_adata(drivers=False), {}, _Ctx(tmp_path))
     assert isinstance(res, MethodSkip)
