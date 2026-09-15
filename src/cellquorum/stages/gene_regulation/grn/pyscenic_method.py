@@ -142,6 +142,11 @@ class PyscenicMethod(AnalysisMethod):
 
         out_dir = Path(getattr(context.paths, "results", ".")) / "grn"
         out_dir.mkdir(parents=True, exist_ok=True)
+        # Figures belong under figures/, not results/ -- out_dir above stays
+        # results-rooted because it's also the pySCENIC subprocess's own
+        # --out-dir for its raw data outputs (regulons/adjacencies/loom/AUC).
+        figures_dir = Path(getattr(context.paths, "figures", ".")) / "grn"
+        figures_dir.mkdir(parents=True, exist_ok=True)
         tag = "grn"
 
         # 5. Run grn -> ctx in-env script
@@ -233,14 +238,14 @@ class PyscenicMethod(AnalysisMethod):
                     # closing over the loop variables would draw the last pair twice.
                     render_figure(
                         fn.__name__,
-                        lambda fn=fn, kwargs=kwargs: fn(auc, groups, out_dir, **kwargs),
+                        lambda fn=fn, kwargs=kwargs: fn(auc, groups, figures_dir, **kwargs),
                         figures=figs,
                         warnings=warnings,
                     )
                 render_figure(
                     "cell clustermap",
                     lambda: rf.plot_regulon_cell_clustermap(
-                        auc, groups.to_frame(group_by), out_dir, top_n=top_n
+                        auc, groups.to_frame(group_by), figures_dir, top_n=top_n
                     ),
                     figures=figs,
                     warnings=warnings,
@@ -253,7 +258,7 @@ class PyscenicMethod(AnalysisMethod):
                         index=adata.obs_names,
                         columns=["UMAP1", "UMAP2"],
                     )
-                    return rf.plot_regulon_umap(auc, umap, out_dir, groups=groups, top_n=12)
+                    return rf.plot_regulon_umap(auc, umap, figures_dir, groups=groups, top_n=12)
 
                 render_figure("regulon-UMAP", _regulon_umap, figures=figs, warnings=warnings)
 
