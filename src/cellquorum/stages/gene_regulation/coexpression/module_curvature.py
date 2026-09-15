@@ -94,24 +94,39 @@ def plot_module_curvature(
     second implementation.
 
     Returns:
-        List of written figure paths (PNG+PDF), or [] when the graph has no
-        edges (no kME_<module> columns, or every module under 2 genes).
-    """
-    G = build_module_coexpression_graph(
-        modules, gene_col=gene_col, module_col=module_col, top_k_per_module=top_k_per_module
-    )
-    if G.number_of_edges() == 0:
-        return []
+        List of written figure paths (PNG+PDF), one pair per real module, or
+        [] when no module has kME_<module> edges to plot.
 
-    edge_df, node_df = compute_ricci_curvature(nx.DiGraph(G), ricci_alpha)
-    if edge_df.empty:
+    One file per module, not one combined figure: modules never share an
+    edge (build_module_coexpression_graph only connects genes within the
+    same module), so a single canvas across all of them is N unrelated
+    cliques, not one meaningful plot -- on real data (10 modules x 15 hub
+    genes) that rendered as an unreadable label smear.
+    """
+    if modules is None or modules.empty:
         return []
 
     figstyle.set_style()
     out_dir = Path(out_dir)
-    fig = curvature_network(edge_df, node_df, top_k=edge_df.shape[0])
-    fig.suptitle("Co-expression module curvature (Ollivier-Ricci)", fontsize=12, fontweight="bold")
-    return figstyle.save_figure(fig, out_dir, "module_curvature_network")
+    paths: list[Path] = []
+    for module_id in sorted(modules[module_col].astype(str).unique()):
+        if module_id == _GREY:
+            continue
+        sub = modules[modules[module_col].astype(str) == module_id]
+        G = build_module_coexpression_graph(
+            sub, gene_col=gene_col, module_col=module_col, top_k_per_module=top_k_per_module
+        )
+        if G.number_of_edges() == 0:
+            continue
+        edge_df, node_df = compute_ricci_curvature(nx.DiGraph(G), ricci_alpha)
+        if edge_df.empty:
+            continue
+        fig = curvature_network(edge_df, node_df)
+        fig.suptitle(
+            f"Module {module_id} curvature (Ollivier-Ricci)", fontsize=12, fontweight="bold"
+        )
+        paths += figstyle.save_figure(fig, out_dir, f"module_curvature_{module_id}")
+    return paths
 
 
 __all__ = ["build_module_coexpression_graph", "plot_module_curvature"]

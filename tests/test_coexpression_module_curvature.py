@@ -105,3 +105,21 @@ def test_plot_module_curvature_renders_real_ollivier_ricci_curvature(tmp_path: P
 
     assert len(figs) > 0
     assert all(p.exists() for p in figs)
+
+
+def test_plot_module_curvature_writes_one_figure_per_module_not_one_combined_figure(
+    tmp_path: Path,
+) -> None:
+    """House style: one plot = one file. Co-expression modules never share an
+    edge (build_module_coexpression_graph only connects genes within the same
+    module), so a single combined figure across all modules is not one
+    meaningful plot -- it is N unrelated cliques crammed into one canvas, and
+    on real data (10 modules x 15 hub genes) that renders as an unreadable
+    label smear. Each module gets its own PNG+PDF pair instead."""
+    modules = _modules_df()
+
+    figs = plot_module_curvature(modules, tmp_path, top_k_per_module=5)
+
+    png_stems = {p.stem for p in figs if p.suffix == ".png"}
+    # _modules_df() has two real modules (M1, M2) plus "grey" (excluded).
+    assert png_stems == {"module_curvature_M1", "module_curvature_M2"}
