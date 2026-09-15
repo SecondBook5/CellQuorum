@@ -17,7 +17,10 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.gene_regulation.grn import regulon_figures as rf
-from cellquorum.stages.gene_regulation.grn.regulon_curvature import load_regulons_csv
+from cellquorum.stages.gene_regulation.grn.regulon_curvature import (
+    load_regulons_csv,
+    plot_regulon_curvature,
+)
 from cellquorum.visualization.figstyle import render_figure
 
 
@@ -209,6 +212,7 @@ class PyscenicMethod(AnalysisMethod):
             str(num_workers),
         ]
         warnings: list[str] = []
+        figs: list[Path] = []
         auc = None
         try:
             aproc = backend.run_script(PYSCENIC_AUCELL_PY, aucell_args, timeout=timeout_seconds)
@@ -222,8 +226,16 @@ class PyscenicMethod(AnalysisMethod):
             # the regulon table alone.
             warnings.append(f"AUCell skipped: {str(exc)[:200]}")
 
+        # 6b. Regulon curvature: structural, needs only the regulon table
+        # itself (not AUC), so it renders even when AUCell above failed.
+        render_figure(
+            "regulon curvature",
+            lambda: plot_regulon_curvature(regulons_df, figures_dir),
+            figures=figs,
+            warnings=warnings,
+        )
+
         # 7. Figures (in cellquorum env) when AUC available
-        figs: list[Path] = []
         if auc is not None and auc.shape[1] > 0:
             groups = None
             if group_by in adata.obs.columns:

@@ -18,6 +18,12 @@ from pathlib import Path
 import networkx as nx
 import pandas as pd
 
+from cellquorum.stages.cell_cell_communication.network.ricci_method import (
+    compute_ricci_curvature,
+)
+from cellquorum.stages.cell_cell_communication.viz._plots import curvature_network
+from cellquorum.visualization import figstyle
+
 
 def load_regulons_csv(path: str | Path) -> pd.DataFrame:
     """Load pySCENIC's real regulons.csv shape into flat, named columns.
@@ -105,4 +111,43 @@ def build_regulon_graph(
     return G
 
 
-__all__ = ["build_regulon_graph", "load_regulons_csv"]
+def plot_regulon_curvature(
+    regulons: pd.DataFrame,
+    out_dir: str | Path,
+    *,
+    tf_col: str = "TF",
+    target_genes_col: str = "TargetGenes",
+    top_k_targets: int = 15,
+    ricci_alpha: float = 0.5,
+) -> list[Path]:
+    """Render an Ollivier-Ricci curvature network of the TF->target regulon graph.
+
+    Negative-curvature edges mark TF-target relationships that bridge
+    otherwise disjoint regulatory neighborhoods; positive curvature marks
+    redundant, tightly co-regulated cores. Reuses the same curvature
+    algorithm and plotting function as the CCC network curvature panel
+    (cell_cell_communication.network.ricci_method /
+    cell_cell_communication.viz._plots.curvature_network).
+
+    Returns:
+        List of written figure paths (PNG+PDF), or [] when the regulon graph
+        has no edges.
+    """
+    G = build_regulon_graph(
+        regulons, tf_col=tf_col, target_genes_col=target_genes_col, top_k_targets=top_k_targets
+    )
+    if G.number_of_edges() == 0:
+        return []
+
+    edge_df, node_df = compute_ricci_curvature(G, ricci_alpha)
+    if edge_df.empty:
+        return []
+
+    figstyle.set_style()
+    out_dir = Path(out_dir)
+    fig = curvature_network(edge_df, node_df, top_k=edge_df.shape[0])
+    fig.suptitle("Regulon curvature (Ollivier-Ricci)", fontsize=12, fontweight="bold")
+    return figstyle.save_figure(fig, out_dir, "regulon_curvature_network")
+
+
+__all__ = ["build_regulon_graph", "load_regulons_csv", "plot_regulon_curvature"]

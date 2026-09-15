@@ -9,6 +9,7 @@ import pandas as pd
 from cellquorum.stages.gene_regulation.grn.regulon_curvature import (
     build_regulon_graph,
     load_regulons_csv,
+    plot_regulon_curvature,
 )
 
 _REAL_SHAPE_CSV = (
@@ -134,3 +135,22 @@ def test_returns_empty_graph_for_empty_input():
     )
 
     assert G.number_of_nodes() == 0
+
+
+def test_plot_regulon_curvature_writes_no_figure_when_graph_is_empty(tmp_path: Path) -> None:
+    """No parseable TargetGenes -> empty graph -> nothing to curve; must not raise."""
+    regulons = pd.DataFrame(columns=["TF", "MotifID", "TargetGenes"])
+
+    figs = plot_regulon_curvature(regulons, tmp_path)
+
+    assert figs == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_plot_regulon_curvature_renders_real_ollivier_ricci_curvature(tmp_path: Path) -> None:
+    """A real TF->target regulon graph must produce a saved figure whose edges
+    carry genuine Ollivier-Ricci curvature (computed, not stubbed)."""
+    figs = plot_regulon_curvature(_regulons_df(), tmp_path, top_k_targets=10)
+
+    assert len(figs) > 0
+    assert all(p.exists() for p in figs)

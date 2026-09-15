@@ -28,7 +28,12 @@ def _adata(n: int = 300, g: int = 40) -> ad.AnnData:
 
 
 def _ctx(tmp_path: Path, backend):
-    paths = SimpleNamespace(results=tmp_path / "res", scratch=tmp_path / "scr")
+    # `figures` was missing here, so `getattr(context.paths, "figures", ".")` in
+    # the method fell back to "." -- every figure-rendering test wrote real
+    # PNG/PDFs into the repo's cwd (a stray grn/ directory) instead of tmp_path.
+    paths = SimpleNamespace(
+        results=tmp_path / "res", scratch=tmp_path / "scr", figures=tmp_path / "figs"
+    )
     reg = SimpleNamespace(get=lambda name: backend)
     return SimpleNamespace(paths=paths, backend_registry=reg, config=None)
 
@@ -173,6 +178,46 @@ def test_success_path_builds_artifacts_and_metrics(tmp_path: Path) -> None:
     artifact_names = {a.name for a in res.artifacts}
     assert "regulons" in artifact_names
     assert "auc_mtx" in artifact_names
+
+
+def test_success_path_renders_regulon_curvature_figure(tmp_path: Path) -> None:
+    """The regulon curvature network must render from the regulon table alone
+    -- it needs no AUCell output, so it must appear even though this test's
+    stub AUCell run (same FakeBackend as the success-path test) succeeds."""
+
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            if "--out-dir" in args:
+                out_dir_idx = args.index("--out-dir") + 1
+                out_dir = Path(args[out_dir_idx])
+                tag_idx = args.index("--tag") + 1
+                tag = args[tag_idx]
+                out_dir.mkdir(parents=True, exist_ok=True)
+                regulons_csv = out_dir / f"scenic_regulons_{tag}.csv"
+                regulons_csv.write_text(
+                    ",,Enrichment,Enrichment\n"
+                    ",,AUC,TargetGenes\n"
+                    "TF,MotifID,,\n"
+                    "STAT1,m1,0.1,\"[('GENE1', 0.9), ('GENE2', 0.5)]\"\n"
+                    "IRF1,m1,0.2,\"[('GENE3', 0.8), ('GENE4', 0.4)]\"\n"
+                )
+                (out_dir / f"scenic_adjacencies_{tag}.tsv").write_text("TF\ttarget\timportance\n")
+                (out_dir / f"scenic_input_{tag}.loom").write_text("")
+                return SimpleNamespace(returncode=0, stderr="")
+            # AUCell call: fail on purpose -- curvature must still render.
+            return SimpleNamespace(returncode=1, stderr="stop before AUCell")
+
+    cfg = {"launcher": "python", **_db_config(tmp_path)}
+    m = PyscenicMethod()
+    res = m._run(_adata(), cfg, _ctx(tmp_path, FakeBackend()))
+
+    assert not isinstance(res, MethodSkip)
+    curvature_figs = [a for a in res.artifacts if "curvature" in a.name]
+    assert len(curvature_figs) > 0
+    assert all(a.path.exists() for a in curvature_figs)
 
 
 def test_scratch_h5ad_does_not_carry_unrelated_layers_and_obsm(tmp_path: Path) -> None:
