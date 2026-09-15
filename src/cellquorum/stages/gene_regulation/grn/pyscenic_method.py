@@ -67,6 +67,7 @@ class PyscenicMethod(AnalysisMethod):
         rankings_glob = config.get("rankings_glob")
         curvature_top_k_targets = int(config.get("curvature_top_k_targets", 15))
         curvature_ricci_alpha = float(config.get("curvature_ricci_alpha", 0.5))
+        curvature_plot_top_k = int(config.get("curvature_plot_top_k", 30))
 
         # 2. Resolve group_by generically
         if group_by_cfg:
@@ -237,6 +238,7 @@ class PyscenicMethod(AnalysisMethod):
                 figures_dir,
                 top_k_targets=curvature_top_k_targets,
                 ricci_alpha=curvature_ricci_alpha,
+                plot_top_k=curvature_plot_top_k,
             ),
             figures=figs,
             warnings=warnings,

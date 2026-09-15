@@ -119,6 +119,7 @@ def plot_regulon_curvature(
     target_genes_col: str = "TargetGenes",
     top_k_targets: int = 15,
     ricci_alpha: float = 0.5,
+    plot_top_k: int = 30,
 ) -> list[Path]:
     """Render an Ollivier-Ricci curvature network of the TF->target regulon graph.
 
@@ -128,6 +129,14 @@ def plot_regulon_curvature(
     algorithm and plotting function as the CCC network curvature panel
     (cell_cell_communication.network.ricci_method /
     cell_cell_communication.viz._plots.curvature_network).
+
+    A real regulon graph is unlike co-expression modules: TFs legitimately
+    share targets, so the graph stays one connected network rather than
+    splitting into disjoint per-TF figures. But the full graph (161 TFs x up
+    to top_k_targets each on the fibroblast cohort, ~2000 edges) is an
+    unreadable label-smeared hairball if drawn whole -- ``plot_top_k`` caps
+    how many of the strongest edges are actually drawn, matching the same
+    cap curvature_network's own CCC network caller already uses.
 
     Returns:
         List of written figure paths (PNG+PDF), or [] when the regulon graph
@@ -145,7 +154,7 @@ def plot_regulon_curvature(
 
     figstyle.set_style()
     out_dir = Path(out_dir)
-    fig = curvature_network(edge_df, node_df, top_k=edge_df.shape[0])
+    fig = curvature_network(edge_df, node_df, top_k=plot_top_k)
     fig.suptitle("Regulon curvature (Ollivier-Ricci)", fontsize=12, fontweight="bold")
     return figstyle.save_figure(fig, out_dir, "regulon_curvature_network")
 

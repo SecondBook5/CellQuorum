@@ -39,6 +39,7 @@ class GrnConfig(StrictBaseModel):
         curvature_top_k_targets: Targets kept per TF (by importance) for the
             curvature network figure.
         curvature_ricci_alpha: Ollivier-Ricci alpha for the curvature figure.
+        curvature_plot_top_k: Strongest edges actually drawn in the figure.
     """
 
     # Whether this stage runs.
@@ -99,6 +100,10 @@ class GrnConfig(StrictBaseModel):
 
     # Ollivier-Ricci alpha for the regulon curvature figure.
     curvature_ricci_alpha: float = 0.5
+
+    # Strongest edges actually drawn in the curvature figure (the built graph
+    # can have thousands; this keeps the plot legible).
+    curvature_plot_top_k: int = 30
 
 
 __all__ = ["GrnConfig"]

@@ -154,3 +154,38 @@ def test_plot_regulon_curvature_renders_real_ollivier_ricci_curvature(tmp_path: 
 
     assert len(figs) > 0
     assert all(p.exists() for p in figs)
+
+
+def test_plot_regulon_curvature_caps_edges_drawn_to_stay_legible(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A real regulon graph can have thousands of TF->target edges (161 TFs x
+    up to 15 targets on the fibroblast cohort); drawing all of them produced
+    an unreadable label-smeared hairball. The figure must cap how many edges
+    it actually draws -- not just how many the underlying graph has."""
+    import cellquorum.stages.gene_regulation.grn.regulon_curvature as mod
+
+    seen_top_k = {}
+    real_curvature_network = mod.curvature_network
+
+    def spy(edges, nodes, **kwargs):
+        seen_top_k["top_k"] = kwargs.get("top_k")
+        return real_curvature_network(edges, nodes, **kwargs)
+
+    monkeypatch.setattr(mod, "curvature_network", spy)
+
+    # 50 TFs x 10 targets each = 500 edges -- far more than a legible plot.
+    regulons = pd.DataFrame(
+        {
+            "TF": [f"TF{i}" for i in range(50)],
+            "MotifID": ["m1"] * 50,
+            "TargetGenes": [
+                str([(f"G{i}_{j}", 1.0 - j * 0.05) for j in range(10)]) for i in range(50)
+            ],
+        }
+    )
+
+    plot_regulon_curvature(regulons, tmp_path, top_k_targets=10)
+
+    assert seen_top_k["top_k"] is not None
+    assert seen_top_k["top_k"] <= 40
