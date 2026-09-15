@@ -59,6 +59,18 @@ def prepare_milo_beeswarm(da: pd.DataFrame, *, spatial_fdr: float = 0.1) -> pd.D
 
     prepared = da.copy()
     prepared = prepared[prepared["majority_celltype"].notna()].reset_index(drop=True)
+    # String-typed from here on. milo_beeswarm_order() and plot_milo_beeswarm()
+    # both key off this column as a category label (axis ticks, row lookup,
+    # per-group filtering); a numeric cluster label (e.g. a leiden/subcluster
+    # id from Milo's own R output) comes through as int64, and every downstream
+    # `== str(ct)` comparison against that raw int64 column silently matched
+    # nothing. Confirmed live: every scatter call then plotted zero points, the
+    # x-axis autoscaled to near-0 with nothing real to fit, and the "n/N" text
+    # annotations -- placed at the real (correctly computed, unaffected) data
+    # max -- landed far outside that collapsed axis. bbox_inches="tight" on
+    # save expanded the canvas to reach them: a 116,970 x 1,613px PNG, all its
+    # actual content crushed into a sliver at the left edge.
+    prepared["majority_celltype"] = prepared["majority_celltype"].astype(str)
     prepared["significant"] = prepared["SpatialFDR"].astype(float) < spatial_fdr
     return prepared
 

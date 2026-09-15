@@ -134,6 +134,60 @@ def test_plot_milo_beeswarm_returns_figure_with_ordered_rows():
     assert labels == ["TypeA", "TypeB"]
 
 
+def _milo_results_integer_celltypes() -> pd.DataFrame:
+    """Real Milo output shape from a numeric cluster label (fibroblast_subcluster
+    0-8): majority_celltype comes out int64, NOT string -- unlike every fixture
+    above. Real bug, confirmed live: milo_beeswarm_order stringifies the group
+    labels for axis ticks (str(ct)), but the main plotting loop still filters
+    `prepared["majority_celltype"] == ct` against those STRING values, so the
+    int64 column never matches anything. Every scatter call plots zero points,
+    matplotlib autoscales the x-axis to near-nothing around 0, and the "n/N"
+    text annotations -- placed at the REAL data max, computed separately from
+    the unfiltered table -- land wildly outside that collapsed axis. Saving
+    with bbox_inches="tight" then expands the canvas to reach them: a real run
+    produced a 116,970 x 1,613px PNG, all its actual content crushed into a
+    sliver at the left edge.
+    """
+    return pd.DataFrame(
+        {
+            "nhood": list(range(1, 7)),
+            "logFC": [2.0, 1.5, -2.0, 0.1, 1.0, -1.2],
+            "PValue": [0.001, 0.01, 0.001, 0.5, 0.2, 0.03],
+            "SpatialFDR": [0.02, 0.20, 0.03, 0.60, 0.30, 0.04],
+            "nhood_size": [50, 40, 45, 30, 20, 35],
+            "majority_celltype": [0, 0, 1, 1, 2, 2],
+            "celltype_fraction": [0.9, 0.8, 0.95, 0.7, 0.85, 0.88],
+        }
+    )
+
+
+def test_plot_milo_beeswarm_actually_plots_points_for_integer_celltypes():
+    """The real bug: with an int64 majority_celltype column (Milo's real
+    output shape for a numeric cluster label), every group must still end up
+    with its points on the canvas -- not silently filtered to zero by a
+    string/int comparison mismatch.
+    """
+    fig = plot_milo_beeswarm(
+        _milo_results_integer_celltypes(), case="LE", control="N", spatial_fdr=0.1
+    )
+    ax = fig.axes[0]
+    scatter_collections = [c for c in ax.collections if c.get_offsets().size > 0]
+    total_points = sum(len(c.get_offsets()) for c in scatter_collections)
+    assert total_points == 6  # every neighborhood row must be plotted
+
+
+def test_plot_milo_beeswarm_xlim_reflects_the_real_data_range():
+    """A direct pin on the axis-blowout symptom: the x-axis must scale to the
+    actual logFC data, not collapse to near-zero because nothing was plotted.
+    """
+    fig = plot_milo_beeswarm(
+        _milo_results_integer_celltypes(), case="LE", control="N", spatial_fdr=0.1
+    )
+    ax = fig.axes[0]
+    xmin, xmax = ax.get_xlim()
+    assert xmax - xmin > 1.0  # not the ~0.1-wide collapsed range from the bug
+
+
 def _composition_props() -> pd.DataFrame:
     """Tidy per-sample proportions: 2 control (N) + 2 case (LE) samples, 3 cell types.
 
