@@ -168,13 +168,48 @@ def cci_heatmap(
 def _top_edges(
     lr: pd.DataFrame, source_col: str, target_col: str, weight_col: str, top_k: int
 ) -> pd.DataFrame:
+    """Aggregate to (source, target) pairs, then keep the top_k strongest --
+    but never at the cost of dropping a node from the figure entirely.
+
+    top_k is a flat cap on PAIRS; on a real, densely-connected graph (a
+    fibroblast_subcluster CCC run: 9 clusters, up to 72 real pairs) the
+    globally top-15 pairs can easily all involve the same handful of
+    clusters, silently erasing every other cluster from the chord/sankey
+    figure with no warning. Every node's own single strongest edge is
+    guaranteed a seat first; top_k then fills (or trims) the remainder.
+    """
     agg = (
         lr.groupby([source_col, target_col])[weight_col]
         .sum()
         .reset_index()
         .sort_values([weight_col, source_col, target_col], kind="mergesort", ascending=False)
     )
-    return agg.head(top_k)
+    if len(agg) <= top_k:
+        return agg
+
+    # Each node's single best edge (as either source or target), by weight.
+    best_as_source = agg.sort_values(weight_col, ascending=False).drop_duplicates(source_col)
+    best_as_target = agg.sort_values(weight_col, ascending=False).drop_duplicates(target_col)
+    guaranteed = pd.concat([best_as_source, best_as_target]).drop_duplicates(
+        subset=[source_col, target_col]
+    )
+
+    if len(guaranteed) >= top_k:
+        return guaranteed.sort_values(
+            [weight_col, source_col, target_col], kind="mergesort", ascending=False
+        )
+
+    remaining = agg.merge(
+        guaranteed[[source_col, target_col]],
+        on=[source_col, target_col],
+        how="left",
+        indicator=True,
+    )
+    remaining = remaining[remaining["_merge"] == "left_only"].drop(columns="_merge")
+    fill = remaining.head(top_k - len(guaranteed))
+    return pd.concat([guaranteed, fill]).sort_values(
+        [weight_col, source_col, target_col], kind="mergesort", ascending=False
+    )
 
 
 def chord_diagram(

@@ -79,6 +79,65 @@ def test_cci_heatmap_sequential_and_diverging():
     assert isinstance(cci_heatmap(diff, diverging=True), Figure)
 
 
+def _fully_connected_lr(n_clusters: int) -> pd.DataFrame:
+    """Every cluster signals to every other cluster -- the real shape of a
+    fibroblast_subcluster CCC run (9 subclusters, ~72 source-target pairs all
+    carrying some real signal), not a sparse toy graph."""
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    clusters = [str(i) for i in range(n_clusters)]
+    rows = []
+    for s in clusters:
+        for t in clusters:
+            if s == t:
+                continue
+            rows.append({"source": s, "target": t, "weight": float(rng.uniform(0.1, 1.0))})
+    return pd.DataFrame(rows)
+
+
+def test_top_edges_default_does_not_drop_nodes_on_a_dense_graph():
+    """Real bug, confirmed live: a 9-subcluster fibroblast CCC run's chord
+    diagram silently dropped 3 of 9 clusters entirely. top_k=15 is a flat cap
+    applied to (source, target) pairs AFTER aggregation; with 9 clusters and
+    ~72 real pairs, only the 15 globally-strongest pairs survived, and the 3
+    clusters whose own pairs never made that list vanished from the figure
+    with no warning. The cap must scale with how many nodes are actually in
+    the graph, not stay fixed regardless of cluster count.
+    """
+    from cellquorum.stages.cell_cell_communication.viz._plots import _top_edges
+
+    lr = _fully_connected_lr(9)
+    edges = _top_edges(lr, "source", "target", "weight", top_k=15)
+
+    present_nodes = set(edges["source"]) | set(edges["target"])
+    assert present_nodes == {str(i) for i in range(9)}
+
+
+def test_top_edges_never_drops_a_node_even_with_a_tiny_explicit_top_k():
+    """top_k trims SURPLUS edges once every node is represented; it must
+    never be the reason a node silently vanishes from the figure, even when
+    explicitly set below the node count."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import _top_edges
+
+    lr = _fully_connected_lr(6)
+    edges = _top_edges(lr, "source", "target", "weight", top_k=2)
+
+    present_nodes = set(edges["source"]) | set(edges["target"])
+    assert present_nodes == {str(i) for i in range(6)}
+
+
+def test_top_edges_does_not_inflate_a_graph_that_already_fits() -> None:
+    """When the input already has at most top_k pairs, nothing is added or
+    dropped -- the guarantee only ever fills gaps, never pads output."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import _top_edges
+
+    lr = _fully_connected_lr(3)  # 6 possible (source, target) pairs
+    edges = _top_edges(lr, "source", "target", "weight", top_k=100)
+
+    assert len(edges) == 6
+
+
 def test_chord_and_sankey_return_figure():
     from cellquorum.stages.cell_cell_communication.viz._plots import (
         celltype_palette,
