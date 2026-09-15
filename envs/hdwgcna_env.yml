@@ -14,3 +14,13 @@ dependencies:
   - bioconductor-zellkonverter
   - bioconductor-singlecellexperiment
   - bioconductor-summarizedexperiment
+  # Without these two, zellkonverter::readH5AD(reader = "R") fails with
+  # "there is no package called 'rhdf5'" / "'HDF5Array'" and falls back to its
+  # default Python-backed reader, which goes through basilisk and tries to
+  # BUILD a fresh Python from source (pyenv-style) the first time it runs --
+  # confirmed live: it picked Python 3.14.0 and failed compiling _lzmamodule.c
+  # (missing liblzma-dev), which surfaced only as "hdWGCNA skipped: runtime
+  # error: installation of Python 3.14.0 failed" with no clue it was an H5AD
+  # reader fallback. Installing these keeps hdWGCNA's AnnData reads pure-R.
+  - bioconductor-rhdf5
+  - bioconductor-hdf5array
