@@ -433,6 +433,86 @@ def test_write_manifest_writes_artifact_manifest_csv(tmp_path: Path) -> None:
     assert manager.artifacts[-1].name == "artifact_manifest"
 
 
+def test_write_dataframe_failed_write_preserves_previous_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash mid-write must never leave `path` holding a partial file.
+
+    ArtifactManager.write_dataframe wrote straight to the destination path --
+    unlike cellquorum.stages.qc.artifacts.write_dataframe_artifact, which
+    writes to a temp file and only replaces the destination once the write
+    fully succeeds. Every other stage using StageArtifactWriter (which
+    delegates here) was exposed to the corruption QC's own writer already
+    solved."""
+    manager = ArtifactManager.from_root(tmp_path / "run")
+    manager.ensure_root()
+    path = manager.resolve_path("result.csv")
+    path.write_text("previous complete result\n", encoding="utf-8")
+
+    def partial_write(self, destination, **kwargs):  # noqa: ANN001, ANN003
+        Path(destination).write_text("incomplete", encoding="utf-8")
+        raise OSError("disk write failed")
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", partial_write)
+
+    with pytest.raises(OSError, match="disk write failed"):
+        manager.write_dataframe(
+            pd.DataFrame({"value": [1]}), name="result", relative_path="result.csv", description="d"
+        )
+
+    assert path.read_text(encoding="utf-8") == "previous complete result\n"
+    assert not list(tmp_path.rglob(".result.csv.*.tmp"))
+
+
+def test_write_json_failed_replacement_preserves_previous_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = ArtifactManager.from_root(tmp_path / "run")
+    manager.ensure_root()
+    path = manager.resolve_path("summary.json")
+    path.write_text('{"complete": true}\n', encoding="utf-8")
+    original_replace = Path.replace
+
+    def failed_replace(source, target):  # noqa: ANN001
+        if Path(target) == path:
+            raise OSError("replacement denied")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", failed_replace)
+
+    with pytest.raises(OSError, match="replacement denied"):
+        manager.write_json(
+            {"complete": False}, name="summary", relative_path="summary.json", description="d"
+        )
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {"complete": True}
+    assert not list(tmp_path.rglob(".summary.json.*.tmp"))
+
+
+def test_write_text_failed_write_preserves_previous_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = ArtifactManager.from_root(tmp_path / "run")
+    manager.ensure_root()
+    path = manager.resolve_path("notes.md")
+    path.write_text("previous notes\n", encoding="utf-8")
+    original_write_text = Path.write_text
+
+    def partial_write_text(self, *args, **kwargs):  # noqa: ANN001, ANN003
+        original_write_text(self, "incomplete")
+        raise OSError("disk write failed")
+
+    monkeypatch.setattr(Path, "write_text", partial_write_text)
+
+    with pytest.raises(OSError, match="disk write failed"):
+        manager.write_text(
+            "new notes", name="notes", relative_path="notes.md", kind="markdown", description="d"
+        )
+
+    assert path.read_text(encoding="utf-8") == "previous notes\n"
+    assert not list(tmp_path.rglob(".notes.md.*.tmp"))
+
+
 def test_write_json_accepts_numpy_values(tmp_path: Path) -> None:
     """
     Verify that a numpy-typed payload can be written as JSON.

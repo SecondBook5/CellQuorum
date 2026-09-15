@@ -3,13 +3,38 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 
 from cellquorum.core.stage import StageArtifact
+
+
+def _atomic_write(path: Path, write_fn: Callable[[Path], None]) -> None:
+    """Write ``path`` via a temp-file-then-replace so a crash mid-write can
+    never leave ``path`` holding a partial file.
+
+    ``write_fn`` receives the temp path and performs the actual write; once it
+    returns, the temp file is atomically moved into place. On any failure the
+    temp file is removed and the exception re-raised, leaving a previously
+    existing ``path`` untouched. Mirrors the pattern
+    ``cellquorum.stages.qc.artifacts`` already used for QC's own table/JSON
+    writes, now shared so every stage going through ArtifactManager /
+    StageArtifactWriter gets the same guarantee.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        write_fn(temp_path)
+        temp_path.replace(path)
+    except BaseException:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
 
 
 @dataclass
@@ -183,19 +208,16 @@ class ArtifactManager:
         # Resolve the target path.
         path = self.resolve_path(relative_path)
 
-        # Create the parent directory if needed.
-        path.parent.mkdir(parents=True, exist_ok=True)
-
         # Normalize the suffix for format dispatch.
         suffix = path.suffix.lower()
 
         # Write CSV output when requested.
         if suffix == ".csv":
-            dataframe.to_csv(path, index=index)
+            _atomic_write(path, lambda temp_path: dataframe.to_csv(temp_path, index=index))
 
         # Write Parquet output when requested.
         elif suffix == ".parquet":
-            dataframe.to_parquet(path, index=index)
+            _atomic_write(path, lambda temp_path: dataframe.to_parquet(temp_path, index=index))
 
         # Reject unsupported table formats.
         else:
@@ -259,9 +281,6 @@ class ArtifactManager:
         if path.suffix.lower() != ".json":
             raise ValueError("JSON artifacts must use a '.json' suffix. " f"Received: {path.name}")
 
-        # Create the parent directory if needed.
-        path.parent.mkdir(parents=True, exist_ok=True)
-
         # Convert numpy scalars/arrays and other engine-native types before encoding,
         # using the same converter provenance uses. Two notions of "JSON-safe" in one
         # engine is how a run reached its final provenance write and died there on an
@@ -271,7 +290,8 @@ class ArtifactManager:
         safe_payload = to_json_safe(payload)
 
         # Write the JSON payload with stable formatting.
-        path.write_text(json.dumps(safe_payload, indent=indent, sort_keys=True), encoding="utf-8")
+        encoded = json.dumps(safe_payload, indent=indent, sort_keys=True)
+        _atomic_write(path, lambda temp_path: temp_path.write_text(encoded, encoding="utf-8"))
 
         # Register and return the written artifact.
         return self.register(
@@ -321,11 +341,8 @@ class ArtifactManager:
         # Resolve the target path.
         path = self.resolve_path(relative_path)
 
-        # Create the parent directory if needed.
-        path.parent.mkdir(parents=True, exist_ok=True)
-
         # Write the text payload as UTF-8.
-        path.write_text(text, encoding="utf-8")
+        _atomic_write(path, lambda temp_path: temp_path.write_text(text, encoding="utf-8"))
 
         # Register and return the written artifact.
         return self.register(
