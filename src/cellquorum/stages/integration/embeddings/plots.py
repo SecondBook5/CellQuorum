@@ -93,6 +93,58 @@ def _angular_sweep(centroids: dict[str, np.ndarray], cats: list[str]) -> list[st
     return [present[i] for i in np.argsort(angles)]
 
 
+def _palette_from_centroids(centroids: dict[str, np.ndarray], cats: list[str]) -> dict[str, str]:
+    """Shared core: muted-palette colors dealt in angular-sweep order.
+
+    Split out of ``categorical_embedding`` so it and
+    ``compute_categorical_palette`` assign colors identically without either
+    duplicating the other's centroid computation -- ``categorical_embedding``
+    already has its own ``centroids`` dict (reused later for PAGA nodes and
+    text labels), so it calls this directly; an external caller without
+    precomputed centroids should use ``compute_categorical_palette`` instead.
+    """
+    colors = muted_palette_colors(len(cats))
+    sweep = _angular_sweep(centroids, cats)
+    palette = {c: colors[i] for i, c in enumerate(sweep)}
+    for i, cat in enumerate(c for c in cats if c not in palette):
+        palette[cat] = colors[(len(sweep) + i) % len(colors)]
+    return palette
+
+
+def compute_categorical_palette(
+    xy: np.ndarray,
+    groups: object,
+    cats: list[str],
+) -> dict[str, str]:
+    """The exact category -> color mapping ``categorical_embedding`` uses.
+
+    Extracted so any OTHER figure describing the same categories (a marker
+    dotplot's column colors, say) can reuse the identical mapping instead of
+    silently drifting from it -- two figures about the same clusters using
+    different color assignments defeats the entire point of "color it so
+    it's easily identifiable [against the other figure]".
+
+    Args:
+        xy: Cells x 2 embedding coordinates (same basis categorical_embedding
+            would use), aligned to ``groups``.
+        groups: Per-cell category labels (same length as ``xy``; any array-like
+            works -- a plain list, numpy array, or pandas Series).
+        cats: The full ordered category list to assign colors for.
+
+    Returns:
+        ``{category: hex_color}`` for every category with at least one cell in
+        ``groups`` intersected with ``cats``, plus any declared-but-absent
+        category (dealt a color so callers never KeyError on it).
+    """
+    groups_arr = np.asarray(groups)
+    centroids: dict[str, np.ndarray] = {}
+    for cat in cats:
+        mask = groups_arr == cat
+        if mask.any():
+            centroids[cat] = np.array([np.median(xy[mask, 0]), np.median(xy[mask, 1])])
+    return _palette_from_centroids(centroids, cats)
+
+
 def _repel_labels(ax: Axes, texts: list) -> None:
     """De-collide per-group text labels with leader lines (best-effort).
 
@@ -204,13 +256,10 @@ def categorical_embedding(
     # is what once painted a 15-category atlas in raw vivids.
     #
     # Slots are then dealt in ANGULAR SWEEP order, not category order, so spatial
-    # neighbours land on adjacent slots. See `_angular_sweep`.
-    colors = muted_palette_colors(len(cats))
-    sweep = _angular_sweep(centroids, cats)
-    palette = {c: colors[i] for i, c in enumerate(sweep)}
-    # Declared-but-absent categories still need a color for the PAGA node loop.
-    for _i, _cat in enumerate(c for c in cats if c not in palette):
-        palette[_cat] = colors[(len(sweep) + _i) % len(colors)]
+    # neighbours land on adjacent slots. See `_angular_sweep`. Shared with
+    # compute_categorical_palette (for external figures that want these same
+    # colors) via `_palette_from_centroids`, so the two can never drift apart.
+    palette = _palette_from_centroids(centroids, cats)
 
     if missing_groups.any():
         palette[missing_label] = "#999999"
