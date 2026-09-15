@@ -21,7 +21,7 @@ pytest.importorskip(
     reason="colorspacious is a [dev] extra; install with `pip install -e .[dev]`",
 )
 
-from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE  # noqa: E402
+from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, MUTED_PALETTE  # noqa: E402
 from cellquorum.visualization.palette_audit import (  # noqa: E402
     PaletteAuditError,
     _perceptual,
@@ -47,6 +47,12 @@ CORE_ALL_PAIRS_FLOOR = 6.9
 # Floor for CONSECUTIVE colours across the whole 18, which is the case a stacked bar
 # or an ordered legend actually presents.
 ADJACENT_FLOOR = 8.0
+
+# MUTED_PALETTE (the large-atlas/subcluster embedding theme) floored at the MEASURED
+# worst all-pairs value across all 13 slots (11.84, rose vs purple under tritanomaly),
+# not an aspirational round number. Unlike CATEGORICAL_PALETTE's 18-slot overflow tier,
+# every one of these 13 is all-pairs safe -- there is no unsafe tail to separately pin.
+MUTED_ALL_PAIRS_FLOOR = 11.8
 
 
 def test_identical_colours_have_no_separation() -> None:
@@ -196,3 +202,34 @@ def test_the_palette_spans_enough_lightness_for_greyscale_print() -> None:
     audit = audit_palette(list(CATEGORICAL_PALETTE))
 
     assert audit.lightness_span >= 30.0, format_audit(audit)
+
+
+def test_muted_palette_is_all_pairs_safe_at_every_length() -> None:
+    """
+    Verify EVERY one of the 13 muted-palette slots stays separated from every
+    other slot, under every simulated vision, at every prefix length.
+
+    Real bug, confirmed live: this palette (the one an embeddings/subcluster
+    UMAP actually draws from) was never audited at all. Measured, the longest
+    safe prefix was only 6 of 13 -- slot 7 (teal) collided with slot 1 (soft
+    blue) at dE=5.24 under tritanomaly, well under CATEGORICAL_PALETTE's own
+    6.9 floor. A real 9-subcluster fibroblast run used slots 1-9, three past
+    where the palette had already stopped being distinguishable.
+
+    Colors 7-13 were replaced and re-measured; this pins the repair so it
+    cannot silently regress the way the original slipped in unaudited.
+    """
+
+    assert longest_safe_prefix(list(MUTED_PALETTE), threshold=MUTED_ALL_PAIRS_FLOOR) == len(
+        MUTED_PALETTE
+    )
+    audit = audit_palette(list(MUTED_PALETTE))
+    assert audit.worst_all_pairs >= MUTED_ALL_PAIRS_FLOOR, format_audit(audit)
+
+
+def test_muted_palette_colours_stay_visible_on_the_chart_surface() -> None:
+    """Verify no muted-palette colour disappears into the chart background."""
+
+    audit = audit_palette(list(MUTED_PALETTE))
+
+    assert audit.min_vs_surface >= 20.0, format_audit(audit)

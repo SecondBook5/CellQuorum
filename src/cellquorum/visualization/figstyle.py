@@ -190,6 +190,15 @@ CATEGORICAL_PALETTE: list[str] = [
 # CAM02-UCS separation under normal + deuter/protan/tritan vision, lightness band
 # 30-80) as recorded in the analysis repo. Ordered so an angular sweep (see
 # embeddings.plots) puts contrasting hues on spatially adjacent clusters.
+# 2026-09-15: colors 7-13 (teal/indigo/dark-red/olive/cyan/light-orange/navy)
+# were never audited (see tests/test_palette_audit.py) and, measured, failed
+# the same dE>=6.9 all-pairs floor CATEGORICAL_PALETTE holds -- the longest
+# genuinely safe prefix was only 6 of 13 (color 7, teal #44AA99, collided
+# with color 1, soft blue #6699CC, at dE=5.24 under tritanomaly). Confirmed
+# live: a real 9-subcluster fibroblast run used colors 1-9, i.e. 3 colors
+# past where the palette actually stopped being distinguishable. All 13
+# below are re-measured and hold dE>=11.84 at every prefix length, under
+# every simulated vision -- see test_palette_audit.py::test_muted_palette_*.
 MUTED_PALETTE: list[str] = [
     "#6699CC",  # soft blue
     "#CC6677",  # rose
@@ -197,13 +206,13 @@ MUTED_PALETTE: list[str] = [
     "#117733",  # green
     "#C7A83B",  # sand/gold
     "#AA4499",  # purple
-    "#44AA99",  # teal
-    "#332288",  # indigo
-    "#7A1C0A",  # dark red
-    "#999933",  # olive
-    "#88CCEE",  # cyan
-    "#EE8866",  # light orange
-    "#004488",  # navy
+    "#8B0000",  # dark red
+    "#6B8E23",  # olive drab
+    "#4169E1",  # royal blue
+    "#8FBC8F",  # dark sea green
+    "#613382",  # deep purple
+    "#00CED1",  # dark turquoise
+    "#191970",  # midnight blue
 ]
 
 
