@@ -31,6 +31,24 @@ def test_rss_shape_and_bounds() -> None:
     assert np.isfinite(rss.to_numpy()).all()
 
 
+def test_rss_orders_numeric_cluster_ids_numerically_not_lexicographically() -> None:
+    """Leiden/CHOIR group labels are numeric-looking strings ("0".."15"); a plain
+    string sort puts "10" before "2", scrambling every downstream figure's column
+    order. Real bug, confirmed in a live GRN dotplot before this fix."""
+    n = 20
+    auc = _auc(n_cells=n)
+    labels = [str(i % 12) for i in range(n)]  # cycles through "0".."11"
+    groups = pd.Series(labels, index=auc.index)
+    rss = rf.regulon_specificity_scores(auc, groups)
+    assert list(rss.index) == [str(i) for i in range(12)]
+
+
+def test_annotation_palette_orders_numeric_categories_numerically() -> None:
+    cats = ["10", "2", "1", "0", "11"]
+    pal = rf._annotation_palette("cluster", cats)
+    assert list(pal.keys()) == ["0", "1", "2", "10", "11"]
+
+
 def test_rss_panels_writes_png_and_pdf(tmp_path: Path) -> None:
     auc = _auc()
     paths = rf.plot_rss_panels(auc, _groups(auc), tmp_path, top_n=3)

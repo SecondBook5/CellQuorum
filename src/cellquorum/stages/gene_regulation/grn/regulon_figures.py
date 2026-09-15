@@ -13,6 +13,7 @@ says which the niche *redirects*.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,20 @@ if TYPE_CHECKING:
     from matplotlib.colors import ListedColormap
 
 
+def _sort_categories(cats: Iterable[object]) -> list[str]:
+    """Sort category labels naturally: numerically if every one is an integer (e.g.
+
+    Leiden/CHOIR cluster ids "0".."15"), else alphabetically. Plain ``sorted(str)``
+    puts "10" before "2" -- correct for real names, wrong for numeric cluster ids,
+    which is exactly the labels this module groups by.
+    """
+    cats = [str(c) for c in cats]
+    try:
+        return sorted(cats, key=int)
+    except ValueError:
+        return sorted(cats)
+
+
 def regulon_specificity_scores(auc_mtx: pd.DataFrame, groups: pd.Series) -> pd.DataFrame:
     """RSS via Jensen-Shannon distance (the pySCENIC-protocol definition, reimplemented).
 
@@ -38,7 +53,7 @@ def regulon_specificity_scores(auc_mtx: pd.DataFrame, groups: pd.Series) -> pd.D
     """
     from scipy.spatial.distance import jensenshannon
 
-    cats = sorted(groups.dropna().unique().astype(str))
+    cats = _sort_categories(groups.dropna().unique())
     aucn = auc_mtx.div(
         auc_mtx.sum(axis=0) + 1e-12, axis=1
     )  # normalize each regulon to a distribution
@@ -61,7 +76,7 @@ def _annotation_palette(col: str, cats: list[str]) -> dict:
     from matplotlib.colors import to_rgb
 
     palette = figstyle.CATEGORICAL_PALETTE
-    return {c: to_rgb(palette[i % len(palette)]) for i, c in enumerate(sorted(cats))}
+    return {c: to_rgb(palette[i % len(palette)]) for i, c in enumerate(_sort_categories(cats))}
 
 
 def plot_regulon_cell_clustermap(
