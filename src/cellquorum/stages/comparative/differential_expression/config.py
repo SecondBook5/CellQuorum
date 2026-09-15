@@ -60,6 +60,18 @@ class DifferentialExpressionConfig(StrictBaseModel):
         fdr: FDR threshold recorded in outputs.
         timeout_seconds: R execution timeout in seconds.
         r_package: R package name for backend status checks (edgeR).
+        cell_type_col: Optional obs column to stratify the comparison by (e.g.
+            a subcluster label). None (default) runs one comparison pooling
+            every cell, exactly as before. Set, the stage ALSO runs the
+            comparison separately within each group and writes a combined
+            long-format table alongside the pooled one -- a pooled-only
+            comparison cannot distinguish "this gene changes within a cell
+            state" from "the MIX of states shifted between conditions",
+            which every other comparative stage in this pipeline
+            (composition, differential_abundance, coexpression, grn,
+            enrichment) already accounts for by running per group. A group
+            without enough donor replication for its own fit is skipped with
+            a warning, not fatal to the others or to the pooled result.
     """
 
     # Whether this stage runs.
@@ -67,6 +79,9 @@ class DifferentialExpressionConfig(StrictBaseModel):
 
     # Selected DE method (registry key under stage_category 'differential_expression').
     method: str = "pseudobulk_edger"
+
+    # Optional obs column to additionally stratify the comparison by.
+    cell_type_col: str | None = None
 
     # Layer holding raw counts for pseudobulk aggregation.
     layer: str = "counts"
