@@ -585,7 +585,10 @@ def write_population_identity_artifacts(
     artifacts: list[StageArtifact] = []
     base = Path("results") / config.output_dir
     table_dir = base / "tables"
-    plot_dir = base / "plots"
+    # Images belong under figures/, not results/ -- every other stage's plots
+    # live there; this one was the odd one out (confirmed by grep audit,
+    # 2026-09-14). Data (tables, audit.json, evidence.md) stays under results/.
+    plot_dir = Path("figures") / config.output_dir
 
     table_descriptions = {
         "population_summary": "Population/state candidate identity evidence summary.",

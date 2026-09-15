@@ -97,12 +97,7 @@ def test_population_identity_uses_reference_when_available(tmp_path: Path) -> No
     )
     evidence_path = tmp_path / "run" / "results" / "population_identity" / "evidence.md"
     reference_plot = (
-        tmp_path
-        / "run"
-        / "results"
-        / "population_identity"
-        / "plots"
-        / "embedding_by_population.png"
+        tmp_path / "run" / "figures" / "population_identity" / "embedding_by_population.png"
     )
     assert summary_path.exists()
     assert evidence_path.exists()
