@@ -229,6 +229,66 @@ def _config(tmp_path, sender):
     return config
 
 
+# nichenet_de_cell_type: filtering a per-subcluster DE table to just the
+# receiver's own rows before building the geneset. Without this, pointing
+# nichenet_de_csv at a stratified DE table (differential_expression's
+# de_pseudobulk_edger_by_subcluster.csv) would mix every subcluster's DE
+# genes into one geneset -- reintroducing, inside NicheNet's own ligand
+# prioritization, exactly the pooled-vs-composition confound
+# differential_expression.cell_type_col was built to avoid.
+
+
+def _de_csv_multi_cluster(tmp_path):
+    """A stratified DE table (a cell_type column, like
+    de_pseudobulk_edger_by_subcluster.csv) with DISTINCT top genes per
+    cluster, so a test can tell which cluster's rows actually got used."""
+    de = tmp_path / "de_by_subcluster.csv"
+    rows = []
+    for cluster, genes in (("0", ["G0", "G1", "G2"]), ("3", ["G3", "G4", "G5"])):
+        for i, gene in enumerate(genes):
+            rows.append(
+                {
+                    "cell_type": cluster,
+                    "gene": gene,
+                    "logFC": 3.0 - i,
+                    "logCPM": 1,
+                    "F": 1,
+                    "PValue": 0.001,
+                    "FDR": 0.01,
+                }
+            )
+    pd.DataFrame(rows).to_csv(de, index=False)
+    return de
+
+
+def test_nichenet_de_cell_type_filters_a_stratified_de_table(tmp_path, mock_context):
+    ctx = _CapturingContext(tmp_path, mock_context)
+    config = _config(tmp_path, "all")
+    config["nichenet_de_csv"] = str(_de_csv_multi_cluster(tmp_path))
+    config["nichenet_de_cell_type"] = "0"
+    config["nichenet_de_fdr"] = 1.0
+    config["nichenet_de_top_n"] = 10
+
+    res = NicheNetMethod()._run(_multi_adata(), config, ctx)
+    assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
+
+    geneset_csv = ctx.paths.scratch / "nichenet_geneset.csv"
+    genes = set(pd.read_csv(geneset_csv)["gene"])
+    assert genes == {"G0", "G1", "G2"}
+
+
+def test_nichenet_de_cell_type_unknown_value_skips_cleanly(tmp_path, mock_context):
+    ctx = mock_context(tmp_path)
+    config = _config(tmp_path, "all")
+    config["nichenet_de_csv"] = str(_de_csv_multi_cluster(tmp_path))
+    config["nichenet_de_cell_type"] = "NOT_A_REAL_CLUSTER"
+
+    outcome = NicheNetMethod()._run(_multi_adata(), config, ctx)
+
+    assert isinstance(outcome, MethodSkip)
+    assert "nichenet_de_cell_type" in outcome.reason
+
+
 def test_all_sentinel_sends_every_other_cell_type(tmp_path, mock_context):
     ctx = _CapturingContext(tmp_path, mock_context)
     res = NicheNetMethod()._run(_multi_adata(), _config(tmp_path, "all"), ctx)

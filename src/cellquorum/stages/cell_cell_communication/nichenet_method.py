@@ -99,6 +99,25 @@ class NicheNetMethod(RAnalysisMethod):
         # is an external surface — a malformed/mis-columned file must skip, not crash.
         try:
             de_df = pd.read_csv(de_csv)
+            de_cell_type = config.get("nichenet_de_cell_type")
+            if de_cell_type is not None:
+                # nichenet_de_csv pointed at a STRATIFIED DE table (e.g.
+                # differential_expression's de_pseudobulk_edger_by_subcluster.csv)
+                # carries every subcluster's rows in one file. Without this filter
+                # the geneset would mix every subcluster's DE genes together,
+                # reintroducing inside NicheNet's own ligand prioritization the
+                # exact pooled-vs-composition confound cell_type_col-stratified DE
+                # exists to avoid — the receiver's ligand ranking would be driven
+                # partly by genes that only changed in some OTHER subcluster.
+                if "cell_type" not in de_df.columns:
+                    return self._skip(
+                        "nichenet_de_cell_type set but the DE CSV has no 'cell_type' column"
+                    )
+                de_df = de_df[de_df["cell_type"].astype(str) == str(de_cell_type)]
+                if de_df.empty:
+                    return self._skip(
+                        f"nichenet_de_cell_type '{de_cell_type}' not present in the DE CSV"
+                    )
             geneset, background = de_to_geneset(
                 de_df,
                 fdr=float(config.get("nichenet_de_fdr", 0.05)),

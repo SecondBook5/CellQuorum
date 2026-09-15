@@ -88,6 +88,11 @@ class CellCellCommunicationConfig(StrictBaseModel):
     nichenet_sender: str | None = None
     nichenet_receiver: str | None = None
     nichenet_de_csv: str | None = None
+    # Filters nichenet_de_csv to one subcluster's rows before building the
+    # geneset -- set this when nichenet_de_csv points at a cell_type_col
+    # -stratified DE table (e.g. differential_expression's
+    # de_pseudobulk_edger_by_subcluster.csv) rather than a single pooled one.
+    nichenet_de_cell_type: str | None = None
     nichenet_top_ligands: int = 10
     nichenet_top_targets: int = 50
     nichenet_de_fdr: float = 0.05
