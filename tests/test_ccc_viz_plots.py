@@ -249,8 +249,11 @@ def test_curvature_network_without_weight_col():
     assert fig is not None
 
 
-def test_topology_facets_returns_figure():
-    from cellquorum.stages.cell_cell_communication.viz._plots import topology_facets
+def test_topology_facet_figures_returns_one_figure_per_metric():
+    """One file per metric (house style: one plot = one file), not a combined
+    4-panel grid -- each metric (who receives, who sends, who mediates, who's
+    central) answers a different question a reader cares about separately."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import topology_facet_figures
 
     topo = pd.DataFrame(
         {
@@ -261,7 +264,37 @@ def test_topology_facets_returns_figure():
             "Pagerank": [0.2, 0.3, 0.5],
         }
     )
-    assert isinstance(topology_facets(topo, top_k=2), Figure)
+    figs = topology_facet_figures(topo, top_k=2)
+    assert set(figs) == {"Listener", "Influencer", "Mediator", "Pagerank"}
+    assert all(isinstance(f, Figure) for f in figs.values())
+
+
+def test_topology_facet_figures_explains_a_degenerate_metric_instead_of_a_blank_panel():
+    """Real bug, confirmed live: a real 9-cluster CCC network is essentially
+    complete (every cluster signals every other), so betweenness centrality
+    ("Mediator") is mathematically 0 for every node -- no node ever sits on a
+    shortest path when direct edges connect everyone. That's a genuine result,
+    not a computation bug, but the panel rendered as an empty, unexplained
+    blank -- which reads as broken. A metric with zero variance across every
+    node must say so, not render silently empty bars.
+    """
+    from cellquorum.stages.cell_cell_communication.viz._plots import topology_facet_figures
+
+    topo = pd.DataFrame(
+        {
+            "node": ["0", "1", "2", "3", "4", "5", "6", "7", "8"],
+            "Listener": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+            "Mediator": [0.0] * 9,
+        }
+    )
+    figs = topology_facet_figures(topo, metric_cols=("Listener", "Mediator"), top_k=5)
+
+    mediator_ax = figs["Mediator"].axes[0]
+    texts = " ".join(t.get_text() for t in mediator_ax.texts)
+    assert "no variation" in texts.lower()
+    # The real metric renders normally, unaffected.
+    listener_ax = figs["Listener"].axes[0]
+    assert len(listener_ax.patches) > 0
 
 
 def test_interaction_dotplot_all_nan_weight():

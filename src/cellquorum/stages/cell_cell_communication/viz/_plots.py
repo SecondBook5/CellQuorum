@@ -485,40 +485,68 @@ def curvature_network(
     return fig
 
 
-def topology_facets(
+def topology_facet_figures(
     topo: pd.DataFrame,
     *,
     node_col: str = "node",
     metric_cols: tuple[str, ...] = ("Listener", "Influencer", "Mediator", "Pagerank"),
     top_k: int = 15,
-) -> Figure:
-    """One small-multiple panel per metric: top-N nodes as horizontal bars."""
+) -> dict[str, Figure]:
+    """One figure per topology metric: top-N nodes as horizontal bars.
+
+    One plot per file (house style), not a combined small-multiple grid --
+    each metric (who receives most, who sends most, who mediates, who's most
+    central) answers a different question a reader asks separately.
+
+    A metric with zero variance across every node (e.g. betweenness
+    centrality -- "Mediator" -- on a near-complete graph, where every
+    shortest path is a direct edge and no node ever mediates anything: a
+    genuine result, confirmed on a real 9-cluster CCC network with 81 edges)
+    renders as an explained empty panel instead of silent blank bars.
+    """
     if topo is None or topo.empty:
-        return _empty_fig()
+        return {}
     metrics = [m for m in metric_cols if m in topo.columns]
     if not metrics:
-        return _empty_fig()
-    fig, axes = plt.subplots(1, len(metrics), figsize=(4 * len(metrics), 5), squeeze=False)
-    for ax, m in zip(axes[0], metrics, strict=False):
+        return {}
+    figures: dict[str, Figure] = {}
+    for m in metrics:
         sub = topo.reindex(topo[m].abs().sort_values(kind="mergesort", ascending=False).index).head(
             top_k
         )
         sub = sub.iloc[::-1]
         vals = sub[m].to_numpy(dtype=float)
-        straddles = float(np.nanmin(vals)) < 0 < float(np.nanmax(vals))
-        if straddles:
-            norm = signed_norm(vals)
-            colors = plt.get_cmap("RdBu_r")(norm(vals))
+        fig, ax = plt.subplots(figsize=(5, max(2.5, 0.4 * len(sub) + 1)))
+        finite = vals[np.isfinite(vals)]
+        if finite.size == 0 or float(np.nanmax(finite) - np.nanmin(finite)) == 0.0:
+            ax.text(
+                0.5,
+                0.5,
+                f"{m}: no variation across nodes\n(degenerate for this network's structure)",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=9,
+                wrap=True,
+            )
+            ax.set_xticks([])
+            ax.set_yticks([])
         else:
-            norm = Normalize(vmin=float(np.nanmin(vals)), vmax=float(np.nanmax(vals)) or 1.0)
-            colors = plt.get_cmap(_SEQ_CMAP)(norm(vals))
-        y = np.arange(len(sub))
-        ax.barh(y, vals, color=colors, edgecolor="0.3", linewidth=0.4)
-        ax.set_yticks(y)
-        ax.set_yticklabels(sub[node_col].astype(str).tolist())
+            straddles = float(np.nanmin(vals)) < 0 < float(np.nanmax(vals))
+            if straddles:
+                norm = signed_norm(vals)
+                colors = plt.get_cmap("RdBu_r")(norm(vals))
+            else:
+                norm = Normalize(vmin=float(np.nanmin(vals)), vmax=float(np.nanmax(vals)))
+                colors = plt.get_cmap(_SEQ_CMAP)(norm(vals))
+            y = np.arange(len(sub))
+            ax.barh(y, vals, color=colors, edgecolor="0.3", linewidth=0.4)
+            ax.set_yticks(y)
+            ax.set_yticklabels(sub[node_col].astype(str).tolist())
         ax.set_title(m)
-    fig.tight_layout()
-    return fig
+        fig.tight_layout()
+        figures[m] = fig
+    return figures
 
 
 __all__ = [
@@ -529,7 +557,7 @@ __all__ = [
     "chord_diagram",
     "sankey_flow",
     "curvature_network",
-    "topology_facets",
+    "topology_facet_figures",
     "_CELLTYPE_HEXES",
     "_OTHER_GRAY",
 ]

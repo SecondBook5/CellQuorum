@@ -309,12 +309,21 @@ class SummaryVizMethod(AnalysisMethod):
                 warnings.append(f"summary_viz: heatmap {label} failed: {str(exc)[:200]}")
         for level, df in topo.items():
             try:
-                fig = _plots.topology_facets(df, top_k=top_k)
-                paths = save_figure(fig, figures_dir, f"topology_{level}", formats=formats, dpi=dpi)
-                artifacts += figure_artifacts(
-                    paths, name="ccc_figure", description=f"Topology roles ({level})."
-                )
-                n_figures += 1
+                figs = _plots.topology_facet_figures(df, top_k=top_k)
+                for metric, fig in figs.items():
+                    paths = save_figure(
+                        fig,
+                        figures_dir,
+                        f"topology_{level}_{metric.lower()}",
+                        formats=formats,
+                        dpi=dpi,
+                    )
+                    artifacts += figure_artifacts(
+                        paths,
+                        name="ccc_figure",
+                        description=f"Topology role: {metric} ({level}).",
+                    )
+                    n_figures += 1
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"summary_viz: topology {level} failed: {str(exc)[:200]}")
 
