@@ -696,6 +696,12 @@ def apply_cellquorum_theme() -> None:
             "pdf.fonttype": 42,  # TrueType fonts in PDF
             "ps.fonttype": 42,  # TrueType fonts in PS
             "svg.fonttype": "none",
+            # Tufte-style by default: a caller that only ever calls
+            # apply_cellquorum_theme() (never the per-axis
+            # apply_cellquorum_axis_style() follow-up) still gets clean spines,
+            # instead of silently keeping matplotlib's default boxed axes.
+            "axes.spines.top": False,
+            "axes.spines.right": False,
         }
     )
 
@@ -711,10 +717,12 @@ def apply_cellquorum_axis_style(ax: Axes, remove_top_right: bool = True) -> None
         ax: Matplotlib axis to style.
         remove_top_right: Whether to remove top and right spines (Tufte style).
     """
-    # Remove top and right spines (Tufte-style)
-    if remove_top_right:
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+    # Remove top and right spines (Tufte-style). Explicit in both directions,
+    # not just when removing: apply_cellquorum_theme() now defaults new axes
+    # to hidden top/right spines via rcParams, so "keep all spines" has to
+    # actively re-show them rather than just skipping the hide call.
+    ax.spines["top"].set_visible(not remove_top_right)
+    ax.spines["right"].set_visible(not remove_top_right)
 
     # Style remaining spines
     for spine in ax.spines.values():
