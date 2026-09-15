@@ -139,6 +139,11 @@ class HdwgcnaMethod(AnalysisMethod):
         # 5. Create output directory
         out_dir = Path(getattr(context.paths, "results", ".")) / "coexpression"
         out_dir.mkdir(parents=True, exist_ok=True)
+        # Figures belong under figures/, not results/ -- out_dir above stays
+        # results-rooted because it's also the R script's own output dir for
+        # its raw data (modules.csv/eigengenes.csv/module_condition_corr.csv).
+        figures_dir = Path(getattr(context.paths, "figures", ".")) / "coexpression"
+        figures_dir.mkdir(parents=True, exist_ok=True)
 
         # 6. Build args for R script
         args = [
@@ -192,7 +197,7 @@ class HdwgcnaMethod(AnalysisMethod):
         if module_umap_csv.exists():
             render_figure(
                 "module UMAP",
-                lambda: plot_module_umap(module_umap_csv, out_dir),
+                lambda: plot_module_umap(module_umap_csv, figures_dir),
                 figures=figs,
                 warnings=warnings,
             )

@@ -30,7 +30,9 @@ def _adata(n: int = 200) -> ad.AnnData:
 
 
 def _ctx(tmp_path: Path, backend) -> SimpleNamespace:  # noqa: ANN001
-    paths = SimpleNamespace(results=tmp_path / "res", scratch=tmp_path / "scr")
+    paths = SimpleNamespace(
+        results=tmp_path / "res", figures=tmp_path / "figs", scratch=tmp_path / "scr"
+    )
     reg = SimpleNamespace(get=lambda name: backend if name == "hdwgcna_r" else None)
     return SimpleNamespace(paths=paths, backend_registry=reg)
 
