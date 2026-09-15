@@ -382,4 +382,105 @@ def _join_labels_by_barcode(
     return result_adata
 
 
-__all__ = ["run_choir", "run_scshc_test"]
+def run_leiden_stability(
+    adata: ad.AnnData,
+    config: SubclusteringConfig,
+    *,
+    reduction_key: str,
+    context: object = None,
+) -> ad.AnnData | MethodSkip:
+    """Bootstrap-validated Leiden partition: an alternative to CHOIR, not a fallback.
+
+    Sweeps a resolution grid, scores each by chooseR-style bootstrap Jaccard
+    stability (``cellquorum.stages.clustering.resolution_diagnostic``, reused
+    rather than reimplemented), and materializes real Leiden labels at
+    whichever resolution is both the most stable AND the most consistently so
+    (highest ``median_jaccard - IQR``). Use this in place of CHOIR when CHOIR
+    is unavailable, fails outright, or its own sc-SHC test rejects the
+    partition it proposes -- those are three different failure modes this
+    project hit in practice, and this method sidesteps all three by never
+    depending on CHOIR succeeding in the first place.
+
+    Args:
+        adata: Focus-filtered subset carrying ``obsm[reduction_key]``.
+        config: Subclustering config; reads ``config.partition.leiden_stability``
+            and writes ``config.key_added``.
+        reduction_key: obsm key of the (ideally batch-corrected) embedding to
+            cluster on -- the same reduction CHOIR would have used.
+        context: Pipeline context, forwarded for GPU routing. None runs CPU-only.
+
+    Returns:
+        ``adata`` with ``obs[config.key_added]`` set to the chosen resolution's
+        Leiden labels, and ``uns["subclustering"]["leiden_stability"]`` holding
+        the chosen resolution and the full per-resolution stability summary
+        (as records) for provenance. ``MethodSkip`` when ``reduction_key`` is
+        absent or every candidate resolution collapses to a single cluster.
+    """
+    from cellquorum.stages.clustering.neighbors_leiden import run_neighbors_leiden_routed
+    from cellquorum.stages.clustering.resolution_diagnostic import (
+        compute_resolution_stability,
+        summarize_resolution_stability,
+    )
+
+    if reduction_key not in adata.obsm:
+        return MethodSkip(
+            reason=f"leiden_stability partition skipped: reduction '{reduction_key}' not found",
+            details={"method": "leiden_stability"},
+        )
+
+    opts = config.partition.leiden_stability or {}
+    resolutions = list(opts.get("resolutions", [0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6]))
+    n_bootstraps = int(opts.get("n_bootstraps", 20))
+    subsample_fraction = float(opts.get("subsample_fraction", 0.8))
+    random_state = int(opts.get("random_state", 0))
+    n_neighbors = int(opts.get("n_neighbors", 15))
+    adaptive = bool(opts.get("adaptive", True))
+
+    long_df, n_clusters_by_resolution = compute_resolution_stability(
+        adata,
+        use_rep=reduction_key,
+        n_neighbors=n_neighbors,
+        resolutions=resolutions,
+        n_bootstraps=n_bootstraps,
+        subsample_fraction=subsample_fraction,
+        random_state=random_state,
+        context=context,
+        adaptive=adaptive,
+    )
+    summary = summarize_resolution_stability(long_df, n_clusters_by_resolution)
+
+    # Composite score: reward high median stability AND a tight spread, so a
+    # resolution that is stable but only in a wide, unreliable range does not
+    # beat one that is both stable and consistently so (this is exactly the
+    # 0.6-vs-0.4 distinction that came up choosing this by hand for fibroblasts).
+    candidates = summary[summary["n_clusters"] > 1].copy()
+    if candidates.empty:
+        return MethodSkip(
+            reason="leiden_stability partition skipped: every candidate resolution "
+            "collapsed to a single cluster",
+            details={"method": "leiden_stability"},
+        )
+    candidates["iqr"] = candidates["q75"] - candidates["q25"]
+    candidates["composite"] = candidates["median_jaccard"] - candidates["iqr"]
+    best_resolution = float(candidates.loc[candidates["composite"].idxmax(), "resolution"])
+
+    result_adata = adata.copy()
+    run_neighbors_leiden_routed(
+        result_adata,
+        context=context,
+        n_neighbors=n_neighbors,
+        use_rep=reduction_key,
+        resolution=best_resolution,
+        random_state=random_state,
+        key_added=config.key_added,
+    )
+
+    subclustering_uns = result_adata.uns.setdefault("subclustering", {})
+    subclustering_uns["leiden_stability"] = {
+        "chosen_resolution": best_resolution,
+        "summary": summary.to_dict(orient="records"),
+    }
+    return result_adata
+
+
+__all__ = ["run_choir", "run_scshc_test", "run_leiden_stability"]

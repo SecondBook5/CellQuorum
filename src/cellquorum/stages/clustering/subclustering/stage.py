@@ -30,7 +30,11 @@ from cellquorum.stages.clustering.subclustering.extract import (
     extract_focus,
     reembed_focus_batch_aware,
 )
-from cellquorum.stages.clustering.subclustering.partition import run_choir, run_scshc_test
+from cellquorum.stages.clustering.subclustering.partition import (
+    run_choir,
+    run_leiden_stability,
+    run_scshc_test,
+)
 
 
 class SubclusteringFocusError(CellQuorumConfigError):
@@ -236,13 +240,13 @@ class SubclusteringStage:
         # Run partition (CHOIR or fallback). Initialized here (not just inside the
         # "choir" branch) so the donor gate below can look at it regardless of
         # which partition method ran, without a NameError.
-        choir_reduction_key: str | None = None
+        partition_reduction_key: str | None = None
         if sc_config.partition.method == "choir":
             # Batch-aware re-embedding must happen BEFORE partitioning: CHOIR
             # needs it to cluster on a corrected space, and the donor gate
             # reuses this SAME corrected embedding below rather than deriving
             # its own uncorrected one -- see the donor-gate section.
-            choir_reduction_key = reembed_focus_batch_aware(
+            partition_reduction_key = reembed_focus_batch_aware(
                 filtered,
                 counts_layer=sc_config.counts_layer,
                 batch_key=nuisance_key,
@@ -250,9 +254,9 @@ class SubclusteringStage:
                 max_iter_harmony=sc_config.reembed.max_iter_harmony,
                 diagnostics=warnings,
             )
-            if choir_reduction_key:
-                notes.append(f"CHOIR reduction: {choir_reduction_key}")
-                metrics["choir_reduction"] = choir_reduction_key
+            if partition_reduction_key:
+                notes.append(f"CHOIR reduction: {partition_reduction_key}")
+                metrics["choir_reduction"] = partition_reduction_key
             else:
                 # A warning, not a note. CHOIR declares its cluster count
                 # significant *in the space it was given*, so an uncorrected
@@ -267,7 +271,7 @@ class SubclusteringStage:
                 sc_config,
                 backend,
                 scratch,
-                reduction_key=choir_reduction_key,
+                reduction_key=partition_reduction_key,
             )
 
             if isinstance(partition_result, MethodSkip):
@@ -354,6 +358,51 @@ class SubclusteringStage:
                         if "subclustering" not in filtered.uns:
                             filtered.uns["subclustering"] = {}
                         filtered.uns["subclustering"]["formal_test"] = test_result
+        elif sc_config.partition.method == "leiden_stability":
+            # An alternative to CHOIR, not a fallback: bootstrap-validated Leiden
+            # resolution selection, for when CHOIR is unavailable, fails outright,
+            # or its own sc-SHC test rejects the partition it proposes -- three
+            # distinct failure modes this project hit in practice on real data.
+            reduction_key = reembed_focus_batch_aware(
+                filtered,
+                counts_layer=sc_config.counts_layer,
+                batch_key=nuisance_key,
+                random_state=(sc_config.partition.seeds[0] if sc_config.partition.seeds else 0),
+                max_iter_harmony=sc_config.reembed.max_iter_harmony,
+                diagnostics=warnings,
+            )
+            if reduction_key:
+                notes.append(f"leiden_stability reduction: {reduction_key}")
+                metrics["leiden_stability_reduction"] = reduction_key
+            else:
+                warnings.append(
+                    "leiden_stability reduction unavailable: clustering will use an "
+                    "UNCORRECTED reduction, so the resolution choice may be donor-driven."
+                )
+                reduction_key = "X_pca"
+
+            partition_result = run_leiden_stability(
+                filtered,
+                sc_config,
+                reduction_key=reduction_key,
+                context=context,
+            )
+
+            if isinstance(partition_result, MethodSkip):
+                warnings.append(f"leiden_stability partition skipped: {partition_result.reason}")
+                metrics["partition_skipped"] = True
+                metrics["partition_skip_reason"] = partition_result.reason
+            else:
+                filtered = partition_result
+                n_subclusters = filtered.obs[sc_config.key_added].nunique()
+                chosen = filtered.uns["subclustering"]["leiden_stability"]["chosen_resolution"]
+                notes.append(
+                    f"leiden_stability partition: {n_subclusters} subclusters identified "
+                    f"(bootstrap-selected resolution={chosen})"
+                )
+                metrics["n_subclusters"] = int(n_subclusters)
+                metrics["partition_method"] = "leiden_stability"
+                metrics["leiden_stability_resolution"] = chosen
         elif sc_config.partition.method == "leiden_grid":
             # Minimal scanpy fallback (defer detailed implementation).
             notes.append("leiden_grid partition: deferred (CHOIR is primary method)")
@@ -389,7 +438,7 @@ class SubclusteringStage:
         # reduction was unavailable) does this fall back to deriving a fresh
         # "X_pca" -- extract_focus deleted the parent's X_* embeddings, so
         # something must exist for the gate to test on.
-        donor_gate_embedding_key = choir_reduction_key or "X_pca"
+        donor_gate_embedding_key = partition_reduction_key or "X_pca"
         embedding_ready = False
         if group_key is not None and has_cluster_labels:
             embedding_ready = ensure_focus_embedding(

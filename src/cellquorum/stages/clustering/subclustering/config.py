@@ -62,15 +62,23 @@ class PartitionConfig(StrictBaseModel):
     Partition configuration (CHOIR + fallback grid, Task 2).
 
     Args:
-        method: partition method (choir or leiden_grid).
+        method: partition method (choir, leiden_stability, or leiden_grid).
         seeds: random seeds for ensemble partitioning.
         choir: CHOIR-specific parameters.
+        leiden_stability: chooseR-style bootstrap-validated Leiden resolution
+            selection, for when CHOIR is unavailable, fails, or its own
+            formal significance test rejects the partition. Keys:
+            resolutions (list[float]), n_bootstraps (int), subsample_fraction
+            (float), random_state (int), n_neighbors (int), adaptive (bool).
+            See cellquorum.stages.clustering.resolution_diagnostic for the
+            underlying method and its defaults.
         leiden_grid: Leiden grid-search parameters.
     """
 
     method: str = "choir"
     seeds: list[int] = [0]
     choir: dict = {}
+    leiden_stability: dict = {}
     leiden_grid: dict = {}
 
 
