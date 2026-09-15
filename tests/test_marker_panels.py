@@ -164,6 +164,27 @@ def test_plot_categorized_dotplot_drops_categories_with_no_present_genes(tmp_pat
     assert out.exists()
 
 
+def test_plot_categorized_dotplot_handles_a_gene_shared_across_categories(tmp_path):
+    """A gene can legitimately appear in more than one category (e.g. COL1A1 in
+    both a homeostatic/ECM panel and a myofibroblast panel) -- exactly the
+    real Mehrara panel this figure was built for. That duplicates the gene's
+    row label, which broke a .loc-based scalar lookup before this test."""
+    from cellquorum.visualization.marker_panels import plot_categorized_dotplot
+
+    a = _categorized_adata()
+    categories = {
+        "Category A": ["G0", "G1"],
+        "Category B": ["G1", "G2"],  # G1 shared with Category A
+    }
+
+    out = plot_categorized_dotplot(
+        a, categories, groupby="state", layer="norm", out_path=tmp_path / "cat_dotplot_dup.png"
+    )
+
+    assert out is not None
+    assert out.exists()
+
+
 def test_plot_categorized_dotplot_returns_none_when_no_gene_present(tmp_path):
     from cellquorum.visualization.marker_panels import plot_categorized_dotplot
 

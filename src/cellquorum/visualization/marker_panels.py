@@ -243,23 +243,29 @@ def plot_categorized_dotplot(
     if not groups:
         groups = sorted(adata.obs[groupby].astype(str).unique())
 
+    # A gene may legitimately repeat across categories (e.g. COL1A1 in both a
+    # "Homeostatic/ECM" and a "Myofibroblast/contractile" panel -- exactly the
+    # case Mehrara's own table has). That means all_genes can have duplicate
+    # names, so everything below is indexed by ROW POSITION, never by gene
+    # name via .loc -- a duplicated label there returns a Series, not a
+    # scalar, and silently breaks the color/size lookup per cell.
     all_genes = [g for genes in present_categories.values() for g in genes]
-    matrix = adata[:, all_genes].layers[layer]
+    var_positions = adata.var_names.get_indexer(all_genes)
+    matrix = adata.layers[layer][:, var_positions]
     matrix = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
-    expr = pd.DataFrame(matrix, columns=all_genes, index=adata.obs_names)
-    group_labels = adata.obs[groupby].astype(str)
-
-    mean_expr = pd.DataFrame(index=all_genes, columns=groups, dtype=float)
-    pct_expr = pd.DataFrame(index=all_genes, columns=groups, dtype=float)
-    for group in groups:
-        mask = (group_labels == group).to_numpy()
-        sub = expr.loc[mask]
-        mean_expr[group] = sub.mean(axis=0)
-        pct_expr[group] = (sub > 0).mean(axis=0) * 100.0
-
-    vmax = float(np.nanpercentile(mean_expr.to_numpy(), vmax_percentile)) or 1.0
+    group_labels = adata.obs[groupby].astype(str).to_numpy()
 
     n_rows = len(all_genes)
+    mean_arr = np.full((n_rows, len(groups)), np.nan)
+    pct_arr = np.full((n_rows, len(groups)), np.nan)
+    for col_idx, group in enumerate(groups):
+        mask = group_labels == group
+        sub = matrix[mask]
+        mean_arr[:, col_idx] = sub.mean(axis=0)
+        pct_arr[:, col_idx] = (sub > 0).mean(axis=0) * 100.0
+
+    vmax = float(np.nanpercentile(mean_arr, vmax_percentile)) or 1.0
+
     n_cols = len(groups)
     row_h = 0.34
     fig_h = max(3.0, n_rows * row_h + 1.6)
@@ -273,7 +279,10 @@ def plot_categorized_dotplot(
     dot_ax = fig.add_subplot(gs[0, 1])
     legend_ax = fig.add_subplot(gs[0, 2])
 
-    y_positions = {gene: n_rows - 1 - i for i, gene in enumerate(all_genes)}
+    # Row position by index, not gene name: a name can repeat across
+    # categories, so a name-keyed dict would silently collapse duplicates
+    # onto one row.
+    row_y = [n_rows - 1 - i for i in range(n_rows)]
 
     # Alternating row-band shading per category, and the boxed category label.
     row_cursor = 0
@@ -311,20 +320,22 @@ def plot_categorized_dotplot(
 
     # Dots.
     cmap = plt.get_cmap("Reds")
-    for gene in all_genes:
-        y = y_positions[gene]
-        for x, group in enumerate(groups):
-            pct = pct_expr.loc[gene, group]
-            val = mean_expr.loc[gene, group]
+    for row_idx in range(n_rows):
+        y = row_y[row_idx]
+        for col_idx in range(n_cols):
+            pct = pct_arr[row_idx, col_idx]
+            val = mean_arr[row_idx, col_idx]
             size = 6.0 + (pct / 100.0) * 110.0
             color = cmap(min(val / vmax, 1.0)) if np.isfinite(val) else "#DDDDDD"
-            dot_ax.scatter(x, y, s=size, color=color, edgecolor="#555555", linewidth=0.3, zorder=3)
+            dot_ax.scatter(
+                col_idx, y, s=size, color=color, edgecolor="#555555", linewidth=0.3, zorder=3
+            )
 
     dot_ax.set_xlim(-0.6, n_cols - 0.4)
     dot_ax.set_ylim(-0.5, n_rows - 0.5)
     dot_ax.set_xticks(range(n_cols))
     dot_ax.set_xticklabels(groups, rotation=35, ha="right", fontsize=8.5)
-    dot_ax.set_yticks([y_positions[g] for g in all_genes])
+    dot_ax.set_yticks(row_y)
     dot_ax.set_yticklabels(all_genes, style="italic", fontsize=8.5)
     dot_ax.tick_params(axis="both", length=0)
     for spine in dot_ax.spines.values():
