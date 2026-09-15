@@ -12,6 +12,7 @@ import cellquorum.stages.comparative.differential_expression  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.stage_base import MethodDispatchStage, _apply_cohort_overlay
@@ -110,13 +111,12 @@ class DifferentialExpressionStage(MethodDispatchStage):
 
         if per_group_frames:
             combined = pd.concat(per_group_frames, ignore_index=True)
-            combined_path = results_dir / "de_pseudobulk_edger_by_subcluster.csv"
-            combined.to_csv(combined_path, index=False)
+            writer = StageArtifactWriter.from_context(context)
             artifacts.append(
-                StageArtifact(
+                writer.table(
+                    combined,
+                    "de_pseudobulk_edger_by_subcluster.csv",
                     name="de_results_by_subcluster",
-                    path=combined_path,
-                    kind="csv",
                     description="Pseudobulk edgeR DE, stratified by subcluster.",
                 )
             )

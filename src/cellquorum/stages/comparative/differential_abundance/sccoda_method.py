@@ -12,6 +12,7 @@ import pandas as pd
 from cellquorum.backends.sccoda_backend import SCCODA_HELPER
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.differential_abundance.aggregation import (
     aggregate_celltype_counts,
@@ -155,6 +156,7 @@ class SccodaMethod(AnalysisMethod):
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
         out_csv = results_dir / "da_sccoda.csv"
+        writer = StageArtifactWriter.from_context(context)
         diagnostics_json = scratch / "da_sccoda_diagnostics.json"
 
         # Build helper args.
@@ -277,9 +279,9 @@ class SccodaMethod(AnalysisMethod):
                 pass
             notes.extend(concordance_notes)
             extra_artifacts.append(
-                self._write_table(
+                writer.table(
                     concordance,
-                    results_dir / "da_sccoda_donor_concordance.csv",
+                    "da_sccoda_donor_concordance.csv",
                     name="da_donor_concordance",
                     description=(
                         "Per-cell-type donor-level concordance for the scCODA calls: "
@@ -298,9 +300,9 @@ class SccodaMethod(AnalysisMethod):
         # Record the reference criterion, so a reader can see what was rejected.
         if reference_choice is not None and not reference_choice.criterion.empty:
             extra_artifacts.append(
-                self._write_table(
+                writer.table(
                     reference_choice.criterion,
-                    results_dir / "da_sccoda_reference_criterion.csv",
+                    "da_sccoda_reference_criterion.csv",
                     name="da_reference_criterion",
                     description=(
                         "Compositional reference selection: per-cell-type presence, mean "
@@ -555,15 +557,6 @@ class SccodaMethod(AnalysisMethod):
             f"{MIN_PAIRED_BLOCKS}-pair floor at which a within-donor contrast is worth the "
             f"degrees of freedom"
         )
-
-    @staticmethod
-    def _write_table(
-        table: pd.DataFrame, path: Path, *, name: str, description: str
-    ) -> StageArtifact:
-        """Write a supporting table and describe it as an artifact."""
-
-        table.to_csv(path, index=False)
-        return StageArtifact(name=name, path=path, kind="csv", description=description)
 
     @staticmethod
     def _read_diagnostics(path: Path, n_credible: int | None) -> tuple[dict, list[str]]:

@@ -121,8 +121,11 @@ def _context(adata, *, cell_type_col=None, tmp_path):
     )
     backend = _EdgeRCapturingBackend()
     registry = SimpleNamespace(get=lambda name: backend)
+    # PipelinePaths fields are always real Path objects in production; a
+    # plain-str fixture worked only because the old code re-wrapped it in
+    # Path(...) before use, papering over the mismatch.
     paths = SimpleNamespace(
-        results=str(tmp_path), figures=str(tmp_path), scratch=str(tmp_path), root=str(tmp_path)
+        results=Path(tmp_path), figures=Path(tmp_path), scratch=Path(tmp_path), root=Path(tmp_path)
     )
     ctx = SimpleNamespace(
         config=config,

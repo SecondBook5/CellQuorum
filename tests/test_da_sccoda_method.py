@@ -107,6 +107,7 @@ def mock_context(tmp_path):
     """Build a mock stage context with paths and backend registry."""
 
     class Paths:
+        root = tmp_path
         scratch = tmp_path / "scratch"
         results = tmp_path / "results"
         figures = tmp_path / "figures"
@@ -405,6 +406,7 @@ def test_sccoda_determinism(synthetic_adata, mock_context, tmp_path):
 
     # Run 2 (fresh context with different paths)
     class Paths:
+        root = tmp_path
         scratch = tmp_path / "run2_scratch"
         results = tmp_path / "run2_results"
         figures = tmp_path / "run2_figures"

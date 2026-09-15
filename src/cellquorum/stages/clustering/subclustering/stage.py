@@ -14,6 +14,7 @@ from pathlib import Path
 
 from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.clustering.subclustering.diagnostics import (
@@ -597,7 +598,6 @@ class SubclusteringStage:
                             )
                         )
 
-                    results_dir = Path(getattr(paths, "results", "."))
                     rows = []
                     for cid, c in qc_result["clusters"].items():
                         row = {"cluster": cid, "n_cells": c["n_cells"], "qc_pass": c["qc_pass"]}
@@ -608,14 +608,12 @@ class SubclusteringStage:
                     if rows:
                         import pandas as pd
 
-                        table_path = results_dir / "subclustering_technical_qc_consistency.csv"
-                        table_path.parent.mkdir(parents=True, exist_ok=True)
-                        pd.DataFrame(rows).to_csv(table_path, index=False)
+                        writer = StageArtifactWriter.from_context(context)
                         artifacts.append(
-                            StageArtifact(
+                            writer.table(
+                                pd.DataFrame(rows),
+                                "subclustering_technical_qc_consistency.csv",
                                 name="subclustering_technical_qc_consistency_table",
-                                path=table_path,
-                                kind="csv",
                                 description=(
                                     "Per-subcluster QC evidence values and z-scores vs. siblings"
                                 ),

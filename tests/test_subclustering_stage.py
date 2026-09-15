@@ -227,9 +227,8 @@ def test_technical_qc_consistency_flags_a_qc_confounded_cluster(monkeypatch, tmp
         update={"formal_test": FormalTestConfig(method="none")}
     )
     ctx.backend_registry = SimpleNamespace(get=lambda name: _ChoirCapturingBackend())
-    ctx.paths = SimpleNamespace(
-        figures=str(tmp_path), scratch=str(tmp_path), root=str(tmp_path), results=str(tmp_path)
-    )
+    # PipelinePaths fields are always real Path objects in production.
+    ctx.paths = SimpleNamespace(figures=tmp_path, scratch=tmp_path, root=tmp_path, results=tmp_path)
 
     result = SubclusteringStage().run(ctx)
 
