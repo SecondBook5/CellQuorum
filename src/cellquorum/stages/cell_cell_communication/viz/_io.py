@@ -73,6 +73,31 @@ def load_topology(results_dir: Path) -> dict[str, pd.DataFrame]:
     return out
 
 
+def load_tensor_factors(results_dir: Path) -> dict[str, pd.DataFrame] | None:
+    """Read the 4 tensor-cell2cell factor-loading CSVs, or None if incomplete.
+
+    tensor_c2c_method.py writes contexts/senders/receivers/lr_pairs as four
+    separate tables (each: index=entity, columns=Factor 1..N) under
+    results_dir/cell_cell_communication/. A factor decomposition plot needs
+    all four to say anything, so this returns None rather than a partial
+    dict when even one is missing.
+    """
+    ccc = results_dir / "cell_cell_communication"
+    mapping = {
+        "contexts": "tensor_factors_contexts.csv",
+        "senders": "tensor_factors_senders.csv",
+        "receivers": "tensor_factors_receivers.csv",
+        "lr_pairs": "tensor_factors_lr_pairs.csv",
+    }
+    out: dict[str, pd.DataFrame] = {}
+    for key, fname in mapping.items():
+        df = _read_csv(ccc / fname)
+        if df is None:
+            return None
+        out[key] = df.set_index(df.columns[0])
+    return out
+
+
 def load_curvature(results_dir: Path) -> dict[str, pd.DataFrame]:
     """Read curvature CSVs from results_dir/ccc_network. Missing keys omitted."""
     net = results_dir / "ccc_network"
@@ -110,6 +135,7 @@ __all__ = [
     "load_canonical_lr_sources",
     "load_topology",
     "load_curvature",
+    "load_tensor_factors",
     "apply_theme",
     "save_figure",
     "figure_artifacts",

@@ -549,6 +549,99 @@ def topology_facet_figures(
     return figures
 
 
+def plot_tensor_factors(
+    contexts: pd.DataFrame,
+    senders: pd.DataFrame,
+    receivers: pd.DataFrame,
+    lr_pairs: pd.DataFrame,
+    *,
+    context_palette: dict[str, str] | None = None,
+    node_palette: dict[str, str] | None = None,
+    top_k_lr: int = 200,
+) -> Figure:
+    """Standard tensor-cell2cell factor-loading plot: one row per factor,
+    four columns (contexts, ligand-receptor pairs, senders, receivers).
+
+    Unlike most figures in this module, this is a deliberate exception to
+    one-plot-per-file: comparing loadings ACROSS factors is the entire
+    analytical point of a tensor decomposition (which factor is
+    condition-specific, which senders/receivers/LR-pairs define it), so
+    splitting factors into separate files would remove the thing the figure
+    exists to show.
+
+    contexts/senders/receivers/lr_pairs each have entities on the index and
+    one column per factor (as tensor_c2c_method.py writes them). lr_pairs is
+    typically hundreds to low thousands of pairs -- too many to label
+    individually -- so it renders as an unlabeled bar-code-style strip
+    (magnitude only), capped at top_k_lr by max loading across factors,
+    while contexts/senders/receivers (a handful to a few dozen entities)
+    render as normal labeled bars.
+    """
+    frames = {
+        "contexts": contexts,
+        "senders": senders,
+        "receivers": receivers,
+        "lr_pairs": lr_pairs,
+    }
+    if any(df is None or df.empty for df in frames.values()):
+        return _empty_fig()
+
+    factor_cols = list(contexts.columns)
+    n_factors = len(factor_cols)
+    if n_factors == 0:
+        return _empty_fig()
+
+    # Cap lr_pairs to its top_k_lr strongest rows (by max loading across
+    # factors) so the barcode strip stays a reasonable size to render.
+    lr_ranked = lr_pairs.loc[lr_pairs.max(axis=1).sort_values(ascending=False).index]
+    lr_ranked = lr_ranked.head(top_k_lr)
+
+    fig, axes = plt.subplots(
+        n_factors,
+        4,
+        figsize=(16, max(2.2, 1.8 * n_factors)),
+        squeeze=False,
+    )
+    col_frames = [
+        ("Contexts", contexts, context_palette),
+        ("Ligand-Receptor Pairs", lr_ranked, None),
+    ]
+    col_frames += [
+        ("Sender Cells", senders, node_palette),
+        ("Receiver Cells", receivers, node_palette),
+    ]
+
+    for row, factor in enumerate(factor_cols):
+        for col, (col_title, df, palette) in enumerate(col_frames):
+            ax = axes[row][col]
+            vals = df[factor].to_numpy(dtype=float)
+            x = np.arange(len(df))
+            if palette:
+                colors = [palette.get(str(i), _OTHER_GRAY) for i in df.index]
+            else:
+                colors = [_CELLTYPE_HEXES[0]] * len(df)
+            ax.bar(x, vals, color=colors, width=1.0 if col == 1 else 0.8, edgecolor="none")
+            if col == 1:
+                # Barcode strip: magnitude only, no per-pair labels (hundreds
+                # to thousands of genes cannot be individually ticked).
+                ax.set_xticks([])
+            else:
+                ax.set_xticks(x)
+                ax.set_xticklabels(list(df.index), rotation=90 if len(df) > 6 else 45, fontsize=7)
+            ax.set_ylim(0, None)
+            if row == 0:
+                ax.set_title(col_title, fontsize=10)
+            if col == 0:
+                ax.set_ylabel(
+                    f"Factor {row + 1}"
+                    if not str(factor).lower().startswith("factor")
+                    else str(factor),
+                    fontsize=10,
+                )
+    fig.tight_layout()
+    return fig
+
+
 __all__ = [
     "signed_norm",
     "celltype_palette",
@@ -558,6 +651,7 @@ __all__ = [
     "sankey_flow",
     "curvature_network",
     "topology_facet_figures",
+    "plot_tensor_factors",
     "_CELLTYPE_HEXES",
     "_OTHER_GRAY",
 ]

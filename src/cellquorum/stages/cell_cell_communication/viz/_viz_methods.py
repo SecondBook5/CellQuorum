@@ -15,6 +15,7 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     figure_artifacts,
     load_canonical_lr_sources,
     load_curvature,
+    load_tensor_factors,
     load_topology,
     save_figure,
 )
@@ -339,10 +340,88 @@ class SummaryVizMethod(AnalysisMethod):
         )
 
 
+class TensorFactorsVizMethod(AnalysisMethod):
+    """Render the tensor-cell2cell factor-decomposition plot.
+
+    tensor_c2c_method.py writes four real, computed factor-loading tables
+    (contexts/senders/receivers/lr_pairs); nothing ever visualized them.
+    """
+
+    name = "tensor_factors_viz"
+    stage_category = "ccc_viz"
+    backend = "python"
+
+    def input_contract(self, config: dict) -> DataContract:
+        return DataContract()
+
+    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        results_dir = Path(context.paths.results)
+        figures_dir = Path(context.paths.figures) / "ccc"
+        formats = tuple(config.get("figure_formats", ["pdf", "png"]))
+        dpi = int(config.get("dpi", 300))
+        top_k_lr = int(config.get("tensor_top_k_lr", 200))
+
+        factors = load_tensor_factors(results_dir)
+        if factors is None:
+            return self._skip("tensor_c2c factor tables not found or incomplete")
+
+        # Color contexts by condition when a sample name follows the
+        # <sample>_<condition> convention (e.g. "P1_LE") -- the single most
+        # informative grouping for a context axis, and free to infer since
+        # it costs nothing when the convention doesn't hold (falls back to
+        # an uncolored bar rather than guessing wrong).
+        context_palette = config.get("context_palette")
+        if context_palette is None:
+            conditions = {
+                str(ctx): str(ctx).rsplit("_", 1)[-1]
+                for ctx in factors["contexts"].index
+                if "_" in str(ctx)
+            }
+            distinct = sorted(set(conditions.values()))
+            if 1 < len(distinct) <= len(_plots._CELLTYPE_HEXES):
+                group_color = dict(zip(distinct, _plots._CELLTYPE_HEXES, strict=False))
+                context_palette = {ctx: group_color[cond] for ctx, cond in conditions.items()}
+
+        node_palette = config.get("node_palette")
+        if node_palette is None:
+            node_ids = sorted(set(factors["senders"].index) | set(factors["receivers"].index))
+            node_palette = _plots.celltype_palette(node_ids)
+
+        apply_theme()
+        try:
+            fig = _plots.plot_tensor_factors(
+                factors["contexts"],
+                factors["senders"],
+                factors["receivers"],
+                factors["lr_pairs"],
+                context_palette=context_palette,
+                node_palette=node_palette,
+                top_k_lr=top_k_lr,
+            )
+            paths = save_figure(fig, figures_dir, "tensor_factors", formats=formats, dpi=dpi)
+        except Exception as exc:  # noqa: BLE001
+            return self._skip(f"tensor_factors_viz failed: {str(exc)[:200]}")
+
+        artifacts = figure_artifacts(
+            paths,
+            name="ccc_figure",
+            description="Tensor-cell2cell factor decomposition "
+            "(contexts x LR pairs x senders x receivers).",
+        )
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=[f"tensor_factors_viz rendered {factors['contexts'].shape[1]} factors."],
+            metrics={"method": self.name, "n_factors": factors["contexts"].shape[1]},
+            backend="python",
+        )
+
+
 __all__ = [
     "DotplotVizMethod",
     "ChordVizMethod",
     "SankeyVizMethod",
     "NetworkVizMethod",
     "SummaryVizMethod",
+    "TensorFactorsVizMethod",
 ]

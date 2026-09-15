@@ -9,7 +9,14 @@ from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 _VIZ_CONFIG_KEYS = ("enabled", "top_k", "figure_formats", "dpi", "sources", "levels")
-_DEFAULT_METHODS = ["dotplot_viz", "chord_viz", "sankey_viz", "network_viz", "summary_viz"]
+_DEFAULT_METHODS = [
+    "dotplot_viz",
+    "chord_viz",
+    "sankey_viz",
+    "network_viz",
+    "summary_viz",
+    "tensor_factors_viz",
+]
 
 
 @register_stage(

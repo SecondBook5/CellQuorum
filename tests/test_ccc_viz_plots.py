@@ -297,6 +297,54 @@ def test_topology_facet_figures_explains_a_degenerate_metric_instead_of_a_blank_
     assert len(listener_ax.patches) > 0
 
 
+def _tensor_factor_frames():
+    """Matches tensor_c2c_method.py's real written shape: index=entity,
+    columns=Factor 1..N."""
+    contexts = pd.DataFrame(
+        {"Factor 1": [0.2, 0.3, 0.25], "Factor 2": [0.4, 0.1, 0.3]},
+        index=["P1_LE", "P1_Normal", "P2_LE"],
+    )
+    senders = pd.DataFrame(
+        {"Factor 1": [0.5, 0.3, 0.2], "Factor 2": [0.1, 0.6, 0.3]}, index=["0", "1", "2"]
+    )
+    receivers = pd.DataFrame(
+        {"Factor 1": [0.4, 0.4, 0.2], "Factor 2": [0.2, 0.3, 0.5]}, index=["0", "1", "2"]
+    )
+    lr_pairs = pd.DataFrame(
+        {"Factor 1": [0.1, 0.05, 0.2, 0.15], "Factor 2": [0.3, 0.2, 0.05, 0.1]},
+        index=["A^B", "C^D", "E^F", "G^H"],
+    )
+    return contexts, senders, receivers, lr_pairs
+
+
+def test_plot_tensor_factors_returns_a_figure_with_one_row_per_factor():
+    """Real gap, confirmed live: tensor_c2c writes 4 real factor-loading
+    tables (contexts/senders/receivers/lr_pairs) and NOTHING ever visualized
+    them -- zero figures existed for real, computed data. One row per
+    factor x 4 columns (contexts/LR-pairs/senders/receivers) is the
+    standard tensor-cell2cell factor-plot layout; unlike topology_facets,
+    comparing loadings ACROSS factors side by side is the entire analytical
+    point, so a combined grid is the deliberate, correct call here.
+    """
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
+
+    contexts, senders, receivers, lr_pairs = _tensor_factor_frames()
+    fig = plot_tensor_factors(contexts, senders, receivers, lr_pairs)
+
+    assert isinstance(fig, Figure)
+    # 2 factors x 4 columns.
+    assert len(fig.axes) == 8
+
+
+def test_plot_tensor_factors_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
+
+    empty = pd.DataFrame()
+    contexts, senders, receivers, lr_pairs = _tensor_factor_frames()
+    assert isinstance(plot_tensor_factors(empty, senders, receivers, lr_pairs), Figure)
+    assert isinstance(plot_tensor_factors(contexts, empty, receivers, lr_pairs), Figure)
+
+
 def test_interaction_dotplot_all_nan_weight():
     from cellquorum.stages.cell_cell_communication.viz._plots import interaction_dotplot
 

@@ -9,6 +9,7 @@ from cellquorum.stages.cell_cell_communication.viz._viz_methods import (
     NetworkVizMethod,
     SankeyVizMethod,
     SummaryVizMethod,
+    TensorFactorsVizMethod,
 )
 from cellquorum.stages.cell_cell_communication.viz.config import CccVizConfig
 
@@ -18,6 +19,7 @@ for _method in (
     SankeyVizMethod,
     NetworkVizMethod,
     SummaryVizMethod,
+    TensorFactorsVizMethod,
 ):
     if not METHOD_REGISTRY.has("ccc_viz", _method.name):
         METHOD_REGISTRY.register(_method)
@@ -29,4 +31,5 @@ __all__ = [
     "NetworkVizMethod",
     "SankeyVizMethod",
     "SummaryVizMethod",
+    "TensorFactorsVizMethod",
 ]
