@@ -24,6 +24,15 @@ class PerturbationConfig(StrictBaseModel):
         condition_key: Disease/healthy obs column; absent -> direction-agnostic.
         healthy_label: Target condition value; absent -> direction-agnostic.
         tf_list: TFs to knock out; None -> systematic screen of all fitted TFs.
+        n_top_genes: Highly-variable-gene cap applied before CellOracle ever
+            sees the object. CellOracle's own perform_PCA() runs a dense SVD
+            over whatever gene panel it is handed; on a real ~33k-gene, ~70k
+            -cell object that is over LAPACK's 32-bit dense-indexing ceiling
+            ("Indexing a matrix... would incur an in integer overflow in
+            LAPACK") -- confirmed live. CellOracle's own tutorials restrict
+            to a few thousand HVGs before building the Oracle object for
+            exactly this reason. A panel already at or under this cap is
+            left untouched.
         n_top_targets: Ranked-table / figure cutoff.
         knn_n_neighbors: Neighbors for CellOracle kNN imputation.
         n_propagation: Signal-propagation iterations for the KO simulation.
@@ -63,6 +72,9 @@ class PerturbationConfig(StrictBaseModel):
 
     # TFs to knock out; None -> systematic screen of all fitted TFs.
     tf_list: list[str] | None = None
+
+    # Highly-variable-gene cap applied before CellOracle sees the object.
+    n_top_genes: int = 2000
 
     # Ranked-table / figure cutoff.
     n_top_targets: int = 20

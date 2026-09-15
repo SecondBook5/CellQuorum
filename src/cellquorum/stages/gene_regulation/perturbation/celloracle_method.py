@@ -9,6 +9,7 @@ from pathlib import Path
 import anndata as ad
 import numpy as np
 import pandas as pd
+import scanpy as sc
 
 from cellquorum.backends.celloracle_backend import CELLORACLE_KO_PY
 from cellquorum.core.contracts import DataContract
@@ -114,17 +115,30 @@ class CellOracleMethod(AnalysisMethod):
         # -- it is cheap (a handful of dimensions per cell) next to the layers,
         # which are the actual multi-GB cost.
         if layer and layer != "X" and layer in adata.layers:
-            write_h5ad(
-                ad.AnnData(
-                    X=adata.layers[layer],
-                    obs=adata.obs.copy(),
-                    var=adata.var.copy(),
-                    obsm=dict(adata.obsm),
-                ),
-                h5ad,
+            work = ad.AnnData(
+                X=adata.layers[layer],
+                obs=adata.obs.copy(),
+                var=adata.var.copy(),
+                obsm=dict(adata.obsm),
             )
         else:
-            write_h5ad(adata, h5ad)
+            work = adata
+
+        # Restrict to highly-variable genes before CellOracle ever sees the
+        # object. CellOracle's own perform_PCA() runs a dense SVD over
+        # whatever gene panel it is handed; on a real ~33k-gene, ~70k-cell
+        # object that overflows LAPACK's 32-bit dense-indexing ceiling
+        # ("Indexing a matrix... would incur an in integer overflow in
+        # LAPACK") -- confirmed live. flavor="seurat_v3" operates directly
+        # on raw counts (work.X here), matching what this layer already is.
+        n_top_genes = int(config.get("n_top_genes", 2000))
+        if work.n_vars > n_top_genes:
+            hvg = sc.pp.highly_variable_genes(
+                work, n_top_genes=n_top_genes, flavor="seurat_v3", inplace=False
+            )
+            work = work[:, hvg["highly_variable"].to_numpy()].copy()
+
+        write_h5ad(work, h5ad)
 
         out_dir = Path(getattr(context.paths, "results", ".")) / "perturbation"
         out_dir.mkdir(parents=True, exist_ok=True)

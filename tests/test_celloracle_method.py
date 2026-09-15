@@ -190,6 +190,90 @@ def test_scratch_h5ad_keeps_obsm_but_not_unrelated_layers(tmp_path: Path) -> Non
     assert written.obsm["X_umap"].shape == a.obsm["X_umap"].shape
 
 
+def test_scratch_h5ad_is_restricted_to_highly_variable_genes(tmp_path: Path) -> None:
+    """Real bug, confirmed live: CellOracle's own perform_PCA() runs a dense
+    SVD over the FULL gene panel handed to it. On a 68,148-cell x 33,417-gene
+    fibroblast object that is 2,277,301,716 elements -- just over LAPACK's
+    32-bit dense-indexing ceiling -- and the whole stage failed with
+    "Indexing a matrix... would incur an in integer overflow in LAPACK".
+    CellOracle's own tutorials restrict to a few thousand HVGs before ever
+    building the Oracle object; this pipeline never did. Real genes with
+    real different variances here (not just a slice) so the test proves HVG
+    selection ran, not an arbitrary truncation to the first N columns.
+    """
+    rng = np.random.default_rng(1)
+    n, g = 200, 50
+    # A realistic spread of per-gene baseline rates (not all genes sharing
+    # one mean -- seurat_v3's loess mean-variance fit needs that spread to
+    # be numerically stable; a tiny, artificially uniform toy panel makes it
+    # near-singular). Genes 0-4 additionally get a marker-like pattern: a
+    # 15% subpopulation expresses them far more strongly -- overdispersed
+    # relative to the fitted Poisson trend, which is what seurat_v3 actually
+    # ranks on (raw variance alone is not enough: Poisson variance already
+    # scales with the mean, so a uniform-rate gene looks "expected").
+    base_rates = rng.uniform(1, 8, size=g)
+    X = rng.poisson(base_rates[None, :], size=(n, g)).astype("float32")
+    marker_mask = rng.random(n) < 0.15
+    for j in range(5):
+        X[marker_mask, j] = rng.poisson(80, size=int(marker_mask.sum()))
+    a = ad.AnnData(
+        X=X,
+        obs=pd.DataFrame(index=[f"cell_{i}" for i in range(n)]),
+        var=pd.DataFrame(index=[f"gene_{j}" for j in range(g)]),
+    )
+    a.layers["counts"] = X.copy()
+    a.obsm["X_umap"] = rng.random((n, 2)).astype("float32")
+
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            return SimpleNamespace(returncode=1, stderr="stop after write")
+
+    res = CellOracleMethod()._run(
+        a,
+        {"launcher": "python", "n_top_genes": 5, "min_cells_total": 10},
+        _ctx(tmp_path, FakeBackend()),
+    )
+    assert isinstance(res, MethodSkip)
+
+    written = ad.read_h5ad(tmp_path / "scr" / "perturbation_input.h5ad")
+    assert written.n_vars == 5
+    # At least one of the deliberately marker-like genes was kept -- proof
+    # real variance-based selection ran (they dominate variance overall;
+    # seurat_v3's own local mean-variance normalization can rank the rest of
+    # that cluster against each other rather than against the whole panel).
+    kept = set(written.var_names)
+    assert kept & {f"gene_{j}" for j in range(5)}
+    # And it is not the naive "first n_top_genes columns" truncation this
+    # guards against: gene_5 (a baseline, non-marker gene) sits right after
+    # the marker block, so a truncation bug would never reach it or anything
+    # past it, while real selection routinely does.
+    assert any(int(name.split("_")[1]) >= 5 for name in kept)
+
+
+def test_scratch_h5ad_untouched_when_gene_count_already_under_the_cap(tmp_path: Path) -> None:
+    """A gene panel already at or below n_top_genes is written as-is -- no
+    HVG computation forced on an object too small for it to be meaningful."""
+
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            return SimpleNamespace(returncode=1, stderr="stop after write")
+
+    a = _adata(g=40)
+    res = CellOracleMethod()._run(
+        a, {"launcher": "python", "n_top_genes": 2000}, _ctx(tmp_path, FakeBackend())
+    )
+    assert isinstance(res, MethodSkip)
+
+    written = ad.read_h5ad(tmp_path / "scr" / "perturbation_input.h5ad")
+    assert written.n_vars == 40
+
+
 def test_fate_summary_figure_produced(tmp_path: Path) -> None:
     """The in-process fate summary (FIX 4) is computed and wired into artifacts."""
     res = CellOracleMethod()._run(
