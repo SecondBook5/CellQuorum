@@ -46,16 +46,29 @@ def test_celltype_palette_deterministic_and_entity_keyed():
     assert set(p1) == {"A", "B", "C"}
 
 
-def test_celltype_palette_overflow_to_other():
-    from cellquorum.stages.cell_cell_communication.viz._plots import (
-        _CELLTYPE_HEXES,
-        _OTHER_GRAY,
-        celltype_palette,
-    )
+def test_celltype_palette_never_degrades_more_than_8_types_to_flat_gray():
+    """The real fibroblast cohort has 9 subclusters -- one more than the old
+    fixed 8-hex list, so cluster #9 rendered as flat gray in EVERY CCC figure,
+    visually indistinguishable from background. celltype_palette must draw
+    from the same unbounded, audited palette every other stage uses
+    (figstyle.palette_colors), which never cycles or grays out."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import celltype_palette
 
-    many = [f"ct{i}" for i in range(len(_CELLTYPE_HEXES) + 3)]
+    many = [f"ct{i}" for i in range(11)]
     pal = celltype_palette(many)
-    assert list(pal.values()).count(_OTHER_GRAY) == 3
+    assert len(set(pal.values())) == 11
+
+
+def test_celltype_palette_matches_the_validated_categorical_palette():
+    """celltype_palette must draw from figstyle's audited CATEGORICAL_PALETTE,
+    not a second, never-audited color list -- otherwise a CCC figure can use
+    a color the palette-audit tooling has never checked for colorblind
+    safety."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import celltype_palette
+    from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE
+
+    pal = celltype_palette(["A", "B", "C"])
+    assert set(pal.values()) <= set(CATEGORICAL_PALETTE)
 
 
 def test_interaction_dotplot_returns_figure():

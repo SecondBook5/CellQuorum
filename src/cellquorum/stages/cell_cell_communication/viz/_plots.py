@@ -17,21 +17,9 @@ from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.patches import Wedge
 
-from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP
+from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP
+from cellquorum.visualization.figstyle import get_group_palette as _get_group_palette
 
-# Colorblind-validated categorical theme (dataviz skill default; validated via
-# scripts/validate_palette.js, CVD dE >= 8). Colors map to sorted cell-type
-# positions at render time -- never to named biological types.
-_CELLTYPE_HEXES = [
-    "#4E79A7",
-    "#F28E2B",
-    "#59A14F",
-    "#E15759",
-    "#B07AA1",
-    "#76B7B2",
-    "#EDC948",
-    "#FF9DA7",
-]
 _OTHER_GRAY = "#9E9E9E"
 _SEQ_CMAP = SEQUENTIAL_CMAP
 
@@ -48,12 +36,15 @@ def signed_norm(values: np.ndarray) -> TwoSlopeNorm:
 
 
 def celltype_palette(cell_types: list[str]) -> dict[str, str]:
-    """Deterministic sorted-celltype -> fixed hex; overflow -> gray. Entity-keyed."""
-    uniq = sorted({str(c) for c in cell_types})
-    out: dict[str, str] = {}
-    for i, ct in enumerate(uniq):
-        out[ct] = _CELLTYPE_HEXES[i] if i < len(_CELLTYPE_HEXES) else _OTHER_GRAY
-    return out
+    """Deterministic sorted-celltype -> validated categorical color. Entity-keyed.
+
+    Delegates to figstyle's audited CATEGORICAL_PALETTE (via get_group_palette)
+    rather than a second, never-audited color list: that list capped out at 8
+    colors with flat-gray overflow past it, which silently made a 9th cell
+    type (the real fibroblast cohort has 9 subclusters) indistinguishable from
+    background in every CCC figure. palette_colors never cycles or grays out.
+    """
+    return _get_group_palette(list(cell_types))
 
 
 def _empty_fig(msg: str = "no data") -> Figure:
@@ -619,7 +610,7 @@ def plot_tensor_factors(
             if palette:
                 colors = [palette.get(str(i), _OTHER_GRAY) for i in df.index]
             else:
-                colors = [_CELLTYPE_HEXES[0]] * len(df)
+                colors = [CATEGORICAL_PALETTE[0]] * len(df)
             ax.bar(x, vals, color=colors, width=1.0 if col == 1 else 0.8, edgecolor="none")
             if col == 1:
                 # Barcode strip: magnitude only, no per-pair labels (hundreds
@@ -652,6 +643,5 @@ __all__ = [
     "curvature_network",
     "topology_facet_figures",
     "plot_tensor_factors",
-    "_CELLTYPE_HEXES",
     "_OTHER_GRAY",
 ]

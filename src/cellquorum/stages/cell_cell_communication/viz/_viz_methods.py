@@ -378,8 +378,8 @@ class TensorFactorsVizMethod(AnalysisMethod):
                 if "_" in str(ctx)
             }
             distinct = sorted(set(conditions.values()))
-            if 1 < len(distinct) <= len(_plots._CELLTYPE_HEXES):
-                group_color = dict(zip(distinct, _plots._CELLTYPE_HEXES, strict=False))
+            if len(distinct) > 1:
+                group_color = _plots.celltype_palette(distinct)
                 context_palette = {ctx: group_color[cond] for ctx, cond in conditions.items()}
 
         node_palette = config.get("node_palette")
