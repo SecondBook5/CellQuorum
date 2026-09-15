@@ -176,9 +176,14 @@ class PreprocessingStage:
 
         # Write normalization diagnostic figures (config-gated, on by default).
         if preprocessing_config.write_figures:
+            # figures/<subdir>, not results/<subdir>/figures -- this used to nest
+            # a "figures" folder INSIDE the results-rooted output_dir, which is
+            # not the same thing as the actual figures/ root every other stage
+            # writes images to.
+            figures_dir = Path(getattr(context.paths, "figures", output_dir)) / self.output_subdir
             figure_result = write_normalization_figures(
                 normalization_result.adata,
-                output_dir / "figures",
+                figures_dir,
                 counts_layer=normalization_result.preserve_counts_layer,
                 normalized_layer=normalization_result.output_layer,
                 dpi=preprocessing_config.figure_dpi,
