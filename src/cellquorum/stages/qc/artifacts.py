@@ -123,6 +123,7 @@ def _report_figure_order(written: object) -> list[Path]:
 def write_qc_artifacts(
     *,
     output_dir: str | PathLike[str] | Path,
+    figures_dir: str | PathLike[str] | Path | None = None,
     metrics_result: QCMetricsResult,
     floors: FloorResult,
     mixture: MitoMixtureResult | None = None,
@@ -141,7 +142,12 @@ def write_qc_artifacts(
     """Write QC module artifacts to disk.
 
     Args:
-        output_dir: Directory where QC artifacts should be written.
+        output_dir: Directory where QC data artifacts (qc.h5ad, tables, the
+            HTML report, qc_summary.json) should be written.
+        figures_dir: Directory where QC PNG/PDF figures should be written.
+            Defaults to ``output_dir`` when omitted (the pre-fix behavior),
+            so existing direct callers keep working; the QC stage itself
+            always passes ``context.paths.figures/<subdir>``.
         metrics_result: Calculated QC metrics.
         floors: Floor masks, reasons and counts.
         mixture: Fitted mitochondrial mixture, or None.
@@ -195,6 +201,7 @@ def write_qc_artifacts(
     )
 
     output_path = prepare_qc_output_dir(output_dir)
+    figures_path = prepare_qc_output_dir(figures_dir) if figures_dir is not None else output_path
 
     artifacts: dict[str, Path | list[str]] = {}
 
@@ -360,7 +367,7 @@ def write_qc_artifacts(
 
                 graded_paths, graded_warnings = write_graded_qc_figures(
                     figure_source.obs,
-                    output_path,
+                    figures_path,
                     concern_severity=qc_config.graded.concern_severity,
                     sample_column=group_key or "sample_id",
                     pair_column=(publication_keys or {}).get("patient_key") or "donor_id",
@@ -395,7 +402,7 @@ def write_qc_artifacts(
                         str(p)
                         for p in write_qc_panels(
                             panel_frame,
-                            output_path,
+                            figures_path,
                             case_label=keys.get("disease_label"),
                             comparisons=donor_comparisons,
                             formats=(qc_config.outputs.figure_format,),
@@ -429,7 +436,7 @@ def write_qc_artifacts(
                 artifacts["publication_tables"] = [
                     str(path)
                     for path in write_qc_publication_tables(
-                        output_path,
+                        figures_path,
                         cell_metrics=metrics_result.cell_metrics,
                         cell_decisions=floors.cell_table(),
                         obs=figure_source.obs,

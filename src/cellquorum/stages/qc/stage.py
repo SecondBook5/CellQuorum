@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar
 
 import anndata as ad
@@ -256,6 +257,11 @@ class QCStage:
             )
 
         output_dir = get_qc_output_dir(context, self.output_subdir)
+        # QC figures belong under figures/, not results/ -- output_dir above
+        # stays results-rooted for qc.h5ad, tables, the HTML report, and
+        # qc_summary.json. Falls back to output_dir when paths.figures is
+        # absent (matches every other path-resolution helper's own fallback).
+        figures_dir = Path(getattr(context.paths, "figures", output_dir)) / self.output_subdir
 
         metrics_result = calculate_qc_metrics(adata, qc_config)
 
@@ -465,6 +471,7 @@ class QCStage:
 
         artifact_manifest = write_qc_artifacts(
             output_dir=output_dir,
+            figures_dir=figures_dir,
             metrics_result=metrics_result,
             floors=floors,
             mixture=mixture,
