@@ -268,6 +268,10 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         # ---- Write artifacts into results/multicellular_programs/. ----
         results_dir = Path(context.paths.results) / "multicellular_programs"
         results_dir.mkdir(parents=True, exist_ok=True)
+        # Figures belong under figures/, not results/ -- results_dir above stays
+        # results-rooted for the actual data tables.
+        figures_dir = Path(context.paths.figures) / "multicellular_programs"
+        figures_dir.mkdir(parents=True, exist_ok=True)
         writer = StageArtifactWriter.from_context(context, default_subdir="multicellular_programs")
 
         artifacts = [
@@ -328,7 +332,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                     scores,
                     donor_support_df,
                     cell_type_col_values=cell_types_used,
-                    out_dir=results_dir,
+                    out_dir=figures_dir,
                     name="mcp_summary",
                 ),
                 figures=figs,

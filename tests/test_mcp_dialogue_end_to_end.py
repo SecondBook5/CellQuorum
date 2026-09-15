@@ -76,8 +76,10 @@ def mock_context():
             self.root = tmp_path
             self.scratch = tmp_path / "scratch"
             self.results = tmp_path / "results"
+            self.figures = tmp_path / "figures"
             self.scratch.mkdir(parents=True, exist_ok=True)
             self.results.mkdir(parents=True, exist_ok=True)
+            self.figures.mkdir(parents=True, exist_ok=True)
 
     class MockContext:
         def __init__(self, tmp_path: Path):
