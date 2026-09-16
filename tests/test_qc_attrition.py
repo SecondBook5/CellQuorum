@@ -703,7 +703,7 @@ def test_the_audit_reaches_the_stage_result_and_the_run_directory(tmp_path: Path
 
     config = CellQuorumConfig(
         cohort={"condition_key": "condition", "donor_key": "donor_id"},
-        qc=QCConfig(
+        qc_evidence=QCConfig(
             floors={"min_genes_per_cell": 1, "min_cells_per_gene": 1},
             outputs={"write_h5ad": False, "write_figures": False},
         ),

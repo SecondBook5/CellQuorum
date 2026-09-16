@@ -144,7 +144,7 @@ def build_execution_config(h5ad_path: Path | None) -> CellQuorumConfig:
         preprocessing={
             "normalization": {"recipe": "cellquorum_log1p_cp10k_v1"},
         },
-        qc={
+        qc_evidence={
             "metrics": {
                 "percent_top": [2],
             },
@@ -232,9 +232,9 @@ def test_execute_pipeline_run_loads_input_and_runs_qc(tmp_path: Path) -> None:
     assert isinstance(result.execution_result, PipelineExecutionResult)
 
     # Confirm QC and preprocessing succeeded.
-    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "qc_evidence" in result.execution_result.succeeded_stage_names()
     assert "preprocessing" in result.execution_result.succeeded_stage_names()
-    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "qc_evidence" in result.execution_result.succeeded_stage_names()
     assert "preprocessing" in result.execution_result.succeeded_stage_names()
 
     # Confirm future stages were skipped explicitly (composition not yet implemented).
@@ -252,7 +252,7 @@ def test_execute_pipeline_run_loads_input_and_runs_qc(tmp_path: Path) -> None:
     # as a skip before qc, so locate the qc record by name rather than position.
     records = load_stage_execution_records(tmp_path / "executed_run")
     assert records[0]["stage_name"] == "bootstrap"
-    qc_record = next(r for r in records if r["stage_name"] == "qc")
+    qc_record = next(r for r in records if r["stage_name"] == "qc_evidence")
     assert qc_record["status"] == "success"
 
 
@@ -280,14 +280,14 @@ def test_execute_pipeline_run_records_failure_without_input(tmp_path: Path) -> N
     # Confirm QC failed because context.adata was missing. qc is the first
     # ENABLED executable stage (ambient_correction is disabled by default), so it
     # is the only failing stage.
-    assert result.execution_result.failed_stage_names() == ["qc"]
+    assert result.execution_result.failed_stage_names() == ["qc_evidence"]
     assert result.execution_result.has_failures() is True
 
     # Confirm provenance still records the failure. Locate qc by name (a disabled
     # ambient_correction skip record precedes it).
     records = load_stage_execution_records(tmp_path / "missing_input_run")
     assert records[0]["stage_name"] == "bootstrap"
-    qc_record = next(r for r in records if r["stage_name"] == "qc")
+    qc_record = next(r for r in records if r["stage_name"] == "qc_evidence")
     assert qc_record["status"] == "failed"
     assert qc_record["error"]["error_type"] in {"QCStageError", "CellQuorumDataError"}
 
@@ -318,10 +318,13 @@ def test_continue_on_stage_failure_attempts_stages_past_a_failure(tmp_path: Path
 
     # qc still fails, but execution did not stop at it: at least one later stage
     # was attempted and also recorded (failed or otherwise), so the failure set
-    # is not the single-element ["qc"] the fail-fast path produces.
+    # is not the single-element ["qc_evidence"] the fail-fast path produces.
     failed = result.execution_result.failed_stage_names()
-    assert "qc" in failed
+    assert "qc_evidence" in failed
     assert len(failed) > 1
+
+
+def test_execute_pipeline_run_from_config_file(tmp_path: Path) -> None:
     """
     Verify config-file execution loads YAML and runs QC.
 
@@ -347,7 +350,7 @@ compute:
   fallback_to_cpu: true
 r:
   enabled: false
-qc:
+qc_evidence:
   metrics:
     percent_top: [2]
   floors:
@@ -369,7 +372,7 @@ qc:
 
     # Confirm QC executed.
     assert result.execution_result is not None
-    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "qc_evidence" in result.execution_result.succeeded_stage_names()
 
     # Confirm input was loaded.
     assert isinstance(result.context.adata, ad.AnnData)

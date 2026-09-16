@@ -98,7 +98,7 @@ def _apply_stage_overrides(
     Let a manifest's ``config_overrides.stages`` win over the computed flags.
 
     Without this the computed block silently clobbered whatever the manifest
-    declared, so a manifest could say ``qc: false``, be believed by everyone who
+    declared, so a manifest could say ``qc_evidence: false``, be believed by everyone who
     read it, and still generate a config with QC on -- which every repo then
     worked around with its own post-generation patch script. That is the same
     decision written twice per repo, and the copy that loses is the readable one.

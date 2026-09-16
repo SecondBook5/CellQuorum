@@ -55,7 +55,7 @@ so it runs anywhere:
 
 ```yaml
 stages:
-  qc: true
+  qc_evidence: true
   preprocessing: true
   dimensionality: true
   integration: true            # Harmony over cohort.batch_key

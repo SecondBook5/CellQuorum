@@ -106,7 +106,7 @@ def _chain_config(h5ad_path) -> CellQuorumConfig:
         stages={
             # Ambient needs R + Cell Ranger matrices; tested separately.
             "ambient_correction": False,
-            "qc": True,
+            "qc_evidence": True,
             "preprocessing": True,
             "dimensionality": True,
             "integration": True,
@@ -125,7 +125,7 @@ def _chain_config(h5ad_path) -> CellQuorumConfig:
         # cp10k recipe keeps this threading test env-independent: the scclr-backed
         # PFlog1pPF default needs the isolated scclr env (covered separately).
         preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
-        qc={
+        qc_evidence={
             "metrics": {"percent_top": [2]},
             "floors": {
                 "min_genes_per_cell": 1,
@@ -177,7 +177,7 @@ def test_full_cpu_chain_threads_every_stage_output(tmp_path):
     # Every enabled backbone stage ran (not skipped).
     succeeded = result.execution_result.succeeded_stage_names()
     for stage in [
-        "qc",
+        "qc_evidence",
         "preprocessing",
         "dimensionality",
         "integration",
@@ -249,7 +249,7 @@ def test_full_analysis_chain_runs_de_da_enrichment_viz(tmp_path):
         r={"enabled": False},
         stages={
             "ambient_correction": False,
-            "qc": True,
+            "qc_evidence": True,
             "preprocessing": True,
             "dimensionality": True,
             "integration": True,
@@ -270,7 +270,7 @@ def test_full_analysis_chain_runs_de_da_enrichment_viz(tmp_path):
             "network_analysis": False,
         },
         preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
-        qc={
+        qc_evidence={
             "metrics": {"percent_top": [2]},
             "floors": {
                 "min_genes_per_cell": 1,
@@ -321,7 +321,7 @@ def test_full_analysis_chain_runs_de_da_enrichment_viz(tmp_path):
     # The core backbone stages ran.
     succeeded = result.execution_result.succeeded_stage_names()
     for stage in [
-        "qc",
+        "qc_evidence",
         "preprocessing",
         "dimensionality",
         "integration",
@@ -422,7 +422,7 @@ def test_embeddings_stage_runs_in_full_chain(tmp_path):
         r={"enabled": False},
         stages={
             "ambient_correction": False,
-            "qc": True,
+            "qc_evidence": True,
             "preprocessing": True,
             "dimensionality": True,
             "integration": True,
@@ -442,7 +442,7 @@ def test_embeddings_stage_runs_in_full_chain(tmp_path):
             "network_analysis": False,
         },
         preprocessing={"normalization": {"recipe": "cellquorum_log1p_cp10k_v1"}},
-        qc={
+        qc_evidence={
             "metrics": {"percent_top": [2]},
             "floors": {
                 "min_genes_per_cell": 1,

@@ -50,10 +50,10 @@ def resolve_qc_config(
     if isinstance(context_config, QCConfig):
         return context_config
 
-    if isinstance(context_config, Mapping) and "qc" in context_config:
-        return coerce_qc_config(context_config["qc"])
+    if isinstance(context_config, Mapping) and "qc_evidence" in context_config:
+        return coerce_qc_config(context_config["qc_evidence"])
 
-    qc_attribute = getattr(context_config, "qc", None)
+    qc_attribute = getattr(context_config, "qc_evidence", None)
     if qc_attribute is not None:
         return coerce_qc_config(qc_attribute)
 
@@ -103,13 +103,13 @@ def is_qc_stage_enabled(context: object, qc_config: QCConfig) -> bool:
     if isinstance(context_config, Mapping):
         stages = context_config.get("stages")
 
-        if isinstance(stages, Mapping) and "qc" in stages:
-            return bool(stages["qc"])
+        if isinstance(stages, Mapping) and "qc_evidence" in stages:
+            return bool(stages["qc_evidence"])
 
     stages = getattr(context_config, "stages", None)
 
-    if stages is not None and hasattr(stages, "qc"):
-        return bool(stages.qc)
+    if stages is not None and hasattr(stages, "qc_evidence"):
+        return bool(stages.qc_evidence)
 
     return True
 

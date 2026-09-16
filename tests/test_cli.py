@@ -105,7 +105,7 @@ r:
     assert "CellQuorum stage plan" in result.stdout
 
     # Confirm a core stage appears in the plan output.
-    assert "qc" in result.stdout
+    assert "qc_evidence" in result.stdout
 
     # Confirm an advanced gated capability appears in the plan output.
     assert "molecular_inference" in result.stdout
@@ -173,7 +173,7 @@ r:
     stage_names = {stage["name"] for stage in payload["stages"]}
 
     # Confirm a core stage is present.
-    assert "qc" in stage_names
+    assert "qc_evidence" in stage_names
 
     # Confirm an advanced gated capability is present (the topology/curvature
     # stage is planned under its registered name "ccc_network").
@@ -384,7 +384,7 @@ r:
     )
 
     # Confirm enabled stages were serialized.
-    assert "qc" in payload["enabled_stages"]
+    assert "qc_evidence" in payload["enabled_stages"]
 
     # Confirm advanced gated stages were serialized (topology/curvature stage
     # is planned under its registered name "ccc_network").

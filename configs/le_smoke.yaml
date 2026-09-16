@@ -35,7 +35,7 @@ cohort:
 
 stages:
   ambient_correction: false     # input is the already-corrected small cohort
-  qc: true
+  qc_evidence: true
   preprocessing: true
   feature_selection: false
   dimensionality: true
@@ -57,7 +57,7 @@ stages:
   cell_cell_communication: false
   network_analysis: false
 
-qc:
+qc_evidence:
   enabled: true
   metrics:
     layer: counts

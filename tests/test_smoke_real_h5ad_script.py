@@ -87,7 +87,7 @@ def test_smoke_script_basic_execution(tmp_path: Path) -> None:
     summary = parse_summary(result)
     assert summary["status"] == "success"
     assert summary["subset_shape"] == [4, 6]
-    assert "qc" in summary["successful_stages"]
+    assert "qc_evidence" in summary["successful_stages"]
     assert "preprocessing" in summary["successful_stages"]
     assert summary["failed_stages"] == []
     assert summary["has_normalized_layer"] is True

@@ -38,7 +38,7 @@ cohort:
 
 stages:
   ambient_correction: true
-  qc: true
+  qc_evidence: true
   preprocessing: true
   feature_selection: false
   dimensionality: true
@@ -67,7 +67,7 @@ ambient_correction:
   round_to_int: true
   resume: true          # reuse already-corrected libraries; skip SoupX on re-run
 
-qc:
+qc_evidence:
   enabled: true
   metrics:
     layer: counts

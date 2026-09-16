@@ -93,7 +93,7 @@ def test_requested_in_stages_but_disabled_in_the_block_is_refused() -> None:
     """The dangerous pair: reads as "run it", behaves as a silent skip."""
 
     with pytest.raises(ValueError, match="declared once"):
-        _config(stages={"qc": True}, qc={"enabled": False})
+        _config(stages={"qc_evidence": True}, qc_evidence={"enabled": False})
 
 
 def test_switched_off_in_stages_with_settings_left_behind_is_fine() -> None:
@@ -117,12 +117,12 @@ def test_saying_both_and_agreeing_is_fine() -> None:
 
 
 def test_component_switches_inside_a_stage_are_untouched() -> None:
-    """``qc.doublets.enabled`` decides whether a PART of a stage runs.
+    """``qc_evidence.doublets.enabled`` decides whether a PART of a stage runs.
 
     That is a different question with only one place to ask it, so the reconciliation must
     not reach into nested blocks — which would tie doublet detection to whether QC runs.
     """
 
-    config = _config(stages={"qc": True}, qc={"doublets": {"enabled": False}})
-    assert config.qc.enabled is True
-    assert config.qc.doublets.enabled is False
+    config = _config(stages={"qc_evidence": True}, qc_evidence={"doublets": {"enabled": False}})
+    assert config.qc_evidence.enabled is True
+    assert config.qc_evidence.doublets.enabled is False

@@ -1002,8 +1002,8 @@ def _config_disabled_stage_names(
 
     A stage is off if either gate says so: the top-level ``stages`` flag, or the
     stage's own ``enabled`` field. Both are honoured because they are independent --
-    ``stages.qc: false`` and ``qc: {enabled: false}`` are different ways to say the
-    same thing, and a check that read only one would miss half the cases.
+    ``stages.qc_evidence: false`` and ``qc_evidence: {enabled: false}`` are different
+    ways to say the same thing, and a check that read only one would miss half the cases.
 
     This deliberately ignores the plan. Plan membership also encodes resume windows
     and missing implementations, neither of which is a statement that a stage should

@@ -63,7 +63,7 @@ def _config_with_integration(h5ad_path: Path) -> dict:
             "condition_levels": ["control", "stimulated"],
         },
         "stages": {
-            "qc": True,
+            "qc_evidence": True,
             "preprocessing": True,
             "feature_selection": False,
             "dimensionality": True,
@@ -75,7 +75,7 @@ def _config_with_integration(h5ad_path: Path) -> dict:
             "integration_benchmark": False,
             "adjudication": False,
         },
-        "qc": {
+        "qc_evidence": {
             "metrics": {"layer": "counts", "percent_top": [2]},
             "floors": {"min_genes_per_cell": 5, "min_cells_per_gene": 1},
             "outputs": {"write_h5ad": False, "write_figures": False},

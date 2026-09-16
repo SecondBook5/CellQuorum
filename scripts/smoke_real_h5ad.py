@@ -127,7 +127,7 @@ def main(
         input=InputConfig(h5ad=subset_input_path),
         compute=ComputeConfig(backend="cpu", prefer_gpu=False, fallback_to_cpu=True),
         r=RConfig(enabled=False),
-        qc=QCConfig(
+        qc_evidence=QCConfig(
             metrics={"percent_top": [20]},
             # A smoke subset is small and arbitrary, so the floors are set to keep everything
             # the assay detected; the point of the run is that the stages execute, not that this
@@ -168,7 +168,7 @@ def main(
     succeeded = execution_result.succeeded_stage_names()
     failed = execution_result.failed_stage_names()
 
-    if "qc" not in succeeded:
+    if "qc_evidence" not in succeeded:
         click.echo("Error: QC stage did not succeed", err=True)
         sys.exit(1)
 

@@ -43,7 +43,7 @@ def test_planner_orders_ambient_first_by_default():
     cfg = CellQuorumConfig()
     names = [s.name for s in PipelinePlanner(cfg).build_plan().stages]
     assert "ambient_correction" in names
-    assert names.index("ambient_correction") < names.index("qc")
+    assert names.index("ambient_correction") < names.index("qc_evidence")
 
 
 def test_planner_can_still_turn_ambient_off():

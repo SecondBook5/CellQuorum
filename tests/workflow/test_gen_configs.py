@@ -56,7 +56,7 @@ def test_stage_flags_reflect_resolved_methods(manifest, template) -> None:
     # a run method (pathway_enrichment) -> its stages on
     assert stages["enrichment"] is True
     # mandatory stage always on
-    assert stages["qc"] is True
+    assert stages["qc_evidence"] is True
     # an unrelated optional stage off
     assert stages["grn"] is False
 
@@ -299,17 +299,17 @@ def test_stage_flags_cover_every_declared_stage(manifest, template) -> None:
 
 
 def test_manifest_stage_declaration_beats_the_computed_flags(manifest, template) -> None:
-    # `qc` is a mandatory stage, so the computed block always turns it on. A project
+    # `qc_evidence` is a mandatory stage, so the computed block always turns it on. A project
     # whose QC ran once on a shared atlas has to be able to say so in the manifest and
     # be believed -- before this, the computed block silently won and every repo
     # worked around it with its own post-generation patch script.
     off_manifest = copy.deepcopy(manifest)
     entry = off_manifest["emt_krt"]
-    entry.setdefault("config_overrides", {})["stages"] = {"qc": False}
+    entry.setdefault("config_overrides", {})["stages"] = {"qc_evidence": False}
 
     out = gen_configs(off_manifest, template)
 
-    assert out["emt_krt__KC"]["stages"]["qc"] is False
+    assert out["emt_krt__KC"]["stages"]["qc_evidence"] is False
     validate_config_dict(out["emt_krt__KC"])  # raises if invalid
 
 
@@ -331,7 +331,7 @@ def test_stage_overrides_preserve_the_canonical_key_order(manifest, template) ->
     # the real change in the diff.
     off_manifest = copy.deepcopy(manifest)
     entry = off_manifest["emt_krt"]
-    entry.setdefault("config_overrides", {})["stages"] = {"qc": False}
+    entry.setdefault("config_overrides", {})["stages"] = {"qc_evidence": False}
 
     plain = gen_configs(manifest, template)["emt_krt__KC"]["stages"]
     patched = gen_configs(off_manifest, template)["emt_krt__KC"]["stages"]

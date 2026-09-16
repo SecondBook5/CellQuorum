@@ -44,7 +44,7 @@ design:
 # --- Which stages run ---
 stages:
   ambient_correction: false
-  qc: true
+  qc_evidence: true
   preprocessing: true
   feature_selection: true
   dimensionality: true
@@ -65,7 +65,7 @@ stages:
   cell_cell_communication: false
   network_analysis: false
 
-qc:
+qc_evidence:
   enabled: true
   metrics:
     layer: counts

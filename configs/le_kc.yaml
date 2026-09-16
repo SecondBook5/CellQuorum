@@ -32,7 +32,7 @@ compute:
 # reference_mapping writes the KC-state labels used downstream.
 stages:
   ambient_correction: false   # already SoupX-corrected
-  qc: true                    # audit QC metrics/figures; do not filter cells
+  qc_evidence: true                    # audit QC metrics/figures; do not filter cells
   preprocessing: true         # create a CellQuorum-tagged normalized layer from counts
   feature_selection: false
   dimensionality: true        # PCA on the normalized layer
@@ -53,7 +53,7 @@ stages:
   cell_cell_communication: false
   network_analysis: false
 
-qc:
+qc_evidence:
   enabled: true
   metrics:
     layer: counts

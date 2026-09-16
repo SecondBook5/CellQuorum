@@ -812,7 +812,7 @@ def test_the_fitted_model_and_its_posterior_reach_the_run_directory(tmp_path: Pa
     result = QCStage().run(
         PipelineContext(
             config=CellQuorumConfig(
-                qc=QCConfig(
+                qc_evidence=QCConfig(
                     floors={"min_genes_per_cell": 1, "min_cells_per_gene": 1},
                     mito_mixture={"enabled": True},
                     graded={"self_check_fails_run": False},

@@ -69,7 +69,7 @@ def _generic_config(h5ad_path: Path, output_dir: Path) -> dict:
             "condition_levels": ["control", "stimulated"],
         },
         "stages": {
-            "qc": True,
+            "qc_evidence": True,
             "preprocessing": True,
             "dimensionality": True,
             "clustering": True,
@@ -81,7 +81,7 @@ def _generic_config(h5ad_path: Path, output_dir: Path) -> dict:
             "integration_benchmark": False,
             "adjudication": False,
         },
-        "qc": {
+        "qc_evidence": {
             "metrics": {"layer": "counts", "percent_top": [2]},
             # The fixture has 50 genes, so the default 200-gene detection floor would remove
             # every cell. Set the floors to the fixture's scale: this test is about the stages
@@ -133,7 +133,7 @@ def test_generic_non_kc_cohort_runs_end_to_end(tmp_path: Path) -> None:
 
     # QC ran and annotated the generic cohort (proving cohort-keyed grouping).
     succeeded = set(execution.succeeded_stage_names())
-    assert "qc" in succeeded
+    assert "qc_evidence" in succeeded
 
 
 def test_generic_config_file_plans_and_validates() -> None:
@@ -151,4 +151,4 @@ def test_generic_config_file_plans_and_validates() -> None:
     cfg = CellQuorumConfig.model_validate(yaml.safe_load(config_path.read_text(encoding="utf-8")))
     plan = PipelinePlanner(cfg).build_plan()
     # The plan renders and QC is among the enabled stages.
-    assert "qc" in plan.enabled_stage_names()
+    assert "qc_evidence" in plan.enabled_stage_names()

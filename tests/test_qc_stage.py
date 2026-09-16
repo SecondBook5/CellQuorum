@@ -255,7 +255,7 @@ def test_qc_stage_has_stable_name_and_default_output_subdir() -> None:
     stage = QCStage()
 
     # Confirm the stable stage name.
-    assert stage.name == "qc"
+    assert stage.name == "qc_evidence"
 
     # Confirm the default output subdirectory.
     assert stage.output_subdir == "qc"
@@ -303,7 +303,7 @@ def test_resolve_qc_config_accepts_context_qc_config(tmp_path: Path) -> None:
 
 def test_resolve_qc_config_accepts_object_qc_field(tmp_path: Path) -> None:
     """
-    Verify context.config.qc can be resolved into QCConfig.
+    Verify context.config.qc_evidence can be resolved into QCConfig.
 
     This supports future top-level configs once QC is embedded directly.
     """
@@ -311,7 +311,7 @@ def test_resolve_qc_config_accepts_object_qc_field(tmp_path: Path) -> None:
     # Build a context with object-style QC config.
     context = make_context(
         tmp_path,
-        config=SimpleNamespace(qc={"floors": {"min_genes_per_cell": 1}}),
+        config=SimpleNamespace(qc_evidence={"floors": {"min_genes_per_cell": 1}}),
     )
 
     # Resolve the QC config.
@@ -358,7 +358,7 @@ def test_is_qc_stage_enabled_respects_top_level_stage_selection(tmp_path: Path) 
     """
 
     # Build top-level config with QC disabled.
-    config = CellQuorumConfig(stages={"qc": False})
+    config = CellQuorumConfig(stages={"qc_evidence": False})
 
     # Build a context.
     context = make_context(tmp_path, config=config)
@@ -572,7 +572,7 @@ def test_qc_stage_run_respects_top_level_stage_disabled_flag(tmp_path: Path) -> 
     """
 
     # Build top-level config with QC disabled.
-    config = CellQuorumConfig(stages={"qc": False})
+    config = CellQuorumConfig(stages={"qc_evidence": False})
 
     # Build context and stage.
     context = make_context(tmp_path, config=config)
@@ -731,7 +731,7 @@ def test_annotate_adata_with_qc_metrics_reports_a_stale_gene_level_column() -> N
 
 def test_resolve_qc_config_accepts_mapping_qc_field(tmp_path: Path) -> None:
     """
-    Verify context.config['qc'] can be resolved into QCConfig.
+    Verify context.config['qc_evidence'] can be resolved into QCConfig.
 
     Dictionary-like contexts are useful for lightweight adapters.
     """
@@ -740,7 +740,7 @@ def test_resolve_qc_config_accepts_mapping_qc_field(tmp_path: Path) -> None:
     context = make_context(
         tmp_path,
         config={
-            "qc": {
+            "qc_evidence": {
                 "enabled": False,
             }
         },

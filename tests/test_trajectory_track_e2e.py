@@ -92,7 +92,7 @@ def build_trajectory_config(h5ad_path: Path) -> CellQuorumConfig:
         stages={
             # Disable everything upstream/adjacent; keep only the trajectory track.
             "ambient_correction": False,
-            "qc": False,
+            "qc_evidence": False,
             "preprocessing": False,
             "feature_selection": False,
             "dimensionality": False,

@@ -54,7 +54,7 @@ def build_test_config(*, qc_mode: str = "flag_no_drop") -> CellQuorumConfig:
         r={
             "enabled": False,
         },
-        qc={
+        qc_evidence={
             "metrics": {
                 "percent_top": [2],
             },
@@ -82,7 +82,7 @@ def test_executor_with_verbose_reporter_emits_stage_markers(tmp_path: Path):
     plan = PipelinePlan(
         profile="standard",
         stages=[
-            PlannedStage(name="qc", enabled=True, status="enabled", reason="test"),
+            PlannedStage(name="qc_evidence", enabled=True, status="enabled", reason="test"),
         ],
     )
 
@@ -97,12 +97,12 @@ def test_executor_with_verbose_reporter_emits_stage_markers(tmp_path: Path):
 
     # Check that execution succeeded.
     assert len(result.succeeded_stage_names()) == 1
-    assert "qc" in result.succeeded_stage_names()
+    assert "qc_evidence" in result.succeeded_stage_names()
 
     # Check that the reporter emitted stage markers.
     output = buf.getvalue()
-    assert "▶ qc" in output  # stage_start
-    assert "✓ qc" in output  # stage_end
+    assert "▶ qc_evidence" in output  # stage_start
+    assert "✓ qc_evidence" in output  # stage_end
 
 
 def test_executor_with_noop_reporter_produces_no_output(tmp_path: Path):
@@ -117,7 +117,7 @@ def test_executor_with_noop_reporter_produces_no_output(tmp_path: Path):
     plan = PipelinePlan(
         profile="standard",
         stages=[
-            PlannedStage(name="qc", enabled=True, status="enabled", reason="test"),
+            PlannedStage(name="qc_evidence", enabled=True, status="enabled", reason="test"),
         ],
     )
 
@@ -145,7 +145,7 @@ def test_executor_results_identical_with_verbose_and_noop_reporter(tmp_path: Pat
     plan = PipelinePlan(
         profile="standard",
         stages=[
-            PlannedStage(name="qc", enabled=True, status="enabled", reason="test"),
+            PlannedStage(name="qc_evidence", enabled=True, status="enabled", reason="test"),
         ],
     )
 
@@ -205,7 +205,7 @@ def test_executor_without_reporter_arg_still_works(tmp_path: Path):
     plan = PipelinePlan(
         profile="standard",
         stages=[
-            PlannedStage(name="qc", enabled=True, status="enabled", reason="test"),
+            PlannedStage(name="qc_evidence", enabled=True, status="enabled", reason="test"),
         ],
     )
 
@@ -215,7 +215,7 @@ def test_executor_without_reporter_arg_still_works(tmp_path: Path):
 
     # Check that execution succeeded.
     assert len(result.succeeded_stage_names()) == 1
-    assert "qc" in result.succeeded_stage_names()
+    assert "qc_evidence" in result.succeeded_stage_names()
 
 
 def test_config_echo_with_planned_stage_names_shows_only_runnable_stages():

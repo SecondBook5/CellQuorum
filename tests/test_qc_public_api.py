@@ -206,7 +206,7 @@ def test_qc_public_api_stage_can_be_instantiated() -> None:
     stage = qc.QCStage(config=make_public_api_qc_config())
 
     # Confirm the stable stage name.
-    assert stage.name == "qc"
+    assert stage.name == "qc_evidence"
 
     # Confirm the config was retained.
     assert isinstance(stage.config, qc.QCConfig)

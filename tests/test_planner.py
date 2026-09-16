@@ -30,7 +30,7 @@ def test_pipeline_planner_builds_plan_from_default_config() -> None:
     assert plan.profile == "standard"
 
     # Confirm core stages are enabled.
-    assert "qc" in plan.enabled_stage_names()
+    assert "qc_evidence" in plan.enabled_stage_names()
 
     # Confirm molecular inference is enabled as a gated capability.
     assert "molecular_inference" in plan.enabled_stage_names()
@@ -136,7 +136,7 @@ def test_pipeline_planner_respects_disabled_stage_flags() -> None:
     # Build a config with selected stages disabled.
     config = CellQuorumConfig(
         stages={
-            "qc": True,
+            "qc_evidence": True,
             "preprocessing": True,
             "integration": False,
             "annotation": False,

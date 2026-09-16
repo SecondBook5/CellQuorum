@@ -50,7 +50,7 @@ def test_default_cellquorum_config_builds_successfully() -> None:
     assert config.report.enabled is True
 
     # Confirm quality control is enabled by default.
-    assert config.stages.qc is True
+    assert config.stages.qc_evidence is True
 
     # Confirm molecular inference is enabled as a gated capability by default.
     assert config.stages.molecular_inference is True
@@ -333,7 +333,7 @@ def test_stage_selection_config_defaults_to_major_capabilities_enabled() -> None
     config = StageSelectionConfig()
 
     # Confirm QC is enabled by default.
-    assert config.qc is True
+    assert config.qc_evidence is True
 
     # Confirm preprocessing is enabled by default.
     assert config.preprocessing is True

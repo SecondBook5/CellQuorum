@@ -12,7 +12,7 @@ that have no module yet.
 |---|---|---|
 | 10 | `ambient_correction` | implemented |
 | 15 | `qc_splice_metrics` | implemented |
-| 20 | `qc` | implemented |
+| 20 | `qc_evidence` | implemented |
 | 30 | `preprocessing` | implemented |
 | 40 | `feature_selection` | implemented |
 | 50 | `dimensionality` | implemented |

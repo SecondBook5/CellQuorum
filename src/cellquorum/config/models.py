@@ -835,7 +835,7 @@ class StageSelectionConfig(StrictBaseModel):
     Args:
         ambient_correction: Whether ambient correction is enabled.
         qc_splice_metrics: Whether the optional splice-QC extraction is enabled.
-        qc: Whether quality control is enabled.
+        qc_evidence: Whether quality control is enabled.
         preprocessing: Whether preprocessing is enabled.
         dimensionality: Whether dimensionality reduction is enabled.
         clustering: Whether clustering is enabled.
@@ -872,7 +872,7 @@ class StageSelectionConfig(StrictBaseModel):
     qc_splice_metrics: bool = False
 
     # Store whether quality control is enabled.
-    qc: bool = True
+    qc_evidence: bool = True
 
     # Store whether preprocessing is enabled.
     preprocessing: bool = True
@@ -1011,7 +1011,7 @@ class CellQuorumConfig(StrictBaseModel):
         report: Final report settings.
         stages: Major stage enablement flags.
         ambient_correction: Ambient-correction settings.
-        qc: Quality-control settings.
+        qc_evidence: Quality-control settings.
         preprocessing: Preprocessing settings.
         dimensionality: Dimensionality-reduction settings.
         clustering: Clustering settings.
@@ -1045,7 +1045,7 @@ class CellQuorumConfig(StrictBaseModel):
     ambient_correction: AmbientCorrectionConfig = Field(default_factory=AmbientCorrectionConfig)
 
     # Store quality-control settings.
-    qc: QCConfig = Field(default_factory=QCConfig)
+    qc_evidence: QCConfig = Field(default_factory=QCConfig)
 
     # Store preprocessing settings.
     preprocessing: PreprocessingConfig = Field(default_factory=PreprocessingConfig)
@@ -1231,9 +1231,9 @@ class CellQuorumConfig(StrictBaseModel):
         dangerous one: it reads as "run this stage", and the thing that actually happens is
         the silent skip described above. That halts at load.
 
-        Component switches nested inside a stage (``qc.doublets.enabled``,
-        ``qc.graded.enabled``) are untouched: those decide whether a *part* of a stage
-        runs, which is a different question with only one place to ask it.
+        Component switches nested inside a stage (``qc_evidence.doublets.enabled``,
+        ``qc_evidence.graded.enabled``) are untouched: those decide whether a *part* of a
+        stage runs, which is a different question with only one place to ask it.
 
         Returns:
             Validated CellQuorumConfig, with both switches in agreement.

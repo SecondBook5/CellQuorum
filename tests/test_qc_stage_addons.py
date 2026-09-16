@@ -29,11 +29,11 @@ class _Paths:
 
 
 class _Config:
-    """Match real context.config structure: config.qc reads QCConfig."""
+    """Match real context.config structure: config.qc_evidence reads QCConfig."""
 
     def __init__(self, qc):
-        self.qc = qc
-        self.stages = type("S", (), {"qc": True})()
+        self.qc_evidence = qc
+        self.stages = type("S", (), {"qc_evidence": True})()
 
 
 class _Ctx:

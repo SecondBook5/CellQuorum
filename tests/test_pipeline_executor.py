@@ -132,7 +132,7 @@ def build_test_config(*, qc_mode: str = "flag_no_drop") -> CellQuorumConfig:
         r={
             "enabled": False,
         },
-        qc={
+        qc_evidence={
             "metrics": {
                 "percent_top": [2],
             },
@@ -298,7 +298,7 @@ def test_default_stage_registry_contains_qc() -> None:
     assert registry.get("adjudication") is not None
     assert registry.get("ambient_correction") is not None
     assert registry.get("qc_splice_metrics") is not None
-    assert registry.get("qc") is not None
+    assert registry.get("qc_evidence") is not None
     assert registry.get("preprocessing") is not None
     assert registry.get("dimensionality") is not None
     assert registry.get("clustering") is not None
@@ -339,7 +339,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "perturbation",
         "population_identity",
         "preprocessing",
-        "qc",
+        "qc_evidence",
         "qc_finalization",
         "qc_splice_metrics",
         "query_projection",
@@ -416,7 +416,7 @@ def test_executor_runs_qc_stage_and_updates_context(tmp_path: Path) -> None:
     context = build_test_context(tmp_path)
 
     # Build a plan with QC enabled.
-    plan = make_plan(make_enabled_stage("qc"))
+    plan = make_plan(make_enabled_stage("qc_evidence"))
 
     # Execute the plan.
     execution_result = PipelineExecutor().run(context=context, plan=plan)
@@ -425,13 +425,13 @@ def test_executor_runs_qc_stage_and_updates_context(tmp_path: Path) -> None:
     assert isinstance(execution_result, PipelineExecutionResult)
 
     # Confirm QC succeeded.
-    assert execution_result.succeeded_stage_names() == ["qc"]
+    assert execution_result.succeeded_stage_names() == ["qc_evidence"]
     assert execution_result.skipped_stage_names() == []
     assert execution_result.failed_stage_names() == []
     assert execution_result.has_failures() is False
 
     # Confirm QC result was stored.
-    assert "qc" in execution_result.succeeded_stage_names()
+    assert "qc_evidence" in execution_result.succeeded_stage_names()
 
     # Confirm context AnnData was preserved and updated.
     assert isinstance(execution_result.context.adata, ad.AnnData)
@@ -462,14 +462,14 @@ def test_executor_records_disabled_stage_as_skipped(tmp_path: Path) -> None:
     context = build_test_context(tmp_path)
 
     # Build a plan with QC disabled.
-    plan = make_plan(make_disabled_stage("qc"))
+    plan = make_plan(make_disabled_stage("qc_evidence"))
 
     # Execute the plan.
     execution_result = PipelineExecutor().run(context=context, plan=plan)
 
     # Confirm QC was skipped.
     assert execution_result.succeeded_stage_names() == []
-    assert execution_result.skipped_stage_names() == ["qc"]
+    assert execution_result.skipped_stage_names() == ["qc_evidence"]
 
     # Confirm skip reason came from the plan.
     record = execution_result.stage_execution_records[0]

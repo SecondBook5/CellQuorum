@@ -207,7 +207,7 @@ def test_empty_doublet_result_fails_at_qc(monkeypatch, tmp_path):
 def test_doublets_removed_when_remove_true(tmp_path):
     a = _counts_adata()
     config = {
-        "qc": {
+        "qc_evidence": {
             "enabled": True,
             "metrics": {"layer": "counts"},
             # The fixture is a handful of synthetic barcodes, below any real
@@ -254,7 +254,7 @@ def test_doublets_removed_when_remove_true(tmp_path):
 def test_doublets_kept_when_remove_false(tmp_path):
     a = _counts_adata()
     config = {
-        "qc": {
+        "qc_evidence": {
             "enabled": True,
             "metrics": {"layer": "counts"},
             # The fixture is a handful of synthetic barcodes, below any real

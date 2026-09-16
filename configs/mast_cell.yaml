@@ -33,7 +33,7 @@ r:
 
 stages:
   ambient_correction: true
-  qc: true
+  qc_evidence: true
   preprocessing: true
   dimensionality: true
   integration: true
@@ -50,7 +50,7 @@ ambient_correction:
   cluster_resolution: 0.5
   timeout_seconds: 1800
 
-qc:
+qc_evidence:
   enabled: true
 
 preprocessing:

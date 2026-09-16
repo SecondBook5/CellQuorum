@@ -77,7 +77,7 @@ Run stage-by-stage (`--from-stage X --until-stage X`, or the narrowest window
 that makes sense per stage), inspecting real output — a table, a figure, a
 row count — before extending to the next stage. Order:
 
-1. `bootstrap` → `ambient_correction` (soupx) → `qc` → `preprocessing` →
+1. `bootstrap` → `ambient_correction` (soupx) → `qc_evidence` → `preprocessing` →
    `feature_selection` → `dimensionality` → `integration` (scVI/Harmony).
    Mechanically the same as before; the difference this time is actually
    looking at each stage's output.

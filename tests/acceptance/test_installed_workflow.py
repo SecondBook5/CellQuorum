@@ -40,7 +40,7 @@ def registry() -> BackendRegistry:
 
 def config_for(source: Path) -> dict:
     enabled = {
-        "qc",
+        "qc_evidence",
         "preprocessing",
         "dimensionality",
         "clustering",
@@ -52,7 +52,12 @@ def config_for(source: Path) -> dict:
         "input": {"h5ad": str(source), "counts_layer": "counts"},
         "compute": {"backend": "cpu", "prefer_gpu": False},
         "r": {"enabled": False},
-        "run": {"random_seed": 7, "verbose": False, "checkpoint": True, "checkpoint_after": ["qc"]},
+        "run": {
+            "random_seed": 7,
+            "verbose": False,
+            "checkpoint": True,
+            "checkpoint_after": ["qc_evidence"],
+        },
         "cohort": {
             "sample_key": "sample",
             "donor_key": "donor",
@@ -67,7 +72,7 @@ def config_for(source: Path) -> dict:
             "paired": True,
         },
         "stages": {name: name in enabled for name in StageSelectionConfig.model_fields},
-        "qc": {
+        "qc_evidence": {
             "metrics": {"layer": "counts", "percent_top": [20]},
             "floors": {"min_genes_per_cell": 20, "min_cells_per_gene": 1},
             "doublets": {"enabled": False},
@@ -160,9 +165,9 @@ def test_installed_analysis_checkpoint_and_outputs(tmp_path: Path) -> None:
         assert final.uns["pca"]["params"]["arithmetic_dtype"] == "float64"
 
     stopped = run_pipeline(
-        config, output_dir=resumed_dir, backend_registry=registry(), until_stage="qc"
+        config, output_dir=resumed_dir, backend_registry=registry(), until_stage="qc_evidence"
     )
-    assert stopped.execution_result.succeeded_stage_names() == ["qc"]
+    assert stopped.execution_result.succeeded_stage_names() == ["qc_evidence"]
     resumed = run_pipeline(
         config, output_dir=resumed_dir, backend_registry=registry(), from_stage="preprocessing"
     )
@@ -174,7 +179,7 @@ def test_installed_analysis_checkpoint_and_outputs(tmp_path: Path) -> None:
     np.testing.assert_array_equal(final.obs.leiden, resumed.context.adata.obs.leiden)
 
     changed = copy.deepcopy(config)
-    changed["qc"]["floors"]["min_genes_per_cell"] = 25
+    changed["qc_evidence"]["floors"]["min_genes_per_cell"] = 25
     with pytest.raises(CheckpointError, match="(?i)fingerprint|settings|config.*chang|stale"):
         run_pipeline(
             changed, output_dir=resumed_dir, backend_registry=registry(), from_stage="preprocessing"

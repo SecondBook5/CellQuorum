@@ -999,12 +999,12 @@ class QCConfig(StrictBaseModel):
 def validate_qc_config_dict(config: Mapping[str, object]) -> QCConfig:
     """Validate a plain mapping into a QCConfig object."""
 
-    config_dict = require_mapping(config, field_path="qc")
+    config_dict = require_mapping(config, field_path="qc_evidence")
 
     reject_unknown_keys(
         config_dict,
         allowed_keys=[*QCConfig.model_fields, *QCConfig._REMOVED_KEYS],
-        field_path="qc",
+        field_path="qc_evidence",
     )
 
     try:

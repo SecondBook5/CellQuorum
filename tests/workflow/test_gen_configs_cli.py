@@ -33,7 +33,7 @@ def test_cli_writes_configs_and_accounting(tmp_path: Path) -> None:
     assert acct["il33_axis"]["blocked"] == ["rna_velocity"]
 
     written = yaml.safe_load((cfg_dir / "il33_axis__KC.yaml").read_text())
-    assert written["stages"]["qc"] is True
+    assert written["stages"]["qc_evidence"] is True
 
 
 def test_run_subcommand_matches_snakefile_invocation(tmp_path: Path) -> None:

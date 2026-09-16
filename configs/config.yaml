@@ -75,7 +75,7 @@ report:
   fail_on_report_error: false
 
 stages:
-  qc: true
+  qc_evidence: true
   preprocessing: true
   integration: true
   annotation: true

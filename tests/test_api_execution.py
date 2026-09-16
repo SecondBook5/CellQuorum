@@ -126,7 +126,7 @@ def build_execution_config(h5ad_path: Path) -> CellQuorumConfig:
         r={
             "enabled": False,
         },
-        qc={
+        qc_evidence={
             "metrics": {
                 "percent_top": [2],
             },
@@ -165,7 +165,7 @@ def test_run_pipeline_executes_by_default_for_config_model(tmp_path: Path) -> No
 
     # Confirm execution happened.
     assert result.execution_result is not None
-    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "qc_evidence" in result.execution_result.succeeded_stage_names()
 
     # Confirm final AnnData contains QC annotations.
     assert isinstance(result.context.adata, ad.AnnData)
@@ -226,7 +226,7 @@ def test_run_pipeline_executes_by_default_for_dictionary(tmp_path: Path) -> None
             "r": {
                 "enabled": False,
             },
-            "qc": {
+            "qc_evidence": {
                 "metrics": {
                     "percent_top": [2],
                 },
@@ -246,7 +246,7 @@ def test_run_pipeline_executes_by_default_for_dictionary(tmp_path: Path) -> None
 
     # Confirm execution happened.
     assert result.execution_result is not None
-    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "qc_evidence" in result.execution_result.succeeded_stage_names()
 
 
 def test_run_pipeline_executes_by_default_for_yaml_path(tmp_path: Path) -> None:
@@ -273,7 +273,7 @@ compute:
   fallback_to_cpu: true
 r:
   enabled: false
-qc:
+qc_evidence:
   metrics:
     percent_top: [2]
   floors:
@@ -295,7 +295,7 @@ qc:
 
     # Confirm execution happened.
     assert result.execution_result is not None
-    assert "qc" in result.execution_result.succeeded_stage_names()
+    assert "qc_evidence" in result.execution_result.succeeded_stage_names()
 
     # Confirm final AnnData contains QC annotations.
     assert isinstance(result.context.adata, ad.AnnData)

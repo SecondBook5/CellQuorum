@@ -181,7 +181,7 @@ compute:
   fallback_to_cpu: true
 
 stages:                # enable/disable stages (all default true except
-  qc: true             # ambient_correction and integration_gate)
+  qc_evidence: true             # ambient_correction and integration_gate)
   preprocessing: true
   dimensionality: true
   integration: true

@@ -112,7 +112,7 @@ and the `AnnData` passes through unchanged.
 ```yaml
 stages:
   ambient_correction: false   # off by default
-  qc: true
+  qc_evidence: true
   preprocessing: true
   feature_selection: true
   dimensionality: true

@@ -56,7 +56,7 @@ Once validated, the config is a frozen Pydantic model that threads through the e
 
 The validated config and backend registry are passed to **`core/planner.py:build_pipeline_plan`**, which:
 1. Reads the ordered list of all stages from **`core/stage_catalog.py`** (the `@register_stage` decorator catalog)
-2. For each stage, checks its `config_flag` (e.g., `stages.qc`) to determine if it's enabled
+2. For each stage, checks its `config_flag` (e.g., `stages.qc_evidence`) to determine if it's enabled
 3. Produces a `PipelinePlan` containing an ordered list of `PlannedStage` objects (each marked `enabled` or `disabled`) plus backend availability warnings
 
 The planner **does not yet instantiate stages** — it only decides *which* stages will run. The full pipeline order lives in the catalog, populated at import time by `@register_stage` decorators on each stage class.

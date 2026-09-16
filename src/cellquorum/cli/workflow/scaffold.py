@@ -27,7 +27,7 @@ SCAFFOLD: list[str] = [
 # annotation and its consensus/diagnostics. These are prerequisites for
 # every downstream method, so they are always enabled.
 MANDATORY_STAGES: list[str] = [
-    "qc",
+    "qc_evidence",
     "preprocessing",
     "feature_selection",
     "dimensionality",

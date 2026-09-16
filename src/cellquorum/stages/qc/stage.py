@@ -1,4 +1,4 @@
-# Pipeline step (order=20): qc — metrics, floors, evidence, and analysis eligibility.
+# Pipeline step (order=20): qc_evidence — metrics, floors, evidence, and analysis eligibility.
 """QC pipeline stage for CellQuorum."""
 
 from __future__ import annotations
@@ -201,7 +201,7 @@ def _removed_cells_table(
     )
 
 
-@register_stage(name="qc", order=20, config_flag="qc", config_field="qc")
+@register_stage(name="qc_evidence", order=20, config_flag="qc_evidence", config_field="qc_evidence")
 @dataclass(frozen=True)
 class QCStage:
     """Execute the complete CellQuorum QC module.

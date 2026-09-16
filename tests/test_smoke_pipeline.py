@@ -442,7 +442,7 @@ def test_bootstrap_pipeline_run_returns_structured_result_and_writes_provenance(
     assert result.plan.profile == "standard"
 
     # Confirm QC is enabled in the stage plan.
-    assert "qc" in result.plan.enabled_stage_names()
+    assert "qc_evidence" in result.plan.enabled_stage_names()
 
     # Confirm the topology/curvature network stage is enabled as a gated
     # capability (planned under its registered name "ccc_network").
@@ -686,7 +686,7 @@ def test_pipeline_provenance_files_have_expected_content(tmp_path: Path) -> None
     stage_plan = pd.read_csv(result.context.paths.provenance / "stage_plan.csv")
 
     # Confirm QC appears in the stage plan CSV.
-    assert "qc" in set(stage_plan["name"])
+    assert "qc_evidence" in set(stage_plan["name"])
 
     # Load the written run metadata JSON.
     run_metadata = json.loads(

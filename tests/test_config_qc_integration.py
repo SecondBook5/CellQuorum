@@ -71,12 +71,12 @@ def test_cellquorum_config_default_includes_qc_config() -> None:
     config = CellQuorumConfig()
 
     # Confirm QC config is present.
-    assert isinstance(config.qc, QCConfig)
+    assert isinstance(config.qc_evidence, QCConfig)
 
     # Confirm key QC defaults are available from the top-level config.
-    assert config.qc.enabled is True
-    assert config.qc.floors.min_genes_per_cell == 200
-    assert config.qc.floors.min_cells_per_gene == 3
+    assert config.qc_evidence.enabled is True
+    assert config.qc_evidence.floors.min_genes_per_cell == 200
+    assert config.qc_evidence.floors.min_cells_per_gene == 3
 
 
 def test_cellquorum_config_accepts_qc_mapping_directly() -> None:
@@ -88,7 +88,7 @@ def test_cellquorum_config_accepts_qc_mapping_directly() -> None:
 
     # Build a top-level config with a QC mapping.
     config = CellQuorumConfig(
-        qc={
+        qc_evidence={
             "enabled": True,
             "floors": {
                 "min_genes_per_cell": 123,
@@ -98,16 +98,16 @@ def test_cellquorum_config_accepts_qc_mapping_directly() -> None:
     )
 
     # Confirm the QC mapping was converted into QCConfig.
-    assert isinstance(config.qc, QCConfig)
+    assert isinstance(config.qc_evidence, QCConfig)
 
     # Confirm nested QC values were retained.
-    assert config.qc.floors.min_genes_per_cell == 123
-    assert config.qc.floors.min_cells_per_gene == 4
+    assert config.qc_evidence.floors.min_genes_per_cell == 123
+    assert config.qc_evidence.floors.min_cells_per_gene == 4
 
 
 def test_validate_config_dict_accepts_qc_block() -> None:
     """
-    Verify validate_config_dict accepts a top-level qc block.
+    Verify validate_config_dict accepts a top-level qc_evidence block.
 
     This is the main dictionary-to-runtime-config path used by notebooks and API
     calls.
@@ -119,7 +119,7 @@ def test_validate_config_dict_accepts_qc_block() -> None:
             "project": {
                 "name": "qc_dict_project",
             },
-            "qc": {
+            "qc_evidence": {
                 "enabled": True,
                 "floors": {
                     "min_genes_per_cell": 150,
@@ -133,26 +133,26 @@ def test_validate_config_dict_accepts_qc_block() -> None:
     assert isinstance(config, CellQuorumConfig)
 
     # Confirm QC config was parsed.
-    assert isinstance(config.qc, QCConfig)
-    assert config.qc.floors.min_genes_per_cell == 150
-    assert config.qc.floors.min_cells_per_gene == 5
+    assert isinstance(config.qc_evidence, QCConfig)
+    assert config.qc_evidence.floors.min_genes_per_cell == 150
+    assert config.qc_evidence.floors.min_cells_per_gene == 5
 
 
 def test_validate_config_dict_rejects_unknown_qc_keys() -> None:
     """
     Verify unknown nested QC keys still fail strict validation.
 
-    Adding qc to the top-level config must not weaken strict config validation.
+    Adding qc_evidence to the top-level config must not weaken strict config validation.
     """
 
-    # Confirm unknown keys inside qc fail validation.
+    # Confirm unknown keys inside qc_evidence fail validation.
     with pytest.raises(ConfigLoadError, match="Invalid CellQuorum configuration"):
         validate_config_dict(
             {
                 "project": {
                     "name": "bad_qc_project",
                 },
-                "qc": {
+                "qc_evidence": {
                     "not_a_real_qc_key": True,
                 },
             }
@@ -161,7 +161,7 @@ def test_validate_config_dict_rejects_unknown_qc_keys() -> None:
 
 def test_load_config_accepts_yaml_qc_block(tmp_path: Path) -> None:
     """
-    Verify YAML config files can include a top-level qc block.
+    Verify YAML config files can include a top-level qc_evidence block.
 
     This is the future CLI path for configuring QC.
     """
@@ -177,7 +177,7 @@ project:
 compute:
   backend: cpu
   prefer_gpu: false
-qc:
+qc_evidence:
   enabled: true
   floors:
     min_genes_per_cell: 175
@@ -193,22 +193,22 @@ qc:
     assert isinstance(config, CellQuorumConfig)
 
     # Confirm QC settings loaded.
-    assert isinstance(config.qc, QCConfig)
+    assert isinstance(config.qc_evidence, QCConfig)
     assert config.project.name == "yaml_qc_project"
-    assert config.qc.floors.min_genes_per_cell == 175
-    assert config.qc.floors.min_cells_per_gene == 6
+    assert config.qc_evidence.floors.min_genes_per_cell == 175
+    assert config.qc_evidence.floors.min_cells_per_gene == 6
 
 
 def test_qc_stage_resolves_top_level_config_qc_block() -> None:
     """
-    Verify QCStage config resolution uses CellQuorumConfig.qc automatically.
+    Verify QCStage config resolution uses CellQuorumConfig.qc_evidence automatically.
 
     This proves the stage no longer requires a manual QCStage(config=...) override
     when running from the top-level CellQuorum config.
     """
 
     # Build a top-level config with custom QC settings.
-    config = CellQuorumConfig(qc={})
+    config = CellQuorumConfig(qc_evidence={})
 
     # Build a lightweight context carrying the top-level config.
     context = SimpleNamespace(config=config)
@@ -217,31 +217,34 @@ def test_qc_stage_resolves_top_level_config_qc_block() -> None:
     resolved_qc_config = resolve_qc_config(context)
 
     # Confirm the top-level QC config was used directly.
-    assert resolved_qc_config is config.qc
+    assert resolved_qc_config is config.qc_evidence
 
 
 def test_qc_stage_enablement_follows_the_stages_block() -> None:
     """
-    Verify QC enablement comes from ``stages.qc`` alone.
+    Verify QC enablement comes from ``stages.qc_evidence`` alone.
 
-    This test used to assert an AND over two flags -- ``stages.qc`` and ``qc.enabled`` --
-    and built configs where the two disagreed to prove each could veto. That design is the
+    This test used to assert an AND over two flags -- ``stages.qc_evidence`` and
+    ``qc_evidence.enabled`` -- and built configs where the two disagreed to prove each
+    could veto. That design is the
     one that let ``stages.feature_selection: true`` be planned, reached, and then skipped
     "disabled by config", so PCA and scVI ran on all ~33,000 genes. Whether a stage runs is
     declared once now, and a contradiction is refused at load rather than resolved.
     """
 
     # Disabling via the stages block disables the stage.
-    disabled = CellQuorumConfig(stages={"qc": False})
-    assert disabled.qc.enabled is False
-    assert is_qc_stage_enabled(SimpleNamespace(config=disabled), disabled.qc) is False
+    disabled = CellQuorumConfig(stages={"qc_evidence": False})
+    assert disabled.qc_evidence.enabled is False
+    assert is_qc_stage_enabled(SimpleNamespace(config=disabled), disabled.qc_evidence) is False
 
     # Enabling via the stages block reaches the QC block's own gate.
-    enabled = CellQuorumConfig(stages={"qc": True})
-    assert enabled.qc.enabled is True
-    assert is_qc_stage_enabled(SimpleNamespace(config=enabled), enabled.qc) is True
+    enabled = CellQuorumConfig(stages={"qc_evidence": True})
+    assert enabled.qc_evidence.enabled is True
+    assert is_qc_stage_enabled(SimpleNamespace(config=enabled), enabled.qc_evidence) is True
 
     # Saying it in the stage block still works, and the stages block is kept in step.
-    block_style = CellQuorumConfig(qc={"enabled": False})
-    assert block_style.stages.qc is False
-    assert is_qc_stage_enabled(SimpleNamespace(config=block_style), block_style.qc) is False
+    block_style = CellQuorumConfig(qc_evidence={"enabled": False})
+    assert block_style.stages.qc_evidence is False
+    assert (
+        is_qc_stage_enabled(SimpleNamespace(config=block_style), block_style.qc_evidence) is False
+    )

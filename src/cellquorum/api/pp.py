@@ -16,9 +16,14 @@ if TYPE_CHECKING:
 
 
 def qc(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:
-    """Run the QC stage (metrics, thresholds, decisions, figures)."""
+    """Run the QC stage (metrics, thresholds, decisions, figures).
 
-    return run_stage("qc", adata, **kwargs)
+    The public name stays ``qc`` for a stable, memorable notebook call
+    (``cq.pp.qc(adata)``) even though the registered stage itself is named
+    ``qc_evidence`` (see stages/qc/__init__.py).
+    """
+
+    return run_stage("qc_evidence", adata, **kwargs)
 
 
 def normalize(adata: ad.AnnData, **kwargs: Any) -> NotebookStageOutput:

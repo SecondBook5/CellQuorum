@@ -128,7 +128,7 @@ GOLDEN_STAGE_ORDER = [
     # order=15: optional, reads spliced/unspliced counts a prior velocyto run already
     # produced (never generates them), before qc_evidence (20) can use them.
     "qc_splice_metrics",
-    "qc",
+    "qc_evidence",
     "preprocessing",
     "feature_selection",
     "dimensionality",
@@ -204,7 +204,7 @@ NON_STAGE_CONFIG_FIELDS = {
 # stage's declared category against this list rather than against the decorator's
 # own value, so a mistyped or misplaced category= argument fails loudly.
 STAGES_WITHOUT_CATEGORY = {
-    "qc",
+    "qc_evidence",
     "qc_splice_metrics",
     "preprocessing",
     "adjudication",

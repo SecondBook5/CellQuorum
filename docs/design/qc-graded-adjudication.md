@@ -452,7 +452,7 @@ remain fully functional on a filtered matrix alone.
 ## 10. Assay type
 
 ```yaml
-qc:
+qc_evidence:
   assay_type: auto     # → scrna_whole_cell | snrna
 ```
 
@@ -465,7 +465,7 @@ Schema versioning, not a hard error — silent reinterpretation is unacceptable,
 breaking existing reproducible runs is also unacceptable for a workflow engine.
 
 ```yaml
-qc:
+qc_evidence:
   schema_version: 2
   policy: graded_adjudication
 ```
