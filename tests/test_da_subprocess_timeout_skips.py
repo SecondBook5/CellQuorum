@@ -80,6 +80,7 @@ class _Registry:
 
 class _Paths:
     def __init__(self, tmp_path):
+        self.root = tmp_path
         self.results = tmp_path / "results"
         self.scratch = tmp_path / "scratch"
         self.results.mkdir(parents=True, exist_ok=True)
