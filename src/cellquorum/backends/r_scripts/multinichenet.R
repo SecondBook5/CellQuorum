@@ -14,8 +14,12 @@ case <- args[[9]]; control <- args[[10]]
 ligand_target_rds <- args[[11]]; lr_network_rds <- args[[12]]
 fraction_cutoff <- as.numeric(args[[13]]); min_sample_prop <- as.numeric(args[[14]])
 logfc_threshold <- as.numeric(args[[15]]); p_val_threshold <- as.numeric(args[[16]])
-p_val_adj <- as.logical(args[[17]]); top_n_target <- as.integer(args[[18]])
-scenario <- args[[19]]; n_cores <- as.integer(args[[20]]); seed <- as.integer(args[[21]])
+p_val_adj <- as.logical(args[[17]])
+# multinichenetr checks is.double() on both, not is.numeric() -- an
+# as.integer() value fails that check even though it's conceptually a
+# number ("top_n_target should be numeric" / "n.cores should be numeric").
+top_n_target <- as.numeric(args[[18]])
+scenario <- args[[19]]; n_cores <- as.numeric(args[[20]]); seed <- as.integer(args[[21]])
 
 set.seed(seed)
 
@@ -35,6 +39,23 @@ obs <- read.csv(obs_csv, stringsAsFactors = FALSE)
 rownames(obs) <- obs$barcode
 obs <- obs[barcodes, , drop = FALSE]
 
+# multinichenetr requires cell type labels to be syntactically valid R names
+# (they end up as list/column names internally) -- a bare numeric label like
+# "0" is not ("All the cell type labels ... should be syntactically valid R
+# names"). Sanitize here, and map the output back to the real labels below,
+# so nothing downstream of this script has to know about the substitution.
+#
+# Forced to character first: read.csv parses a numeric-looking column (e.g.
+# cluster ids "0".."8") as integer, and indexing a named vector by an
+# integer does R's POSITIONAL lookup, not its NAME lookup -- silently wrong
+# (and index 0 drops the row entirely, which is why this once produced
+# 61775 rows instead of 68148).
+obs[[celltype_col]] <- as.character(obs[[celltype_col]])
+original_celltypes <- unique(obs[[celltype_col]])
+sanitized_celltypes <- make.names(original_celltypes)
+celltype_lookup <- setNames(original_celltypes, sanitized_celltypes)
+obs[[celltype_col]] <- setNames(sanitized_celltypes, original_celltypes)[obs[[celltype_col]]]
+
 sce <- SingleCellExperiment(assays = list(counts = counts), colData = obs)
 # multinichenetr expects a normalized "logcounts" assay.
 logcounts(sce) <- log1p(counts)
@@ -51,6 +72,11 @@ contrast_tbl <- data.frame(
 output <- multi_nichenet_analysis(
   sce = sce,
   celltype_id = celltype_col, sample_id = sample_col, group_id = group_col,
+  # No batch or covariate column in this design; NA is multinichenetr's own
+  # documented value for "correct for nothing" (required, no default as of
+  # multinichenetr 2.1.0 -- an older/different version this script was
+  # originally written against apparently didn't require them).
+  batches = NA, covariates = NA,
   lr_network = lr_network, ligand_target_matrix = ligand_target_matrix,
   contrasts_oi = contrasts_oi, contrast_tbl = contrast_tbl,
   fraction_cutoff = fraction_cutoff, min_sample_prop = min_sample_prop,
@@ -61,4 +87,14 @@ output <- multi_nichenet_analysis(
 )
 
 tbl <- output$prioritization_tables$group_prioritization_tbl
+# Undo the make.names() sanitization: any column whose values are entirely
+# drawn from the sanitized cell type labels (sender/receiver, in the current
+# schema, but this stays correct if multinichenetr renames them) gets mapped
+# back to the real, original labels.
+for (col in names(tbl)) {
+  values <- as.character(tbl[[col]])
+  if (all(values %in% names(celltype_lookup))) {
+    tbl[[col]] <- unname(celltype_lookup[values])
+  }
+}
 write.csv(tbl, out_csv, row.names = FALSE)
