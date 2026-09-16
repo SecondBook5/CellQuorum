@@ -262,6 +262,28 @@ def test_curvature_network_without_weight_col():
     assert fig is not None
 
 
+def test_curvature_network_does_not_drop_nodes_on_a_dense_graph():
+    """Same bug already fixed for chord/sankey (_top_edges), never applied to
+    curvature_network: a flat top_k cap on a real, densely-connected 9-cluster
+    CCI network (36 edges) silently dropped 2 of 9 clusters from network_cci.png
+    -- confirmed directly against a real fibroblast run's curvature CSVs."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import curvature_network
+
+    nodes_list = [str(i) for i in range(9)]
+    rows = []
+    for i, a in enumerate(nodes_list):
+        for b in nodes_list[i + 1 :]:
+            rows.append({"source": a, "target": b, "ricci_curvature": 0.1, "weight": 100.0 + i})
+    edges = pd.DataFrame(rows)
+    nodes = pd.DataFrame({"node": nodes_list, "ricci_curvature": [0.1] * 9})
+
+    fig = curvature_network(edges, nodes, top_k=15)
+
+    ax = fig.axes[0]
+    shown = {t.get_text() for t in ax.texts}
+    assert shown == set(nodes_list)
+
+
 def test_topology_facet_figures_returns_one_figure_per_metric():
     """One file per metric (house style: one plot = one file), not a combined
     4-panel grid -- each metric (who receives, who sends, who mediates, who's

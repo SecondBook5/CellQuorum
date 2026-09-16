@@ -203,25 +203,22 @@ def cci_heatmap(
     return fig
 
 
-def _top_edges(
-    lr: pd.DataFrame, source_col: str, target_col: str, weight_col: str, top_k: int
+def _guarantee_node_seats(
+    agg: pd.DataFrame, source_col: str, target_col: str, weight_col: str, top_k: int
 ) -> pd.DataFrame:
-    """Aggregate to (source, target) pairs, then keep the top_k strongest --
-    but never at the cost of dropping a node from the figure entirely.
+    """From an already-deduplicated (source, target) edge table, keep the
+    top_k strongest -- but never at the cost of dropping a node from the
+    figure entirely.
 
     top_k is a flat cap on PAIRS; on a real, densely-connected graph (a
-    fibroblast_subcluster CCC run: 9 clusters, up to 72 real pairs) the
-    globally top-15 pairs can easily all involve the same handful of
-    clusters, silently erasing every other cluster from the chord/sankey
-    figure with no warning. Every node's own single strongest edge is
-    guaranteed a seat first; top_k then fills (or trims) the remainder.
+    fibroblast_subcluster CCC run: 9 clusters, up to 72 real pairs, or a
+    36-edge complete CCI curvature graph) the globally top-15 pairs can
+    easily all involve the same handful of clusters, silently erasing every
+    other cluster from the figure with no warning. Every node's own single
+    strongest edge is guaranteed a seat first; top_k then fills (or trims)
+    the remainder.
     """
-    agg = (
-        lr.groupby([source_col, target_col])[weight_col]
-        .sum()
-        .reset_index()
-        .sort_values([weight_col, source_col, target_col], kind="mergesort", ascending=False)
-    )
+    agg = agg.sort_values([weight_col, source_col, target_col], kind="mergesort", ascending=False)
     if len(agg) <= top_k:
         return agg
 
@@ -248,6 +245,14 @@ def _top_edges(
     return pd.concat([guaranteed, fill]).sort_values(
         [weight_col, source_col, target_col], kind="mergesort", ascending=False
     )
+
+
+def _top_edges(
+    lr: pd.DataFrame, source_col: str, target_col: str, weight_col: str, top_k: int
+) -> pd.DataFrame:
+    """Aggregate to (source, target) pairs, then apply _guarantee_node_seats."""
+    agg = lr.groupby([source_col, target_col])[weight_col].sum().reset_index()
+    return _guarantee_node_seats(agg, source_col, target_col, weight_col, top_k)
 
 
 def chord_diagram(
@@ -427,7 +432,7 @@ def curvature_network(
         e[weight_col] = 1.0
     else:
         e = edges
-    e = e.sort_values(weight_col, kind="mergesort", ascending=False).head(top_k)
+    e = _guarantee_node_seats(e, source_col, target_col, weight_col, top_k)
     G = nx.DiGraph()
     for _, r in e.iterrows():
         G.add_edge(
