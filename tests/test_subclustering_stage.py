@@ -238,6 +238,47 @@ def test_technical_qc_consistency_flags_a_qc_confounded_cluster(monkeypatch, tmp
     assert (tmp_path / "subclustering_technical_qc_consistency.csv").exists()
 
 
+def test_technical_qc_action_drop_removes_qc_confounded_cluster_cells(monkeypatch, tmp_path):
+    """`action: drop` is documented as governing clusters that fail ANY gate
+
+    ("action when clusters fail gate (flag or drop)"), and the donor gate
+    already honors it. The technical-QC-consistency gate silently ignored it
+    -- a cluster independently confirmed QC-confounded (elevated multiplet
+    rate, degraded complexity) stayed in every downstream figure regardless
+    of this setting. Confirmed live: a real 9-cluster fibroblast run with
+    two clusters flagged QC-confounded by this exact check still fed them
+    into CCC networks, coexpression, and GRN as ordinary peers, because
+    nothing ever consulted `action` for this gate.
+    """
+    from cellquorum.stages.clustering.subclustering import partition as partition_module
+
+    monkeypatch.setattr(partition_module.shutil, "which", lambda name: "/usr/bin/Rscript")
+
+    parent = _parent_adata()
+    n = parent.n_obs
+    even = np.arange(n) % 2 == 0
+    parent.obs["pct_counts_mito"] = np.where(even, 6.0, 2.0)
+    parent.obs["total_counts"] = np.where(even, 1500.0, 8000.0)
+    parent.obs["n_genes_by_counts"] = np.where(even, 900.0, 2800.0)
+    parent.obs["qc_probable_multiplet"] = even
+    n_confounded = int(even.sum())  # cluster "1" -- the even-indexed cells
+
+    ctx = _context(parent, focus_labels=["Fibroblasts"])
+    ctx.config.subclustering = ctx.config.subclustering.model_copy(
+        update={"formal_test": FormalTestConfig(method="none"), "action": "drop"}
+    )
+    ctx.backend_registry = SimpleNamespace(get=lambda name: _ChoirCapturingBackend())
+    ctx.paths = SimpleNamespace(figures=tmp_path, scratch=tmp_path, root=tmp_path, results=tmp_path)
+
+    result = SubclusteringStage().run(ctx)
+
+    assert result.metrics.get("technical_qc_n_fail") == 1
+    assert result.metrics.get("technical_qc_n_cells_dropped") == n_confounded
+    assert result.adata.n_obs == parent.n_obs - n_confounded
+    assert "fibroblast_subcluster" in result.adata.obs.columns
+    assert "1" not in set(result.adata.obs["fibroblast_subcluster"].astype(str))
+
+
 def test_subclustering_zero_cell_focus_is_refused():
     """Focus matches 0 cells: fail, rather than pass the parent through.
 

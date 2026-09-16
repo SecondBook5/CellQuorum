@@ -581,6 +581,31 @@ class SubclusteringStage:
                         f"necessarily real biological states -- {failed}"
                     )
 
+                    # Apply action (flag or drop) -- same shared switch the donor
+                    # gate already honors ("action when clusters fail gate"). A
+                    # QC-confounded cluster left in place is not just mislabeled:
+                    # every downstream stage keyed on cluster_key (CCC networks,
+                    # coexpression, GRN, enrichment) treats it as an ordinary peer.
+                    apply_qc_flags(filtered, cluster_key, qc_result, key_added="technical_qc")
+                    if sc_config.action == "drop":
+                        n_cells_before = filtered.n_obs
+                        filtered = filtered[filtered.obs["technical_qc_qc_pass"]].copy()
+                        n_cells_after = filtered.n_obs
+                        n_dropped = n_cells_before - n_cells_after
+                        notes.append(
+                            f"Action=drop: removed {n_dropped} cells in "
+                            f"QC-confounded clusters {sorted(failed)}"
+                        )
+                        warnings.append(
+                            f"Dropped {n_dropped} cells in QC-confounded clusters "
+                            "(action='drop' configured)"
+                        )
+                        metrics["technical_qc_n_cells_dropped"] = n_dropped
+                    else:
+                        notes.append(
+                            "Action=flag: retained all cells despite QC-confounded clusters"
+                        )
+
                 paths = getattr(context, "paths", None)
                 if paths is not None:
                     figures_dir = Path(getattr(paths, "figures", "."))
