@@ -21,6 +21,11 @@ class CCCNetworkConfig(StrictBaseModel):
         ricci_alpha: Ollivier-Ricci laziness parameter.
         pagerank_alpha: Bayesian prior for the comparative PageRank log-ratio.
         min_edges: Minimum edges for a network to be scored.
+        curvature_sparsify_k: Strongest partners kept per node before curvature
+            is computed. Ollivier-Ricci curvature is mathematically degenerate
+            on a complete graph (every edge identical regardless of weight);
+            real interaction networks are near-complete, so this sparsifies
+            to a backbone with actual topology to measure.
     """
 
     enabled: bool = True
@@ -31,6 +36,7 @@ class CCCNetworkConfig(StrictBaseModel):
     ricci_alpha: float = 0.5
     pagerank_alpha: float = 0.01
     min_edges: int = 1
+    curvature_sparsify_k: int = 3
 
 
 __all__ = ["CCCNetworkConfig"]

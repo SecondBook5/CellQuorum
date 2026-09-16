@@ -15,6 +15,7 @@ from cellquorum.stages.cell_cell_communication.network._networks import (
     build_gci_network,
     liana_to_canonical,
     resolve_condition_arms,
+    sparsify_top_k_per_node,
 )
 
 _EDGE_COLS = ["source", "target", "ricci_curvature", "weight"]
@@ -121,6 +122,7 @@ class RicciMethod(AnalysisMethod):
         gci_max_edges = int(config.get("gci_max_edges", 200_000))
         alpha = float(config.get("ricci_alpha", 0.5))
         min_edges = int(config.get("min_edges", 1))
+        sparsify_k = int(config.get("curvature_sparsify_k", 3))
 
         liana_res = adata.uns.get(source_key)
         if liana_res is None or len(liana_res) == 0:
@@ -148,7 +150,7 @@ class RicciMethod(AnalysisMethod):
         store_curv: dict[str, dict[str, pd.DataFrame]] = {}
 
         for level in levels:
-            G = self._build(canon, level, gci_max_edges, min_edges, warnings)
+            G = self._build(canon, level, gci_max_edges, min_edges, warnings, sparsify_k)
             if G is None:
                 continue
             edge_df, node_df = compute_ricci_curvature(G, alpha)
@@ -177,8 +179,8 @@ class RicciMethod(AnalysisMethod):
                 and not case_lr.empty
                 and not ctrl_lr.empty
             ):
-                G_case = self._build(case_lr, level, gci_max_edges, min_edges, warnings)
-                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, warnings)
+                G_case = self._build(case_lr, level, gci_max_edges, min_edges, warnings, sparsify_k)
+                G_ctrl = self._build(ctrl_lr, level, gci_max_edges, min_edges, warnings, sparsify_k)
                 if G_case is not None and G_ctrl is not None:
                     diff = compute_differential_curvature(G_ctrl, G_case, alpha)
                     store_curv[level]["differential"] = diff
@@ -204,7 +206,13 @@ class RicciMethod(AnalysisMethod):
         )
 
     def _build(
-        self, lr: pd.DataFrame, level: str, gci_max_edges: int, min_edges: int, warnings: list[str]
+        self,
+        lr: pd.DataFrame,
+        level: str,
+        gci_max_edges: int,
+        min_edges: int,
+        warnings: list[str],
+        sparsify_k: int,
     ) -> nx.DiGraph | None:
         """Build one network level; skip if over GCI cap or below min_edges.
 
@@ -224,14 +232,22 @@ class RicciMethod(AnalysisMethod):
                 return None
             G = build_gci_network(lr)
 
-        # min_edges gate: skip if below threshold.
+        # min_edges gate on the raw graph: skip if there is too little real signal
+        # to say anything, before sparsification (a deliberate downsampling) changes
+        # the count.
         if G.number_of_edges() < min_edges:
             warnings.append(
                 f"ricci: {level.upper()} curvature NOT computed: {G.number_of_edges()} edges "
                 f"< min_edges={min_edges}."
             )
             return None
-        return G
+
+        # Ollivier-Ricci curvature is mathematically degenerate on a complete
+        # graph (every edge identical regardless of weight) -- real interaction
+        # networks are near-complete, so sparsify to each node's strongest
+        # partners before curvature has anything to measure. See
+        # sparsify_top_k_per_node's docstring for the confirmed real-data proof.
+        return sparsify_top_k_per_node(G, sparsify_k)
 
     def _write(
         self,

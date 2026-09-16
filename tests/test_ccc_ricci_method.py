@@ -79,6 +79,53 @@ def test_ricci_computes_curvature_when_available(tmp_path):
     assert "curvature" in res.adata.uns["ccc_network"]
 
 
+def _complete_liana_res(n_clusters: int = 6) -> pd.DataFrame:
+    """A LIANA result covering EVERY ordered cluster pair -- the real, common
+    shape (LIANA scores nearly every pair), which built a complete CCI graph
+    and made Ollivier-Ricci curvature degenerate (every edge identical)
+    before sparsification, confirmed directly on a real 9-cluster cohort."""
+    rows = []
+    clusters = [str(i) for i in range(n_clusters)]
+    for i, src in enumerate(clusters):
+        for j, tgt in enumerate(clusters):
+            if src == tgt:
+                continue
+            rows.append(
+                {
+                    "sample": "s1",
+                    "source": src,
+                    "target": tgt,
+                    "ligand_complex": "L1",
+                    "receptor_complex": "R1",
+                    "magnitude_rank": 0.01 + 0.05 * abs(i - j),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_ricci_sparsifies_the_cci_graph_before_computing_curvature(tmp_path):
+    """Without sparsifying first, curvature on a complete graph is
+    mathematically degenerate: every edge gets (near) the identical value
+    regardless of weight, because every node's neighborhood IS every other
+    node -- confirmed directly on a real 9-cluster cohort (36/36 possible
+    edges, weights ranging 2061-4347, every edge curved to exactly 0.5625).
+    The structural, solver-noise-proof check: a complete 9-cluster LIANA
+    result (36 unique unordered pairs) must not still be complete by the
+    time curvature is computed -- some edges must have been dropped."""
+    pytest.importorskip("GraphRicciCurvature")
+    a = ad.AnnData(
+        X=np.ones((1, 2)), obs=pd.DataFrame({"sample": ["s1"], "condition": ["control"]})
+    )
+    a.uns["liana_res"] = _complete_liana_res(n_clusters=9)
+
+    res = RicciMethod().run(a, _config(), _Ctx(tmp_path))
+
+    assert not isinstance(res, MethodSkip)
+    edges = pd.read_csv(tmp_path / "results" / "ccc_network" / "curvature_cci_edges.csv")
+    complete_graph_edge_count = 9 * 8 // 2
+    assert len(edges) < complete_graph_edge_count
+
+
 def test_ricci_runtime_error_returns_empty_frames(monkeypatch):
     """FIX 3: guard the OT solver runtime, not just the import."""
     pytest.importorskip("GraphRicciCurvature")

@@ -299,6 +299,49 @@ def compute_topology_ranking(
     )
 
 
+def sparsify_top_k_per_node(G: nx.DiGraph, k: int) -> nx.DiGraph:
+    """Keep each node's top-k strongest incident edges, union across all nodes.
+
+    Ollivier-Ricci curvature is mathematically degenerate on a complete graph:
+    every edge gets the identical value regardless of weight, because every
+    node's neighborhood IS every other node -- there is no shortest-path
+    structure left to differentiate. Confirmed directly on a real 9-cluster
+    CCI network (36/36 possible edges, weights ranging 2061-4347): every edge
+    curved to exactly 0.5625. Real interaction networks are near-complete, so
+    curvature needs a sparsified backbone with actual topology (bridges,
+    non-neighbors) to have anything to measure.
+
+    A node's own top-k (by weight, in or out edges combined) is guaranteed to
+    survive even if no other node's top-k includes it -- the guarantee is
+    per-node, matching the same principle behind chord/sankey's
+    ``_top_edges``, applied here before curvature is computed rather than
+    only at plot time.
+
+    Args:
+        G: Directed, weighted graph (edges carry a ``weight`` attribute).
+        k: Edges kept per node.
+
+    Returns:
+        The induced subgraph on the union of every node's top-k incident
+        edges. All original nodes are preserved even if isolated.
+    """
+    H = G.__class__()
+    H.add_nodes_from(G.nodes(data=True))
+    if G.number_of_edges() == 0 or k <= 0:
+        return H
+
+    keep: set[tuple] = set()
+    for n in G.nodes():
+        incident = [(d.get("weight", 1.0), (u, v)) for u, v, d in G.out_edges(n, data=True)]
+        incident += [(d.get("weight", 1.0), (u, v)) for u, v, d in G.in_edges(n, data=True)]
+        incident.sort(key=lambda item: item[0], reverse=True)
+        keep.update(edge for _, edge in incident[:k])
+
+    for u, v in keep:
+        H.add_edge(u, v, **G[u][v])
+    return H
+
+
 __all__ = [
     "CANONICAL_COLUMNS",
     "liana_to_canonical",
@@ -308,4 +351,5 @@ __all__ = [
     "build_differential_network",
     "compute_topology_ranking",
     "resolve_condition_arms",
+    "sparsify_top_k_per_node",
 ]

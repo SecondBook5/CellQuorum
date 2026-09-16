@@ -12,6 +12,7 @@ from cellquorum.stages.cell_cell_communication.network._networks import (
     build_gci_network,
     compute_topology_ranking,
     liana_to_canonical,
+    sparsify_top_k_per_node,
 )
 from cellquorum.stages.cell_cell_communication.network.config import CCCNetworkConfig
 
@@ -37,6 +38,7 @@ def test_config_defaults():
     assert cfg.ricci_alpha == 0.5
     assert cfg.pagerank_alpha == 0.01
     assert cfg.min_edges == 1
+    assert cfg.curvature_sparsify_k == 3
 
 
 def test_liana_to_canonical_maps_and_inverts_weight():
@@ -247,3 +249,71 @@ def test_comparative_degrees_are_signed_difference():
     # C is a sender of C->D; gained in case -> positive Influencer.
     c = df[df["node"] == "C"].iloc[0]
     assert c["Influencer"] > 0, "Influencer for C (sends GAINED edge) should be positive"
+
+
+def _complete_digraph(n: int, weight_fn) -> nx.DiGraph:
+    """A complete directed graph on n nodes, weight_fn(u, v) -> float."""
+    G = nx.DiGraph()
+    nodes = list(range(n))
+    G.add_nodes_from(nodes)
+    for u in nodes:
+        for v in nodes:
+            if u != v:
+                G.add_edge(u, v, weight=weight_fn(u, v))
+    return G
+
+
+def test_sparsify_keeps_only_top_k_edges_per_node():
+    """Ollivier-Ricci curvature is mathematically degenerate on a complete
+    graph (every edge gets the identical value, confirmed directly on the real
+    9-cluster fibroblast CCI network: 36/36 possible edges, weights ranging
+    2061-4347, yet every edge curvature was exactly 0.5625). Real interaction
+    networks are near-complete, so curvature needs a sparsified backbone with
+    actual topology (bridges, non-neighbors) to have anything to measure."""
+    G = _complete_digraph(9, lambda u, v: float(abs(u - v)) + 1.0)
+
+    H = sparsify_top_k_per_node(G, k=3)
+
+    assert set(H.nodes()) == set(G.nodes())
+    assert H.number_of_edges() < G.number_of_edges()
+    # Every node kept at least one of its own top-k edges (in or out).
+    for n in H.nodes():
+        assert H.in_degree(n) + H.out_degree(n) > 0
+
+
+def test_sparsify_keeps_each_nodes_own_strongest_edges():
+    """A node's top-k must survive sparsification even if another node's
+    top-k doesn't include it -- the guarantee is per-node, not global."""
+    G = nx.DiGraph()
+    G.add_edge("weak_hub", "strong_partner", weight=100.0)
+    for i in range(10):
+        G.add_edge("weak_hub", f"other{i}", weight=1.0)
+        G.add_edge(f"other{i}", "weak_hub", weight=1.0)
+    # strong_partner's only edge is its strongest; must survive at k=1.
+    G.add_edge("strong_partner", "weak_hub", weight=100.0)
+
+    H = sparsify_top_k_per_node(G, k=1)
+
+    assert H.has_edge("weak_hub", "strong_partner")
+
+
+def test_sparsify_produces_meaningfully_varied_curvature_on_a_near_complete_graph():
+    """The actual point of sparsifying: curvature computed on the sparsified
+    graph must show real variation, unlike the degenerate complete-graph case."""
+    from cellquorum.stages.cell_cell_communication.network.ricci_method import (
+        compute_ricci_curvature,
+    )
+
+    G = _complete_digraph(9, lambda u, v: float(abs(u - v)) * 500.0 + 1000.0)
+    complete_edges, _ = compute_ricci_curvature(G, alpha=0.5)
+    assert complete_edges["ricci_curvature"].std() < 1e-9  # degenerate, as expected
+
+    H = sparsify_top_k_per_node(G, k=3)
+    sparse_edges, _ = compute_ricci_curvature(H, alpha=0.5)
+    assert sparse_edges["ricci_curvature"].std() > 1e-6
+
+
+def test_sparsify_returns_empty_graph_for_empty_input():
+    G = nx.DiGraph()
+    H = sparsify_top_k_per_node(G, k=3)
+    assert H.number_of_edges() == 0
