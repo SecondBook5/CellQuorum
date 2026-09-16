@@ -64,6 +64,33 @@ def test_skips_on_timeout(tmp_path: Path) -> None:
     assert isinstance(res, MethodSkip)
 
 
+def test_skip_reason_names_the_signal_when_subprocess_is_killed(tmp_path: Path) -> None:
+    """A negative returncode means the OS killed the process with a signal (e.g.
+
+    SIGKILL from an OOM kill) -- Python's subprocess module encodes this as
+    returncode = -signum, never raises, and the child writes no FAILED sentinel
+    (SIGKILL can't be caught). The old code folded this into the same generic
+    "KO script failed" text as an ordinary non-zero exit, silently discarding
+    the one piece of information (which signal) that tells a reader whether
+    this was a code bug or a resource kill. Confirmed live: reproducing the
+    perturbation stage's "KO script failed" skip against the real fibroblast
+    object showed exactly this shape -- the process vanished mid-GRN-fit with
+    no stderr, no FAILED marker, consistent with an uncatchable SIGKILL.
+    """
+
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, _s, _a, *, timeout=None):  # noqa: ANN001, ANN003
+            return SimpleNamespace(returncode=-9, stderr="")
+
+    res = CellOracleMethod()._run(_adata(), {"launcher": "python"}, _ctx(tmp_path, FakeBackend()))
+    assert isinstance(res, MethodSkip)
+    assert "signal" in res.reason.lower()
+    assert "sigkill" in res.reason.lower()
+
+
 def test_input_contract_does_not_require_condition_or_cluster() -> None:
     m = CellOracleMethod()
     contract = m.input_contract({})

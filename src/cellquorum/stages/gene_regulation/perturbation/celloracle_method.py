@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 
@@ -187,8 +188,19 @@ class CellOracleMethod(AnalysisMethod):
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             return self._skip("KO script execution failed or timed out", error=str(exc)[:500])
         if proc.returncode != 0:
+            rc = proc.returncode
+            if rc < 0:
+                try:
+                    sig_name = signal.Signals(-rc).name
+                except ValueError:
+                    sig_name = f"signal {-rc}"
+                reason = f"KO script killed by {sig_name} (signal {-rc}) -- likely OOM"
+            else:
+                reason = "KO script failed"
             return self._skip(
-                "KO script failed", stderr=str(getattr(proc, "stderr", "")).strip()[:500]
+                reason,
+                returncode=rc,
+                stderr=str(getattr(proc, "stderr", "")).strip()[:500],
             )
 
         ranking_csv = out_dir / "perturbation_ranking.csv"
