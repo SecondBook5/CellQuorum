@@ -19,6 +19,7 @@ from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.clustering.subclustering.diagnostics import (
     plot_group_recovery,
+    plot_marker_identity_dotplot,
     plot_subcluster_qc_panel,
     plot_technical_qc_consistency,
 )
@@ -646,6 +647,46 @@ class SubclusteringStage:
                         )
         elif sc_config.technical_qc.enabled and not has_cluster_labels:
             notes.append("Technical-QC consistency: skipped (no cluster labels)")
+
+        # Marker-gene identity dotplot: auto-derived top markers per cluster,
+        # on the FINAL (post-drop) cluster set -- "what is this cluster,"
+        # complementing the technical-QC/donor-gate panels' "is it
+        # trustworthy." Skipped gracefully (returns a non-existent path) when
+        # fewer than 2 clusters survive or the configured layer is absent.
+        if (
+            sc_config.diagnostics.marker_dotplot
+            and has_cluster_labels
+            and cluster_key in filtered.obs.columns
+            and sc_config.diagnostics.marker_dotplot_layer in filtered.layers
+        ):
+            paths = getattr(context, "paths", None)
+            if paths is not None:
+                figures_dir = Path(getattr(paths, "figures", "."))
+                dotplot_path = figures_dir / "subclustering_marker_identity_dotplot.png"
+                try:
+                    plot_marker_identity_dotplot(
+                        filtered,
+                        cluster_key=cluster_key,
+                        layer=sc_config.diagnostics.marker_dotplot_layer,
+                        out_path=dotplot_path,
+                        n_top=sc_config.diagnostics.marker_dotplot_n_top,
+                        cluster_labels=sc_config.diagnostics.marker_dotplot_cluster_labels,
+                    )
+                except Exception as exc:  # noqa: BLE001 -- a figure must never sink the stage
+                    warnings.append(f"marker identity dotplot failed: {str(exc)[:200]}")
+                else:
+                    if dotplot_path.exists():
+                        artifacts.append(
+                            StageArtifact(
+                                name="subclustering_marker_identity_dotplot",
+                                path=dotplot_path,
+                                kind="png",
+                                description=(
+                                    "Auto-derived top marker genes per subcluster "
+                                    "(fraction expressing x mean expression)"
+                                ),
+                            )
+                        )
 
         # Generate clustree plot (if leiden_grid labels present).
         # Note: clustree expects multiple cluster columns with a common prefix.

@@ -149,10 +149,24 @@ class DiagnosticsConfig(StrictBaseModel):
     Args:
         clustree: whether to generate clustree plot.
         stability_curve: whether to generate stability curve.
+        marker_dotplot: whether to generate the marker-gene identity dotplot
+            (auto-derived top markers per cluster -- "what is this cluster,"
+            complementing the technical-QC and donor-gate panels' "is this
+            cluster trustworthy").
+        marker_dotplot_n_top: marker genes shown per cluster.
+        marker_dotplot_layer: expression layer the markers are computed and
+            plotted from.
+        marker_dotplot_cluster_labels: optional cluster id -> display name
+            map, for display only (the object's own cluster column is never
+            renamed in place).
     """
 
     clustree: bool = True
     stability_curve: bool = True
+    marker_dotplot: bool = True
+    marker_dotplot_n_top: int = 6
+    marker_dotplot_layer: str = "cellquorum_normalized"
+    marker_dotplot_cluster_labels: dict[str, str] = {}
 
 
 class SubclusteringConfig(StrictBaseModel):

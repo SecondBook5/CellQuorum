@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import anndata as ad
 import matplotlib
 import matplotlib.pyplot as plt
+import scanpy as sc
 
 from cellquorum.visualization.figstyle import (
     CELLQUORUM_BLUE,
@@ -344,7 +346,86 @@ def plot_technical_qc_consistency(
 
 __all__ = [
     "plot_group_recovery",
+    "plot_marker_identity_dotplot",
     "plot_stability_curve",
     "plot_subcluster_qc_panel",
     "plot_technical_qc_consistency",
+    "select_marker_genes",
 ]
+
+
+def select_marker_genes(
+    adata: ad.AnnData,
+    *,
+    cluster_key: str,
+    layer: str,
+    n_top: int = 6,
+    method: str = "wilcoxon",
+) -> dict[str, list[str]]:
+    """Top-``n_top`` marker genes per cluster via ``rank_genes_groups``.
+
+    Auto-derived, not a hand-picked gene list -- a hardcoded list goes stale
+    silently the moment clusters change (different boundaries, a re-run on
+    corrected input); this recomputes from whatever ``adata`` actually holds,
+    every time the figure is generated.
+    """
+    work = adata.copy()
+    work.X = work.layers[layer]
+    sc.tl.rank_genes_groups(work, groupby=cluster_key, method=method, n_genes=n_top)
+    result = sc.get.rank_genes_groups_df(work, group=None)
+    markers: dict[str, list[str]] = {}
+    for group in work.obs[cluster_key].astype(str).unique():
+        ordered = result[result["group"] == group].sort_values("scores", ascending=False)
+        markers[str(group)] = ordered.head(n_top)["names"].tolist()
+    return markers
+
+
+def plot_marker_identity_dotplot(
+    adata: ad.AnnData,
+    *,
+    cluster_key: str,
+    layer: str,
+    out_path: Path | str,
+    n_top: int = 6,
+    cluster_labels: dict[str, str] | None = None,
+) -> Path:
+    """Marker-gene dotplot: which genes justify calling this cluster what it's called.
+
+    Complements the technical-QC and donor-gate panels -- those ask "is this
+    cluster trustworthy," this asks "what is it." Dot size = fraction of
+    cells expressing; color = mean expression. Markers are auto-derived
+    (:func:`select_marker_genes`), and a cluster with fewer than 2 siblings
+    is skipped (rank_genes_groups needs something to rank against).
+
+    ``cluster_labels`` renames clusters for display only -- ``adata.obs`` is
+    never mutated in place, matching ``de_heatmap_method``'s convention, so
+    the same object can be relabeled independently by each figure without
+    the two colliding.
+    """
+    out_path = Path(out_path)
+    n_clusters = adata.obs[cluster_key].astype(str).nunique()
+    if n_clusters < 2:
+        return out_path
+
+    markers = select_marker_genes(adata, cluster_key=cluster_key, layer=layer, n_top=n_top)
+    genes: list[str] = []
+    for group_genes in markers.values():
+        for g in group_genes:
+            if g not in genes:
+                genes.append(g)
+
+    work = adata.copy()
+    work.X = work.layers[layer]
+    labels = cluster_labels or {}
+    work.obs["_identity"] = work.obs[cluster_key].astype(str).map(lambda c: labels.get(c, c))
+    order = sorted(markers.keys(), key=lambda c: labels.get(c, c))
+    order = [labels.get(c, c) for c in order]
+    work.obs["_identity"] = work.obs["_identity"].astype("category").cat.reorder_categories(order)
+
+    apply_cellquorum_theme()
+    fig = sc.pl.dotplot(work, genes, groupby="_identity", standard_scale="var", return_fig=True)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close("all")
+    return out_path
