@@ -435,6 +435,14 @@ def run_leiden_stability(
     random_state = int(opts.get("random_state", 0))
     n_neighbors = int(opts.get("n_neighbors", 15))
     adaptive = bool(opts.get("adaptive", True))
+    # GPU-accelerated Leiden (rapids_singlecell/cuGraph) doesn't guarantee
+    # bit-exact reproducibility across runs even with the same seed -- confirmed
+    # live: two nominally identical subclustering re-runs on the real
+    # fibroblast object (same seed, same input) produced different cluster
+    # boundaries. Default True here (unlike the coarse `clustering` stage,
+    # which stays GPU-first): a partition method whose whole selling point is
+    # "bootstrap-validated stability" should itself be reproducible.
+    force_cpu = bool(opts.get("force_cpu", True))
 
     long_df, n_clusters_by_resolution = compute_resolution_stability(
         adata,
@@ -446,6 +454,7 @@ def run_leiden_stability(
         random_state=random_state,
         context=context,
         adaptive=adaptive,
+        force_cpu=force_cpu,
     )
     summary = summarize_resolution_stability(long_df, n_clusters_by_resolution)
 
@@ -473,6 +482,7 @@ def run_leiden_stability(
         resolution=best_resolution,
         random_state=random_state,
         key_added=config.key_added,
+        force_cpu=force_cpu,
     )
 
     subclustering_uns = result_adata.uns.setdefault("subclustering", {})

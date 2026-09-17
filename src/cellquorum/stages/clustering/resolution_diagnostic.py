@@ -95,6 +95,7 @@ def _run_one_clustering(
     use_rep: str,
     resolution: float,
     random_state: int,
+    force_cpu: bool = False,
 ) -> pd.Series:
     """Neighbors+Leiden on ``target`` (mutated), returning labels indexed by cell name."""
     run_neighbors_leiden_routed(
@@ -105,6 +106,7 @@ def _run_one_clustering(
         resolution=resolution,
         random_state=random_state,
         key_added=_DIAG_KEY,
+        force_cpu=force_cpu,
     )
     return target.obs[_DIAG_KEY].astype(str)
 
@@ -121,6 +123,7 @@ def _bootstrap_round(
     n_draws: int,
     subsample_fraction: float,
     seed_offset: int,
+    force_cpu: bool = False,
 ) -> list[dict]:
     """Run ``n_draws`` independent subsample-and-recluster bootstraps.
 
@@ -144,6 +147,7 @@ def _bootstrap_round(
             use_rep=use_rep,
             resolution=resolution,
             random_state=random_state,
+            force_cpu=force_cpu,
         )
         subsample_set = set(sub.obs_names)
         subsample_clusters = _cluster_membership(sub_labels)
@@ -226,6 +230,7 @@ def compute_resolution_stability(
     context: object = None,
     adaptive: bool = True,
     initial_fraction: float = 0.3,
+    force_cpu: bool = False,
 ) -> tuple[pd.DataFrame, dict[float, int]]:
     """Bootstrap cluster-stability across a resolution sweep.
 
@@ -267,6 +272,7 @@ def compute_resolution_stability(
             use_rep=use_rep,
             resolution=resolution,
             random_state=random_state,
+            force_cpu=force_cpu,
         )
         reference_clusters = _cluster_membership(reference_labels)
         reference_by_resolution[resolution] = reference_clusters
@@ -284,6 +290,7 @@ def compute_resolution_stability(
                 n_draws=min(initial_n, n_bootstraps),
                 subsample_fraction=subsample_fraction,
                 seed_offset=0,
+                force_cpu=force_cpu,
             )
         )
 
@@ -303,6 +310,7 @@ def compute_resolution_stability(
                     n_draws=allocation.get(resolution, 0),
                     subsample_fraction=subsample_fraction,
                     seed_offset=initial_n,
+                    force_cpu=force_cpu,
                 )
             )
 

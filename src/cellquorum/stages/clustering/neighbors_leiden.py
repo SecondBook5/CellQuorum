@@ -103,6 +103,7 @@ def run_neighbors_leiden_routed(
     resolution: float,
     random_state: int,
     key_added: str,
+    force_cpu: bool = False,
 ) -> tuple[str, str | None]:
     """Build the kNN graph and run Leiden on ``target``, GPU-first with CPU fallback.
 
@@ -114,11 +115,32 @@ def run_neighbors_leiden_routed(
         target: Object to cluster in place (mutated: obsp graph, obs[key_added]).
         context: Pipeline context, for the GPU/CPU routing decision.
         n_neighbors, use_rep, resolution, random_state, key_added: As in LeidenMethod.
+        force_cpu: Skip GPU routing entirely, unconditionally. GPU-accelerated
+            Leiden (rapids_singlecell/cuGraph) doesn't guarantee bit-exact
+            reproducibility across runs even with the same seed -- confirmed
+            live on the real fibroblast object, where two nominally identical
+            subclustering re-runs produced different cluster boundaries. A
+            caller that needs deterministic, reproducible clusters (e.g. the
+            leiden_stability bootstrap sweep, where the whole point is
+            comparing runs against each other) sets this rather than relying
+            on ``fallback_to_cpu``, which only fires when GPU is *unavailable*
+            or *fails* -- never when it succeeds non-deterministically.
 
     Returns:
         ``(compute_used, gpu_fallback_note)`` -- "gpu" or "cpu", and a message when GPU
         was unavailable or failed, else None.
     """
+    if force_cpu:
+        _neighbors_and_leiden(
+            target,
+            n_neighbors=n_neighbors,
+            use_rep=use_rep,
+            resolution=resolution,
+            random_state=random_state,
+            key_added=key_added,
+        )
+        return "cpu", None
+
     from cellquorum.backends.compute import resolve_compute
 
     routing = resolve_compute(context)
