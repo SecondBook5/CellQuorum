@@ -142,6 +142,31 @@ def test_skips_when_no_significant_genes(tmp_path):
     assert isinstance(res, MethodSkip)
 
 
+def test_cluster_labels_rename_the_matrix_columns_before_rendering(tmp_path):
+    """Bare cluster ids ("0", "1"...) are meaningless without the object open --
+
+    cluster_labels lets a project map them to real identities once
+    characterized, so the figure itself carries the label instead of asking
+    the reader to cross-reference a separate legend every time.
+    """
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, de_csv=_de_df())
+    DeHeatmapMethod()._run(
+        _adata(),
+        {
+            "cell_type_col": "fibroblast_subcluster",
+            "top_n": 2,
+            "cluster_labels": {"0": "Papillary", "1": "Reticular"},
+        },
+        ctx,
+    )
+    matrix_csv = tmp_path / "scratch" / "de_heatmap_matrix.csv"
+    header = matrix_csv.read_text().splitlines()[0]
+    assert "Papillary_Lymphedema" in header
+    assert "Reticular_Normal" in header
+    assert "0_Lymphedema" not in header
+
+
 def test_success_writes_heatmap_artifact(tmp_path):
     backend = _FakeBackend()
     ctx = _ctx(tmp_path, backend, de_csv=_de_df())

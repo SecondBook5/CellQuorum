@@ -46,7 +46,19 @@ tryCatch(
     height_px <- max(1800, min(8000, 22 * n_genes + 400))
     show_names <- n_genes <= 200
 
-    png(out_png, width = 2400, height = height_px, res = 300)
+    # ComplexHeatmap's per-slice column_title (auto-generated from
+    # column_split) draws centered text at a fixed font size with no width
+    # constraint or wrapping -- a bare numeric id ("0", "1"...) never
+    # overflowed its slice, but a real identity label ("Mechanosensory",
+    # "Progenitor-like") reliably does, bleeding into its neighbor
+    # regardless of device width or column_gap (both tried, neither
+    # changes the text viewport itself). The "Cluster" annotation bar
+    # below already conveys the same identity, unambiguously, colour-coded
+    # with a legend -- so the redundant, overflow-prone per-slice title is
+    # dropped rather than fought.
+    width_px <- max(2400, 200 * length(cluster_levels) + 900)
+
+    png(out_png, width = width_px, height = height_px, res = 300)
     ht <- Heatmap(
       mat_z,
       name = "z-score",
@@ -54,11 +66,12 @@ tryCatch(
       top_annotation = top_anno,
       cluster_columns = FALSE,
       column_split = clusters,
+      column_title = NULL,
+      column_gap = unit(2.5, "mm"),
       cluster_rows = TRUE,
       show_row_dend = TRUE,
       show_row_names = show_names,
       row_names_gp = gpar(fontsize = 7, fontface = "italic"),
-      column_title_gp = gpar(fontsize = 11, fontface = "bold"),
       column_names_gp = gpar(fontsize = 8),
       use_raster = n_genes > 500,
       heatmap_legend_param = list(title = "mean expr\n(z-scored)")

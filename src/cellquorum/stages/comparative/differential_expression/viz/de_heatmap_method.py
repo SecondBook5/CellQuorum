@@ -99,11 +99,14 @@ class DeHeatmapMethod(RAnalysisMethod):
         if not genes:
             return self._skip(f"no significant genes at FDR<{fdr_cut}")
 
+        cluster_labels = config.get("cluster_labels") or {}
+
         X = adata[:, genes].layers[layer]
         if sp.issparse(X):
             X = X.toarray()
         expr = pd.DataFrame(X, columns=genes, index=adata.obs_names)
-        expr["cluster"] = adata.obs[cell_type_col].astype(str).to_numpy()
+        raw_cluster = adata.obs[cell_type_col].astype(str)
+        expr["cluster"] = raw_cluster.map(lambda c: cluster_labels.get(c, c)).to_numpy()
         expr["condition"] = adata.obs[condition_col].astype(str).to_numpy()
         expr["group"] = expr["cluster"] + "_" + expr["condition"]
         matrix = expr.groupby("group")[genes].mean().T
