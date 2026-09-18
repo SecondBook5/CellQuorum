@@ -111,6 +111,10 @@ class EmbeddingsConfig(StrictBaseModel):
         mixing_rep: obsm key for the mixing manifold; None tries X_scANVI/X_scvi/PCA.
         overlay: Feature-overlay specification.
         magic: Opt-in scoped MAGIC configuration.
+        cluster_labels: Optional display-only rename of the colour column's values
+            in the categorical panels' in-plot text and legend (e.g. {"0":
+            "Papillary"}). Grouping, the palette, and PAGA connectivity indexing
+            all stay keyed on the raw value.
     """
 
     enabled: bool = True
@@ -127,6 +131,7 @@ class EmbeddingsConfig(StrictBaseModel):
     min_label_frac: float = 0.001
     legend: bool = True
     figure_title: str = ""
+    cluster_labels: dict[str, str] = {}
     color_by: list[str] = []
     qc_state_column: str | None = None
     atlas_states: list[str] = []
