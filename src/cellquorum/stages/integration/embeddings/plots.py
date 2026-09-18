@@ -185,6 +185,7 @@ def categorical_embedding(
     legend: bool = True,
     title: str = "",
     cell_mask: np.ndarray | None = None,
+    cluster_labels: dict[str, str] | None = None,
 ) -> Figure:
     """Per-group scatter on `basis`, with PAGA graph overlaid when present.
 
@@ -211,7 +212,12 @@ def categorical_embedding(
     category order is still taken from the unfiltered column, because that order is what
     ``uns['paga']['connectivities']`` is indexed by; only the drawn points, the counts,
     and the centroids come from the subset.
+
+    ``cluster_labels`` renames the in-plot text and legend only (e.g. {"0":
+    "Papillary"}) -- grouping, the palette, and PAGA connectivity indexing all
+    stay keyed on the raw category value throughout.
     """
+    cluster_labels = cluster_labels or {}
     xy = np.asarray(adata.obsm[basis])[:, :2]
     orig_col = adata.obs[group_key]
     if cell_mask is not None:
@@ -366,7 +372,7 @@ def categorical_embedding(
             ax.text(
                 centroid[0],
                 centroid[1],
-                cat,
+                cluster_labels.get(cat, cat),
                 fontsize=9,
                 fontweight="bold",
                 ha="center",
@@ -405,7 +411,7 @@ def categorical_embedding(
                 markersize=5,
                 markerfacecolor=palette[cat],
                 markeredgecolor="none",
-                label=f"{cat} ({int(counts[cat]):,})",
+                label=f"{cluster_labels.get(cat, cat)} ({int(counts[cat]):,})",
             )
             for cat in counts.index
             if cat in palette

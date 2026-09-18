@@ -59,6 +59,36 @@ def test_categorical_embedding_without_paga_renders_scatter_only():
     assert len(ax.get_lines()) == 0
 
 
+def test_categorical_embedding_cluster_labels_rename_legend_and_inplot_text():
+    """Bare cluster ids ("0", "1") are meaningless on a figure without a separate
+
+    legend to cross-reference -- cluster_labels renames the in-plot text and the
+    legend, without touching which cells belong to which group (grouping, PAGA
+    connectivity indexing, and the palette all stay keyed on the raw id).
+    """
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(X=rng.random((60, 8)).astype("float32"))
+    a.obsm["X_umap"] = rng.normal(size=(60, 2)).astype("float32")
+    a.obs["leiden"] = ["0"] * 30 + ["1"] * 30
+    a.obs["leiden"] = a.obs["leiden"].astype("category")
+    fig = plots.categorical_embedding(
+        a,
+        "leiden",
+        basis="X_umap",
+        axis_labels=("UMAP1", "UMAP2"),
+        cluster_labels={"0": "Papillary", "1": "Reticular"},
+    )
+    ax = fig.axes[0]
+    in_plot_texts = {t.get_text() for t in ax.texts}
+    assert "Papillary" in in_plot_texts
+    assert "Reticular" in in_plot_texts
+    assert "0" not in in_plot_texts
+    assert "1" not in in_plot_texts
+    legend_labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert any(label.startswith("Papillary") for label in legend_labels)
+    assert any(label.startswith("Reticular") for label in legend_labels)
+
+
 def test_continuous_overlay_returns_figure():
     coords = np.random.default_rng(0).random((50, 2))
     values = np.random.default_rng(1).random(50)

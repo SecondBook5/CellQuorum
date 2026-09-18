@@ -335,6 +335,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                                 legend=legend,
                                 title=title,
                                 cell_mask=mask,
+                                cluster_labels=config.get("cluster_labels") or {},
                             )
                             paths = save_figure(fig, figures_dir, stem, formats=formats, dpi=dpi)
                             artifacts += figure_artifacts(
