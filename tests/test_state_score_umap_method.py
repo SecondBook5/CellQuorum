@@ -75,6 +75,12 @@ def test_success_renders_one_figure_per_program(tmp_path):
     assert len(res.artifacts) == 2  # proliferating + myofibroblast, png only
     for artifact in res.artifacts:
         assert artifact.path.exists()
+        # Lives in figures/embeddings/, not figures/state_scoring/ -- this
+        # method is registered under the embeddings stage category (see the
+        # module docstring for why), and its output must land where every
+        # other embeddings figure does, not in a directory named after the
+        # stage that no longer owns it.
+        assert artifact.path.parent.name == "embeddings"
 
 
 def test_cluster_labels_rename_output_filenames_stay_stable(tmp_path):

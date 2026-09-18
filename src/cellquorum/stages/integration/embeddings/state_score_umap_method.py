@@ -75,7 +75,7 @@ class StateScoreUmapMethod(AnalysisMethod):
             )
 
         cluster_labels = config.get("cluster_labels") or {}
-        figures_dir = Path(context.paths.figures) / "state_scoring"
+        figures_dir = Path(context.paths.figures) / "embeddings"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
 
