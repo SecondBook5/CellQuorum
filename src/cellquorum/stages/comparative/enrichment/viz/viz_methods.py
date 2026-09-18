@@ -246,7 +246,13 @@ class GsvaVizMethod(AnalysisMethod):
             scores_path = results_dir / f"enrichment_gsva_scores_{collection}.csv"
             if scores_path.exists():
                 try:
-                    matrix = pd.read_csv(scores_path, index_col=0)
+                    # The upstream writer stores "per-sample scores" sample-indexed
+                    # (few sample rows, many pathway columns) -- transpose to the
+                    # source x sample orientation annotated_clustermap's top_n row
+                    # cap (and this method's own sample_condition column lookup)
+                    # both assume, or a large collection never gets capped and the
+                    # condition strip never matches a real sample name.
+                    matrix = pd.read_csv(scores_path, index_col=0).T
                     col_colors = None
                     if sample_condition:
                         cond = pd.Series(
