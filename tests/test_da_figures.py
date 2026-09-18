@@ -134,6 +134,24 @@ def test_plot_milo_beeswarm_returns_figure_with_ordered_rows():
     assert labels == ["TypeA", "TypeB"]
 
 
+def test_plot_milo_beeswarm_cluster_labels_rename_yticks_only():
+    """Bare cell-type ids on the y-axis are meaningless without cross-referencing --
+
+    cluster_labels renames them for display; row assignment/order (still keyed
+    off the raw id internally) is unaffected.
+    """
+    fig = plot_milo_beeswarm(
+        _milo_results(),
+        case="LE",
+        control="N",
+        spatial_fdr=0.1,
+        cluster_labels={"TypeA": "Papillary", "TypeB": "Reticular"},
+    )
+    ax = fig.axes[0]
+    labels = [t.get_text() for t in ax.get_yticklabels()]
+    assert labels == ["Papillary", "Reticular"]
+
+
 def _milo_results_integer_celltypes() -> pd.DataFrame:
     """Real Milo output shape from a numeric cluster label (fibroblast_subcluster
     0-8): majority_celltype comes out int64, NOT string -- unlike every fixture
@@ -243,3 +261,17 @@ def test_plot_sccoda_composition_returns_two_panel_figure():
     # Panel B holds one horizontal bar per cell type (3).
     bar_panel = fig.axes[1]
     assert len(bar_panel.containers[0]) == 3
+
+
+def test_plot_sccoda_composition_cluster_labels_rename_yticks_only():
+    fig = plot_sccoda_composition(
+        _sccoda_single(),
+        _composition_props(),
+        case="LE",
+        control="N",
+        cluster_labels={"TypeA": "Papillary", "TypeB": "Reticular", "TypeC": "Perivascular"},
+    )
+    ax_a = fig.axes[0]
+    labels = [t.get_text() for t in ax_a.get_yticklabels()]
+    # sccoda_composition_order is TypeC, TypeA, TypeB (ascending case proportion).
+    assert labels == ["Perivascular", "Papillary", "Reticular"]

@@ -183,6 +183,7 @@ def plot_milo_beeswarm(
     case_color: str = LE_RED,
     control_color: str = NORMAL_BLUE,
     seed: int = 0,
+    cluster_labels: dict[str, str] | None = None,
 ) -> Figure:
     """Render the Milo neighborhood-level DA beeswarm.
 
@@ -199,12 +200,16 @@ def plot_milo_beeswarm(
         case_color: Warm pole of the diverging map / case cue color.
         control_color: Cool pole of the diverging map / control cue color.
         seed: RNG seed for the deterministic swarm jitter.
+        cluster_labels: Optional display-only rename of cell-type ids for the
+            y-axis (e.g. {"0": "Papillary"}). Row placement stays keyed off
+            the raw id -- only the tick text changes.
 
     Returns:
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
     set_style()
+    cluster_labels = cluster_labels or {}
     rng = np.random.default_rng(seed)
     prepared = prepare_milo_beeswarm(da, spatial_fdr=spatial_fdr)
     order = milo_beeswarm_order(prepared)
@@ -269,7 +274,7 @@ def plot_milo_beeswarm(
             )
 
     ax.set_yticks(range(n_rows))
-    ax.set_yticklabels(order, fontsize=8)
+    ax.set_yticklabels([cluster_labels.get(ct, ct) for ct in order], fontsize=8)
     ax.set_ylim(-0.6, n_rows - 0.4)
     ax.set_xlabel(f"Neighborhood log fold-change  ({case} vs {control})")
     ax.set_ylabel("")
@@ -318,6 +323,7 @@ def plot_sccoda_composition(
     case_color: str = LE_RED,
     control_color: str = NORMAL_BLUE,
     seed: int = 0,
+    cluster_labels: dict[str, str] | None = None,
 ) -> Figure:
     """Render the two-panel scCODA composition figure.
 
@@ -335,12 +341,16 @@ def plot_sccoda_composition(
         case_color: Case marker / credible-bar color.
         control_color: Control marker color.
         seed: RNG seed for the deterministic per-sample jitter.
+        cluster_labels: Optional display-only rename of cell-type ids for the
+            y-axis (e.g. {"0": "Papillary"}). Row order/lookups stay keyed
+            off the raw id -- only the tick text changes.
 
     Returns:
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
     set_style()
+    cluster_labels = cluster_labels or {}
     eff = sccoda_single_reference(effects, reference=reference).set_index("cell_type")
     order = sccoda_composition_order(eff.reset_index(), proportions, case=case)
     n = len(order)
@@ -399,7 +409,7 @@ def plot_sccoda_composition(
         ax_a.scatter([le], [y], s=42, color=case_color, edgecolors="white", lw=0.6, zorder=4)
     ax_a.set_xscale("log")
     ax_a.set_yticks(range(n))
-    ax_a.set_yticklabels(order, fontsize=8)
+    ax_a.set_yticklabels([cluster_labels.get(ct, ct) for ct in order], fontsize=8)
     ax_a.set_ylim(-0.6, n - 0.4)
     ax_a.set_xlabel("Cell-type proportion per sample (%, log scale)")
     ax_a.set_title(f"Compositional shift ({control} vs {case})", fontsize=10, pad=8)

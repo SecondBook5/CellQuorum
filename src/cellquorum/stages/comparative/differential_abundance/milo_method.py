@@ -267,7 +267,13 @@ class MiloMethod(RAnalysisMethod):
             prepared = prepare_milo_beeswarm(da, spatial_fdr=spatial_fdr)
             if prepared.empty:
                 return []
-            fig = plot_milo_beeswarm(da, case=case, control=control, spatial_fdr=spatial_fdr)
+            fig = plot_milo_beeswarm(
+                da,
+                case=case,
+                control=control,
+                spatial_fdr=spatial_fdr,
+                cluster_labels=config.get("cluster_labels") or {},
+            )
         except Exception:
             return []
 

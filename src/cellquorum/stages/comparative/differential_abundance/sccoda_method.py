@@ -674,7 +674,12 @@ class SccodaMethod(AnalysisMethod):
             if proportions.empty:
                 return []
             fig = plot_sccoda_composition(
-                effects, proportions, case=case, control=control, reference=reference
+                effects,
+                proportions,
+                case=case,
+                control=control,
+                reference=reference,
+                cluster_labels=config.get("cluster_labels") or {},
             )
         except Exception:
             return []
