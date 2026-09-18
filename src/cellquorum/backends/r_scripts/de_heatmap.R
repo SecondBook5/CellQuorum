@@ -46,6 +46,10 @@ tryCatch(
     height_px <- max(1800, min(8000, 22 * n_genes + 400))
     show_names <- n_genes <= 200
 
+    # Extra breathing room between the heatmap body and the row (gene) name
+    # text -- ComplexHeatmap's default padding sits flush against the matrix.
+    ht_opt$DIMNAME_PADDING <- unit(3, "mm")
+
     # ComplexHeatmap's per-slice column_title (auto-generated from
     # column_split) draws centered text at a fixed font size with no width
     # constraint or wrapping -- a bare numeric id ("0", "1"...) never
@@ -73,10 +77,13 @@ tryCatch(
       show_row_names = show_names,
       row_names_gp = gpar(fontsize = 7, fontface = "italic"),
       column_names_gp = gpar(fontsize = 8),
+      column_names_rot = 45,
       use_raster = n_genes > 500,
       heatmap_legend_param = list(title = "mean expr\n(z-scored)")
     )
-    draw(ht)
+    # Legends drawn above the plot (rather than ComplexHeatmap's default
+    # right-hand side) free up horizontal width for the heatmap body itself.
+    draw(ht, heatmap_legend_side = "top", annotation_legend_side = "top")
     dev.off()
     cat("de_heatmap.R: wrote", out_png, "(", n_genes, "genes )\n")
   },
