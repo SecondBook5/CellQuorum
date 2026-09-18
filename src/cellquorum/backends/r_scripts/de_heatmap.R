@@ -47,8 +47,10 @@ tryCatch(
     show_names <- n_genes <= 200
 
     # Extra breathing room between the heatmap body and the row (gene) name
-    # text -- ComplexHeatmap's default padding sits flush against the matrix.
-    ht_opt$DIMNAME_PADDING <- unit(3, "mm")
+    # text -- ComplexHeatmap's default (1mm) sits nearly flush against the
+    # matrix; 6mm is large enough to read as deliberate spacing rather than
+    # rounding noise.
+    ht_opt$DIMNAME_PADDING <- unit(6, "mm")
 
     # ComplexHeatmap's per-slice column_title (auto-generated from
     # column_split) draws centered text at a fixed font size with no width
@@ -81,9 +83,11 @@ tryCatch(
       use_raster = n_genes > 500,
       heatmap_legend_param = list(title = "mean expr\n(z-scored)")
     )
-    # Legends drawn above the plot (rather than ComplexHeatmap's default
-    # right-hand side) free up horizontal width for the heatmap body itself.
-    draw(ht, heatmap_legend_side = "top", annotation_legend_side = "top")
+    # Only the z-score colour scale moves to sit above the Cluster/Condition
+    # annotation bars, freeing horizontal width for the heatmap body itself.
+    # The Cluster/Condition annotation legends stay in their default
+    # right-hand, vertically-stacked position -- untouched.
+    draw(ht, heatmap_legend_side = "top")
     dev.off()
     cat("de_heatmap.R: wrote", out_png, "(", n_genes, "genes )\n")
   },
