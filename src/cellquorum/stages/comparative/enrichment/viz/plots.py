@@ -180,7 +180,9 @@ def running_es_curve(
     es_col: str = "running_es",
     hit_col: str = "hit",
     metric_col: str = "metric",
+    gene_col: str = "gene",
     title: str | None = None,
+    max_labeled_genes: int = 12,
 ) -> Figure:
     """Classic 3-track Subramanian plot: ES line, hit ticks, ranked metric area.
 
@@ -191,13 +193,22 @@ def running_es_curve(
     hallmark output. A filled area renders as a solid shape independent of
     point density, so both the ES curve and the ranked metric use
     fill_between instead of per-point patches.
+
+    When ``gene_col`` is present, the hits track also labels the leading-edge
+    genes -- hits at or before the peak for a positive score, at or after the
+    trough for a negative one, the same split ``gsea_method.leading_edge()``
+    uses to define which genes carry the enrichment. A real leading edge can
+    run to dozens of genes, so labeling is capped at ``max_labeled_genes``,
+    keeping the ones closest to the extreme end of the ranking (the
+    strongest individual contributors) and staggering label height so
+    closely-ranked genes don't collide.
     """
     fig, axes = plt.subplots(
         3,
         1,
-        figsize=(7.5, 5.5),
+        figsize=(7.5, 6.5),
         sharex=True,
-        gridspec_kw={"height_ratios": [3, 0.35, 1]},
+        gridspec_kw={"height_ratios": [3, 1.1, 1]},
     )
     ax_es, ax_hits, ax_metric = axes
     for ax in (ax_es, ax_hits, ax_metric):
@@ -223,11 +234,35 @@ def running_es_curve(
     if title:
         ax_es.set_title(title)
 
-    hit_ranks = rank[df[hit_col].to_numpy().astype(bool)]
-    ax_hits.vlines(hit_ranks, 0, 1, color="0.15", linewidth=0.5)
+    hit_mask = df[hit_col].to_numpy().astype(bool)
+    ax_hits.vlines(rank[hit_mask], 0, 1, color="0.15", linewidth=0.5)
     ax_hits.set_yticks([])
     ax_hits.set_ylabel("hits", rotation=0, ha="right", va="center")
     ax_hits.spines["left"].set_visible(False)
+
+    if gene_col in df.columns and max_labeled_genes > 0:
+        positions = np.arange(len(es))
+        if es[peak_i] >= 0:
+            edge_positions = positions[hit_mask & (positions <= peak_i)][:max_labeled_genes]
+        else:
+            edge_positions = positions[hit_mask & (positions >= peak_i)][-max_labeled_genes:]
+        genes = df[gene_col].to_numpy()
+        for j, pos in enumerate(edge_positions):
+            label_y = 1.35 if j % 2 == 0 else 1.85
+            ax_hits.annotate(
+                str(genes[pos]),
+                xy=(rank[pos], 1.0),
+                xytext=(rank[pos], label_y),
+                rotation=90,
+                fontsize=6.5,
+                ha="center",
+                va="bottom",
+                arrowprops={"arrowstyle": "-", "color": "0.6", "linewidth": 0.4},
+                annotation_clip=False,
+            )
+        ax_hits.set_ylim(0, 2.6)
+    else:
+        ax_hits.set_ylim(0, 1)
 
     metric = df[metric_col].to_numpy(dtype=float)
     pos_color, neg_color = "#B2182B", "#2166AC"

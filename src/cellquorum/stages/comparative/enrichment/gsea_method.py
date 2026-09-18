@@ -64,6 +64,7 @@ def running_es_walk(metric: pd.Series, members: set[str]) -> pd.DataFrame | None
             "running_es": running,
             "hit": hit.astype(int),
             "metric": vals,
+            "gene": genes,
         }
     )
 
@@ -330,7 +331,9 @@ class GseaMethod(AnalysisMethod):
                     walk_rows.append(walk)
                 if walk_rows:
                     running_df = pd.concat(walk_rows, ignore_index=True)
-                    running_df = running_df[["source", "rank", "running_es", "hit", "metric"]]
+                    running_df = running_df[
+                        ["source", "rank", "running_es", "hit", "metric", "gene"]
+                    ]
                     artifacts.append(
                         writer.table(
                             running_df,

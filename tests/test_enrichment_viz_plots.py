@@ -138,6 +138,61 @@ def test_running_es_curve_metric_panel_uses_filled_area_not_one_bar_per_gene():
     plt.close("all")
 
 
+def test_running_es_curve_labels_leading_edge_genes_on_the_hits_track():
+    """Leading edge = hits at or before the peak (positive score) -- same rule
+
+    gsea_method.leading_edge() uses. The strongest contributor (rank 1, a
+    hit) must be among the labeled genes.
+    """
+    n = 30
+    df = pd.DataFrame(
+        {
+            "rank": np.arange(1, n + 1),
+            "running_es": np.concatenate([np.linspace(0.1, 0.6, 15), np.linspace(0.6, -0.1, 15)]),
+            "hit": ([1, 0, 0, 1, 0] * 6),
+            "metric": np.linspace(3, -3, n),
+            "gene": [f"GENE{i}" for i in range(n)],
+        }
+    )
+    fig = plots.running_es_curve(df, title="S1", max_labeled_genes=5)
+    ax_hits = fig.axes[1]
+    labels = {t.get_text() for t in ax_hits.texts}
+    assert "GENE0" in labels
+    plt.close("all")
+
+
+def test_running_es_curve_caps_labeled_genes_at_max_labeled_genes():
+    n = 100
+    df = pd.DataFrame(
+        {
+            "rank": np.arange(1, n + 1),
+            "running_es": np.concatenate([np.linspace(0, 0.9, 50), np.linspace(0.9, -0.1, 50)]),
+            "hit": ([1] * 40 + [0] * 60),
+            "metric": np.linspace(5, -5, n),
+            "gene": [f"G{i}" for i in range(n)],
+        }
+    )
+    fig = plots.running_es_curve(df, title="S1", max_labeled_genes=8)
+    ax_hits = fig.axes[1]
+    assert len(ax_hits.texts) == 8
+    plt.close("all")
+
+
+def test_running_es_curve_without_gene_column_still_renders():
+    n = 20
+    df = pd.DataFrame(
+        {
+            "rank": np.arange(1, n + 1),
+            "running_es": np.linspace(0.5, -0.1, n),
+            "hit": ([1, 0, 0, 1] * 5),
+            "metric": np.linspace(2, -2, n),
+        }
+    )
+    fig = plots.running_es_curve(df, title="S1")
+    assert len(fig.axes) == 3
+    plt.close("all")
+
+
 def test_running_es_curve_es_panel_has_a_filled_area_under_the_curve():
     n = 50
     df = pd.DataFrame(

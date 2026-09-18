@@ -15,7 +15,7 @@ def test_running_es_walk_endpoint_returns_near_zero():
     metric = pd.Series({f"g{i}": 10.0 - i for i in range(10)})
     members = {"g2", "g3", "g4"}
     walk = running_es_walk(metric, members)
-    assert list(walk.columns) == ["rank", "running_es", "hit", "metric"]
+    assert list(walk.columns) == ["rank", "running_es", "hit", "metric", "gene"]
     assert len(walk) == 10
     # Walk ends at ~0 (P_hit and P_miss both reach 1).
     assert abs(float(walk["running_es"].iloc[-1])) < 1e-9
@@ -23,6 +23,21 @@ def test_running_es_walk_endpoint_returns_near_zero():
     assert int(walk["hit"].sum()) == 3
     # Ranks are 1..N ascending.
     assert list(walk["rank"]) == list(range(1, 11))
+
+
+def test_running_es_walk_gene_column_matches_ranked_order():
+    """The plotted hits track needs to know WHICH gene sits at each rank, to
+
+    label leading-edge genes on the barcode -- without this the walk has
+    positions but no identity, so a figure could only ever show anonymous
+    tick marks.
+    """
+    metric = pd.Series({f"g{i}": 10.0 - i for i in range(10)})
+    members = {"g2", "g3", "g4"}
+    walk = running_es_walk(metric, members)
+    assert list(walk["gene"]) == [f"g{i}" for i in range(10)]  # ranked descending
+    hit_genes = walk.loc[walk["hit"].astype(bool), "gene"].tolist()
+    assert hit_genes == ["g2", "g3", "g4"]
 
 
 def test_running_es_walk_hits_accumulate_monotonically():
