@@ -101,11 +101,11 @@ tryCatch(
     # cluster count -- 6 clusters x 2 conditions is 12 columns, and the old
     # per-cluster-only formula left most of that freed-up horizontal room
     # (from moving the legend off the top) unused, making the figure read
-    # as too tall/narrow for how few columns it actually has. The +1400
-    # overhead covers the 45mm left padding, row dendrogram, gene-name
+    # as too tall/narrow for how few columns it actually has. The +1100
+    # overhead covers the 20mm left padding, row dendrogram, gene-name
     # column, and right-side legend, none of which scale with column count.
     n_data_cols <- ncol(mat_z)
-    width_px <- max(3200, 230 * n_data_cols + 1400)
+    width_px <- max(3200, 230 * n_data_cols + 1100)
 
     png(out_png, width = width_px, height = height_px, res = 300)
     ht <- Heatmap(
@@ -134,7 +134,7 @@ tryCatch(
     # from there -- with real identity labels ("Mechanosensory_Lymphedema")
     # the leftmost label's tail runs past the device's left edge and gets
     # clipped without it.
-    draw(ht, annotation_legend_list = legend_list, padding = unit(c(2, 45, 2, 2), "mm"))
+    draw(ht, annotation_legend_list = legend_list, padding = unit(c(2, 20, 2, 2), "mm"))
     dev.off()
     cat("de_heatmap.R: wrote", out_png, "(", n_genes, "genes )\n")
   },
