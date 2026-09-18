@@ -8,6 +8,7 @@ import anndata as ad
 import matplotlib
 import matplotlib.pyplot as plt
 import scanpy as sc
+from matplotlib.patches import Rectangle
 
 from cellquorum.visualization.figstyle import (
     CELLQUORUM_BLUE,
@@ -380,6 +381,35 @@ def select_marker_genes(
     return markers
 
 
+def _marker_highlight_boxes(
+    *,
+    markers: dict[str, list[str]],
+    genes: list[str],
+    row_order: list[str],
+) -> list[tuple[float, float]]:
+    """(x, y) center of each gene's dot in the cluster it was selected FOR.
+
+    Scanpy's dotplot places column ``i`` and row ``j`` centers at
+    ``i + 0.5`` / ``j + 0.5`` (confirmed against a live ``DotPlot`` -- ticks
+    land at those half-integers in the order the groupby/gene list was
+    given), so this stays purely a coordinate lookup rather than needing to
+    introspect the rendered axis. A gene can own more than one cluster's box
+    (shared top marker) or none (present only as cross-cluster context).
+    """
+    gene_x = {gene: i + 0.5 for i, gene in enumerate(genes)}
+    row_y = {cluster: j + 0.5 for j, cluster in enumerate(row_order)}
+    boxes: list[tuple[float, float]] = []
+    for cluster_id, cluster_genes in markers.items():
+        y = row_y.get(cluster_id)
+        if y is None:
+            continue
+        for gene in cluster_genes:
+            x = gene_x.get(gene)
+            if x is not None:
+                boxes.append((x, y))
+    return boxes
+
+
 def plot_marker_identity_dotplot(
     adata: ad.AnnData,
     *,
@@ -418,12 +448,27 @@ def plot_marker_identity_dotplot(
     work.X = work.layers[layer]
     labels = cluster_labels or {}
     work.obs["_identity"] = work.obs[cluster_key].astype(str).map(lambda c: labels.get(c, c))
-    order = sorted(markers.keys(), key=lambda c: labels.get(c, c))
-    order = [labels.get(c, c) for c in order]
-    work.obs["_identity"] = work.obs["_identity"].astype("category").cat.reorder_categories(order)
+    raw_order = sorted(markers.keys(), key=lambda c: labels.get(c, c))
+    labeled_order = [labels.get(c, c) for c in raw_order]
+    work.obs["_identity"] = (
+        work.obs["_identity"].astype("category").cat.reorder_categories(labeled_order)
+    )
 
     apply_cellquorum_theme()
     fig = sc.pl.dotplot(work, genes, groupby="_identity", standard_scale="var", return_fig=True)
+    main_ax = fig.get_axes()["mainplot_ax"]
+    for x, y in _marker_highlight_boxes(markers=markers, genes=genes, row_order=raw_order):
+        main_ax.add_patch(
+            Rectangle(
+                (x - 0.5, y - 0.5),
+                1.0,
+                1.0,
+                fill=False,
+                edgecolor="gold",
+                linewidth=2.2,
+                zorder=10,
+            )
+        )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")

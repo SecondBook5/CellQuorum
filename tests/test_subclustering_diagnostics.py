@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.stages.clustering.subclustering.diagnostics import (
+    _marker_highlight_boxes,
     plot_marker_identity_dotplot,
     plot_technical_qc_consistency,
     select_marker_genes,
@@ -114,6 +115,47 @@ def test_plot_marker_identity_dotplot_applies_cluster_labels(tmp_path) -> None:
     # is never mutated in place, matching de_heatmap_method's convention of
     # building a display-only relabeled copy rather than touching the object.
     assert set(a.obs["subcluster"].astype(str).unique()) == {"0", "1"}
+
+
+def test_marker_highlight_boxes_locates_each_clusters_own_marker() -> None:
+    """A gene defining cluster 0 gets boxed at (its x, cluster 0's row) -- not
+
+    at every row it happens to appear in, only the one it was selected for.
+    """
+    boxes = _marker_highlight_boxes(
+        markers={"0": ["MARKER_0"], "1": ["MARKER_1"]},
+        genes=["MARKER_0", "MARKER_1"],
+        row_order=["0", "1"],
+    )
+
+    assert boxes == [(0.5, 0.5), (1.5, 1.5)]
+
+
+def test_marker_highlight_boxes_handles_a_gene_shared_by_two_clusters() -> None:
+    """Same gene, two owning clusters -- one box per (gene, owning cluster) pair."""
+    boxes = _marker_highlight_boxes(
+        markers={"0": ["SHARED"], "1": ["SHARED"]},
+        genes=["SHARED"],
+        row_order=["0", "1"],
+    )
+
+    assert boxes == [(0.5, 0.5), (0.5, 1.5)]
+
+
+def test_marker_highlight_boxes_skips_unknown_cluster_or_gene() -> None:
+    """A cluster missing from row_order, or a gene missing from the gene list,
+
+    can't be placed on the grid -- skip it rather than crash (defensive, since
+    both lists are auto-derived from the same object and should never
+    disagree in practice).
+    """
+    boxes = _marker_highlight_boxes(
+        markers={"0": ["MARKER_0"], "99": ["MARKER_1"]},
+        genes=["MARKER_0"],
+        row_order=["0"],
+    )
+
+    assert boxes == [(0.5, 0.5)]
 
 
 def test_plot_marker_identity_dotplot_skips_with_fewer_than_two_clusters(tmp_path) -> None:
