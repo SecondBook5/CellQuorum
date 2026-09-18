@@ -456,21 +456,30 @@ def plot_marker_identity_dotplot(
 
     apply_cellquorum_theme()
     fig = sc.pl.dotplot(work, genes, groupby="_identity", standard_scale="var", return_fig=True)
+    # DotPlot.savefig() calls make_figure() internally on every call, which
+    # rebuilds the axes from scratch and would silently discard any patches
+    # added beforehand -- build once via make_figure(), draw on the real
+    # axes it produces, then save with plt.savefig() directly so a second
+    # save (the .pdf twin) doesn't wipe the boxes either.
+    fig.make_figure()
     main_ax = fig.get_axes()["mainplot_ax"]
     for x, y in _marker_highlight_boxes(markers=markers, genes=genes, row_order=raw_order):
+        # Soft fill behind the dot, not an outline -- zorder=1 sits above the
+        # axis background/gridlines but below the dot itself (scatter marker
+        # zorder defaults above 1), so the dot renders unobscured on top.
         main_ax.add_patch(
             Rectangle(
                 (x - 0.5, y - 0.5),
                 1.0,
                 1.0,
-                fill=False,
-                edgecolor="gold",
-                linewidth=2.2,
-                zorder=10,
+                facecolor="#FFE08A",
+                edgecolor="none",
+                alpha=0.9,
+                zorder=1,
             )
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
     plt.close("all")
     return out_path
