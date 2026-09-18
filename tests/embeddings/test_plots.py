@@ -96,6 +96,80 @@ def test_continuous_overlay_returns_figure():
     assert isinstance(fig, Figure)
 
 
+def _score_by_condition_adata():
+    rng = np.random.default_rng(0)
+    n = 60
+    a = ad.AnnData(X=rng.random((n, 8)).astype("float32"))
+    a.obsm["X_umap"] = rng.normal(size=(n, 2)).astype("float32")
+    a.obs["fibroblast_subcluster"] = ["0"] * 30 + ["1"] * 30
+    a.obs["fibroblast_subcluster"] = a.obs["fibroblast_subcluster"].astype("category")
+    a.obs["condition"] = (["Normal"] * 15 + ["Lymphedema"] * 15) * 2
+    return a
+
+
+def test_plot_score_by_condition_returns_three_panels():
+    a = _score_by_condition_adata()
+    score = np.random.default_rng(2).random(a.n_obs)
+    fig = plots.plot_score_by_condition(
+        a,
+        score=score,
+        score_label="proliferating (UCell)",
+        cluster_key="fibroblast_subcluster",
+        basis="X_umap",
+        axis_labels=("UMAP1", "UMAP2"),
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+    )
+    assert isinstance(fig, Figure)
+    # 3 content panels (state, control, case) + 1 shared colorbar axes.
+    assert len(fig.axes) == 4
+
+
+def test_plot_score_by_condition_shares_color_scale_across_condition_panels():
+    """Panels 2 and 3 use the SAME vmin/vmax -- otherwise a dark red dot in one
+
+    panel and a dark red dot in the other can mean different score values,
+    silently defeating the whole point of a shared-scale comparison figure.
+    """
+    a = _score_by_condition_adata()
+    score = np.random.default_rng(2).random(a.n_obs)
+    fig = plots.plot_score_by_condition(
+        a,
+        score=score,
+        score_label="proliferating (UCell)",
+        cluster_key="fibroblast_subcluster",
+        basis="X_umap",
+        axis_labels=("UMAP1", "UMAP2"),
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+    )
+    control_scatter = next(c for c in fig.axes[1].collections if hasattr(c, "get_clim"))
+    case_scatter = next(c for c in fig.axes[2].collections if hasattr(c, "get_clim"))
+    assert control_scatter.get_clim() == case_scatter.get_clim()
+
+
+def test_plot_score_by_condition_cluster_labels_rename_state_panel_text():
+    a = _score_by_condition_adata()
+    score = np.random.default_rng(2).random(a.n_obs)
+    fig = plots.plot_score_by_condition(
+        a,
+        score=score,
+        score_label="proliferating (UCell)",
+        cluster_key="fibroblast_subcluster",
+        basis="X_umap",
+        axis_labels=("UMAP1", "UMAP2"),
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+        cluster_labels={"0": "Papillary", "1": "Reticular"},
+    )
+    state_texts = {t.get_text() for t in fig.axes[0].texts}
+    assert "Papillary" in state_texts
+    assert "Reticular" in state_texts
+
+
 def test_save_figure_writes_both_formats(tmp_path):
     apply_theme()
     fig = Figure()

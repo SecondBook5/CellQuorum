@@ -499,6 +499,153 @@ def continuous_overlay(
     return fig
 
 
+def plot_score_by_condition(
+    adata: ad.AnnData,
+    *,
+    score: np.ndarray,
+    score_label: str,
+    cluster_key: str,
+    basis: str,
+    axis_labels: tuple[str, str],
+    condition_col: str,
+    case: str,
+    control: str,
+    case_label: str | None = None,
+    control_label: str | None = None,
+    cluster_labels: dict[str, str] | None = None,
+    cmap: str = _SEQUENTIAL_CMAP,
+    clip_pct: float = 2.0,
+    point_size: float | None = None,
+) -> Figure:
+    """3-panel figure: cluster-state UMAP, then a per-cell score split by condition.
+
+    Panel 1 is a plain categorical scatter (no PAGA, no side legend -- just
+    in-plot cluster labels, matching the reference "state map" layout this
+    was built to reproduce). Panels 2 and 3 color the SAME score by the
+    control and case condition respectively, on ONE shared color scale
+    (computed once, across all cells, before either panel is drawn) with a
+    single shared colorbar -- two independently-clipped scales would let the
+    same color mean different score values in each panel, defeating the
+    point of putting them side by side.
+
+    ``cluster_labels`` renames panel 1's in-plot text only; grouping and the
+    palette stay keyed on the raw cluster value, same convention as
+    ``categorical_embedding``.
+    """
+    cluster_labels = cluster_labels or {}
+    control_label = control_label or control
+    case_label = case_label or case
+
+    coords = np.asarray(adata.obsm[basis])[:, :2]
+    score = np.asarray(score, dtype=float)
+    cluster_col = adata.obs[cluster_key].astype(str)
+    cond_col = adata.obs[condition_col].astype(str)
+
+    if hasattr(adata.obs[cluster_key], "cat"):
+        cats = [str(c) for c in adata.obs[cluster_key].cat.categories]
+    else:
+        cats = sorted(cluster_col.dropna().unique())
+
+    centroids: dict[str, np.ndarray] = {}
+    for cat in cats:
+        mask = (cluster_col == cat).to_numpy()
+        if mask.any():
+            centroids[cat] = np.array([np.median(coords[mask, 0]), np.median(coords[mask, 1])])
+    palette = _palette_from_centroids(centroids, cats)
+
+    n_obs = int(len(score))
+    size = _adaptive_point_size(n_obs) if point_size is None else point_size
+
+    fig = Figure(figsize=(15.5, 5.0))
+    ax_state = fig.add_subplot(131)
+    ax_control = fig.add_subplot(132)
+    ax_case = fig.add_subplot(133)
+
+    # --- Panel 1: cluster state map --------------------------------------
+    for cat in cats:
+        mask = (cluster_col == cat).to_numpy()
+        if not mask.any():
+            continue
+        ax_state.scatter(
+            coords[mask, 0],
+            coords[mask, 1],
+            s=size,
+            c=palette[cat],
+            alpha=0.6,
+            linewidths=0,
+            rasterized=True,
+        )
+    texts = []
+    for cat in cats:
+        centroid = centroids.get(cat)
+        if centroid is None:
+            continue
+        texts.append(
+            ax_state.text(
+                centroid[0],
+                centroid[1],
+                cluster_labels.get(cat, cat),
+                fontsize=9,
+                fontweight="bold",
+                ha="center",
+                va="center",
+                zorder=10,
+                clip_on=False,
+                bbox={
+                    "boxstyle": "round,pad=0.25",
+                    "fc": palette.get(cat, "#FFFFFF"),
+                    "ec": "none",
+                    "alpha": 0.28,
+                },
+            )
+        )
+    _repel_labels(ax_state, texts)
+    ax_state.margins(0.10)
+    _style_axes(ax_state, axis_labels)
+    ax_state.set_title(f"{n_obs:,} cells", fontsize=9, color=_TEXT)
+
+    # --- Shared color scale, computed ONCE across all cells --------------
+    finite = score[np.isfinite(score)]
+    if finite.size and clip_pct > 0:
+        vmin, vmax = np.percentile(finite, [clip_pct, 100 - clip_pct])
+        if vmin == vmax:
+            vmin, vmax = None, None
+    else:
+        vmin, vmax = None, None
+
+    # --- Panels 2/3: same score, split by condition, same vmin/vmax -----
+    sctr = None
+    for ax, label, cond_value in (
+        (ax_control, control_label, control),
+        (ax_case, case_label, case),
+    ):
+        mask = (cond_col == cond_value).to_numpy()
+        order = np.argsort(score[mask], kind="mergesort")
+        sctr = ax.scatter(
+            coords[mask][order, 0],
+            coords[mask][order, 1],
+            c=score[mask][order],
+            cmap=cmap,
+            s=size,
+            alpha=0.9,
+            linewidths=0,
+            rasterized=True,
+            vmin=vmin,
+            vmax=vmax,
+        )
+        _style_axes(ax, axis_labels)
+        ax.set_title(f"{label}\n{int(mask.sum()):,} cells", fontsize=9, color=_TEXT)
+
+    if sctr is not None:
+        cbar = fig.colorbar(sctr, ax=[ax_control, ax_case], shrink=0.7, aspect=25, pad=0.02)
+        cbar.set_label(score_label, fontsize=8)
+        cbar.outline.set_linewidth(0.4)
+        cbar.outline.set_edgecolor("#BDBDBD")
+        cbar.ax.tick_params(labelsize=8, length=2, width=0.4)
+
+    return fig
+
+
 def magic_zscore_layer(
     adata: ad.AnnData, *, source_layer: str = "magic", out_layer: str = "magic_z"
 ) -> bool:
@@ -535,5 +682,6 @@ __all__ = [
     "continuous_overlay",
     "figure_artifacts",
     "magic_zscore_layer",
+    "plot_score_by_condition",
     "save_figure",
 ]
