@@ -115,9 +115,14 @@ class EmbeddingsConfig(StrictBaseModel):
             in the categorical panels' in-plot text and legend (e.g. {"0":
             "Papillary"}). Grouping, the palette, and PAGA connectivity indexing
             all stay keyed on the raw value.
+        methods: Embeddings method registry keys (empty -> default list injected:
+            umap, phate, paga, categorical_embedding, continuous_overlay). Setting
+            this explicitly replaces the default list rather than adding to it, so
+            an override that wants the defaults plus one more must name all of them.
     """
 
     enabled: bool = True
+    methods: list[dict] = []
     use_rep: str = "X_pca_harmony"
     umap_min_dist: float = 0.3
     phate_knn: int = 15

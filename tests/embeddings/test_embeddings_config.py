@@ -36,6 +36,17 @@ def test_overlay_and_magic_defaults():
     )
 
 
+def test_embeddings_config_accepts_explicit_methods_list():
+    """A project overriding the default method list (e.g. to add
+
+    state_score_umap) must be able to set methods: explicitly -- this
+    schema silently lacked the field entirely, so ANY custom methods list
+    failed top-level config validation before a run could even start.
+    """
+    cfg = EmbeddingsConfig(methods=[{"method": "umap"}, {"method": "state_score_umap"}])
+    assert cfg.methods == [{"method": "umap"}, {"method": "state_score_umap"}]
+
+
 def test_embeddings_config_rejects_unknown_field():
     with pytest.raises(ValidationError):
         EmbeddingsConfig(not_a_field=1)
