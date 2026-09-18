@@ -464,9 +464,11 @@ def plot_marker_identity_dotplot(
     fig.make_figure()
     main_ax = fig.get_axes()["mainplot_ax"]
     for x, y in _marker_highlight_boxes(markers=markers, genes=genes, row_order=raw_order):
-        # Soft fill behind the dot, not an outline -- zorder=1 sits above the
-        # axis background/gridlines but below the dot itself (scatter marker
-        # zorder defaults above 1), so the dot renders unobscured on top.
+        # Soft fill behind the dot, not an outline. The dot scatter's own
+        # zorder is 1 (confirmed directly against a live DotPlot) -- equal
+        # zorder ties break by add-order, and this patch is added after the
+        # scatter already exists, so matching zorder=1 draws it OVER the dot,
+        # not behind it. zorder must be strictly less than 1.
         main_ax.add_patch(
             Rectangle(
                 (x - 0.5, y - 0.5),
@@ -475,7 +477,7 @@ def plot_marker_identity_dotplot(
                 facecolor="#FFE08A",
                 edgecolor="none",
                 alpha=0.9,
-                zorder=1,
+                zorder=0.5,
             )
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
