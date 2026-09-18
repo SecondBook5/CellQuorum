@@ -124,6 +124,30 @@ def test_by_sample_table_orders_donors_numerically_not_lexicographically(tmp_pat
     assert table["sample_id"].tolist() == ["P1", "P2", "P10", "P12"]
 
 
+def test_by_sample_table_handles_categorical_donor_id_column(tmp_path):
+    """Real objects store donor_id as pandas Categorical -- .fillna("") on a
+
+    Categorical raises TypeError unless "" is a declared category, which it
+    never is. Confirmed live on the real fibroblast object.
+    """
+    n = 8
+    obs = pd.DataFrame(
+        {
+            "cell_type": ["A", "B"] * 4,
+            "donor_id": pd.Categorical(["P1", "P1", "P2", "P2", "P10", "P10", "P12", "P12"]),
+            "sample_id": ["P1", "P1", "P2", "P2", "P10", "P10", "P12", "P12"],
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    adata = ad.AnnData(X=np.ones((n, 3)), obs=obs)
+    context = _context(tmp_path, adata)
+    result = CompositionStage().run(context)
+    assert result.status == "success"
+    by_sample_path = next(a.path for a in result.artifacts if a.name == "composition_by_sample")
+    table = pd.read_csv(by_sample_path)
+    assert table["sample_id"].tolist() == ["P1", "P2", "P10", "P12"]
+
+
 def test_cluster_labels_rename_the_stacked_bar_legend_only(tmp_path):
     """Bare cell-type ids in the legend are meaningless without cross-referencing --
 

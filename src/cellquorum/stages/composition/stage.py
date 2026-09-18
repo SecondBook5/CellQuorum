@@ -118,8 +118,13 @@ class CompositionStage:
             by_sample = grouped_composition(cell_type, obs[sample_key])
             if donor_key and donor_key in obs.columns:
                 sample_donor = obs.drop_duplicates(sample_key).set_index(sample_key)[donor_key]
+                # donor_id is commonly a pandas Categorical on a real object --
+                # .fillna("") on one raises unless "" is a declared category,
+                # which it never is. astype(object) first fully decategorizes
+                # (keeping real NaN as NaN) so fillna has an unconstrained
+                # dtype to fill into.
                 donor_keys = natural_sort_key(
-                    sample_donor.reindex(by_sample.index).fillna("").astype(str)
+                    sample_donor.reindex(by_sample.index).astype(object).fillna("").astype(str)
                 )
                 sample_keys = natural_sort_key(pd.Series(by_sample.index, index=by_sample.index))
                 sort_order = (donor_keys + "|" + sample_keys).sort_values().index
