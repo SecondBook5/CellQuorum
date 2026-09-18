@@ -15,6 +15,7 @@ from cellquorum.stages.integration.embeddings.methods import (
     PhateMethod,
     UmapMethod,
 )
+from cellquorum.stages.integration.embeddings.state_score_umap_method import StateScoreUmapMethod
 
 for _method in (
     UmapMethod,
@@ -22,6 +23,7 @@ for _method in (
     PagaMethod,
     CategoricalEmbeddingMethod,
     ContinuousOverlayMethod,
+    StateScoreUmapMethod,
 ):
     if not METHOD_REGISTRY.has("embeddings", _method.name):
         METHOD_REGISTRY.register(_method)
@@ -34,5 +36,6 @@ __all__ = [
     "OverlayConfig",
     "PagaMethod",
     "PhateMethod",
+    "StateScoreUmapMethod",
     "UmapMethod",
 ]

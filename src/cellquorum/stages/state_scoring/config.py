@@ -30,9 +30,6 @@ class StateScoringConfig(StrictBaseModel):
         min_program_genes: Minimum present genes for a program to be eligible.
         random_state: Seed for scanpy ``score_genes`` control-gene sampling.
         key_prefix: Prefix for the per-program obs columns (``score_genes``).
-        cluster_labels: Optional display-only rename of cluster values in the
-            state_score_umap figures (e.g. {"0": "Papillary"}). Grouping and
-            the palette stay keyed on the raw value.
     """
 
     enabled: bool = True
@@ -47,7 +44,6 @@ class StateScoringConfig(StrictBaseModel):
     min_program_genes: int = 3
     random_state: int = 0
     key_prefix: str = "state_"
-    cluster_labels: dict[str, str] = {}
 
 
 __all__ = ["StateScoringConfig"]

@@ -5,6 +5,12 @@ program scores) on an embedding anywhere in the pipeline before this --
 reuses embeddings.plots.plot_score_by_condition (cluster-state panel + two
 condition panels on one shared color scale) rather than duplicating that
 figure's centroid/palette/label machinery.
+
+Lives in the ``embeddings`` package/stage category (order=200), NOT
+``state_scoring`` (order=170), even though it reads state_scoring's
+output: state_scoring runs BEFORE embeddings computes UMAP/PHATE, so a
+method needing both a scored program AND an embedding can only run at or
+after the later of the two.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ class StateScoreUmapMethod(AnalysisMethod):
     """Render one cluster-state + per-condition score figure per program."""
 
     name = "state_score_umap"
-    stage_category = "state_scoring"
+    stage_category = "embeddings"
     backend = "python"
 
     def input_contract(self, config: dict) -> DataContract:

@@ -10,7 +10,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.stages.state_scoring.state_score_umap_method import StateScoreUmapMethod
+from cellquorum.stages.integration.embeddings.state_score_umap_method import StateScoreUmapMethod
 
 
 def _adata(n=60):
