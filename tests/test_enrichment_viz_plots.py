@@ -113,6 +113,47 @@ def test_running_es_curve_returns_three_track_figure():
     plt.close("all")
 
 
+def test_running_es_curve_metric_panel_uses_filled_area_not_one_bar_per_gene():
+    """The old implementation drew one Rectangle per ranked gene -- fine for a
+
+    50-row test fixture, but a real collection ranks the whole transcriptome
+    (20k+ genes), and 20k+ sub-pixel-wide bars anti-alias into a washed-out,
+    nearly invisible panel (confirmed live against the real hallmark output).
+    A filled area renders as a solid shape regardless of point density, so
+    the panel must use zero bar patches.
+    """
+    n = 500
+    df = pd.DataFrame(
+        {
+            "rank": np.arange(1, n + 1),
+            "running_es": np.linspace(0.6, -0.1, n),
+            "hit": ([1, 0, 0, 0, 1] * 100),
+            "metric": np.linspace(7, -7, n),
+        }
+    )
+    fig = plots.running_es_curve(df, title="S1")
+    ax_metric = fig.axes[2]
+    assert len(ax_metric.patches) == 0
+    assert len(ax_metric.collections) >= 1
+    plt.close("all")
+
+
+def test_running_es_curve_es_panel_has_a_filled_area_under_the_curve():
+    n = 50
+    df = pd.DataFrame(
+        {
+            "rank": np.arange(1, n + 1),
+            "running_es": np.concatenate([np.linspace(0, 0.6, 25), np.linspace(0.6, -0.1, 25)]),
+            "hit": ([1, 0, 0, 0, 1] * 10),
+            "metric": np.linspace(3, -3, n),
+        }
+    )
+    fig = plots.running_es_curve(df, title="S1")
+    ax_es = fig.axes[0]
+    assert len(ax_es.collections) >= 1
+    plt.close("all")
+
+
 def test_ora_barplot_facets_by_direction():
     df = pd.DataFrame(
         {

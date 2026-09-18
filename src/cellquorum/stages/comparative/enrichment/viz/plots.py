@@ -182,19 +182,34 @@ def running_es_curve(
     metric_col: str = "metric",
     title: str | None = None,
 ) -> Figure:
-    """Classic 3-track Subramanian plot: ES line, hit ticks, ranked metric bar."""
+    """Classic 3-track Subramanian plot: ES line, hit ticks, ranked metric area.
+
+    The ranked-metric track used to be one Rectangle per ranked gene, which
+    looks fine on a handful of rows but anti-aliases into a washed-out,
+    near-invisible panel once the collection ranks a real transcriptome
+    (20k+ genes at sub-pixel bar width) -- confirmed live against the real
+    hallmark output. A filled area renders as a solid shape independent of
+    point density, so both the ES curve and the ranked metric use
+    fill_between instead of per-point patches.
+    """
     fig, axes = plt.subplots(
         3,
         1,
-        figsize=(7, 5),
+        figsize=(7.5, 5.5),
         sharex=True,
-        gridspec_kw={"height_ratios": [3, 0.4, 1]},
+        gridspec_kw={"height_ratios": [3, 0.35, 1]},
     )
     ax_es, ax_hits, ax_metric = axes
+    for ax in (ax_es, ax_hits, ax_metric):
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
     rank = df[rank_col].to_numpy()
     es = df[es_col].to_numpy(dtype=float)
-    ax_es.plot(rank, es, color="#2E7D32", linewidth=1.5)
-    ax_es.axhline(0, color="0.6", linewidth=0.8)
+    es_color = "#2E7D32"
+    ax_es.plot(rank, es, color=es_color, linewidth=1.8, zorder=3)
+    ax_es.fill_between(rank, es, 0, color=es_color, alpha=0.15, linewidth=0, zorder=2)
+    ax_es.axhline(0, color="0.6", linewidth=0.8, zorder=1)
     peak_i = int(np.argmax(np.abs(es)))
     ax_es.annotate(
         f"ES={es[peak_i]:.3f}",
@@ -207,15 +222,22 @@ def running_es_curve(
     ax_es.set_ylabel("running ES")
     if title:
         ax_es.set_title(title)
+
     hit_ranks = rank[df[hit_col].to_numpy().astype(bool)]
-    ax_hits.vlines(hit_ranks, 0, 1, color="black", linewidth=0.5)
+    ax_hits.vlines(hit_ranks, 0, 1, color="0.15", linewidth=0.5)
     ax_hits.set_yticks([])
     ax_hits.set_ylabel("hits", rotation=0, ha="right", va="center")
+    ax_hits.spines["left"].set_visible(False)
+
     metric = df[metric_col].to_numpy(dtype=float)
-    norm = signed_norm(metric)
-    cmap = plt.get_cmap("RdBu_r")
-    ax_metric.bar(rank, metric, width=1.0, color=cmap(norm(metric)))
-    ax_metric.axhline(0, color="0.4", linewidth=0.8)
+    pos_color, neg_color = "#B2182B", "#2166AC"
+    ax_metric.fill_between(
+        rank, metric, 0, where=metric >= 0, color=pos_color, linewidth=0, interpolate=True
+    )
+    ax_metric.fill_between(
+        rank, metric, 0, where=metric <= 0, color=neg_color, linewidth=0, interpolate=True
+    )
+    ax_metric.axhline(0, color="0.3", linewidth=0.8)
     ax_metric.set_ylabel("ranked metric")
     ax_metric.set_xlabel("rank")
     fig.tight_layout()
