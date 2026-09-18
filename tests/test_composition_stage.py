@@ -103,3 +103,41 @@ def test_metrics_report_cell_and_group_counts(tmp_path):
     assert result.metrics["n_cell_types"] == 2
     assert result.metrics["condition_key"] == "condition"
     assert result.metrics["sample_key"] == "sample_id"
+
+
+def test_by_sample_table_orders_donors_numerically_not_lexicographically(tmp_path):
+    """P1, P2, P10, P12 -- plain string sort would put P1, P10, P12, P2."""
+    n = 8
+    obs = pd.DataFrame(
+        {
+            "cell_type": ["A", "B"] * 4,
+            "donor_id": ["P1", "P1", "P2", "P2", "P10", "P10", "P12", "P12"],
+            "sample_id": ["P1", "P1", "P2", "P2", "P10", "P10", "P12", "P12"],
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    adata = ad.AnnData(X=np.ones((n, 3)), obs=obs)
+    context = _context(tmp_path, adata)
+    result = CompositionStage().run(context)
+    by_sample_path = next(a.path for a in result.artifacts if a.name == "composition_by_sample")
+    table = pd.read_csv(by_sample_path)
+    assert table["sample_id"].tolist() == ["P1", "P2", "P10", "P12"]
+
+
+def test_cluster_labels_rename_the_stacked_bar_legend_only(tmp_path):
+    """Bare cell-type ids in the legend are meaningless without cross-referencing --
+
+    cluster_labels renames them for display, same convention as de_heatmap and
+    the marker identity dotplot (display-only, doesn't touch the data table).
+    """
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    table = pd.DataFrame({"A": [60.0, 55.0], "B": [40.0, 45.0]}, index=["Normal", "Case"])
+    fig = _stacked_bar(
+        table, x_label="condition", cluster_labels={"A": "Papillary", "B": "Reticular"}
+    )
+    ax = fig.axes[0]
+    legend_labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert legend_labels == ["Papillary", "Reticular"]
+    # The data itself is untouched -- x-axis groups still read the real index.
+    assert [t.get_text() for t in ax.get_xticklabels()] == ["Normal", "Case"]

@@ -30,6 +30,10 @@ class CompositionConfig(StrictBaseModel):
         figure_formats: Export formats for the composition figures.
         dpi: Figure export resolution.
         output_prefix: Prefix used for output artifact filenames.
+        cluster_labels: Optional display-only rename of cell_type_key values in
+            the figure legends (e.g. {"0": "Papillary"}). Never mutates obs or
+            the written tables -- bare cluster ids stay bare on disk, only the
+            legend text changes.
     """
 
     cell_type_key: str = "cell_type"
@@ -45,6 +49,7 @@ class CompositionConfig(StrictBaseModel):
     figure_formats: list[str] = ["pdf", "png"]
     dpi: int = 300
     output_prefix: str = "composition"
+    cluster_labels: dict[str, str] = {}
 
 
 __all__ = ["CompositionConfig"]

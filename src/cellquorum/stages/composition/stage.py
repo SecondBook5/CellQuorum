@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -95,7 +96,9 @@ class CompositionStage:
                     description="Cell-type composition per condition (percent).",
                 )
             )
-            fig = _stacked_bar(by_condition, x_label=condition_key)
+            fig = _stacked_bar(
+                by_condition, x_label=condition_key, cluster_labels=config.cluster_labels
+            )
             paths = figstyle.save_figure(
                 fig, figures_dir, "composition_by_condition", formats=formats, dpi=config.dpi
             )
@@ -116,7 +119,13 @@ class CompositionStage:
             if donor_key and donor_key in obs.columns:
                 sample_donor = obs.drop_duplicates(sample_key).set_index(sample_key)[donor_key]
                 by_sample = by_sample.loc[
-                    sorted(by_sample.index, key=lambda s: (str(sample_donor.get(s, "")), str(s)))
+                    sorted(
+                        by_sample.index,
+                        key=lambda s: (
+                            _natural_sort_key(sample_donor.get(s, "")),
+                            _natural_sort_key(s),
+                        ),
+                    )
                 ]
             artifacts.append(
                 manager.write_dataframe(
@@ -126,7 +135,7 @@ class CompositionStage:
                     description="Cell-type composition per sample (percent).",
                 )
             )
-            fig = _stacked_bar(by_sample, x_label=sample_key)
+            fig = _stacked_bar(by_sample, x_label=sample_key, cluster_labels=config.cluster_labels)
             paths = figstyle.save_figure(
                 fig, figures_dir, "composition_by_sample", formats=formats, dpi=config.dpi
             )
@@ -156,6 +165,20 @@ class CompositionStage:
                 "donor_key": donor_key if donor_key in obs.columns else None,
             },
         )
+
+
+def _natural_sort_key(s: str) -> tuple:
+    """Split "P10" into ("p", 10) so numeric suffixes sort numerically.
+
+    A plain string sort puts "P1", "P10", "P12", "P2" in that order --
+    donor/sample ids almost always carry a trailing number, and reading them
+    out of numeric order in a figure looks like a labeling bug even when the
+    data itself is fine.
+    """
+
+    return tuple(
+        int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", str(s))
+    )
 
 
 def _resolve_key(stage_value: str | None, config: object, attr: str, default: str) -> str | None:
@@ -194,11 +217,19 @@ def _qc_mask(adata: object, config: CompositionConfig) -> np.ndarray | None:
     return mask
 
 
-def _stacked_bar(table: pd.DataFrame, *, x_label: str) -> Figure:
-    """Percent-stacked bar of cell-type composition, one bar per row of `table`."""
+def _stacked_bar(
+    table: pd.DataFrame, *, x_label: str, cluster_labels: dict[str, str] | None = None
+) -> Figure:
+    """Percent-stacked bar of cell-type composition, one bar per row of `table`.
+
+    ``cluster_labels`` renames the legend only -- ``table``'s columns (the
+    actual grouping the bars are computed from) are never touched, same
+    display-only convention as de_heatmap's cluster_labels.
+    """
 
     import matplotlib.pyplot as plt
 
+    cluster_labels = cluster_labels or {}
     groups = list(table.index)
     cell_types = list(table.columns)
     palette = {
@@ -218,7 +249,7 @@ def _stacked_bar(table: pd.DataFrame, *, x_label: str) -> Figure:
             color=palette[ct],
             edgecolor="white",
             linewidth=0.4,
-            label=ct,
+            label=cluster_labels.get(str(ct), ct),
         )
         bottom += values
     ax.set_ylim(0, 100)
