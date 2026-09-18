@@ -29,8 +29,16 @@ def volcano(
     x_label: str,
     top_n_labels: int = 40,
     ambient_col: str = "likely_ambient",
+    highlight_genes: set[str] | frozenset[str] | None = None,
 ) -> Figure:
-    """Render a pseudobulk volcano from a (gene, logFC, FDR) frame."""
+    """Render a pseudobulk volcano from a (gene, logFC, FDR) frame.
+
+    ``highlight_genes``, when given, marks genes with a distinct outline and
+    always labels them -- even when not DE-significant between conditions.
+    Meant for a cluster's own identity markers: whether they're also
+    condition-responsive is exactly what the highlight makes visible at a
+    glance, not something the significance filter should hide.
+    """
     if not np.isfinite(fc_cut) or fc_cut < 0:
         raise ValueError("fc_cut must be finite and nonnegative")
     if not np.isfinite(fdr_cut) or not 0 < fdr_cut < 1:
@@ -109,38 +117,54 @@ def volcano(
         zorder=2,
     )
 
+    highlight_set = {str(g) for g in (highlight_genes or ())}
+    d["highlight"] = d["gene"].astype(str).isin(highlight_set)
+    hl = d[d["highlight"]]
+    if len(hl):
+        ax.scatter(
+            hl["logFC"],
+            hl["neg_log10fdr"],
+            facecolors="none",
+            edgecolors="black",
+            marker="*",
+            s=110,
+            linewidths=1.1,
+            zorder=3,
+        )
+
     ax.axvline(fc_cut, color="grey", linestyle=":", linewidth=0.8, zorder=0)
     ax.axvline(-fc_cut, color="grey", linestyle=":", linewidth=0.8, zorder=0)
     ax.axvline(0, color="black", linewidth=0.5, zorder=0)
     ax.axhline(y_sig, color="grey", linestyle="--", linewidth=0.8, zorder=0)
 
-    # Label the most-significant genes (cap to keep dense volcanoes legible).
-    labelled = d[sig].sort_values("FDR").head(top_n_labels)
+    # Label the most-significant genes (cap to keep dense volcanoes legible),
+    # plus every highlighted gene regardless of significance -- a cluster's
+    # own identity markers are worth showing even when condition-stable.
+    labelled = pd.concat([d[sig].sort_values("FDR").head(top_n_labels), hl]).drop_duplicates(
+        subset="gene"
+    )
     texts = []
     for _, r in labelled.iterrows():
         if r["ambient"]:
-            texts.append(
-                ax.text(
-                    r["logFC"],
-                    r["neg_log10fdr"],
-                    str(r["gene"]),
-                    fontsize=6,
-                    style="italic",
-                    color=_AMBIENT_EDGE,
-                )
-            )
+            color = _AMBIENT_EDGE
+            style = "italic"
+        elif r["highlight"] and not (r["FDR"] < fdr_cut and abs(r["logFC"]) > fc_cut):
+            color = "black"
+            style = "normal"
         else:
             color = case_color if r["logFC"] > 0 else control_color
-            texts.append(
-                ax.text(
-                    r["logFC"],
-                    r["neg_log10fdr"],
-                    str(r["gene"]),
-                    fontsize=6,
-                    fontweight="bold",
-                    color=color,
-                )
+            style = "normal"
+        texts.append(
+            ax.text(
+                r["logFC"],
+                r["neg_log10fdr"],
+                str(r["gene"]),
+                fontsize=6,
+                fontweight="bold",
+                style=style,
+                color=color,
             )
+        )
     try:
         from adjustText import adjust_text
 

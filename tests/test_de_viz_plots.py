@@ -85,6 +85,25 @@ def test_volcano_includes_extreme_effects_and_nonsignificant_scale():
     assert ax.get_ylim()[1] > -np.log10(0.05)
 
 
+def test_volcano_highlights_marker_genes_even_if_not_significant():
+    # G2 defines this cluster's identity but isn't DE between conditions --
+    # top_n_labels=0 means no gene would normally get a text label, so any
+    # label present must come from highlight_genes, not the significance path.
+    df = _demo_df()
+    fig = plots.volcano(
+        df,
+        fc_cut=1.0,
+        fdr_cut=0.05,
+        case_color="#C41E3A",
+        control_color="#1B4F8A",
+        x_label="x",
+        top_n_labels=0,
+        highlight_genes={"G2"},
+    )
+    labels = [t.get_text() for t in fig.axes[0].texts]
+    assert "G2" in labels
+
+
 def test_volcano_rejects_invalid_probabilities_and_thresholds():
     import pytest
 

@@ -7,10 +7,13 @@ from cellquorum.stages.comparative.differential_expression.viz.config import DeV
 from cellquorum.stages.comparative.differential_expression.viz.de_heatmap_method import (
     DeHeatmapMethod,
 )
+from cellquorum.stages.comparative.differential_expression.viz.volcano_subcluster_method import (
+    VolcanoBySubclusterMethod,
+)
 from cellquorum.stages.comparative.differential_expression.viz.volcano_viz import VolcanoVizMethod
 
-for _method in (VolcanoVizMethod, DeHeatmapMethod):
+for _method in (VolcanoVizMethod, DeHeatmapMethod, VolcanoBySubclusterMethod):
     if not METHOD_REGISTRY.has("de_viz", _method.name):
         METHOD_REGISTRY.register(_method)
 
-__all__ = ["DeVizConfig", "VolcanoVizMethod", "DeHeatmapMethod"]
+__all__ = ["DeVizConfig", "VolcanoVizMethod", "DeHeatmapMethod", "VolcanoBySubclusterMethod"]
