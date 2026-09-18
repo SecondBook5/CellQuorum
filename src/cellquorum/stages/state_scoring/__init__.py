@@ -7,9 +7,10 @@ from cellquorum.stages.state_scoring.aucell_method import AucellMethod
 from cellquorum.stages.state_scoring.config import StateScoringConfig
 from cellquorum.stages.state_scoring.programs import STATE_PROGRAMS, resolve_programs
 from cellquorum.stages.state_scoring.score_genes_method import ScoreGenesMethod
+from cellquorum.stages.state_scoring.state_score_umap_method import StateScoreUmapMethod
 from cellquorum.stages.state_scoring.ucell_method import UcellMethod
 
-for _method in (ScoreGenesMethod, AucellMethod, UcellMethod):
+for _method in (ScoreGenesMethod, AucellMethod, UcellMethod, StateScoreUmapMethod):
     if not METHOD_REGISTRY.has("state_scoring", _method.name):
         METHOD_REGISTRY.register(_method)
 
@@ -17,6 +18,7 @@ __all__ = [
     "STATE_PROGRAMS",
     "AucellMethod",
     "ScoreGenesMethod",
+    "StateScoreUmapMethod",
     "StateScoringConfig",
     "UcellMethod",
     "resolve_programs",
