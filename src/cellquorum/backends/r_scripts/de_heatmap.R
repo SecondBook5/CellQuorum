@@ -51,11 +51,24 @@ tryCatch(
     condition_palette <- c("#c0392b", "#3a6ea5")[seq_along(condition_levels)]
     condition_colors <- setNames(condition_palette, condition_levels)
 
+    # show_legend=FALSE + show_heatmap_legend=FALSE below: ComplexHeatmap's
+    # default draw() treats the heatmap's own colour-scale legend and the
+    # annotations' legends as two SEPARATE groups placed side by side
+    # (visually two columns), even with everything on the "right" side --
+    # merge_legend=TRUE doesn't fix the ordering either. Building all three
+    # by hand and passing them as one ordered annotation_legend_list is the
+    # only way to get a single vertical stack with z-score on top.
     top_anno <- HeatmapAnnotation(
       Cluster = clusters,
       Condition = conditions,
       col = list(Cluster = cluster_colors, Condition = condition_colors),
-      annotation_name_side = "left"
+      annotation_name_side = "left",
+      show_legend = FALSE
+    )
+    legend_list <- list(
+      Legend(col_fun = col_fun, title = "mean expr\n(z-scored)", at = c(-2, -1, 0, 1, 2)),
+      Legend(labels = cluster_levels, legend_gp = gpar(fill = cluster_colors), title = "Cluster"),
+      Legend(labels = condition_levels, legend_gp = gpar(fill = condition_colors), title = "Condition")
     )
 
     n_genes <- nrow(mat_z)
@@ -83,7 +96,16 @@ tryCatch(
     # below already conveys the same identity, unambiguously, colour-coded
     # with a legend -- so the redundant, overflow-prone per-slice title is
     # dropped rather than fought.
-    width_px <- max(2400, 200 * length(cluster_levels) + 900)
+    #
+    # Width scales on actual data columns (clusters x conditions), not
+    # cluster count -- 6 clusters x 2 conditions is 12 columns, and the old
+    # per-cluster-only formula left most of that freed-up horizontal room
+    # (from moving the legend off the top) unused, making the figure read
+    # as too tall/narrow for how few columns it actually has. The +1400
+    # overhead covers the 45mm left padding, row dendrogram, gene-name
+    # column, and right-side legend, none of which scale with column count.
+    n_data_cols <- ncol(mat_z)
+    width_px <- max(3200, 230 * n_data_cols + 1400)
 
     png(out_png, width = width_px, height = height_px, res = 300)
     ht <- Heatmap(
@@ -103,16 +125,16 @@ tryCatch(
       column_names_gp = gpar(fontsize = 8),
       column_names_rot = 45,
       use_raster = n_genes > 500,
-      heatmap_legend_param = list(title = "mean expr\n(z-scored)")
+      show_heatmap_legend = FALSE
     )
-    # Default legend placement already stacks z-score above Cluster above
-    # Condition on the right-hand side -- exactly the wanted order, no
-    # explicit side args needed. Extra left padding is required because the
-    # 45-degree column labels are right-anchored at the top of each column
-    # and extend down-and-LEFT from there -- with real identity labels
-    # ("Mechanosensory_Lymphedema") the leftmost label's tail runs past the
-    # device's left edge and gets clipped without it.
-    draw(ht, padding = unit(c(2, 45, 2, 2), "mm"))
+    # annotation_legend_list carries all three hand-built legends in the
+    # order we want (z-score, Cluster, Condition), stacked as one column.
+    # Extra left padding is required because the 45-degree column labels
+    # are right-anchored at the top of each column and extend down-and-LEFT
+    # from there -- with real identity labels ("Mechanosensory_Lymphedema")
+    # the leftmost label's tail runs past the device's left edge and gets
+    # clipped without it.
+    draw(ht, annotation_legend_list = legend_list, padding = unit(c(2, 45, 2, 2), "mm"))
     dev.off()
     cat("de_heatmap.R: wrote", out_png, "(", n_genes, "genes )\n")
   },
