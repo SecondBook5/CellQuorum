@@ -8,6 +8,7 @@ caller maps its columns onto these generic parameters.
 from __future__ import annotations
 
 import math
+import textwrap
 from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
@@ -221,6 +222,19 @@ def running_es_curve(
     return fig
 
 
+def _wrap_label(text: str, *, width: int = 28, max_lines: int = 2) -> str:
+    """Wrap a gene-set name onto at most ``max_lines`` lines.
+
+    Real Reactome/Hallmark names run 30-140+ characters -- constrained_layout
+    can reflow axes around a long label, but it can't shrink the text itself,
+    and a figure this size has no room for an 80-char single-line label.
+    textwrap's own ``max_lines`` truncates with a placeholder rather than
+    wrapping forever, which would eat vertical space a 12-row facet doesn't
+    have either.
+    """
+    return textwrap.fill(text, width=width, max_lines=max_lines, placeholder=" …")
+
+
 def _facet_bar_or_dot(
     df: pd.DataFrame,
     *,
@@ -270,7 +284,7 @@ def ora_barplot(
         y = np.arange(len(sub))
         ax.barh(y, sub[count_col].to_numpy(dtype=float), color=cmap(norm(p)))
         ax.set_yticks(y)
-        ax.set_yticklabels(sub[label_col].astype(str).tolist())
+        ax.set_yticklabels([_wrap_label(s) for s in sub[label_col].astype(str)])
         ax.set_xlabel(count_col)
         ax.set_title(str(facet))
         ax.figure.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=padj_col)
@@ -312,7 +326,7 @@ def ora_dotplot(
             linewidth=0.4,
         )
         ax.set_yticks(y)
-        ax.set_yticklabels(sub[label_col].astype(str).tolist())
+        ax.set_yticklabels([_wrap_label(s) for s in sub[label_col].astype(str)])
         ax.set_xlabel(ratio_col)
         ax.set_title(str(facet))
         ax.figure.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=padj_col)

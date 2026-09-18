@@ -9,6 +9,7 @@ import pandas as pd
 from matplotlib.colors import TwoSlopeNorm
 
 from cellquorum.stages.comparative.enrichment.viz import plots
+from cellquorum.stages.comparative.enrichment.viz.plots import _wrap_label
 
 
 def test_signed_norm_straddles_zero_even_when_all_positive():
@@ -193,13 +194,83 @@ def test_ora_barplot_long_labels_do_not_overflow_into_the_previous_facets_colorb
     down_bars_ax, up_bars_ax, down_cbar_ax, _up_cbar_ax = fig.axes
     down_cbar_right_edge = down_cbar_ax.get_position().x1
 
-    target = next(t for t in up_bars_ax.get_yticklabels() if t.get_text() == long_label)
+    # Now wrapped onto multiple lines (a separate, later fix), so it no longer
+    # matches the raw source string exactly -- match on the unwrapped text.
+    target = next(
+        t
+        for t in up_bars_ax.get_yticklabels()
+        if t.get_text().replace("\n", "").replace(" …", "") == long_label
+    )
     bbox_fig = target.get_window_extent(renderer).transformed(fig.transFigure.inverted())
 
     assert bbox_fig.x0 >= down_cbar_right_edge, (
         f"label {long_label!r} starts at x={bbox_fig.x0:.3f}, left of the "
         f"'down' colorbar's right edge at x={down_cbar_right_edge:.3f} -- it "
         "overlaps the previous facet"
+    )
+    plt.close("all")
+
+
+def test_wrap_label_caps_even_an_extreme_label_at_two_lines():
+    """The real reactome ORA table's longest label (141 chars) must never
+
+    produce more than 2 lines -- textwrap alone would keep wrapping onto a
+    4th or 5th line for something this long, eating vertical space the
+    figure doesn't have.
+    """
+    extreme = (
+        "REACTOME_TP53_REGULATES_TRANSCRIPTION_OF_SEVERAL_ADDITIONAL_CELL_DEATH_GENES_"
+        "WHOSE_SPECIFIC_ROLES_IN_P53_DEPENDENT_APOPTOSIS_REMAIN_UNCERTAIN"
+    )
+    wrapped = _wrap_label(extreme)
+    assert wrapped.count("\n") <= 1
+
+
+def test_wrap_label_leaves_short_labels_untouched():
+    assert _wrap_label("HYPOXIA") == "HYPOXIA"
+
+
+def test_ora_barplot_wraps_reactome_length_labels_instead_of_overflowing():
+    """constrained_layout alone (the earlier fix) only holds up to the ~34-char
+
+    synthetic label used in the test above it -- real Reactome names run to
+    80+ characters (confirmed against the actual pipeline output:
+    REACTOME_TRANSPORT_OF_BILE_SALTS_AND_ORGANIC_ACIDS_METAL_IONS_AND_AMINE_COMPOUNDS
+    is 81 chars), and at that length the "up" panel's labels bled across the
+    shared middle colorbar into the "down" panel on the real hallmark/reactome
+    ORA figure. Wrapping the label text onto multiple lines keeps each line
+    short enough for constrained_layout to actually separate the facets.
+    """
+    long_label = "REACTOME_TRANSPORT_OF_BILE_SALTS_AND_ORGANIC_ACIDS_METAL_IONS_AND_AMINE_COMPOUNDS"
+    df = pd.DataFrame(
+        {
+            "source": [long_label]
+            + [f"UP_SET_{i}" for i in range(5)]
+            + [f"DOWN_SET_{i}" for i in range(6)],
+            "direction": ["up"] * 6 + ["down"] * 6,
+            "count": [31, 15, 15, 14, 12, 12, 7, 6, 6, 5, 5, 4],
+            "padj": [1e-4, 1e-3, 1e-3, 1e-3, 1e-2, 1e-2, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06],
+        }
+    )
+    fig = plots.ora_barplot(
+        df, count_col="count", label_col="source", padj_col="padj", facet_col="direction", top_k=12
+    )
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    down_bars_ax, up_bars_ax, down_cbar_ax, _up_cbar_ax = fig.axes
+    down_cbar_right_edge = down_cbar_ax.get_position().x1
+
+    target = next(
+        t for t in up_bars_ax.get_yticklabels() if long_label.split("_")[0] in t.get_text()
+    )
+    text = target.get_text()
+    assert "\n" in text, "a label this long must be wrapped onto multiple lines"
+    assert text.count("\n") <= 1, f"wrapped label must be capped at 2 lines, got: {text!r}"
+    bbox_fig = target.get_window_extent(renderer).transformed(fig.transFigure.inverted())
+    assert bbox_fig.x0 >= down_cbar_right_edge, (
+        f"wrapped label still starts at x={bbox_fig.x0:.3f}, left of the "
+        f"'down' colorbar's right edge at x={down_cbar_right_edge:.3f}"
     )
     plt.close("all")
 
