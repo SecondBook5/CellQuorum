@@ -161,6 +161,38 @@ def test_running_es_curve_labels_leading_edge_genes_on_the_hits_track():
     plt.close("all")
 
 
+def test_running_es_curve_spreads_clustered_leading_edge_labels_horizontally():
+    """A strongly enriched real pathway packs almost all its leading-edge hits
+
+    into the first few hundred of 20k+ ranks (confirmed against the real
+    EPITHELIAL_MESENCHYMAL_TRANSITION output) -- labeling each gene at its
+    true rank position collapses all 12 labels into the same few pixels.
+    Labels must be spread to distinct x positions with room between them,
+    not placed at their true (nearly identical) rank.
+    """
+    n = 1000
+    hit = np.zeros(n, dtype=int)
+    hit[:12] = 1  # all 12 leading-edge hits packed into the first 12 ranks
+    df = pd.DataFrame(
+        {
+            "rank": np.arange(1, n + 1),
+            "running_es": np.concatenate(
+                [np.linspace(0.1, 0.8, 500), np.linspace(0.8, -0.05, 500)]
+            ),
+            "hit": hit,
+            "metric": np.linspace(5, -5, n),
+            "gene": [f"G{i}" for i in range(n)],
+        }
+    )
+    fig = plots.running_es_curve(df, title="S1", max_labeled_genes=12)
+    ax_hits = fig.axes[1]
+    xs = sorted(t.get_position()[0] for t in ax_hits.texts)
+    assert len(set(xs)) == len(xs), "labels must not share an x position"
+    min_gap = min(b - a for a, b in zip(xs, xs[1:], strict=False))
+    assert min_gap > 1.0, "their true ranks were only 1 apart -- must be spread wider than that"
+    plt.close("all")
+
+
 def test_running_es_curve_caps_labeled_genes_at_max_labeled_genes():
     n = 100
     df = pd.DataFrame(

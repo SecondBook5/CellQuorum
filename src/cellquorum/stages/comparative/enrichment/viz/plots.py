@@ -247,12 +247,37 @@ def running_es_curve(
         else:
             edge_positions = positions[hit_mask & (positions >= peak_i)][-max_labeled_genes:]
         genes = df[gene_col].to_numpy()
+        # A strongly enriched real pathway packs most leading-edge hits into
+        # the first few hundred of 20k+ ranks (confirmed against the real
+        # EMT output) -- labeling each gene at its own true rank collapses
+        # every label onto the same few pixels. Spread labels across an
+        # artificial x-window instead, connected back to their true tick by
+        # annotate()'s own leader line; the window is at least a fixed
+        # fraction of the full rank axis so it can't collapse either, even
+        # when every hit truly does land one rank apart.
+        n_total = max(len(es), 1)
+        min_window = 0.12 * (rank.max() - rank.min() if len(rank) > 1 else n_total)
+        label_ranks = rank[edge_positions]
+        if es[peak_i] >= 0:
+            start = float(label_ranks.min()) if len(label_ranks) else float(rank.min())
+            span = max(
+                float(label_ranks.max() - label_ranks.min()) if len(label_ranks) else 0.0,
+                min_window,
+            )
+            label_xs = np.linspace(start, start + span, len(edge_positions))
+        else:
+            end = float(label_ranks.max()) if len(label_ranks) else float(rank.max())
+            span = max(
+                float(label_ranks.max() - label_ranks.min()) if len(label_ranks) else 0.0,
+                min_window,
+            )
+            label_xs = np.linspace(end - span, end, len(edge_positions))
         for j, pos in enumerate(edge_positions):
             label_y = 1.35 if j % 2 == 0 else 1.85
             ax_hits.annotate(
                 str(genes[pos]),
                 xy=(rank[pos], 1.0),
-                xytext=(rank[pos], label_y),
+                xytext=(label_xs[j], label_y),
                 rotation=90,
                 fontsize=6.5,
                 ha="center",
