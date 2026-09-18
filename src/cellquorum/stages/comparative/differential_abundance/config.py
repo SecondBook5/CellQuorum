@@ -37,6 +37,10 @@ class DifferentialAbundanceConfig(StrictBaseModel):
         transform: Transformation applied to abundance data (e.g., asin for proportions).
         fdr: FDR threshold recorded in outputs.
         timeout_seconds: Execution timeout in seconds.
+        cluster_labels: Optional display-only rename of cell_type_col values in
+            the composition figures' legends (e.g. {"0": "Papillary"}). Never
+            mutates obs or the written tables -- bare cluster ids stay bare on
+            disk, only the legend text changes.
     """
 
     # Whether this stage runs.
@@ -96,6 +100,9 @@ class DifferentialAbundanceConfig(StrictBaseModel):
 
     # Execution timeout (seconds).
     timeout_seconds: int = 1800
+
+    # Display-only rename of cell_type_col values in composition figure legends.
+    cluster_labels: dict[str, str] = {}
 
 
 __all__ = ["DifferentialAbundanceConfig"]

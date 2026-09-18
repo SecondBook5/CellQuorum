@@ -86,6 +86,7 @@ def plot_condition_composition(
     control_color: str = NORMAL_BLUE,
     cell_type_order: list[str] | None = None,
     min_label_pct: float = 4.0,
+    cluster_labels: dict[str, str] | None = None,
 ) -> Figure:
     """Stacked composition bar comparing control vs case at the condition level.
 
@@ -98,12 +99,16 @@ def plot_condition_composition(
         control_color: Tick-label color for the control arm.
         cell_type_order: Bottom-to-top segment order; defaults to abundance order.
         min_label_pct: Segments at least this many percent get an in-bar label.
+        cluster_labels: Optional display-only rename of cell-type ids in the
+            legend (e.g. {"0": "Papillary"}). Grouping, color, and stacking
+            order all still key off the raw id -- only the legend text changes.
 
     Returns:
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
     set_style()
+    cluster_labels = cluster_labels or {}
     order = cell_type_order or composition_cell_type_order(proportions)
     colors = cell_type_palette(order)
     frac = (
@@ -125,7 +130,7 @@ def plot_condition_composition(
             color=colors[ct],
             edgecolor="white",
             linewidth=0.4,
-            label=ct,
+            label=cluster_labels.get(str(ct), ct),
         )
         for xi, (v, b) in enumerate(zip(vals, bottoms, strict=False)):
             if v >= min_label_pct:
@@ -168,6 +173,7 @@ def plot_per_patient_composition(
     case_color: str = LE_RED,
     control_color: str = NORMAL_BLUE,
     cell_type_order: list[str] | None = None,
+    cluster_labels: dict[str, str] | None = None,
 ) -> Figure:
     """Per-sample stacked composition, laid out control block | divider | case block.
 
@@ -182,12 +188,16 @@ def plot_per_patient_composition(
         case_color: Header/label color for the case block.
         control_color: Header/label color for the control block.
         cell_type_order: Bottom-to-top segment order; defaults to abundance order.
+        cluster_labels: Optional display-only rename of cell-type ids in the
+            legend (e.g. {"0": "Papillary"}). Grouping, color, and stacking
+            order all still key off the raw id -- only the legend text changes.
 
     Returns:
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
     set_style()
+    cluster_labels = cluster_labels or {}
     order = cell_type_order or composition_cell_type_order(proportions)
     colors = cell_type_palette(order)
 
@@ -218,7 +228,7 @@ def plot_per_patient_composition(
             color=colors[ct],
             edgecolor="white",
             linewidth=0.3,
-            label=ct,
+            label=cluster_labels.get(str(ct), ct),
         )
         bottoms += vals
 

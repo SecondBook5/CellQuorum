@@ -103,3 +103,34 @@ def test_plot_per_patient_composition_returns_stacked_figure():
     assert len(ax.patches) == 12
     # One x tick per sample.
     assert len(ax.get_xticks()) == 4
+
+
+def test_plot_condition_composition_cluster_labels_rename_legend_only():
+    """Bare cell-type ids in the legend are meaningless without cross-referencing --
+
+    cluster_labels renames them for display, without changing which cell type
+    each stacked segment actually represents.
+    """
+    fig = plot_condition_composition(
+        _proportions(),
+        case="LE",
+        control="N",
+        cluster_labels={"TypeA": "Papillary", "TypeB": "Reticular", "TypeC": "Perivascular"},
+    )
+    ax = fig.axes[0]
+    legend_labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert legend_labels == ["Papillary", "Reticular", "Perivascular"]
+    # Pooled percentages are unaffected by the rename.
+    assert ax.get_ylim() == (0.0, 100.0)
+
+
+def test_plot_per_patient_composition_cluster_labels_rename_legend_only():
+    fig = plot_per_patient_composition(
+        _proportions(),
+        case="LE",
+        control="N",
+        cluster_labels={"TypeA": "Papillary", "TypeB": "Reticular", "TypeC": "Perivascular"},
+    )
+    ax = fig.axes[0]
+    legend_labels = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert legend_labels == ["Papillary", "Reticular", "Perivascular"]

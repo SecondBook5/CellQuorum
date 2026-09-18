@@ -585,12 +585,13 @@ class ProportionTTestMethod(AnalysisMethod):
             )
         ]
 
+        cluster_labels = config.get("cluster_labels") or {}
         figures_dir = Path(context.paths.figures) / "differential_abundance"
         for stem, builder, what in (
             ("composition_condition_stacked", plot_condition_composition, "by condition"),
             ("composition_per_patient_stacked", plot_per_patient_composition, "per patient"),
         ):
-            fig = builder(proportions, case=case, control=control)
+            fig = builder(proportions, case=case, control=control, cluster_labels=cluster_labels)
             for path in save_figure(fig, figures_dir, stem):
                 artifacts.append(
                     StageArtifact(

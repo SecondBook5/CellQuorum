@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +17,7 @@ from cellquorum.methods.context_access import resolve_stage_config
 from cellquorum.stages.composition.compute import grouped_composition, overall_composition
 from cellquorum.stages.composition.config import CompositionConfig
 from cellquorum.visualization import figstyle
+from cellquorum.visualization.qc.summarise import natural_sort_key
 
 
 @register_stage(
@@ -118,15 +118,12 @@ class CompositionStage:
             by_sample = grouped_composition(cell_type, obs[sample_key])
             if donor_key and donor_key in obs.columns:
                 sample_donor = obs.drop_duplicates(sample_key).set_index(sample_key)[donor_key]
-                by_sample = by_sample.loc[
-                    sorted(
-                        by_sample.index,
-                        key=lambda s: (
-                            _natural_sort_key(sample_donor.get(s, "")),
-                            _natural_sort_key(s),
-                        ),
-                    )
-                ]
+                donor_keys = natural_sort_key(
+                    sample_donor.reindex(by_sample.index).fillna("").astype(str)
+                )
+                sample_keys = natural_sort_key(pd.Series(by_sample.index, index=by_sample.index))
+                sort_order = (donor_keys + "|" + sample_keys).sort_values().index
+                by_sample = by_sample.loc[sort_order]
             artifacts.append(
                 manager.write_dataframe(
                     by_sample.reset_index(names=sample_key),
@@ -165,20 +162,6 @@ class CompositionStage:
                 "donor_key": donor_key if donor_key in obs.columns else None,
             },
         )
-
-
-def _natural_sort_key(s: str) -> tuple:
-    """Split "P10" into ("p", 10) so numeric suffixes sort numerically.
-
-    A plain string sort puts "P1", "P10", "P12", "P2" in that order --
-    donor/sample ids almost always carry a trailing number, and reading them
-    out of numeric order in a figure looks like a labeling bug even when the
-    data itself is fine.
-    """
-
-    return tuple(
-        int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", str(s))
-    )
 
 
 def _resolve_key(stage_value: str | None, config: object, attr: str, default: str) -> str | None:

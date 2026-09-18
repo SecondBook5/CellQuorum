@@ -319,6 +319,20 @@ def test_build_composition_proportions_control_first_ordering():
     assert list(d1_n["cell_type"]) == ["TypeA", "TypeB"]
 
 
+def test_build_composition_proportions_orders_donors_numerically_not_lexicographically():
+    """P1, P2, P10, P12 -- plain string sort would put P1, P10, P12, P2."""
+    donors_shuffled = ["P12", "P1", "P10", "P2"]  # not in natural OR alphabetical order
+    samples = [f"{d}_N" for d in donors_shuffled]
+    counts = pd.DataFrame({"TypeA": [5, 5, 5, 5], "TypeB": [5, 5, 5, 5]}, index=samples)
+    conditions = pd.Series(["N"] * 4, index=samples)
+    donors = pd.Series(donors_shuffled, index=samples)
+
+    comp = build_composition_proportions(counts, conditions, donors, case="LE", control="N")
+
+    ordered_donors = list(dict.fromkeys(comp["donor"]))
+    assert ordered_donors == ["P1", "P2", "P10", "P12"]
+
+
 def test_a_numeric_state_column_is_not_named_with_a_decimal_point():
     """A subcluster column is float64 (NaN forces it); its states are 1..8, not 1.0..8.0.
 

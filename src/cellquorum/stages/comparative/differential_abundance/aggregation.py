@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.labels import as_label_strings
+from cellquorum.visualization.qc.summarise import natural_sort_key
 
 
 @dataclass(frozen=True)
@@ -321,10 +322,15 @@ def build_composition_proportions(
 
     # Control arm first, then case arm — matches the left→right reading of the
     # Normal-vs-Disease figure. Samples in any other condition are excluded.
+    # Donors within an arm are natural-sorted (P2 before P10), not plain
+    # string-sorted (which would put P10 before P2) -- see natural_sort_key.
     ordered_samples: list[str] = []
     for arm in (control, case):
         arm_samples = [s for s in counts.index if aligned_conditions.get(s) == arm]
-        arm_samples.sort(key=lambda s: str(aligned_donors.get(s)))
+        arm_donor_keys = natural_sort_key(
+            pd.Series([str(aligned_donors.get(s)) for s in arm_samples])
+        )
+        arm_samples = [s for _, s in sorted(zip(arm_donor_keys, arm_samples, strict=True))]
         ordered_samples.extend(arm_samples)
 
     rows = []
