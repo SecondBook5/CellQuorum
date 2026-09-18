@@ -230,8 +230,17 @@ def _facet_bar_or_dot(
 ) -> Figure:
     """Shared faceting harness for ORA bar/dot plots (one column per facet value)."""
     facets = sorted(df[facet_col].astype(str).unique())
+    # constrained_layout accounts for each facet's own post-hoc colorbar and
+    # tick-label extents when it solves subplot positions, so a long y-tick
+    # label (or a colorbar) can no longer bleed into the neighboring facet --
+    # a fixed-position plt.subplots() grid has no mechanism to reflow around
+    # artists added after the axes are created.
     fig, axes = plt.subplots(
-        1, max(1, len(facets)), figsize=(5 * max(1, len(facets)), 5), squeeze=False
+        1,
+        max(1, len(facets)),
+        figsize=(5 * max(1, len(facets)), 5),
+        squeeze=False,
+        layout="constrained",
     )
     for ax, facet in zip(axes[0], facets, strict=False):
         sub = df[df[facet_col].astype(str) == facet]
@@ -332,6 +341,12 @@ def annotated_clustermap(
         order = col_colors.sort_values(kind="mergesort").index
         mat = mat[order]
         col_colors = col_colors.reindex(order)
+    # A reactome-scale collection can carry hundreds of rows even after
+    # top_n filtering -- the per-row/per-column inch formula alone grows
+    # without bound, so both dimensions are capped at a size that still
+    # renders as a readable figure rather than a many-foot-tall PNG.
+    width = min(16.0, max(6.0, 0.4 * mat.shape[1]))
+    height = min(20.0, max(6.0, 0.3 * mat.shape[0]))
     return sns.clustermap(
         mat,
         cmap="RdBu_r",
@@ -339,7 +354,7 @@ def annotated_clustermap(
         col_cluster=col_cluster,
         row_cluster=True,
         col_colors=col_colors,
-        figsize=(max(6, 0.4 * mat.shape[1]), max(6, 0.3 * mat.shape[0])),
+        figsize=(width, height),
     )
 
 
@@ -350,11 +365,16 @@ def cross_group_dotplot(
     col_col: str,
     value_col: str,
     top_k: int = 12,
+    col_labels: dict[str, str] | None = None,
 ) -> Figure:
     """Grid col_col (x) × row_col (y): color=signed value, dot area=|value|.
 
     Rows selected as the top-K sources by across-group variance (deterministic).
+    ``col_labels`` renames the x-axis tick text only -- column selection,
+    ordering, and the scatter positions all still run on the raw ids, same
+    display-only convention as every other cluster_labels site.
     """
+    col_labels = col_labels or {}
     var_by_row = df.groupby(row_col)[value_col].var().fillna(0.0)
     keep_rows = var_by_row.sort_values(kind="mergesort", ascending=False).head(top_k).index
     keep_rows = sorted(keep_rows)
@@ -372,7 +392,7 @@ def cross_group_dotplot(
     sizes = 20.0 + 200.0 * (mag / (mag.max() or 1.0))
     ax.scatter(xs, ys, s=sizes, c=values, cmap=cmap, norm=norm, edgecolor="0.3", linewidth=0.4)
     ax.set_xticks(range(len(cols)))
-    ax.set_xticklabels(cols, rotation=45, ha="right")
+    ax.set_xticklabels([col_labels.get(c, c) for c in cols], rotation=45, ha="right")
     ax.set_yticks(range(len(keep_rows)))
     ax.set_yticklabels(keep_rows)
     fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=value_col)

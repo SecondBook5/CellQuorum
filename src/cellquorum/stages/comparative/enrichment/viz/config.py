@@ -19,6 +19,8 @@ class EnrichmentVizConfig(StrictBaseModel):
         dpi: Raster resolution.
         collections: If set, only render these GSEA/ORA/GSVA collections; None → all present.
         resources: If set, only render these activity resources; None → all present.
+        cluster_labels: optional cluster id -> display name map for the activity
+            dotplot's cell-type axis, display only (source CSVs are never rewritten).
     """
 
     enabled: bool = True
@@ -27,6 +29,7 @@ class EnrichmentVizConfig(StrictBaseModel):
     dpi: int = 300
     collections: list[str] | None = None
     resources: list[str] | None = None
+    cluster_labels: dict[str, str] = {}
 
 
 __all__ = ["EnrichmentVizConfig"]

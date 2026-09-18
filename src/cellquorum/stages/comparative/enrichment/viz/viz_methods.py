@@ -23,8 +23,10 @@ from cellquorum.visualization.figstyle import get_group_palette
 # Cap on how many running-ES per-source curves to render per collection.
 _MAX_RUNNING_ES_FIGS = 6
 
-# Keep the heatmap readable when a collection has many sources.
-_HEATMAP_TOP_N = 50
+# Keep the heatmap readable when a collection has many sources -- a reactome
+# collection can carry hundreds of pathways, and 50 rows is already a lot to
+# read even after annotated_clustermap's own figsize cap.
+_HEATMAP_TOP_N = 30
 
 
 class ActivityVizMethod(AnalysisMethod):
@@ -44,6 +46,7 @@ class ActivityVizMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
         top_k = int(config.get("top_k", 12))
         wanted = config.get("resources")
+        cluster_labels = config.get("cluster_labels") or {}
 
         resources = collections_from_glob(results_dir, "enrichment_activity_")
         if wanted:
@@ -64,7 +67,12 @@ class ActivityVizMethod(AnalysisMethod):
                 continue
             try:
                 fig = plots.cross_group_dotplot(
-                    df, row_col="source", col_col="cell_type", value_col="mean_score", top_k=top_k
+                    df,
+                    row_col="source",
+                    col_col="cell_type",
+                    value_col="mean_score",
+                    top_k=top_k,
+                    col_labels=cluster_labels,
                 )
                 paths = save_figure(
                     fig, figures_dir, f"activity_dotplot_{resource}", formats=formats, dpi=dpi

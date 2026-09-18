@@ -10,7 +10,15 @@ from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
 # Keys bridged from config.enrichment_viz into each dispatched viz method's config.
-_VIZ_CONFIG_KEYS = ("enabled", "top_k", "figure_formats", "dpi", "collections", "resources")
+_VIZ_CONFIG_KEYS = (
+    "enabled",
+    "top_k",
+    "figure_formats",
+    "dpi",
+    "collections",
+    "resources",
+    "cluster_labels",
+)
 
 
 @register_stage(

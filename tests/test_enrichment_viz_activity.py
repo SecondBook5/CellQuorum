@@ -50,6 +50,30 @@ def test_activity_viz_resource_filter(tmp_path):
     assert "activity_dotplot_collectri.png" not in names
 
 
+def test_activity_viz_passes_cluster_labels_through_to_the_dotplot(tmp_path, monkeypatch):
+    """Bare cell_type ids in the activity CSV ("0", "1", ...) are meaningless
+
+    without cross-referencing -- config.cluster_labels must reach
+    cross_group_dotplot's col_labels, same wiring convention used for every
+    other cluster_labels config field in the pipeline.
+    """
+    from cellquorum.stages.comparative.enrichment.viz import viz_methods
+
+    ctx = _context(tmp_path)
+    _write_activity(ctx.paths, "collectri")
+    captured = {}
+    real_dotplot = viz_methods.plots.cross_group_dotplot
+
+    def spy(*args, **kwargs):
+        captured["col_labels"] = kwargs.get("col_labels")
+        return real_dotplot(*args, **kwargs)
+
+    monkeypatch.setattr(viz_methods.plots, "cross_group_dotplot", spy)
+    labels = {"Tcell": "T cell", "Bcell": "B cell"}
+    ActivityVizMethod()._run(ctx.adata, {"figure_formats": ["png"], "cluster_labels": labels}, ctx)
+    assert captured["col_labels"] == labels
+
+
 def test_activity_viz_skips_when_no_csv(tmp_path):
     ctx = _context(tmp_path)
     assert isinstance(ActivityVizMethod()._run(ctx.adata, {}, ctx), MethodSkip)

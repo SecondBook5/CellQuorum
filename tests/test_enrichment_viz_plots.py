@@ -128,6 +128,82 @@ def test_ora_barplot_facets_by_direction():
     plt.close("all")
 
 
+def test_ora_barplot_facet_colorbars_do_not_overlap_the_next_facet():
+    """Each facet's per-panel colorbar is added to the shared figure AFTER
+
+    plt.subplots() has already fixed every axes' position -- without a
+    layout engine, matplotlib doesn't reflow neighboring axes to make room,
+    so a facet's colorbar is drawn straddling the boundary into the next
+    facet's panel. Confirmed live: the real hallmark up/down figure has the
+    "down" panel's padj colorbar tick labels rendered directly on top of the
+    "up" panel's gene-set-name bar labels.
+    """
+    df = pd.DataFrame(
+        {
+            "source": [f"SOME_VERY_LONG_HALLMARK_GENE_SET_NAME_{i}" for i in range(6)],
+            "direction": ["up", "up", "up", "down", "down", "down"],
+            "count": [10, 5, 3, 8, 6, 3],
+            "padj": [1e-3, 0.02, 0.03, 1e-4, 0.01, 0.04],
+        }
+    )
+    fig = plots.ora_barplot(
+        df, count_col="count", label_col="source", padj_col="padj", facet_col="direction", top_k=5
+    )
+    fig.canvas.draw()
+
+    boxes = [ax.get_position() for ax in fig.axes]
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            assert not boxes[i].overlaps(
+                boxes[j]
+            ), f"axes {i} and {j} overlap: {boxes[i]} vs {boxes[j]}"
+    plt.close("all")
+
+
+def test_ora_barplot_long_labels_do_not_overflow_into_the_previous_facets_colorbar():
+    """Y-tick labels are right-anchored text, not clipped to their axes box.
+
+    A long gene-set name (Reactome/Hallmark names routinely run 30+ chars,
+    e.g. "EPITHELIAL_MESENCHYMAL_TRANSITION") renders far enough left of its
+    anchor point to land on top of the PREVIOUS facet's colorbar -- axes
+    positions never overlap (already covered by a separate geometric test),
+    but unwrapped label text does. Confirmed live against the real hallmark
+    ORA barplot: this exact label overlaps the "down" panel's colorbar tick
+    labels two columns to its left.
+    """
+    long_label = "EPITHELIAL_MESENCHYMAL_TRANSITION"
+    df = pd.DataFrame(
+        {
+            "source": [long_label]
+            + [f"UP_SET_{i}" for i in range(5)]
+            + [f"DOWN_SET_{i}" for i in range(6)],
+            "direction": ["up"] * 6 + ["down"] * 6,
+            "count": [31, 15, 15, 14, 12, 12, 7, 6, 6, 5, 5, 4],
+            "padj": [1e-4, 1e-3, 1e-3, 1e-3, 1e-2, 1e-2, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06],
+        }
+    )
+    fig = plots.ora_barplot(
+        df, count_col="count", label_col="source", padj_col="padj", facet_col="direction", top_k=12
+    )
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    # Facet order is alphabetical ("down" before "up"): axes = [down_bars,
+    # up_bars, down_cbar, up_cbar], per _facet_bar_or_dot's construction.
+    down_bars_ax, up_bars_ax, down_cbar_ax, _up_cbar_ax = fig.axes
+    down_cbar_right_edge = down_cbar_ax.get_position().x1
+
+    target = next(t for t in up_bars_ax.get_yticklabels() if t.get_text() == long_label)
+    bbox_fig = target.get_window_extent(renderer).transformed(fig.transFigure.inverted())
+
+    assert bbox_fig.x0 >= down_cbar_right_edge, (
+        f"label {long_label!r} starts at x={bbox_fig.x0:.3f}, left of the "
+        f"'down' colorbar's right edge at x={down_cbar_right_edge:.3f} -- it "
+        "overlaps the previous facet"
+    )
+    plt.close("all")
+
+
 def test_ora_dotplot_returns_figure():
     df = pd.DataFrame(
         {
@@ -178,4 +254,51 @@ def test_cross_group_dotplot_returns_figure():
         df, row_col="source", col_col="cell_type", value_col="mean_score", top_k=5
     )
     assert fig is not None
+    plt.close("all")
+
+
+def test_cross_group_dotplot_col_labels_rename_the_x_axis_only():
+    """Bare cluster ids ("0", "1") are meaningless without cross-referencing --
+
+    col_labels renames the x-axis text for display, same convention as every
+    other cluster_labels site in the codebase (de_heatmap, composition,
+    categorical_embedding). Column selection/ordering still runs on the raw
+    ids -- only the tick text changes.
+    """
+    df = pd.DataFrame(
+        {
+            "cell_type": ["0", "0", "1", "1"],
+            "source": ["S1", "S2", "S1", "S2"],
+            "mean_score": [1.0, -0.5, 0.2, 2.0],
+        }
+    )
+    fig = plots.cross_group_dotplot(
+        df,
+        row_col="source",
+        col_col="cell_type",
+        value_col="mean_score",
+        top_k=5,
+        col_labels={"0": "Papillary", "1": "Reticular"},
+    )
+    ax = fig.axes[0]
+    assert [t.get_text() for t in ax.get_xticklabels()] == ["Papillary", "Reticular"]
+    plt.close("all")
+
+
+def test_annotated_clustermap_figsize_is_capped_for_a_large_matrix():
+    """A reactome-scale matrix (hundreds of pathways) must not blow the figure
+
+    up to dozens of inches tall -- annotated_clustermap's own figsize formula
+    grows without bound (0.3in per row), so a real large collection produces
+    an unusably huge figure. A hard ceiling keeps it viewable regardless of
+    how many rows top_n lets through.
+    """
+    mat = pd.DataFrame(
+        np.random.default_rng(0).normal(size=(200, 6)),
+        index=[f"src{i}" for i in range(200)],
+        columns=[f"samp{j}" for j in range(6)],
+    )
+    grid = plots.annotated_clustermap(mat, col_colors=None, top_n=200)
+    height_in = grid.fig.get_size_inches()[1]
+    assert height_in <= 20.0
     plt.close("all")
