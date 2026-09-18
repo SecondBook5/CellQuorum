@@ -28,7 +28,23 @@ tryCatch(
     mat_z[is.na(mat_z)] <- 0 # zero-variance rows (flat across all groups)
 
     col_fun <- colorRamp2(c(-2, 0, 2), c("#2b6e71", "#f4f5f1", "#a8402f"))
-    cluster_levels <- sort(unique(clusters))
+
+    # Order cluster blocks by similarity (centroid hclust on the z-scored
+    # matrix) rather than alphabetically, so adjacent blocks are the ones
+    # that actually look alike. Only the block ORDER is clustered --
+    # clustering the 2 condition columns within a block too would let
+    # Leiden left/right flip per cluster with only 2 leaves to place,
+    # trading a real signal (which clusters resemble each other) for pure
+    # layout noise (which side Lymphedema lands on).
+    raw_cluster_levels <- unique(clusters)
+    if (length(raw_cluster_levels) > 2) {
+      centroids <- sapply(raw_cluster_levels, function(cl) rowMeans(mat_z[, clusters == cl, drop = FALSE]))
+      slice_order <- raw_cluster_levels[hclust(dist(t(centroids)))$order]
+    } else {
+      slice_order <- sort(raw_cluster_levels)
+    }
+    clusters <- factor(clusters, levels = slice_order)
+    cluster_levels <- levels(clusters)
     cluster_palette <- grDevices::hcl.colors(length(cluster_levels), "Set2")
     cluster_colors <- setNames(cluster_palette, cluster_levels)
     condition_levels <- sort(unique(conditions))
@@ -43,7 +59,12 @@ tryCatch(
     )
 
     n_genes <- nrow(mat_z)
-    height_px <- max(1800, min(8000, 22 * n_genes + 400))
+    # ~32px/gene row gives the row-name text visible breathing room between
+    # adjacent labels; the previous 22px/gene packed them close enough to
+    # read as touching even though DIMNAME_PADDING (the heatmap-to-text gap)
+    # was already generous -- that padding is horizontal, not the vertical
+    # gap between one gene's label and the next.
+    height_px <- max(1800, min(9000, 32 * n_genes + 400))
     show_names <- n_genes <= 200
 
     # Extra breathing room between the heatmap body and the row (gene) name
@@ -72,6 +93,7 @@ tryCatch(
       top_annotation = top_anno,
       cluster_columns = FALSE,
       column_split = clusters,
+      cluster_column_slices = FALSE,
       column_title = NULL,
       column_gap = unit(2.5, "mm"),
       cluster_rows = TRUE,
@@ -83,11 +105,14 @@ tryCatch(
       use_raster = n_genes > 500,
       heatmap_legend_param = list(title = "mean expr\n(z-scored)")
     )
-    # Only the z-score colour scale moves to sit above the Cluster/Condition
-    # annotation bars, freeing horizontal width for the heatmap body itself.
-    # The Cluster/Condition annotation legends stay in their default
-    # right-hand, vertically-stacked position -- untouched.
-    draw(ht, heatmap_legend_side = "top")
+    # Default legend placement already stacks z-score above Cluster above
+    # Condition on the right-hand side -- exactly the wanted order, no
+    # explicit side args needed. Extra left padding is required because the
+    # 45-degree column labels are right-anchored at the top of each column
+    # and extend down-and-LEFT from there -- with real identity labels
+    # ("Mechanosensory_Lymphedema") the leftmost label's tail runs past the
+    # device's left edge and gets clipped without it.
+    draw(ht, padding = unit(c(2, 45, 2, 2), "mm"))
     dev.off()
     cat("de_heatmap.R: wrote", out_png, "(", n_genes, "genes )\n")
   },
