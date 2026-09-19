@@ -485,6 +485,34 @@ def test_annotated_clustermap_with_and_without_strip():
     plt.close("all")
 
 
+def test_annotated_clustermap_truncates_long_row_labels_to_one_line():
+    """The GSVA per-sample heatmap never got the ORA/GSEA label-wrap fix --
+
+    confirmed live: a real reactome pathway name ran the full width of the
+    figure as one unwrapped line. seaborn's clustermap generates its own
+    y-tick labels from the matrix index, so this needs its own step rather
+    than the set_yticklabels-based fix used everywhere else.
+
+    Unlike ORA/GSEA's 12-row facets, a real GSVA heatmap can carry 20-30
+    rows in a height-capped figure -- 2-line wrapping (the ORA/GSEA
+    approach) doesn't fit that little vertical room per row and collides
+    with the row above/below (confirmed live: wrapped labels rendered as
+    an overlapping unreadable stack). Truncated to one line instead.
+    """
+    long_name = "REACTOME_COLLAGEN_BIOSYNTHESIS_AND_MODIFYING_ENZYMES"
+    mat = pd.DataFrame(
+        np.random.default_rng(0).normal(size=(3, 4)),
+        index=[long_name, "src1", "src2"],
+        columns=[f"samp{j}" for j in range(4)],
+    )
+    grid = plots.annotated_clustermap(mat, col_colors=None, top_n=None)
+    labels = {t.get_text() for t in grid.ax_heatmap.get_yticklabels()}
+    truncated = next(lbl for lbl in labels if lbl.startswith("REACTOME_COLLAGEN"))
+    assert "\n" not in truncated, f"must be a single line, got: {truncated!r}"
+    assert truncated != long_name, "must actually be shortened, not left as-is"
+    plt.close("all")
+
+
 def test_cross_group_dotplot_returns_figure():
     df = pd.DataFrame(
         {

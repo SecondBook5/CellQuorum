@@ -469,6 +469,17 @@ def annotated_clustermap(
     # renders as a readable figure rather than a many-foot-tall PNG.
     width = min(16.0, max(6.0, 0.4 * mat.shape[1]))
     height = min(20.0, max(6.0, 0.3 * mat.shape[0]))
+    # seaborn generates its own y-tick labels straight from the row index --
+    # unlike every other figure in this module, there's no set_yticklabels
+    # call to hook _wrap_label into, so the index itself is renamed instead.
+    # Row CLUSTERING runs on the values, not the labels, so renaming the
+    # index here (after top_n selection, before clustermap builds the
+    # dendrogram) doesn't touch what gets clustered. max_lines=1, not the
+    # ORA/GSEA facets' 2 -- a real GSVA heatmap can carry 20-30 rows in a
+    # height-capped figure, and 2-line labels don't fit that little
+    # per-row space without colliding with the row above/below (confirmed
+    # live: a 2-line wrap rendered as an overlapping unreadable stack).
+    mat = mat.rename(index=lambda s: _wrap_label(str(s), max_lines=1))
     return sns.clustermap(
         mat,
         cmap="RdBu_r",
