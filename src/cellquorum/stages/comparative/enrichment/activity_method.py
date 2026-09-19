@@ -51,6 +51,17 @@ class ActivityMethod(AnalysisMethod):
         # cell that is all-zero over the net's targets, so a positional label
         # array would mismatch the returned frame's length.
         labels = adata.obs[cell_type_col].astype(str)
+        # condition_col is bridged in from config.design by EnrichmentStage
+        # (same as every other enrichment method) -- optional and only
+        # applied when it actually names a real obs column, so a caller that
+        # never configured a design block gets the unchanged, cell-type-only
+        # aggregation this method always had.
+        condition_col = config.get("condition_col")
+        conditions = (
+            adata.obs[condition_col].astype(str)
+            if condition_col and condition_col in adata.obs.columns
+            else None
+        )
         ulm_layer = layer if layer != "X" and layer in adata.layers else None
 
         try:
@@ -98,16 +109,23 @@ class ActivityMethod(AnalysisMethod):
                     )
                     continue
                 es[cell_type_col] = aligned.values
-                per_ct = es.groupby(cell_type_col).mean()
+                group_cols = [cell_type_col]
+                if conditions is not None:
+                    aligned_cond = conditions.reindex(es.index)
+                    if not aligned_cond.isna().any():
+                        es[condition_col] = aligned_cond.values
+                        group_cols.append(condition_col)
+                per_ct = es.groupby(group_cols).mean()
             except Exception as exc:
                 skipped.append({"resource": resource, "reason": str(exc)[:300]})
                 continue
 
             long = per_ct.reset_index().melt(
-                id_vars=cell_type_col, var_name="source", value_name="mean_score"
+                id_vars=group_cols, var_name="source", value_name="mean_score"
             )
             long = long.rename(columns={cell_type_col: "cell_type"})
-            long = long[["cell_type", "source", "mean_score"]]
+            id_cols = ["cell_type"] + ([condition_col] if condition_col in group_cols else [])
+            long = long[[*id_cols, "source", "mean_score"]]
             artifacts.append(
                 writer.table(
                     long,

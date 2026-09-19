@@ -31,6 +31,24 @@ def _write_activity(paths, resource):
     pd.DataFrame(rows).to_csv(paths.results / f"enrichment_activity_{resource}.csv", index=False)
 
 
+def _write_activity_with_condition(paths, resource):
+    rows = []
+    for ct in ["Tcell", "Bcell", "Myeloid"]:
+        for cond in ["Normal", "Lymphedema"]:
+            for i in range(5):
+                rows.append(
+                    {
+                        "cell_type": ct,
+                        "condition": cond,
+                        "source": f"TF_{i}",
+                        "mean_score": np.sin(i)
+                        + len(ct) * 0.1
+                        + (2.0 if cond == "Lymphedema" else 0.0),
+                    }
+                )
+    pd.DataFrame(rows).to_csv(paths.results / f"enrichment_activity_{resource}.csv", index=False)
+
+
 def test_activity_viz_produces_dotplot(tmp_path):
     ctx = _context(tmp_path)
     _write_activity(ctx.paths, "collectri")
@@ -72,6 +90,66 @@ def test_activity_viz_passes_cluster_labels_through_to_the_dotplot(tmp_path, mon
     labels = {"Tcell": "T cell", "Bcell": "B cell"}
     ActivityVizMethod()._run(ctx.adata, {"figure_formats": ["png"], "cluster_labels": labels}, ctx)
     assert captured["col_labels"] == labels
+
+
+def test_activity_viz_uses_condition_split_dotplot_when_available(tmp_path, monkeypatch):
+    """A CSV with a condition column (produced when the pipeline's design
+
+    block has a condition_col) must render the two-panel z-scored figure,
+    not the plain per-cluster dotplot -- that's the whole point of the
+    condition-splitting feature: comparing disease states, not just
+    re-confirming cluster identity.
+    """
+    from cellquorum.stages.comparative.enrichment.viz import viz_methods
+
+    ctx = _context(tmp_path)
+    _write_activity_with_condition(ctx.paths, "collectri")
+    called = {}
+    real = viz_methods.plots.cross_group_dotplot_by_condition
+
+    def spy(*args, **kwargs):
+        called["yes"] = True
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(viz_methods.plots, "cross_group_dotplot_by_condition", spy)
+    result = ActivityVizMethod()._run(
+        ctx.adata,
+        {"figure_formats": ["png"], "case": "Lymphedema", "control": "Normal"},
+        ctx,
+    )
+    assert called.get("yes") is True
+    assert not isinstance(result, MethodSkip)
+    names = {p.name for p in (ctx.paths.figures / "enrichment").glob("*.png")}
+    assert "activity_dotplot_collectri.png" in names
+
+
+def test_activity_viz_falls_back_to_plain_dotplot_without_case_control(tmp_path, monkeypatch):
+    """A condition column with no resolvable case/control (no design block,
+
+    nothing passed directly) can't be split -- fall back to the existing
+    plain dotplot rather than crash or silently drop the figure.
+    """
+    from cellquorum.stages.comparative.enrichment.viz import viz_methods
+
+    ctx = _context(tmp_path)
+    _write_activity_with_condition(ctx.paths, "collectri")
+    called = {"split": False, "plain": False}
+    real_split = viz_methods.plots.cross_group_dotplot_by_condition
+    real_plain = viz_methods.plots.cross_group_dotplot
+
+    def spy_split(*args, **kwargs):
+        called["split"] = True
+        return real_split(*args, **kwargs)
+
+    def spy_plain(*args, **kwargs):
+        called["plain"] = True
+        return real_plain(*args, **kwargs)
+
+    monkeypatch.setattr(viz_methods.plots, "cross_group_dotplot_by_condition", spy_split)
+    monkeypatch.setattr(viz_methods.plots, "cross_group_dotplot", spy_plain)
+    result = ActivityVizMethod()._run(ctx.adata, {"figure_formats": ["png"]}, ctx)
+    assert called == {"split": False, "plain": True}
+    assert not isinstance(result, MethodSkip)
 
 
 def test_activity_viz_skips_when_no_csv(tmp_path):

@@ -522,6 +522,86 @@ def cross_group_dotplot(
     return fig
 
 
+def cross_group_dotplot_by_condition(
+    df: pd.DataFrame,
+    *,
+    row_col: str,
+    col_col: str,
+    value_col: str,
+    condition_col: str,
+    control: str,
+    case: str,
+    top_k: int = 12,
+    col_labels: dict[str, str] | None = None,
+    condition_labels: dict[str, str] | None = None,
+) -> Figure:
+    """Two panels (control | case), color = per-row z-score, shared scale.
+
+    Matches decoupler's own documented convention for this exact plot --
+    ``sc.pl.matrixplot(..., standard_scale="var")`` -- z-scoring each row
+    (source) so one dominant source (e.g. MYC, an order of magnitude above
+    everything else) doesn't compress every other row to a single shade on
+    the color scale. The mean/std baseline is computed once, pooling BOTH
+    conditions, so the two panels share one scale and stay comparable --
+    same principle as embeddings.plot_score_by_condition's shared vmin/vmax.
+    """
+    col_labels = col_labels or {}
+    condition_labels = condition_labels or {}
+    sub = df[df[condition_col].astype(str).isin([control, case])].copy()
+    sub["_group"] = sub[col_col].astype(str) + "||" + sub[condition_col].astype(str)
+    pivot = sub.pivot_table(index=row_col, columns="_group", values=value_col, aggfunc="mean")
+
+    var_by_row = pivot.var(axis=1).fillna(0.0)
+    keep_rows = var_by_row.sort_values(kind="mergesort", ascending=False).head(top_k).index
+    keep_rows = sorted(keep_rows)
+
+    row_mean = pivot.loc[keep_rows].mean(axis=1)
+    row_std = pivot.loc[keep_rows].std(axis=1).replace(0.0, 1.0).fillna(1.0)
+    z = pivot.loc[keep_rows].sub(row_mean, axis=0).div(row_std, axis=0)
+
+    cols = sorted(sub[col_col].astype(str).unique())
+    row_pos = {r: i for i, r in enumerate(keep_rows)}
+    col_pos = {c: i for i, c in enumerate(cols)}
+
+    vmax = float(np.nanmax(np.abs(z.to_numpy(dtype=float)))) if z.size else 1.0
+    vmax = vmax or 1.0
+    norm = TwoSlopeNorm(vcenter=0.0, vmin=-vmax, vmax=vmax)
+    cmap = plt.get_cmap("RdBu_r")
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(max(8.0, 1.1 * len(cols) * 2), max(4.0, 0.4 * len(keep_rows))),
+        sharey=True,
+        layout="constrained",
+    )
+    mappable = ScalarMappable(norm=norm, cmap=cmap)
+    for ax, condition in zip(axes, [control, case], strict=True):
+        xs, ys, vals = [], [], []
+        for r in keep_rows:
+            for c in cols:
+                key = f"{c}||{condition}"
+                if key not in z.columns:
+                    continue
+                v = z.loc[r, key]
+                if pd.notna(v):
+                    xs.append(col_pos[c])
+                    ys.append(row_pos[r])
+                    vals.append(float(v))
+        vals_arr = np.array(vals, dtype=float)
+        sizes = 20.0 + 200.0 * (np.abs(vals_arr) / vmax) if len(vals_arr) else []
+        ax.scatter(
+            xs, ys, s=sizes, c=vals_arr, cmap=cmap, norm=norm, edgecolor="0.3", linewidth=0.4
+        )
+        ax.set_xticks(range(len(cols)))
+        ax.set_xticklabels([col_labels.get(c, c) for c in cols], rotation=45, ha="right")
+        ax.set_title(condition_labels.get(condition, condition))
+    axes[0].set_yticks(range(len(keep_rows)))
+    axes[0].set_yticklabels(keep_rows)
+    fig.colorbar(mappable, ax=axes, label=f"{value_col} (z-score)")
+    return fig
+
+
 __all__ = [
     "signed_norm",
     "pvalue_to_stars",
@@ -533,4 +613,5 @@ __all__ = [
     "ora_dotplot",
     "annotated_clustermap",
     "cross_group_dotplot",
+    "cross_group_dotplot_by_condition",
 ]

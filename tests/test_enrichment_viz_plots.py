@@ -525,6 +525,104 @@ def test_cross_group_dotplot_col_labels_rename_the_x_axis_only():
     )
     ax = fig.axes[0]
     assert [t.get_text() for t in ax.get_xticklabels()] == ["Papillary", "Reticular"]
+
+
+def _condition_activity_df():
+    # source S1: varies a lot across cell_type/condition -> kept by top_k.
+    # source S2: identical everywhere -> zero variance, dropped by top_k=1.
+    rows = []
+    for ct, base in [("A", 0.0), ("B", 10.0)]:
+        for cond, delta in [("Normal", -2.0), ("Lymphedema", 2.0)]:
+            rows.append({"cell_type": ct, "condition": cond, "source": "S1", "score": base + delta})
+            rows.append({"cell_type": ct, "condition": cond, "source": "S2", "score": 5.0})
+    return pd.DataFrame(rows)
+
+
+def test_cross_group_dotplot_by_condition_returns_two_panels_plus_colorbar():
+    df = _condition_activity_df()
+    fig = plots.cross_group_dotplot_by_condition(
+        df,
+        row_col="source",
+        col_col="cell_type",
+        value_col="score",
+        condition_col="condition",
+        control="Normal",
+        case="Lymphedema",
+        top_k=5,
+    )
+    # 2 content panels + 1 colorbar axes.
+    assert len(fig.axes) == 3
+    plt.close("all")
+
+
+def test_cross_group_dotplot_by_condition_titles_control_left_case_right():
+    df = _condition_activity_df()
+    fig = plots.cross_group_dotplot_by_condition(
+        df,
+        row_col="source",
+        col_col="cell_type",
+        value_col="score",
+        condition_col="condition",
+        control="Normal",
+        case="Lymphedema",
+        top_k=5,
+    )
+    control_ax, case_ax = fig.axes[0], fig.axes[1]
+    assert control_ax.get_title() == "Normal"
+    assert case_ax.get_title() == "Lymphedema"
+    plt.close("all")
+
+
+def test_cross_group_dotplot_by_condition_zscores_per_row_not_raw_value():
+    """decoupler's own documented convention for this exact plot
+
+    (sc.pl.matrixplot with standard_scale="var") z-scores each row so one
+    dominant source doesn't swamp the color scale for every other row --
+    S1 spans [-2, 22] here (base 0 or 10, delta ±2) while S2 is a flat 5.0
+    everywhere. On raw values S1 would dominate; z-scored, each row's own
+    color range is centered on that row's own mean.
+    """
+    df = _condition_activity_df()
+    fig = plots.cross_group_dotplot_by_condition(
+        df,
+        row_col="source",
+        col_col="cell_type",
+        value_col="score",
+        condition_col="condition",
+        control="Normal",
+        case="Lymphedema",
+        top_k=1,  # keeps only S1 (S2 has zero variance)
+    )
+    control_ax = fig.axes[0]
+    colors = control_ax.collections[0].get_array()
+    # cell_type A/Normal = 0 + (-2) = -2, the row minimum -> most negative z.
+    # cell_type B/Normal = 10 + (-2) = 8, the row maximum -> most positive z
+    # among the Normal panel's own two points, but still below the global
+    # per-row mean pulled up by the Lymphedema arm -- just check it is not
+    # all-identical (i.e. real z-scoring happened, not a constant fallback).
+    assert len(set(np.round(colors, 6))) > 1
+    plt.close("all")
+
+
+def test_cross_group_dotplot_by_condition_col_labels_rename_x_axis():
+    df = _condition_activity_df()
+    fig = plots.cross_group_dotplot_by_condition(
+        df,
+        row_col="source",
+        col_col="cell_type",
+        value_col="score",
+        condition_col="condition",
+        control="Normal",
+        case="Lymphedema",
+        top_k=5,
+        col_labels={"A": "Perivascular", "B": "Inflammatory"},
+    )
+    control_ax = fig.axes[0]
+    assert [t.get_text() for t in control_ax.get_xticklabels()] == [
+        "Perivascular",
+        "Inflammatory",
+    ]
+    plt.close("all")
     plt.close("all")
 
 

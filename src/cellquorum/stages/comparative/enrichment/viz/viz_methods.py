@@ -47,6 +47,10 @@ class ActivityVizMethod(AnalysisMethod):
         top_k = int(config.get("top_k", 12))
         wanted = config.get("resources")
         cluster_labels = config.get("cluster_labels") or {}
+        condition_labels = config.get("condition_labels") or {}
+        design = getattr(getattr(context, "config", None), "design", None)
+        case = config.get("case") or getattr(design, "case", None)
+        control = config.get("control") or getattr(design, "control", None)
 
         resources = collections_from_glob(results_dir, "enrichment_activity_")
         if wanted:
@@ -66,14 +70,28 @@ class ActivityVizMethod(AnalysisMethod):
                 warnings.append(f"activity_viz: {resource} CSV is empty")
                 continue
             try:
-                fig = plots.cross_group_dotplot(
-                    df,
-                    row_col="source",
-                    col_col="cell_type",
-                    value_col="mean_score",
-                    top_k=top_k,
-                    col_labels=cluster_labels,
-                )
+                if "condition" in df.columns and case and control:
+                    fig = plots.cross_group_dotplot_by_condition(
+                        df,
+                        row_col="source",
+                        col_col="cell_type",
+                        value_col="mean_score",
+                        condition_col="condition",
+                        control=control,
+                        case=case,
+                        top_k=top_k,
+                        col_labels=cluster_labels,
+                        condition_labels=condition_labels,
+                    )
+                else:
+                    fig = plots.cross_group_dotplot(
+                        df,
+                        row_col="source",
+                        col_col="cell_type",
+                        value_col="mean_score",
+                        top_k=top_k,
+                        col_labels=cluster_labels,
+                    )
                 paths = save_figure(
                     fig, figures_dir, f"activity_dotplot_{resource}", formats=formats, dpi=dpi
                 )

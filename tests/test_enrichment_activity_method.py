@@ -133,6 +133,73 @@ def test_activity_does_not_densify_the_full_expression_matrix(tmp_path, monkeypa
     assert df["mean_score"].notna().all()
 
 
+def _adata_with_condition():
+    """20 cells x 8 genes, two cell types x two conditions, no dropped cells --
+
+    isolates the condition-splitting behavior from the empty-cell guard
+    already covered above.
+    """
+    rng = np.random.default_rng(1)
+    n = 20
+    X = rng.random(size=(n, 8)) + 0.1
+    obs = pd.DataFrame(
+        {
+            "cell_type": (["T0"] * 10) + (["T1"] * 10),
+            "condition": (["Normal"] * 5 + ["Lymphedema"] * 5) * 2,
+        }
+    )
+    a = ad.AnnData(X=X, obs=obs)
+    a.var_names = [f"G{i}" for i in range(8)]
+    a.layers["cellquorum_normalized"] = X.copy()
+    return a
+
+
+def test_activity_splits_by_condition_when_condition_col_configured(tmp_path, monkeypatch):
+    """condition_col is bridged into every enrichment method's config from
+
+    config.design (see EnrichmentStage._augment_config) -- when present in
+    obs, activity must aggregate per (cell_type, condition) instead of just
+    cell_type, so the resulting figure can compare disease states rather
+    than only re-confirming cluster identity.
+    """
+    a = _adata_with_condition()
+    _patch_get_net(monkeypatch, _weighted_net())
+    cfg = {
+        "activity_resources": ["collectri"],
+        "cell_type_col": "cell_type",
+        "condition_col": "condition",
+        "layer": "cellquorum_normalized",
+        "min_size": 3,
+    }
+    out = ActivityMethod()._run(a, cfg, _Ctx(tmp_path))
+    assert not isinstance(out, MethodSkip)
+    df = pd.read_csv(tmp_path / "results" / "enrichment_activity_collectri.csv")
+    assert list(df.columns) == ["cell_type", "condition", "source", "mean_score"]
+    assert set(df["condition"]) == {"Normal", "Lymphedema"}
+    # Both cell types x both conditions represented (2 x 2 x 2 sources = 8 rows).
+    assert len(df) == 8
+    assert df["mean_score"].notna().all()
+
+
+def test_activity_omits_condition_column_when_not_configured(tmp_path, monkeypatch):
+    """Backward compatible: no condition_col in config -> unchanged output,
+
+    same as before this feature existed.
+    """
+    a = _adata_with_condition()
+    _patch_get_net(monkeypatch, _weighted_net())
+    cfg = {
+        "activity_resources": ["collectri"],
+        "cell_type_col": "cell_type",
+        "layer": "cellquorum_normalized",
+        "min_size": 3,
+    }
+    out = ActivityMethod()._run(a, cfg, _Ctx(tmp_path))
+    assert not isinstance(out, MethodSkip)
+    df = pd.read_csv(tmp_path / "results" / "enrichment_activity_collectri.csv")
+    assert list(df.columns) == ["cell_type", "source", "mean_score"]
+
+
 def test_activity_skips_when_decoupler_absent(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "decoupler", None)
     cfg = {
