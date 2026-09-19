@@ -83,6 +83,30 @@ def test_diverging_bar_returns_axes():
     plt.close("all")
 
 
+def test_diverging_bar_wraps_reactome_length_labels():
+    """diverging_bar (GSEA's own single-panel figure) never got the ORA
+
+    label-wrap fix -- confirmed live: the real reactome GSEA activity/
+    diverging figures still show a single unwrapped line running the full
+    width of the image for a 100+ char pathway name.
+    """
+    long_label = (
+        "REACTOME_ACTIVATION_OF_THE_MRNA_UPON_BINDING_OF_THE_CAP_BINDING_COMPLEX_"
+        "AND_EIFS_AND_SUBSEQUENT_BINDING_TO_43S"
+    )
+    df = pd.DataFrame(
+        {
+            "source": [long_label] + [f"S{i}" for i in range(5)],
+            "score": [-2.3, 2.0, 1.5, -1.0, 0.8, -0.5],
+            "padj": [1e-5, 1e-4, 1e-3, 0.01, 0.02, 0.03],
+        }
+    )
+    ax = plots.diverging_bar(df, value_col="score", label_col="source", pvalue_col="padj", top_k=3)
+    target = next(t for t in ax.get_yticklabels() if "REACTOME_ACTIVATION" in t.get_text())
+    assert "\n" in target.get_text()
+    plt.close("all")
+
+
 def test_activity_dotplot_returns_axes():
     df = pd.DataFrame(
         {
@@ -95,6 +119,26 @@ def test_activity_dotplot_returns_axes():
         df, value_col="score", label_col="source", pvalue_col="padj", top_k=2
     )
     assert ax is not None
+    plt.close("all")
+
+
+def test_activity_dotplot_wraps_reactome_length_labels():
+    long_label = (
+        "REACTOME_ACTIVATION_OF_THE_MRNA_UPON_BINDING_OF_THE_CAP_BINDING_COMPLEX_"
+        "AND_EIFS_AND_SUBSEQUENT_BINDING_TO_43S"
+    )
+    df = pd.DataFrame(
+        {
+            "source": [long_label] + [f"S{i}" for i in range(3)],
+            "score": [-2.3, 2.0, 1.5, -1.0],
+            "padj": [1e-5, 1e-4, 1e-3, 0.01],
+        }
+    )
+    ax = plots.activity_dotplot(
+        df, value_col="score", label_col="source", pvalue_col="padj", top_k=2
+    )
+    target = next(t for t in ax.get_yticklabels() if "REACTOME_ACTIVATION" in t.get_text())
+    assert "\n" in target.get_text()
     plt.close("all")
 
 
@@ -327,7 +371,7 @@ def test_ora_barplot_long_labels_do_not_overflow_into_the_previous_facets_colorb
     target = next(
         t
         for t in up_bars_ax.get_yticklabels()
-        if t.get_text().replace("\n", "").replace(" …", "") == long_label
+        if t.get_text().replace("\n", "_").replace(" …", "") == long_label
     )
     bbox_fig = target.get_window_extent(renderer).transformed(fig.transFigure.inverted())
 

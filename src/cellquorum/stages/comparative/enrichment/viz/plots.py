@@ -8,7 +8,6 @@ caller maps its columns onto these generic parameters.
 from __future__ import annotations
 
 import math
-import textwrap
 from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
@@ -121,7 +120,7 @@ def diverging_bar(
     y = np.arange(len(sel))
     ax.barh(y, values, color=colors, edgecolor="0.3", linewidth=0.4)
     ax.set_yticks(y)
-    ax.set_yticklabels(sel[label_col].astype(str).tolist())
+    ax.set_yticklabels([_wrap_label(s) for s in sel[label_col].astype(str)])
     ax.axvline(0, color="0.4", linestyle="--", linewidth=0.8)
     ax.set_xlabel(value_col)
     if pvalue_col is not None and pvalue_col in sel.columns:
@@ -165,7 +164,7 @@ def activity_dotplot(
     y = np.arange(len(sel))
     ax.scatter(values, y, s=sizes, c=values, cmap=cmap, norm=norm, edgecolor="0.3", linewidth=0.4)
     ax.set_yticks(y)
-    ax.set_yticklabels(sel[label_col].astype(str).tolist())
+    ax.set_yticklabels([_wrap_label(s) for s in sel[label_col].astype(str)])
     ax.axvline(0, color="0.4", linestyle="--", linewidth=0.8)
     ax.set_xlabel(value_col)
     ax.figure.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=value_col)
@@ -305,16 +304,43 @@ def running_es_curve(
 
 
 def _wrap_label(text: str, *, width: int = 28, max_lines: int = 2) -> str:
-    """Wrap a gene-set name onto at most ``max_lines`` lines.
+    """Wrap a gene-set name onto at most ``max_lines`` lines, on "_" boundaries.
 
     Real Reactome/Hallmark names run 30-140+ characters -- constrained_layout
     can reflow axes around a long label, but it can't shrink the text itself,
     and a figure this size has no room for an 80-char single-line label.
-    textwrap's own ``max_lines`` truncates with a placeholder rather than
-    wrapping forever, which would eat vertical space a 12-row facet doesn't
-    have either.
+    ``textwrap.fill`` alone breaks mid-word (there are no real spaces in a
+    gene-set name, so it treats the whole underscore-joined string as one
+    unbreakable "word" and splits it at an arbitrary character offset --
+    confirmed live: "...BIOSYNTHES" / "IS_AND..."). Splitting on "_" and
+    packing whole tokens per line keeps every break at a real word boundary,
+    still capped at ``max_lines`` with a trailing placeholder for anything
+    left over.
     """
-    return textwrap.fill(text, width=width, max_lines=max_lines, placeholder=" …")
+    tokens = text.split("_")
+    lines: list[str] = []
+    current = ""
+    consumed = 0
+    for tok in tokens:
+        candidate = tok if not current else f"{current}_{tok}"
+        if len(candidate) <= width or not current:
+            current = candidate
+            consumed += 1
+            continue
+        if len(lines) + 1 >= max_lines:
+            break
+        lines.append(current)
+        current = tok
+        consumed += 1
+    else:
+        if current:
+            lines.append(current)
+        return "\n".join(lines)
+    if current:
+        lines.append(current)
+    if consumed < len(tokens):
+        lines[-1] = lines[-1] + " …"
+    return "\n".join(lines[:max_lines])
 
 
 def _facet_bar_or_dot(
