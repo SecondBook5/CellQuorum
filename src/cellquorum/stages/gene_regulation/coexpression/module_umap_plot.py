@@ -28,7 +28,6 @@ from matplotlib.figure import Figure
 from matplotlib.legend import Legend
 from matplotlib.lines import Line2D
 from matplotlib.text import Text
-from matplotlib.transforms import Bbox
 
 from cellquorum.visualization import figstyle
 
@@ -100,9 +99,19 @@ def _build_figure(
         )
         for m in mods
     ]
+    # Anchored OUTSIDE the axes (bbox_to_anchor in figure-relative space, not
+    # loc="upper left" inside the data rectangle) -- an inside legend sits on
+    # top of whatever data happens to be in that corner, and module points
+    # are not evenly distributed, so "upper left" reliably covered real
+    # points for some module (confirmed live). Outside the axes, it cannot
+    # overlap a data point regardless of layout. save_figure's own
+    # bbox_inches="tight" (figstyle.py) picks up the extra width so this
+    # doesn't get clipped on save.
     leg = ax.legend(
         handles=handles,
         loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0,
         fontsize=7.5,
         frameon=True,
         title="Co-expression module",
@@ -156,64 +165,6 @@ def _build_figure(
     ax.spines["left"].set_color("#999")
     ax.spines["bottom"].set_color("#999")
     plt.tight_layout()
-
-    # adjustText's own `objects=` obstacle-avoidance doesn't work for a
-    # legend: it fetches the legend's bbox via get_window_extent (display /
-    # pixel coordinates, since a loc="upper left" legend isn't data-
-    # positioned), then feeds those pixel values through ax.convert_xunits,
-    # which is a no-op for a plain numeric axis -- the "obstacle" ends up
-    # miles away in data-space and never actually blocks anything (confirmed
-    # directly: labels still landed under the legend with objects=[leg]
-    # passed). Real fix: after the repulsion, physically push away any hub
-    # label whose rendered bbox still overlaps the legend's.
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    legend_bbox = leg.get_window_extent(renderer)
-    # Module hub genes cluster together in UMAP space by construction, so
-    # more than one can sit near the legend's corner at once. A label
-    # already just outside the legend box (not "overlapping" by a strict
-    # bbox test) can still end up collided into once a neighbor gets pushed
-    # toward it -- expanding the exclusion zone by a bit more than one
-    # label's height catches those near-misses too, and every label caught
-    # in the zone (not just the ones strictly overlapping the legend) is
-    # laid out together in one packed row.
-    pad = 14.0
-    zone = Bbox.from_extents(
-        legend_bbox.x0 - pad, legend_bbox.y0 - pad, legend_bbox.x1 + pad, legend_bbox.y1 + pad
-    )
-    conflicted = [t for t in labels if t.get_window_extent(renderer).overlaps(zone)]
-    if conflicted:
-        # Placing the packed row just below the legend (the first fix) still
-        # left it INSIDE the plotted data's own coordinate range -- module
-        # hub genes cluster together, so the real scatter points for this
-        # exact module sit right there too, and the row could land on top of
-        # one. Extending the y-axis to add headroom above every real data
-        # point, then placing the row in that new strip (beside the legend,
-        # not under it), guarantees it can only ever overlap whitespace.
-        cur_ylim = ax.get_ylim()
-        headroom = 0.16 * (cur_ylim[1] - cur_ylim[0])
-        ax.set_ylim(cur_ylim[0], cur_ylim[1] + headroom)
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-        legend_bbox = leg.get_window_extent(renderer)
-        axes_bbox = ax.get_window_extent(renderer)
-        inv = ax.transData.inverted()
-        # adjustText leaves every label centered on its anchor (ha="center",
-        # va="center"), not left/baseline-aligned -- set_position places the
-        # MIDDLE of the glyph, so the left edge lands at position - width/2,
-        # not at position itself. Missing this shifted every placed label
-        # left by half its own width, under-spacing each pair by a
-        # different, width-dependent amount (confirmed directly: three
-        # labels placed in sequence came out short by 14px, 24px, 17px --
-        # each exactly half that label's own rendered width, not a constant).
-        next_x_disp = legend_bbox.x1 + 10
-        row_y_disp = axes_bbox.y1 - 10
-        for t in conflicted:
-            bbox = t.get_window_extent(renderer)
-            anchor_x = next_x_disp + bbox.width / 2
-            anchor_y = row_y_disp - bbox.height / 2
-            t.set_position(inv.transform((anchor_x, anchor_y)))
-            next_x_disp += bbox.width + 6
 
     return fig, leg, labels
 
