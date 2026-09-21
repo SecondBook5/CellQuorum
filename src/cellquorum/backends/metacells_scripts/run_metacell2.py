@@ -105,52 +105,60 @@ def main(argv: list[str]) -> int:
     if layer != "X":
         full.X = full.layers[layer]
 
-    mc.ut.set_name(full, "full")
+    try:
+        mc.ut.set_name(full, "full")
 
-    # Generic cell-cycle/stress gene exclusion -- these patterns are biology-
-    # agnostic housekeeping/stress markers common to the standard MetaCell2
-    # tutorial, not study-specific to any one project.
-    mc.pl.exclude_genes(
-        full,
-        excluded_gene_patterns=["MT-.*", "RP[LS].*"],
-        random_seed=seed,
-    )
-    mc.pl.exclude_cells(full, properly_sampled_min_cell_total=None)
-    clean = mc.pl.extract_clean_data(full, name="clean")
+        # Generic cell-cycle/stress gene exclusion -- these patterns are biology-
+        # agnostic housekeeping/stress markers common to the standard MetaCell2
+        # tutorial, not study-specific to any one project.
+        mc.pl.exclude_genes(
+            full,
+            excluded_gene_patterns=["MT-.*", "RP[LS].*"],
+            random_seed=seed,
+        )
+        mc.pl.exclude_cells(full, properly_sampled_min_cell_total=None)
+        clean = mc.pl.extract_clean_data(full, name="clean")
 
-    mc.pl.divide_and_conquer_pipeline(
-        clean,
-        target_metacell_size=target_metacell_size,
-        random_seed=seed,
-    )
-    metacell_adata = mc.pl.collect_metacells(clean, name="metacells")
+        mc.pl.divide_and_conquer_pipeline(
+            clean,
+            target_metacell_size=target_metacell_size,
+            random_seed=seed,
+        )
+        metacell_adata = mc.pl.collect_metacells(clean, name="metacells")
 
-    # ---- Build the per-cell assignment table, including Outliers ---- #
-    n_umis = np.asarray(full.X.sum(axis=1)).ravel()
-    groups = full.obs[group_by].astype(str).to_numpy()
-    cell_ids = full.obs_names.to_numpy()
+        # ---- Build the per-cell assignment table, including Outliers ---- #
+        n_umis = np.asarray(full.X.sum(axis=1)).ravel()
+        groups = full.obs[group_by].astype(str).to_numpy()
+        cell_ids = full.obs_names.to_numpy()
 
-    clean_metacell_of_cell = clean.obs.get("metacell_name")
-    metacell_by_cell_id = (
-        dict(zip(clean.obs_names, clean_metacell_of_cell, strict=False))
-        if clean_metacell_of_cell is not None
-        else {}
-    )
-    metacell_ids = [metacell_by_cell_id.get(cid, "Outliers") or "Outliers" for cid in cell_ids]
+        clean_metacell_of_cell = clean.obs.get("metacell_name")
+        metacell_by_cell_id = (
+            dict(zip(clean.obs_names, clean_metacell_of_cell, strict=False))
+            if clean_metacell_of_cell is not None
+            else {}
+        )
+        metacell_ids = [metacell_by_cell_id.get(cid, "Outliers") or "Outliers" for cid in cell_ids]
 
-    import pandas as pd
+        import pandas as pd
 
-    assignments = pd.DataFrame(
-        {
-            "cell_id": cell_ids,
-            "metacell_id": metacell_ids,
-            "group": groups,
-            "n_umis": n_umis,
-        }
-    )
-    out_dir.mkdir(parents=True, exist_ok=True)
-    assignments.to_csv(out_dir / "metacell_assignments.csv", index=False)
-    metacell_adata.write_h5ad(out_dir / "metacell_adata.h5ad")
+        assignments = pd.DataFrame(
+            {
+                "cell_id": cell_ids,
+                "metacell_id": metacell_ids,
+                "group": groups,
+                "n_umis": n_umis,
+            }
+        )
+        out_dir.mkdir(parents=True, exist_ok=True)
+        assignments.to_csv(out_dir / "metacell_assignments.csv", index=False)
+        metacell_adata.write_h5ad(out_dir / "metacell_adata.h5ad")
+    except Exception as exc:  # noqa: BLE001 -- a real pipeline failure, not a graceful skip
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "metacells_FAILED.txt").write_text(
+            f"MetaCell2 pipeline run failed: {exc}\n", encoding="utf-8"
+        )
+        print(f"[metacells] FAILED: {exc}", file=sys.stderr)
+        return 1
 
     print(
         f"[metacells] wrote {assignments['metacell_id'].nunique()} metacell groups "
