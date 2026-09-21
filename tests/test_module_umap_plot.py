@@ -107,6 +107,49 @@ def test_hub_labels_do_not_overlap_the_legend(tmp_path: Path) -> None:
     plt.close("all")
 
 
+def test_pushed_labels_land_above_the_data_not_inside_it(tmp_path: Path) -> None:
+    """Placing the packed row just below the legend (the first fix) still put
+
+    it inside the plotted data's own coordinate range -- module hub genes
+    cluster together, so the real scatter points for this exact module sit
+    right there too, and a pushed label could land on top of one. Pushed
+    labels must render above the original data's y-range entirely (in the
+    headroom added for them), never inside it.
+    """
+    import matplotlib.pyplot as plt
+
+    from cellquorum.stages.gene_regulation.coexpression.module_umap_plot import (
+        _build_figure,
+    )
+    from cellquorum.visualization import figstyle
+
+    df = pd.DataFrame(
+        {
+            "gene": ["CCN5", "COL23A1", "MFAP5", "NFKB1", "SOD2", "NAMPT", "OTHER1", "OTHER2"],
+            "UMAP1": [0.05, 0.08, 0.03, 5.0, 5.2, 5.1, 2.5, 2.6],
+            "UMAP2": [4.9, 4.95, 4.85, 0.5, 0.6, 0.4, 2.5, 2.4],
+            "module": ["M1", "M1", "M1", "M2", "M2", "M2", "M1", "M2"],
+            "hub": ["hub", "hub", "hub", "hub", "hub", "hub", "other", "other"],
+            "kME": [0.9, 0.85, 0.8, 0.9, 0.85, 0.8, 0.4, 0.4],
+        }
+    )
+    mods = ["M1", "M2"]
+    mod_color = {"M1": figstyle.CATEGORICAL_PALETTE[0], "M2": figstyle.CATEGORICAL_PALETTE[1]}
+    top_hub = {"M1": "CCN5", "M2": "NFKB1"}
+
+    original_data_ymax = df.UMAP2.max()
+    fig, leg, labels = _build_figure(df, mods=mods, mod_color=mod_color, top_hub=top_hub, tag="")
+    pushed = {"CCN5", "COL23A1", "MFAP5"}
+    for t in labels:
+        if t.get_text() in pushed:
+            _, y_data = t.get_position()
+            assert y_data > original_data_ymax, (
+                f"{t.get_text()!r} at y={y_data} was not pushed above the "
+                f"original data range (max y={original_data_ymax})"
+            )
+    plt.close("all")
+
+
 def test_uses_categorical_palette(tmp_path: Path) -> None:
     from cellquorum.visualization import figstyle
 

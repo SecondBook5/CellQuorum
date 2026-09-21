@@ -169,7 +169,6 @@ def _build_figure(
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     legend_bbox = leg.get_window_extent(renderer)
-    inv = ax.transData.inverted()
     # Module hub genes cluster together in UMAP space by construction, so
     # more than one can sit near the legend's corner at once. A label
     # already just outside the legend box (not "overlapping" by a strict
@@ -177,15 +176,28 @@ def _build_figure(
     # toward it -- expanding the exclusion zone by a bit more than one
     # label's height catches those near-misses too, and every label caught
     # in the zone (not just the ones strictly overlapping the legend) is
-    # laid out together in one packed row, so the whole cluster resolves at
-    # once instead of one push creating a fresh collision with an untouched
-    # neighbor.
+    # laid out together in one packed row.
     pad = 14.0
     zone = Bbox.from_extents(
         legend_bbox.x0 - pad, legend_bbox.y0 - pad, legend_bbox.x1 + pad, legend_bbox.y1 + pad
     )
     conflicted = [t for t in labels if t.get_window_extent(renderer).overlaps(zone)]
     if conflicted:
+        # Placing the packed row just below the legend (the first fix) still
+        # left it INSIDE the plotted data's own coordinate range -- module
+        # hub genes cluster together, so the real scatter points for this
+        # exact module sit right there too, and the row could land on top of
+        # one. Extending the y-axis to add headroom above every real data
+        # point, then placing the row in that new strip (beside the legend,
+        # not under it), guarantees it can only ever overlap whitespace.
+        cur_ylim = ax.get_ylim()
+        headroom = 0.16 * (cur_ylim[1] - cur_ylim[0])
+        ax.set_ylim(cur_ylim[0], cur_ylim[1] + headroom)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        legend_bbox = leg.get_window_extent(renderer)
+        axes_bbox = ax.get_window_extent(renderer)
+        inv = ax.transData.inverted()
         # adjustText leaves every label centered on its anchor (ha="center",
         # va="center"), not left/baseline-aligned -- set_position places the
         # MIDDLE of the glyph, so the left edge lands at position - width/2,
@@ -194,8 +206,8 @@ def _build_figure(
         # different, width-dependent amount (confirmed directly: three
         # labels placed in sequence came out short by 14px, 24px, 17px --
         # each exactly half that label's own rendered width, not a constant).
-        next_x_disp = legend_bbox.x0
-        row_y_disp = legend_bbox.y0 - 4
+        next_x_disp = legend_bbox.x1 + 10
+        row_y_disp = axes_bbox.y1 - 10
         for t in conflicted:
             bbox = t.get_window_extent(renderer)
             anchor_x = next_x_disp + bbox.width / 2
