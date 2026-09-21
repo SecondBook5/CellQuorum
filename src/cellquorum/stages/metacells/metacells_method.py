@@ -14,7 +14,16 @@ from cellquorum.core.contracts.data_contract import DataContract
 from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.stages.metacells.aggregate import outlier_summary
+from cellquorum.stages.metacells.aggregate import dominant_group, outlier_summary
+from cellquorum.stages.metacells.viz.composition import plot_metacell_composition_bar
+from cellquorum.stages.metacells.viz.heatmap import plot_metacell_gene_heatmap
+from cellquorum.stages.metacells.viz.marker_traces import plot_metacell_marker_traces
+from cellquorum.stages.metacells.viz.network import plot_metacell_network
+from cellquorum.stages.metacells.viz.qc_scatter import (
+    plot_metacell_qc_size_comparison,
+    plot_metacell_qc_unclassified_vs_size,
+)
+from cellquorum.visualization.figstyle import render_figure
 
 
 class MetacellsMethod(AnalysisMethod):
@@ -133,6 +142,93 @@ class MetacellsMethod(AnalysisMethod):
             adata.obs_names.to_series().map(id_by_cell).fillna("Outliers").astype(str).to_numpy()
         )
 
+        mc_adata_path = out_dir / "metacell_adata.h5ad"
+
+        # 5b. Build the small per-metacell "nodes" table every figure shares
+        real_assignments = assignments[assignments["metacell_id"] != "Outliers"]
+        nodes = pd.DataFrame(
+            {
+                "metacell_id": sorted(real_assignments["metacell_id"].unique()),
+            }
+        )
+        dom = dominant_group(assignments)
+        counts = real_assignments.groupby("metacell_id").size()
+        nodes["dominant_group"] = nodes["metacell_id"].map(dom)
+        nodes["n_cells"] = nodes["metacell_id"].map(counts).fillna(0).astype(int)
+
+        figures_dir = Path(getattr(context.paths, "figures", ".")) / "metacells"
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        figs: list[Path] = []
+        fig_warnings: list[str] = []
+
+        expr = None
+        marker_dir = None
+        if mc_adata_path.exists():
+            try:
+                mc_adata = ad.read_h5ad(mc_adata_path)
+                expr = pd.DataFrame(
+                    mc_adata.X.T if hasattr(mc_adata.X, "T") else mc_adata.X,
+                    index=mc_adata.var_names,
+                    columns=mc_adata.obs_names,
+                )
+            except Exception as exc:  # noqa: BLE001
+                fig_warnings.append(f"could not read metacell_adata for figures: {str(exc)[:150]}")
+
+        # Metacell-to-metacell similarity from shared nearest hub genes -- a
+        # simple correlation graph over the pseudobulk expression, thresholded
+        # to the top edges per node, since MetaCell2's own umap/graph object is
+        # not persisted by the in-env script (only the collected pseudobulk is).
+        edges = pd.DataFrame(columns=["source", "target", "weight"])
+        if expr is not None and expr.shape[1] > 1:
+            corr = expr.corr()
+            rows = []
+            for i, a in enumerate(corr.columns):
+                for b in corr.columns[i + 1 :]:
+                    rows.append({"source": a, "target": b, "weight": float(corr.loc[a, b])})
+            edges = pd.DataFrame(rows)
+
+        render_figure(
+            "metacell network",
+            lambda: plot_metacell_network(edges, nodes, figures_dir),
+            figures=figs,
+            warnings=fig_warnings,
+        )
+        if expr is not None:
+            render_figure(
+                "metacell gene heatmap",
+                lambda: plot_metacell_gene_heatmap(expr, nodes, figures_dir),
+                figures=figs,
+                warnings=fig_warnings,
+            )
+        render_figure(
+            "metacell composition bar",
+            lambda: plot_metacell_composition_bar(assignments, nodes, figures_dir),
+            figures=figs,
+            warnings=fig_warnings,
+        )
+        render_figure(
+            "metacell qc unclassified vs size",
+            lambda: plot_metacell_qc_unclassified_vs_size(assignments, nodes, figures_dir),
+            figures=figs,
+            warnings=fig_warnings,
+        )
+        render_figure(
+            "metacell qc size comparison",
+            lambda: plot_metacell_qc_size_comparison(assignments, nodes, figures_dir),
+            figures=figs,
+            warnings=fig_warnings,
+        )
+
+        marker_genes = config.get("marker_genes") or []
+        if marker_genes and expr is not None:
+            marker_dir = figures_dir / "metacell_marker_traces"
+            render_figure(
+                "metacell marker traces",
+                lambda: plot_metacell_marker_traces(expr, nodes, marker_dir, marker_genes),
+                figures=figs,
+                warnings=fig_warnings,
+            )
+
         # 6. Artifacts
         artifacts: list[StageArtifact] = [
             StageArtifact(
@@ -142,7 +238,6 @@ class MetacellsMethod(AnalysisMethod):
                 description="Per-cell metacell assignment (including the Outliers bucket)",
             ),
         ]
-        mc_adata_path = out_dir / "metacell_adata.h5ad"
         if mc_adata_path.exists():
             artifacts.append(
                 StageArtifact(
@@ -150,6 +245,15 @@ class MetacellsMethod(AnalysisMethod):
                     path=mc_adata_path,
                     kind="h5ad",
                     description="Aggregated (pseudobulk) metacell AnnData",
+                )
+            )
+        for fig_path in figs:
+            artifacts.append(
+                StageArtifact(
+                    name=f"figure_{fig_path.stem}",
+                    path=fig_path,
+                    kind="figure",
+                    description="metacells stage figure",
                 )
             )
 
@@ -166,7 +270,7 @@ class MetacellsMethod(AnalysisMethod):
         return StageResult(
             adata=adata,
             artifacts=artifacts,
-            warnings=[],
+            warnings=fig_warnings,
             metrics=metrics,
             backend="metacells",
         )
