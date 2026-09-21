@@ -189,3 +189,49 @@ def test_plot_regulon_curvature_caps_edges_drawn_to_stay_legible(
 
     assert seen_top_k["top_k"] is not None
     assert seen_top_k["top_k"] <= 40
+
+
+def test_plot_regulon_curvature_actually_caps_labeled_nodes_not_just_the_kwarg(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The test above only proved top_k was PASSED to curvature_network --
+
+    not that curvature_network's OWN node-seat guarantee actually honors it.
+    On this exact 50-TF x 10-unique-targets-each shape (500 distinct target
+    genes), curvature_network's shared _guarantee_node_seats helper's "give
+    every node at least one edge" step produces a guaranteed set of ~550
+    rows before it ever compares against top_k, hits
+    `len(guaranteed) >= top_k` immediately, and returns the WHOLE guaranteed
+    set -- confirmed directly by calling curvature_network on this shape:
+    550 labels, not ~30. That helper's unconditional-guarantee behavior is
+    correct and separately tested for its original use case (a handful of
+    CCC clusters, where dropping one is a real loss), so the fix belongs in
+    the regulon-specific caller: pre-trim to the globally strongest
+    plot_top_k edges before curvature_network ever sees the graph.
+    """
+    import cellquorum.stages.gene_regulation.grn.regulon_curvature as mod
+
+    regulons = pd.DataFrame(
+        {
+            "TF": [f"TF{i}" for i in range(50)],
+            "MotifID": ["m1"] * 50,
+            "TargetGenes": [
+                str([(f"G{i}_{j}", 1.0 - j * 0.05) for j in range(10)]) for i in range(50)
+            ],
+        }
+    )
+    captured = {}
+    real_curvature_network = mod.curvature_network
+
+    def spy(edges, nodes, **kwargs):
+        captured["n_edges"] = len(edges)
+        return real_curvature_network(edges, nodes, **kwargs)
+
+    monkeypatch.setattr(mod, "curvature_network", spy)
+
+    figs = plot_regulon_curvature(regulons, tmp_path, top_k_targets=10, plot_top_k=30)
+    assert figs
+    assert captured["n_edges"] <= 30, (
+        f"curvature_network received {captured['n_edges']} edges, "
+        "not the pre-trimmed ~30 the hairball fix relies on"
+    )

@@ -152,6 +152,19 @@ def plot_regulon_curvature(
     if edge_df.empty:
         return []
 
+    # curvature_network's own top_k relies on _guarantee_node_seats, whose
+    # "give every node at least one edge" step is correct for its original
+    # use case (a handful of CCC clusters -- dropping one is a real loss) but
+    # breaks down here: a regulon graph has one distinct node per TARGET
+    # GENE, not per cluster, so "every node gets a seat" can mean hundreds of
+    # nodes even after the guarantee logic runs, defeating plot_top_k
+    # entirely (confirmed directly: a 500-target-gene graph produced a
+    # 550-node hairball instead of the requested ~30). Pre-trimming to the
+    # globally strongest plot_top_k edges here, before curvature_network
+    # ever sees the graph, keeps that shared helper's tested CCC contract
+    # untouched while still bounding what a regulon run can produce.
+    edge_df = edge_df.nlargest(plot_top_k, "weight")
+
     figstyle.set_style()
     out_dir = Path(out_dir)
     fig = curvature_network(edge_df, node_df, top_k=plot_top_k)
