@@ -90,6 +90,8 @@ def plot_regulon_cell_clustermap(
     vmin: float = -1.5,
     vmax: float = 6.0,
     name: str = "scenic_regulon_cell_clustermap",
+    cluster_labels: dict[str, str] | None = None,
+    cluster_col: str | None = None,
 ) -> list[Path]:
     """Canonical pySCENIC AUCell clustermap: CELLS x regulons, both hierarchically clustered.
 
@@ -162,6 +164,13 @@ def plot_regulon_cell_clustermap(
     # Z-score each regulon across cells (the protocol's auc_mtx_Z)
     sub = auc[topreg]
     z = (sub - sub.mean(axis=0)) / (sub.std(axis=0, ddof=0) + 1e-12)
+
+    # Display-only rename of the one annotation column that carries cluster
+    # ids -- computation above (grp/rss/topreg) already ran on the raw
+    # values, so this can't change which regulons got selected, only what
+    # the row-color legend's swatch labels say.
+    if cluster_labels and cluster_col is not None and cluster_col in ann.columns:
+        ann[cluster_col] = ann[cluster_col].map(lambda v: cluster_labels.get(v, v))
 
     # build one row-color bar per annotation column + remember palettes for the legends
     row_colors = pd.DataFrame(index=z.index)
@@ -315,6 +324,7 @@ def plot_rss_panels(
     group_label: str = "group",
     top_n: int = 5,
     name: str = "scenic_rss_panels",
+    cluster_labels: dict[str, str] | None = None,
 ) -> list[Path]:
     """One panel per category: regulons ranked by RSS, top-N labelled (protocol RSS figure)."""
     if auc_mtx is None or auc_mtx.shape[0] == 0 or auc_mtx.shape[1] == 0:
@@ -357,7 +367,8 @@ def plot_rss_panels(
             texts.append(ax.text(r, val, reg.replace("_(+)", ""), fontsize=8, fontweight="bold"))
         if _have_at and texts:
             adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="-", color="#bbb", lw=0.5))
-        ax.set_title(f"{group_label} = {c}", fontsize=11, fontweight="bold")
+        c_label = (cluster_labels or {}).get(str(c), str(c))
+        ax.set_title(f"{group_label} = {c_label}", fontsize=11, fontweight="bold")
         ax.set_xlabel("regulon rank", fontsize=9)
         ax.set_ylabel("RSS", fontsize=9)
     # blank any unused axes
@@ -379,6 +390,7 @@ def plot_regulon_clustermap(
     group_label: str = "group",
     top_n: int = 5,
     name: str = "scenic_regulon_clustermap",
+    cluster_labels: dict[str, str] | None = None,
 ) -> list[Path]:
     """Z-scored regulon-activity clustermap over the union of each category's top-N RSS regulons,
     rows annotated by category (protocol clustermap figure)."""
@@ -412,8 +424,17 @@ def plot_regulon_clustermap(
     try:
         import seaborn as sns
 
+        # Renaming the INDEX (not passing a separately-ordered yticklabels
+        # list) so clustermap's own row-clustering reorder stays correctly
+        # aligned with the labels -- clustering runs on cat_mean.index by
+        # position, agnostic to what the label text says, so this can't
+        # desync the way a manually-ordered label list could if seaborn's
+        # dendrogram permutation and a hand-built list ever disagreed on
+        # order.
+        labels = cluster_labels or {}
+        display = cat_mean.rename(index=lambda c: labels.get(str(c), str(c)))
         g = sns.clustermap(
-            cat_mean,
+            display,
             cmap=figstyle.SEQUENTIAL_CMAP,
             figsize=(max(8, 0.35 * len(topreg)), 5),
             linewidths=0.3,

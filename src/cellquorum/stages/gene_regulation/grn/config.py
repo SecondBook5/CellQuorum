@@ -40,6 +40,9 @@ class GrnConfig(StrictBaseModel):
             curvature network figure.
         curvature_ricci_alpha: Ollivier-Ricci alpha for the curvature figure.
         curvature_plot_top_k: Strongest edges actually drawn in the figure.
+        cluster_labels: optional cluster id -> display name map for the
+            RSS/clustermap/cell-clustermap figures, display only (the
+            underlying group_by column is never renamed in place).
     """
 
     # Whether this stage runs.
@@ -104,6 +107,9 @@ class GrnConfig(StrictBaseModel):
     # Strongest edges actually drawn in the curvature figure (the built graph
     # can have thousands; this keeps the plot legible).
     curvature_plot_top_k: int = 30
+
+    # Optional cluster id -> display name map for RSS/clustermap figures.
+    cluster_labels: dict[str, str] = {}
 
 
 __all__ = ["GrnConfig"]

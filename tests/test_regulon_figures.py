@@ -62,6 +62,30 @@ def test_regulon_clustermap_writes_files(tmp_path: Path) -> None:
     assert paths and all(Path(p).exists() for p in paths)
 
 
+def test_regulon_clustermap_cluster_labels_rename_yticklabels(tmp_path: Path, monkeypatch) -> None:
+    """Bare cluster ids ("0", "1", ...) on the y-axis are meaningless without
+
+    cross-referencing -- confirmed live: the real fibroblast GRN clustermap
+    shows raw fibroblast_subcluster ids (0-6), not names, unlike every
+    other stage's figures. cluster_labels renames the y-axis text only.
+    """
+    import seaborn as sns
+
+    captured = {}
+    real_clustermap = sns.clustermap
+
+    def spy(data, **kwargs):
+        captured["index"] = list(data.index)
+        return real_clustermap(data, **kwargs)
+
+    monkeypatch.setattr(sns, "clustermap", spy)
+    auc = _auc()
+    rf.plot_regulon_clustermap(
+        auc, _groups(auc), tmp_path, top_n=3, cluster_labels={"A": "Papillary", "B": "Reticular"}
+    )
+    assert set(captured["index"]) == {"Papillary", "Reticular"}
+
+
 def test_regulon_umap_writes_files(tmp_path: Path) -> None:
     auc = _auc()
     rng = np.random.default_rng(1)
@@ -75,6 +99,55 @@ def test_cell_clustermap_writes_files(tmp_path: Path) -> None:
     ann = _groups(auc).to_frame("group")
     paths = rf.plot_regulon_cell_clustermap(auc, ann, tmp_path, top_n=3)
     assert paths and all(Path(p).exists() for p in paths)
+
+
+def test_cell_clustermap_cluster_labels_rename_the_annotation_legend(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The row-color legend's swatch labels come straight from the raw
+
+    annotation values -- same bare-id problem as the clustermap y-axis,
+    just one file over (the companion *_legend_<col>.pdf).
+    """
+    captured = {}
+    real_palette = rf._annotation_palette
+
+    def spy(col, cats):
+        captured[col] = cats
+        return real_palette(col, cats)
+
+    monkeypatch.setattr(rf, "_annotation_palette", spy)
+    auc = _auc()
+    ann = _groups(auc).to_frame("group")
+    rf.plot_regulon_cell_clustermap(
+        auc,
+        ann,
+        tmp_path,
+        top_n=3,
+        cluster_labels={"A": "Papillary", "B": "Reticular"},
+        cluster_col="group",
+    )
+    assert set(captured["group"]) == {"Papillary", "Reticular"}
+
+
+def test_rss_panels_cluster_labels_rename_titles(tmp_path: Path, monkeypatch) -> None:
+    import matplotlib.axes
+
+    titles = []
+    real_set_title = matplotlib.axes.Axes.set_title
+
+    def spy(self, label, *a, **kw):
+        titles.append(label)
+        return real_set_title(self, label, *a, **kw)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "set_title", spy)
+    auc = _auc()
+    rf.plot_rss_panels(
+        auc, _groups(auc), tmp_path, top_n=3, cluster_labels={"A": "Papillary", "B": "Reticular"}
+    )
+    assert any("Papillary" in t for t in titles)
+    assert any("Reticular" in t for t in titles)
+    assert not any(t.endswith("= A") or t.endswith("= B") for t in titles)
 
 
 def test_plots_return_empty_on_empty_auc(tmp_path: Path) -> None:

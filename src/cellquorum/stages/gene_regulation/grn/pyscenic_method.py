@@ -69,6 +69,7 @@ class PyscenicMethod(AnalysisMethod):
         curvature_top_k_targets = int(config.get("curvature_top_k_targets", 15))
         curvature_ricci_alpha = float(config.get("curvature_ricci_alpha", 0.5))
         curvature_plot_top_k = int(config.get("curvature_plot_top_k", 30))
+        cluster_labels = config.get("cluster_labels") or {}
 
         # 2. Resolve group_by generically
         group_by = resolve_group_by(adata, group_by_cfg, default="all")
@@ -247,8 +248,14 @@ class PyscenicMethod(AnalysisMethod):
             common = auc.index.intersection(adata.obs_names)
             if groups is not None and len(common) > 0:
                 for fn, kwargs in (
-                    (rf.plot_rss_panels, {"group_label": group_by, "top_n": top_n}),
-                    (rf.plot_regulon_clustermap, {"group_label": group_by, "top_n": top_n}),
+                    (
+                        rf.plot_rss_panels,
+                        {"group_label": group_by, "top_n": top_n, "cluster_labels": cluster_labels},
+                    ),
+                    (
+                        rf.plot_regulon_clustermap,
+                        {"group_label": group_by, "top_n": top_n, "cluster_labels": cluster_labels},
+                    ),
                 ):
                     # Bound as defaults: the lambda outlives this iteration, and
                     # closing over the loop variables would draw the last pair twice.
@@ -261,7 +268,12 @@ class PyscenicMethod(AnalysisMethod):
                 render_figure(
                     "cell clustermap",
                     lambda: rf.plot_regulon_cell_clustermap(
-                        auc, groups.to_frame(group_by), figures_dir, top_n=top_n
+                        auc,
+                        groups.to_frame(group_by),
+                        figures_dir,
+                        top_n=top_n,
+                        cluster_labels=cluster_labels,
+                        cluster_col=group_by,
                     ),
                     figures=figs,
                     warnings=warnings,
