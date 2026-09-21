@@ -14,6 +14,7 @@ BACKEND_ENV_FILES = {
     "celloracle_env": "celloracle_env.yml",
     "pyscenic_env": "pyscenic_env.yml",
     "hdwgcna_env": "hdwgcna_env.yml",
+    "metacells_env": "metacells_env.yml",
     "scclr": "scclr.yml",
     "sccoda_env": "sccoda_env.yml",
     # Optional: the QC archetype audit. Kept isolated because partipy is GPL-3 and
