@@ -43,6 +43,7 @@ STAGES_THAT_FIT_ACROSS_CELLS: frozenset[str] = frozenset(
         "dimensionality",
         "integration",
         "clustering",
+        "metacells",
     }
 )
 

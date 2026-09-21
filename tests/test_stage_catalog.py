@@ -149,6 +149,11 @@ GOLDEN_STAGE_ORDER = [
     # technical-validity input, so biological claims are only adjudicated once QC's own
     # final verdict exists (docs/design/qc-graded-adjudication.md's stage layout).
     "adjudication",
+    # order=148, after adjudication (145): needs the final qc_state_final/consensus
+    # cell-type label as its color-bar/purity statistic, but must run before
+    # population_identity (150) narrows into per-lineage structure -- this stage
+    # operates at whole-object granularity.
+    "metacells",
     "population_identity",
     # order=155, deliberately AFTER reference_mapping (120) and population_identity
     # (150): the atlas labels it focuses on have to exist, and the populations it
@@ -222,7 +227,7 @@ def test_catalog_order_matches_golden():
 def test_catalog_implemented_set_matches_golden():
     impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
     assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 38
+    assert len(GOLDEN_IMPLEMENTED_SORTED) == 39
 
 
 def test_orders_are_unique_and_ascending():
