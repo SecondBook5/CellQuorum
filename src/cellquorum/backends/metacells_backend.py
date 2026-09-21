@@ -1,0 +1,225 @@
+"""MetaCell2 subprocess backend for CellQuorum.
+
+MetaCell2 (the ``metacells`` PyPI package, Baran & Tanay) has its own C-extension
+build and pinning story that cannot be a direct dependency of CellQuorum. The
+resolution is env isolation, identical in shape to pySCENIC: ``metacells`` lives in
+its own micromamba environment (``metacells_env``), and CellQuorum invokes it as a
+subprocess through the in-env python. This backend runs
+``micromamba run -n <env> python <script> [args...]`` and exchanges data through
+files; it never imports ``metacells`` into the CellQuorum process.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from cellquorum.backends._probe import env_python_module_available, resolve_env, resolve_launcher
+from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+
+# Directory holding the in-env helper script run INSIDE the metacells environment.
+_METACELLS_SCRIPTS_DIR = Path(__file__).parent / "metacells_scripts"
+
+
+@dataclass
+class MetacellsBackend(BaseBackend):
+    """Backend for executing MetaCell2 in an isolated micromamba environment.
+
+    Availability requires (a) a micromamba/conda launcher on PATH and (b) that the
+    ``metacells`` Python module is importable inside the configured environment.
+    Both are checked lazily so the planner can report availability before a run.
+
+    Args:
+        name: Stable backend name.
+        kind: Backend family.
+        env_name: Name of the micromamba environment that has ``metacells`` installed.
+        launcher: Environment launcher executable (micromamba/conda/mamba).
+        timeout_seconds: Timeout for the availability check.
+        script_timeout_seconds: Timeout for helper-script execution.
+        requirement_list: Requirements checked by this backend.
+    """
+
+    name: str = "metacells"
+    kind: str = "external"
+    env_name: str = "metacells_env"
+    launcher: str = "micromamba"
+    timeout_seconds: int = 60
+    script_timeout_seconds: int = 3600
+
+    requirement_list: list[BackendRequirement] = field(
+        default_factory=lambda: [
+            BackendRequirement(
+                name="micromamba",
+                requirement_type="executable",
+                required=True,
+                install_hint="Install micromamba (or set launcher to conda/mamba).",
+            ),
+            BackendRequirement(
+                name="metacells",
+                requirement_type="other",
+                required=True,
+                install_hint=(
+                    "Create an isolated env with MetaCell2: "
+                    "`micromamba create -n metacells_env -c conda-forge -c bioconda "
+                    "'python=3.11' metacells`."
+                ),
+            ),
+        ]
+    )
+
+    def status(self) -> BackendStatus:
+        """Check whether MetaCell2 can run in its isolated environment."""
+
+        missing: list[str] = []
+        warnings: list[str] = []
+        details: dict[str, str | int | bool] = {
+            "env_name": self.env_name,
+            "launcher": self.launcher,
+        }
+
+        if not self._launcher_available():
+            missing.append(self.launcher)
+            return BackendStatus(
+                name=self.name,
+                kind=self.kind,
+                available=False,
+                requirements=self.requirements(),
+                missing=missing,
+                warnings=warnings,
+                details=details,
+            )
+
+        if not self._py_module_available("metacells"):
+            missing.append("metacells")
+
+        available = len(missing) == 0
+        return BackendStatus(
+            name=self.name,
+            kind=self.kind,
+            available=available,
+            requirements=self.requirements(),
+            missing=missing,
+            warnings=warnings,
+            details=details,
+        )
+
+    def run_script(
+        self,
+        script_path: str | Path,
+        args: list[str] | None = None,
+        *,
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run an in-env helper script inside the metacells environment.
+
+        Runs ``<launcher> run -n <env> python <script> [args...]`` and captures
+        output. Non-zero exit codes are returned (not raised) so the caller can
+        inspect stderr and raise a domain-specific error.
+
+        Args:
+            script_path: Path to the helper script (runs inside the metacells env).
+            args: Positional arguments passed to the helper.
+            timeout: Optional timeout override; defaults to script_timeout_seconds.
+
+        Returns:
+            Completed subprocess result with captured stdout and stderr.
+
+        Raises:
+            FileNotFoundError: If the launcher or the helper script is missing.
+        """
+
+        script = Path(script_path)
+        if not script.is_file():
+            raise FileNotFoundError(f"metacells helper script not found: {script}")
+
+        if not self._launcher_available():
+            raise FileNotFoundError(
+                f"Environment launcher '{self.launcher}' was not found on PATH."
+            )
+
+        cmd = [
+            resolve_launcher(self.launcher) or self.launcher,
+            "run",
+            "-n",
+            self.env_name,
+            "python",
+            str(script),
+            *(args or []),
+        ]
+        return subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout if timeout is not None else self.script_timeout_seconds,
+        )
+
+    def _launcher_available(self) -> bool:
+        """Return whether the environment launcher is on PATH."""
+
+        return resolve_launcher(self.launcher) is not None
+
+    def _py_module_available(self, module_name: str) -> bool:
+        """Return whether a Python module is importable inside the configured env.
+
+        Args:
+            module_name: Python module name to probe.
+
+        Returns:
+            True if the module imports, otherwise False.
+
+        Raises:
+            ValueError: If the module name contains unsupported characters.
+        """
+
+        if not self._valid_module_name(module_name):
+            raise ValueError(
+                "Invalid Python module name. Expected letters, numbers, dots, or "
+                f"underscores starting with a letter. Received: {module_name}"
+            )
+
+        return env_python_module_available(
+            resolve_launcher(self.launcher) or self.launcher,
+            self.env_name,
+            module_name,
+            self.timeout_seconds,
+        )
+
+    @staticmethod
+    def _valid_module_name(module_name: str) -> bool:
+        """Validate a Python module name for safe use in a simple import expression."""
+
+        if not isinstance(module_name, str):
+            return False
+        return re.fullmatch(r"[A-Za-z][A-Za-z0-9._]*", module_name) is not None
+
+
+def build_metacells_backend(
+    *,
+    env_name: str | Sequence[str] = "metacells_env",
+    launcher: str = "micromamba",
+    timeout_seconds: int = 60,
+) -> MetacellsBackend:
+    """Build a MetaCell2 subprocess backend."""
+
+    candidates = [env_name] if isinstance(env_name, str) else list(env_name)
+    resolved = resolve_env(resolve_launcher(launcher) or launcher, candidates)
+    return MetacellsBackend(
+        env_name=resolved or candidates[0],
+        launcher=launcher,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+# Path to the bundled in-env helper script, run inside metacells_env.
+RUN_METACELL2_PY = _METACELLS_SCRIPTS_DIR / "run_metacell2.py"
+
+
+__all__ = [
+    "RUN_METACELL2_PY",
+    "MetacellsBackend",
+    "build_metacells_backend",
+]

@@ -149,6 +149,11 @@ micromamba run -n hdwgcna_env Rscript -e \
   'remotes::install_github("smorabit/hdWGCNA", upgrade = "never")'
 ```
 
+### `metacells_env`
+Isolated env for MetaCell2 (the `metacells` package, Baran & Tanay) — has its own
+C-extension build requirements that would conflict with `cellquorum-core`'s pins.
+Invoked exclusively as a subprocess (`MetacellsBackend`), never imported in-process.
+
 ## Locking Environments
 
 Use `make lock` to generate conda-lock files from the environment YAML recipes:

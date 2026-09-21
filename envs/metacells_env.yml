@@ -1,0 +1,14 @@
+name: metacells_env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - pandas
+  - h5py
+  - anndata
+  - pip
+  - pip:
+      - metacells
