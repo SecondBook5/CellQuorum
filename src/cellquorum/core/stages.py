@@ -69,6 +69,11 @@ import cellquorum.stages.annotation.diagnostics.stage  # noqa: F401
 # QC's own final verdict exists.
 import cellquorum.stages.annotation.adjudication.stage  # noqa: F401
 
+# Metacells (148) needs the final qc_state_final/consensus cell-type label as its
+# color-bar/purity statistic, so it runs after adjudication and before population
+# identity narrows into per-lineage structure.
+import cellquorum.stages.metacells.stage  # noqa: F401
+
 # Population identity is evidence-driven (reference > annotation > clusters).
 import cellquorum.stages.annotation.population_identity.stage  # noqa: F401
 import cellquorum.stages.integration.benchmark.stage  # noqa: F401

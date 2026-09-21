@@ -1,5 +1,4 @@
-# Pipeline step (order=148): metacells -- partition cells into near-homogeneous
-# metacells via MetaCell2, feeding atlas-level QC/identity figures.
+# Pipeline step (order=148): metacells — partition cells into near-homogeneous MetaCell2 groups.
 """Metacells stage: dispatches to the configured metacell method."""
 
 from __future__ import annotations

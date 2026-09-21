@@ -26,6 +26,7 @@ that have no module yet.
 | 135 | `qc_finalization` | implemented |
 | 140 | `annotation_diagnostics` | implemented |
 | 145 | `adjudication` | implemented |
+| 148 | `metacells` | implemented |
 | 150 | `population_identity` | implemented |
 | 155 | `subclustering` | implemented |
 | 160 | `integration_benchmark` | implemented |

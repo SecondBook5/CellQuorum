@@ -95,11 +95,21 @@ def test_the_fitted_chain_is_protected_end_to_end() -> None:
     Damaged cells carry stress genes, mitochondrial genes and immediate-early genes. If they
     take part in HVG selection they change the biological manifold *even if* they are later
     excluded from PCA. Protecting only the obvious steps leaves the leak upstream.
+
+    ``metacells`` is deliberately excluded from this particular check. Unlike the
+    reference-building chain below (preprocessing -> feature_selection -> dimensionality ->
+    integration -> clustering), its declared ``fit_scope=ALL`` is not a leak but the stage's
+    whole diagnostic purpose (see its ``cell_scope`` reason in
+    ``cellquorum.stages.metacells.stage``): it characterizes contamination/outlier structure
+    across every cell, including QC-flagged ones, and does not feed the shared biological
+    reference this test protects. ``test_fitting_stage_declares_a_cell_scope`` and
+    ``test_fitting_on_every_cell_requires_a_stated_reason`` already cover it elsewhere.
     """
+    reference_building_chain = STAGES_THAT_FIT_ACROSS_CELLS - {"metacells"}
     scopes = {
         spec.name: spec.cell_scope
         for spec in all_stage_specs()
-        if spec.name in STAGES_THAT_FIT_ACROSS_CELLS
+        if spec.name in reference_building_chain
     }
     leaking = sorted(
         name

@@ -334,6 +334,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "grn",
         "integration",
         "integration_benchmark",
+        "metacells",
         "module_remodeling",
         "multicellular_programs",
         "perturbation",

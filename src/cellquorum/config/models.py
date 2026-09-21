@@ -107,6 +107,9 @@ from cellquorum.stages.integration.config import IntegrationConfig
 # Import the embeddings configuration model.
 from cellquorum.stages.integration.embeddings.config import EmbeddingsConfig
 
+# Import the metacells (MetaCell2) configuration model.
+from cellquorum.stages.metacells.config import MetacellsConfig
+
 # Import the preprocessing configuration model.
 from cellquorum.stages.preprocessing.config import PreprocessingConfig
 
@@ -846,6 +849,7 @@ class StageSelectionConfig(StrictBaseModel):
         discovery: Whether automatic discovery is enabled.
         subclustering: Whether subclustering is enabled.
         adjudication: Whether cluster/state adjudication is enabled.
+        metacells: Whether the metacell (MetaCell2) diagnostic stage is enabled.
         composition: Whether composition analysis is enabled.
         differential_expression: Whether differential expression is enabled.
         differential_state: Whether donor-paired testing of per-cell state/program
@@ -934,6 +938,10 @@ class StageSelectionConfig(StrictBaseModel):
 
     # Store whether cluster/state adjudication is enabled.
     adjudication: bool = True
+
+    # Store whether the metacell (MetaCell2) diagnostic stage is enabled. Opt-in:
+    # a QC/identity diagnostic, not a required pipeline step.
+    metacells: bool = False
 
     # Store whether composition analysis is enabled.
     composition: bool = True
@@ -1100,6 +1108,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store adjudication settings.
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
+
+    # Store metacell (MetaCell2) diagnostic settings.
+    metacells: MetacellsConfig = Field(default_factory=MetacellsConfig)
 
     # Store differential-abundance settings.
     differential_abundance: DifferentialAbundanceConfig = Field(

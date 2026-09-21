@@ -8,6 +8,7 @@ from cellquorum.backends.base import Backend, BackendStatus, BackendUnavailableE
 from cellquorum.backends.celloracle_backend import build_celloracle_backend
 from cellquorum.backends.gpu import build_gpu_backend
 from cellquorum.backends.hdwgcna_backend import build_hdwgcna_backend
+from cellquorum.backends.metacells_backend import build_metacells_backend
 from cellquorum.backends.pyscenic_backend import build_pyscenic_backend
 from cellquorum.backends.python import build_default_python_backends
 from cellquorum.backends.pyucell_backend import build_pyucell_backend
@@ -344,6 +345,9 @@ def build_default_backend_registry(
     # Register the isolated-env pyucell backend (small-signature cell scoring,
     # deliberately reuses celloracle_env -- see pyucell_backend module docstring).
     registry.register(build_pyucell_backend())
+
+    # Register the isolated-env metacells (MetaCell2) backend.
+    registry.register(build_metacells_backend())
 
     # Return the populated backend registry.
     return registry
