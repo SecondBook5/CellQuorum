@@ -8,6 +8,7 @@ with a matplotlib fallback so a missing dep never raises.
 
 from __future__ import annotations
 
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -15,7 +16,7 @@ import pandas as pd
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
-from matplotlib.patches import Wedge
+from matplotlib.patches import FancyArrowPatch, Wedge
 
 from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import get_group_palette as _get_group_palette
@@ -423,7 +424,34 @@ def curvature_network(
     node_curv_col: str = "ricci_curvature",
     top_k: int = 30,
 ) -> Figure:
-    """Curvature-colored network; seeded layout; diverging edge color (center 0)."""
+    """Curvature-colored network: kamada-kawai layout, curved edges, halo'd labels.
+
+    Three changes from the original straight-line/spring-layout version, all
+    aimed at the same complaint on real output (a real regulon network:
+    "not advanced looking, and the labels are being covered by the network
+    rather than clearly standing out"):
+
+    - spring layout, but with room to breathe: k (optimal node distance) is
+      scaled up from networkx's crowded 1/sqrt(n) default. kamada-kawai was
+      tried first and looked cleaner on a well-connected graph, but a real
+      regulon network (confirmed directly) is mostly disconnected TF-target
+      dyads after the top_k trim, not one component -- kamada-kawai
+      collapses each disconnected pair down to near-zero separation and
+      scatters the pairs across mostly-empty canvas, which is worse than
+      the original crowding, not better. Spring layout with a larger k
+      keeps every component reliably legible regardless of how connected
+      the graph turns out to be.
+    - Curved edges (FancyArrowPatch, connectionstyle="arc3") instead of
+      straight lines. Two edges between nearby nodes no longer draw
+      exactly on top of each other, and the slight arcs make individual
+      connections traceable by eye even where several cross near a hub --
+      the standard technique real network-viz tools (Gephi, Cytoscape) use
+      for exactly this readability problem.
+    - Labels get a white stroke halo (same technique already used for
+      module_umap_plot's hub labels) so text stays legible over a busy
+      tangle of edges instead of visually merging with whatever crosses
+      behind it.
+    """
     if edges is None or edges.empty:
         return _empty_fig()
     # Guard for missing weight_col (differential curvature frames lack it)
@@ -443,41 +471,69 @@ def curvature_network(
         )
     if G.number_of_edges() == 0:
         return _empty_fig()
-    pos = nx.spring_layout(G, seed=0, weight="weight")
+    n_nodes = max(G.number_of_nodes(), 1)
+    pos = nx.spring_layout(G, seed=0, weight="weight", k=2.2 / n_nodes**0.5, iterations=100)
     curvs = np.array([d["curv"] for _, _, d in G.edges(data=True)], dtype=float)
     norm = signed_norm(curvs)
     cmap = plt.get_cmap("RdBu_r")
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=(9, 8))
+    wmax = (curvs.size and float(e[weight_col].max())) or 1.0
     for (u, v, d), c in zip(G.edges(data=True), curvs, strict=False):
-        x0, y0 = pos[u]
-        x1, y1 = pos[v]
-        wmax = curvs.size and float(e[weight_col].max()) or 1.0
-        ax.plot(
-            [x0, x1],
-            [y0, y1],
+        arrow = FancyArrowPatch(
+            pos[u],
+            pos[v],
+            connectionstyle="arc3,rad=0.12",
             color=cmap(norm(c)),
-            linewidth=0.5 + 2.5 * d["weight"] / wmax,
-            alpha=0.8,
+            linewidth=0.5 + 2.3 * d["weight"] / wmax,
+            alpha=0.75,
             zorder=1,
+            shrinkA=0,
+            shrinkB=0,
+            arrowstyle="-",
         )
+        ax.add_patch(arrow)
     ncurv = {}
     if nodes is not None and not nodes.empty and node_curv_col in nodes.columns:
         node_strs = nodes["node"].astype(str)
         node_vals = nodes[node_curv_col].astype(float)
         ncurv = dict(zip(node_strs, node_vals, strict=False))
+    # Node size carries degree -- a hub reads as a hub at a glance, not just
+    # from counting converging edges.
+    degree = dict(G.degree())
+    max_degree = max(degree.values()) if degree else 1
+    label_texts = []
     for n, (x, y) in pos.items():
+        size = 90.0 + 220.0 * (degree.get(n, 1) / max_degree) if max_degree else 140.0
         ax.scatter(
             [x],
             [y],
-            s=120,
+            s=size,
             color=cmap(norm(ncurv.get(n, 0.0))),
-            edgecolor="0.2",
-            linewidth=0.5,
-            zorder=2,
+            edgecolor="0.15",
+            linewidth=0.8,
+            zorder=3,
         )
-        ax.text(x, y, str(n), fontsize=7, ha="center", va="center")
-    fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=curvature_col)
+        t = ax.text(x, y, str(n), fontsize=7.5, ha="center", va="center", zorder=4)
+        t.set_path_effects([pe.withStroke(linewidth=2.2, foreground="white")])
+        label_texts.append(t)
+    # A wider k still leaves close-together nodes (a real, dense TF/target
+    # pair) with their labels dead-centered on the marker and touching each
+    # other -- the same repulsion module_umap_plot's hub labels already use.
+    try:
+        from adjustText import adjust_text
+
+        adjust_text(
+            label_texts,
+            ax=ax,
+            only_move={"points": "xy", "text": "xy"},
+            arrowprops=dict(arrowstyle="-", color="#999", lw=0.4),
+        )
+    except Exception:
+        pass  # labels still render, just un-repelled
+    fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=curvature_col, shrink=0.8)
     ax.set_axis_off()
+    ax.margins(0.1)
+    fig.tight_layout()
     return fig
 
 
