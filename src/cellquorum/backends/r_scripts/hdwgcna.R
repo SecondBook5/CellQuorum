@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 # hdWGCNA co-expression modules -- config-driven, biology-free port.
 # Usage: Rscript hdwgcna.R <h5ad> <out_dir> <group_by> <condition_col> \
-#        <n_hvg> <k> <min_cells> <soft_power|NA> <seed>
+#        <n_hvg> <k> <min_cells> <soft_power|NA> <seed> <fig_dir>
 # Graceful-skip: on any failure writes header-only modules.csv + hdwgcna_SKIPPED.txt, quit(status=0).
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -11,7 +11,12 @@ n_hvg <- as.integer(args[[5]]); k <- as.integer(args[[6]])
 min_cells <- as.integer(args[[7]])
 soft_power <- suppressWarnings(as.integer(args[[8]]))  # NA -> auto
 seed <- as.integer(args[[9]])
+# figures/, not results/ -- matches the split every other CellQuorum stage
+# uses; only this script's own raw-data CSVs (modules/eigengenes/etc.)
+# belong in out_dir.
+fig_dir <- if (length(args) >= 10) args[[10]] else out_dir
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
 out_csv <- file.path(out_dir, "modules.csv")
 
 skip <- function(reason) {
@@ -53,6 +58,32 @@ tryCatch({
   seu <- tryCatch(ModuleConnectivity(ModuleEigengenes(seu)), error = function(e) {
     message(sprintf("[hdwgcna] eigengenes/connectivity failed (%s)", conditionMessage(e))); seu })
   seu <- tryCatch(ResetModuleNames(seu, new_name = "M"), error = function(e) seu)
+
+  # Gene dendrogram with the module color bar -- hdWGCNA's own canonical
+  # figure for "did the clustering find real modules". ConstructNetwork()
+  # above already computed and stored the dendrogram; this just renders it,
+  # same graceful-skip-on-failure pattern as every other tryCatch here.
+  tryCatch({
+    pdf(file.path(fig_dir, "gene_dendrogram.pdf"), width = 10, height = 6)
+    PlotDendrogram(seu, main = "hdWGCNA gene dendrogram")
+    dev.off()
+  }, error = function(e) {
+    message(sprintf("[hdwgcna] dendrogram skipped: %s", conditionMessage(e)))
+  })
+
+  # Per-module network plots -- hdWGCNA's own canonical "networks" figure
+  # (one PDF per module: top hub genes + their strongest connections), a
+  # ModuleConnectivity kME map rather than the CellQuorum-side Ollivier-Ricci
+  # curvature network module_curvature.py already renders separately.
+  # ModuleNetworkPlot writes its own files into outdir; nothing to capture
+  # here beyond letting it run.
+  tryCatch({
+    net_dir <- file.path(fig_dir, "module_networks")
+    dir.create(net_dir, showWarnings = FALSE, recursive = TRUE)
+    ModuleNetworkPlot(seu, outdir = net_dir)
+  }, error = function(e) {
+    message(sprintf("[hdwgcna] module network plots skipped: %s", conditionMessage(e)))
+  })
 
   mods <- GetModules(seu)
   keep <- intersect(c("gene_name", "module", "color", grep("^kME_", colnames(mods), value = TRUE)),

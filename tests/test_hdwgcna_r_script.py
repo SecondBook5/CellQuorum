@@ -32,3 +32,21 @@ def test_script_reads_and_writes_expected_files() -> None:
     assert "modules.csv" in text
     assert "eigengenes.csv" in text
     assert "module_umap.csv" in text
+
+
+def test_script_renders_hdwgcnas_own_dendrogram_and_module_networks() -> None:
+    """ConstructNetwork() already computes the gene dendrogram, and
+
+    ModuleConnectivity() the per-module hub connectivity -- both are
+    hdWGCNA's own canonical figures (PlotDendrogram/ModuleNetworkPlot), and
+    neither was ever rendered, confirmed live: a real fibroblast run had no
+    dendrogram or network output anywhere, only the CellQuorum-side
+    Ollivier-Ricci curvature network and module UMAP.
+    """
+    text = HDWGCNA_R.read_text()
+    assert "PlotDendrogram" in text
+    assert "gene_dendrogram" in text
+    assert "ModuleNetworkPlot" in text
+    # Both render failures degrade gracefully like every other step here,
+    # not abort the whole script.
+    assert text.count("tryCatch") >= 5

@@ -155,6 +155,7 @@ class HdwgcnaMethod(AnalysisMethod):
             str(min_cells),
             "NA" if soft_power is None else str(soft_power),
             str(seed),
+            str(figures_dir),
         ]
 
         # 7. Run the hdWGCNA R script
@@ -268,6 +269,32 @@ class HdwgcnaMethod(AnalysisMethod):
                     description="hdWGCNA co-expression figure",
                 )
             )
+
+        # hdWGCNA's own canonical figures, rendered directly by the R script
+        # (not post-processed from a CSV like the two above) -- registered
+        # here rather than via render_figure/figs since there's no Python
+        # call to wrap, just files to discover after the script succeeded.
+        dendrogram_pdf = figures_dir / "gene_dendrogram.pdf"
+        if dendrogram_pdf.exists():
+            artifacts.append(
+                StageArtifact(
+                    name="figure_gene_dendrogram",
+                    path=dendrogram_pdf,
+                    kind="figure",
+                    description="hdWGCNA gene dendrogram with module color bar",
+                )
+            )
+        module_networks_dir = figures_dir / "module_networks"
+        if module_networks_dir.is_dir():
+            for net_path in sorted(module_networks_dir.glob("*.pdf")):
+                artifacts.append(
+                    StageArtifact(
+                        name=f"figure_{net_path.stem}",
+                        path=net_path,
+                        kind="figure",
+                        description="hdWGCNA per-module hub-gene network",
+                    )
+                )
 
         # 11. Build metrics
         # Exclude the unassigned "grey" bin (WGCNA/hdWGCNA label for genes not

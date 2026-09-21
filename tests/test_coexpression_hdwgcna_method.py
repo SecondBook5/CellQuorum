@@ -231,6 +231,50 @@ def test_success_path_renders_module_curvature_figure(
     assert all(a.path.exists() for a in curvature_figs)
 
 
+def test_success_path_registers_dendrogram_and_module_network_figures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """hdWGCNA's own canonical figures (PlotDendrogram, ModuleNetworkPlot) are
+
+    rendered directly by the R script into figures_dir (the new arg this
+    stage passes), not post-processed from a CSV -- confirmed live that
+    neither was ever produced or registered before this fix, only the
+    module UMAP and the CellQuorum-side curvature network. The Python side
+    just has to discover and register whatever the R script wrote.
+    """
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame({"gene": ["G0", "G1"], "module": ["M1", "M2"]}).to_csv(
+                out_dir / "modules.csv", index=False
+            )
+            fig_dir = Path(_args[9])
+            fig_dir.mkdir(parents=True, exist_ok=True)
+            (fig_dir / "gene_dendrogram.pdf").write_bytes(b"%PDF-fake")
+            net_dir = fig_dir / "module_networks"
+            net_dir.mkdir(parents=True, exist_ok=True)
+            (net_dir / "M1.pdf").write_bytes(b"%PDF-fake")
+            (net_dir / "M2.pdf").write_bytes(b"%PDF-fake")
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr="")
+
+    m = HdwgcnaMethod()
+    res = m._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+    from cellquorum.core.stage import StageResult
+
+    assert isinstance(res, StageResult)
+    dendro = [a for a in res.artifacts if a.name == "figure_gene_dendrogram"]
+    assert len(dendro) == 1 and dendro[0].path.exists()
+    net_figs = [a for a in res.artifacts if a.name in {"figure_M1", "figure_M2"}]
+    assert len(net_figs) == 2
+    assert all(a.path.exists() for a in net_figs)
+
+
 def test_input_contract_does_not_require_group_by() -> None:
     """A configured-but-absent group_by must not hard-fail the contract.
 
