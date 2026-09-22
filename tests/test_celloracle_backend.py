@@ -66,6 +66,56 @@ def test_run_script_builds_micromamba_argv(monkeypatch, tmp_path: Path) -> None:
     assert captured["check"] is False
 
 
+def test_run_script_caps_blas_threads_to_avoid_joblib_oversubscription(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """CellOracle's get_links() runs joblib.Parallel(n_jobs=-1) internally with no
+    thread cap of its own. Each of those worker processes then makes its own
+    threaded BLAS calls (numpy/scipy), and unconstrained thread-per-process times
+    process-per-core oversubscribes the machine -- a well-documented cause of
+    joblib/loky worker crashes. Reproduced live: get_links() on the real
+    61,608-cell fibroblast object segfaulted (exit 139) with loky's
+    resource_tracker reporting thousands of leaked semaphore/folder objects,
+    the signature of workers dying mid-fit. run_script must cap BLAS threads to
+    1 per worker so process-level parallelism is the only parallelism.
+    """
+    script = tmp_path / "s.py"
+    script.write_text("print('hi')\n")
+    b = build_celloracle_backend()
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        captured["env"] = kwargs.get("env")
+
+        class R:  # noqa: D401
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return R()
+
+    monkeypatch.setattr(
+        "cellquorum.backends.celloracle_backend.resolve_launcher",
+        lambda _name: "/usr/bin/micromamba",
+    )
+    monkeypatch.setattr("cellquorum.backends.celloracle_backend.subprocess.run", fake_run)
+    monkeypatch.setenv("SOME_UNRELATED_VAR", "keep-me")
+
+    b.run_script(script, ["--h5ad", "x.h5ad"])
+
+    env = captured["env"]
+    assert env is not None
+    for var in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    ):
+        assert env[var] == "1"
+    assert env["SOME_UNRELATED_VAR"] == "keep-me"  # inherits the rest of the environment
+
+
 def test_run_script_missing_script_raises(tmp_path: Path) -> None:
     b = build_celloracle_backend()
     with pytest.raises(FileNotFoundError):

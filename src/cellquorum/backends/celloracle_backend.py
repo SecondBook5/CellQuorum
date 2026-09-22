@@ -10,6 +10,7 @@ files; it never imports CellOracle into the CellQuorum process.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -22,6 +23,19 @@ from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBack
 
 # Directory holding the in-env helper scripts run INSIDE the celloracle environment.
 _CELLORACLE_SCRIPTS_DIR = Path(__file__).parent / "celloracle_scripts"
+
+# get_links() runs joblib.Parallel(n_jobs=-1) internally with no thread cap of its
+# own; each worker process then makes its own threaded BLAS calls, and unconstrained
+# threads-per-process times processes-per-core oversubscribes the machine. Confirmed
+# live: get_links() on a real 61,608-cell object segfaulted (exit 139) with loky's
+# resource_tracker reporting thousands of leaked semaphore/folder objects -- the
+# signature of worker processes dying mid-fit under memory/thread pressure.
+_THREAD_CAP_ENV = {
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+}
 
 
 @dataclass
@@ -155,6 +169,7 @@ class CellOracleBackend(BaseBackend):
             capture_output=True,
             text=True,
             timeout=timeout if timeout is not None else self.script_timeout_seconds,
+            env={**os.environ, **_THREAD_CAP_ENV},
         )
 
     def _launcher_available(self) -> bool:
