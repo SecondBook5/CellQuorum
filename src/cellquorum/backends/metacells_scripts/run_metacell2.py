@@ -33,6 +33,37 @@ import sys
 from pathlib import Path
 
 
+def mapping_failure_reason(n_metacells_produced: int, n_mapped_cells: int) -> str | None:
+    """Detect the "MetaCell2 succeeded but the per-cell mapping came back empty" case.
+
+    A small, separately-callable/testable helper: if `collect_metacells`
+    genuinely produced metacells but zero cells could be mapped to any of
+    them (e.g. `clean.obs["metacell_name"]` is absent because a different
+    MetaCell2 API version names or omits that column), the per-cell
+    assignment table would be 100% "Outliers" while the run still looks
+    superficially successful (exit 0, real metacell_adata.h5ad on disk).
+    That is a real pipeline failure, not a graceful skip, and must not pass
+    silently.
+
+    Args:
+        n_metacells_produced: `metacell_adata.n_obs` -- how many metacells
+            MetaCell2's own pipeline actually produced.
+        n_mapped_cells: Count of assignment rows whose `metacell_id` is a
+            real metacell (i.e. not the "Outliers" sentinel).
+
+    Returns:
+        A human-readable failure reason if this failure mode is detected,
+        else None.
+    """
+    if n_metacells_produced > 0 and n_mapped_cells == 0:
+        return (
+            f"MetaCell2 produced {n_metacells_produced} metacells but no cells "
+            "could be mapped to them -- clean.obs may be missing the expected "
+            "'metacell_name' column"
+        )
+    return None
+
+
 def _write_empty(out_dir: Path, reason: str) -> None:
     """Write the expected empty outputs for a harmless configuration/data skip."""
 
@@ -158,6 +189,19 @@ def main(argv: list[str]) -> int:
             f"MetaCell2 pipeline run failed: {exc}\n", encoding="utf-8"
         )
         print(f"[metacells] FAILED: {exc}", file=sys.stderr)
+        return 1
+
+    # ---- Post-pipeline sanity check: metacells produced but unmapped ---- #
+    # Not an exception, so it lives outside the try/except above as its own
+    # explicit check -- a distinct real-pipeline-failure path, not a graceful
+    # skip, reusing the same write-FAILED-file-and-return-1 pattern.
+    n_mapped_cells = int((assignments["metacell_id"] != "Outliers").sum())
+    failure_reason = mapping_failure_reason(metacell_adata.n_obs, n_mapped_cells)
+    if failure_reason is not None:
+        (out_dir / "metacells_FAILED.txt").write_text(
+            f"MetaCell2 pipeline run failed: {failure_reason}\n", encoding="utf-8"
+        )
+        print(f"[metacells] FAILED: {failure_reason}", file=sys.stderr)
         return 1
 
     print(
