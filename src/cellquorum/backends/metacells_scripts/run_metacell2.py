@@ -135,6 +135,13 @@ def main(argv: list[str]) -> int:
 
     if layer != "X":
         full.X = full.layers[layer]
+    # MetaCell2 internals (metacells.tools.downsample.downsample_cells) assert
+    # the data is float32 -- confirmed live against metacells 0.9.5: real
+    # int64/int32 counts (the common on-disk dtype) fail that assertion with
+    # no informative message, deep inside the pipeline. Synthetic data built
+    # with float32 by construction never exercised this.
+    if full.X.dtype != np.float32:
+        full.X = full.X.astype(np.float32)
 
     try:
         mc.ut.set_name(full, "full")
