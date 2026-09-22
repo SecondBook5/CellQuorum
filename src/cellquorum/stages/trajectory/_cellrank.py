@@ -302,15 +302,33 @@ def build_kernel(
     notes: list[str] = []
     warnings: list[str] = []
 
-    # 1. Ensure a neighbor graph exists (needed for ConnectivityKernel).
-    if "connectivities" not in adata.obsp:
+    # 1. Ensure a neighbor graph exists (needed for ConnectivityKernel) and that
+    # every row has at least one positive-weight edge. A graph inherited from an
+    # upstream, differently-scoped object (e.g. the whole atlas before
+    # subsetting to one lineage) can carry isolated rows for cells whose
+    # nearest neighbors were all of a now-excluded cell type. CellRank's
+    # transition-matrix normalization divides by each row's sum, so a
+    # zero-degree row does not degrade gracefully -- it raises "Transition
+    # matrix is not row stochastic". Detected live: 7 of 61,608 fibroblasts in
+    # a lineage-subsetted atlas had all-zero rows after subsetting.
+    n_isolated = 0
+    if "connectivities" in adata.obsp:
+        row_sums = np.asarray(adata.obsp["connectivities"].sum(axis=1)).ravel()
+        n_isolated = int((row_sums <= 0).sum())
+    if "connectivities" not in adata.obsp or n_isolated:
         rep = _resolve_use_rep(adata, use_rep, use_rep_fallback)
         if rep is None:
             raise NoKernelInput("no connectivities and no usable representation")
         try:
             np.random.seed(seed)
             sc.pp.neighbors(adata, use_rep=rep, n_neighbors=n_neighbors)
-            notes.append(f"built neighbor graph on '{rep}'")
+            if n_isolated:
+                notes.append(
+                    f"rebuilt neighbor graph on '{rep}': {n_isolated} isolated "
+                    "(zero-degree) row(s) in the inherited connectivity graph"
+                )
+            else:
+                notes.append(f"built neighbor graph on '{rep}'")
         except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
             raise NoKernelInput(f"neighbor graph construction failed on '{rep}': {exc}") from exc
 

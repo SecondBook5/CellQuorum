@@ -82,6 +82,41 @@ def test_build_kernel_builds_graph_when_connectivities_absent():
     assert kernel is not None
 
 
+def test_build_kernel_rebuilds_graph_when_isolated_nodes_present():
+    """An inherited connectivity graph with zero-degree rows must be rebuilt,
+    not handed to ConnectivityKernel as-is -- CellRank's transition-matrix
+    normalization requires every row to sum to a positive value, and a
+    lineage-subsetted object can inherit a whole-atlas graph where some cells'
+    only neighbors were of a different, now-excluded cell type. Reproduces a
+    real failure: 7 of 61,608 fibroblasts had all-zero connectivity rows after
+    subsetting from the full lymphedema atlas, and ConnectivityKernel raised
+    'Transition matrix is not row stochastic' rather than degrading gracefully.
+    """
+    a = _make_adata(with_graph=True)
+    conn = a.obsp["connectivities"].tolil()
+    conn.rows[0] = []
+    conn.data[0] = []
+    conn[:, 0] = 0
+    a.obsp["connectivities"] = conn.tocsr()
+    row_sums = np.asarray(a.obsp["connectivities"].sum(axis=1)).ravel()
+    assert row_sums[0] == 0  # sanity check the fixture actually has an isolated node
+
+    kernel, info = _cellrank.build_kernel(
+        a,
+        pseudotime_key="pseudotime",
+        cytotrace_key=None,
+        use_rep=None,
+        use_rep_fallback=["X_pca"],
+        n_neighbors=15,
+        weight_connectivities=0.2,
+        seed=0,
+    )
+    assert kernel is not None
+    assert any("isolated" in n for n in info["notes"])
+    rebuilt_row_sums = np.asarray(a.obsp["connectivities"].sum(axis=1)).ravel()
+    assert (rebuilt_row_sums > 0).all()
+
+
 def test_build_kernel_raises_no_kernel_input():
     a = _make_adata(with_graph=False)
     del a.obsm["X_pca"]  # no graph and no usable rep
