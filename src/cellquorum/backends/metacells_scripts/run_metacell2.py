@@ -147,15 +147,32 @@ def main(argv: list[str]) -> int:
             excluded_gene_patterns=["MT-.*", "RP[LS].*"],
             random_seed=seed,
         )
-        mc.pl.exclude_cells(full, properly_sampled_min_cell_total=None)
+        mc.pl.exclude_cells(
+            full,
+            properly_sampled_min_cell_total=None,
+            properly_sampled_max_cell_total=None,
+            properly_sampled_max_excluded_genes_fraction=None,
+        )
         clean = mc.pl.extract_clean_data(full, name="clean")
+
+        # divide_and_conquer_pipeline requires the lateral/noisy gene masks to
+        # already exist (it combines them with the selected-gene mask); no
+        # genes are actually excluded here (names/patterns left unset), this
+        # only satisfies that precondition with an empty mask -- confirmed
+        # live against metacells 0.9.5: omitting these produces a
+        # "KeyError: unknown mask data: lateral_gene" deep inside pipeline
+        # internals rather than failing at the call site.
+        mc.pl.mark_lateral_genes(clean)
+        mc.pl.mark_noisy_genes(clean)
 
         mc.pl.divide_and_conquer_pipeline(
             clean,
             target_metacell_size=target_metacell_size,
             random_seed=seed,
         )
-        metacell_adata = mc.pl.collect_metacells(clean, name="metacells")
+        # random_seed has no default in this API version; omitting it
+        # triggers a TypeError, confirmed live against metacells 0.9.5.
+        metacell_adata = mc.pl.collect_metacells(clean, name="metacells", random_seed=seed)
 
         # ---- Build the per-cell assignment table, including Outliers ---- #
         n_umis = np.asarray(full.X.sum(axis=1)).ravel()
