@@ -84,3 +84,25 @@ def test_heatmap_only_plots_top_variance_genes() -> None:
     ytick_labels = {t.get_text() for t in ax.get_yticklabels()}
     assert ytick_labels == {f"GENE_{i}" for i in range(n_total - n_keep, n_total)}
     assert len(ytick_labels) == n_keep
+
+
+def test_many_metacell_columns_skips_x_tick_labels() -> None:
+    """At real atlas scale (thousands of metacells), an x-tick label on every
+    column is an illegible solid band of text -- confirmed live against a
+    4297-metacell atlas_v3 run. Above max_labeled_columns, drop the column
+    labels entirely rather than render them unreadably."""
+
+    n = 200
+    nodes = pd.DataFrame(
+        {
+            "metacell_id": [f"MC{i}" for i in range(n)],
+            "dominant_group": ["A" if i % 2 else "B" for i in range(n)],
+            "n_cells": [10] * n,
+        }
+    )
+    expr = pd.DataFrame(
+        {f"MC{i}": [float(i), -float(i)] for i in range(n)}, index=["GENE_A", "GENE_B"]
+    )
+    fig = _build_heatmap_figure(expr, nodes)
+    ax = fig.axes[0]
+    assert len(ax.get_xticklabels()) == 0

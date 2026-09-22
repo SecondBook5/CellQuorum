@@ -18,8 +18,15 @@ from cellquorum.stages.metacells.viz.heatmap import ordered_metacell_columns
 from cellquorum.visualization import figstyle
 
 
-def _build_composition_figure(assignments: pd.DataFrame, nodes: pd.DataFrame) -> Figure:
-    """Draw the composition-bar figure and return it unsaved (for geometry tests)."""
+def _build_composition_figure(
+    assignments: pd.DataFrame, nodes: pd.DataFrame, *, max_labeled_columns: int = 80
+) -> Figure:
+    """Draw the composition-bar figure and return it unsaved (for geometry tests).
+
+    Above `max_labeled_columns`, x-axis tick labels are dropped entirely --
+    confirmed live against a real 4297-metacell atlas run that a label on
+    every column is a solid, illegible band of text, not a readable axis.
+    """
 
     order = ordered_metacell_columns(nodes)
     groups = sorted(assignments["group"].astype(str).unique())
@@ -42,8 +49,11 @@ def _build_composition_figure(assignments: pd.DataFrame, nodes: pd.DataFrame) ->
         ax.bar(pct.index, pct[g], bottom=bottom, color=color_by_group[g], width=0.9, label=g)
         bottom = bottom + pct[g]
 
-    ax.set_xticks(range(len(order)))
-    ax.set_xticklabels(order, rotation=90, fontsize=6)
+    if len(order) <= max_labeled_columns:
+        ax.set_xticks(range(len(order)))
+        ax.set_xticklabels(order, rotation=90, fontsize=6)
+    else:
+        ax.set_xticks([])
     ax.set_ylabel("% of cells", fontsize=9)
     ax.set_title("Metacell composition", fontsize=13, fontweight="bold")
     ax.legend(

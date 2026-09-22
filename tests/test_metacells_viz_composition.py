@@ -47,3 +47,29 @@ def test_column_order_matches_heatmap_ordering() -> None:
     ax = fig.axes[0]
     tick_order = [lbl.get_text() for lbl in ax.get_xticklabels()]
     assert tick_order == ordered_metacell_columns(_nodes())
+
+
+def test_many_metacell_columns_skips_x_tick_labels() -> None:
+    """At real atlas scale (thousands of metacells), an x-tick label on every
+    column is an illegible solid band of text -- confirmed live against a
+    4297-metacell atlas_v3 run. Above max_labeled_columns, drop the column
+    labels entirely rather than render them unreadably."""
+    from cellquorum.stages.metacells.viz.composition import _build_composition_figure
+
+    n = 200
+    nodes = pd.DataFrame(
+        {
+            "metacell_id": [f"MC{i}" for i in range(n)],
+            "dominant_group": ["A" if i % 2 else "B" for i in range(n)],
+            "n_cells": [10] * n,
+        }
+    )
+    rows = [
+        {"cell_id": f"MC{i}_{j}", "metacell_id": f"MC{i}", "group": "A" if i % 2 else "B"}
+        for i in range(n)
+        for j in range(5)
+    ]
+    assignments = pd.DataFrame(rows)
+    fig = _build_composition_figure(assignments, nodes)
+    ax = fig.axes[0]
+    assert len(ax.get_xticklabels()) == 0

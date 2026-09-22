@@ -63,8 +63,15 @@ def top_variable_genes(expr: pd.DataFrame, n_genes: int) -> pd.DataFrame:
     return expr.loc[order[:n_genes]]
 
 
-def _build_heatmap_figure(expr: pd.DataFrame, nodes: pd.DataFrame, *, n_genes: int = 50) -> Figure:
-    """Draw the heatmap and return it unsaved (for geometry tests)."""
+def _build_heatmap_figure(
+    expr: pd.DataFrame, nodes: pd.DataFrame, *, n_genes: int = 50, max_labeled_columns: int = 80
+) -> Figure:
+    """Draw the heatmap and return it unsaved (for geometry tests).
+
+    Above `max_labeled_columns`, x-axis tick labels are dropped entirely --
+    confirmed live against a real 4297-metacell atlas run that a label on
+    every column is a solid, illegible band of text, not a readable axis.
+    """
 
     expr = top_variable_genes(expr, n_genes)
     order = [c for c in ordered_metacell_columns(nodes) if c in expr.columns]
@@ -72,8 +79,11 @@ def _build_heatmap_figure(expr: pd.DataFrame, nodes: pd.DataFrame, *, n_genes: i
 
     fig, ax = plt.subplots(figsize=figstyle.FIGSIZE["heatmap"])
     im = ax.imshow(ordered_expr.to_numpy(), aspect="auto", cmap="viridis", interpolation="nearest")
-    ax.set_xticks(np.arange(len(order)))
-    ax.set_xticklabels(order, rotation=90, fontsize=6)
+    if len(order) <= max_labeled_columns:
+        ax.set_xticks(np.arange(len(order)))
+        ax.set_xticklabels(order, rotation=90, fontsize=6)
+    else:
+        ax.set_xticks([])
     ax.set_yticks(np.arange(len(ordered_expr.index)))
     ax.set_yticklabels(ordered_expr.index, fontsize=6)
     ax.set_title("Metacell gene expression", fontsize=13, fontweight="bold")
