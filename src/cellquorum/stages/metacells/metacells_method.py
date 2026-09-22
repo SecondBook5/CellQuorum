@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 
 import anndata as ad
+import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 
 from cellquorum.backends.metacells_backend import RUN_METACELL2_PY
 from cellquorum.core.contracts.data_contract import DataContract
@@ -24,6 +26,64 @@ from cellquorum.stages.metacells.viz.qc_scatter import (
     plot_metacell_qc_unclassified_vs_size,
 )
 from cellquorum.visualization.figstyle import render_figure
+
+
+def _top_k_positive_edges(corr: pd.DataFrame, k: int = 8) -> pd.DataFrame:
+    """Build an edge list from each node's top-k strongest positive correlations.
+
+    Drops non-positive and NaN correlations (a negative or undefined
+    correlation is not a "similarity" edge) and keeps at most `k` edges per
+    node, rather than every pair -- an unthresholded full pairwise graph is
+    O(n^2) edges, which is both meaningless (includes anti-correlated pairs)
+    and unusable to render once metacell counts reach the hundreds to
+    thousands. Fully vectorized over the correlation matrix (no Python-level
+    loop over nodes or pairs).
+
+    Args:
+        corr: Square, symmetric correlation matrix (metacell_id x metacell_id).
+        k: Max edges kept per node before undirected deduplication.
+
+    Returns:
+        DataFrame with columns source, target, weight -- weight always > 0,
+        at most k edges contributed per node before dedup (so at most
+        roughly k * n rows total, never n*(n-1)/2).
+    """
+    if corr.empty:
+        return pd.DataFrame(columns=["source", "target", "weight"])
+    labels = corr.columns.to_numpy()
+    n = len(labels)
+    k_eff = min(k, n - 1) if n > 1 else 0
+    if k_eff <= 0:
+        return pd.DataFrame(columns=["source", "target", "weight"])
+
+    values = corr.to_numpy(dtype=float).copy()
+    np.fill_diagonal(values, np.nan)
+    values = np.where(values > 0, values, np.nan)
+
+    # Top-k column indices per row, descending by value (NaNs sort last).
+    sort_key = np.where(np.isnan(values), -np.inf, values)
+    order = np.argsort(sort_key, axis=1)[:, ::-1][:, :k_eff]
+    row_idx = np.repeat(np.arange(n), k_eff)
+    col_idx = order.ravel()
+    weights = values[row_idx, col_idx]
+
+    valid = ~np.isnan(weights)
+    row_idx, col_idx, weights = row_idx[valid], col_idx[valid], weights[valid]
+    if row_idx.size == 0:
+        return pd.DataFrame(columns=["source", "target", "weight"])
+
+    edges = pd.DataFrame({"source": labels[row_idx], "target": labels[col_idx], "weight": weights})
+    # Dedupe undirected pairs -- a top-k edge often gets contributed by both
+    # of its endpoints; keep one row per unordered pair.
+    pair = np.sort(np.stack([row_idx, col_idx], axis=1), axis=1)
+    edges["_pair"] = list(map(tuple, pair))
+    edges = (
+        edges.sort_values("weight", ascending=False)
+        .drop_duplicates(subset="_pair")
+        .drop(columns="_pair")
+        .reset_index(drop=True)
+    )
+    return edges
 
 
 class MetacellsMethod(AnalysisMethod):
@@ -130,7 +190,12 @@ class MetacellsMethod(AnalysisMethod):
             )
             return self._skip(reason)
         try:
-            assignments = pd.read_csv(assignments_csv)
+            # Explicit string dtypes: letting pandas infer types lets numeric-
+            # looking barcodes (e.g. "1000", "1001", ...) come back as int64,
+            # which then silently fails to match `adata.obs_names` (always
+            # str) in the `.map()` join below -- every cell would fall
+            # through to "Outliers" with no error and no warning.
+            assignments = pd.read_csv(assignments_csv, dtype={"cell_id": str, "metacell_id": str})
         except Exception as exc:
             return self._skip("could not read assignments CSV", error=str(exc)[:500])
         if len(assignments) == 0:
@@ -138,6 +203,21 @@ class MetacellsMethod(AnalysisMethod):
 
         # 5. Write metacell_id onto the main object
         id_by_cell = dict(zip(assignments["cell_id"], assignments["metacell_id"], strict=False))
+        matched = set(adata.obs_names) & set(assignments["cell_id"])
+        has_real_assignments = (assignments["metacell_id"] != "Outliers").any()
+        if has_real_assignments and len(matched) < max(1, int(0.01 * adata.n_obs)):
+            # The assignments table has real (non-Outliers) metacells, but
+            # almost none of its cell_id values actually match adata's
+            # obs_names -- the join below would silently fail and write a
+            # plausible-looking obs column that is 100% "Outliers". That is
+            # a wrong answer, not a legitimate result, so skip loudly rather
+            # than proceed.
+            return self._skip(
+                "assignments cell_id values do not match adata.obs_names "
+                f"({len(matched)}/{adata.n_obs} matched) -- join would silently fail",
+                n_matched=len(matched),
+                n_obs=int(adata.n_obs),
+            )
         adata.obs["metacell_id"] = (
             adata.obs_names.to_series().map(id_by_cell).fillna("Outliers").astype(str).to_numpy()
         )
@@ -166,8 +246,9 @@ class MetacellsMethod(AnalysisMethod):
         if mc_adata_path.exists():
             try:
                 mc_adata = ad.read_h5ad(mc_adata_path)
+                mc_x = mc_adata.X.toarray() if sp.issparse(mc_adata.X) else mc_adata.X
                 expr = pd.DataFrame(
-                    mc_adata.X.T if hasattr(mc_adata.X, "T") else mc_adata.X,
+                    mc_x.T if hasattr(mc_x, "T") else mc_x,
                     index=mc_adata.var_names,
                     columns=mc_adata.obs_names,
                 )
@@ -176,16 +257,14 @@ class MetacellsMethod(AnalysisMethod):
 
         # Metacell-to-metacell similarity from shared nearest hub genes -- a
         # simple correlation graph over the pseudobulk expression, thresholded
-        # to the top edges per node, since MetaCell2's own umap/graph object is
-        # not persisted by the in-env script (only the collected pseudobulk is).
+        # to the top-k strongest positive-correlation edges per node (k=8),
+        # since MetaCell2's own umap/graph object is not persisted by the
+        # in-env script (only the collected pseudobulk is). An unthresholded
+        # full pairwise graph is O(n^2) edges -- unreadable and unusably slow
+        # to render once metacell counts reach the hundreds to thousands.
         edges = pd.DataFrame(columns=["source", "target", "weight"])
         if expr is not None and expr.shape[1] > 1:
-            corr = expr.corr()
-            rows = []
-            for i, a in enumerate(corr.columns):
-                for b in corr.columns[i + 1 :]:
-                    rows.append({"source": a, "target": b, "weight": float(corr.loc[a, b])})
-            edges = pd.DataFrame(rows)
+            edges = _top_k_positive_edges(expr.corr(), k=8)
 
         render_figure(
             "metacell network",

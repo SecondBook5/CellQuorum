@@ -41,9 +41,32 @@ def ordered_metacell_columns(nodes: pd.DataFrame) -> list[str]:
     return ordered["metacell_id"].astype(str).tolist()
 
 
-def _build_heatmap_figure(expr: pd.DataFrame, nodes: pd.DataFrame) -> Figure:
+def top_variable_genes(expr: pd.DataFrame, n_genes: int) -> pd.DataFrame:
+    """Return the `n_genes` rows (genes) of `expr` with the highest variance.
+
+    Selects by variance across metacells (`expr.var(axis=1)`, descending) so
+    the heatmap shows the genes that actually distinguish metacells from one
+    another, not every gene in the object -- with e.g. 20,000 genes, plotting
+    all of them produces an illegible, effectively solid-color figure.
+
+    Args:
+        expr: Genes (rows) x metacell_id (columns) expression matrix.
+        n_genes: Max number of genes to keep.
+
+    Returns:
+        A row-subset of `expr`, ordered by descending variance, at most
+        `n_genes` rows (fewer if `expr` has fewer genes than that).
+    """
+    if len(expr) <= n_genes:
+        return expr
+    order = expr.var(axis=1).sort_values(ascending=False).index
+    return expr.loc[order[:n_genes]]
+
+
+def _build_heatmap_figure(expr: pd.DataFrame, nodes: pd.DataFrame, *, n_genes: int = 50) -> Figure:
     """Draw the heatmap and return it unsaved (for geometry tests)."""
 
+    expr = top_variable_genes(expr, n_genes)
     order = [c for c in ordered_metacell_columns(nodes) if c in expr.columns]
     ordered_expr = expr[order]
 
@@ -60,14 +83,21 @@ def _build_heatmap_figure(expr: pd.DataFrame, nodes: pd.DataFrame) -> Figure:
 
 
 def plot_metacell_gene_heatmap(
-    expr: pd.DataFrame, nodes: pd.DataFrame, out_dir: str | Path, *, tag: str = ""
+    expr: pd.DataFrame,
+    nodes: pd.DataFrame,
+    out_dir: str | Path,
+    *,
+    n_genes: int = 50,
+    tag: str = "",
 ) -> list[Path]:
-    """Render the gene x metacell heatmap.
+    """Render the gene x metacell heatmap, restricted to the top variable genes.
 
     Args:
         expr: Genes (rows) x metacell_id (columns) expression matrix.
         nodes: Columns metacell_id, dominant_group.
         out_dir: Output directory.
+        n_genes: Max genes plotted, chosen by descending variance across
+            metacells (spec section 4.4 item 2: "top variable genes").
         tag: Optional filename tag.
 
     Returns:
@@ -77,9 +107,9 @@ def plot_metacell_gene_heatmap(
     if expr is None or expr.empty:
         return []
     out_dir = Path(out_dir)
-    fig = _build_heatmap_figure(expr, nodes)
+    fig = _build_heatmap_figure(expr, nodes, n_genes=n_genes)
     stem = f"metacell_gene_heatmap_{tag}" if tag else "metacell_gene_heatmap"
     return figstyle.save_figure(fig, out_dir, stem)
 
 
-__all__ = ["ordered_metacell_columns", "plot_metacell_gene_heatmap"]
+__all__ = ["ordered_metacell_columns", "plot_metacell_gene_heatmap", "top_variable_genes"]
