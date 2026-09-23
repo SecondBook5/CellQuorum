@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPT = (
     Path(__file__).resolve().parents[1]
     / "src"
@@ -45,6 +47,10 @@ def test_parser_has_expected_args() -> None:
     # filter_edge_number is the PER-CLUSTER edge cap (CellOracle default 10000),
     # distinct from n_top_targets (the figure top-N) -- must not collapse to 20.
     assert args.filter_edge_number == 10000
+    # filter_links' p-value cutoff, not the edge-count cap, is usually the real
+    # constraint -- exposed separately so it can be relaxed without touching
+    # --filter-edge-number, which turned out to have zero effect in practice.
+    assert args.filter_p == pytest.approx(0.001)
     assert args.knn_n_neighbors == 200
     assert args.n_propagation == 3
     assert args.seed == 0

@@ -50,6 +50,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="filter_links threshold_number: top-N edges kept PER CLUSTER network "
         "(CellOracle default 10000); distinct from --n-top-targets (figure top-N).",
     )
+    p.add_argument(
+        "--filter-p",
+        type=float,
+        default=0.001,
+        help="filter_links p-value significance cutoff (CellOracle default 0.001). "
+        "This, not --filter-edge-number, is usually the binding constraint: a TF "
+        "present in the base GRN can still have zero edges survive filter_links "
+        "at a given cluster's cell count if none clear this p-value regardless of "
+        "how high --filter-edge-number is set.",
+    )
     p.add_argument("--knn-n-neighbors", type=int, default=200)
     p.add_argument("--n-propagation", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
@@ -208,7 +218,9 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     links = oracle.get_links(
         cluster_name_for_GRN_unit=cluster_key, alpha=10, verbose_level=0, n_jobs=1
     )
-    links.filter_links(p=0.001, weight="coef_abs", threshold_number=int(args.filter_edge_number))
+    links.filter_links(
+        p=float(args.filter_p), weight="coef_abs", threshold_number=int(args.filter_edge_number)
+    )
     oracle.get_cluster_specific_TFdict_from_Links(links_object=links)
     oracle.fit_GRN_for_simulation(alpha=10, use_cluster_specific_TFdict=True, verbose_level=0)
 
