@@ -295,11 +295,16 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
             oracle.simulate_shift(
                 perturb_condition={tf: 0.0}, n_propagation=int(args.n_propagation)
             )
+            # n_jobs=1 (default is 4): same joblib/loky worker-pool segfault as
+            # get_links() -- estimate_transition_prob's internal parallelism
+            # crashed (no exception, no "skip <tf>" line, process just vanished)
+            # on the very first TF simulated, on this same real object.
             oracle.estimate_transition_prob(
                 n_neighbors=n_neighbors,
                 knn_random=True,
                 sampled_fraction=1,
                 random_seed=int(args.seed),
+                n_jobs=1,
             )
             oracle.calculate_embedding_shift(sigma_corr=0.05)
         except Exception as e:  # one infeasible TF must not sink the screen
