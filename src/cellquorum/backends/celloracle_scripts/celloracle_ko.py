@@ -196,12 +196,17 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     # embedding-shift step (estimate_transition_prob) is seeded. threshold_number caps
     # the edges kept PER CLUSTER network (CellOracle default 10000) -- NOT a per-TF
     # target count, so it is decoupled from n_top_targets (the figure top-N).
-    # n_jobs matches knn_imputation's choice above (default is n_jobs=-1, i.e. one
-    # process per core; combined with per-process BLAS threads that oversubscribes
-    # the machine and crashed get_links() with a segfault on the real 61,608-cell
-    # object -- see _THREAD_CAP_ENV in celloracle_backend.py for the other half).
+    # n_jobs=1 (NOT the tempting n_jobs=4/-1): get_links()'s internal joblib/loky
+    # worker pool segfaulted (exit 139) on the real 61,608-cell object at ANY
+    # n_jobs>1, deterministically -- same crash with n_jobs=4 alone, n_jobs=4 plus
+    # BLAS-thread capping (see _THREAD_CAP_ENV in celloracle_backend.py), run
+    # isolated or run alongside other jobs, always with joblib's resource_tracker
+    # reporting the identical "9612 leaked folder objects". A n_jobs=1 rerun on
+    # the same object went straight through get_links -> filter_links ->
+    # fit_GRN_for_simulation with no crash, isolating the bug to loky's worker
+    # machinery itself, not to memory pressure or the data. Slower, but correct.
     links = oracle.get_links(
-        cluster_name_for_GRN_unit=cluster_key, alpha=10, verbose_level=0, n_jobs=4
+        cluster_name_for_GRN_unit=cluster_key, alpha=10, verbose_level=0, n_jobs=1
     )
     links.filter_links(p=0.001, weight="coef_abs", threshold_number=int(args.filter_edge_number))
     oracle.get_cluster_specific_TFdict_from_Links(links_object=links)
