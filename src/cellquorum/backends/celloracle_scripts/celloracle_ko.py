@@ -63,6 +63,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--knn-n-neighbors", type=int, default=200)
     p.add_argument("--n-propagation", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument(
+        "--sampled-fraction",
+        type=float,
+        default=1.0,
+        help="estimate_transition_prob's sampled_fraction: the fraction of cells "
+        "used as the random-neighbor candidate pool (CellOracle default 1.0, i.e. "
+        "every cell). velocyto's compiled correlation routine that this call "
+        "reaches (colDeltaCorpartial) segfaulted deterministically on a real "
+        "61,608-cell object at sampled_fraction=1 but has only ever been proven "
+        "to work at ~2,000-cell scale (a real prior LEC run, 1977 cells, same "
+        "script, completed cleanly). Lower this to keep the candidate pool near "
+        "that scale on larger objects.",
+    )
     return p
 
 
@@ -302,7 +315,7 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
             oracle.estimate_transition_prob(
                 n_neighbors=n_neighbors,
                 knn_random=True,
-                sampled_fraction=1,
+                sampled_fraction=float(args.sampled_fraction),
                 random_seed=int(args.seed),
                 n_jobs=1,
             )

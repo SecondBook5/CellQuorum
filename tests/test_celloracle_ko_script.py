@@ -52,6 +52,11 @@ def test_parser_has_expected_args() -> None:
     # --filter-edge-number, which turned out to have zero effect in practice.
     assert args.filter_p == pytest.approx(0.001)
     assert args.knn_n_neighbors == 200
+    # velocyto's compiled colDeltaCorpartial segfaults on a large real object at
+    # the CellOracle default (1.0, i.e. every cell is a candidate neighbor); a
+    # real prior run at ~2,000-cell scale completed cleanly, so this must stay
+    # overridable to keep the candidate pool near a proven-working size.
+    assert args.sampled_fraction == pytest.approx(1.0)
     assert args.n_propagation == 3
     assert args.seed == 0
 
