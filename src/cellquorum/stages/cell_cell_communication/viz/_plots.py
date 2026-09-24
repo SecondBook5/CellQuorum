@@ -321,6 +321,39 @@ def _chord_fallback(
     return fig
 
 
+def _select_sankey_flows(
+    df: pd.DataFrame,
+    *,
+    source_col: str,
+    ligand_col: str,
+    receptor_col: str,
+    target_col: str,
+    weight_col: str,
+    top_k: int,
+) -> pd.DataFrame:
+    """Rows for the sankey diagram: every real (source, target) cluster pair
+    guaranteed a seat, keeping each guaranteed pair's single strongest
+    ligand-receptor row.
+
+    Real bug this fixes: a flat ``df.sort_values(weight).head(top_k)`` cut
+    across the WHOLE LR results table (thousands of source-ligand-receptor-
+    target rows on a real cohort) let the top-15 strongest individual rows
+    concentrate in one or two source clusters, leaving another cluster with
+    literally zero flow -- completely isolated in the rendered diagram, with
+    no warning. chord_diagram already guards against exactly this via
+    _top_edges/_guarantee_node_seats; this reuses the same guarantee so the
+    sankey and the chord diagram agree about which cluster pairs matter.
+    """
+    edges = _top_edges(df, source_col, target_col, weight_col, top_k)
+    if edges.empty:
+        return edges
+    return (
+        df.sort_values(weight_col, ascending=False, kind="mergesort")
+        .merge(edges[[source_col, target_col]], on=[source_col, target_col])
+        .drop_duplicates(subset=[source_col, target_col])
+    )
+
+
 def sankey_flow(
     lr: pd.DataFrame,
     *,
@@ -337,7 +370,15 @@ def sankey_flow(
         return _empty_fig()
     df = lr.copy()
     df["__w"] = df[weight_col].astype(float)
-    df = df.sort_values("__w", kind="mergesort", ascending=False).head(top_k)
+    df = _select_sankey_flows(
+        df,
+        source_col=source_col,
+        ligand_col=ligand_col,
+        receptor_col=receptor_col,
+        target_col=target_col,
+        weight_col="__w",
+        top_k=top_k,
+    )
     if df.empty:
         return _empty_fig()
     try:

@@ -197,6 +197,71 @@ def test_top_edges_does_not_inflate_a_graph_that_already_fits() -> None:
     assert len(edges) == 6
 
 
+def _fully_connected_lr_with_genes(n_clusters: int) -> pd.DataFrame:
+    """Same shape as _fully_connected_lr, plus the ligand/receptor columns
+    sankey_flow needs -- the real shape of a canonical LIANA results frame.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    clusters = [str(i) for i in range(n_clusters)]
+    rows = []
+    for s in clusters:
+        for t in clusters:
+            if s == t:
+                continue
+            rows.append(
+                {
+                    "source": s,
+                    "target": t,
+                    "ligand": f"L_{s}_{t}",
+                    "receptor": f"R_{s}_{t}",
+                    "weight": float(rng.uniform(0.1, 1.0)),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_select_sankey_flows_does_not_starve_a_cluster_of_all_flow():
+    """Real bug found on a rendered figure: sankey_flow took a single global
+    top-K cut (df.sort_values(weight).head(top_k)) across the ENTIRE LR
+    results table before building the diagram. On a real cohort with
+    thousands of source-ligand-receptor-target rows, the top-15 strongest
+    individual rows were dominated by one or two source clusters, leaving
+    another cluster with literally zero flow -- completely isolated in the
+    rendered diagram, with no warning. chord_diagram already guards against
+    this exact failure via _top_edges/_guarantee_node_seats (see
+    test_top_edges_default_does_not_drop_nodes_on_a_dense_graph); sankey_flow
+    must get the same guarantee.
+    """
+    from cellquorum.stages.cell_cell_communication.viz._plots import _select_sankey_flows
+
+    lr = _fully_connected_lr_with_genes(9)
+    kept = _select_sankey_flows(
+        lr,
+        source_col="source",
+        ligand_col="ligand",
+        receptor_col="receptor",
+        target_col="target",
+        weight_col="weight",
+        top_k=15,
+    )
+    present = set(kept["source"]) | set(kept["target"])
+    assert present == {str(i) for i in range(9)}
+
+
+def test_sankey_flow_returns_figure_on_a_dense_graph():
+    from cellquorum.stages.cell_cell_communication.viz._plots import (
+        celltype_palette,
+        sankey_flow,
+    )
+
+    lr = _fully_connected_lr_with_genes(9)
+    pal = celltype_palette(list(set(lr["source"]) | set(lr["target"])))
+    fig = sankey_flow(lr, palette=pal, top_k=15)
+    assert isinstance(fig, Figure)
+
+
 def test_chord_and_sankey_return_figure():
     from cellquorum.stages.cell_cell_communication.viz._plots import (
         celltype_palette,
