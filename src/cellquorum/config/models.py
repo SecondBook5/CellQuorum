@@ -641,7 +641,11 @@ class RConfig(StrictBaseModel):
     timeout_seconds: int = Field(default=30, ge=1)
 
     # Store the RLIMIT_AS ceiling for Rscript subprocesses, in GB. None disables it.
-    max_memory_gb: float | None = 12.0
+    # Raised from 12.0 after a real failure: multinichenet's pseudobulk DE +
+    # ligand-receptor scoring across 6+ cell types on a 61,608-cell cohort
+    # silently failed under the 12GB cap (confirmed: the identical script and
+    # data succeeded with no cap, twice, outside the pipeline).
+    max_memory_gb: float | None = 24.0
 
 
 class ReportConfig(StrictBaseModel):
