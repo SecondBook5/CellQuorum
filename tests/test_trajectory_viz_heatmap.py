@@ -56,6 +56,35 @@ def test_binned_categorical_track_takes_the_modal_code_per_bin():
     assert list(track) == [0, 1]
 
 
+def test_normalize_profiles_pooled_preserves_cross_condition_magnitude():
+    """Real bug: normalizing each condition panel to its OWN 0-1 range hides a
+    true magnitude difference between conditions -- a gene uniformly higher
+    in one condition still gets stretched to look identical to every other
+    condition. Pooling min/max across all conditions before normalizing must
+    keep that real difference visible: a gene at a constant LOW value in one
+    condition and a constant HIGH value in another must not both end up at a
+    flat 1.0 (or a flat 0.0) once normalized.
+    """
+    # One gene, two bins, two conditions. Condition "lo" sits at 1-2,
+    # condition "hi" sits at 8-9 -- a real magnitude gap.
+    profiles = {
+        "lo": np.array([[1.0], [2.0]]),
+        "hi": np.array([[8.0], [9.0]]),
+    }
+    normed = heatmap.normalize_profiles_pooled(profiles)
+    assert normed["lo"].max() < normed["hi"].min(), "lo condition must stay visibly lower than hi"
+    # Global min/max (1 and 9) anchor the 0-1 scale, not each condition's own.
+    assert np.isclose(normed["lo"].min(), 0.0)
+    assert np.isclose(normed["hi"].max(), 1.0)
+
+
+def test_normalize_profiles_pooled_handles_a_constant_gene():
+    profiles = {"a": np.array([[5.0], [5.0]]), "b": np.array([[5.0], [5.0]])}
+    normed = heatmap.normalize_profiles_pooled(profiles)
+    assert np.isfinite(normed["a"]).all()
+    assert np.isfinite(normed["b"]).all()
+
+
 def test_peak_bin_order_sorts_by_argmax():
     # gene 0 peaks at bin 2, gene 1 at bin 0, gene 2 at bin 1
     combined = np.zeros((3, 3))
@@ -141,6 +170,38 @@ def test_condition_split_heatmap_two_categorical_tracks():
         "75%",
         "100%",
     ]
+
+
+def test_condition_split_heatmap_labels_genes_with_leader_lines_on_the_last_panel():
+    """Reference-figure ask: gene names for a dense heatmap (dozens of rows)
+    read better as evenly-spaced text connected to its real row by a thin
+    leader line than as a plain, easily-cramped y-tick list -- and they
+    belong on the RIGHTMOST condition panel (matching the reference, which
+    puts one shared gene-label margin after the last condition column), not
+    the first.
+    """
+    n_bins, n_genes = 20, 5
+    prof = np.tile(np.linspace(0, 1, n_bins)[:, None], (1, n_genes))
+    profiles = {"Normal": prof, "LE": prof[::-1]}
+    gene_labels = [f"G{i}" for i in range(n_genes)]
+    fig = heatmap.condition_split_heatmap(
+        profiles, {}, [], gene_labels, np.arange(n_genes), condition_order=["Normal", "LE"]
+    )
+    expr_axes = [ax for ax in fig.axes if ax.get_xlabel().startswith("pseudotime")]
+    assert len(expr_axes) == 2
+    first_ax, last_ax = expr_axes[0], expr_axes[1]
+
+    # No cramped y-tick list on either panel any more.
+    assert first_ax.get_yticklabels() == [] or all(
+        t.get_text() == "" for t in first_ax.get_yticklabels()
+    )
+    # The leader-line labels themselves live on the LAST panel, one per gene.
+    last_texts = {t.get_text() for t in last_ax.texts}
+    assert set(gene_labels) <= last_texts
+    first_texts = {t.get_text() for t in first_ax.texts}
+    assert not (set(gene_labels) & first_texts), "gene labels leaked onto the first panel"
+    # A thin leader line connects each label back to its row.
+    assert len(last_ax.lines) >= n_genes
 
 
 def test_condition_split_heatmap_single_panel_when_one_condition():

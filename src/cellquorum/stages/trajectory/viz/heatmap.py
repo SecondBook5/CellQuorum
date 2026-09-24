@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import matplotlib.gridspec as gridspec
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
@@ -101,9 +102,74 @@ def binned_tracks(
     )
 
 
+def normalize_profiles_pooled(profiles: dict) -> dict:
+    """0-1 normalize each gene using min/max pooled across ALL conditions.
+
+    Real bug this fixes: normalizing each condition panel independently (each
+    condition's own min/max) hides a true cross-condition magnitude
+    difference -- a gene uniformly higher in one condition still gets
+    stretched to look like the same 0-1 range as every other condition, which
+    can make a real disease-vs-healthy effect invisible. Pooling the min/max
+    across all conditions before normalizing keeps a real magnitude
+    difference visible, matching how a published reference figure of this
+    same plot type normalizes (globally, on the pooled data, not per panel).
+
+    Args:
+        profiles: {condition -> (n_bins, n_genes) RAW (not yet normalized)
+            binned expression array}.
+
+    Returns:
+        {condition -> same-shape array, each gene scaled into [0, 1] using
+        min/max pooled across every condition's array}.
+    """
+    stacked = np.concatenate(list(profiles.values()), axis=0)
+    gmin = stacked.min(0)
+    span = stacked.max(0) - gmin
+    span = np.where(span > 1e-9, span, 1.0)
+    return {c: (p - gmin) / span for c, p in profiles.items()}
+
+
 def peak_bin_order(combined_profile: np.ndarray) -> np.ndarray:
     """Gene order by peak (argmax) bin of the combined profile."""
     return np.argsort(np.argmax(np.asarray(combined_profile), axis=0))
+
+
+def _leader_line_labels(ax: Axes, gene_labels_ordered: list[str], *, fontsize: float = 6.5) -> None:
+    """Evenly-spaced right-margin gene labels, each on a thin leader line back
+    to its real row, instead of a plain y-tick list.
+
+    Drawn in the axes' own data coordinates just past its right edge, with
+    ``clip_on=False`` so matplotlib does not clip them off -- the caller must
+    leave enough right margin (see ``condition_split_heatmap``'s gridspec) for
+    them to land in.
+    """
+    n = len(gene_labels_ordered)
+    if n == 0:
+        return
+    x0, x1 = ax.get_xlim()
+    span = x1 - x0
+    line_end_x = x1 + 0.06 * span
+    text_x = x1 + 0.09 * span
+    label_y = np.linspace(0, n - 1, n)
+    for i, label in enumerate(gene_labels_ordered):
+        ax.plot(
+            [x1, line_end_x],
+            [i, label_y[i]],
+            color="#9a9a9a",
+            lw=0.5,
+            clip_on=False,
+            zorder=1,
+        )
+        ax.text(
+            text_x,
+            label_y[i],
+            label,
+            fontsize=fontsize,
+            fontstyle="italic",
+            va="center",
+            ha="left",
+            clip_on=False,
+        )
 
 
 def condition_split_heatmap(
@@ -162,7 +228,7 @@ def condition_split_heatmap(
         hspace=0.08,
         wspace=0.06,
         left=0.14,
-        right=0.88,
+        right=0.82,
         top=0.90,
         bottom=0.08,
     )
@@ -226,21 +292,23 @@ def condition_split_heatmap(
         ax.set_xticks(tick_pos)
         ax.set_xticklabels(tick_lab, fontsize=7.5)
         ax.set_xlabel("pseudotime (percent of range)", fontsize=8)
-        if j == 0:
-            ax.set_yticks(range(len(gene_labels)))
-            ax.set_yticklabels(
-                [gene_labels[i] for i in gene_order], fontsize=6.5, fontstyle="italic"
-            )
-        else:
-            ax.set_yticks([])
+        ax.set_yticks([])
+        if j == n_cols - 1:
+            last_expr_ax = ax
+
+    # Gene names as evenly-spaced, leader-lined labels in the right margin
+    # after the LAST condition panel (matching the reference layout this was
+    # modeled on), rather than a plain y-tick list on the first panel -- past
+    # a few dozen genes a tick list reads as a cramped, illegible block.
+    _leader_line_labels(last_expr_ax, [gene_labels[i] for i in gene_order])
 
     if im_score is not None:
-        cax_g = fig.add_axes([0.905, 0.74, 0.014, 0.12])
+        cax_g = fig.add_axes([0.93, 0.74, 0.014, 0.12])
         cb_g = fig.colorbar(im_score, cax=cax_g, ticks=[s_vmin, s_vmax])
         cb_g.ax.set_yticklabels(["Min", "Max"], fontsize=7)
         cb_g.set_label("Score", fontsize=7.5)
     if im_expr is not None:
-        cax = fig.add_axes([0.905, 0.40, 0.014, 0.24])
+        cax = fig.add_axes([0.93, 0.40, 0.014, 0.24])
         fig.colorbar(im_expr, cax=cax, label="scaled expr")
 
     # One stacked legend block per categorical track, top to bottom.
@@ -283,6 +351,7 @@ __all__ = [
     "binned_score_track",
     "binned_categorical_track",
     "binned_tracks",
+    "normalize_profiles_pooled",
     "peak_bin_order",
     "condition_split_heatmap",
 ]

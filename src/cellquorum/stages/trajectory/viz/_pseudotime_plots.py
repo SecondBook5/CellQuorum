@@ -307,9 +307,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 m = (cond == c) & finite
                 if m.sum() < 2:
                     continue
-                p = heatmap.binned_profile(pt[m], M[m], n_bins)
-                p = (p - p.min(0)) / (np.ptp(p, axis=0) + 1e-9)
-                profiles[c] = p
+                profiles[c] = heatmap.binned_profile(pt[m], M[m], n_bins)
                 score_tracks[c] = heatmap.binned_score_track(pt[m], score[m], n_bins)
                 for k, spec in enumerate(cat_specs):
                     categorical_tracks[k]["tracks"][c] = heatmap.binned_categorical_track(
@@ -318,6 +316,10 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             if not profiles:
                 return self._skip("no condition had enough cells")
             condition_order = [c for c in condition_order if c in profiles]
+            # Pool-normalized, not per-condition: a gene uniformly higher in one
+            # condition must stay visibly higher, not get stretched to match
+            # every other condition's own 0-1 range.
+            profiles = heatmap.normalize_profiles_pooled(profiles)
 
             combined = np.mean([profiles[c] for c in condition_order], axis=0)
             gene_order = heatmap.peak_bin_order(combined)
