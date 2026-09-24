@@ -28,6 +28,40 @@ _FATE_KEYS = ("cellrank_fate_probabilities", "palantir_fate_probabilities")
 _MACROSTATE_SPLIT_SUFFIX = re.compile(r"_\d+$")
 
 
+def _select_top_drivers_overall(
+    mat: np.ndarray, genes: np.ndarray, top_k: int
+) -> tuple[list[str], np.ndarray]:
+    """Top-``top_k`` genes overall by max |correlation| across any lineage,
+    ordered by (peak lineage column, then |correlation| within that lineage,
+    descending).
+
+    Replaces a selection that unioned EACH lineage's own top-K genes: total
+    row count scaled with n_lineages * top_k (up to 105 rows for 7 lineages,
+    a 43-inch-tall figure), and concatenating each lineage's block in turn
+    produced unexplained-looking seams between blocks. A fixed overall cap
+    keeps the figure a bounded height regardless of lineage count; grouping
+    by peak lineage keeps the same "each gene has a clear home" structure
+    that made the blocks readable, without the height blowup.
+
+    Args:
+        mat: (n_genes, n_lineages) signed correlation matrix.
+        genes: gene name per row of ``mat``.
+        top_k: total number of genes to keep (not per lineage).
+
+    Returns:
+        (ordered gene names, (len(names), n_lineages) matrix in that order).
+    """
+    abs_mat = np.abs(mat)
+    max_abs = abs_mat.max(axis=1)
+    k = min(top_k, mat.shape[0])
+    top_idx = np.argsort(-max_abs, kind="stable")[:k]
+    peak_col = abs_mat[top_idx].argmax(axis=1)
+    peak_val = abs_mat[top_idx, peak_col]
+    order = np.lexsort((-peak_val, peak_col))
+    ordered_idx = top_idx[order]
+    return [str(genes[i]) for i in ordered_idx], mat[ordered_idx]
+
+
 def _resolve_fate_label(name: str, fate_labels: dict[str, str] | None) -> str:
     """Append a human-readable identity label to a bare macrostate/lineage id.
 
@@ -424,44 +458,34 @@ class DriverVizMethod(AnalysisMethod):
 
         _helpers.apply_theme()
         artifacts, warnings, n = [], [], 0
-        top_gene_set: list[str] = []
-        for col, name in enumerate(names):
-            try:
-                vals = mat[:, col]
-                order = np.argsort(-np.abs(vals), kind="stable")[:top_k]
-                sel_genes = [str(genes[i]) for i in order]
-                for gname in sel_genes:
-                    if gname not in top_gene_set:
-                        top_gene_set.append(gname)
-                title = f"{_resolve_fate_label(name, fate_labels)} drivers"
-                fig = _helpers.signed_diverging_bar(sel_genes, vals[order], title=title)
-                paths = _helpers.save_figure(
-                    fig, figures_dir, f"drivers_bar_{name}", formats=formats, dpi=dpi
-                )
-                artifacts += _helpers.figure_artifacts(
-                    paths, name="trajectory_figure", description=f"Top-{top_k} drivers for {name}."
-                )
-                n += 1
-            except Exception as exc:  # noqa: BLE001
-                warnings.append(f"driver_viz: bar {name} failed: {str(exc)[:200]}")
-
+        # One heatmap, top_k genes OVERALL (not top_k per lineage unioned --
+        # that scaled with n_lineages and produced an unbounded, block-seamed
+        # figure). See _select_top_drivers_overall.
         try:
-            if top_gene_set:
-                idx = {str(g): i for i, g in enumerate(genes)}
-                rows = [mat[idx[g], :] for g in top_gene_set]
+            top_genes, top_mat = _select_top_drivers_overall(mat, genes, top_k)
+            if top_genes:
                 labeled_names = [_resolve_fate_label(nm, fate_labels) for nm in names]
+                # A gene's peak lineage column groups it with its "home"
+                # lineage; a thin separator after each group boundary makes
+                # that grouping read as intentional structure, not an
+                # unexplained seam.
+                peak_col = np.abs(top_mat).argmax(axis=1)
+                breaks = [i + 1 for i in range(len(peak_col) - 1) if peak_col[i] != peak_col[i + 1]]
                 fig = _helpers.matrix_heatmap(
-                    np.vstack(rows),
-                    top_gene_set,
+                    top_mat,
+                    top_genes,
                     labeled_names,
                     title="Lineage drivers",
                     cbar_label="correlation",
+                    row_group_breaks=breaks,
                 )
                 paths = _helpers.save_figure(
                     fig, figures_dir, "drivers_heatmap", formats=formats, dpi=dpi
                 )
                 artifacts += _helpers.figure_artifacts(
-                    paths, name="trajectory_figure", description="Driver correlation heatmap."
+                    paths,
+                    name="trajectory_figure",
+                    description=f"Top-{top_k} driver genes overall, by max |correlation|.",
                 )
                 n += 1
         except Exception as exc:  # noqa: BLE001

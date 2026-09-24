@@ -5,7 +5,10 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.methods.base import MethodSkip
-from cellquorum.stages.trajectory.viz._kernel_plots import DriverVizMethod
+from cellquorum.stages.trajectory.viz._kernel_plots import (
+    DriverVizMethod,
+    _select_top_drivers_overall,
+)
 
 
 class _Ctx:
@@ -40,6 +43,60 @@ def _adata(n=30, g=12, drivers=True, lineages=("L0", "L1")):
     return a
 
 
+def test_select_top_drivers_overall_caps_to_top_k_regardless_of_lineage_count():
+    """Real bug: the old selection unioned EACH lineage's own top-K, so total
+    rows scaled with n_lineages * top_k -- up to 105 rows for 7 lineages,
+    a 43-inch-tall figure. Selecting top-K OVERALL (by max |correlation|
+    across any lineage) keeps a fixed cap regardless of lineage count.
+    """
+    rng = np.random.default_rng(0)
+    mat = rng.normal(size=(50, 7))  # 50 genes, 7 lineages
+    genes = np.array([f"g{i}" for i in range(50)])
+    names, ordered = _select_top_drivers_overall(mat, genes, top_k=10)
+    assert len(names) == 10
+    assert ordered.shape == (10, 7)
+
+
+def test_select_top_drivers_overall_picks_the_strongest_genes():
+    mat = np.zeros((5, 2))
+    mat[0, 0] = 0.9  # strongest overall
+    mat[1, 1] = 0.8
+    mat[2, 0] = 0.05  # weak, should not be selected
+    mat[3, 1] = 0.05
+    mat[4, 0] = 0.7
+    genes = np.array(["strong_a", "strong_b", "weak_a", "weak_b", "mid_a"])
+    names, _ = _select_top_drivers_overall(mat, genes, top_k=3)
+    assert set(names) == {"strong_a", "strong_b", "mid_a"}
+
+
+def test_select_top_drivers_overall_groups_by_peak_lineage_then_magnitude():
+    """Rows are ordered by (peak lineage column, then |correlation| within
+    that lineage descending) -- genes that peak in the SAME lineage stay
+    adjacent, and within a group the strongest driver comes first.
+    """
+    mat = np.array(
+        [
+            [0.9, 0.1],  # peaks col 0, strong
+            [0.1, 0.9],  # peaks col 1, strong
+            [0.5, 0.1],  # peaks col 0, weaker
+        ]
+    )
+    genes = np.array(["a_strong_0", "b_strong_1", "c_weak_0"])
+    names, ordered = _select_top_drivers_overall(mat, genes, top_k=3)
+    assert names == ["a_strong_0", "c_weak_0", "b_strong_1"]
+    assert ordered[0, 0] == 0.9
+    assert ordered[1, 0] == 0.5
+    assert ordered[2, 1] == 0.9
+
+
+def test_select_top_drivers_overall_handles_fewer_genes_than_top_k():
+    mat = np.random.default_rng(0).normal(size=(3, 2))
+    genes = np.array(["a", "b", "c"])
+    names, ordered = _select_top_drivers_overall(mat, genes, top_k=10)
+    assert len(names) == 3
+    assert ordered.shape == (3, 2)
+
+
 def test_handles_driver_columns_and_fate_names_as_numpy_arrays(tmp_path):
     """Real crash on the fibroblast cohort (same class as fate_viz): both
     driver_columns and fate_names come from adata.uns['trajectory']['cellrank']
@@ -57,33 +114,41 @@ def test_handles_driver_columns_and_fate_names_as_numpy_arrays(tmp_path):
         a, {"figure_formats": ["png"], "dpi": 72, "top_k": 5}, _Ctx(tmp_path)
     )
     assert not isinstance(res, MethodSkip)
-    bars = sorted(p.name for p in (tmp_path / "f" / "trajectory").glob("drivers_bar_*.png"))
-    assert bars == ["drivers_bar_L0.png", "drivers_bar_L1.png"]
+    heat = list((tmp_path / "f" / "trajectory").glob("drivers_heatmap.png"))
+    assert len(heat) == 1
 
 
-def test_renders_driver_bars_and_heatmap(tmp_path):
+def test_renders_driver_heatmap(tmp_path):
     # Two lineages → 10 varm columns, but only the two _corr columns are plotted.
     res = DriverVizMethod()._run(
         _adata(), {"figure_formats": ["png"], "dpi": 72, "top_k": 5}, _Ctx(tmp_path)
     )
     assert not isinstance(res, MethodSkip)
-    bars = sorted(p.name for p in (tmp_path / "f" / "trajectory").glob("drivers_bar_*.png"))
     heat = list((tmp_path / "f" / "trajectory").glob("drivers_heatmap.png"))
-    # Exactly one bar per lineage, labeled by the lineage name (suffix stripped).
-    assert bars == ["drivers_bar_L0.png", "drivers_bar_L1.png"]
     assert len(heat) == 1
 
 
-def test_driver_bar_title_carries_the_fate_label_when_configured(tmp_path):
-    """Real complaint: a driver bar's title/filename is just the bare
-    macrostate id ("1 drivers"), and a reader has no way to tell what "1"
-    means without cross-referencing a separate table. CellRank names a
-    macrostate after the dominant cluster id it was seeded from (optionally
-    "_1"/"_2" suffixed when a cluster splits into more than one macrostate),
-    so a manifest-declared id->label mapping (fate_labels) should resolve
-    "1" -> "1 (Perivascular/FRC-like, Inflammatory)" in the figure TITLE,
-    without needing to guess or invent biology in the engine itself.
+def test_driver_heatmap_columns_carry_the_fate_label_when_configured(tmp_path, monkeypatch):
+    """Real complaint: a driver column's label is just the bare macrostate id
+    ("1"), and a reader has no way to tell what "1" means without
+    cross-referencing a separate table. CellRank names a macrostate after the
+    dominant cluster id it was seeded from (optionally "_1"/"_2" suffixed
+    when a cluster splits into more than one macrostate), so a
+    manifest-declared id->label mapping (fate_labels) should resolve
+    "1" -> "1 (Perivascular/FRC-like, Inflammatory)" as the heatmap's column
+    label, without needing to guess or invent biology in the engine itself.
     """
+    from cellquorum.stages.trajectory.viz import _kernel_plots
+
+    captured = {}
+    real_heatmap = _kernel_plots._helpers.matrix_heatmap
+
+    def _spy(matrix, row_labels, col_labels, **kwargs):
+        captured["col_labels"] = col_labels
+        return real_heatmap(matrix, row_labels, col_labels, **kwargs)
+
+    monkeypatch.setattr(_kernel_plots._helpers, "matrix_heatmap", _spy)
+
     res = DriverVizMethod()._run(
         _adata(lineages=("1", "8_1")),
         {
@@ -95,10 +160,7 @@ def test_driver_bar_title_carries_the_fate_label_when_configured(tmp_path):
         _Ctx(tmp_path),
     )
     assert not isinstance(res, MethodSkip)
-    # Filenames stay stable/filesystem-safe on the bare id even when a label
-    # is configured -- only the in-figure title changes.
-    bars = sorted(p.name for p in (tmp_path / "f" / "trajectory").glob("drivers_bar_*.png"))
-    assert bars == ["drivers_bar_1.png", "drivers_bar_8_1.png"]
+    assert captured["col_labels"] == ["1 (Perivascular/FRC-like, Inflammatory)", "8_1"]
 
     # The title-resolution contract itself: given this name and this config,
     # what title text is produced. This is the actual behavior a reader
@@ -133,8 +195,8 @@ def test_plain_matrix_without_driver_columns_falls_back_per_column(tmp_path):
         a, {"figure_formats": ["png"], "dpi": 72, "top_k": 5}, _Ctx(tmp_path)
     )
     assert not isinstance(res, MethodSkip)
-    bars = list((tmp_path / "f" / "trajectory").glob("drivers_bar_*.png"))
-    assert len(bars) == 2  # fate_names matches the 2 columns
+    heat = list((tmp_path / "f" / "trajectory").glob("drivers_heatmap.png"))
+    assert len(heat) == 1
 
 
 def test_skips_with_non_dict_trajectory_uns(tmp_path):
@@ -148,5 +210,5 @@ def test_skips_with_non_dict_trajectory_uns(tmp_path):
     )
     # Must NOT raise; renders with fallback lineage_N names (one per column).
     assert not isinstance(res, MethodSkip)
-    bars = list((tmp_path / "f" / "trajectory").glob("drivers_bar_*.png"))
-    assert len(bars) == 2  # two columns, fallback lineage_N names
+    heat = list((tmp_path / "f" / "trajectory").glob("drivers_heatmap.png"))
+    assert len(heat) == 1
