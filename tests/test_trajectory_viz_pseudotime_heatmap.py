@@ -66,6 +66,31 @@ def test_renders_condition_split(tmp_path):
     assert pngs
 
 
+def test_categorical_track_colors_use_the_muted_atlas_palette(tmp_path):
+    """Real complaint: the bright CATEGORICAL_PALETTE (meant for a handful of
+    bars or a volcano plot) reads as cartoonish/clownish for a categorical
+    identity track -- exactly the failure MUTED_PALETTE's own docstring was
+    written to fix ("saturated primaries reads as cartoonish -- the clusters
+    look like poster clip-art"), just never wired into this call site.
+    """
+    from cellquorum.visualization.figstyle import MUTED_PALETTE
+
+    ctx, figures = _context(tmp_path)
+    adata = _adata()
+    adata.obs["fibroblast_subcluster"] = pd.Categorical(["0"] * 30 + ["1"] * 30)
+    cfg = {
+        "case": "LE",
+        "control": "Normal",
+        "condition_col": "condition",
+        "heatmap_genes": [f"G{i}" for i in range(6)],
+        "heatmap_categorical_keys": ["fibroblast_subcluster"],
+    }
+    out = PseudotimeHeatmapVizMethod()._run(adata, cfg, ctx)
+    assert not isinstance(out, MethodSkip)
+    tracks = PseudotimeHeatmapVizMethod()._resolve_categorical_tracks(adata, cfg)
+    assert tracks[0]["colors"] == MUTED_PALETTE[:2]
+
+
 def test_renders_two_categorical_tracks_via_heatmap_categorical_keys(tmp_path):
     """The real ask: subcluster AND cell-cycle-phase stacked as two separate
     tracks, not the single legacy heatmap_state_key row.

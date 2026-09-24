@@ -220,8 +220,15 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 {
                     "label": track_labels.get(key, key),
                     "cats": [value_labels.get(c, c) for c in cats],
+                    # MUTED_PALETTE, not CATEGORICAL_PALETTE: a categorical
+                    # identity track (subcluster, cell-cycle phase) is the same
+                    # "paint real cell groups" use case MUTED_PALETTE exists
+                    # for, not the "a handful of bars" case CATEGORICAL_PALETTE
+                    # is tuned for -- the bright palette here reads as
+                    # cartoonish/poster clip-art, exactly what MUTED_PALETTE's
+                    # own docstring describes fixing.
                     "colors": [
-                        figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
+                        figstyle.MUTED_PALETTE[i % len(figstyle.MUTED_PALETTE)]
                         for i in range(len(cats))
                     ],
                     "codes": series.map(code_map).to_numpy(),
