@@ -131,39 +131,36 @@ def test_grouped_violin_sorted_groups():
     assert isinstance(fig, Figure)
 
 
-def test_grouped_violin_does_not_draw_misleading_extrema_bars():
-    """Real complaint: matplotlib's default violinplot(showextrema=True) draws
-    a thin bar from the true min to true max of each group. For a 0-1-bounded
-    value like a fate probability, that bar visually dominates over the much
-    narrower actual density shape, reading as a plotting bug rather than the
-    real (concentrated) distribution it's supposed to show.
+def test_grouped_violin_uses_the_house_raincloud_primitive():
+    """Real complaint: this figure should look like the QC violin/boxplots,
+    not like a bare matplotlib violinplot from a different tool. It must
+    reuse figstyle.raincloud (half-violin + compact box + median + jittered
+    points) -- the same primitive every QC distribution figure uses -- not
+    ax.violinplot.
     """
+    from matplotlib.collections import PathCollection, PolyCollection
+
     groups = {"A": np.random.RandomState(0).rand(30), "B": np.random.RandomState(1).rand(30)}
     fig = plots.grouped_violin(groups, title="t", ylabel="fate prob")
     ax = fig.axes[0]
-    # showextrema=True would add THREE extra LineCollections (cmins, cmaxes,
-    # cbars) alongside the one legitimate cmedians line; only cmedians (kept
-    # via showmedians=True) should remain.
-    from matplotlib.collections import LineCollection
-
-    line_collections = [c for c in ax.collections if isinstance(c, LineCollection)]
-    assert len(line_collections) == 1, f"expected only cmedians, found {len(line_collections)}"
+    # The half-violin density (fill_betweenx -> PolyCollection) and the
+    # jittered point cloud (scatter -> PathCollection) are both raincloud's
+    # signature, neither of which ax.violinplot produces.
+    assert any(isinstance(c, PolyCollection) for c in ax.collections), "no half-violin density"
+    assert any(isinstance(c, PathCollection) for c in ax.collections), "no jittered point cloud"
+    # The compact box (a Rectangle patch), also raincloud's, not violinplot's.
+    assert ax.patches, "no box patch"
 
 
 def test_grouped_violin_bodies_are_not_the_bare_matplotlib_default_color():
     """Real complaint: unstyled matplotlib default fill reads as generic /
     off-house-style next to every other figure in this package.
     """
-    from matplotlib.collections import PolyCollection
-
     groups = {"A": np.random.RandomState(0).rand(30), "B": np.random.RandomState(1).rand(30)}
     fig = plots.grouped_violin(groups, title="t", ylabel="fate prob")
     ax = fig.axes[0]
-    bodies = [c for c in ax.collections if isinstance(c, PolyCollection)]
-    assert bodies
+    assert ax.patches
     default_blue = (0.12156862745098039, 0.4666666666666667, 0.7058823529411765, 1.0)
-    for body in bodies:
-        face = tuple(body.get_facecolor()[0])
-        assert (
-            face[:3] != default_blue[:3]
-        ), "violin body still uses matplotlib's bare default color"
+    for box in ax.patches:
+        face = tuple(box.get_facecolor())
+        assert face[:3] != default_blue[:3], "box still uses matplotlib's bare default color"

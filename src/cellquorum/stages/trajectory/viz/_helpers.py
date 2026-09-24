@@ -314,29 +314,24 @@ def coarse_transition_heatmap(
 
 
 def grouped_violin(groups: Any, *, title: str, ylabel: str) -> Figure:
-    """One violin per group, house-styled.
+    """One raincloud (half-violin + compact box + median + jittered points)
+    per group, via the house raincloud primitive.
 
-    ``showextrema=False``: matplotlib's default extrema bars run from the true
-    min to true max of each group, which for a 0-1-bounded value (a fate
-    probability) visually dominates over the actual, much narrower density
-    shape -- reading as a plotting defect rather than the real distribution.
-    The violin body's own taper already shows the range; a median tick is
-    enough on top of that. Bodies are filled from MUTED_PALETTE (the same
-    house choice used for other real-identity categorical groupings) rather
-    than matplotlib's bare default color.
+    Real complaint: a bare ``ax.violinplot`` reads as a different, unstyled
+    tool produced this figure, next to every QC distribution figure in this
+    codebase using ``figstyle.raincloud`` for the same job. This now reuses
+    that exact primitive instead of reimplementing a plainer version of it.
     """
+    from cellquorum.visualization.figstyle import raincloud
+
     keys = sorted(groups)
-    data = [np.asarray(groups[k], dtype=float) for k in keys]
-    fig, ax = plt.subplots(figsize=(max(4, 0.6 * len(keys)), 4))
-    parts = ax.violinplot(data, showmedians=True, showextrema=False)
-    for i, body in enumerate(parts["bodies"]):
+    fig, ax = plt.subplots(figsize=(max(4, 0.9 * len(keys) + 1), 4))
+    for i, key in enumerate(keys):
         color = MUTED_PALETTE[i % len(MUTED_PALETTE)]
-        body.set_facecolor(color)
-        body.set_edgecolor(color)
-        body.set_alpha(0.75)
-    parts["cmedians"].set_color("#333333")
-    ax.set_xticks(range(1, len(keys) + 1))
+        raincloud(ax, np.asarray(groups[key], dtype=float), float(i), color=color, seed=i)
+    ax.set_xticks(range(len(keys)))
     ax.set_xticklabels(keys, rotation=45, ha="right")
+    ax.set_xlim(-0.5, len(keys) - 0.3)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     return fig
