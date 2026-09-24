@@ -151,6 +151,40 @@ def test_success_directional_builds_artifacts_and_metrics(tmp_path: Path) -> Non
     assert "ranking" in names
 
 
+def test_max_cells_sampled_fraction_filter_p_reach_the_subprocess(tmp_path: Path) -> None:
+    """The real segfault fix (max_cells) and its companions must actually reach
+    the KO subprocess -- config fields that never make it into ko_args are
+    exactly the kind of silent-no-op that let a real, confirmed fix (subsampling
+    to ~2,000 cells) sit unused by the actual pipeline while only a hand-run
+    scratch invocation of the script ever exercised it.
+    """
+    captured = {}
+
+    class FakeBackend:
+        def _py_module_available(self, _m):  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            captured["args"] = args
+            out_dir = Path(args[args.index("--out-dir") + 1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(columns=["tf", "score", "n_cells", "direction"]).to_csv(
+                out_dir / "perturbation_ranking.csv", index=False
+            )
+            return SimpleNamespace(returncode=0, stderr="")
+
+    res = CellOracleMethod()._run(
+        _adata(),
+        {"launcher": "python", "max_cells": 2500, "sampled_fraction": 0.032, "filter_p": 0.05},
+        _ctx(tmp_path, FakeBackend()),
+    )
+    assert not isinstance(res, MethodSkip)
+    args = captured["args"]
+    assert args[args.index("--max-cells") + 1] == "2500"
+    assert args[args.index("--sampled-fraction") + 1] == "0.032"
+    assert args[args.index("--filter-p") + 1] == "0.05"
+
+
 def test_success_magnitude_when_no_condition(tmp_path: Path) -> None:
     res = CellOracleMethod()._run(
         _adata(),

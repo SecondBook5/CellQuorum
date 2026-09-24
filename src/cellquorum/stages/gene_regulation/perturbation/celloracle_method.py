@@ -53,6 +53,9 @@ class CellOracleMethod(AnalysisMethod):
         n_top_targets = int(config.get("n_top_targets", 20))
         filter_edge_number = int(config.get("filter_edge_number", 10000))
         knn_n_neighbors = int(config.get("knn_n_neighbors", 200))
+        max_cells = int(config.get("max_cells", 0))
+        sampled_fraction = float(config.get("sampled_fraction", 1.0))
+        filter_p = float(config.get("filter_p", 0.001))
         n_propagation = int(config.get("n_propagation", 3))
         seed = int(config.get("seed", 0))
         launcher = config.get("launcher", "micromamba")
@@ -178,6 +181,12 @@ class CellOracleMethod(AnalysisMethod):
             str(filter_edge_number),
             "--knn-n-neighbors",
             str(knn_n_neighbors),
+            "--max-cells",
+            str(max_cells),
+            "--sampled-fraction",
+            str(sampled_fraction),
+            "--filter-p",
+            str(filter_p),
             "--n-propagation",
             str(n_propagation),
             "--seed",

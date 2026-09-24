@@ -22,6 +22,9 @@ def test_defaults() -> None:
     assert c.tf_list is None
     assert c.n_top_targets == 20
     assert c.knn_n_neighbors == 200
+    assert c.max_cells == 0
+    assert c.sampled_fraction == pytest.approx(1.0)
+    assert c.filter_p == pytest.approx(0.001)
     assert c.n_propagation == 3
     assert c.min_cells_total == 200
     assert c.seed == 0

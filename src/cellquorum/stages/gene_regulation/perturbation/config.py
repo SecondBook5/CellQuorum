@@ -35,6 +35,25 @@ class PerturbationConfig(StrictBaseModel):
             left untouched.
         n_top_targets: Ranked-table / figure cutoff.
         knn_n_neighbors: Neighbors for CellOracle kNN imputation.
+        max_cells: Physically subsample to at most this many cells (proportionally
+            stratified by cluster_key, and condition_key when set) before the
+            Oracle is built. 0 disables subsampling. estimate_transition_prob's
+            call into velocyto's compiled correlation routine
+            (colDeltaCorpartial) segfaulted deterministically on a real
+            61,608-cell object -- confirmed, by reading velocyto's own source,
+            to be an unbounded array write, and confirmed fixed by shrinking the
+            object itself (a real ~2,000-cell run completed cleanly with the
+            same script; sampled_fraction/knn_n_neighbors alone did not fix it
+            even matched exactly to that object's values, since the crashing
+            buffer is sized off the actual cell count, not a sampling ratio).
+        sampled_fraction: estimate_transition_prob's random-neighbor candidate
+            pool as a fraction of cells (CellOracle default 1.0). Independent of
+            max_cells; use max_cells for the crash above.
+        filter_p: filter_links' significance cutoff (CellOracle default 0.001).
+            Usually the actual binding constraint on which TFs get simulated --
+            not filter_edge_number's count cap. A TF present in the base GRN can
+            still get zero fitted edges at a given cluster's cell count if none
+            clear this p-value, regardless of how high the count cap is set.
         n_propagation: Signal-propagation iterations for the KO simulation.
         min_cells_total: Minimum total cells required to attempt inference.
         seed: Random seed for reproducibility.
@@ -81,6 +100,19 @@ class PerturbationConfig(StrictBaseModel):
 
     # Neighbors for CellOracle kNN imputation.
     knn_n_neighbors: int = 200
+
+    # Physically subsample to at most this many cells before the Oracle is
+    # built. 0 disables subsampling. See the class docstring for why this
+    # exists -- it is the real fix for a real segfault, not a knob to leave at
+    # its default on a large object.
+    max_cells: int = 0
+
+    # estimate_transition_prob's random-neighbor candidate pool as a fraction
+    # of cells (CellOracle default 1.0).
+    sampled_fraction: float = 1.0
+
+    # filter_links' significance cutoff (CellOracle default 0.001).
+    filter_p: float = 0.001
 
     # Signal-propagation iterations for the KO simulation.
     n_propagation: int = 3
