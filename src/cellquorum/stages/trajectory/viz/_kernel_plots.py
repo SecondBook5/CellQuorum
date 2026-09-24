@@ -397,7 +397,11 @@ class DriverVizMethod(AnalysisMethod):
         # to treating each column as its own lineage (older runs / plain matrices).
         suffix = "_corr"
         corr_cols: list[tuple[int, str]] = []
-        if driver_columns and len(driver_columns) == mat.shape[1]:
+        # driver_columns/fate_names both come from adata.uns and round-trip
+        # through h5ad as numpy arrays, not the plain lists an in-memory test
+        # fixture builds -- `if x` on a multi-element array raises "truth
+        # value of an array... is ambiguous", so both check identity here.
+        if driver_columns is not None and len(driver_columns) == mat.shape[1]:
             corr_cols = [
                 (i, str(c)[: -len(suffix)])
                 for i, c in enumerate(driver_columns)
@@ -406,7 +410,7 @@ class DriverVizMethod(AnalysisMethod):
         if corr_cols:
             mat = mat[:, [i for i, _ in corr_cols]]
             names = [nm for _, nm in corr_cols]
-        elif fate_names and len(fate_names) == mat.shape[1]:
+        elif fate_names is not None and len(fate_names) == mat.shape[1]:
             names = [str(x) for x in fate_names]
         else:
             names = [f"lineage_{i}" for i in range(mat.shape[1])]

@@ -40,6 +40,27 @@ def _adata(n=30, g=12, drivers=True, lineages=("L0", "L1")):
     return a
 
 
+def test_handles_driver_columns_and_fate_names_as_numpy_arrays(tmp_path):
+    """Real crash on the fibroblast cohort (same class as fate_viz): both
+    driver_columns and fate_names come from adata.uns['trajectory']['cellrank']
+    and round-trip through h5ad as numpy arrays, not the plain Python lists
+    every existing in-memory test fixture constructs. Two separate
+    `if x and len(x) == ...` checks in this method -- one for driver_columns,
+    one for fate_names -- each raised "The truth value of an array with more
+    than one element is ambiguous" the moment a real array reached them.
+    """
+    a = _adata()
+    cr = a.uns["trajectory"]["cellrank"]
+    cr["fate_names"] = np.array(cr["fate_names"], dtype=object)
+    cr["driver_columns"] = np.array(cr["driver_columns"], dtype=object)
+    res = DriverVizMethod()._run(
+        a, {"figure_formats": ["png"], "dpi": 72, "top_k": 5}, _Ctx(tmp_path)
+    )
+    assert not isinstance(res, MethodSkip)
+    bars = sorted(p.name for p in (tmp_path / "f" / "trajectory").glob("drivers_bar_*.png"))
+    assert bars == ["drivers_bar_L0.png", "drivers_bar_L1.png"]
+
+
 def test_renders_driver_bars_and_heatmap(tmp_path):
     # Two lineages → 10 varm columns, but only the two _corr columns are plotted.
     res = DriverVizMethod()._run(
