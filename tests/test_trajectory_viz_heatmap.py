@@ -14,6 +14,24 @@ def test_bin_masks_sorts_and_bins():
     assert binid.min() >= 0 and binid.max() <= 3
 
 
+def test_bin_masks_uses_rank_not_raw_value_so_skew_does_not_empty_most_bins():
+    """Real bug found on the fibroblast cohort: dpt_pseudotime had 99.84% of
+    61,601 cells packed into the first 5% of its raw value range, with a
+    handful of straggler cells stretching the max out to 1.0. Binning by raw
+    VALUE (the old np.linspace(pt.min(), pt.max(), n_bins+1) edges) left
+    83/100 bins completely empty; the heatmap's forward-fill then painted
+    those empty bins with whichever straggler landed last, producing large,
+    confident-looking blocks of color backed by a handful of outlier cells
+    rather than real trend. Binning by RANK instead of raw value must keep
+    every bin populated regardless of how skewed the raw values are.
+    """
+    n_dense, n_stray = 995, 5
+    pt = np.concatenate([np.linspace(0.0, 0.03, n_dense), np.linspace(0.1, 1.0, n_stray)])
+    _, binid = heatmap.bin_masks(pt, n_bins=100)
+    counts = np.bincount(binid, minlength=100)
+    assert (counts > 0).all(), f"{(counts == 0).sum()} of 100 bins are empty"
+
+
 def test_binned_profile_shape():
     rng = np.random.default_rng(0)
     pt = np.linspace(0, 1, 50)

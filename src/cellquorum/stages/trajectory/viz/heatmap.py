@@ -19,12 +19,26 @@ from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP
 
 
 def bin_masks(pt: np.ndarray, n_bins: int) -> tuple[np.ndarray, np.ndarray]:
-    """Return (sort order over pt, bin id per cell in that sorted order)."""
+    """Return (sort order over pt, bin id per cell in that sorted order).
+
+    Bins by RANK (equal cell count per bin), not by raw pseudotime value.
+    Real bug this fixes: dpt_pseudotime on a real cohort had 99.84% of cells
+    packed into the first 5% of its raw value range, with a handful of
+    straggler cells stretching the max out to 1.0. Binning by raw value
+    (the previous ``np.linspace(pt.min(), pt.max(), n_bins+1)`` edges) left
+    83-91/100 bins completely empty; the heatmap's forward-fill then painted
+    those empty bins with whichever straggler landed last, producing large,
+    confident-looking color blocks backed by a handful of outliers rather
+    than real trend. Rank binning keeps every bin populated (when there are
+    at least n_bins cells) regardless of how skewed the raw values are, and
+    is robust to whichever pseudotime metric a caller picks -- the engine
+    should not depend on one particular algorithm's value distribution being
+    well-behaved.
+    """
     pt = np.asarray(pt, dtype=float)
     order = np.argsort(pt)
-    s = pt[order]
-    edges = np.linspace(s.min(), s.max(), n_bins + 1)
-    binid = np.clip(np.digitize(s, edges[1:-1]), 0, n_bins - 1)
+    n = len(order)
+    binid = np.clip((np.arange(n) * n_bins) // max(n, 1), 0, n_bins - 1).astype(int)
     return order, binid
 
 
