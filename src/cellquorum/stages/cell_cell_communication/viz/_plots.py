@@ -25,6 +25,21 @@ _OTHER_GRAY = "#9E9E9E"
 _SEQ_CMAP = SEQUENTIAL_CMAP
 
 
+def _clean_id(v: object) -> str:
+    """String form of a node/cluster id, stripping a spurious trailing '.0'.
+
+    Real bug this fixes: cluster ids ("0", "1", ..., "6") all look numeric,
+    so a CSV read without an explicit dtype=str silently infers a float64
+    column -- str(6.0) == "6.0", not "6", so every node label in a rendered
+    network figure read "6.0" instead of "6". A whole-number float is
+    rendered as its integer form regardless of which dtype the caller's
+    DataFrame happens to carry.
+    """
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
 def signed_norm(values: np.ndarray) -> TwoSlopeNorm:
     """TwoSlopeNorm centered at 0, guaranteed vmin < 0 < vmax."""
     arr = np.asarray(values, dtype=float)
@@ -505,8 +520,8 @@ def curvature_network(
     G = nx.DiGraph()
     for _, r in e.iterrows():
         G.add_edge(
-            str(r[source_col]),
-            str(r[target_col]),
+            _clean_id(r[source_col]),
+            _clean_id(r[target_col]),
             curv=float(r[curvature_col]),
             weight=float(r[weight_col]),
         )
@@ -535,7 +550,7 @@ def curvature_network(
         ax.add_patch(arrow)
     ncurv = {}
     if nodes is not None and not nodes.empty and node_curv_col in nodes.columns:
-        node_strs = nodes["node"].astype(str)
+        node_strs = nodes["node"].map(_clean_id)
         node_vals = nodes[node_curv_col].astype(float)
         ncurv = dict(zip(node_strs, node_vals, strict=False))
     # Node size carries degree -- a hub reads as a hub at a glance, not just

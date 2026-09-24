@@ -327,6 +327,32 @@ def test_curvature_network_without_weight_col():
     assert fig is not None
 
 
+def test_curvature_network_strips_a_spurious_float_suffix_from_cluster_ids():
+    """Real bug found on a rendered figure: node labels read "6.0" instead of
+    "6". Cluster ids ("0", "1", ..., "6") all look numeric, so a real CSV
+    read without dtype=str silently infers a float64 column -- pandas hands
+    curvature_network float values, and str(6.0) == "6.0", not "6". This
+    must render the clean integer-looking id regardless of whether the
+    caller's DataFrame column happens to be numeric or string dtype.
+    """
+    from cellquorum.stages.cell_cell_communication.viz._plots import curvature_network
+
+    edges = pd.DataFrame(
+        {
+            "source": [0.0, 1.0, 6.0],
+            "target": [1.0, 6.0, 0.0],
+            "ricci_curvature": [0.1, 0.2, 0.3],
+            "weight": [1.0, 2.0, 3.0],
+        }
+    )
+    nodes = pd.DataFrame({"node": [0.0, 1.0, 6.0], "ricci_curvature": [0.1, 0.2, 0.3]})
+    fig = curvature_network(edges, nodes)
+    ax = fig.axes[0]
+    labels = {t.get_text() for t in ax.texts}
+    assert labels == {"0", "1", "6"}
+    assert not any(lbl.endswith(".0") for lbl in labels)
+
+
 def test_curvature_network_does_not_drop_nodes_on_a_dense_graph():
     """Same bug already fixed for chord/sankey (_top_edges), never applied to
     curvature_network: a flat top_k cap on a real, densely-connected 9-cluster
