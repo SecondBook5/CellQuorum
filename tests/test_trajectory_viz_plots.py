@@ -68,3 +68,41 @@ def test_grouped_violin_sorted_groups():
     groups = {"B": np.random.RandomState(2).rand(20), "A": np.random.RandomState(3).rand(20)}
     fig = plots.grouped_violin(groups, title="t", ylabel="fate prob")
     assert isinstance(fig, Figure)
+
+
+def test_grouped_violin_does_not_draw_misleading_extrema_bars():
+    """Real complaint: matplotlib's default violinplot(showextrema=True) draws
+    a thin bar from the true min to true max of each group. For a 0-1-bounded
+    value like a fate probability, that bar visually dominates over the much
+    narrower actual density shape, reading as a plotting bug rather than the
+    real (concentrated) distribution it's supposed to show.
+    """
+    groups = {"A": np.random.RandomState(0).rand(30), "B": np.random.RandomState(1).rand(30)}
+    fig = plots.grouped_violin(groups, title="t", ylabel="fate prob")
+    ax = fig.axes[0]
+    # showextrema=True would add THREE extra LineCollections (cmins, cmaxes,
+    # cbars) alongside the one legitimate cmedians line; only cmedians (kept
+    # via showmedians=True) should remain.
+    from matplotlib.collections import LineCollection
+
+    line_collections = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert len(line_collections) == 1, f"expected only cmedians, found {len(line_collections)}"
+
+
+def test_grouped_violin_bodies_are_not_the_bare_matplotlib_default_color():
+    """Real complaint: unstyled matplotlib default fill reads as generic /
+    off-house-style next to every other figure in this package.
+    """
+    from matplotlib.collections import PolyCollection
+
+    groups = {"A": np.random.RandomState(0).rand(30), "B": np.random.RandomState(1).rand(30)}
+    fig = plots.grouped_violin(groups, title="t", ylabel="fate prob")
+    ax = fig.axes[0]
+    bodies = [c for c in ax.collections if isinstance(c, PolyCollection)]
+    assert bodies
+    default_blue = (0.12156862745098039, 0.4666666666666667, 0.7058823529411765, 1.0)
+    for body in bodies:
+        face = tuple(body.get_facecolor()[0])
+        assert (
+            face[:3] != default_blue[:3]
+        ), "violin body still uses matplotlib's bare default color"

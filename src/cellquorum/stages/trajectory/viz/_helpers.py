@@ -19,7 +19,11 @@ from matplotlib.colors import TwoSlopeNorm
 from matplotlib.figure import Figure
 
 from cellquorum.visualization.figio import figure_artifacts, save_figure
-from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP, apply_cellquorum_theme
+from cellquorum.visualization.figstyle import (
+    MUTED_PALETTE,
+    SEQUENTIAL_CMAP,
+    apply_cellquorum_theme,
+)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Input resolvers (from inputs.py)
@@ -157,25 +161,57 @@ def signed_diverging_bar(labels: Any, values: Any, *, title: str) -> Figure:
 
 
 def matrix_heatmap(
-    matrix: Any, row_labels: Any, col_labels: Any, *, title: str, cbar_label: str
+    matrix: Any,
+    row_labels: Any,
+    col_labels: Any,
+    *,
+    title: str,
+    cbar_label: str,
+    row_group_breaks: list[int] | None = None,
 ) -> Figure:
+    """Signed matrix as a diverging, zero-centered heatmap.
+
+    ``row_group_breaks`` draws a thin separator line after each given row
+    index (e.g. where consecutive rows change which column they peak in) --
+    makes a real grouping in the row order read as intentional structure
+    rather than an unexplained seam between otherwise-similar blocks.
+    """
     matrix = np.asarray(matrix, dtype=float)
     fig, ax = plt.subplots(figsize=(1.2 + 0.5 * len(col_labels), 1.2 + 0.4 * len(row_labels)))
-    im = ax.imshow(matrix, aspect="auto", cmap=SEQUENTIAL_CMAP)
+    im = ax.imshow(matrix, aspect="auto", cmap="RdBu_r", norm=_signed_norm(matrix))
     ax.set_xticks(range(len(col_labels)))
     ax.set_xticklabels(col_labels, rotation=90)
     ax.set_yticks(range(len(row_labels)))
     ax.set_yticklabels(row_labels)
+    for row in row_group_breaks or []:
+        ax.axhline(row - 0.5, color="white", lw=1.5)
     ax.set_title(title)
     fig.colorbar(im, ax=ax, label=cbar_label)
     return fig
 
 
 def grouped_violin(groups: Any, *, title: str, ylabel: str) -> Figure:
+    """One violin per group, house-styled.
+
+    ``showextrema=False``: matplotlib's default extrema bars run from the true
+    min to true max of each group, which for a 0-1-bounded value (a fate
+    probability) visually dominates over the actual, much narrower density
+    shape -- reading as a plotting defect rather than the real distribution.
+    The violin body's own taper already shows the range; a median tick is
+    enough on top of that. Bodies are filled from MUTED_PALETTE (the same
+    house choice used for other real-identity categorical groupings) rather
+    than matplotlib's bare default color.
+    """
     keys = sorted(groups)
     data = [np.asarray(groups[k], dtype=float) for k in keys]
     fig, ax = plt.subplots(figsize=(max(4, 0.6 * len(keys)), 4))
-    ax.violinplot(data, showmedians=True)
+    parts = ax.violinplot(data, showmedians=True, showextrema=False)
+    for i, body in enumerate(parts["bodies"]):
+        color = MUTED_PALETTE[i % len(MUTED_PALETTE)]
+        body.set_facecolor(color)
+        body.set_edgecolor(color)
+        body.set_alpha(0.75)
+    parts["cmedians"].set_color("#333333")
     ax.set_xticks(range(1, len(keys) + 1))
     ax.set_xticklabels(keys, rotation=45, ha="right")
     ax.set_ylabel(ylabel)
