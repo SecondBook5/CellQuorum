@@ -2,6 +2,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import numpy as np
+import pandas as pd
 from matplotlib.figure import Figure
 
 from cellquorum.stages.trajectory.viz import plots
@@ -49,6 +50,66 @@ def test_embedding_scatter_clips_color_scale_to_be_robust_to_outliers():
     # A handful of outliers must not stretch the scale to the raw max; it
     # should track where the bulk of the real data actually is.
     assert vmax < 0.1, f"vmax={vmax} -- outliers still dominate the color scale"
+
+
+def _coarse_T():
+    """Real shape confirmed against a live cellrank GPCCA estimator:
+    coarse_T is a square pandas.DataFrame indexed/columned by macrostate
+    names; coarse_stationary_distribution is a same-indexed Series.
+    """
+    names = ["B_1", "B_2", "A"]
+    mat = pd.DataFrame(
+        [
+            [0.90, 0.06, 0.04],
+            [0.03, 0.92, 0.05],
+            [0.07, 0.08, 0.85],
+        ],
+        index=names,
+        columns=names,
+    )
+    stationary = pd.Series([0.15, 0.39, 0.46], index=names)
+    return mat, stationary
+
+
+def test_coarse_transition_heatmap_returns_figure():
+    mat, stationary = _coarse_T()
+    fig = plots.coarse_transition_heatmap(mat, stationary)
+    assert isinstance(fig, Figure)
+
+
+def test_off_diagonal_vmax_ignores_the_diagonal():
+    """Real complaint: a shared 0-1 color scale across BOTH the near-1.0
+    diagonal (expected, uninformative -- well-separated macrostates mostly
+    stay put) and the off-diagonal (the actually informative cross-state
+    flow) drowns the off-diagonal signal in a wall of bright diagonal cells.
+    The color scale must be built from off-diagonal values only.
+    """
+    mat = np.array([[0.90, 0.06, 0.04], [0.03, 0.92, 0.05], [0.07, 0.08, 0.85]])
+    assert plots.off_diagonal_vmax(mat) == 0.08
+
+
+def test_off_diagonal_vmax_handles_a_2x2_matrix():
+    mat = np.array([[0.99, 0.01], [0.02, 0.98]])
+    assert plots.off_diagonal_vmax(mat) == 0.02
+
+
+def test_off_diagonal_vmax_falls_back_when_off_diagonal_is_all_zero():
+    mat = np.eye(3)
+    assert plots.off_diagonal_vmax(mat) == 1.0
+
+
+def test_coarse_transition_heatmap_applies_labels():
+    mat, stationary = _coarse_T()
+    fig = plots.coarse_transition_heatmap(
+        mat, stationary, labels={"B_1": "Perivascular", "A": "Papillary"}
+    )
+    ax = fig.axes[0]
+    tick_text = {t.get_text() for t in ax.get_xticklabels()} | {
+        t.get_text() for t in ax.get_yticklabels()
+    }
+    assert "Perivascular" in tick_text
+    assert "Papillary" in tick_text
+    assert "B_2" in tick_text  # unmapped name stays bare
 
 
 def test_signed_diverging_bar_handles_all_positive():

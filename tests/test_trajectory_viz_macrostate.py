@@ -59,6 +59,35 @@ def test_renders_macrostate_figures(tmp_path):
     assert len(figs) >= 1
 
 
+def test_coarse_transition_renders_with_fate_labels(tmp_path, monkeypatch):
+    """coarse_transition must use our own off-diagonal-focused renderer (not
+    CellRank's raw plot_coarse_T, whose shared color scale drowned the
+    off-diagonal signal behind the expected near-1.0 diagonal), and apply
+    fate_labels the same way every other trajectory_viz figure does.
+    """
+    _fitted_estimator(tmp_path)
+    from cellquorum.stages.trajectory.viz import _kernel_plots
+
+    real_fn = _kernel_plots._helpers.coarse_transition_heatmap
+    captured = {}
+
+    def _spy(coarse_T, stationary=None, **kwargs):
+        captured["labels"] = kwargs.get("labels")
+        return real_fn(coarse_T, stationary, **kwargs)
+
+    monkeypatch.setattr(_kernel_plots._helpers, "coarse_transition_heatmap", _spy)
+
+    res = MacrostateVizMethod()._run(
+        ad.AnnData(np.zeros((2, 2))),
+        {"figure_formats": ["png"], "dpi": 72, "fate_labels": {"A": "Papillary"}},
+        _Ctx(tmp_path),
+    )
+    assert not isinstance(res, MethodSkip)
+    assert captured["labels"]["A"] == "A (Papillary)"
+    heat = list((tmp_path / "f" / "trajectory").glob("coarse_transition.png"))
+    assert len(heat) == 1
+
+
 def test_skips_without_pickle(tmp_path):
     (tmp_path).mkdir(exist_ok=True)
     res = MacrostateVizMethod()._run(ad.AnnData(np.zeros((2, 2))), {}, _Ctx(tmp_path))

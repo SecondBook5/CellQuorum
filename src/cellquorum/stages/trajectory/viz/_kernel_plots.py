@@ -274,18 +274,31 @@ class MacrostateVizMethod(AnalysisMethod):
         else:
             warnings.append("macrostate_viz: no embedding basis; plot_macrostates skipped")
 
-        # coarse transition matrix (no show= kwarg).
+        # Coarse transition matrix: our own off-diagonal-focused renderer, not
+        # CellRank's raw plot_coarse_T(), whose shared 0-1 color scale across
+        # both the near-1.0 diagonal (expected for stable, well-separated
+        # macrostates) and the off-diagonal (the actually informative
+        # cross-state flow) drowned the off-diagonal signal entirely.
         try:
-            estimator.plot_coarse_T()
+            fate_labels = config.get("fate_labels")
+            names = [str(c) for c in estimator.coarse_T.columns]
+            labels = {nm: _resolve_fate_label(nm, fate_labels) for nm in names}
+            fig = _helpers.coarse_transition_heatmap(
+                estimator.coarse_T,
+                estimator.coarse_stationary_distribution,
+                labels=labels,
+            )
             paths = _helpers.save_figure(
-                plt.gcf(), figures_dir, "coarse_transition", formats=formats, dpi=dpi
+                fig, figures_dir, "coarse_transition", formats=formats, dpi=dpi
             )
             artifacts += _helpers.figure_artifacts(
-                paths, name="trajectory_figure", description="CellRank coarse transition matrix."
+                paths,
+                name="trajectory_figure",
+                description="Coarse-grained macrostate transitions.",
             )
             n += 1
         except Exception as exc:  # noqa: BLE001
-            warnings.append(f"macrostate_viz: plot_coarse_T failed: {str(exc)[:200]}")
+            warnings.append(f"macrostate_viz: coarse_transition failed: {str(exc)[:200]}")
 
         if n == 0:
             return self._skip("nothing rendered", warnings=warnings)
