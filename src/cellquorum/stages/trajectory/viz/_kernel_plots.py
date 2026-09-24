@@ -360,13 +360,17 @@ class FateVizMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
         coords = adata.obsm[basis]
         cluster_key = config.get("cluster_key")
+        fate_labels = config.get("fate_labels")
 
         _helpers.apply_theme()
         artifacts, warnings, n = [], [], 0
         for col, name in lineages:
             try:
                 fig = _helpers.embedding_scatter(
-                    coords, fp[:, col], title=name, cbar_label="fate prob"
+                    coords,
+                    fp[:, col],
+                    title=_resolve_fate_label(name, fate_labels),
+                    cbar_label="fate prob",
                 )
                 paths = _helpers.save_figure(
                     fig, figures_dir, f"fate_{name}", formats=formats, dpi=dpi
@@ -380,11 +384,14 @@ class FateVizMethod(AnalysisMethod):
 
         if cluster_key and cluster_key in adata.obs:
             try:
-                labels = adata.obs[cluster_key].astype(str).to_numpy()
+                cell_groups = adata.obs[cluster_key].astype(str).to_numpy()
                 for col, name in lineages:
-                    groups = {g: fp[labels == g, col] for g in sorted(set(labels))}
+                    groups = {g: fp[cell_groups == g, col] for g in sorted(set(cell_groups))}
                     fig = _helpers.grouped_violin(
-                        groups, title=f"{name} by {cluster_key}", ylabel="fate prob"
+                        groups,
+                        title=f"{_resolve_fate_label(name, fate_labels)} by {cluster_key}",
+                        ylabel="fate prob",
+                        labels=fate_labels,
                     )
                     paths = _helpers.save_figure(
                         fig, figures_dir, f"fate_violin_{name}", formats=formats, dpi=dpi

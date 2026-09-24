@@ -313,7 +313,9 @@ def coarse_transition_heatmap(
     return fig
 
 
-def grouped_violin(groups: Any, *, title: str, ylabel: str) -> Figure:
+def grouped_violin(
+    groups: Any, *, title: str, ylabel: str, labels: dict[str, str] | None = None
+) -> Figure:
     """One raincloud (half-violin + compact box + median + jittered points)
     per group, via the house raincloud primitive.
 
@@ -321,6 +323,11 @@ def grouped_violin(groups: Any, *, title: str, ylabel: str) -> Figure:
     tool produced this figure, next to every QC distribution figure in this
     codebase using ``figstyle.raincloud`` for the same job. This now reuses
     that exact primitive instead of reimplementing a plainer version of it.
+
+    ``labels`` is an optional {raw group key -> display name} override for
+    the x-tick TEXT ONLY -- sort order stays keyed on the raw group values
+    (a bare "0"/"1"/"4" is illegible on its own, but sorting by display name
+    instead would silently scramble whatever order the raw keys implied).
     """
     from cellquorum.visualization.figstyle import raincloud
 
@@ -330,7 +337,7 @@ def grouped_violin(groups: Any, *, title: str, ylabel: str) -> Figure:
         color = MUTED_PALETTE[i % len(MUTED_PALETTE)]
         raincloud(ax, np.asarray(groups[key], dtype=float), float(i), color=color, seed=i)
     ax.set_xticks(range(len(keys)))
-    ax.set_xticklabels(keys, rotation=45, ha="right")
+    ax.set_xticklabels([(labels or {}).get(k, k) for k in keys], rotation=45, ha="right")
     ax.set_xlim(-0.5, len(keys) - 0.3)
     ax.set_ylabel(ylabel)
     ax.set_title(title)

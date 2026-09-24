@@ -131,6 +131,27 @@ def test_grouped_violin_sorted_groups():
     assert isinstance(fig, Figure)
 
 
+def test_grouped_violin_applies_labels_without_reordering_groups():
+    """Real ask: bare group codes ("0", "1", ...) on the x-axis are illegible
+    without cross-referencing a separate table -- the same problem fate_labels
+    already solves for driver_viz/velocity_viz/coarse_transition_heatmap
+    titles. Display labels must not change the underlying sort order (sorting
+    by DISPLAY name instead, e.g. "Inflammatory" before "Mechanosensory",
+    would silently scramble the natural 0,1,2,3,4,6 order the caller expects).
+    """
+    groups = {
+        "0": np.random.RandomState(0).rand(20),
+        "4": np.random.RandomState(1).rand(20),
+        "1": np.random.RandomState(2).rand(20),
+    }
+    fig = plots.grouped_violin(
+        groups, title="t", ylabel="fate prob", labels={"0": "Perivascular", "4": "Inflammatory"}
+    )
+    ax = fig.axes[0]
+    tick_text = [t.get_text() for t in ax.get_xticklabels()]
+    assert tick_text == ["Perivascular", "1", "Inflammatory"]  # sort order still by raw key
+
+
 def test_grouped_violin_uses_the_house_raincloud_primitive():
     """Real complaint: this figure should look like the QC violin/boxplots,
     not like a bare matplotlib violinplot from a different tool. It must

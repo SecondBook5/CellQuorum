@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 import anndata as ad
 import numpy as np
+import pandas as pd
 
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.trajectory.viz._kernel_plots import FateVizMethod
@@ -55,6 +56,51 @@ def test_handles_fate_names_as_a_numpy_array_not_a_list(tmp_path):
     assert not isinstance(res, MethodSkip)
     figs = list((tmp_path / "f" / "trajectory").glob("fate_*.png"))
     assert len(figs) == 2
+
+
+def test_fate_labels_reach_the_scatter_title_and_violin_ticks(tmp_path, monkeypatch):
+    """Real ask: bare macrostate/subcluster ids ("0", "1", "4") on fate_*.png
+    titles and fate_violin_*.png x-ticks are illegible without a separate
+    lookup table -- the same fate_labels dict already used by
+    driver_viz/velocity_viz/coarse_transition_heatmap must resolve them here
+    too, in both places.
+    """
+    from cellquorum.stages.trajectory.viz import _kernel_plots
+
+    a = _adata()
+    a.obs["sub"] = pd.Categorical(["0"] * 20 + ["4"] * 20)
+    real_scatter = _kernel_plots._helpers.embedding_scatter
+    real_violin = _kernel_plots._helpers.grouped_violin
+    scatter_titles = []
+    violin_calls = []
+
+    def _scatter_spy(coords, values, *, title, cbar_label):
+        scatter_titles.append(title)
+        return real_scatter(coords, values, title=title, cbar_label=cbar_label)
+
+    def _violin_spy(groups, *, title, ylabel, labels=None):
+        violin_calls.append((title, labels))
+        return real_violin(groups, title=title, ylabel=ylabel, labels=labels)
+
+    monkeypatch.setattr(_kernel_plots._helpers, "embedding_scatter", _scatter_spy)
+    monkeypatch.setattr(_kernel_plots._helpers, "grouped_violin", _violin_spy)
+
+    res = FateVizMethod()._run(
+        a,
+        {
+            "figure_formats": ["png"],
+            "dpi": 72,
+            "cluster_key": "sub",
+            "fate_labels": {"0": "Perivascular", "4": "Inflammatory", "L0": "Terminal state"},
+        },
+        _Ctx(tmp_path),
+    )
+    assert not isinstance(res, MethodSkip)
+    assert "Terminal state" in "".join(scatter_titles)  # "L0 (Terminal state)"
+    assert violin_calls
+    for title, labels in violin_calls:
+        assert "Terminal state" in title or "L1" in title
+        assert labels == {"0": "Perivascular", "4": "Inflammatory", "L0": "Terminal state"}
 
 
 def test_fallback_lineage_names_when_uns_trajectory_not_dict(tmp_path):
