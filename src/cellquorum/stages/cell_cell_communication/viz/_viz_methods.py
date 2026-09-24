@@ -17,6 +17,7 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     load_curvature,
     load_tensor_factors,
     load_topology,
+    relabel_clusters,
     save_figure,
 )
 
@@ -46,6 +47,8 @@ class DotplotVizMethod(AnalysisMethod):
             sources = [(lab, df) for lab, df in sources if lab in set(wanted)]
         if not sources:
             return self._skip("no canonical LR sources found")
+        labels = config.get("cluster_labels")
+        sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -98,6 +101,8 @@ class ChordVizMethod(AnalysisMethod):
             sources = [(lab, df) for lab, df in sources if lab in set(wanted)]
         if not sources:
             return self._skip("no canonical LR sources found")
+        labels = config.get("cluster_labels")
+        sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -152,6 +157,8 @@ class SankeyVizMethod(AnalysisMethod):
             sources = [(lab, df) for lab, df in sources if lab in set(wanted)]
         if not sources:
             return self._skip("no canonical LR sources found")
+        labels = config.get("cluster_labels")
+        sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -213,6 +220,13 @@ class NetworkVizMethod(AnalysisMethod):
         curv = load_curvature(results_dir)
         if not curv:
             return self._skip("no curvature CSVs found")
+        labels = config.get("cluster_labels")
+        curv = {
+            key: relabel_clusters(
+                df, ["node"] if key.endswith("_nodes") else ["source", "target"], labels
+            )
+            for key, df in curv.items()
+        }
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -295,6 +309,9 @@ class SummaryVizMethod(AnalysisMethod):
         topo = load_topology(results_dir)
         if not sources and not topo:
             return self._skip("no LR sources or topology found")
+        labels = config.get("cluster_labels")
+        sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
+        topo = {level: relabel_clusters(df, ["node"], labels) for level, df in topo.items()}
 
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
@@ -364,6 +381,16 @@ class TensorFactorsVizMethod(AnalysisMethod):
         factors = load_tensor_factors(results_dir)
         if factors is None:
             return self._skip("tensor_c2c factor tables not found or incomplete")
+        # senders/receivers are indexed BY cluster code (not a column), so
+        # relabel_clusters (column-based) doesn't apply -- relabel the index
+        # directly, same display-only {code -> name} override.
+        cluster_labels = config.get("cluster_labels")
+        if cluster_labels:
+            factors = dict(factors)
+            for key in ("senders", "receivers"):
+                factors[key] = factors[key].rename(
+                    index=lambda v: cluster_labels.get(str(v), str(v))
+                )
 
         # Color contexts by condition when a sample name follows the
         # <sample>_<condition> convention (e.g. "P1_LE") -- the single most

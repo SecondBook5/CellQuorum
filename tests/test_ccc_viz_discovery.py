@@ -3,6 +3,42 @@
 import pandas as pd
 
 
+def test_relabel_clusters_overrides_display_only():
+    """Real ask: every CCC figure (dotplot, chord, sankey, network, topology)
+    showed bare numeric subcluster codes ("0","1",...) with no way to tell
+    what they mean. cluster_labels is a display-only {raw code -> name}
+    override, same pattern as trajectory_viz's fate_labels: a code with no
+    entry stays unchanged, and columns not named in `cols` are untouched.
+    """
+    from cellquorum.stages.cell_cell_communication.viz._io import relabel_clusters
+
+    df = pd.DataFrame({"source": ["0", "1"], "target": ["1", "6"], "ligand": ["L1", "L2"]})
+    out = relabel_clusters(df, ["source", "target"], {"0": "Perivascular", "1": "Mechanosensory"})
+    assert list(out["source"]) == ["Perivascular", "Mechanosensory"]
+    assert list(out["target"]) == ["Mechanosensory", "6"]  # "6" has no entry, stays bare
+    assert list(out["ligand"]) == ["L1", "L2"]  # untouched column
+
+
+def test_cluster_labels_is_in_the_stage_whitelist():
+    """A config field that exists on CccVizConfig but is missing from
+    _VIZ_CONFIG_KEYS is silently dropped before any method ever sees it --
+    the exact bug already found live in trajectory_viz (fate_labels existed
+    on the model but wasn't forwarded by _augment_config).
+    """
+    from cellquorum.stages.cell_cell_communication.viz.stage import _VIZ_CONFIG_KEYS
+
+    assert "cluster_labels" in _VIZ_CONFIG_KEYS
+
+
+def test_relabel_clusters_no_labels_is_a_noop():
+    from cellquorum.stages.cell_cell_communication.viz._io import relabel_clusters
+
+    df = pd.DataFrame({"source": ["0"], "target": ["1"]})
+    out = relabel_clusters(df, ["source", "target"], None)
+    assert list(out["source"]) == ["0"]
+    assert out is df  # no-op returns the same object, not a needless copy
+
+
 def _canon(sample="s1"):
     return pd.DataFrame(
         {

@@ -18,6 +18,11 @@ class CccVizConfig(StrictBaseModel):
         dpi: Raster resolution.
         sources: If set, only render these canonical LR sources by name; None -> all present.
         levels: If set, only render these network levels (cci/gci) by name; None -> all present.
+        cluster_labels: Optional {raw cluster code -> display name} override for every
+            figure's cluster axis/node/segment labels (display only -- grouping and
+            color still key off the raw code). A code with no entry stays bare;
+            unset, every figure shows raw codes. Never defaulted, since the mapping
+            is study-specific.
     """
 
     enabled: bool = True
@@ -26,6 +31,7 @@ class CccVizConfig(StrictBaseModel):
     dpi: int = 300
     sources: list[str] | None = None
     levels: list[str] | None = None
+    cluster_labels: dict[str, str] | None = None
 
 
 __all__ = ["CccVizConfig"]

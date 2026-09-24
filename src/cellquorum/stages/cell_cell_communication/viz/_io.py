@@ -14,6 +14,27 @@ from cellquorum.visualization.figstyle import apply_cellquorum_theme
 # ─── Input discovery ───────────────────────────────────────────────────────
 
 
+def relabel_clusters(
+    df: pd.DataFrame, cols: list[str], labels: dict[str, str] | None
+) -> pd.DataFrame:
+    """Display-only {raw cluster code -> name} override on the given columns.
+
+    Real ask: every CCC figure (dotplot, chord, sankey, network, topology)
+    showed bare numeric subcluster codes with no way to tell what they mean
+    -- same pattern trajectory_viz's fate_labels already solves. A code with
+    no entry in ``labels`` is left unchanged, and ``labels`` itself is never
+    required: the engine never defaults or invents biology, a caller opts in
+    by passing a project-declared mapping.
+    """
+    if not labels:
+        return df
+    df = df.copy()
+    for c in cols:
+        if c in df.columns:
+            df[c] = df[c].astype(str).map(lambda v: labels.get(v, v))
+    return df
+
+
 def _read_csv(path: Path) -> pd.DataFrame | None:
     try:
         if not path.exists():

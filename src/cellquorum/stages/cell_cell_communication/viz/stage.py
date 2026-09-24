@@ -8,7 +8,15 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
 
-_VIZ_CONFIG_KEYS = ("enabled", "top_k", "figure_formats", "dpi", "sources", "levels")
+_VIZ_CONFIG_KEYS = (
+    "enabled",
+    "top_k",
+    "figure_formats",
+    "dpi",
+    "sources",
+    "levels",
+    "cluster_labels",
+)
 _DEFAULT_METHODS = [
     "dotplot_viz",
     "chord_viz",
