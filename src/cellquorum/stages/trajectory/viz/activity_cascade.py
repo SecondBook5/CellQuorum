@@ -21,6 +21,8 @@ import pandas as pd
 from matplotlib.figure import Figure
 from scipy.stats import spearmanr
 
+from cellquorum.stages.trajectory.viz.heatmap import bin_masks
+
 # Row z-scores are clipped to this symmetric range before drawing, so a single
 # extreme bin cannot wash out the diverging colormap.
 _ZCLIP = 2.5
@@ -56,24 +58,33 @@ def rank_by_pseudotime(activity: pd.DataFrame, pseudotime: np.ndarray) -> pd.Dat
 def binned_matrix(
     activity: pd.DataFrame, pseudotime: np.ndarray, names: list[str], n_bins: int
 ) -> pd.DataFrame:
-    """Mean activity per source across equal-width pseudotime bins.
+    """Mean activity per source across pseudotime bins.
 
     Returns a ``source × bin`` frame (rows reindexed to ``names``); empty bins
     stay NaN. Mirrors ``dc.pp.bin_order`` + per-bin mean without the decoupler
     dependency.
+
+    Binned by RANK (``heatmap.bin_masks``), not raw pseudotime value. Real bug
+    this fixes, found on the fibroblast cohort: dpt_pseudotime had 99.84% of
+    cells packed into the first 5% of its raw value range, with a handful of
+    straggler cells stretching the max to 1.0. Equal-WIDTH bins left most of
+    them completely empty -- a heatmap that was blank everywhere except a
+    handful of narrow populated strips. Same fix, same reason, as the
+    condition-split pseudotime heatmap; both now share one binning
+    implementation instead of two independently-broken ones.
     """
     pt = np.asarray(pseudotime, dtype=float)
     finite = np.isfinite(pt)
-    lo, hi = float(pt[finite].min()), float(pt[finite].max())
-    if hi <= lo:  # degenerate pseudotime: one bin
-        edges = np.array([lo, lo + 1e-9])
+    if not finite.any():
+        return pd.DataFrame(index=names, columns=range(n_bins), dtype=float)
+    pt_finite = pt[finite]
+    if np.ptp(pt_finite) <= 0:  # degenerate pseudotime: one bin
         n_bins = 1
-    else:
-        edges = np.linspace(lo, hi, n_bins + 1)
-    # Right-closed bins so the max pseudotime lands in the last bin, not one past.
-    idx = np.clip(np.digitize(pt, edges[1:-1], right=False), 0, n_bins - 1)
+    order, binid = bin_masks(pt_finite, n_bins)
+    idx = np.empty(pt_finite.shape[0], dtype=int)
+    idx[order] = binid
     sub = activity.loc[:, names].loc[finite].copy()
-    sub["__bin__"] = idx[finite]
+    sub["__bin__"] = idx
     mat = sub.groupby("__bin__").mean().T
     mat = mat.reindex(columns=range(n_bins))
     return mat.reindex(names)

@@ -71,6 +71,24 @@ def test_binned_matrix_shape_and_direction():
     assert mat.loc["early"].iloc[-1] < mat.loc["early"].iloc[0]
 
 
+def test_binned_matrix_uses_rank_not_raw_value_so_skew_does_not_empty_most_bins():
+    """Real bug found on the fibroblast cohort's activity_cascade figures
+    (same root cause as the pseudotime heatmap's binning bug): dpt_pseudotime
+    had 99.84% of cells packed into the first 5% of its raw value range, with
+    a handful of straggler cells stretching the max to 1.0. Equal-WIDTH
+    binning (np.linspace(pt.min(), pt.max(), n_bins+1)) left most bins
+    completely empty (NaN) -- exactly the near-blank-heatmap-with-a-few-
+    populated-strips a user actually saw. Binning by RANK instead must keep
+    every bin populated regardless of skew.
+    """
+    n_dense, n_stray = 995, 5
+    pt = np.concatenate([np.linspace(0.0, 0.03, n_dense), np.linspace(0.1, 1.0, n_stray)])
+    df = pd.DataFrame({"src": np.random.RandomState(0).rand(len(pt))})
+    mat = cascade.binned_matrix(df, pt, ["src"], n_bins=100)
+    empty = mat.loc["src"].isna().sum()
+    assert empty == 0, f"{empty} of 100 bins are empty (NaN)"
+
+
 def test_clean_label_strips_hallmark_prefix():
     assert cascade.clean_label("HALLMARK_TNFA_SIGNALING_VIA_NFKB") == "Tnfa Signaling Via Nfkb"
     assert cascade.clean_label("EGFR") == "EGFR"
