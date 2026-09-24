@@ -99,9 +99,17 @@ class VelocityVizMethod(AnalysisMethod):
         # Colour by the most specific NAMED grouping available. A velocity figure
         # with no grouping is the grey-blob failure this rewrite exists to fix, so
         # having no usable key is a skip, not a silently ugly figure.
+        #
+        # This must read config['cluster_key'] -- the SAME field pseudotime_heatmap
+        # and driver_viz already use for the project's real cluster identities --
+        # not a second, differently-named switch. A prior version read a
+        # config['group_key'] that no config schema field or stage whitelist ever
+        # set, so it always fell through to the generic candidate chain below and
+        # landed on 'cell_type_granular' (a coarse, auto-named atlas column) even
+        # when the project config correctly declared cluster_key.
         group_key = velocity_viz.resolve_group_key(
             sub,
-            config.get("group_key"),
+            config.get("cluster_key"),
             ("cell_type_granular", "cell_type", "state", "leiden"),
         )
         if group_key is None:
@@ -115,6 +123,7 @@ class VelocityVizMethod(AnalysisMethod):
                 group_key=group_key,
                 basis=basis,
                 title=config.get("title") or f"RNA velocity ({sub.n_obs:,} cells)",
+                group_labels=config.get("fate_labels"),
             )
             paths = _helpers.save_figure(
                 fig, figures_dir, "velocity_stream", formats=formats, dpi=dpi

@@ -195,3 +195,36 @@ def test_velocity_stream_figure_raises_when_the_group_key_is_absent():
     adata = _velocity_adata()
     with pytest.raises(VelocityRenderError, match="not in obs"):
         velocity_stream_figure(adata, group_key="nope")
+
+
+def test_velocity_stream_figure_applies_group_labels_to_legend_and_text():
+    """group_labels must relabel the legend and on-plot text, not the grouping.
+
+    Real bug: the raw group_key values shown here were auto-generated marker
+    names like "cell_type_granular" categories, not the project's declared
+    cluster identities. group_labels is the same {raw value -> display name}
+    override pattern already used by the perturbation figures, so a caller can
+    show real identities without changing which cells get grouped together.
+    """
+    adata = _velocity_adata()
+    fig = velocity_stream_figure(
+        adata,
+        group_key="leiden",
+        density=3.0,
+        group_labels={"0": "Papillary", "1": "Mechanosensory"},
+    )
+    ax = fig.axes[0]
+
+    legend_labels = {t.get_text() for t in ax.get_legend().get_texts()}
+    assert "Papillary" in legend_labels
+    assert "Mechanosensory" in legend_labels
+    # Unmapped groups keep their raw value.
+    assert "2" in legend_labels
+    assert "3" in legend_labels
+    # Raw codes for the mapped groups must not leak into the legend.
+    assert "0" not in legend_labels
+    assert "1" not in legend_labels
+
+    text_labels = {t.get_text() for t in ax.texts}
+    assert "Papillary" in text_labels
+    assert "Mechanosensory" in text_labels

@@ -114,8 +114,16 @@ def _label_groups(
     palette: dict[str, str],
     *,
     min_cells: int = 15,
+    group_labels: dict[str, str] | None = None,
 ) -> None:
-    """Boxed group labels at per-group medians, de-collided when adjustText exists."""
+    """Boxed group labels at per-group medians, de-collided when adjustText exists.
+
+    ``group_labels`` is an optional {raw group value -> display name} override
+    for the TEXT ONLY (a group with no entry keeps its raw value). Grouping,
+    masking and the palette all stay keyed by the raw value in ``groups``/
+    ``order`` -- this never changes which cells are grouped together, only
+    what a reader sees.
+    """
     texts = []
     for group in order:
         mask = groups == group
@@ -126,7 +134,7 @@ def _label_groups(
             ax.text(
                 cx,
                 cy,
-                group,
+                (group_labels or {}).get(group, group),
                 fontsize=9,
                 fontweight="bold",
                 ha="center",
@@ -171,12 +179,17 @@ def velocity_stream_figure(
     stream_density: float = 1.5,
     point_size: float = 14.0,
     figsize: tuple[float, float] = (8.8, 8.2),
+    group_labels: dict[str, str] | None = None,
 ) -> Figure:
     """Velocity stream over group-coloured cells. Raises VelocityRenderError if unusable.
 
     Requires ``obsm['X_<basis>']`` and a reprojected ``obsm['velocity_<basis>']``.
     The reprojection is attempted here when absent, which is also the guard that
     catches an object whose velocity was never projected into any embedding.
+
+    ``group_labels`` is an optional {raw ``group_key`` value -> display name}
+    override applied to the on-plot text and legend only; ``group_key``
+    itself still decides which cells are grouped and colored together.
     """
     import matplotlib.pyplot as plt
 
@@ -266,7 +279,7 @@ def velocity_stream_figure(
         arrowstyle="-|>",
         zorder=5,
     )
-    _label_groups(ax, xy, groups, order, palette)
+    _label_groups(ax, xy, groups, order, palette, group_labels=group_labels)
     ax.set_aspect("equal", adjustable="datalim")
     _corner_axes(ax, xy, (f"{basis.upper()}1", f"{basis.upper()}2"))
     ax.set_title(title or f"RNA velocity ({adata.n_obs:,} cells)", fontsize=12)
@@ -289,7 +302,7 @@ def velocity_stream_figure(
             markersize=8,
             markerfacecolor=palette.get(g, "#9a9a9a"),
             markeredgecolor="none",
-            label=g,
+            label=(group_labels or {}).get(g, g),
         )
         for g in order
     ]
