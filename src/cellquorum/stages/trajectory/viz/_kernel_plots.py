@@ -285,7 +285,11 @@ class FateVizMethod(AnalysisMethod):
         traj = adata.uns.get("trajectory", {})
         cr = traj.get("cellrank", {}) if isinstance(traj, dict) else {}
         fate_names = cr.get("fate_names") if isinstance(cr, dict) else None
-        if fate_names and len(fate_names) == n_lin:
+        # uns['trajectory']['cellrank']['fate_names'] round-trips through h5ad
+        # as a numpy array, not the plain list every in-memory test constructs
+        # -- `if fate_names` on a multi-element array raises "truth value of an
+        # array... is ambiguous", so this must check identity, not truthiness.
+        if fate_names is not None and len(fate_names) == n_lin:
             names = [str(x) for x in fate_names]
         else:
             names = [f"lineage_{i}" for i in range(n_lin)]
