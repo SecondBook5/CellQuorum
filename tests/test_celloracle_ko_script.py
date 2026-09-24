@@ -61,6 +61,56 @@ def test_parser_has_expected_args() -> None:
     assert args.seed == 0
 
 
+def test_stratified_subsample_preserves_group_proportions() -> None:
+    import pandas as pd
+
+    ns = _load()
+    subsample = ns["_stratified_subsample"]
+
+    # 4 fibroblast_subclusters x 2 conditions, deliberately imbalanced sizes,
+    # mirroring the real object's smallest cluster (Mechanosensory, ~2,913 of
+    # 61,608 cells) so a naive random subsample could plausibly drop it entirely.
+    rows = []
+    sizes = {("0", "Normal"): 3000, ("0", "LE"): 4000, ("1", "Normal"): 100, ("1", "LE"): 150}
+    for (cl, cond), n in sizes.items():
+        rows += [{"cluster": cl, "condition": cond}] * n
+    obs = pd.DataFrame(rows, index=[f"c{i}" for i in range(len(rows))])
+
+    kept = subsample(obs, "cluster", "condition", max_cells=500, seed=0)
+
+    assert len(kept) <= 550  # rounding may push slightly over/under 500
+    kept_obs = obs.loc[kept]
+    # every group present in the input must still be represented, however small
+    for cl, cond in sizes:
+        assert ((kept_obs["cluster"] == cl) & (kept_obs["condition"] == cond)).sum() >= 1
+    # the two real groups' relative sizes should roughly survive (proportional,
+    # not equal) -- cluster 0 (7000 of 7250 cells) should dominate the subsample
+    assert (kept_obs["cluster"] == "0").sum() > (kept_obs["cluster"] == "1").sum()
+
+
+def test_stratified_subsample_is_deterministic() -> None:
+    import pandas as pd
+
+    ns = _load()
+    subsample = ns["_stratified_subsample"]
+    obs = pd.DataFrame({"cluster": ["a"] * 200 + ["b"] * 50}, index=[f"c{i}" for i in range(250)])
+
+    first = subsample(obs, "cluster", None, max_cells=60, seed=7)
+    second = subsample(obs, "cluster", None, max_cells=60, seed=7)
+    assert list(first) == list(second)
+
+
+def test_stratified_subsample_no_op_when_already_small() -> None:
+    import pandas as pd
+
+    ns = _load()
+    subsample = ns["_stratified_subsample"]
+    obs = pd.DataFrame({"cluster": ["a"] * 10}, index=[f"c{i}" for i in range(10)])
+
+    kept = subsample(obs, "cluster", None, max_cells=500, seed=0)
+    assert list(kept) == list(obs.index)
+
+
 def test_write_skip_creates_empty_ranking_and_marker(tmp_path: Path) -> None:
     ns = _load()
     ns["write_skip"](tmp_path, "t", "no base GRN")

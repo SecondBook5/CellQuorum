@@ -64,6 +64,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-propagation", type=int, default=3)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument(
+        "--max-cells",
+        type=int,
+        default=0,
+        help="Physically subsample the object to at most this many cells "
+        "(proportionally stratified by --cluster-key, and --condition-key if "
+        "set) before building the Oracle. 0 (default) disables subsampling. "
+        "See _stratified_subsample's docstring for why this exists: the "
+        "crashing buffer in velocyto's compiled correlation routine is sized "
+        "off the actual cell count, not a sampling-ratio parameter.",
+    )
+    p.add_argument(
         "--sampled-fraction",
         type=float,
         default=1.0,
@@ -77,6 +88,43 @@ def build_parser() -> argparse.ArgumentParser:
         "that scale on larger objects.",
     )
     return p
+
+
+def _stratified_subsample(
+    obs: pd.DataFrame,  # noqa: F821 -- pandas kept unimported at module level
+    cluster_key: str,
+    condition_key: str | None,
+    max_cells: int,
+    seed: int,
+) -> pd.Index:  # noqa: F821
+    """Return obs_names to keep, proportionally stratified by cluster (+condition).
+
+    velocyto's speedboosted.pyx (called by estimate_transition_prob) crashes with
+    a deterministic segfault on a real 61,608-cell object; the same script ran
+    cleanly end-to-end on a real ~2,000-cell object. Parameter-only mitigations
+    (sampled_fraction, knn_n_neighbors) did not fix it even matched exactly to
+    the working object's values -- the crashing buffer is sized off the actual
+    cell count, not a sampling ratio. This physically shrinks the object instead.
+
+    Proportional per-group sampling (not flat/equal) so the smallest real
+    cluster in this data (Mechanosensory, ~2,913 of 61,608 cells) doesn't get
+    disproportionately over- or under-represented, and every observed
+    (cluster, condition) combination keeps at least one cell so no group
+    vanishes from the simulation entirely.
+    """
+    if len(obs) <= max_cells:
+        return obs.index
+    import numpy as np
+
+    group_cols = [cluster_key] + ([condition_key] if condition_key else [])
+    rng = np.random.RandomState(seed)
+    frac = max_cells / len(obs)
+    keep: list[str] = []
+    for _, grp in obs.groupby(group_cols, observed=True):
+        n_keep = min(len(grp), max(1, round(len(grp) * frac)))
+        idx = rng.choice(grp.index.to_numpy(), size=n_keep, replace=False)
+        keep.extend(idx.tolist())
+    return obs.index.__class__(keep)
 
 
 def write_skip(out_dir: Path, tag: str, reason: str) -> None:
@@ -176,6 +224,17 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     if cluster_key not in adata.obs.columns:
         adata.obs[cluster_key] = "all"
     adata.obs[cluster_key] = adata.obs[cluster_key].astype("category")
+
+    if int(args.max_cells) > 0 and adata.n_obs > int(args.max_cells):
+        cond_key = args.condition_key if args.condition_key in adata.obs.columns else None
+        keep = _stratified_subsample(
+            adata.obs, cluster_key, cond_key, int(args.max_cells), int(args.seed)
+        )
+        print(
+            f"[celloracle] Subsampling {adata.n_obs} -> {len(keep)} cells "
+            f"(stratified by {cluster_key}{f'+{cond_key}' if cond_key else ''})"
+        )
+        adata = adata[keep].copy()
 
     try:
         base_grn = _load_base_grn(co, args.organism)
