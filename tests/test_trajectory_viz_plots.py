@@ -14,6 +14,43 @@ def test_embedding_scatter_returns_figure():
     assert isinstance(fig, Figure)
 
 
+def test_embedding_scatter_handles_non_finite_values_without_crashing(tmp_path):
+    """matplotlib's own autoscale already masks non-finite values (verified:
+    scatter(c=[...finite..., inf]).get_clim() returns the finite max, not
+    inf) -- so an inf in the array was never the thing crushing this figure's
+    color scale. It must still not crash export, though (PDF export failing
+    on a non-finite value reaching the backend is a real failure class fixed
+    elsewhere in this codebase for the velocity streamplot).
+    """
+    coords = np.random.RandomState(0).rand(10, 2)
+    vals = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, np.inf])
+    fig = plots.embedding_scatter(coords, vals, title="t", cbar_label="pt")
+    fig.savefig(tmp_path / "out.pdf", format="pdf")
+
+
+def test_embedding_scatter_clips_color_scale_to_be_robust_to_outliers():
+    """Real bug found on the fibroblast cohort's dpt_pseudotime figure: 99.84%
+    of 61,601 cells sat in [0, 0.03] of the raw value range, while a handful
+    of legitimate finite outlier cells reached up to 1.0. embedding_scatter's
+    color scale used raw min/max, so it spanned the full [0, 1] range and the
+    99.84% majority collapsed into one indistinguishable dark shade at the
+    bottom of the colormap -- a figure that LOOKED broken (near-uniform
+    color) even though every underlying value was finite and real. The scale
+    must be robust to a few outliers, the same skew-robustness principle
+    already applied to the pseudotime heatmap's rank-based binning.
+    """
+    coords = np.random.RandomState(0).rand(1000, 2)
+    vals = np.concatenate([np.linspace(0.0, 0.03, 995), np.linspace(0.1, 1.0, 5)])
+    fig = plots.embedding_scatter(coords, vals, title="t", cbar_label="pt")
+    ax = fig.axes[0]
+    mappables = [c for c in ax.collections if c.get_array() is not None]
+    assert mappables, "no colored scatter collection found"
+    vmin, vmax = mappables[0].get_clim()
+    # A handful of outliers must not stretch the scale to the raw max; it
+    # should track where the bulk of the real data actually is.
+    assert vmax < 0.1, f"vmax={vmax} -- outliers still dominate the color scale"
+
+
 def test_signed_diverging_bar_handles_all_positive():
     fig = plots.signed_diverging_bar(["a", "b"], np.array([0.3, 0.7]), title="t")
     assert isinstance(fig, Figure)

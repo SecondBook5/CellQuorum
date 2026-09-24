@@ -93,20 +93,49 @@ def _signed_norm(values: np.ndarray) -> TwoSlopeNorm:
 
 
 def embedding_scatter(coords: Any, values: Any, *, title: str, cbar_label: str) -> Figure:
+    """Scatter colored by a continuous obs value, with an outlier-robust scale.
+
+    vmin/vmax are clipped to the 1st/99th percentile of the FINITE values
+    rather than the raw min/max. Real bug this fixes: dpt_pseudotime on a
+    real cohort had 99.84% of cells sitting in [0, 0.03] of its own range,
+    with a handful of legitimate finite outlier cells reaching up to 1.0. A
+    raw-min/max scale spans the full range for those outliers' sake and
+    crushes the 99.84% majority into one indistinguishable shade -- a figure
+    that looks broken even though every value is real. Values outside the
+    clipped range still get drawn (at the nearest end color, via the
+    colorbar's "extend" arrows), just not allowed to stretch the scale.
+    """
     coords = np.asarray(coords, dtype=float)
+    values = np.asarray(values, dtype=float)
+    finite = np.isfinite(values)
+    finite_vals = values[finite]
+
     fig, ax = plt.subplots(figsize=(5, 4.5))
+    if finite_vals.size:
+        vmin, vmax = (float(v) for v in np.percentile(finite_vals, [1, 99]))
+        if vmax <= vmin:
+            vmin, vmax = float(finite_vals.min()), float(finite_vals.max())
+    else:
+        vmin, vmax = 0.0, 1.0
+
     sc = ax.scatter(
         coords[:, 0],
         coords[:, 1],
-        c=np.asarray(values, dtype=float),
+        c=values,
         s=8,
         cmap=SEQUENTIAL_CMAP,
+        vmin=vmin,
+        vmax=vmax,
         linewidths=0,
     )
     ax.set_title(title)
     ax.set_xticks([])
     ax.set_yticks([])
-    fig.colorbar(sc, ax=ax, label=cbar_label)
+    extend = "neither"
+    if finite_vals.size:
+        below, above = finite_vals.min() < vmin, finite_vals.max() > vmax
+        extend = "both" if (below and above) else "min" if below else "max" if above else "neither"
+    fig.colorbar(sc, ax=ax, label=cbar_label, extend=extend)
     return fig
 
 
