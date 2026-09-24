@@ -335,6 +335,37 @@ def test_scratch_h5ad_untouched_when_gene_count_already_under_the_cap(tmp_path: 
     assert written.n_vars == 40
 
 
+def test_cluster_labels_reach_the_shift_figures(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """cluster_labels is a real config field, not a name that only exists in
+    PerturbationConfig -- it must actually reach plot_ko_shift_field/_grid's
+    group_labels argument, the same class of silent-no-op the max_cells fix
+    itself was almost caught by.
+    """
+    from cellquorum.stages.gene_regulation.perturbation import celloracle_method as m
+
+    captured = {}
+    real_grid = m.pfig.plot_ko_shift_grid
+
+    def spy_grid(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        captured["group_labels"] = kwargs.get("group_labels")
+        return real_grid(*args, **kwargs)
+
+    monkeypatch.setattr(m.pfig, "plot_ko_shift_grid", spy_grid)
+
+    res = CellOracleMethod()._run(
+        _adata(condition=True),
+        {
+            "launcher": "python",
+            "condition_key": "condition",
+            "healthy_label": "healthy",
+            "cluster_labels": {"A": "Alpha", "B": "Beta"},
+        },
+        _ctx(tmp_path, _fake_success_backend("directional")),
+    )
+    assert not isinstance(res, MethodSkip)
+    assert captured["group_labels"] == {"A": "Alpha", "B": "Beta"}
+
+
 def test_fate_summary_figure_produced(tmp_path: Path) -> None:
     """The in-process fate summary (FIX 4) is computed and wired into artifacts."""
     res = CellOracleMethod()._run(

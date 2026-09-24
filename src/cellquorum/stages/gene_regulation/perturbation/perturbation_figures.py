@@ -13,11 +13,100 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from cellquorum.visualization import figstyle
+
+
+def _style_embedding_axes(ax: plt.Axes) -> None:
+    """House convention for a 2-D embedding axes (matches module_umap_plot.py).
+
+    Raw UMAP/embedding coordinates carry no meaning as numbers, so ticks are
+    hidden; the bottom/left spines stay as a faint frame rather than vanishing
+    entirely, top/right are dropped.
+    """
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.spines["left"].set_color("#999")
+    ax.spines["bottom"].set_color("#999")
+
+
+def _label_groups(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    groups: pd.Series,
+    group_labels: dict[str, str] | None,
+) -> None:
+    """Draw a repelled, haloed label at each group's median position.
+
+    ``group_labels`` maps a raw group value (e.g. a cluster id) to its display
+    name; a group with no entry falls back to its raw value so labelling is
+    never silently incomplete. No-op if ``group_labels`` is None -- the caller
+    is a study-specific config value, never a hardcoded biology assumption
+    here (this module stays biology-free per figstyle's own contract).
+    """
+    if group_labels is None:
+        return
+    texts = []
+    for cat in sorted(groups.unique()):
+        mask = (groups == cat).to_numpy()
+        if not mask.any():
+            continue
+        label = group_labels.get(cat, cat)
+        t = ax.text(
+            float(np.median(x[mask])),
+            float(np.median(y[mask])),
+            label,
+            fontsize=8,
+            fontweight="bold",
+            color=figstyle.TEXT,
+            ha="center",
+            va="center",
+            zorder=10,
+        )
+        t.set_path_effects([pe.withStroke(linewidth=2.2, foreground="white")])
+        texts.append(t)
+    if not texts:
+        return
+    try:
+        from adjustText import adjust_text
+
+        adjust_text(
+            texts,
+            ax=ax,
+            only_move={"points": "xy", "text": "xy"},
+            arrowprops=dict(arrowstyle="-", color="#888", lw=0.5),
+        )
+    except Exception:
+        pass  # labels still render, just un-repelled
+
+
+def _grid_density_mask(
+    total_mass: np.ndarray,
+    nearest_cell_dist: np.ndarray,
+    grid_step: float,
+    *,
+    min_mass_percentile: float,
+    max_nearest_cell_grid_steps: float,
+) -> np.ndarray:
+    """Which gridpoints to keep: real local density AND a real cell nearby.
+
+    A percentile rank on total_mass alone is not sufficient on an embedding
+    with several spatially separated clusters -- a gridpoint sitting in
+    genuinely empty space between two islands can still rank above a low
+    percentile if density is low everywhere (confirmed live: arrows rendered
+    in visibly empty margins). max_nearest_cell_grid_steps is the real
+    backstop: an absolute "is there actually a cell near here" check.
+    """
+    mass_thresh = np.percentile(total_mass, min_mass_percentile)
+    near_real_cell = nearest_cell_dist <= (max_nearest_cell_grid_steps * grid_step)
+    return (total_mass >= mass_thresh) & near_real_cell
 
 
 def plot_target_ranking(
@@ -53,6 +142,7 @@ def plot_ko_shift_field(
     *,
     tf: str,
     groups: pd.Series | None = None,
+    group_labels: dict[str, str] | None = None,
     name: str | None = None,
 ) -> list[Path]:
     """Quiver of per-cell shift vectors on the 2-D embedding, aligned by index intersection.
@@ -64,6 +154,8 @@ def plot_ko_shift_field(
         out_dir: output directory.
         tf: TF name for the title.
         groups: optional per-cell grouping for background coloring.
+        group_labels: optional {raw group value -> display name}; drawn at
+            each group's median position when both this and groups are set.
         name: output basename (default: f"perturbation_ko_shift_{tf}").
 
     Returns:
@@ -107,12 +199,20 @@ def plot_ko_shift_field(
                 y[mask],
                 c=[figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]],
                 s=8,
-                alpha=0.3,
+                alpha=0.35,
                 edgecolors="none",
-                label=cat,
+                label=(group_labels or {}).get(cat, cat),
                 rasterized=True,
             )
-        ax.legend(loc="best", markerscale=2)
+        leg = ax.legend(
+            loc="upper left",
+            bbox_to_anchor=(1.02, 1.0),
+            borderaxespad=0,
+            fontsize=7.5,
+            frameon=True,
+        )
+        leg.get_frame().set_edgecolor("#ccc")
+        _label_groups(ax, x, y, g, group_labels)
     else:
         # Plain background scatter
         ax.scatter(x, y, c="#cccccc", s=8, alpha=0.3, edgecolors="none", rasterized=True)
@@ -132,17 +232,19 @@ def plot_ko_shift_field(
         y[idx],
         dx[idx],
         dy[idx],
-        color=figstyle.CATEGORICAL_PALETTE[1],  # orange
-        alpha=0.7,
-        width=0.003,
+        color="#C4592A",
+        alpha=0.55,
+        width=0.0022,
         scale=None,
         scale_units="xy",
         angles="xy",
     )
 
-    ax.set_xlabel(emb.columns[0])
-    ax.set_ylabel(emb.columns[1])
+    ax.set_xlabel(emb.columns[0], fontsize=10)
+    ax.set_ylabel(emb.columns[1], fontsize=10)
     ax.set_title(f"{tf} knockout shift field", fontweight="bold")
+    _style_embedding_axes(ax)
+    fig.tight_layout()
 
     if name is None:
         name = f"perturbation_ko_shift_{tf}"
@@ -157,10 +259,12 @@ def plot_ko_shift_grid(
     *,
     tf: str,
     groups: pd.Series | None = None,
+    group_labels: dict[str, str] | None = None,
     n_grid: int = 40,
     smooth: float = 0.5,
     n_neighbors: int = 100,
     min_mass_percentile: float = 30.0,
+    max_nearest_cell_grid_steps: float = 1.8,
     name: str | None = None,
 ) -> list[Path]:
     """Gridded KO shift vector field on the 2-D embedding (CellOracle-style).
@@ -177,10 +281,23 @@ def plot_ko_shift_grid(
         out_dir: output directory.
         tf: TF name for the title.
         groups: optional per-cell grouping for faint background coloring.
+        group_labels: optional {raw group value -> display name}; drawn at
+            each group's median position when both this and groups are set.
         n_grid: grid steps per axis.
         smooth: Gaussian kernel width as a multiple of grid step (CellOracle default 0.5).
         n_neighbors: neighbors per gridpoint used in the weighted average.
         min_mass_percentile: gridpoints below this density percentile are dropped.
+            A percentile rank alone is not enough on an embedding with several
+            spatially separated clusters -- a gridpoint sitting in genuinely
+            empty space between two islands can still rank above a low
+            percentile if density is low everywhere, confirmed live (arrows
+            rendered in visibly empty margins). max_nearest_cell_grid_steps is
+            the real backstop.
+        max_nearest_cell_grid_steps: a gridpoint is dropped unless its single
+            nearest real cell is within this many grid-step-widths -- an
+            absolute "is there actually a cell near here" check, robust to
+            density varying across separated clusters in a way a percentile
+            rank is not.
         name: output basename (default: f"perturbation_ko_shift_grid_{tf}").
 
     Returns:
@@ -220,9 +337,17 @@ def plot_ko_shift_grid(
     total_mass = gaussian_w.sum(1)
     uz = (delta[neighs] * gaussian_w[:, :, None]).sum(1) / np.maximum(1, total_mass)[:, None]
 
-    # Mass filter: keep only gridpoints with enough underlying cell density.
-    mass_thresh = np.percentile(total_mass, min_mass_percentile)
-    keep = total_mass >= mass_thresh
+    # Mass filter: keep only gridpoints with enough underlying cell density,
+    # AND (the real backstop) a real cell actually nearby -- see
+    # _grid_density_mask's docstring.
+    grid_step = float(np.mean([g[1] - g[0] for g in grs]))
+    keep = _grid_density_mask(
+        total_mass,
+        dists[:, 0],
+        grid_step,
+        min_mass_percentile=min_mass_percentile,
+        max_nearest_cell_grid_steps=max_nearest_cell_grid_steps,
+    )
     if not keep.any():
         return []
 
@@ -241,12 +366,20 @@ def plot_ko_shift_grid(
                 emb[mask, 1],
                 c=[figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]],
                 s=6,
-                alpha=0.25,
+                alpha=0.3,
                 edgecolors="none",
-                label=cat,
+                label=(group_labels or {}).get(cat, cat),
                 rasterized=True,
             )
-        ax.legend(loc="best", markerscale=2, fontsize=7, framealpha=0.7)
+        leg = ax.legend(
+            loc="upper left",
+            bbox_to_anchor=(1.02, 1.0),
+            borderaxespad=0,
+            fontsize=7.5,
+            frameon=True,
+        )
+        leg.get_frame().set_edgecolor("#ccc")
+        _label_groups(ax, emb[:, 0], emb[:, 1], g, group_labels)
     else:
         ax.scatter(
             emb[:, 0], emb[:, 1], c="#d9d9d9", s=6, alpha=0.3, edgecolors="none", rasterized=True
@@ -257,16 +390,18 @@ def plot_ko_shift_grid(
         gridpoints[keep, 1],
         uz[keep, 0],
         uz[keep, 1],
-        color=figstyle.CATEGORICAL_PALETTE[1],
+        color="#C4592A",
         angles="xy",
         scale_units="xy",
         scale=None,
-        width=0.004,
-        alpha=0.9,
+        width=0.0032,
+        alpha=0.75,
     )
-    ax.set_xlabel(str(embedding_df.columns[0]))
-    ax.set_ylabel(str(embedding_df.columns[1]))
+    ax.set_xlabel(str(embedding_df.columns[0]), fontsize=10)
+    ax.set_ylabel(str(embedding_df.columns[1]), fontsize=10)
     ax.set_title(f"{tf} knockout — gridded shift field", fontweight="bold")
+    _style_embedding_axes(ax)
+    fig.tight_layout()
 
     if name is None:
         name = f"perturbation_ko_shift_grid_{tf}"

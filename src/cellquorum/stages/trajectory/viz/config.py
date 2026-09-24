@@ -38,7 +38,25 @@ class TrajectoryVizConfig(StrictBaseModel):
     # Condition-split pseudotime heatmap controls (all optional; biology via config).
     heatmap_genes: list[str] | None = None
     heatmap_score_key: str | None = None
+    # Single legacy categorical track; still honored when heatmap_categorical_keys
+    # is unset. heatmap_categorical_keys is the real, generalized control -- a
+    # list of obs columns, each rendered as its own stacked annotation row
+    # (e.g. ["fibroblast_subcluster", "phase"] for subcluster + cell-cycle).
     heatmap_state_key: str | None = None
+    heatmap_categorical_keys: list[str] | None = None
+    # Optional {obs column -> display row label}, e.g. {"phase": "Cell cycle"};
+    # a key with no entry falls back to its raw column name.
+    heatmap_categorical_labels: dict[str, str] | None = None
+    # Optional {raw category value -> display name}, applied to every
+    # categorical track's values (e.g. {"0": "Perivascular", ...}); a value
+    # with no entry falls back to its raw form.
+    heatmap_value_labels: dict[str, str] | None = None
+    # If "phase" is in heatmap_categorical_keys and no obs['phase'] column
+    # exists yet, compute one via the canonical Tirosh S/G2M gene sets
+    # (already used by the embeddings overlay stage) rather than skipping the
+    # track. False by default -- this stays opt-in so a dataset that already
+    # has its own phase calling isn't silently overwritten.
+    heatmap_compute_cell_cycle: bool = False
     heatmap_n_bins: int = 100
     heatmap_max_genes: int = 60
     heatmap_corr_cut: float = 0.1

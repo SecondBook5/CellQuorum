@@ -165,6 +165,70 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 return key
         return None
 
+    def _compute_cell_cycle_phase(self, adata: ad.AnnData) -> str | None:
+        """Score S/G2M and write obs['phase'] using the canonical Tirosh gene
+        sets already used elsewhere in this engine (embeddings overlay). This
+        is genuinely generic infrastructure -- the same fixed, organism-general
+        reference list every scanpy cell-cycle tutorial uses -- not study-
+        specific biology, so it stays consistent with the "no defaulted
+        biology" rule the rest of this file follows for real gene panels.
+        Returns 'phase' on success, None if too few marker genes are present
+        (e.g. a non-human dataset) to skip rather than crash.
+        """
+        import scanpy as sc
+
+        from cellquorum.stages.integration.embeddings.overlay import (
+            TIROSH_G2M_GENES,
+            TIROSH_S_GENES,
+        )
+
+        s_present = [g for g in TIROSH_S_GENES if g in adata.var_names]
+        g2m_present = [g for g in TIROSH_G2M_GENES if g in adata.var_names]
+        if not s_present or not g2m_present:
+            return None
+        sc.tl.score_genes_cell_cycle(adata, s_genes=s_present, g2m_genes=g2m_present)
+        return "phase"
+
+    def _resolve_categorical_tracks(self, adata: ad.AnnData, config: dict) -> list[dict]:
+        """Build zero or more categorical-track specs (cats/colors/raw codes).
+
+        ``heatmap_categorical_keys`` (a list) is the real, generalized control;
+        the older single ``heatmap_state_key`` still works as a one-item
+        fallback so an existing config that only names one track is unaffected.
+        """
+        keys = config.get("heatmap_categorical_keys")
+        if keys:
+            keys = [k for k in keys if k == "phase" or k in adata.obs.columns]
+        else:
+            legacy = self._resolve_key(adata, config.get("heatmap_state_key"), _STATE_FALLBACKS)
+            keys = [legacy] if legacy else []
+
+        if "phase" in keys and "phase" not in adata.obs.columns:
+            if config.get("heatmap_compute_cell_cycle"):
+                self._compute_cell_cycle_phase(adata)
+            if "phase" not in adata.obs.columns:
+                keys = [k for k in keys if k != "phase"]
+
+        value_labels: dict = config.get("heatmap_value_labels") or {}
+        track_labels: dict = config.get("heatmap_categorical_labels") or {}
+        specs = []
+        for key in keys:
+            series = adata.obs[key].astype(str)
+            cats = sorted(series.unique())
+            code_map = {c: i for i, c in enumerate(cats)}
+            specs.append(
+                {
+                    "label": track_labels.get(key, key),
+                    "cats": [value_labels.get(c, c) for c in cats],
+                    "colors": [
+                        figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
+                        for i in range(len(cats))
+                    ],
+                    "codes": series.map(code_map).to_numpy(),
+                }
+            )
+        return specs
+
     def _select_genes(self, adata: ad.AnnData, pt: np.ndarray, config: dict) -> list[str]:
         genes = config.get("heatmap_genes") or config.get("genes")
         present = [g for g in (genes or []) if g in adata.var_names]
@@ -213,7 +277,6 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             M = _dense(source[:, gi])
 
             score_key = self._resolve_key(adata, config.get("heatmap_score_key"), _SCORE_FALLBACKS)
-            state_key = self._resolve_key(adata, config.get("heatmap_state_key"), _STATE_FALLBACKS)
             cond_key = config.get("condition_col")
             cond_present = bool(cond_key) and cond_key in adata.obs
 
@@ -221,17 +284,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             finite = np.isfinite(pt)
 
             score = adata.obs[score_key].to_numpy() if score_key else np.full(adata.n_obs, np.nan)
-            if state_key:
-                state_series = adata.obs[state_key].astype(str)
-                state_cats = sorted(state_series.unique())
-                code_map = {c: i for i, c in enumerate(state_cats)}
-                state_codes = state_series.map(code_map).to_numpy()
-                state_colors = [
-                    figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
-                    for i in range(len(state_cats))
-                ]
-            else:
-                state_cats, state_colors, state_codes = [], [], np.full(adata.n_obs, -1)
+            cat_specs = self._resolve_categorical_tracks(adata, config)
 
             if cond_present:
                 cond = adata.obs[cond_key].astype(str).to_numpy()
@@ -245,7 +298,11 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 cond = np.array(["all"] * adata.n_obs)
                 condition_order = ["all"]
 
-            profiles, tracks = {}, {}
+            profiles, score_tracks = {}, {}
+            categorical_tracks = [
+                {"label": s["label"], "cats": s["cats"], "colors": s["colors"], "tracks": {}}
+                for s in cat_specs
+            ]
             for c in condition_order:
                 m = (cond == c) & finite
                 if m.sum() < 2:
@@ -253,7 +310,11 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 p = heatmap.binned_profile(pt[m], M[m], n_bins)
                 p = (p - p.min(0)) / (np.ptp(p, axis=0) + 1e-9)
                 profiles[c] = p
-                tracks[c] = heatmap.binned_tracks(pt[m], score[m], state_codes[m], n_bins)
+                score_tracks[c] = heatmap.binned_score_track(pt[m], score[m], n_bins)
+                for k, spec in enumerate(cat_specs):
+                    categorical_tracks[k]["tracks"][c] = heatmap.binned_categorical_track(
+                        pt[m], spec["codes"][m], n_bins
+                    )
             if not profiles:
                 return self._skip("no condition had enough cells")
             condition_order = [c for c in condition_order if c in profiles]
@@ -261,9 +322,10 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             combined = np.mean([profiles[c] for c in condition_order], axis=0)
             gene_order = heatmap.peak_bin_order(combined)
 
-            present_codes = sorted(
-                set(int(v) for c in condition_order for v in tracks[c][1] if v >= 0)
-            )
+            for track in categorical_tracks:
+                track["present_codes"] = sorted(
+                    {int(v) for c in condition_order for v in track["tracks"][c] if v >= 0}
+                )
 
             figstyle.set_style()
             figures_dir = Path(context.paths.figures) / "trajectory"
@@ -271,13 +333,11 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             dpi = int(config.get("dpi", 300))
             fig = heatmap.condition_split_heatmap(
                 profiles,
-                tracks,
+                score_tracks,
+                categorical_tracks,
                 genes,
                 gene_order,
                 condition_order=condition_order,
-                state_cats=state_cats,
-                state_colors=state_colors,
-                present_state_codes=present_codes,
                 expr_cmap=config.get("heatmap_expr_cmap", figstyle.SEQUENTIAL_CMAP),
                 title=f"Expression along {pt_key}",
             )

@@ -41,28 +41,50 @@ def binned_profile(pt: np.ndarray, mat: np.ndarray, n_bins: int) -> np.ndarray:
     return prof
 
 
-def binned_tracks(
-    pt: np.ndarray, score: np.ndarray, state_codes: np.ndarray, n_bins: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Per-bin mean score and modal state code (forward-filled over empty bins)."""
+def binned_score_track(pt: np.ndarray, score: np.ndarray, n_bins: int) -> np.ndarray:
+    """Per-bin mean of a continuous score (forward-filled over empty bins)."""
     order, binid = bin_masks(pt, n_bins)
     sc_o = np.asarray(score, dtype=float)[order]
-    st_o = np.asarray(state_codes)[order]
-    score_track = np.full(n_bins, np.nan)
-    state_track = np.full(n_bins, -1)
+    track = np.full(n_bins, np.nan)
     for b in range(n_bins):
         sel = binid == b
         if sel.any():
-            score_track[b] = np.nanmean(sc_o[sel])
-            vals, cnts = np.unique(st_o[sel], return_counts=True)
-            state_track[b] = vals[np.argmax(cnts)]
+            track[b] = np.nanmean(sc_o[sel])
         elif b:
-            score_track[b] = score_track[b - 1]
-            state_track[b] = state_track[b - 1]
+            track[b] = track[b - 1]
     for b in range(1, n_bins):
-        if np.isnan(score_track[b]):
-            score_track[b] = score_track[b - 1]
-    return score_track, state_track.astype(int)
+        if np.isnan(track[b]):
+            track[b] = track[b - 1]
+    return track
+
+
+def binned_categorical_track(pt: np.ndarray, codes: np.ndarray, n_bins: int) -> np.ndarray:
+    """Per-bin modal categorical code (forward-filled over empty bins)."""
+    order, binid = bin_masks(pt, n_bins)
+    st_o = np.asarray(codes)[order]
+    track = np.full(n_bins, -1)
+    for b in range(n_bins):
+        sel = binid == b
+        if sel.any():
+            vals, cnts = np.unique(st_o[sel], return_counts=True)
+            track[b] = vals[np.argmax(cnts)]
+        elif b:
+            track[b] = track[b - 1]
+    return track.astype(int)
+
+
+def binned_tracks(
+    pt: np.ndarray, score: np.ndarray, state_codes: np.ndarray, n_bins: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Deprecated combo of binned_score_track + binned_categorical_track.
+
+    Kept only so any external caller built against the old two-in-one signature
+    keeps working; new code should call the two functions directly.
+    """
+    return (
+        binned_score_track(pt, score, n_bins),
+        binned_categorical_track(pt, state_codes, n_bins),
+    )
 
 
 def peak_bin_order(combined_profile: np.ndarray) -> np.ndarray:
@@ -72,35 +94,52 @@ def peak_bin_order(combined_profile: np.ndarray) -> np.ndarray:
 
 def condition_split_heatmap(
     profiles: dict,
-    tracks: dict,
+    score_tracks: dict,
+    categorical_tracks: list,
     gene_labels: list,
     gene_order: np.ndarray,
     *,
     condition_order: list,
-    state_cats: list,
-    state_colors: list,
-    present_state_codes: list,
     expr_cmap: str = SEQUENTIAL_CMAP,
     title: str = "",
 ) -> Figure:
-    """Build the stacked-annotation, condition-split expression heatmap."""
+    """Build the stacked-annotation, condition-split expression heatmap.
+
+    Args:
+        profiles: {condition -> (n_bins, n_genes) binned expression array}.
+        score_tracks: {condition -> (n_bins,) continuous score array}, or an
+            empty dict / all-NaN to omit the "Score" row entirely.
+        categorical_tracks: zero or more stacked categorical annotation rows,
+            each a dict with keys ``label`` (row title), ``cats`` (ordered
+            category names), ``colors`` (one hex per category, same order),
+            ``tracks`` ({condition -> (n_bins,) int code array, -1 = none}),
+            and ``present_codes`` (which codes actually occur, for the legend).
+            Rendered top-to-bottom in list order, each with its own legend.
+        gene_labels: gene name per column of ``profiles``.
+        gene_order: column order to display (e.g. from ``peak_bin_order``).
+        condition_order: which conditions to render, left to right.
+        expr_cmap: colormap for the expression heatmap.
+        title: figure suptitle.
+
+    Returns:
+        The assembled Figure.
+    """
     n_cols = len(condition_order)
     n_bins = next(iter(profiles.values())).shape[0]
 
-    # Which annotation rows are present.
-    any_score = any(not np.all(np.isnan(tracks[c][0])) for c in condition_order)
-    has_state = bool(state_cats)
+    any_score = bool(score_tracks) and any(
+        not np.all(np.isnan(score_tracks[c])) for c in condition_order
+    )
 
     rows = ["pt"]
     if any_score:
         rows.append("score")
-    if has_state:
-        rows.append("state")
+    rows += [f"cat{i}" for i in range(len(categorical_tracks))]
     rows.append("expr")
     n_ann = len(rows) - 1
 
     hm_h = max(3.0, 0.30 * len(gene_labels))
-    fig = Figure(figsize=(5.5 * n_cols, hm_h + 1.0))
+    fig = Figure(figsize=(5.5 * n_cols, hm_h + 1.0 + 0.22 * len(categorical_tracks)))
     height_ratios = [0.28] * n_ann + [hm_h]
     gs = gridspec.GridSpec(
         len(rows),
@@ -111,17 +150,10 @@ def condition_split_heatmap(
         left=0.14,
         right=0.88,
         top=0.90,
-        bottom=0.06,
+        bottom=0.08,
     )
 
-    state_cmap = ListedColormap(state_colors) if state_colors else None
-    state_norm = (
-        BoundaryNorm(np.arange(-0.5, len(state_cats) + 0.5), len(state_cats))
-        if state_cats
-        else None
-    )
-
-    score_all = np.concatenate([tracks[c][0] for c in condition_order]) if any_score else None
+    score_all = np.concatenate([score_tracks[c] for c in condition_order]) if any_score else None
     if any_score and np.isfinite(score_all).any():
         s_vmin, s_vmax = np.nanpercentile(score_all[np.isfinite(score_all)], [2, 98])
     else:
@@ -130,6 +162,11 @@ def condition_split_heatmap(
     pt_grad = np.linspace(0, 1, n_bins)[None, :]
     im_score = None
     im_expr = None
+    # x-axis tick positions/labels shared by every row -- the point of this
+    # heatmap is progression along pseudotime, so leaving the axis blank
+    # (the prior behaviour) hid the one thing a reader most needs to read off.
+    tick_pos = [0, (n_bins - 1) * 0.25, (n_bins - 1) * 0.5, (n_bins - 1) * 0.75, n_bins - 1]
+    tick_lab = ["0%", "25%", "50%", "75%", "100%"]
     for j, c in enumerate(condition_order):
         r = 0
         ax_pt = fig.add_subplot(gs[r, j])
@@ -143,20 +180,25 @@ def condition_split_heatmap(
         if any_score:
             ax_s = fig.add_subplot(gs[r, j])
             im_score = ax_s.imshow(
-                tracks[c][0][None, :], aspect="auto", cmap="Reds", vmin=s_vmin, vmax=s_vmax
+                score_tracks[c][None, :], aspect="auto", cmap="Reds", vmin=s_vmin, vmax=s_vmax
             )
             ax_s.set_xticks([])
             ax_s.set_yticks([])
             if j == 0:
                 ax_s.set_ylabel("Score", rotation=0, ha="right", va="center", fontsize=7.5)
             r += 1
-        if has_state:
-            ax_st = fig.add_subplot(gs[r, j])
-            ax_st.imshow(tracks[c][1][None, :], aspect="auto", cmap=state_cmap, norm=state_norm)
-            ax_st.set_xticks([])
-            ax_st.set_yticks([])
+        for cat_track in categorical_tracks:
+            cats, colors = cat_track["cats"], cat_track["colors"]
+            cmap = ListedColormap(colors) if colors else None
+            norm = BoundaryNorm(np.arange(-0.5, len(cats) + 0.5), len(cats)) if cats else None
+            ax_ct = fig.add_subplot(gs[r, j])
+            ax_ct.imshow(cat_track["tracks"][c][None, :], aspect="auto", cmap=cmap, norm=norm)
+            ax_ct.set_xticks([])
+            ax_ct.set_yticks([])
             if j == 0:
-                ax_st.set_ylabel("State", rotation=0, ha="right", va="center", fontsize=7.5)
+                ax_ct.set_ylabel(
+                    cat_track["label"], rotation=0, ha="right", va="center", fontsize=7.5
+                )
             r += 1
         ax = fig.add_subplot(gs[r, j])
         im_expr = ax.imshow(
@@ -167,8 +209,9 @@ def condition_split_heatmap(
             vmax=1,
             interpolation="nearest",
         )
-        ax.set_xticks([])
-        ax.set_xlabel("pseudotime", fontsize=8)
+        ax.set_xticks(tick_pos)
+        ax.set_xticklabels(tick_lab, fontsize=7.5)
+        ax.set_xlabel("pseudotime (percent of range)", fontsize=8)
         if j == 0:
             ax.set_yticks(range(len(gene_labels)))
             ax.set_yticklabels(
@@ -185,25 +228,36 @@ def condition_split_heatmap(
     if im_expr is not None:
         cax = fig.add_axes([0.905, 0.40, 0.014, 0.24])
         fig.colorbar(im_expr, cax=cax, label="scaled expr")
-    if has_state and present_state_codes:
+
+    # One stacked legend block per categorical track, top to bottom.
+    legend_y = 0.32
+    for cat_track in categorical_tracks:
+        cats, colors, present = (
+            cat_track["cats"],
+            cat_track["colors"],
+            cat_track.get("present_codes") or [],
+        )
         handles = [
-            Patch(facecolor=state_colors[i], edgecolor="none", label=state_cats[i])
-            for i in present_state_codes
-            if 0 <= i < len(state_cats)
+            Patch(facecolor=colors[i], edgecolor="none", label=cats[i])
+            for i in present
+            if 0 <= i < len(cats)
         ]
-        if handles:
-            fig.legend(
-                handles=handles,
-                loc="upper left",
-                bbox_to_anchor=(0.90, 0.32),
-                frameon=False,
-                fontsize=6.8,
-                title="State",
-                title_fontsize=7.5,
-                handlelength=1.0,
-                handleheight=1.0,
-                labelspacing=0.35,
-            )
+        if not handles:
+            continue
+        fig.legend(
+            handles=handles,
+            loc="upper left",
+            bbox_to_anchor=(0.90, legend_y),
+            frameon=False,
+            fontsize=6.8,
+            title=cat_track["label"],
+            title_fontsize=7.5,
+            handlelength=1.0,
+            handleheight=1.0,
+            labelspacing=0.35,
+        )
+        legend_y -= 0.05 + 0.028 * len(handles)
+
     if title:
         fig.suptitle(title, x=0.02, ha="left", fontsize=13, fontweight="bold")
     return fig
@@ -212,6 +266,8 @@ def condition_split_heatmap(
 __all__ = [
     "bin_masks",
     "binned_profile",
+    "binned_score_track",
+    "binned_categorical_track",
     "binned_tracks",
     "peak_bin_order",
     "condition_split_heatmap",

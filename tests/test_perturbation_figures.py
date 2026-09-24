@@ -43,6 +43,23 @@ def test_shift_field_writes_and_aligns(tmp_path: Path) -> None:
     assert all(p.exists() for p in paths)
 
 
+def test_shift_field_group_labels_do_not_crash(tmp_path: Path) -> None:
+    np.random.seed(0)
+    idx = [f"c{i}" for i in range(50)]
+    shift = pd.DataFrame({"d0": np.random.rand(50), "d1": np.random.rand(50)}, index=idx)
+    emb = pd.DataFrame({"DIM1": np.random.rand(50), "DIM2": np.random.rand(50)}, index=idx)
+    groups = pd.Series(np.random.choice(["0", "1"], 50), index=idx)
+    paths = pf.plot_ko_shift_field(
+        shift,
+        emb,
+        tmp_path,
+        tf="PROX1",
+        groups=groups,
+        group_labels={"0": "Perivascular", "1": "Mechanosensory"},
+    )
+    assert sorted(p.suffix for p in paths) == [".pdf", ".png"]
+
+
 def test_shift_field_no_overlap_returns_empty(tmp_path: Path) -> None:
     shift = pd.DataFrame({"d0": [1.0], "d1": [1.0]}, index=["a"])
     emb = pd.DataFrame({"DIM1": [1.0], "DIM2": [1.0]}, index=["b"])
@@ -66,6 +83,49 @@ def test_shift_grid_no_overlap_returns_empty(tmp_path: Path) -> None:
     shift = pd.DataFrame({"d0": [1.0], "d1": [1.0]}, index=["a"])
     emb = pd.DataFrame({"DIM1": [1.0], "DIM2": [1.0]}, index=["b"])
     assert pf.plot_ko_shift_grid(shift, emb, tmp_path, tf="X") == []
+
+
+def test_shift_grid_group_labels_do_not_crash(tmp_path: Path) -> None:
+    np.random.seed(2)
+    idx = [f"c{i}" for i in range(200)]
+    shift = pd.DataFrame(
+        {"d0": np.random.randn(200) * 0.1, "d1": np.random.randn(200) * 0.1}, index=idx
+    )
+    emb = pd.DataFrame({"DIM1": np.random.rand(200), "DIM2": np.random.rand(200)}, index=idx)
+    groups = pd.Series(np.random.choice(["0", "1"], 200), index=idx)
+    paths = pf.plot_ko_shift_grid(
+        shift,
+        emb,
+        tmp_path,
+        tf="PROX1",
+        groups=groups,
+        group_labels={"0": "Perivascular", "1": "Mechanosensory"},
+        n_grid=12,
+    )
+    assert sorted(p.suffix for p in paths) == [".pdf", ".png"]
+
+
+def test_grid_density_mask_drops_the_gap_between_separated_clusters() -> None:
+    """Regression test for the real bug: two clusters far apart on the
+    embedding, with the grid spanning the empty gap between them. A pure
+    percentile rank on total_mass keeps points in that gap (density is low
+    everywhere, so a low-density gap point can still rank above a low
+    percentile); the real backstop (nearest-cell distance) must not.
+    """
+    # Two tight blobs at (0,0) and (100,100); a grid point at (50,50) sits in
+    # the empty gap, ~70 units from the nearest real cell.
+    total_mass = np.array([5.0, 5.0, 0.5])  # low but nonzero "density" at the gap
+    nearest_cell_dist = np.array([0.1, 0.1, 70.0])
+    grid_step = 2.5  # ~ (100 / n_grid) for a modest grid
+
+    keep = pf._grid_density_mask(
+        total_mass,
+        nearest_cell_dist,
+        grid_step,
+        min_mass_percentile=0.0,  # disabled, isolating the distance backstop
+        max_nearest_cell_grid_steps=1.8,
+    )
+    assert list(keep) == [True, True, False]
 
 
 def test_fate_summary_writes(tmp_path: Path) -> None:

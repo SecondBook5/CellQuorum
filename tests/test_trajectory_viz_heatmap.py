@@ -22,6 +22,22 @@ def test_binned_profile_shape():
     assert prof.shape == (10, 6)
 
 
+def test_binned_score_track_forward_fills_empty_bins():
+    pt = np.array([0.0, 0.0, 1.0, 1.0])  # everything lands in bin 0 or bin 3 of 4
+    score = np.array([2.0, 2.0, 4.0, 4.0])
+    track = heatmap.binned_score_track(pt, score, n_bins=4)
+    assert track[0] == 2.0
+    assert track[-1] == 4.0
+    assert not np.isnan(track).any()  # empty middle bins forward-filled
+
+
+def test_binned_categorical_track_takes_the_modal_code_per_bin():
+    pt = np.linspace(0, 1, 6)
+    codes = np.array([0, 0, 0, 1, 1, 1])
+    track = heatmap.binned_categorical_track(pt, codes, n_bins=2)
+    assert list(track) == [0, 1]
+
+
 def test_peak_bin_order_sorts_by_argmax():
     # gene 0 peaks at bin 2, gene 1 at bin 0, gene 2 at bin 1
     combined = np.zeros((3, 3))
@@ -36,37 +52,89 @@ def test_condition_split_heatmap_builds_figure():
     n_bins, n_genes = 20, 5
     prof = np.tile(np.linspace(0, 1, n_bins)[:, None], (1, n_genes))
     profiles = {"Normal": prof, "LE": prof[::-1]}
-    score = np.linspace(0, 1, n_bins)
+    score_tracks = {"Normal": np.linspace(0, 1, n_bins), "LE": np.linspace(0, 1, n_bins)}
     state = np.zeros(n_bins, dtype=int)
-    tracks = {"Normal": (score, state), "LE": (score, state)}
+    categorical_tracks = [
+        {
+            "label": "State",
+            "cats": ["Basal"],
+            "colors": ["#4C72B0"],
+            "tracks": {"Normal": state, "LE": state},
+            "present_codes": [0],
+        }
+    ]
     order = np.arange(n_genes)
     fig = heatmap.condition_split_heatmap(
         profiles,
-        tracks,
+        score_tracks,
+        categorical_tracks,
         [f"G{i}" for i in range(n_genes)],
         order,
         condition_order=["Normal", "LE"],
-        state_cats=["Basal"],
-        state_colors=["#4C72B0"],
-        present_state_codes=[0],
     )
     # 2 conditions x 4 rows (pt, score, state, expr) = 8 primary axes (+ colorbars)
     assert len(fig.axes) >= 8
+
+
+def test_condition_split_heatmap_two_categorical_tracks():
+    """The real ask: subcluster AND cell-cycle-phase stacked as two separate
+    categorical rows, alongside pseudotime -- not just the single legacy 'state'
+    row the API used to hard-cap at.
+    """
+    n_bins, n_genes = 15, 4
+    prof = np.tile(np.linspace(0, 1, n_bins)[:, None], (1, n_genes))
+    profiles = {"all": prof}
+    subcluster = np.array([0, 0, 1, 1, 2] * 3)
+    phase = np.array([0, 1, 2, 0, 1] * 3)
+    categorical_tracks = [
+        {
+            "label": "Subcluster",
+            "cats": ["Perivascular", "Mechanosensory", "Reticular"],
+            "colors": ["#4C72B0", "#DD8452", "#55A868"],
+            "tracks": {"all": subcluster},
+            "present_codes": [0, 1, 2],
+        },
+        {
+            "label": "Cell cycle",
+            "cats": ["G1", "S", "G2M"],
+            "colors": ["#999999", "#C44E52", "#8172B2"],
+            "tracks": {"all": phase},
+            "present_codes": [0, 1, 2],
+        },
+    ]
+    fig = heatmap.condition_split_heatmap(
+        profiles,
+        {},
+        categorical_tracks,
+        [f"G{i}" for i in range(n_genes)],
+        np.arange(n_genes),
+        condition_order=["all"],
+    )
+    # pt + subcluster + cell-cycle + expr = 4 rows, 1 condition column
+    assert len(fig.axes) >= 4
+    # x-axis of the expression panel must carry real tick labels now, not the
+    # blank axis the old figure shipped with. fig.axes[-1] would be the
+    # colorbar (added after the main loop), so find the real panel by its label.
+    expr_ax = next(ax for ax in fig.axes if ax.get_xlabel().startswith("pseudotime"))
+    assert [t.get_text() for t in expr_ax.get_xticklabels()] == [
+        "0%",
+        "25%",
+        "50%",
+        "75%",
+        "100%",
+    ]
 
 
 def test_condition_split_heatmap_single_panel_when_one_condition():
     n_bins, n_genes = 10, 3
     prof = np.tile(np.linspace(0, 1, n_bins)[:, None], (1, n_genes))
     profiles = {"all": prof}
-    tracks = {"all": (np.full(n_bins, np.nan), np.full(n_bins, -1))}
     fig = heatmap.condition_split_heatmap(
         profiles,
-        tracks,
+        {},
+        [],
         [f"G{i}" for i in range(n_genes)],
         np.arange(n_genes),
         condition_order=["all"],
-        state_cats=[],
-        state_colors=[],
-        present_state_codes=[],
     )
     assert len(fig.axes) >= 2  # pseudotime gradient row + expression row at least

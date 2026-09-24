@@ -17,6 +17,30 @@ def test_config_defaults_are_render_only():
     # No defaulted biology.
     assert c.genes is None and c.cluster_key is None and c.lineages is None
     assert c.pseudotime_keys is None and c.embedding_basis is None
+    assert c.fate_labels is None
+    assert c.heatmap_categorical_keys is None
+    assert c.heatmap_categorical_labels is None
+    assert c.heatmap_value_labels is None
+    assert c.heatmap_compute_cell_cycle is False
+
+
+def test_new_config_fields_reach_methods_through_the_stage_whitelist():
+    """fate_labels and the new heatmap_* fields must actually be in
+    _VIZ_CONFIG_KEYS -- a config field that exists on TrajectoryVizConfig but
+    is missing from that whitelist is silently dropped before any method ever
+    sees it (the exact bug found live: fate_labels existed and was read by
+    DriverVizMethod, but _augment_config never forwarded it).
+    """
+    from cellquorum.stages.trajectory.viz.stage import _VIZ_CONFIG_KEYS
+
+    for field in (
+        "fate_labels",
+        "heatmap_categorical_keys",
+        "heatmap_categorical_labels",
+        "heatmap_value_labels",
+        "heatmap_compute_cell_cycle",
+    ):
+        assert field in _VIZ_CONFIG_KEYS, f"{field} is on the config but not the whitelist"
 
 
 def test_save_figure_writes_all_formats_and_tags_figure(tmp_path):

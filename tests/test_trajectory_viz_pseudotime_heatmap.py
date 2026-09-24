@@ -66,6 +66,78 @@ def test_renders_condition_split(tmp_path):
     assert pngs
 
 
+def test_renders_two_categorical_tracks_via_heatmap_categorical_keys(tmp_path):
+    """The real ask: subcluster AND cell-cycle-phase stacked as two separate
+    tracks, not the single legacy heatmap_state_key row.
+    """
+    ctx, figures = _context(tmp_path)
+    adata = _adata()
+    adata.obs["fibroblast_subcluster"] = pd.Categorical(["0"] * 30 + ["1"] * 30)
+    cfg = {
+        "case": "LE",
+        "control": "Normal",
+        "condition_col": "condition",
+        "heatmap_genes": [f"G{i}" for i in range(6)],
+        "heatmap_categorical_keys": ["fibroblast_subcluster", "cell_type"],
+        "heatmap_categorical_labels": {
+            "fibroblast_subcluster": "Subcluster",
+            "cell_type": "Group",
+        },
+        "heatmap_value_labels": {"0": "Perivascular", "1": "Mechanosensory"},
+    }
+    out = PseudotimeHeatmapVizMethod()._run(adata, cfg, ctx)
+    assert not isinstance(out, MethodSkip)
+    pngs = list((figures / "trajectory").glob("pseudotime_heatmap*.png"))
+    assert pngs
+
+
+def test_computes_cell_cycle_phase_when_requested(tmp_path):
+    """heatmap_compute_cell_cycle + 'phase' in heatmap_categorical_keys must
+    score real cell-cycle genes and use the result as a track, not silently
+    drop 'phase' because no such obs column exists yet.
+    """
+    from cellquorum.stages.integration.embeddings.overlay import (
+        TIROSH_G2M_GENES,
+        TIROSH_S_GENES,
+    )
+
+    ctx, figures = _context(tmp_path)
+    rng = np.random.default_rng(0)
+    n = 60
+    cc_genes = list(TIROSH_S_GENES[:5]) + list(TIROSH_G2M_GENES[:5])
+    # score_genes_cell_cycle bins ALL genes by expression quantile to build a
+    # control set for each scored gene (scanpy's score_genes machinery) -- too
+    # few total genes leaves some bins empty ("No control genes found in any
+    # cut"). 8 filler genes isn't enough; give it real headroom.
+    n_filler = 200
+    g = n_filler + len(cc_genes)
+    X = rng.random((n, g)).astype("float32")
+    obs = pd.DataFrame(
+        {
+            "dpt_pseudotime": np.linspace(0, 1, n),
+            "condition": pd.Categorical(["Normal"] * (n // 2) + ["LE"] * (n - n // 2)),
+        }
+    )
+    adata = ad.AnnData(X, obs=obs)
+    adata.var_names = [f"G{i}" for i in range(n_filler)] + cc_genes
+    assert "phase" not in adata.obs.columns
+
+    cfg = {
+        "case": "LE",
+        "control": "Normal",
+        "condition_col": "condition",
+        "heatmap_genes": [f"G{i}" for i in range(6)],
+        "heatmap_categorical_keys": ["phase"],
+        "heatmap_compute_cell_cycle": True,
+    }
+    out = PseudotimeHeatmapVizMethod()._run(adata, cfg, ctx)
+    assert not isinstance(out, MethodSkip)
+    assert "phase" in adata.obs.columns
+    assert set(adata.obs["phase"].unique()) <= {"G1", "S", "G2M"}
+    pngs = list((figures / "trajectory").glob("pseudotime_heatmap*.png"))
+    assert pngs
+
+
 def test_single_panel_when_no_condition(tmp_path):
     ctx, figures = _context(tmp_path)
     cfg = {"heatmap_genes": [f"G{i}" for i in range(6)]}

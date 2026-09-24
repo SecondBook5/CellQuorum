@@ -19,6 +19,8 @@ class PerturbationConfig(StrictBaseModel):
         layer: Layer holding raw counts for CellOracle.
         organism: Built-in base GRN organism (human/mouse).
         cluster_key: GRN cluster grouping (falls back cell_type -> leiden -> "all").
+        cluster_labels: Optional {raw cluster value -> display name} for figure
+            labels; absent -> raw values are shown as-is.
         embedding_key: Shift-vector embedding (falls back X_umap).
         rep_key: PCA/kNN representation (falls back X_pca -> X_pca_harmony).
         condition_key: Disease/healthy obs column; absent -> direction-agnostic.
@@ -76,6 +78,12 @@ class PerturbationConfig(StrictBaseModel):
 
     # GRN cluster grouping (falls back cell_type -> leiden -> "all").
     cluster_key: str | None = None
+
+    # {raw cluster_key value -> display name} for figure labels (e.g. the
+    # shift-field/shift-grid embedding plots). Purely cosmetic and optional;
+    # a cluster with no entry falls back to its raw value. Study-specific, so
+    # it lives in config, never hardcoded in the figure-drawing code.
+    cluster_labels: dict[str, str] | None = None
 
     # Shift-vector embedding (falls back X_umap).
     embedding_key: str | None = None

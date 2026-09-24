@@ -15,6 +15,7 @@ def test_defaults() -> None:
     assert c.layer == "counts"
     assert c.organism == "human"
     assert c.cluster_key is None
+    assert c.cluster_labels is None
     assert c.embedding_key is None
     assert c.rep_key is None
     assert c.condition_key is None
@@ -41,3 +42,8 @@ def test_rejects_unknown_key() -> None:
 def test_tf_list_accepts_list() -> None:
     c = PerturbationConfig(tf_list=["PROX1", "PIEZO1"])
     assert c.tf_list == ["PROX1", "PIEZO1"]
+
+
+def test_cluster_labels_accepts_dict() -> None:
+    c = PerturbationConfig(cluster_labels={"0": "Perivascular", "1": "Mechanosensory"})
+    assert c.cluster_labels == {"0": "Perivascular", "1": "Mechanosensory"}

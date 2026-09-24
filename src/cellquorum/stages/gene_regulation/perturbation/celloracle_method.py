@@ -63,6 +63,7 @@ class CellOracleMethod(AnalysisMethod):
         condition_key = config.get("condition_key")
         healthy_label = config.get("healthy_label")
         tf_list = config.get("tf_list")
+        cluster_labels = config.get("cluster_labels")
 
         # 2. Resolve generic keys
         cluster_key = config.get("cluster_key")
@@ -274,7 +275,12 @@ class CellOracleMethod(AnalysisMethod):
                             else None
                         )
                         return pfig.plot_ko_shift_field(
-                            shift_df, emb, figures_dir, tf=top_tf, groups=groups
+                            shift_df,
+                            emb,
+                            figures_dir,
+                            tf=top_tf,
+                            groups=groups,
+                            group_labels=cluster_labels,
                         )
 
                     if shift_df is not None:
@@ -293,7 +299,12 @@ class CellOracleMethod(AnalysisMethod):
                             else None
                         )
                         return pfig.plot_ko_shift_grid(
-                            shift_df, emb_grid, figures_dir, tf=top_tf, groups=groups_grid
+                            shift_df,
+                            emb_grid,
+                            figures_dir,
+                            tf=top_tf,
+                            groups=groups_grid,
+                            group_labels=cluster_labels,
                         )
 
                     if shift_df is not None:
