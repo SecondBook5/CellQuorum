@@ -280,7 +280,7 @@ class BackendRegistry:
 
 
 def build_default_backend_registry(
-    *, rscript_path: str = "Rscript", max_memory_gb: float | None = 24.0
+    *, rscript_path: str = "Rscript", max_memory_gb: float | None = 32.0
 ) -> BackendRegistry:
     """
     Build the default CellQuorum backend registry.

@@ -645,7 +645,7 @@ class RConfig(StrictBaseModel):
     # ligand-receptor scoring across 6+ cell types on a 61,608-cell cohort
     # silently failed under the 12GB cap (confirmed: the identical script and
     # data succeeded with no cap, twice, outside the pipeline).
-    max_memory_gb: float | None = 24.0
+    max_memory_gb: float | None = 32.0
 
 
 class ReportConfig(StrictBaseModel):

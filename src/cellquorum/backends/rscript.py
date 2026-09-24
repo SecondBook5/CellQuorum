@@ -58,12 +58,13 @@ class RscriptBackend(BaseBackend):
     # the work that mattered) -- but multinichenet's pseudobulk DE + ligand-receptor scoring
     # across 6+ real cell types on a 61,608-cell cohort silently failed under that cap (confirmed:
     # the identical script and data succeeded with no cap, twice, and failed every time inside the
-    # pipeline's own 12 GB RLIMIT_AS). Raised to 24 GB -- real headroom on this 43 GB machine,
-    # matching what a whole-atlas-scale scDblFinder call already needed once before (see
+    # pipeline's own 12 GB RLIMIT_AS). First raised to 24 GB, then to 32 GB for further real
+    # headroom on this 43 GB machine, matching the exact value already precedented for
+    # whole-atlas-scale scDblFinder calls (see
     # test_build_default_backend_registry_threads_configured_max_memory_gb). R's own message
     # names the size it wanted when the cap IS hit, which is the diagnosis: "cannot allocate
     # vector of size 31.6 Gb".
-    max_memory_gb: float | None = 24.0
+    max_memory_gb: float | None = 32.0
 
     # Store Rscript backend requirements.
     requirement_list: list[BackendRequirement] = field(
@@ -395,7 +396,7 @@ def build_rscript_backend(
     rscript_path: str = "Rscript",
     timeout_seconds: int = 30,
     r_packages: list[str] | None = None,
-    max_memory_gb: float | None = 24.0,
+    max_memory_gb: float | None = 32.0,
 ) -> RscriptBackend:
     """
     Build an Rscript backend with optional R package checks.

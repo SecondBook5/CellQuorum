@@ -598,7 +598,7 @@ def test_build_default_backend_registry_threads_configured_rscript_path() -> Non
 
 
 def test_build_default_backend_registry_defaults_max_memory_gb() -> None:
-    """The 24GB RLIMIT_AS cap is the default when no override is threaded.
+    """The 32GB RLIMIT_AS cap is the default when no override is threaded.
 
     This is the baseline every current config relies on -- the safety cap that
     turns an R subprocess exceeding memory into an ordinary recorded failure
@@ -607,12 +607,12 @@ def test_build_default_backend_registry_defaults_max_memory_gb() -> None:
     pseudobulk DE + ligand-receptor scoring across 6+ cell types on a
     61,608-cell cohort silently failed under the 12GB cap (confirmed: the
     identical script and data succeeded with no cap, twice, outside the
-    pipeline).
+    pipeline). First raised to 24GB, then to 32GB for further headroom.
     """
 
     registry = build_default_backend_registry()
 
-    assert registry.get("rscript").max_memory_gb == 24.0
+    assert registry.get("rscript").max_memory_gb == 32.0
 
 
 def test_build_default_backend_registry_threads_configured_max_memory_gb() -> None:
