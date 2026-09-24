@@ -11,13 +11,27 @@ import scipy.io
 import scipy.sparse as sp
 
 
-def export_sce_inputs(adata: ad.AnnData, obs_cols: list[str], scratch: Path) -> dict[str, Path]:
+def export_sce_inputs(
+    adata: ad.AnnData, obs_cols: list[str], scratch: Path, *, subdir: str
+) -> dict[str, Path]:
     """Export counts + metadata for building a SingleCellExperiment in R.
 
     Writes genes x cells matrix-market counts plus gene/barcode/obs CSVs. The
     R side reconstructs an SCE from these (deliberately avoiding SeuratDisk).
+
+    ``subdir`` is required, not defaulted: real bug found on the fibroblast
+    cohort, both multinichenet_method.py and nichenet_method.py wrote to the
+    SAME hardcoded filenames (scratch/counts.mtx, scratch/obs.csv, ...) with
+    DIFFERENT obs_cols. Both run in the same pipeline invocation, so
+    nichenet's narrower export silently overwrote multinichenet's richer one
+    before (or while) multinichenet's own R subprocess was still reading it,
+    which failed with "sample_id should be a column name in the metadata
+    dataframe of sce" -- a column that really was exported, just erased by
+    the next method's call before the R side got to it. Every caller writes
+    into its own ``scratch/<subdir>/`` namespace so two callers can never
+    collide, regardless of execution order or timing.
     """
-    scratch = Path(scratch)
+    scratch = Path(scratch) / subdir
     scratch.mkdir(parents=True, exist_ok=True)
 
     # genes x cells (R/Bioconductor orientation).

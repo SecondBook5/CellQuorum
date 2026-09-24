@@ -133,7 +133,7 @@ class NicheNetMethod(RAnalysisMethod):
             )
 
         scratch = Path(context.paths.scratch)
-        paths = export_sce_inputs(adata, [cell_type_col], scratch)
+        paths = export_sce_inputs(adata, [cell_type_col], scratch, subdir="nichenet")
         geneset_csv = scratch / "nichenet_geneset.csv"
         background_csv = scratch / "nichenet_background.csv"
         pd.DataFrame({"gene": geneset}).to_csv(geneset_csv, index=False)

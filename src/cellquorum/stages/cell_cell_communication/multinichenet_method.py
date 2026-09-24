@@ -76,7 +76,9 @@ class MultiNicheNetMethod(RAnalysisMethod):
             return skip
 
         scratch = Path(context.paths.scratch)
-        paths = export_sce_inputs(adata, [cell_type_col, sample_col, condition_col], scratch)
+        paths = export_sce_inputs(
+            adata, [cell_type_col, sample_col, condition_col], scratch, subdir="multinichenet"
+        )
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)

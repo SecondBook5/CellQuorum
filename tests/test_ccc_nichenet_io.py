@@ -32,7 +32,9 @@ def _toy_adata():
 
 def test_export_sce_inputs_writes_all_files(tmp_path):
     adata = _toy_adata()
-    paths = export_sce_inputs(adata, ["cell_type", "sample_id", "condition"], tmp_path)
+    paths = export_sce_inputs(
+        adata, ["cell_type", "sample_id", "condition"], tmp_path, subdir="mnn"
+    )
     assert set(paths) == {"counts", "genes", "barcodes", "obs"}
     for p in paths.values():
         assert p.is_file()
@@ -44,6 +46,32 @@ def test_export_sce_inputs_writes_all_files(tmp_path):
     obs = pd.read_csv(paths["obs"])
     assert list(obs.columns) == ["barcode", "cell_type", "sample_id", "condition"]
     assert list(obs["barcode"]) == ["c1", "c2", "c3"]
+
+
+def test_export_sce_inputs_different_callers_do_not_collide(tmp_path):
+    """Real bug found on the fibroblast cohort: multinichenet_method.py and
+    nichenet_method.py both called export_sce_inputs with the SAME hardcoded
+    filenames (scratch/counts.mtx, scratch/obs.csv, ...) and DIFFERENT
+    obs_cols lists. Both methods run in the same pipeline invocation
+    (multinichenet then nichenet), so nichenet's narrower export (just
+    cell_type_col) silently overwrote multinichenet's (cell_type + sample +
+    condition) in the shared scratch directory -- multinichenet's own R
+    subprocess then failed with "sample_id should be a column name in the
+    metadata dataframe of sce" because the file it read no longer had that
+    column. Each caller's export must land in its own namespace.
+    """
+    adata = _toy_adata()
+    mnn_paths = export_sce_inputs(
+        adata, ["cell_type", "sample_id", "condition"], tmp_path, subdir="multinichenet"
+    )
+    nn_paths = export_sce_inputs(adata, ["cell_type"], tmp_path, subdir="nichenet")
+
+    # Distinct files on disk -- the second call must not touch the first's.
+    assert mnn_paths["obs"] != nn_paths["obs"]
+    mnn_obs = pd.read_csv(mnn_paths["obs"])
+    assert list(mnn_obs.columns) == ["barcode", "cell_type", "sample_id", "condition"]
+    nn_obs = pd.read_csv(nn_paths["obs"])
+    assert list(nn_obs.columns) == ["barcode", "cell_type"]
 
 
 def test_de_to_geneset_filters_and_caps():
