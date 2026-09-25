@@ -509,6 +509,24 @@ def test_ligand_activity_bar_orders_by_score_and_caps_top_n():
     assert set(labels) == {"IL6", "TGFB2"}
 
 
+def test_ligand_activity_bar_bars_are_colored_by_their_own_score():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_activity_bar
+
+    activities = pd.DataFrame(
+        {
+            "test_ligand": ["TGFB2", "TGFB1", "IL6"],
+            "aupr_corrected": [0.021, 0.019, 0.041],
+        }
+    )
+    fig = ligand_activity_bar(activities, top_n=3)
+    ax = fig.axes[0]
+    colors = {tuple(p.get_facecolor()) for p in ax.patches}
+    # A flat single color (the old behavior) collapses to one distinct RGBA;
+    # a real gradient keyed on score gives each differently-scored bar its
+    # own color.
+    assert len(colors) == 3
+
+
 def test_ligand_activity_bar_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import ligand_activity_bar
 
@@ -531,6 +549,25 @@ def test_ligand_target_heatmap_returns_figure_with_ligand_and_target_axes():
     ax = fig.axes[0]
     assert set(t.get_text() for t in ax.get_yticklabels()) == {"TGFB2", "IL6"}
     assert set(t.get_text() for t in ax.get_xticklabels()) == {"COL1A1", "COL1A2"}
+
+
+def test_ligand_target_heatmap_uses_a_single_hue_purple_scale():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_target_heatmap
+
+    weights = pd.DataFrame(
+        {
+            "ligand": ["TGFB2", "TGFB2"],
+            "target": ["COL1A1", "COL1A2"],
+            "weight": [0.24, 0.25],
+        }
+    )
+    fig = ligand_target_heatmap(weights)
+    im = fig.axes[0].images[0]
+    # viridis (the shared house sequential map) reads dark-purple-to-yellow
+    # and drowns a small, mostly-near-zero regulatory-potential matrix; a
+    # single-hue white->purple ramp (nichenetr's own convention) is what
+    # reads cleanly here.
+    assert im.get_cmap().name == "Purples"
 
 
 def test_ligand_target_heatmap_empty_guarded():

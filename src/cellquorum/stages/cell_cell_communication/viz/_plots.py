@@ -241,11 +241,17 @@ def ligand_activity_bar(
     df = df.sort_values(score_col, ascending=False, kind="mergesort").head(top_n)
     # Bottom-to-top so the strongest ligand renders at the top of the chart.
     df = df.iloc[::-1]
+    scores = df[score_col].to_numpy(dtype=float)
+    finite = scores[np.isfinite(scores)]
+    lo, hi = (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0)
+    if hi == lo:
+        hi = lo + 1.0
+    norm = Normalize(vmin=lo, vmax=hi)
     fig, ax = plt.subplots(figsize=(6, max(3, 0.35 * len(df))))
     ax.barh(
         df[ligand_col].astype(str),
-        df[score_col].to_numpy(dtype=float),
-        color=CATEGORICAL_PALETTE[0],
+        scores,
+        color=plt.get_cmap("Oranges")(norm(scores)),
     )
     ax.set_xlabel(score_col)
     fig.tight_layout()
@@ -277,7 +283,11 @@ def ligand_target_heatmap(
     fig, ax = plt.subplots(figsize=(max(4, 0.4 * mat.shape[1]), max(3, 0.4 * mat.shape[0])))
     vals = mat.to_numpy(dtype=float)
     norm = Normalize(vmin=0.0, vmax=float(np.nanmax(vals)) or 1.0)
-    im = ax.imshow(vals, cmap=_SEQ_CMAP, norm=norm, aspect="auto")
+    # A single-hue white->purple ramp (nichenetr's own convention), not the
+    # shared multi-hue viridis: this matrix is mostly near-zero (only a
+    # ligand's own top targets are non-zero), and a multi-hue map drowns
+    # that in what reads as noise.
+    im = ax.imshow(vals, cmap="Purples", norm=norm, aspect="auto")
     ax.set_xticks(range(mat.shape[1]))
     ax.set_xticklabels(list(mat.columns), rotation=45, ha="right")
     ax.set_yticks(range(mat.shape[0]))
