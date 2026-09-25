@@ -16,6 +16,7 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     load_canonical_lr_sources,
     load_curvature,
     load_mnn_prioritization,
+    load_mnn_sample_activity,
     load_nichenet,
     load_tensor_factors,
     load_topology,
@@ -548,6 +549,31 @@ class MultiNicheNetVizMethod(AnalysisMethod):
                     warnings.append(
                         f"multinichenet_viz: circos {cluster} ({group}) failed: {str(exc)[:200]}"
                     )
+
+        sample_activity = load_mnn_sample_activity(results_dir)
+        if sample_activity is not None:
+            sample_df, source_df = sample_activity
+            try:
+                fig = _plots.plot_mnn_sample_activity(
+                    sample_df,
+                    source_df,
+                    top_n=int(config.get("mnn_sample_activity_top_n", 20)),
+                    cluster_labels=labels,
+                )
+                paths = save_figure(
+                    fig, figures_dir, "multinichenet_sample_activity", formats=formats, dpi=dpi
+                )
+                artifacts += figure_artifacts(
+                    paths,
+                    name="ccc_figure",
+                    description=(
+                        "MultiNicheNet per-sample expression, ligand activity, and "
+                        "celltype specificity for the top prioritized LR interactions."
+                    ),
+                )
+                n_figures += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"multinichenet_viz: sample_activity failed: {str(exc)[:200]}")
 
         if n_figures == 0:
             return self._skip("nothing plottable", warnings=warnings)

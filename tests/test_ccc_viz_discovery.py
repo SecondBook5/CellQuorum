@@ -171,6 +171,30 @@ def test_load_mnn_prioritization_none_when_absent(tmp_path):
     assert load_mnn_prioritization(tmp_path) is None
 
 
+def test_load_mnn_sample_activity_reads_both_tables(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._io import load_mnn_sample_activity
+
+    pd.DataFrame({"id": ["a"], "sample": ["s1"], "group": ["Normal"]}).to_csv(
+        tmp_path / "mnn_sample_prioritization.csv", index=False
+    )
+    pd.DataFrame({"id": ["a"], "group": ["Normal"], "activity": [0.1]}).to_csv(
+        tmp_path / "mnn_group_prioritization_source.csv", index=False
+    )
+    out = load_mnn_sample_activity(tmp_path)
+    assert out is not None
+    sample_df, source_df = out
+    assert list(sample_df["id"]) == ["a"]
+    assert list(source_df["activity"]) == [0.1]
+
+
+def test_load_mnn_sample_activity_none_when_either_table_absent(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._io import load_mnn_sample_activity
+
+    pd.DataFrame({"id": ["a"]}).to_csv(tmp_path / "mnn_sample_prioritization.csv", index=False)
+    # mnn_group_prioritization_source.csv deliberately missing.
+    assert load_mnn_sample_activity(tmp_path) is None
+
+
 def test_load_topology_and_curvature(tmp_path):
     from cellquorum.stages.cell_cell_communication.viz._io import load_curvature, load_topology
 

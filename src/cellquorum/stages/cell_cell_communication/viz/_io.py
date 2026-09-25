@@ -110,6 +110,20 @@ def load_mnn_prioritization(results_dir: Path) -> pd.DataFrame | None:
     return _read_csv(Path(results_dir) / "mnn_prioritization.csv")
 
 
+def load_mnn_sample_activity(
+    results_dir: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """Read MultiNicheNet's per-sample and pre-trim prioritization tables
+    (sample_prioritization_tbl, group_prioritization_table_source) --
+    together, since plot_mnn_sample_activity needs both or neither.
+    """
+    sample_df = _read_csv(Path(results_dir) / "mnn_sample_prioritization.csv")
+    source_df = _read_csv(Path(results_dir) / "mnn_group_prioritization_source.csv")
+    if sample_df is None or source_df is None:
+        return None
+    return sample_df, source_df
+
+
 def load_topology(results_dir: Path) -> dict[str, pd.DataFrame]:
     """Read topology CSVs from results_dir/ccc_network. Missing keys omitted."""
     net = results_dir / "ccc_network"
@@ -188,6 +202,7 @@ def apply_theme() -> None:
 __all__ = [
     "load_canonical_lr_sources",
     "load_mnn_prioritization",
+    "load_mnn_sample_activity",
     "load_nichenet",
     "load_topology",
     "load_curvature",

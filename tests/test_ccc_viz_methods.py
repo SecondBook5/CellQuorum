@@ -112,6 +112,65 @@ def test_multinichenet_viz_method_defaults_key_clusters_to_everything_present(tm
     assert any("multinichenet_circos_3" in n for n in names)
 
 
+def _write_mnn_sample_activity(results_dir):
+    Path(results_dir).mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "id": ["TGFB1_TGFBR1_X0_X3"] * 2,
+            "sample": ["P1_LE", "P1_N"],
+            "group": ["Lymphedema", "Normal"],
+            "sender": ["0", "0"],
+            "receiver": ["3", "3"],
+            "ligand": ["TGFB1", "TGFB1"],
+            "receptor": ["TGFBR1", "TGFBR1"],
+            "scaled_LR_pb_prod": [1.1, -0.5],
+            "keep_sender_receiver": ["Sender & Receiver present"] * 2,
+        }
+    ).to_csv(Path(results_dir) / "mnn_sample_prioritization.csv", index=False)
+    pd.DataFrame(
+        {
+            "id": ["TGFB1_TGFBR1_X0_X3"] * 2,
+            "sender": ["0", "0"],
+            "receiver": ["3", "3"],
+            "ligand": ["TGFB1", "TGFB1"],
+            "receptor": ["TGFBR1", "TGFBR1"],
+            "group": ["Lymphedema", "Normal"],
+            "activity": [0.04, 0.01],
+            "activity_scaled": [1.5, -1.5],
+            "direction_regulation": ["up", "down"],
+            "scaled_pb_ligand": [1.2, -1.2],
+            "scaled_pb_receptor": [0.9, -0.9],
+            "fraction_ligand_group": [0.8, 0.3],
+            "fraction_receptor_group": [0.7, 0.2],
+            "prioritization_score": [0.95, 0.95],
+        }
+    ).to_csv(Path(results_dir) / "mnn_group_prioritization_source.csv", index=False)
+
+
+def test_multinichenet_viz_method_renders_sample_activity_figure_when_present(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
+
+    adata, ctx = _ctx(tmp_path)
+    _write_mnn_prioritization(ctx.paths.results)
+    _write_mnn_sample_activity(ctx.paths.results)
+    out = MultiNicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    names = {a.path.stem for a in out.artifacts}
+    assert "multinichenet_sample_activity" in names
+
+
+def test_multinichenet_viz_method_skips_sample_activity_when_absent(tmp_path):
+    # mnn_sample_prioritization.csv / mnn_group_prioritization_source.csv
+    # not written (older-style run) -- lollipop/circos must still render.
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
+
+    adata, ctx = _ctx(tmp_path)
+    _write_mnn_prioritization(ctx.paths.results)
+    out = MultiNicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    names = {a.path.stem for a in out.artifacts}
+    assert "multinichenet_sample_activity" not in names
+    assert any("multinichenet_top_lr" in n for n in names)
+
+
 def test_multinichenet_viz_method_renders_one_lollipop_per_group(tmp_path):
     # One lollipop per condition (matching the reference this was built to
     # reproduce), not both groups crammed into one -- a combined figure

@@ -20,6 +20,14 @@ p_val_adj <- as.logical(args[[17]])
 # number ("top_n_target should be numeric" / "n.cores should be numeric").
 top_n_target <- as.numeric(args[[18]])
 scenario <- args[[19]]; n_cores <- as.numeric(args[[20]]); seed <- as.integer(args[[21]])
+# Optional: per-sample and pre-trim (celltype-specificity) tables --
+# multi_nichenet_analysis() already computes both internally
+# (prioritization_tables$sample_prioritization_tbl and
+# $group_prioritization_table_source), but until now nothing extracted
+# them, so the only output was the fully-aggregated group table -- no
+# per-sample values, no ligand/receptor celltype-specificity scores.
+out_sample_csv <- if (length(args) >= 22) args[[22]] else NA_character_
+out_source_csv <- if (length(args) >= 23) args[[23]] else NA_character_
 
 set.seed(seed)
 
@@ -86,15 +94,34 @@ output <- multi_nichenet_analysis(
   verbose = FALSE
 )
 
-tbl <- output$prioritization_tables$group_prioritization_tbl
 # Undo the make.names() sanitization: any column whose values are entirely
 # drawn from the sanitized cell type labels (sender/receiver, in the current
 # schema, but this stays correct if multinichenetr renames them) gets mapped
-# back to the real, original labels.
-for (col in names(tbl)) {
-  values <- as.character(tbl[[col]])
-  if (all(values %in% names(celltype_lookup))) {
-    tbl[[col]] <- unname(celltype_lookup[values])
+# back to the real, original labels. Shared across every output table, not
+# just group_prioritization_tbl, since sample_prioritization_tbl and
+# group_prioritization_table_source carry the same sanitized sender/receiver
+# columns.
+unsanitize <- function(tbl) {
+  for (col in names(tbl)) {
+    values <- as.character(tbl[[col]])
+    if (all(values %in% names(celltype_lookup))) {
+      tbl[[col]] <- unname(celltype_lookup[values])
+    }
   }
+  tbl
 }
-write.csv(tbl, out_csv, row.names = FALSE)
+
+write.csv(unsanitize(output$prioritization_tables$group_prioritization_tbl), out_csv, row.names = FALSE)
+
+if (!is.na(out_sample_csv)) {
+  write.csv(
+    unsanitize(output$prioritization_tables$sample_prioritization_tbl),
+    out_sample_csv, row.names = FALSE
+  )
+}
+if (!is.na(out_source_csv)) {
+  write.csv(
+    unsanitize(output$prioritization_tables$group_prioritization_table_source),
+    out_source_csv, row.names = FALSE
+  )
+}

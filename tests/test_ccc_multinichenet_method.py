@@ -91,6 +91,119 @@ def test_multinichenet_skips_without_prior_models(tmp_path, mock_context):
     assert "prior" in res.reason.lower() or "model" in res.reason.lower()
 
 
+class _CapturingContext:
+    """A context whose R backend records argv and writes the outputs R would write."""
+
+    def __init__(self, tmp_path, mock_context, *, sample_tbl=None, source_tbl=None):
+        self.inner = mock_context(tmp_path)
+        self.paths = self.inner.paths
+        self.args = None
+        self._sample_tbl = sample_tbl
+        self._source_tbl = source_tbl
+        outer = self
+
+        class Backend:
+            def _rscript_available(self):
+                return True
+
+            def _r_package_available(self, package):
+                return True
+
+            def run_script(self, script, args, timeout=None):
+                outer.args = list(args)
+                pd.DataFrame(
+                    {
+                        "contrast": ["case-ctrl"],
+                        "group": ["case"],
+                        "sender": ["A"],
+                        "receiver": ["B"],
+                        "ligand": ["L1"],
+                        "receptor": ["R1"],
+                        "prioritization_score": [0.9],
+                    }
+                ).to_csv(args[4], index=False)
+                if outer._sample_tbl is not None and len(args) >= 22:
+                    outer._sample_tbl.to_csv(args[21], index=False)
+                if outer._source_tbl is not None and len(args) >= 23:
+                    outer._source_tbl.to_csv(args[22], index=False)
+
+                class Proc:
+                    returncode = 0
+                    stdout = ""
+                    stderr = ""
+
+                return Proc()
+
+        class Registry:
+            def get(self, name):
+                if name == "rscript":
+                    return Backend()
+                raise ValueError(name)
+
+        self.backend_registry = Registry()
+
+
+def _mnn_config(tmp_path):
+    lt = tmp_path / "lt.rds"
+    lt.write_text("x")
+    lr = tmp_path / "lr.rds"
+    lr.write_text("x")
+    return {
+        "cell_type_col": "cell_type",
+        "sample_col": "sample_id",
+        "condition_col": "condition",
+        "case": "case",
+        "control": "ctrl",
+        "nichenet_ligand_target_matrix": str(lt),
+        "nichenet_lr_network": str(lr),
+    }
+
+
+def test_sample_and_source_output_paths_are_passed_and_registered(tmp_path, mock_context):
+    sample_tbl = pd.DataFrame(
+        {
+            "sample": ["s0", "s1"],
+            "group": ["case", "ctrl"],
+            "sender": ["A", "B"],
+            "receiver": ["B", "A"],
+            "ligand": ["L1", "L1"],
+            "receptor": ["R1", "R1"],
+            "scaled_LR_prod": [1.2, -0.4],
+            "keep_sender_receiver": ["Sender & Receiver present", "Receiver absent"],
+        }
+    )
+    source_tbl = pd.DataFrame(
+        {
+            "sender": ["A"],
+            "receiver": ["B"],
+            "ligand": ["L1"],
+            "receptor": ["R1"],
+            "scaled_avg_exprs_ligand": [0.8],
+            "scaled_avg_frq_ligand": [0.7],
+        }
+    )
+    ctx = _CapturingContext(tmp_path, mock_context, sample_tbl=sample_tbl, source_tbl=source_tbl)
+    res = MultiNicheNetMethod()._run(_toy_adata(), _mnn_config(tmp_path), ctx)
+    assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
+    assert len(ctx.args) == 23
+    assert ctx.args[21].endswith("mnn_sample_prioritization.csv")
+    assert ctx.args[22].endswith("mnn_group_prioritization_source.csv")
+    names = {a.name for a in res.artifacts}
+    assert "mnn_sample_prioritization" in names
+    assert "mnn_group_prioritization_source" in names
+
+
+def test_sample_and_source_artifacts_absent_when_r_did_not_write_them(tmp_path, mock_context):
+    # Neither table was written by the mock (older-style run) -- must not be
+    # claimed as an artifact.
+    ctx = _CapturingContext(tmp_path, mock_context)
+    res = MultiNicheNetMethod()._run(_toy_adata(), _mnn_config(tmp_path), ctx)
+    assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
+    names = {a.name for a in res.artifacts}
+    assert "mnn_sample_prioritization" not in names
+    assert "mnn_group_prioritization_source" not in names
+
+
 def test_multinichenet_skips_without_r_package(tmp_path, mock_context, monkeypatch):
     monkeypatch.setattr(
         "cellquorum.stages.cell_cell_communication.multinichenet_method.shutil.which",

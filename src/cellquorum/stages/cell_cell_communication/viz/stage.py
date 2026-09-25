@@ -18,6 +18,7 @@ _VIZ_CONFIG_KEYS = (
     "cluster_labels",
     "mnn_key_clusters",
     "mnn_circos_top_k",
+    "mnn_sample_activity_top_n",
 )
 _DEFAULT_METHODS = [
     "dotplot_viz",

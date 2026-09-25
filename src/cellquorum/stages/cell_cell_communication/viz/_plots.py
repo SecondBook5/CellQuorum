@@ -220,6 +220,165 @@ def cci_heatmap(
     return fig
 
 
+def plot_mnn_sample_activity(
+    sample_df: pd.DataFrame,
+    source_df: pd.DataFrame,
+    *,
+    top_n: int = 20,
+    cluster_labels: dict[str, str] | None = None,
+) -> Figure:
+    """MultiNicheNet's own headline figure: per-sample expression, scaled and
+    raw ligand activity in the receiver, and ligand/receptor celltype
+    specificity, for the same top-N prioritized LR interactions.
+
+    Reproduces multinichenetr's own make_sample_lr_prod_activity_plots() in
+    matplotlib/house style rather than importing its ggplot output: same 4
+    panels, same source columns (sample_prioritization_tbl for panel 1,
+    group_prioritization_table_source for panels 2-4 -- confirmed by reading
+    that function's source, since activity/activity_scaled/
+    direction_regulation/fraction_*_group all live in group_prioritization_
+    table_source, not the trimmed group_prioritization_tbl already used
+    elsewhere in this module). Deliberately simplified from the reference:
+    rows are a flat, sorted "sender -> receiver: ligand - receptor" list
+    instead of nested facet strips (matplotlib has no facet_grid equivalent,
+    and free per-facet row heights add real complexity for a readability
+    gain a sorted flat list already gets most of), and panels 2/3 show one
+    activity value per group rather than splitting by up/down direction
+    (redundant with activity_scaled's own sign in the near-totality of
+    real rows). A deliberate exception to one-plot-per-file, like
+    plot_tensor_factors: comparing these 4 views for the SAME interactions
+    is the entire point of the figure.
+    """
+    if sample_df is None or sample_df.empty or source_df is None or source_df.empty:
+        return _empty_fig()
+
+    labels = cluster_labels or {}
+
+    def _route(r: pd.Series) -> str:
+        sender = labels.get(str(r["sender"]), str(r["sender"]))
+        receiver = labels.get(str(r["receiver"]), str(r["receiver"]))
+        return f"{sender} -> {receiver}: {r['ligand']} - {r['receptor']}"
+
+    top_ids = (
+        source_df.groupby("id")["prioritization_score"]
+        .max()
+        .sort_values(ascending=False)
+        .head(top_n)
+        .index
+    )
+    sample_d = sample_df[sample_df["id"].isin(top_ids)].copy()
+    source_d = source_df[source_df["id"].isin(top_ids)].copy()
+    if sample_d.empty or source_d.empty:
+        return _empty_fig()
+
+    id_route = source_d.drop_duplicates("id").set_index("id").apply(_route, axis=1).to_dict()
+    rows = sorted(set(id_route.values()))
+    row_pos = {r: i for i, r in enumerate(rows)}
+    sample_d["__row"] = sample_d["id"].map(id_route)
+    source_d["__row"] = source_d["id"].map(id_route)
+
+    groups = sorted(source_d["group"].unique())
+    samples = sorted(sample_d["sample"].unique())
+
+    fig, axes = plt.subplots(
+        1,
+        4,
+        figsize=(16, max(3, 0.35 * len(rows))),
+        squeeze=True,
+        gridspec_kw={
+            "width_ratios": [max(2, len(samples)), len(groups), len(groups), 2 * len(groups)]
+        },
+    )
+
+    # Panel 1: per-sample scaled LR pseudobulk product, sized by
+    # sender/receiver presence.
+    ax = axes[0]
+    keep_sizes = {
+        "Sender & Receiver absent": 20,
+        "Receiver absent": 45,
+        "Sender absent": 70,
+        "Sender & Receiver present": 140,
+    }
+    x_pos = {s: i for i, s in enumerate(samples)}
+    vmax = float(sample_d["scaled_LR_pb_prod"].abs().max()) or 1.0
+    norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+    ax.scatter(
+        [x_pos[s] for s in sample_d["sample"]],
+        [row_pos[r] for r in sample_d["__row"]],
+        c=sample_d["scaled_LR_pb_prod"],
+        cmap="RdBu_r",
+        norm=norm,
+        s=[keep_sizes.get(k, 40) for k in sample_d["keep_sender_receiver"]],
+        edgecolor="0.3",
+        linewidth=0.3,
+    )
+    ax.set_xticks(range(len(samples)))
+    ax.set_xticklabels(samples, rotation=90, fontsize=8)
+    ax.set_yticks(range(len(rows)))
+    ax.set_yticklabels(rows, fontsize=8)
+    ax.set_title("Sample L-R product", fontsize=9)
+
+    # Panel 2: scaled ligand activity in receiver, one column per group.
+    ax = axes[1]
+    vmax = float(source_d["activity_scaled"].abs().max()) or 1.0
+    norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+    mat = source_d.pivot_table(index="__row", columns="group", values="activity_scaled")
+    mat = mat.reindex(index=rows, columns=groups)
+    ax.imshow(mat.to_numpy(dtype=float), cmap="RdBu_r", norm=norm, aspect="auto")
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels(groups, rotation=90, fontsize=8)
+    ax.set_yticks([])
+    ax.set_title("Scaled activity", fontsize=9)
+
+    # Panel 3: raw ligand activity in receiver, one column per group.
+    ax = axes[2]
+    mat = source_d.pivot_table(index="__row", columns="group", values="activity")
+    mat = mat.reindex(index=rows, columns=groups)
+    vals = mat.to_numpy(dtype=float)
+    vmax = float(np.nanmax(vals)) if np.isfinite(vals).any() else 1.0
+    ax.imshow(vals, cmap="Oranges", norm=Normalize(vmin=0.0, vmax=vmax or 1.0), aspect="auto")
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels(groups, rotation=90, fontsize=8)
+    ax.set_yticks([])
+    ax.set_title("Ligand activity", fontsize=9)
+
+    # Panel 4: ligand/receptor celltype specificity, colored by scaled
+    # pseudobulk expression, sized by fraction of group expressing.
+    ax = axes[3]
+    cols = [f"{lr}\n{g}" for g in groups for lr in ("ligand", "receptor")]
+    col_pos = {c: i for i, c in enumerate(cols)}
+    cs_rows = []
+    for _, r in source_d.iterrows():
+        cs_rows.append(
+            (f"ligand\n{r['group']}", r["__row"], r["scaled_pb_ligand"], r["fraction_ligand_group"])
+        )
+        cs_rows.append(
+            (
+                f"receptor\n{r['group']}",
+                r["__row"],
+                r["scaled_pb_receptor"],
+                r["fraction_receptor_group"],
+            )
+        )
+    cs = pd.DataFrame(cs_rows, columns=["col", "row", "specificity", "fraction"])
+    ax.scatter(
+        [col_pos[c] for c in cs["col"]],
+        [row_pos[r] for r in cs["row"]],
+        c=cs["specificity"],
+        cmap="viridis",
+        s=200.0 * cs["fraction"].clip(lower=0),
+        edgecolor="0.3",
+        linewidth=0.3,
+    )
+    ax.set_xticks(range(len(cols)))
+    ax.set_xticklabels(cols, fontsize=7)
+    ax.set_yticks([])
+    ax.set_title("Celltype specificity", fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
 def cluster_focused_circos(
     df: pd.DataFrame,
     focus: str,

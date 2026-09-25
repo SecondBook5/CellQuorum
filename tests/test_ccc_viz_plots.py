@@ -490,6 +490,100 @@ def test_interaction_dotplot_all_nan_weight():
     assert isinstance(fig, Figure)
 
 
+def _mnn_sample_and_source_dfs():
+    sample_df = pd.DataFrame(
+        {
+            "id": ["TGFB1_TGFBR1_X0_X3"] * 4 + ["CCN2_FGFR2_X3_X6"] * 4,
+            "sample": ["P1_LE", "P2_LE", "P1_N", "P2_N"] * 2,
+            "group": ["Lymphedema", "Lymphedema", "Normal", "Normal"] * 2,
+            "sender": ["0"] * 4 + ["3"] * 4,
+            "receiver": ["3"] * 4 + ["6"] * 4,
+            "ligand": ["TGFB1"] * 4 + ["CCN2"] * 4,
+            "receptor": ["TGFBR1"] * 4 + ["FGFR2"] * 4,
+            "scaled_LR_pb_prod": [1.1, 0.9, -0.5, -0.3, 0.6, 0.4, -0.2, -0.1],
+            "keep_sender_receiver": ["Sender & Receiver present"] * 3
+            + ["Receiver absent"]
+            + ["Sender & Receiver present"] * 4,
+        }
+    )
+    source_df = pd.DataFrame(
+        {
+            "id": [
+                "TGFB1_TGFBR1_X0_X3",
+                "TGFB1_TGFBR1_X0_X3",
+                "CCN2_FGFR2_X3_X6",
+                "CCN2_FGFR2_X3_X6",
+            ],
+            "sender": ["0", "0", "3", "3"],
+            "receiver": ["3", "3", "6", "6"],
+            "ligand": ["TGFB1", "TGFB1", "CCN2", "CCN2"],
+            "receptor": ["TGFBR1", "TGFBR1", "FGFR2", "FGFR2"],
+            "group": ["Lymphedema", "Normal", "Lymphedema", "Normal"],
+            "activity": [0.04, 0.01, 0.03, 0.02],
+            "activity_scaled": [1.5, -1.5, 0.8, -0.8],
+            "direction_regulation": ["up", "down", "up", "down"],
+            "scaled_pb_ligand": [1.2, -1.2, 0.5, -0.5],
+            "scaled_pb_receptor": [0.9, -0.9, 0.3, -0.3],
+            "fraction_ligand_group": [0.8, 0.3, 0.6, 0.4],
+            "fraction_receptor_group": [0.7, 0.2, 0.5, 0.35],
+            "prioritization_score": [0.95, 0.95, 0.80, 0.80],
+        }
+    )
+    return sample_df, source_df
+
+
+def test_plot_mnn_sample_activity_returns_a_four_panel_figure():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    assert isinstance(fig, Figure)
+    assert len(fig.axes) >= 4
+
+
+def test_plot_mnn_sample_activity_rows_name_sender_receiver_and_lr_pair():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    row_text = " ".join(t.get_text() for t in fig.axes[0].get_yticklabels())
+    assert "TGFB1 - TGFBR1" in row_text
+    assert "CCN2 - FGFR2" in row_text
+
+
+def test_plot_mnn_sample_activity_relabels_clusters_in_row_names():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(
+        sample_df, source_df, top_n=20, cluster_labels={"0": "Perivascular", "3": "Progenitor-like"}
+    )
+    row_text = " ".join(t.get_text() for t in fig.axes[0].get_yticklabels())
+    assert "Perivascular" in row_text
+    assert "Progenitor-like" in row_text
+
+
+def test_plot_mnn_sample_activity_caps_to_top_n_interactions():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=1)
+    row_text = [t.get_text() for t in fig.axes[0].get_yticklabels()]
+    # top_n=1 -> only the strongest id (TGFB1-TGFBR1, score 0.95) survives.
+    assert len(row_text) == 1
+    assert "TGFB1" in row_text[0]
+
+
+def test_plot_mnn_sample_activity_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    empty = pd.DataFrame()
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    assert isinstance(plot_mnn_sample_activity(empty, source_df), Figure)
+    assert isinstance(plot_mnn_sample_activity(sample_df, empty), Figure)
+    assert isinstance(plot_mnn_sample_activity(None, None), Figure)
+
+
 # ─── MultiNicheNet-specific plots ───────────────────────────────────────────
 
 

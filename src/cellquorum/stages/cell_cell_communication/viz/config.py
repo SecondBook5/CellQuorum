@@ -29,6 +29,9 @@ class CccVizConfig(StrictBaseModel):
         mnn_circos_top_k: Partners kept per focused circos (ribbons around the
             focus cluster) -- deliberately smaller than top_k, since the point
             of focusing is enough headroom to label each ribbon's LR pair.
+        mnn_sample_activity_top_n: LR interactions kept in the per-sample
+            activity/specificity composite (multinichenet_viz), ranked by
+            MultiNicheNet's own prioritization_score.
     """
 
     enabled: bool = True
@@ -40,6 +43,7 @@ class CccVizConfig(StrictBaseModel):
     cluster_labels: dict[str, str] | None = None
     mnn_key_clusters: list[str] | None = None
     mnn_circos_top_k: int = 8
+    mnn_sample_activity_top_n: int = 20
 
 
 __all__ = ["CccVizConfig"]

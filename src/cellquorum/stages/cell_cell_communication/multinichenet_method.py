@@ -84,6 +84,8 @@ class MultiNicheNetMethod(RAnalysisMethod):
         results_dir.mkdir(parents=True, exist_ok=True)
         writer = StageArtifactWriter.from_context(context)
         native_csv = results_dir / "mnn_prioritization.csv"
+        sample_csv = results_dir / "mnn_sample_prioritization.csv"
+        source_csv = results_dir / "mnn_group_prioritization_source.csv"
 
         timeout = int(config.get("nichenet_timeout_seconds", 7200))
         args = [
@@ -110,6 +112,8 @@ class MultiNicheNetMethod(RAnalysisMethod):
             # Python-side parallel steps instead of the R side keeping its own 4.
             str(resolve_n_jobs(context, config.get("nichenet_n_cores"))),
             str(seed),
+            str(sample_csv),
+            str(source_csv),
         ]
 
         try:
@@ -129,6 +133,24 @@ class MultiNicheNetMethod(RAnalysisMethod):
                 description=f"MultiNicheNet prioritization ({case} vs {control}).",
             )
         ]
+        for path, name, description in (
+            (
+                sample_csv,
+                "mnn_sample_prioritization",
+                "Per-sample scaled ligand-receptor expression product "
+                "(multinichenetr's sample_prioritization_tbl).",
+            ),
+            (
+                source_csv,
+                "mnn_group_prioritization_source",
+                "Pre-trim prioritization table with ligand/receptor celltype-"
+                "specificity scores (multinichenetr's group_prioritization_table_source).",
+            ),
+        ):
+            if path.is_file():
+                artifacts.append(
+                    StageArtifact(name=name, path=path, kind="csv", description=description)
+                )
         n_prioritized = None
         try:
             native = pd.read_csv(native_csv)
