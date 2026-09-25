@@ -17,6 +17,7 @@ from cellquorum.visualization import figstyle
 _QUAD_RED = "#FFE4E6"
 _QUAD_BLUE = "#E6F0FF"
 _AMBIENT_EDGE = "#7A7A7A"
+_HIGHLIGHT_COLOR = "#FFD700"  # gold: high-contrast against both case/control reds/blues
 
 
 def volcano(
@@ -121,13 +122,16 @@ def volcano(
     d["highlight"] = d["gene"].astype(str).isin(highlight_set)
     hl = d[d["highlight"]]
     if len(hl):
+        # A hollow black-outline star at this size reads as noise against
+        # the same-size colored dots; a solid, high-contrast fill is what
+        # actually lets a reader pick these out at a glance.
         ax.scatter(
             hl["logFC"],
             hl["neg_log10fdr"],
-            facecolors="none",
+            facecolors=_HIGHLIGHT_COLOR,
             edgecolors="black",
             marker="*",
-            s=110,
+            s=140,
             linewidths=1.1,
             zorder=3,
         )
@@ -148,7 +152,12 @@ def volcano(
         if r["ambient"]:
             color = _AMBIENT_EDGE
             style = "italic"
-        elif r["highlight"] and not (r["FDR"] < fdr_cut and abs(r["logFC"]) > fc_cut):
+        elif r["highlight"]:
+            # Always the highlight color, even when the gene is also
+            # DE-significant -- falling back to the ordinary case/control
+            # color here (the old behavior) defeated the point of
+            # highlighting it: a reader couldn't tell it apart from the
+            # other ~40 labeled genes.
             color = "black"
             style = "normal"
         else:

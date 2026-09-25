@@ -104,6 +104,48 @@ def test_volcano_highlights_marker_genes_even_if_not_significant():
     assert "G2" in labels
 
 
+def test_volcano_highlight_markers_are_filled_yellow_not_hollow():
+    # A hollow black-outline star at this size reads as noise next to the
+    # colored dots -- a real, opaque fill is what actually pops.
+    df = _demo_df()
+    fig = plots.volcano(
+        df,
+        fc_cut=1.0,
+        fdr_cut=0.05,
+        case_color="#C41E3A",
+        control_color="#1B4F8A",
+        x_label="x",
+        top_n_labels=0,
+        highlight_genes={"G2"},
+    )
+    # The highlight scatter is the last ax.scatter() call in volcano() --
+    # after the main up/down/ambient scatters -- so it's the last collection.
+    star = fig.axes[0].collections[-1]
+    facecolor = star.get_facecolor()
+    assert len(facecolor) > 0, "highlight marker has no fill at all (facecolors='none')"
+    assert tuple(facecolor[0])[:3] != (0.0, 0.0, 0.0)  # not black/hollow
+    assert facecolor[0][3] > 0.0  # not fully transparent
+
+
+def test_volcano_highlight_labels_are_always_visually_distinct():
+    # A highlighted gene that also happens to be DE-significant previously
+    # fell back to the same case/control color as every other label,
+    # defeating the point of highlighting it.
+    df = _demo_df()
+    fig = plots.volcano(
+        df,
+        fc_cut=0.1,
+        fdr_cut=0.5,
+        case_color="#C41E3A",
+        control_color="#1B4F8A",
+        x_label="x",
+        top_n_labels=0,
+        highlight_genes={"G1"},  # significant AND highlighted
+    )
+    label = next(t for t in fig.axes[0].texts if t.get_text() == "G1")
+    assert label.get_color() not in ("#C41E3A", "#1B4F8A")
+
+
 def test_volcano_rejects_invalid_probabilities_and_thresholds():
     import pytest
 
