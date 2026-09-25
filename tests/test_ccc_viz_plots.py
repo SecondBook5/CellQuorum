@@ -487,3 +487,79 @@ def test_interaction_dotplot_all_nan_weight():
     # Should return a Figure without raising
     fig = interaction_dotplot(df, top_k=5)
     assert isinstance(fig, Figure)
+
+
+# ─── NicheNet-specific plots ────────────────────────────────────────────────
+
+
+def test_ligand_activity_bar_orders_by_score_and_caps_top_n():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_activity_bar
+
+    activities = pd.DataFrame(
+        {
+            "test_ligand": ["TGFB2", "TGFB1", "IL6", "CCN2"],
+            "aupr_corrected": [0.021, 0.019, 0.041, 0.005],
+        }
+    )
+    fig = ligand_activity_bar(activities, top_n=2)
+    assert isinstance(fig, Figure)
+    ax = fig.axes[0]
+    # Top-2 by score, and the y-tick labels carry the actual ligand identity.
+    labels = [t.get_text() for t in ax.get_yticklabels()]
+    assert set(labels) == {"IL6", "TGFB2"}
+
+
+def test_ligand_activity_bar_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_activity_bar
+
+    assert isinstance(ligand_activity_bar(pd.DataFrame()), Figure)
+    assert isinstance(ligand_activity_bar(None), Figure)
+
+
+def test_ligand_target_heatmap_returns_figure_with_ligand_and_target_axes():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_target_heatmap
+
+    weights = pd.DataFrame(
+        {
+            "ligand": ["TGFB2", "TGFB2", "IL6"],
+            "target": ["COL1A1", "COL1A2", "COL1A1"],
+            "weight": [0.24, 0.25, 0.10],
+        }
+    )
+    fig = ligand_target_heatmap(weights)
+    assert isinstance(fig, Figure)
+    ax = fig.axes[0]
+    assert set(t.get_text() for t in ax.get_yticklabels()) == {"TGFB2", "IL6"}
+    assert set(t.get_text() for t in ax.get_xticklabels()) == {"COL1A1", "COL1A2"}
+
+
+def test_ligand_target_heatmap_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_target_heatmap
+
+    assert isinstance(ligand_target_heatmap(pd.DataFrame()), Figure)
+    assert isinstance(ligand_target_heatmap(None), Figure)
+
+
+def test_sender_ligand_dotplot_returns_figure_with_sender_and_ligand_axes():
+    from cellquorum.stages.cell_cell_communication.viz._plots import sender_ligand_dotplot
+
+    expr = pd.DataFrame(
+        {
+            "sender": ["Perivascular", "Perivascular", "Reticular"],
+            "ligand": ["TGFB2", "TGFB1", "TGFB2"],
+            "fraction_expressing": [0.17, 0.40, 0.05],
+            "mean_expression": [0.32, 0.69, 0.11],
+        }
+    )
+    fig = sender_ligand_dotplot(expr)
+    assert isinstance(fig, Figure)
+    ax = fig.axes[0]
+    assert set(t.get_text() for t in ax.get_xticklabels()) == {"Perivascular", "Reticular"}
+    assert set(t.get_text() for t in ax.get_yticklabels()) == {"TGFB2", "TGFB1"}
+
+
+def test_sender_ligand_dotplot_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import sender_ligand_dotplot
+
+    assert isinstance(sender_ligand_dotplot(pd.DataFrame()), Figure)
+    assert isinstance(sender_ligand_dotplot(None), Figure)

@@ -26,6 +26,7 @@ def test_all_six_methods_registered():
         "network_viz",
         "summary_viz",
         "tensor_factors_viz",
+        "nichenet_viz",
     ):
         assert METHOD_REGISTRY.has("ccc_viz", name)
 
@@ -46,6 +47,7 @@ def test_stage_default_methods_list():
         "network_viz",
         "summary_viz",
         "tensor_factors_viz",
+        "nichenet_viz",
     ]
 
 

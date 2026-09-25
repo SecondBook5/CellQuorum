@@ -104,6 +104,46 @@ def test_load_canonical_skips_unreadable(tmp_path):
     assert "multinichenet" not in [lab for lab, _ in out]
 
 
+def test_load_nichenet_returns_whichever_tables_are_present(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._io import load_nichenet
+
+    pd.DataFrame({"test_ligand": ["TGFB2"], "aupr_corrected": [0.02]}).to_csv(
+        tmp_path / "nichenet_activities.csv", index=False
+    )
+    # weights/sender_expression deliberately absent -- a partial result set
+    # (e.g. weights_csv never wrote) should still surface what did land,
+    # not be treated as all-or-nothing like tensor_factors.
+    out = load_nichenet(tmp_path)
+    assert set(out) == {"activities"}
+
+
+def test_load_nichenet_reads_all_three_tables(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._io import load_nichenet
+
+    pd.DataFrame({"test_ligand": ["TGFB2"], "aupr_corrected": [0.02]}).to_csv(
+        tmp_path / "nichenet_activities.csv", index=False
+    )
+    pd.DataFrame({"ligand": ["TGFB2"], "target": ["COL1A1"], "weight": [0.24]}).to_csv(
+        tmp_path / "nichenet_ligand_target_weights.csv", index=False
+    )
+    pd.DataFrame(
+        {
+            "sender": ["1"],
+            "ligand": ["TGFB2"],
+            "fraction_expressing": [0.17],
+            "mean_expression": [0.32],
+        }
+    ).to_csv(tmp_path / "nichenet_sender_expression.csv", index=False)
+    out = load_nichenet(tmp_path)
+    assert set(out) == {"activities", "weights", "sender_expression"}
+
+
+def test_load_nichenet_empty_dict_when_none_present(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._io import load_nichenet
+
+    assert load_nichenet(tmp_path) == {}
+
+
 def test_load_topology_and_curvature(tmp_path):
     from cellquorum.stages.cell_cell_communication.viz._io import load_curvature, load_topology
 

@@ -15,6 +15,7 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     figure_artifacts,
     load_canonical_lr_sources,
     load_curvature,
+    load_nichenet,
     load_tensor_factors,
     load_topology,
     relabel_clusters,
@@ -444,6 +445,98 @@ class TensorFactorsVizMethod(AnalysisMethod):
         )
 
 
+# ─── NicheNet ────────────────────────────────────────────────────────────
+
+
+class NicheNetVizMethod(AnalysisMethod):
+    """Render NicheNet's own outputs: ligand activity, ligand-target, sender dotplot.
+
+    nichenet_method.py already computes and writes these three tables; the
+    generic canonical-LR pipeline (dotplot_viz/chord_viz/sankey_viz) only
+    ever sees NicheNet's thin LR-edge projection of them, so the analysis's
+    actual headline result -- which ligand best explains the receiver's DE
+    geneset, and through which targets -- never reached a figure.
+    """
+
+    name = "nichenet_viz"
+    stage_category = "ccc_viz"
+    backend = "python"
+
+    def input_contract(self, config: dict) -> DataContract:
+        return DataContract()
+
+    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        results_dir = Path(context.paths.results)
+        figures_dir = Path(context.paths.figures) / "ccc"
+        formats = tuple(config.get("figure_formats", ["pdf", "png"]))
+        dpi = int(config.get("dpi", 300))
+        top_n = int(config.get("nichenet_top_n_ligands", 20))
+
+        tables = load_nichenet(results_dir)
+        if not tables:
+            return self._skip("no NicheNet output tables found")
+        labels = config.get("cluster_labels")
+        if labels and "sender_expression" in tables:
+            tables["sender_expression"] = relabel_clusters(
+                tables["sender_expression"], ["sender"], labels
+            )
+
+        apply_theme()
+        artifacts, warnings, n_figures = [], [], 0
+
+        if "activities" in tables:
+            try:
+                fig = _plots.ligand_activity_bar(tables["activities"], top_n=top_n)
+                paths = save_figure(
+                    fig, figures_dir, "nichenet_ligand_activity", formats=formats, dpi=dpi
+                )
+                artifacts += figure_artifacts(
+                    paths, name="ccc_figure", description="NicheNet ligand-activity ranking."
+                )
+                n_figures += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"nichenet_viz: ligand_activity failed: {str(exc)[:200]}")
+
+        if "weights" in tables:
+            try:
+                fig = _plots.ligand_target_heatmap(tables["weights"])
+                paths = save_figure(
+                    fig, figures_dir, "nichenet_ligand_target", formats=formats, dpi=dpi
+                )
+                artifacts += figure_artifacts(
+                    paths,
+                    name="ccc_figure",
+                    description="NicheNet ligand->target regulatory potential.",
+                )
+                n_figures += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"nichenet_viz: ligand_target failed: {str(exc)[:200]}")
+
+        if "sender_expression" in tables:
+            try:
+                fig = _plots.sender_ligand_dotplot(tables["sender_expression"])
+                paths = save_figure(
+                    fig, figures_dir, "nichenet_sender_dotplot", formats=formats, dpi=dpi
+                )
+                artifacts += figure_artifacts(
+                    paths, name="ccc_figure", description="NicheNet sender ligand expression."
+                )
+                n_figures += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"nichenet_viz: sender_dotplot failed: {str(exc)[:200]}")
+
+        if n_figures == 0:
+            return self._skip("nothing plottable", warnings=warnings)
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=[f"nichenet_viz rendered {n_figures} figures."],
+            warnings=warnings,
+            metrics={"method": self.name, "n_figures": n_figures},
+            backend="python",
+        )
+
+
 __all__ = [
     "DotplotVizMethod",
     "ChordVizMethod",
@@ -451,4 +544,5 @@ __all__ = [
     "NetworkVizMethod",
     "SummaryVizMethod",
     "TensorFactorsVizMethod",
+    "NicheNetVizMethod",
 ]

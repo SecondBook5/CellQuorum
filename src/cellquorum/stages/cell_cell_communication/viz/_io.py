@@ -77,6 +77,29 @@ def load_canonical_lr_sources(
     return out
 
 
+def load_nichenet(results_dir: Path) -> dict[str, pd.DataFrame]:
+    """Read NicheNet's own-format outputs (not the canonical LR schema).
+
+    nichenet_method.py writes three tables the generic canonical-LR pipeline
+    never touches: the ligand-activity ranking, the ligand->target weight
+    matrix, and per-sender ligand expression. Each key is independently
+    present/absent (a run can have activities without weights, e.g. if no
+    ligand had any weighted target links), so this returns whichever tables
+    exist rather than tensor_factors' all-or-nothing dict.
+    """
+    mapping = {
+        "activities": "nichenet_activities.csv",
+        "weights": "nichenet_ligand_target_weights.csv",
+        "sender_expression": "nichenet_sender_expression.csv",
+    }
+    out: dict[str, pd.DataFrame] = {}
+    for key, fname in mapping.items():
+        df = _read_csv(Path(results_dir) / fname)
+        if df is not None:
+            out[key] = df
+    return out
+
+
 def load_topology(results_dir: Path) -> dict[str, pd.DataFrame]:
     """Read topology CSVs from results_dir/ccc_network. Missing keys omitted."""
     net = results_dir / "ccc_network"
@@ -154,6 +177,7 @@ def apply_theme() -> None:
 
 __all__ = [
     "load_canonical_lr_sources",
+    "load_nichenet",
     "load_topology",
     "load_curvature",
     "load_tensor_factors",

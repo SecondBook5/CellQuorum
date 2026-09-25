@@ -219,6 +219,124 @@ def cci_heatmap(
     return fig
 
 
+def ligand_activity_bar(
+    activities: pd.DataFrame,
+    *,
+    ligand_col: str = "test_ligand",
+    score_col: str = "aupr_corrected",
+    top_n: int = 20,
+) -> Figure:
+    """Ranked ligand-activity leaderboard: NicheNet's own headline output.
+
+    predict_ligand_activities() scores every candidate ligand by how well its
+    predicted targets explain the receiver's real DE geneset -- this is the
+    number the whole analysis exists to produce, and nothing in the generic
+    canonical-LR pipeline (built for source/target/weight edges) can show it.
+    """
+    if activities is None or activities.empty:
+        return _empty_fig()
+    df = activities[[ligand_col, score_col]].dropna()
+    if df.empty:
+        return _empty_fig()
+    df = df.sort_values(score_col, ascending=False, kind="mergesort").head(top_n)
+    # Bottom-to-top so the strongest ligand renders at the top of the chart.
+    df = df.iloc[::-1]
+    fig, ax = plt.subplots(figsize=(6, max(3, 0.35 * len(df))))
+    ax.barh(
+        df[ligand_col].astype(str),
+        df[score_col].to_numpy(dtype=float),
+        color=CATEGORICAL_PALETTE[0],
+    )
+    ax.set_xlabel(score_col)
+    fig.tight_layout()
+    return fig
+
+
+def ligand_target_heatmap(
+    weights: pd.DataFrame,
+    *,
+    ligand_col: str = "ligand",
+    target_col: str = "target",
+    weight_col: str = "weight",
+) -> Figure:
+    """Ligand x target regulatory-potential matrix for NicheNet's top ligands.
+
+    get_weighted_ligand_target_links() already restricts rows to the top
+    ligands' top target genes, so a 0 fill for an absent (ligand, target)
+    pair means "not among this ligand's top predicted targets", matching how
+    NicheNet's own reference figures render this matrix.
+    """
+    if weights is None or weights.empty:
+        return _empty_fig()
+    mat = weights.pivot_table(
+        index=ligand_col, columns=target_col, values=weight_col, aggfunc="mean", fill_value=0.0
+    )
+    mat = mat.sort_index(kind="mergesort").sort_index(axis=1, kind="mergesort")
+    if mat.empty:
+        return _empty_fig()
+    fig, ax = plt.subplots(figsize=(max(4, 0.4 * mat.shape[1]), max(3, 0.4 * mat.shape[0])))
+    vals = mat.to_numpy(dtype=float)
+    norm = Normalize(vmin=0.0, vmax=float(np.nanmax(vals)) or 1.0)
+    im = ax.imshow(vals, cmap=_SEQ_CMAP, norm=norm, aspect="auto")
+    ax.set_xticks(range(mat.shape[1]))
+    ax.set_xticklabels(list(mat.columns), rotation=45, ha="right")
+    ax.set_yticks(range(mat.shape[0]))
+    ax.set_yticklabels(list(mat.index))
+    ax.set_xlabel(target_col)
+    ax.set_ylabel(ligand_col)
+    fig.colorbar(im, ax=ax, label=weight_col)
+    fig.tight_layout()
+    return fig
+
+
+def sender_ligand_dotplot(
+    expr: pd.DataFrame,
+    *,
+    sender_col: str = "sender",
+    ligand_col: str = "ligand",
+    frac_col: str = "fraction_expressing",
+    mean_col: str = "mean_expression",
+) -> Figure:
+    """Sender x ligand dotplot: size=fraction expressing, color=mean expression.
+
+    Answers "which cell type actually sends this ligand" -- a question the
+    activity ranking and ligand-target matrix don't, since both are computed
+    over a pooled sender pool (see nichenet_method.py's module docstring).
+    """
+    if expr is None or expr.empty:
+        return _empty_fig()
+    df = expr[[sender_col, ligand_col, frac_col, mean_col]].dropna(subset=[sender_col, ligand_col])
+    if df.empty:
+        return _empty_fig()
+    senders = sorted(df[sender_col].astype(str).unique())
+    ligands = sorted(df[ligand_col].astype(str).unique())
+    x_pos = {v: i for i, v in enumerate(senders)}
+    y_pos = {v: i for i, v in enumerate(ligands)}
+    fig, ax = plt.subplots(figsize=(max(4, 0.6 * len(senders)), max(3, 0.35 * len(ligands))))
+    mean_vals = df[mean_col].to_numpy(dtype=float)
+    finite = mean_vals[np.isfinite(mean_vals)]
+    vmax = float(finite.max()) if finite.size else 1.0
+    norm = Normalize(vmin=0.0, vmax=vmax or 1.0)
+    sizes = 300.0 * df[frac_col].to_numpy(dtype=float)
+    sc = ax.scatter(
+        [x_pos[s] for s in df[sender_col].astype(str)],
+        [y_pos[lg] for lg in df[ligand_col].astype(str)],
+        s=sizes,
+        c=mean_vals,
+        cmap=_SEQ_CMAP,
+        norm=norm,
+        edgecolor="0.3",
+        linewidth=0.4,
+    )
+    ax.set_xticks(range(len(senders)))
+    ax.set_xticklabels(senders, rotation=45, ha="right")
+    ax.set_yticks(range(len(ligands)))
+    ax.set_yticklabels(ligands)
+    fig.colorbar(sc, ax=ax, label=mean_col)
+    fig.tight_layout()
+    return fig
+
+
 def _guarantee_node_seats(
     agg: pd.DataFrame, source_col: str, target_col: str, weight_col: str, top_k: int
 ) -> pd.DataFrame:
