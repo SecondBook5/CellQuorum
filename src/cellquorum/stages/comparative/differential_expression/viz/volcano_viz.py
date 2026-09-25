@@ -96,6 +96,9 @@ class VolcanoVizMethod(AnalysisMethod):
                 control_color=control_color,
                 x_label=x_label,
                 top_n_labels=int(config.get("top_n_labels", 40)),
+                highlight_genes=set(config["highlight_genes"])
+                if config.get("highlight_genes")
+                else None,
             )
         except Exception as exc:  # noqa: BLE001
             return self._skip(f"render failed ({str(exc)[:200]})")

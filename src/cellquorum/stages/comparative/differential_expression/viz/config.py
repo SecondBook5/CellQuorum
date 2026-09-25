@@ -28,6 +28,11 @@ class DeVizConfig(StrictBaseModel):
     case_color: str | None = None  # None → figstyle.LE_RED
     control_color: str | None = None  # None → figstyle.NORMAL_BLUE
     methods: list[dict] = []
+    # Genes to always label and mark with a distinct outline, regardless of
+    # significance -- plots.volcano() already supports this (used by the
+    # per-subcluster volcano), but nothing wired it through for the
+    # whole-lineage figure until now.
+    highlight_genes: list[str] | None = None
 
 
 __all__ = ["DeVizConfig"]

@@ -54,3 +54,33 @@ def test_renders_volcano(tmp_path):
     pngs = list((figures / "differential_expression").glob("volcano*.png"))
     pdfs = list((figures / "differential_expression").glob("volcano*.pdf"))
     assert pngs and pdfs
+
+
+def test_renders_volcano_passes_highlight_genes_through(tmp_path, monkeypatch):
+    """highlight_genes already exists on plots.volcano() (distinct outline, always
+    labeled) and is wired for volcano_subcluster_method.py, but volcano_viz.py --
+    the whole-lineage figure -- never read it from config at all: the exact
+    "field exists on the model/function but a stage's whitelist drops it" bug
+    already found twice this session (trajectory_viz's fate_labels, ccc_viz's
+    cluster_labels).
+    """
+    from cellquorum.stages.comparative.differential_expression.viz import plots
+
+    ctx, results, figures = _context(tmp_path)
+    (results / "de_pseudobulk_edger.csv").write_text(
+        "gene,logFC,logCPM,F,PValue,FDR\n"
+        "A,2.0,5,3,1e-7,1e-6\nB,-2.5,5,3,1e-5,1e-4\nC,0.1,5,3,0.4,0.5\n"
+    )
+    captured = {}
+    real_volcano = plots.volcano
+
+    def spy(*args, **kwargs):
+        captured["highlight_genes"] = kwargs.get("highlight_genes")
+        return real_volcano(*args, **kwargs)
+
+    monkeypatch.setattr(plots, "volcano", spy)
+    out = VolcanoVizMethod()._run(
+        _adata(), {"case": "LE", "control": "Normal", "highlight_genes": ["A", "C"]}, ctx
+    )
+    assert not isinstance(out, MethodSkip)
+    assert captured["highlight_genes"] == {"A", "C"}

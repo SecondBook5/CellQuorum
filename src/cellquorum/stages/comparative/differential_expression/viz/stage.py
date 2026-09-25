@@ -18,6 +18,7 @@ _VIZ_CONFIG_KEYS = (
     "x_label",
     "case_color",
     "control_color",
+    "highlight_genes",
 )
 
 

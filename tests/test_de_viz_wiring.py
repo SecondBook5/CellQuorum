@@ -26,6 +26,14 @@ def test_config_defaults() -> None:
     assert hasattr(cfg.de_viz, "enabled")
     assert hasattr(cfg.de_viz, "fc_cut")
     assert hasattr(cfg.de_viz, "fdr_cut")
+    assert hasattr(cfg.de_viz, "highlight_genes")
+    assert cfg.de_viz.highlight_genes is None
+
+
+def test_highlight_genes_is_in_the_stage_whitelist() -> None:
+    from cellquorum.stages.comparative.differential_expression.viz.stage import _VIZ_CONFIG_KEYS
+
+    assert "highlight_genes" in _VIZ_CONFIG_KEYS
 
 
 def test_planner_schedules_de_viz_after_enrichment_viz() -> None:
