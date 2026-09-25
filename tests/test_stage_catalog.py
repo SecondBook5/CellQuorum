@@ -161,6 +161,7 @@ GOLDEN_STAGE_ORDER = [
     "subclustering",
     "integration_benchmark",
     "state_scoring",
+    "state_scoring_viz",
     "discovery",
     "composition",
     "embeddings",

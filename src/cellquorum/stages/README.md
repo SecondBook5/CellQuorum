@@ -31,6 +31,7 @@ that have no module yet.
 | 155 | `subclustering` | implemented |
 | 160 | `integration_benchmark` | implemented |
 | 170 | `state_scoring` | implemented |
+| 175 | `state_scoring_viz` | implemented |
 | 180 | `discovery` | implemented |
 | 190 | `composition` | implemented |
 | 200 | `embeddings` | implemented |

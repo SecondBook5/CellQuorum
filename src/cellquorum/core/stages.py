@@ -80,6 +80,7 @@ import cellquorum.stages.integration.benchmark.stage  # noqa: F401
 
 # State scoring and de-novo discovery run on the annotated object, before embeddings.
 import cellquorum.stages.state_scoring.stage  # noqa: F401
+import cellquorum.stages.state_scoring.viz.stage  # noqa: F401
 import cellquorum.stages.discovery.stage  # noqa: F401
 import cellquorum.stages.composition.stage  # noqa: F401
 import cellquorum.stages.integration.embeddings.stage  # noqa: F401

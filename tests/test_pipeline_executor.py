@@ -346,6 +346,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "query_projection",
         "reference_mapping",
         "state_scoring",
+        "state_scoring_viz",
         "subclustering",
         "trajectory",
         "trajectory_viz",

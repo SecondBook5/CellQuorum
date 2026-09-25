@@ -126,6 +126,7 @@ from cellquorum.stages.qc.config import (
 
 # Import the state-scoring configuration model.
 from cellquorum.stages.state_scoring.config import StateScoringConfig
+from cellquorum.stages.state_scoring.viz.config import StateScoringVizConfig
 
 # Import the trajectory configuration model.
 from cellquorum.stages.trajectory.config import TrajectoryConfig
@@ -924,6 +925,9 @@ class StageSelectionConfig(StrictBaseModel):
     # Store whether state scoring is enabled.
     state_scoring: bool = True
 
+    # Store whether state-scoring visualization (violin + p-value per cluster) is enabled.
+    state_scoring_viz: bool = True
+
     # Store whether automatic discovery is enabled.
     discovery: bool = True
 
@@ -1152,6 +1156,9 @@ class CellQuorumConfig(StrictBaseModel):
 
     # Store cell-state program scoring settings.
     state_scoring: StateScoringConfig = Field(default_factory=StateScoringConfig)
+
+    # Store state-scoring-visualization settings.
+    state_scoring_viz: StateScoringVizConfig = Field(default_factory=StateScoringVizConfig)
 
     # Store de-novo program discovery (consensus-NMF) settings.
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
