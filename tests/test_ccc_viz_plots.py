@@ -620,6 +620,48 @@ def test_plot_mnn_sample_activity_groups_samples_by_condition_not_alphabetically
     assert max(le_positions) < min(n_positions) or max(n_positions) < min(le_positions)
 
 
+def test_plot_mnn_sample_activity_heatmap_panels_share_scatter_panels_row_order():
+    # Panel 1 (scatter) puts row 0 at the BOTTOM (matplotlib's default,
+    # non-inverted y-axis). imshow's default origin="upper" puts array row 0
+    # at the TOP -- confirmed via ax.get_ylim() on a real render. Left
+    # unfixed, panels 2/3 (imshow) show each row's data on the opposite
+    # horizontal line from its real sample-product/specificity row.
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    scatter_ylim = fig.axes[0].get_ylim()
+    heatmap_ylim = fig.axes[1].get_ylim()
+    # Both non-inverted (row 0 at the bottom): ylim[0] < ylim[1] on both.
+    assert scatter_ylim[0] < scatter_ylim[1]
+    assert heatmap_ylim[0] < heatmap_ylim[1]
+
+
+def test_plot_mnn_sample_activity_groups_rows_by_sender_receiver_with_separators():
+    # Rows for the same sender->receiver route should sit contiguously
+    # (already true, sorted rows), with a visible separator marking where
+    # one route's block ends and the next begins -- confirmed against a
+    # real render as too flat/cramped to tell routes apart at a glance.
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    ax = fig.axes[0]
+    # Two distinct routes in the fixture (0->3 and 3->6) -> at least one
+    # separator line between them.
+    assert len(ax.lines) >= 1
+
+
+def test_plot_mnn_sample_activity_labels_sample_groups_above_panel_one():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    header_text = " ".join(t.get_text() for t in fig.axes[0].texts)
+    assert "Lymphedema" in header_text
+    assert "Normal" in header_text
+
+
 def test_plot_mnn_sample_activity_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
 

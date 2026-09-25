@@ -282,6 +282,14 @@ def plot_mnn_sample_activity(
     sample_d["__row"] = sample_d["id"].map(id_route)
     source_d["__row"] = source_d["id"].map(id_route)
 
+    # sender -> receiver prefix only (drop the ": ligand - receptor" suffix),
+    # to find where one route's block of rows ends and the next begins --
+    # rows are already sorted so same-route rows are contiguous.
+    route_of_row = {r: r.split(": ", 1)[0] for r in rows}
+    group_boundaries = [
+        i + 0.5 for i in range(len(rows) - 1) if route_of_row[rows[i]] != route_of_row[rows[i + 1]]
+    ]
+
     groups = sorted(source_d["group"].unique())
     # Sorted by (group, sample), not bare sample name: a plain alphabetical
     # sort interleaves the two conditions by patient (P10_LE, P10_Normal,
@@ -290,14 +298,22 @@ def plot_mnn_sample_activity(
     # figure's per-group facet columns.
     sample_group = sample_d.drop_duplicates("sample").set_index("sample")["group"]
     samples = sorted(sample_d["sample"].unique(), key=lambda s: (sample_group[s], s))
+    sample_x_range: dict[str, tuple[float, float]] = {}
+    for g in groups:
+        xs = [i for i, s in enumerate(samples) if sample_group[s] == g]
+        if xs:
+            sample_x_range[g] = (min(xs) - 0.5, max(xs) + 0.5)
 
     fig, axes = plt.subplots(
         1,
         4,
-        figsize=(16, max(3, 0.35 * len(rows))),
+        # 0.5in/row (was 0.35) and extra top margin for the group header --
+        # confirmed too cramped on a real render next to the reference.
+        figsize=(17, max(3.5, 0.5 * len(rows) + 1.0)),
         squeeze=True,
         gridspec_kw={
-            "width_ratios": [max(2, len(samples)), len(groups), len(groups), 2 * len(groups)]
+            "width_ratios": [max(2, len(samples)), len(groups), len(groups), 2 * len(groups)],
+            "wspace": 0.35,
         },
     )
 
@@ -328,6 +344,13 @@ def plot_mnn_sample_activity(
     ax.set_yticks(range(len(rows)))
     ax.set_yticklabels(rows, fontsize=8)
     ax.set_title("Sample L-R product", fontsize=9)
+    ax.set_ylim(-0.5, len(rows) - 0.5 + max(1.0, 0.06 * len(rows)))
+    for g, (x0, x1) in sample_x_range.items():
+        header_y = len(rows) - 0.5 + max(1.0, 0.06 * len(rows)) * 0.5
+        ax.text((x0 + x1) / 2, header_y, g, ha="center", va="center", fontweight="bold", fontsize=9)
+        ax.plot(
+            [x0 + 0.05, x1 - 0.05], [len(rows) - 0.5, len(rows) - 0.5], color="0.4", linewidth=1.0
+        )
 
     # Panel 2: scaled ligand activity in receiver, one column per group.
     ax = axes[1]
@@ -335,7 +358,12 @@ def plot_mnn_sample_activity(
     norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
     mat = source_d.pivot_table(index="__row", columns="group", values="activity_scaled")
     mat = mat.reindex(index=rows, columns=groups)
-    ax.imshow(mat.to_numpy(dtype=float), cmap="RdBu_r", norm=norm, aspect="auto")
+    # origin="lower": imshow's default puts array row 0 at the TOP, but
+    # panel 1's scatter (matplotlib's default, non-inverted y-axis) puts
+    # row_pos 0 at the BOTTOM -- confirmed mismatched on a real render,
+    # which silently paired every row's activity with the WRONG sample-
+    # product/specificity row one panel over.
+    ax.imshow(mat.to_numpy(dtype=float), cmap="RdBu_r", norm=norm, aspect="auto", origin="lower")
     ax.set_xticks(range(len(groups)))
     ax.set_xticklabels(groups, rotation=90, fontsize=8)
     ax.set_yticks([])
@@ -347,7 +375,13 @@ def plot_mnn_sample_activity(
     mat = mat.reindex(index=rows, columns=groups)
     vals = mat.to_numpy(dtype=float)
     vmax = float(np.nanmax(vals)) if np.isfinite(vals).any() else 1.0
-    ax.imshow(vals, cmap="Oranges", norm=Normalize(vmin=0.0, vmax=vmax or 1.0), aspect="auto")
+    ax.imshow(
+        vals,
+        cmap="Oranges",
+        norm=Normalize(vmin=0.0, vmax=vmax or 1.0),
+        aspect="auto",
+        origin="lower",  # see panel 2's comment -- same row-order fix
+    )
     ax.set_xticks(range(len(groups)))
     ax.set_xticklabels(groups, rotation=90, fontsize=8)
     ax.set_yticks([])
@@ -385,6 +419,15 @@ def plot_mnn_sample_activity(
     ax.set_xticklabels(cols, fontsize=7)
     ax.set_yticks([])
     ax.set_title("Celltype specificity", fontsize=9)
+
+    # Separator between each sender->receiver route's block of rows, on
+    # every panel -- confirmed too flat/hard to scan as a plain sorted list
+    # next to the reference figure's bordered per-route groups.
+    for ax in axes:
+        xlim = ax.get_xlim()
+        for y in group_boundaries:
+            ax.plot(xlim, [y, y], color="0.75", linewidth=0.7, zorder=0)
+        ax.set_xlim(xlim)
 
     fig.tight_layout()
     return fig
