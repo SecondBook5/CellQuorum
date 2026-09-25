@@ -60,7 +60,7 @@ def test_chord_method_renders(tmp_path):
     assert any(a.kind == "figure" for a in out.artifacts)
 
 
-def _write_nichenet(results_dir, *, with_weights=True, with_expr=True):
+def _write_nichenet(results_dir, *, with_weights=True, with_expr=True, with_receptor_weights=True):
     Path(results_dir).mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"test_ligand": ["TGFB2", "IL6"], "aupr_corrected": [0.021, 0.041]}).to_csv(
         Path(results_dir) / "nichenet_activities.csv", index=False
@@ -78,6 +78,10 @@ def _write_nichenet(results_dir, *, with_weights=True, with_expr=True):
                 "mean_expression": [0.32, 0.69],
             }
         ).to_csv(Path(results_dir) / "nichenet_sender_expression.csv", index=False)
+    if with_receptor_weights:
+        pd.DataFrame({"ligand": ["TGFB2"], "receptor": ["TGFBR1"], "weight": [0.9]}).to_csv(
+            Path(results_dir) / "nichenet_ligand_receptor_weights.csv", index=False
+        )
 
 
 def test_nichenet_viz_method_skips_without_input(tmp_path):
@@ -89,7 +93,7 @@ def test_nichenet_viz_method_skips_without_input(tmp_path):
     assert isinstance(out, MethodSkip)
 
 
-def test_nichenet_viz_method_renders_all_three_figures(tmp_path):
+def test_nichenet_viz_method_renders_all_four_figures(tmp_path):
     from cellquorum.core.stage import StageResult
     from cellquorum.stages.cell_cell_communication.viz._viz_methods import NicheNetVizMethod
 
@@ -97,7 +101,7 @@ def test_nichenet_viz_method_renders_all_three_figures(tmp_path):
     _write_nichenet(ctx.paths.results)
     out = NicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
     assert isinstance(out, StageResult)
-    assert out.metrics["n_figures"] == 3
+    assert out.metrics["n_figures"] == 4
 
 
 def test_nichenet_viz_method_renders_only_whats_present(tmp_path):
@@ -105,7 +109,9 @@ def test_nichenet_viz_method_renders_only_whats_present(tmp_path):
     from cellquorum.stages.cell_cell_communication.viz._viz_methods import NicheNetVizMethod
 
     adata, ctx = _ctx(tmp_path)
-    _write_nichenet(ctx.paths.results, with_weights=False, with_expr=False)
+    _write_nichenet(
+        ctx.paths.results, with_weights=False, with_expr=False, with_receptor_weights=False
+    )
     out = NicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
     assert isinstance(out, StageResult)
     assert out.metrics["n_figures"] == 1
@@ -121,7 +127,7 @@ def test_nichenet_viz_method_relabels_sender_clusters(tmp_path):
         {"figure_formats": ["png"], "cluster_labels": {"1": "Perivascular", "3": "Reticular"}},
         ctx,
     )
-    assert out.metrics["n_figures"] == 3
+    assert out.metrics["n_figures"] == 4
 
 
 def test_dotplot_contract_empty_and_python(tmp_path):

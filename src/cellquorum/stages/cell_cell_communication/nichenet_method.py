@@ -146,6 +146,7 @@ class NicheNetMethod(RAnalysisMethod):
         links_csv = results_dir / "nichenet_target_links.csv"
         weights_csv = results_dir / "nichenet_ligand_target_weights.csv"
         expression_csv = results_dir / "nichenet_sender_expression.csv"
+        receptor_weights_csv = results_dir / "nichenet_ligand_receptor_weights.csv"
 
         timeout = int(config.get("nichenet_timeout_seconds", 7200))
         args = [
@@ -169,6 +170,7 @@ class NicheNetMethod(RAnalysisMethod):
             str(seed),
             str(weights_csv),
             str(expression_csv),
+            str(receptor_weights_csv),
         ]
 
         try:
@@ -198,6 +200,11 @@ class NicheNetMethod(RAnalysisMethod):
                 expression_csv,
                 "nichenet_sender_expression",
                 "Fraction of each sender's cells expressing each top ligand.",
+            ),
+            (
+                receptor_weights_csv,
+                "nichenet_ligand_receptor_weights",
+                "Ligand->receptor prior interaction potential for the top ligands.",
             ),
         ):
             if path.is_file():

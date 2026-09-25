@@ -173,11 +173,12 @@ def _priors(tmp_path):
 class _CapturingContext:
     """A context whose R backend records argv and writes the outputs R would write."""
 
-    def __init__(self, tmp_path, mock_context, *, expression=None):
+    def __init__(self, tmp_path, mock_context, *, expression=None, receptor_weights=None):
         self.inner = mock_context(tmp_path)
         self.paths = self.inner.paths
         self.args = None
         self._expression = expression
+        self._receptor_weights = receptor_weights
         outer = self
 
         class Backend:
@@ -201,6 +202,8 @@ class _CapturingContext:
                 ).to_csv(args[7], index=False)
                 if outer._expression is not None and len(args) >= 20:
                     outer._expression.to_csv(args[19], index=False)
+                if outer._receptor_weights is not None and len(args) >= 21:
+                    outer._receptor_weights.to_csv(args[20], index=False)
 
                 class Proc:
                     returncode = 0
@@ -335,13 +338,31 @@ def test_the_two_new_output_paths_are_passed_and_registered(tmp_path, mock_conte
     ctx = _CapturingContext(tmp_path, mock_context, expression=expression)
     res = NicheNetMethod()._run(_multi_adata(), _config(tmp_path, ["Fib", "Mac"]), ctx)
     assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
-    assert len(ctx.args) == 20
+    assert len(ctx.args) == 21
     assert ctx.args[18].endswith("nichenet_ligand_target_weights.csv")
     assert ctx.args[19].endswith("nichenet_sender_expression.csv")
+    assert ctx.args[20].endswith("nichenet_ligand_receptor_weights.csv")
     names = {a.name for a in res.artifacts}
     assert "nichenet_sender_expression" in names
-    # The weights file was not written by the mock, so it must not be claimed as an artifact.
+    # The weights/receptor-weights files were not written by the mock, so
+    # neither must be claimed as an artifact.
     assert "nichenet_ligand_target_weights" not in names
+    assert "nichenet_ligand_receptor_weights" not in names
+
+
+def test_receptor_weights_output_path_is_passed_and_registered(tmp_path, mock_context):
+    receptor_weights = pd.DataFrame(
+        {
+            "ligand": ["TGFB1", "TGFB1"],
+            "receptor": ["TGFBR1", "TGFBR2"],
+            "weight": [0.9, 0.7],
+        }
+    )
+    ctx = _CapturingContext(tmp_path, mock_context, receptor_weights=receptor_weights)
+    res = NicheNetMethod()._run(_multi_adata(), _config(tmp_path, ["Fib", "Mac"]), ctx)
+    assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
+    names = {a.name for a in res.artifacts}
+    assert "nichenet_ligand_receptor_weights" in names
 
 
 def test_the_canonical_table_names_senders_not_a_joined_label(tmp_path, mock_context):

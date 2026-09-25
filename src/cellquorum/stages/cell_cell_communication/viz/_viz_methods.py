@@ -525,6 +525,21 @@ class NicheNetVizMethod(AnalysisMethod):
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"nichenet_viz: sender_dotplot failed: {str(exc)[:200]}")
 
+        if "receptor_weights" in tables:
+            try:
+                fig = _plots.ligand_receptor_heatmap(tables["receptor_weights"])
+                paths = save_figure(
+                    fig, figures_dir, "nichenet_ligand_receptor", formats=formats, dpi=dpi
+                )
+                artifacts += figure_artifacts(
+                    paths,
+                    name="ccc_figure",
+                    description="NicheNet ligand->receptor prior interaction potential.",
+                )
+                n_figures += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"nichenet_viz: ligand_receptor failed: {str(exc)[:200]}")
+
         if n_figures == 0:
             return self._skip("nothing plottable", warnings=warnings)
         return StageResult(

@@ -91,6 +91,7 @@ def load_nichenet(results_dir: Path) -> dict[str, pd.DataFrame]:
         "activities": "nichenet_activities.csv",
         "weights": "nichenet_ligand_target_weights.csv",
         "sender_expression": "nichenet_sender_expression.csv",
+        "receptor_weights": "nichenet_ligand_receptor_weights.csv",
     }
     out: dict[str, pd.DataFrame] = {}
     for key, fname in mapping.items():

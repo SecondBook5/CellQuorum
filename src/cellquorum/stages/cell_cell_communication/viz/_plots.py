@@ -299,6 +299,45 @@ def ligand_target_heatmap(
     return fig
 
 
+def ligand_receptor_heatmap(
+    weights: pd.DataFrame,
+    *,
+    ligand_col: str = "ligand",
+    receptor_col: str = "receptor",
+    weight_col: str = "weight",
+) -> Figure:
+    """Ligand x receptor prior-interaction-potential matrix (over every expressed
+    receptor, not one arbitrary cognate pick -- see nichenet.R's
+    get_weighted_ligand_receptor_links() call).
+
+    A distinct single-hue scale (pink/RdPu) from ligand_target_heatmap's
+    purple: the two matrices answer different questions (which receptor
+    binds this ligand vs. which target gene it regulates) and share a
+    figure set, so a reader should be able to tell them apart at a glance.
+    """
+    if weights is None or weights.empty:
+        return _empty_fig()
+    mat = weights.pivot_table(
+        index=ligand_col, columns=receptor_col, values=weight_col, aggfunc="mean", fill_value=0.0
+    )
+    mat = mat.sort_index(kind="mergesort").sort_index(axis=1, kind="mergesort")
+    if mat.empty:
+        return _empty_fig()
+    fig, ax = plt.subplots(figsize=(max(4, 0.4 * mat.shape[1]), max(3, 0.4 * mat.shape[0])))
+    vals = mat.to_numpy(dtype=float)
+    norm = Normalize(vmin=0.0, vmax=float(np.nanmax(vals)) or 1.0)
+    im = ax.imshow(vals, cmap="RdPu", norm=norm, aspect="auto")
+    ax.set_xticks(range(mat.shape[1]))
+    ax.set_xticklabels(list(mat.columns), rotation=45, ha="right")
+    ax.set_yticks(range(mat.shape[0]))
+    ax.set_yticklabels(list(mat.index))
+    ax.set_xlabel(receptor_col)
+    ax.set_ylabel(ligand_col)
+    fig.colorbar(im, ax=ax, label=weight_col)
+    fig.tight_layout()
+    return fig
+
+
 def sender_ligand_dotplot(
     expr: pd.DataFrame,
     *,

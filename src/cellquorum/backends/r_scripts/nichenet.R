@@ -25,6 +25,7 @@ expr_prop <- as.numeric(args[[15]]); top_ligands <- as.integer(args[[16]])
 top_targets <- as.integer(args[[17]]); seed <- as.integer(args[[18]])
 out_target_weights <- if (length(args) >= 19) args[[19]] else NA_character_
 out_sender_expression <- if (length(args) >= 20) args[[20]] else NA_character_
+out_receptor_weights <- if (length(args) >= 21) args[[21]] else NA_character_
 
 set.seed(seed)
 stopifnot(file.exists(ligand_target_rds), file.exists(lr_network_rds),
@@ -95,6 +96,22 @@ weights <- lapply(top, function(lg) {
 })
 weights <- do.call(rbind, weights)
 
+# Ligand -> receptor prior interaction potential, over every expressed
+# receptor (not just one arbitrary cognate pick): this is the matrix a
+# NicheNet ligand-receptor figure is actually made of, and until now nothing
+# computed it -- `links` below only ever kept a single, arbitrarily-first
+# receptor per ligand with no weight attached.
+receptor_weights <- tryCatch(
+  get_weighted_ligand_receptor_links(
+    top, expressed_receptors, lr_network, weighted_networks$lr_sig
+  ),
+  error = function(e) NULL
+)
+if (!is.null(receptor_weights)) {
+  receptor_weights <- as.data.frame(receptor_weights)
+  names(receptor_weights) <- c("ligand", "receptor", "weight")
+}
+
 links <- lapply(top, function(lg) {
   if (is.null(weights) || !any(weights$ligand == lg)) return(NULL)
   # attach a cognate receptor from lr_network for the canonical schema
@@ -109,6 +126,9 @@ write.csv(activities, out_activities, row.names = FALSE)
 write.csv(links, out_links, row.names = FALSE)
 if (!is.na(out_target_weights) && !is.null(weights)) {
   write.csv(weights, out_target_weights, row.names = FALSE)
+}
+if (!is.na(out_receptor_weights) && !is.null(receptor_weights) && nrow(receptor_weights) > 0) {
+  write.csv(receptor_weights, out_receptor_weights, row.names = FALSE)
 }
 
 if (!is.na(out_sender_expression)) {

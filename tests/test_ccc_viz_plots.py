@@ -577,6 +577,43 @@ def test_ligand_target_heatmap_empty_guarded():
     assert isinstance(ligand_target_heatmap(None), Figure)
 
 
+def test_ligand_receptor_heatmap_returns_figure_with_ligand_and_receptor_axes():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_receptor_heatmap
+
+    weights = pd.DataFrame(
+        {
+            "ligand": ["TGFB1", "TGFB1", "IL6"],
+            "receptor": ["TGFBR1", "TGFBR2", "IL6R"],
+            "weight": [0.9, 0.7, 1.5],
+        }
+    )
+    fig = ligand_receptor_heatmap(weights)
+    assert isinstance(fig, Figure)
+    ax = fig.axes[0]
+    assert set(t.get_text() for t in ax.get_yticklabels()) == {"TGFB1", "IL6"}
+    assert set(t.get_text() for t in ax.get_xticklabels()) == {"TGFBR1", "TGFBR2", "IL6R"}
+
+
+def test_ligand_receptor_heatmap_uses_a_distinct_single_hue_scale_from_ligand_target():
+    from cellquorum.stages.cell_cell_communication.viz._plots import (
+        ligand_receptor_heatmap,
+        ligand_target_heatmap,
+    )
+
+    weights = pd.DataFrame({"ligand": ["TGFB1"], "receptor": ["TGFBR1"], "weight": [0.9]})
+    targets = pd.DataFrame({"ligand": ["TGFB1"], "target": ["COL1A1"], "weight": [0.24]})
+    lr_cmap = ligand_receptor_heatmap(weights).axes[0].images[0].get_cmap().name
+    lt_cmap = ligand_target_heatmap(targets).axes[0].images[0].get_cmap().name
+    assert lr_cmap != lt_cmap
+
+
+def test_ligand_receptor_heatmap_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import ligand_receptor_heatmap
+
+    assert isinstance(ligand_receptor_heatmap(pd.DataFrame()), Figure)
+    assert isinstance(ligand_receptor_heatmap(None), Figure)
+
+
 def test_sender_ligand_dotplot_returns_figure_with_sender_and_ligand_axes():
     from cellquorum.stages.cell_cell_communication.viz._plots import sender_ligand_dotplot
 

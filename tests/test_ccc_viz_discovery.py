@@ -117,7 +117,7 @@ def test_load_nichenet_returns_whichever_tables_are_present(tmp_path):
     assert set(out) == {"activities"}
 
 
-def test_load_nichenet_reads_all_three_tables(tmp_path):
+def test_load_nichenet_reads_all_four_tables(tmp_path):
     from cellquorum.stages.cell_cell_communication.viz._io import load_nichenet
 
     pd.DataFrame({"test_ligand": ["TGFB2"], "aupr_corrected": [0.02]}).to_csv(
@@ -134,8 +134,11 @@ def test_load_nichenet_reads_all_three_tables(tmp_path):
             "mean_expression": [0.32],
         }
     ).to_csv(tmp_path / "nichenet_sender_expression.csv", index=False)
+    pd.DataFrame({"ligand": ["TGFB2"], "receptor": ["TGFBR1"], "weight": [0.9]}).to_csv(
+        tmp_path / "nichenet_ligand_receptor_weights.csv", index=False
+    )
     out = load_nichenet(tmp_path)
-    assert set(out) == {"activities", "weights", "sender_expression"}
+    assert set(out) == {"activities", "weights", "sender_expression", "receptor_weights"}
 
 
 def test_load_nichenet_empty_dict_when_none_present(tmp_path):
