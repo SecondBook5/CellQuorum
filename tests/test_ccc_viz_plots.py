@@ -583,6 +583,120 @@ def test_mnn_top_lr_lollipop_relabels_sender_receiver_in_legend():
     assert any("Perivascular" in lab for lab in legend_labels)
 
 
+def _mnn_focused_df():
+    return pd.DataFrame(
+        {
+            "sender": ["6", "6", "0", "1", "2", "3"],
+            "receiver": ["3", "0", "1", "2", "3", "4"],
+            "ligand": ["WIF1", "COL18A1", "TGFB1", "IL6", "POSTN", "CCN2"],
+            "receptor": ["FZD5", "ITGAV", "TGFBR1", "IL6R", "ITGAV", "FGFR2"],
+            "prioritization_score": [0.95, 0.90, 0.85, 0.80, 0.75, 0.70],
+        }
+    )
+
+
+def test_cluster_focused_circos_filters_to_only_edges_touching_focus():
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    df = _mnn_focused_df()
+    palette = {c: "#123456" for c in "0123456"}
+    fig = cluster_focused_circos(df, "6", palette=palette)
+    text = " ".join(t.get_text() for t in fig.texts)
+    # Rows touching "6" (sender or receiver): the WIF1/COL18A1 pair. Rows
+    # that never touch "6" (IL6-IL6R, POSTN-ITGAV, CCN2-FGFR2) must not
+    # appear -- this is the whole point of focusing.
+    assert "WIF1" in text and "COL18A1" in text
+    assert "IL6" not in text
+    assert "POSTN" not in text
+    assert "CCN2" not in text
+
+
+def test_cluster_focused_circos_lists_the_lr_pair_for_each_ribbon():
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    df = _mnn_focused_df()
+    palette = {c: "#123456" for c in "0123456"}
+    fig = cluster_focused_circos(df, "6", palette=palette)
+    text = " ".join(t.get_text() for t in fig.texts)
+    assert "WIF1 - FZD5" in text
+    assert "COL18A1 - ITGAV" in text
+
+
+def test_cluster_focused_circos_caps_to_top_k_partners():
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    rng_rows = [
+        {
+            "sender": "6",
+            "receiver": str(i),
+            "ligand": f"L{i}",
+            "receptor": f"R{i}",
+            "prioritization_score": 1.0 - 0.01 * i,
+        }
+        for i in range(10)
+    ]
+    df = pd.DataFrame(rng_rows)
+    palette = {str(i): "#123456" for i in range(10)} | {"6": "#654321"}
+    fig = cluster_focused_circos(df, "6", palette=palette, top_k=3)
+    text = " ".join(t.get_text() for t in fig.texts)
+    assert text.count(" - ") == 3
+
+
+def test_cluster_focused_circos_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    palette = {"6": "#123456"}
+    assert isinstance(cluster_focused_circos(pd.DataFrame(), "6", palette=palette), Figure)
+    assert isinstance(cluster_focused_circos(None, "6", palette=palette), Figure)
+
+
+def test_cluster_focused_circos_relabels_the_ring_nodes(monkeypatch):
+    # Confirmed against a real render: passing cluster_labels only reached
+    # the side legend, not the ring's own sector labels -- the ring kept
+    # showing bare codes ("6") even with a real display-name mapping given.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name.startswith("pycirclize"):
+            raise ImportError(name)
+        return real_import(name, *a, **k)
+
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    df = _mnn_focused_df()
+    palette = {c: "#123456" for c in "0123456"}
+    fig = cluster_focused_circos(
+        df, "6", palette=palette, cluster_labels={"6": "Papillary", "3": "Progenitor-like"}
+    )
+    node_text = " ".join(t.get_text() for t in fig.axes[0].texts)
+    assert "Papillary" in node_text
+    assert "Progenitor-like" in node_text
+
+
+def test_cluster_focused_circos_has_a_title():
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    df = _mnn_focused_df()
+    palette = {c: "#123456" for c in "0123456"}
+    fig = cluster_focused_circos(
+        df, "6", palette=palette, cluster_labels={"6": "Papillary"}, title="Papillary (Lymphedema)"
+    )
+    assert fig._suptitle is not None
+    assert "Papillary" in fig._suptitle.get_text()
+
+
+def test_cluster_focused_circos_empty_when_focus_has_no_edges():
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    df = _mnn_focused_df()
+    palette = {c: "#123456" for c in "0123456789"}
+    fig = cluster_focused_circos(df, "9", palette=palette)  # "9" touches nothing
+    assert fig.texts == [] or all(not t.get_text() for t in fig.texts)
+
+
 # ─── NicheNet-specific plots ────────────────────────────────────────────────
 
 

@@ -83,11 +83,40 @@ def test_multinichenet_viz_method_skips_without_input(tmp_path):
     assert isinstance(out, MethodSkip)
 
 
-def test_multinichenet_viz_method_renders_one_figure_per_group(tmp_path):
-    # One figure per condition (matching the reference this was built to
-    # reproduce), not both groups crammed into one lollipop -- a combined
-    # figure needs one legend entry per sender->receiver route seen in
-    # EITHER group, which becomes illegible past a handful of routes.
+def test_multinichenet_viz_method_renders_one_focused_circos_per_key_cluster(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
+
+    adata, ctx = _ctx(tmp_path)
+    _write_mnn_prioritization(ctx.paths.results)
+    out = MultiNicheNetVizMethod().run(
+        adata, {"figure_formats": ["png"], "mnn_key_clusters": ["0"]}, ctx
+    )
+    names = {a.path.stem for a in out.artifacts}
+    # "0" appears as sender in the Normal row and as receiver in neither of
+    # the two fixture rows for Lymphedema -- one focused circos per group
+    # that actually has an edge touching "0".
+    assert any("multinichenet_circos_0" in n for n in names)
+
+
+def test_multinichenet_viz_method_defaults_key_clusters_to_everything_present(tmp_path):
+    # No mnn_key_clusters given -> render for every distinct cluster seen as
+    # sender or receiver, not silently limited to whatever the engine
+    # guesses is "key" -- config opts in to narrowing, never the other way.
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
+
+    adata, ctx = _ctx(tmp_path)
+    _write_mnn_prioritization(ctx.paths.results)
+    out = MultiNicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    names = {a.path.stem for a in out.artifacts}
+    assert any("multinichenet_circos_0" in n for n in names)
+    assert any("multinichenet_circos_3" in n for n in names)
+
+
+def test_multinichenet_viz_method_renders_one_lollipop_per_group(tmp_path):
+    # One lollipop per condition (matching the reference this was built to
+    # reproduce), not both groups crammed into one -- a combined figure
+    # needs one legend entry per sender->receiver route seen in EITHER
+    # group, which becomes illegible past a handful of routes.
     from cellquorum.core.stage import StageResult
     from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
 
@@ -95,7 +124,6 @@ def test_multinichenet_viz_method_renders_one_figure_per_group(tmp_path):
     _write_mnn_prioritization(ctx.paths.results)
     out = MultiNicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
     assert isinstance(out, StageResult)
-    assert out.metrics["n_figures"] == 2  # Lymphedema + Normal
     names = {a.path.stem for a in out.artifacts}
     assert "multinichenet_top_lr_Lymphedema" in names
     assert "multinichenet_top_lr_Normal" in names

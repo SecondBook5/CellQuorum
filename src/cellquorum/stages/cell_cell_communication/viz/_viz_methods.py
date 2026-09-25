@@ -480,6 +480,12 @@ class MultiNicheNetVizMethod(AnalysisMethod):
         group_col = "group" if "group" in df.columns else None
         groups = sorted(df[group_col].astype(str).unique()) if group_col else [None]
 
+        key_clusters = config.get("mnn_key_clusters")
+        if not key_clusters:
+            key_clusters = sorted(set(df["sender"].astype(str)) | set(df["receiver"].astype(str)))
+        circos_top_k = int(config.get("mnn_circos_top_k", 8))
+        palette = _plots.celltype_palette(key_clusters)
+
         apply_theme()
         artifacts, warnings, n_figures = [], [], 0
         for group in groups:
@@ -506,6 +512,42 @@ class MultiNicheNetVizMethod(AnalysisMethod):
                 n_figures += 1
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"multinichenet_viz: {group} failed: {str(exc)[:200]}")
+
+            for cluster in key_clusters:
+                cluster = str(cluster)
+                touches = (subset["sender"].astype(str) == cluster) | (
+                    subset["receiver"].astype(str) == cluster
+                )
+                if not touches.any():
+                    # No blank "no data" placeholder for a cluster this
+                    # group's subset never mentions -- real signal only.
+                    continue
+                cluster_label = (labels or {}).get(str(cluster), str(cluster))
+                try:
+                    fig = _plots.cluster_focused_circos(
+                        subset,
+                        cluster,
+                        palette=palette,
+                        top_k=circos_top_k,
+                        cluster_labels=labels,
+                        title=f"{cluster_label} ({group})" if group else cluster_label,
+                    )
+                    stem = f"multinichenet_circos_{cluster_label}{suffix}"
+                    paths = save_figure(fig, figures_dir, stem, formats=formats, dpi=dpi)
+                    if paths:
+                        artifacts += figure_artifacts(
+                            paths,
+                            name="ccc_figure",
+                            description=(
+                                f"MultiNicheNet circos focused on {cluster_label}"
+                                f"{f' ({group})' if group else ''}."
+                            ),
+                        )
+                        n_figures += 1
+                except Exception as exc:  # noqa: BLE001
+                    warnings.append(
+                        f"multinichenet_viz: circos {cluster} ({group}) failed: {str(exc)[:200]}"
+                    )
 
         if n_figures == 0:
             return self._skip("nothing plottable", warnings=warnings)

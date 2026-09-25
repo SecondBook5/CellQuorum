@@ -220,6 +220,89 @@ def cci_heatmap(
     return fig
 
 
+def cluster_focused_circos(
+    df: pd.DataFrame,
+    focus: str,
+    *,
+    source_col: str = "sender",
+    target_col: str = "receiver",
+    ligand_col: str = "ligand",
+    receptor_col: str = "receptor",
+    weight_col: str = "prioritization_score",
+    palette: dict[str, str],
+    top_k: int = 8,
+    cluster_labels: dict[str, str] | None = None,
+    title: str | None = None,
+) -> Figure:
+    """Circos scoped to ONE cluster's own edges, with the dominant
+    ligand-receptor pair for every remaining ribbon listed alongside it.
+
+    The whole-cohort circos (chord_diagram) puts every cluster's edges in
+    one ring -- even with the fairness-guaranteed top_k cap, a real
+    multi-subcluster cohort still crowds ribbons too thin to label, and
+    pycirclize has no reliable way to print an LR pair directly on a curved
+    ribbon at that density. Restricting to one cluster's own edges first
+    solves both problems: few enough ribbons to read, and few enough rows
+    to name every one's LR pair in a legend instead of guessing from color.
+    """
+    if df is None or df.empty:
+        return _empty_fig()
+    focus = str(focus)
+    d = df.copy()
+    d[source_col] = d[source_col].astype(str)
+    d[target_col] = d[target_col].astype(str)
+    d = d[(d[source_col] == focus) | (d[target_col] == focus)]
+    if d.empty:
+        return _empty_fig()
+    # One ribbon per partner: each (source, target) route's single
+    # strongest LR pair, ranked, capped to top_k partners.
+    d = (
+        d.sort_values(weight_col, ascending=False, kind="mergesort")
+        .drop_duplicates(subset=[source_col, target_col])
+        .head(top_k)
+    )
+
+    # Relabel BEFORE building the ring: chord_diagram's matrix is indexed by
+    # whatever is in these two columns, so cluster_labels has to land here,
+    # not just in the side legend -- a real render otherwise kept the ring's
+    # own sector labels as bare codes ("6") even with a real name mapping
+    # given, because only the legend text used it.
+    labels = cluster_labels or {}
+    d_display = d.copy()
+    d_display[source_col] = d_display[source_col].map(lambda v: labels.get(v, v))
+    d_display[target_col] = d_display[target_col].map(lambda v: labels.get(v, v))
+    display_palette = {labels.get(k, k): v for k, v in palette.items()}
+
+    fig = chord_diagram(
+        d_display,
+        source_col=source_col,
+        target_col=target_col,
+        weight_col=weight_col,
+        palette=display_palette,
+        top_k=top_k,
+    )
+    if title is None:
+        title = labels.get(focus, focus)
+    fig.suptitle(title, fontsize=11)
+
+    lines = [
+        f"{labels.get(r[source_col], r[source_col])} -> "
+        f"{labels.get(r[target_col], r[target_col])}: "
+        f"{r[ligand_col]} - {r[receptor_col]}"
+        for _, r in d.sort_values(weight_col, ascending=False, kind="mergesort").iterrows()
+    ]
+    fig.text(
+        1.02,
+        0.5,
+        "\n".join(lines),
+        transform=fig.transFigure,
+        fontsize=7,
+        va="center",
+        ha="left",
+    )
+    return fig
+
+
 def mnn_top_lr_lollipop(
     df: pd.DataFrame,
     *,

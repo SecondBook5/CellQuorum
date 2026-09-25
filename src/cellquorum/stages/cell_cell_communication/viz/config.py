@@ -23,6 +23,12 @@ class CccVizConfig(StrictBaseModel):
             color still key off the raw code). A code with no entry stays bare;
             unset, every figure shows raw codes. Never defaulted, since the mapping
             is study-specific.
+        mnn_key_clusters: Clusters to render a focused MultiNicheNet circos for
+            (multinichenet_viz); None -> every cluster seen as a sender or
+            receiver in mnn_prioritization.csv, never a biology-driven guess.
+        mnn_circos_top_k: Partners kept per focused circos (ribbons around the
+            focus cluster) -- deliberately smaller than top_k, since the point
+            of focusing is enough headroom to label each ribbon's LR pair.
     """
 
     enabled: bool = True
@@ -32,6 +38,8 @@ class CccVizConfig(StrictBaseModel):
     sources: list[str] | None = None
     levels: list[str] | None = None
     cluster_labels: dict[str, str] | None = None
+    mnn_key_clusters: list[str] | None = None
+    mnn_circos_top_k: int = 8
 
 
 __all__ = ["CccVizConfig"]

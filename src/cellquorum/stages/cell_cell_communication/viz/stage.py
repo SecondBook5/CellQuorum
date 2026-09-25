@@ -16,6 +16,8 @@ _VIZ_CONFIG_KEYS = (
     "sources",
     "levels",
     "cluster_labels",
+    "mnn_key_clusters",
+    "mnn_circos_top_k",
 )
 _DEFAULT_METHODS = [
     "dotplot_viz",
