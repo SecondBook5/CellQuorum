@@ -233,12 +233,17 @@ def plot_mnn_sample_activity(
 
     Reproduces multinichenetr's own make_sample_lr_prod_activity_plots() in
     matplotlib/house style rather than importing its ggplot output: same 4
-    panels, same source columns (sample_prioritization_tbl for panel 1,
-    group_prioritization_table_source for panels 2-4 -- confirmed by reading
-    that function's source, since activity/activity_scaled/
-    direction_regulation/fraction_*_group all live in group_prioritization_
-    table_source, not the trimmed group_prioritization_tbl already used
-    elsewhere in this module). Deliberately simplified from the reference:
+    panels, same source columns (sample_prioritization_tbl for panel 1;
+    group_prioritization_table_source for panels 2-3 and most of panel 4).
+
+    ``source_df`` must additionally carry scaled_pb_ligand/scaled_pb_receptor
+    (panel 4's color) merged in by the caller from group_prioritization_tbl
+    (mnn_prioritization.csv) on (id, group) -- confirmed against a real
+    MultiNicheNet rerun that those two columns are NOT part of
+    group_prioritization_table_source itself, despite both being read from
+    the same multi_nichenet_analysis() call's prioritization_tables.
+
+    Deliberately simplified from the reference:
     rows are a flat, sorted "sender -> receiver: ligand - receptor" list
     instead of nested facet strips (matplotlib has no facet_grid equivalent,
     and free per-facet row heights add real complexity for a readability
@@ -278,7 +283,13 @@ def plot_mnn_sample_activity(
     source_d["__row"] = source_d["id"].map(id_route)
 
     groups = sorted(source_d["group"].unique())
-    samples = sorted(sample_d["sample"].unique())
+    # Sorted by (group, sample), not bare sample name: a plain alphabetical
+    # sort interleaves the two conditions by patient (P10_LE, P10_Normal,
+    # P12_LE, ...), confirmed on a real render -- samples for the same group
+    # need to render as one contiguous block, matching the reference
+    # figure's per-group facet columns.
+    sample_group = sample_d.drop_duplicates("sample").set_index("sample")["group"]
+    samples = sorted(sample_d["sample"].unique(), key=lambda s: (sample_group[s], s))
 
     fig, axes = plt.subplots(
         1,

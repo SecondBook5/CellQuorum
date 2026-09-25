@@ -553,6 +553,19 @@ class MultiNicheNetVizMethod(AnalysisMethod):
         sample_activity = load_mnn_sample_activity(results_dir)
         if sample_activity is not None:
             sample_df, source_df = sample_activity
+            # scaled_pb_ligand/scaled_pb_receptor (celltype-specificity color
+            # for the 4th panel) live in group_prioritization_tbl (df, loaded
+            # above), not in group_prioritization_table_source -- confirmed
+            # against a real MultiNicheNet rerun, where the two tables are
+            # genuinely distinct outputs of the same R call. Merge on
+            # (id, group) before plotting; a source_df is never used without
+            # this merge, so plot_mnn_sample_activity can assume it's there.
+            if "scaled_pb_ligand" in df.columns and "id" in source_df.columns:
+                source_df = source_df.merge(
+                    df[["id", "group", "scaled_pb_ligand", "scaled_pb_receptor"]],
+                    on=["id", "group"],
+                    how="left",
+                )
             try:
                 fig = _plots.plot_mnn_sample_activity(
                     sample_df,

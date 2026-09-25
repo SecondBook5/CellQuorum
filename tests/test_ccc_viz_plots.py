@@ -574,6 +574,52 @@ def test_plot_mnn_sample_activity_caps_to_top_n_interactions():
     assert "TGFB1" in row_text[0]
 
 
+def test_plot_mnn_sample_activity_groups_samples_by_condition_not_alphabetically():
+    # Confirmed against a real render: plain alphabetical sample sort
+    # interleaves LE/Normal by patient (P10_LE, P10_Normal, P12_LE, ...),
+    # unlike the reference figure's per-group facet columns. Samples for
+    # the same group must render as a contiguous block.
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df = pd.DataFrame(
+        {
+            "id": ["L_R_X0_X3"] * 4,
+            "sample": ["P10_LE", "P10_Normal", "P1_LE", "P1_Normal"],
+            "group": ["Lymphedema", "Normal", "Lymphedema", "Normal"],
+            "sender": ["0"] * 4,
+            "receiver": ["3"] * 4,
+            "ligand": ["L"] * 4,
+            "receptor": ["R"] * 4,
+            "scaled_LR_pb_prod": [1.0, -1.0, 0.5, -0.5],
+            "keep_sender_receiver": ["Sender & Receiver present"] * 4,
+        }
+    )
+    source_df = pd.DataFrame(
+        {
+            "id": ["L_R_X0_X3", "L_R_X0_X3"],
+            "sender": ["0", "0"],
+            "receiver": ["3", "3"],
+            "ligand": ["L", "L"],
+            "receptor": ["R", "R"],
+            "group": ["Lymphedema", "Normal"],
+            "activity": [0.03, 0.02],
+            "activity_scaled": [1.0, -1.0],
+            "scaled_pb_ligand": [1.0, -1.0],
+            "scaled_pb_receptor": [0.5, -0.5],
+            "fraction_ligand_group": [0.7, 0.4],
+            "fraction_receptor_group": [0.6, 0.3],
+            "prioritization_score": [0.9, 0.9],
+        }
+    )
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    xticklabels = [t.get_text() for t in fig.axes[0].get_xticklabels()]
+    le_positions = [i for i, s in enumerate(xticklabels) if "LE" in s]
+    n_positions = [i for i, s in enumerate(xticklabels) if "Normal" in s]
+    # Every LE position comes before every Normal position (or vice versa) --
+    # i.e. the two groups are contiguous blocks, not interleaved by patient.
+    assert max(le_positions) < min(n_positions) or max(n_positions) < min(le_positions)
+
+
 def test_plot_mnn_sample_activity_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
 

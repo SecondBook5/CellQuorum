@@ -158,6 +158,77 @@ def test_multinichenet_viz_method_renders_sample_activity_figure_when_present(tm
     assert "multinichenet_sample_activity" in names
 
 
+def test_multinichenet_viz_method_merges_scaled_pb_from_group_table(tmp_path, monkeypatch):
+    # Real bug, caught by validating against a real MultiNicheNet rerun:
+    # scaled_pb_ligand/scaled_pb_receptor live in group_prioritization_tbl
+    # (mnn_prioritization.csv), NOT in group_prioritization_table_source --
+    # plot_mnn_sample_activity's source_df must have them merged in by id+
+    # group before it's called, or Panel 4 KeyErrors on real data.
+    from cellquorum.methods.base import MethodSkip
+    from cellquorum.stages.cell_cell_communication.viz import _viz_methods
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
+
+    adata, ctx = _ctx(tmp_path)
+    Path(ctx.paths.results).mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "id": ["TGFB1_TGFBR1_X0_X3"],
+            "group": ["Lymphedema"],
+            "sender": ["0"],
+            "receiver": ["3"],
+            "ligand": ["TGFB1"],
+            "receptor": ["TGFBR1"],
+            "scaled_pb_ligand": [1.2],
+            "scaled_pb_receptor": [0.9],
+            "prioritization_score": [0.95],
+        }
+    ).to_csv(Path(ctx.paths.results) / "mnn_prioritization.csv", index=False)
+    # Source table WITHOUT scaled_pb_ligand/scaled_pb_receptor, matching the
+    # real group_prioritization_table_source schema.
+    pd.DataFrame(
+        {
+            "id": ["TGFB1_TGFBR1_X0_X3"],
+            "sender": ["0"],
+            "receiver": ["3"],
+            "ligand": ["TGFB1"],
+            "receptor": ["TGFBR1"],
+            "group": ["Lymphedema"],
+            "activity": [0.04],
+            "activity_scaled": [1.5],
+            "direction_regulation": ["up"],
+            "fraction_ligand_group": [0.8],
+            "fraction_receptor_group": [0.7],
+            "prioritization_score": [0.95],
+        }
+    ).to_csv(Path(ctx.paths.results) / "mnn_group_prioritization_source.csv", index=False)
+    pd.DataFrame(
+        {
+            "id": ["TGFB1_TGFBR1_X0_X3"],
+            "sample": ["P1_LE"],
+            "group": ["Lymphedema"],
+            "sender": ["0"],
+            "receiver": ["3"],
+            "ligand": ["TGFB1"],
+            "receptor": ["TGFBR1"],
+            "scaled_LR_pb_prod": [1.1],
+            "keep_sender_receiver": ["Sender & Receiver present"],
+        }
+    ).to_csv(Path(ctx.paths.results) / "mnn_sample_prioritization.csv", index=False)
+
+    captured = {}
+    real = _viz_methods._plots.plot_mnn_sample_activity
+
+    def spy(sample_df, source_df, **kwargs):
+        captured["cols"] = set(source_df.columns)
+        return real(sample_df, source_df, **kwargs)
+
+    monkeypatch.setattr(_viz_methods._plots, "plot_mnn_sample_activity", spy)
+    out = MultiNicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    assert not isinstance(out, MethodSkip)
+    assert "scaled_pb_ligand" in captured["cols"]
+    assert "scaled_pb_receptor" in captured["cols"]
+
+
 def test_multinichenet_viz_method_skips_sample_activity_when_absent(tmp_path):
     # mnn_sample_prioritization.csv / mnn_group_prioritization_source.csv
     # not written (older-style run) -- lollipop/circos must still render.
