@@ -280,7 +280,8 @@ def mnn_top_lr_lollipop(
     # data, so it gets its own column to the right instead. Width scales
     # with route count for the same reason.
     legend_w = max(2.2, 0.028 * len(routes) * max(len(r) for r in routes))
-    fig, ax = plt.subplots(figsize=(7 + legend_w, max(3, 0.3 * len(d))))
+    height = min(7.0, max(3.0, 0.2 * len(d)))
+    fig, ax = plt.subplots(figsize=(7 + legend_w, height))
     y = np.arange(len(d))
     colors = [palette[r] for r in d["__route"]]
     ax.hlines(y, 0, d[score_col], color=colors, linewidth=1.5, zorder=1)

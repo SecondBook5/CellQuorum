@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import networkx  # noqa: F401
+import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
@@ -534,6 +535,27 @@ def test_mnn_top_lr_lollipop_empty_guarded():
 
     assert isinstance(mnn_top_lr_lollipop(pd.DataFrame()), Figure)
     assert isinstance(mnn_top_lr_lollipop(None), Figure)
+
+
+def test_mnn_top_lr_lollipop_height_stays_reasonable_at_real_scale():
+    # A real run's top_n=30 rendered at 9in tall (0.3in/row) read as an
+    # awkwardly stretched column next to the wide legend -- height per row
+    # needs a lower ceiling.
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    rng = np.random.default_rng(0)
+    n = 30
+    df = pd.DataFrame(
+        {
+            "sender": [str(i % 6) for i in range(n)],
+            "receiver": [str((i + 1) % 6) for i in range(n)],
+            "ligand": [f"L{i}" for i in range(n)],
+            "receptor": [f"R{i}" for i in range(n)],
+            "prioritization_score": rng.uniform(0.8, 0.95, size=n),
+        }
+    )
+    fig = mnn_top_lr_lollipop(df, top_n=30)
+    assert fig.get_size_inches()[1] <= 7.0
 
 
 def test_mnn_top_lr_lollipop_legend_sits_outside_the_axes():
