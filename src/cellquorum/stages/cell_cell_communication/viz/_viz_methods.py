@@ -15,6 +15,7 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     figure_artifacts,
     load_canonical_lr_sources,
     load_curvature,
+    load_mnn_prioritization,
     load_nichenet,
     load_tensor_factors,
     load_topology,
@@ -445,6 +446,79 @@ class TensorFactorsVizMethod(AnalysisMethod):
         )
 
 
+# ─── MultiNicheNet ───────────────────────────────────────────────────────
+
+
+class MultiNicheNetVizMethod(AnalysisMethod):
+    """Render MultiNicheNet's own prioritization table as a top-LR lollipop.
+
+    The circos/chord view (chord_viz on mnn_canonical_lr.csv) aggregates to
+    the cell-type-pair level and can't say which ligand-receptor pair is
+    driving a ribbon. This reads the native mnn_prioritization.csv directly
+    and names each interaction, ranked by MultiNicheNet's own
+    prioritization_score, independently per condition group.
+    """
+
+    name = "multinichenet_viz"
+    stage_category = "ccc_viz"
+    backend = "python"
+
+    def input_contract(self, config: dict) -> DataContract:
+        return DataContract()
+
+    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+        results_dir = Path(context.paths.results)
+        figures_dir = Path(context.paths.figures) / "ccc"
+        formats = tuple(config.get("figure_formats", ["pdf", "png"]))
+        dpi = int(config.get("dpi", 300))
+        top_n = int(config.get("mnn_top_n_lr", 30))
+
+        df = load_mnn_prioritization(results_dir)
+        if df is None:
+            return self._skip("no mnn_prioritization.csv found")
+        labels = config.get("cluster_labels")
+        group_col = "group" if "group" in df.columns else None
+        groups = sorted(df[group_col].astype(str).unique()) if group_col else [None]
+
+        apply_theme()
+        artifacts, warnings, n_figures = [], [], 0
+        for group in groups:
+            subset = df[df[group_col].astype(str) == group] if group_col else df
+            try:
+                # One group per call (group_col omitted from the plot call):
+                # a figure combining every group needs a legend entry per
+                # sender->receiver route seen in ANY group, which is where
+                # the circos-replacement point (name the actual LR pair) gets
+                # undone by an illegible legend instead.
+                fig = _plots.mnn_top_lr_lollipop(subset, top_n=top_n, cluster_labels=labels)
+                suffix = f"_{group}" if group else ""
+                paths = save_figure(
+                    fig, figures_dir, f"multinichenet_top_lr{suffix}", formats=formats, dpi=dpi
+                )
+                artifacts += figure_artifacts(
+                    paths,
+                    name="ccc_figure",
+                    description=(
+                        f"MultiNicheNet top prioritized ligand-receptor interactions"
+                        f"{f' ({group})' if group else ''}."
+                    ),
+                )
+                n_figures += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"multinichenet_viz: {group} failed: {str(exc)[:200]}")
+
+        if n_figures == 0:
+            return self._skip("nothing plottable", warnings=warnings)
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=[f"multinichenet_viz rendered {n_figures} figure(s)."],
+            warnings=warnings,
+            metrics={"method": self.name, "n_figures": n_figures},
+            backend="python",
+        )
+
+
 # ─── NicheNet ────────────────────────────────────────────────────────────
 
 
@@ -560,4 +634,5 @@ __all__ = [
     "SummaryVizMethod",
     "TensorFactorsVizMethod",
     "NicheNetVizMethod",
+    "MultiNicheNetVizMethod",
 ]

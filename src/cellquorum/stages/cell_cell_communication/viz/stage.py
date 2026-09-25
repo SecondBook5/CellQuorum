@@ -25,6 +25,7 @@ _DEFAULT_METHODS = [
     "summary_viz",
     "tensor_factors_viz",
     "nichenet_viz",
+    "multinichenet_viz",
 ]
 
 

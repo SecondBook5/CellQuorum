@@ -60,6 +60,47 @@ def test_chord_method_renders(tmp_path):
     assert any(a.kind == "figure" for a in out.artifacts)
 
 
+def _write_mnn_prioritization(results_dir):
+    Path(results_dir).mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "group": ["Lymphedema", "Normal"],
+            "sender": ["0", "3"],
+            "receiver": ["3", "0"],
+            "ligand": ["TGFB1", "POSTN"],
+            "receptor": ["TGFBR1", "ITGAV"],
+            "prioritization_score": [0.95, 0.80],
+        }
+    ).to_csv(Path(results_dir) / "mnn_prioritization.csv", index=False)
+
+
+def test_multinichenet_viz_method_skips_without_input(tmp_path):
+    from cellquorum.methods.base import MethodSkip
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
+
+    adata, ctx = _ctx(tmp_path)
+    out = MultiNicheNetVizMethod().run(adata, {}, ctx)
+    assert isinstance(out, MethodSkip)
+
+
+def test_multinichenet_viz_method_renders_one_figure_per_group(tmp_path):
+    # One figure per condition (matching the reference this was built to
+    # reproduce), not both groups crammed into one lollipop -- a combined
+    # figure needs one legend entry per sender->receiver route seen in
+    # EITHER group, which becomes illegible past a handful of routes.
+    from cellquorum.core.stage import StageResult
+    from cellquorum.stages.cell_cell_communication.viz._viz_methods import MultiNicheNetVizMethod
+
+    adata, ctx = _ctx(tmp_path)
+    _write_mnn_prioritization(ctx.paths.results)
+    out = MultiNicheNetVizMethod().run(adata, {"figure_formats": ["png"]}, ctx)
+    assert isinstance(out, StageResult)
+    assert out.metrics["n_figures"] == 2  # Lymphedema + Normal
+    names = {a.path.stem for a in out.artifacts}
+    assert "multinichenet_top_lr_Lymphedema" in names
+    assert "multinichenet_top_lr_Normal" in names
+
+
 def _write_nichenet(results_dir, *, with_weights=True, with_expr=True, with_receptor_weights=True):
     Path(results_dir).mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"test_ligand": ["TGFB2", "IL6"], "aupr_corrected": [0.021, 0.041]}).to_csv(

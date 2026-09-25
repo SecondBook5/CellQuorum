@@ -147,6 +147,30 @@ def test_load_nichenet_empty_dict_when_none_present(tmp_path):
     assert load_nichenet(tmp_path) == {}
 
 
+def test_load_mnn_prioritization_reads_the_native_table(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._io import load_mnn_prioritization
+
+    pd.DataFrame(
+        {
+            "group": ["Lymphedema"],
+            "sender": ["0"],
+            "receiver": ["3"],
+            "ligand": ["TGFB1"],
+            "receptor": ["TGFBR1"],
+            "prioritization_score": [0.95],
+        }
+    ).to_csv(tmp_path / "mnn_prioritization.csv", index=False)
+    out = load_mnn_prioritization(tmp_path)
+    assert out is not None
+    assert list(out["ligand"]) == ["TGFB1"]
+
+
+def test_load_mnn_prioritization_none_when_absent(tmp_path):
+    from cellquorum.stages.cell_cell_communication.viz._io import load_mnn_prioritization
+
+    assert load_mnn_prioritization(tmp_path) is None
+
+
 def test_load_topology_and_curvature(tmp_path):
     from cellquorum.stages.cell_cell_communication.viz._io import load_curvature, load_topology
 

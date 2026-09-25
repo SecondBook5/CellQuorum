@@ -489,6 +489,78 @@ def test_interaction_dotplot_all_nan_weight():
     assert isinstance(fig, Figure)
 
 
+# ─── MultiNicheNet-specific plots ───────────────────────────────────────────
+
+
+def _mnn_prioritization_df():
+    return pd.DataFrame(
+        {
+            "group": ["Lymphedema", "Lymphedema", "Normal", "Normal"],
+            "sender": ["0", "3", "0", "6"],
+            "receiver": ["3", "6", "3", "0"],
+            "ligand": ["TGFB1", "CCN2", "IL6", "POSTN"],
+            "receptor": ["TGFBR1", "FGFR2", "IL6R", "ITGAV"],
+            "prioritization_score": [0.95, 0.92, 0.80, 0.78],
+        }
+    )
+
+
+def test_mnn_top_lr_lollipop_orders_by_score_and_caps_top_n():
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    df = _mnn_prioritization_df()
+    fig = mnn_top_lr_lollipop(df, top_n=1)
+    ax = fig.axes[0]
+    labels = [t.get_text() for t in ax.get_yticklabels()]
+    # top_n=1 per group (Lymphedema, Normal) -> the single strongest row each:
+    # TGFB1-TGFBR1 (0.95 > 0.92 CCN2-FGFR2), IL6-IL6R (0.80 > 0.78 POSTN-ITGAV).
+    assert set(labels) == {"TGFB1 - TGFBR1", "IL6 - IL6R"}
+
+
+def test_mnn_top_lr_lollipop_names_the_actual_lr_pair_not_just_cell_types():
+    # This is the whole point over the circos plot: a reader must be able to
+    # tell WHICH ligand-receptor pair each row is, not just which cell types.
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    df = _mnn_prioritization_df()
+    fig = mnn_top_lr_lollipop(df, top_n=10)
+    labels = [t.get_text() for t in fig.axes[0].get_yticklabels()]
+    assert "TGFB1 - TGFBR1" in labels
+    assert "CCN2 - FGFR2" in labels
+
+
+def test_mnn_top_lr_lollipop_empty_guarded():
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    assert isinstance(mnn_top_lr_lollipop(pd.DataFrame()), Figure)
+    assert isinstance(mnn_top_lr_lollipop(None), Figure)
+
+
+def test_mnn_top_lr_lollipop_legend_sits_outside_the_axes():
+    # A real MultiNicheNet run's top-N routinely has 20-30 distinct
+    # sender->receiver routes -- loc="lower right" placed that legend ON TOP
+    # of the data (confirmed by rendering against real project data), not
+    # beside it. The legend must anchor outside the axes bounding box.
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    df = _mnn_prioritization_df()
+    fig = mnn_top_lr_lollipop(df, top_n=10)
+    legend = fig.axes[0].get_legend()
+    anchor = legend.get_bbox_to_anchor()._bbox
+    assert anchor.x0 >= 1.0
+
+
+def test_mnn_top_lr_lollipop_relabels_sender_receiver_in_legend():
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    df = _mnn_prioritization_df()
+    fig = mnn_top_lr_lollipop(
+        df, top_n=10, cluster_labels={"0": "Perivascular", "3": "Progenitor-like"}
+    )
+    legend_labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert any("Perivascular" in lab for lab in legend_labels)
+
+
 # ─── NicheNet-specific plots ────────────────────────────────────────────────
 
 

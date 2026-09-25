@@ -101,6 +101,15 @@ def load_nichenet(results_dir: Path) -> dict[str, pd.DataFrame]:
     return out
 
 
+def load_mnn_prioritization(results_dir: Path) -> pd.DataFrame | None:
+    """Read MultiNicheNet's native prioritization table (not the canonical
+    LR schema): group, sender, receiver, ligand, receptor,
+    prioritization_score, etc. -- the columns a top-LR-interactions figure
+    needs and the canonical projection (mnn_canonical_lr.csv) doesn't carry.
+    """
+    return _read_csv(Path(results_dir) / "mnn_prioritization.csv")
+
+
 def load_topology(results_dir: Path) -> dict[str, pd.DataFrame]:
     """Read topology CSVs from results_dir/ccc_network. Missing keys omitted."""
     net = results_dir / "ccc_network"
@@ -178,6 +187,7 @@ def apply_theme() -> None:
 
 __all__ = [
     "load_canonical_lr_sources",
+    "load_mnn_prioritization",
     "load_nichenet",
     "load_topology",
     "load_curvature",

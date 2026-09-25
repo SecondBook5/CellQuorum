@@ -16,6 +16,7 @@ import pandas as pd
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, Wedge
 
 from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP
@@ -215,6 +216,90 @@ def cci_heatmap(
     ax.set_xlabel(target_col)
     ax.set_ylabel(source_col)
     fig.colorbar(im, ax=ax, label=weight_col)
+    fig.tight_layout()
+    return fig
+
+
+def mnn_top_lr_lollipop(
+    df: pd.DataFrame,
+    *,
+    group_col: str = "group",
+    sender_col: str = "sender",
+    receiver_col: str = "receiver",
+    ligand_col: str = "ligand",
+    receptor_col: str = "receptor",
+    score_col: str = "prioritization_score",
+    top_n: int = 30,
+    cluster_labels: dict[str, str] | None = None,
+) -> Figure:
+    """Top-N prioritized LR interactions, one lollipop per row, colored by
+    sender->receiver, named by the actual ligand-receptor pair.
+
+    The circos/chord view of this same data answers "which cell types talk
+    more in disease" but actively hides WHICH molecules are doing it --
+    everything collapses into one aggregate ribbon per cell-type pair. This
+    is the figure that names names: each row is one real LR pair, ranked by
+    MultiNicheNet's own prioritization_score, not a generic magnitude.
+
+    When ``group_col`` is present, the top ``top_n`` rows are taken
+    independently PER group (e.g. Normal, Lymphedema) so a low-signal group
+    isn't crowded out of the ranking by a high-signal one.
+    """
+    if df is None or df.empty:
+        return _empty_fig()
+    d = df.copy()
+    d[sender_col] = d[sender_col].astype(str)
+    d[receiver_col] = d[receiver_col].astype(str)
+    if group_col in d.columns:
+        parts = [
+            g.sort_values(score_col, ascending=False).head(top_n) for _, g in d.groupby(group_col)
+        ]
+        d = pd.concat(parts, ignore_index=True) if parts else d.iloc[0:0]
+    else:
+        d = d.sort_values(score_col, ascending=False).head(top_n)
+    if d.empty:
+        return _empty_fig()
+
+    labels = cluster_labels or {}
+    d = d.assign(
+        __pair=d[ligand_col].astype(str) + " - " + d[receptor_col].astype(str),
+        __route=(
+            d[sender_col].map(lambda v: labels.get(v, v))
+            + " -> "
+            + d[receiver_col].map(lambda v: labels.get(v, v))
+        ),
+    )
+    # Sort bottom-to-top so the strongest interaction renders at the top.
+    d = d.sort_values(score_col, ascending=True, kind="mergesort")
+
+    routes = sorted(d["__route"].unique())
+    palette = celltype_palette(routes)
+
+    # A real run's top-N routinely has 20-30 distinct sender->receiver
+    # routes; that legend does not fit inside the axes without covering
+    # data, so it gets its own column to the right instead. Width scales
+    # with route count for the same reason.
+    legend_w = max(2.2, 0.028 * len(routes) * max(len(r) for r in routes))
+    fig, ax = plt.subplots(figsize=(7 + legend_w, max(3, 0.3 * len(d))))
+    y = np.arange(len(d))
+    colors = [palette[r] for r in d["__route"]]
+    ax.hlines(y, 0, d[score_col], color=colors, linewidth=1.5, zorder=1)
+    ax.scatter(d[score_col], y, c=colors, s=60, zorder=2, edgecolor="0.3", linewidth=0.4)
+    ax.set_yticks(y)
+    ax.set_yticklabels(d["__pair"])
+    ax.set_xlabel(score_col)
+
+    handles = [
+        Line2D([0], [0], marker="o", linestyle="", color=palette[r], label=r) for r in routes
+    ]
+    ax.legend(
+        handles=handles,
+        bbox_to_anchor=(1.02, 1.0),
+        loc="upper left",
+        fontsize=7,
+        frameon=False,
+        title="sender -> receiver",
+    )
     fig.tight_layout()
     return fig
 
