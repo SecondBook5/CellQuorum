@@ -548,23 +548,41 @@ def _mnn_sample_and_source_dfs():
     return sample_df, source_df
 
 
+def _pair_labels(ax):
+    """Panel 1's per-row ligand-receptor labels: manually-drawn ax.text()
+    calls (not set_yticklabels), identified by " - " with no "->" (route
+    labels use "->"; group headers and significance markers don't have
+    either pattern).
+    """
+    return [t.get_text() for t in ax.texts if " - " in t.get_text() and "->" not in t.get_text()]
+
+
 def test_plot_mnn_sample_activity_returns_a_four_panel_figure():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
 
     sample_df, source_df = _mnn_sample_and_source_dfs()
     fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
     assert isinstance(fig, Figure)
-    assert len(fig.axes) >= 4
+    # 4 data panels + legend column.
+    assert len(fig.axes) >= 5
 
 
 def test_plot_mnn_sample_activity_rows_name_sender_receiver_and_lr_pair():
+    # Both the route (sender->receiver) box label and the ligand-receptor
+    # pair label render as manual ax.text() calls in panel 1 (axes[0])'s
+    # own negative-x margin, not via set_yticklabels -- a separate
+    # route-box axes collided with panel 1's real y-tick labels on a real
+    # render, so everything now lives in one coordinate system.
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
 
     sample_df, source_df = _mnn_sample_and_source_dfs()
     fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    row_text = " ".join(t.get_text() for t in fig.axes[0].get_yticklabels())
+    row_text = " ".join(_pair_labels(fig.axes[0]))
     assert "TGFB1 - TGFBR1" in row_text
     assert "CCN2 - FGFR2" in row_text
+    route_text = " ".join(t.get_text() for t in fig.axes[0].texts if "->" in t.get_text())
+    assert "0 -> 3" in route_text
+    assert "3 -> 6" in route_text
 
 
 def test_plot_mnn_sample_activity_relabels_clusters_in_row_names():
@@ -574,9 +592,9 @@ def test_plot_mnn_sample_activity_relabels_clusters_in_row_names():
     fig = plot_mnn_sample_activity(
         sample_df, source_df, top_n=20, cluster_labels={"0": "Perivascular", "3": "Progenitor-like"}
     )
-    row_text = " ".join(t.get_text() for t in fig.axes[0].get_yticklabels())
-    assert "Perivascular" in row_text
-    assert "Progenitor-like" in row_text
+    route_text = " ".join(t.get_text() for t in fig.axes[0].texts if "->" in t.get_text())
+    assert "Perivascular" in route_text
+    assert "Progenitor-like" in route_text
 
 
 def test_plot_mnn_sample_activity_caps_to_top_n_interactions():
@@ -584,7 +602,7 @@ def test_plot_mnn_sample_activity_caps_to_top_n_interactions():
 
     sample_df, source_df = _mnn_sample_and_source_dfs()
     fig = plot_mnn_sample_activity(sample_df, source_df, top_n=1)
-    row_text = [t.get_text() for t in fig.axes[0].get_yticklabels()]
+    row_text = _pair_labels(fig.axes[0])
     # top_n=1 -> only the strongest id (TGFB1-TGFBR1, score 0.95) survives.
     assert len(row_text) == 1
     assert "TGFB1" in row_text[0]
@@ -662,7 +680,7 @@ def test_plot_mnn_sample_activity_groups_rows_by_sender_receiver_with_separators
 
     sample_df, source_df = _mnn_sample_and_source_dfs()
     fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    ax = fig.axes[0]
+    ax = fig.axes[1]
     # Two distinct routes in the fixture (0->3 and 3->6) -> at least one
     # separator line between them.
     assert len(ax.lines) >= 1
@@ -725,8 +743,8 @@ def test_plot_mnn_sample_activity_sorts_rows_by_score_within_route_block():
     sample_df = pd.concat([s1, s2], ignore_index=True)
     source_df = pd.concat([g1, g2], ignore_index=True)
     fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    labels = [t.get_text() for t in fig.axes[0].get_yticklabels()]
-    assert labels.index("0 -> 3: A - B") > labels.index("0 -> 3: Z - Y")
+    labels = _pair_labels(fig.axes[0])
+    assert labels.index("A - B") > labels.index("Z - Y")
 
 
 def test_plot_mnn_sample_activity_marks_significant_cells():
@@ -746,6 +764,38 @@ def test_plot_mnn_sample_activity_marks_significant_cells():
     fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
     marker_text = "".join(t.get_text() for t in fig.axes[1].texts)
     assert "*" in marker_text
+
+
+def test_plot_mnn_sample_activity_legend_has_labeled_colorbars_and_size_keys():
+    # Confirmed against the reference figure: a reader had no way to tell
+    # what a specific color or dot size actually MEANT quantitatively --
+    # inline panel titles alone don't give that. Each colorbar needs its
+    # own title and real numeric tick values, not just a bare gradient.
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    legend_text = " ".join(t.get_text() for t in fig.axes[4].texts)
+    assert "pseudobulk" in legend_text.lower()
+    assert "specificity" in legend_text.lower()
+    assert "fraction of expression" in legend_text.lower()
+    assert "sufficient presence" in legend_text.lower()
+    # Colorbars are inset axes (children of the legend axes, not top-level
+    # entries in fig.axes) -- at least 4 of them, one per color scale.
+    assert len(fig.axes[4].child_axes) >= 4
+
+
+def test_plot_mnn_sample_activity_colorbars_show_real_numeric_ticks():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    # Colorbars are inset axes (children of the legend axes), not top-level
+    # entries in fig.axes.
+    colorbar_axes = fig.axes[4].child_axes
+    assert len(colorbar_axes) >= 4
+    tick_texts = [t.get_text() for cax in colorbar_axes for t in cax.get_yticklabels()]
+    assert any(t.strip() for t in tick_texts)
 
 
 def test_plot_mnn_sample_activity_empty_guarded():

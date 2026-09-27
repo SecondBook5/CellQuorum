@@ -19,7 +19,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch, Wedge
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Wedge
 
 from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import get_group_palette as _get_group_palette
@@ -328,21 +328,56 @@ def plot_mnn_sample_activity(
         if xs:
             sample_x_range[g] = (min(xs) - 0.5, max(xs) + 0.5)
 
+    top_pad = max(1.0, 0.06 * len(rows))
+    ylim = (-0.5, len(rows) - 0.5 + top_pad)
+
+    # Margin sizing scales with the actual longest label/route string, not a
+    # fixed guess: a fixed guess badly underestimated real gene-symbol pair
+    # widths on a real render (e.g. "ANGPTL4 - ITGB3"), and the pair-label
+    # text -- right-aligned, extending LEFTWARD from its anchor -- visually
+    # intruded into the route-box column. ~0.16 data-units/character is an
+    # empirical estimate for this fontsize; margins below are deliberately
+    # generous on top of that estimate.
+    max_pair_len = max(len(r.split(": ", 1)[1]) for r in rows)
+    max_route_len = max(len(v) for v in set(route_of_row.values()))
+    label_margin = max_pair_len * 0.16 + 0.4
+    box_width = max_route_len * 0.11 + 0.5
+    LABEL_X = -0.3
+    BOX_X1 = LABEL_X - label_margin - 0.3
+    BOX_X0 = BOX_X1 - box_width
+    left_margin = -BOX_X0 + 0.3
+
     fig, axes = plt.subplots(
         1,
-        4,
+        5,
         # 0.5in/row (was 0.35) and extra top margin for the group header --
         # confirmed too cramped on a real render next to the reference.
-        figsize=(17, max(3.5, 0.5 * len(rows) + 1.0)),
+        figsize=(19, max(3.5, 0.5 * len(rows) + 1.0)),
         squeeze=True,
         gridspec_kw={
-            "width_ratios": [max(2, len(samples)), len(groups), len(groups), 2 * len(groups)],
+            "width_ratios": [
+                # Extra width for the label/route margin: without it, that
+                # margin visually compresses the actual sample-column area
+                # instead of getting its own physical space.
+                max(2, len(samples)) + left_margin,
+                len(groups),  # panel 2
+                len(groups),  # panel 3
+                2 * len(groups),  # panel 4
+                2.6,  # legend column
+            ],
             "wspace": 0.35,
         },
     )
 
     # Panel 1: per-sample scaled LR pseudobulk product, sized by
-    # sender/receiver presence.
+    # sender/receiver presence. Route-label boxes render in this SAME
+    # axes' negative-x margin (not a separate axes to the left): a
+    # separate route-box axes collided with panel 1's own y-tick labels,
+    # since both render into the same inter-axes gap and matplotlib's
+    # default tick-label placement doesn't reserve room for a neighboring
+    # axes' content -- confirmed on a real render. Drawing everything in
+    # one coordinate system with clip_on=False gives exact manual control
+    # instead.
     ax = axes[0]
     keep_sizes = {
         "Sender & Receiver absent": 20,
@@ -352,25 +387,60 @@ def plot_mnn_sample_activity(
     }
     x_pos = {s: i for i, s in enumerate(samples)}
     vmax = float(sample_d["scaled_LR_pb_prod"].abs().max()) or 1.0
-    norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
-    ax.scatter(
+    norm1 = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+    sc1 = ax.scatter(
         [x_pos[s] for s in sample_d["sample"]],
         [row_pos[r] for r in sample_d["__row"]],
         c=sample_d["scaled_LR_pb_prod"],
         cmap="RdBu_r",
-        norm=norm,
+        norm=norm1,
         s=[keep_sizes.get(k, 40) for k in sample_d["keep_sender_receiver"]],
         edgecolor="0.3",
         linewidth=0.3,
     )
     ax.set_xticks(range(len(samples)))
     ax.set_xticklabels(samples, rotation=90, fontsize=8)
-    ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels(rows, fontsize=8)
+    ax.set_yticks([])
     ax.set_title("Sample L-R product", fontsize=9)
-    ax.set_ylim(-0.5, len(rows) - 0.5 + max(1.0, 0.06 * len(rows)))
+    ax.set_xlim(BOX_X0 - 0.3, len(samples) - 0.5)
+    ax.set_ylim(*ylim)
+    # Pair name (ligand - receptor) drawn manually, not via set_yticklabels:
+    # real y-tick labels render outside the axes into the inter-axes gap,
+    # which collided with a separate route-box axes on a real render.
+    # Drawing both in THIS axes' own negative-x margin (inside its xlim, so
+    # ordinary clipping already covers them) keeps one coordinate system
+    # and guarantees no cross-axes overlap.
+    for i, r in enumerate(rows):
+        ax.text(LABEL_X, i, r.split(": ", 1)[1], ha="right", va="center", fontsize=8)
+    block_start = 0
+    for i in range(1, len(rows) + 1):
+        at_end = i == len(rows) or route_of_row[rows[i]] != route_of_row[rows[i - 1]]
+        if at_end:
+            y0, y1 = block_start - 0.5, i - 1 + 0.5
+            ax.add_patch(
+                FancyBboxPatch(
+                    (BOX_X0, y0 + 0.05),
+                    BOX_X1 - BOX_X0,
+                    (y1 - y0) - 0.1,
+                    boxstyle="round,pad=0,rounding_size=0.05",
+                    linewidth=0.8,
+                    edgecolor="0.4",
+                    facecolor="0.96",
+                    clip_on=False,
+                )
+            )
+            ax.text(
+                (BOX_X0 + BOX_X1) / 2,
+                (y0 + y1) / 2,
+                route_of_row[rows[block_start]],
+                ha="center",
+                va="center",
+                fontsize=7.5,
+                wrap=True,
+            )
+            block_start = i
     for g, (x0, x1) in sample_x_range.items():
-        header_y = len(rows) - 0.5 + max(1.0, 0.06 * len(rows)) * 0.5
+        header_y = len(rows) - 0.5 + top_pad * 0.5
         ax.text((x0 + x1) / 2, header_y, g, ha="center", va="center", fontweight="bold", fontsize=9)
         ax.plot(
             [x0 + 0.05, x1 - 0.05], [len(rows) - 0.5, len(rows) - 0.5], color="0.4", linewidth=1.0
@@ -379,7 +449,7 @@ def plot_mnn_sample_activity(
     # Panel 2: scaled ligand activity in receiver, one column per group.
     ax = axes[1]
     vmax = float(source_d["activity_scaled"].abs().max()) or 1.0
-    norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+    norm2 = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
     mat = source_d.pivot_table(index="__row", columns="group", values="activity_scaled")
     mat = mat.reindex(index=rows, columns=groups)
     # origin="lower": imshow's default puts array row 0 at the TOP, but
@@ -387,7 +457,9 @@ def plot_mnn_sample_activity(
     # row_pos 0 at the BOTTOM -- confirmed mismatched on a real render,
     # which silently paired every row's activity with the WRONG sample-
     # product/specificity row one panel over.
-    ax.imshow(mat.to_numpy(dtype=float), cmap="RdBu_r", norm=norm, aspect="auto", origin="lower")
+    im2 = ax.imshow(
+        mat.to_numpy(dtype=float), cmap="RdBu_r", norm=norm2, aspect="auto", origin="lower"
+    )
     ax.set_xticks(range(len(groups)))
     ax.set_xticklabels(groups, rotation=90, fontsize=8)
     ax.set_yticks([])
@@ -418,11 +490,11 @@ def plot_mnn_sample_activity(
     mat = source_d.pivot_table(index="__row", columns="group", values="activity")
     mat = mat.reindex(index=rows, columns=groups)
     vals = mat.to_numpy(dtype=float)
-    vmax = float(np.nanmax(vals)) if np.isfinite(vals).any() else 1.0
-    ax.imshow(
+    vmax3 = float(np.nanmax(vals)) if np.isfinite(vals).any() else 1.0
+    im3 = ax.imshow(
         vals,
         cmap="Oranges",
-        norm=Normalize(vmin=0.0, vmax=vmax or 1.0),
+        norm=Normalize(vmin=0.0, vmax=vmax3 or 1.0),
         aspect="auto",
         origin="lower",  # see panel 2's comment -- same row-order fix
     )
@@ -450,7 +522,8 @@ def plot_mnn_sample_activity(
             )
         )
     cs = pd.DataFrame(cs_rows, columns=["col", "row", "specificity", "fraction"])
-    ax.scatter(
+    fraction_vmax = float(cs["fraction"].max()) or 1.0
+    sc4 = ax.scatter(
         [col_pos[c] for c in cs["col"]],
         [row_pos[r] for r in cs["row"]],
         c=cs["specificity"],
@@ -460,18 +533,88 @@ def plot_mnn_sample_activity(
         linewidth=0.3,
     )
     ax.set_xticks(range(len(cols)))
-    ax.set_xticklabels(cols, fontsize=7)
+    # Rotated: the 2-line "ligand\n<condition>" labels are wider than one
+    # column's own spacing at this panel width, and centered horizontal
+    # text collided with its neighbors on a real render.
+    ax.set_xticklabels(cols, fontsize=6.5, rotation=45, ha="right")
     ax.set_yticks([])
     ax.set_title("Celltype specificity", fontsize=9)
 
     # Separator between each sender->receiver route's block of rows, on
-    # every panel -- confirmed too flat/hard to scan as a plain sorted list
-    # next to the reference figure's bordered per-route groups.
-    for ax in axes:
+    # panels 2-4 (not panel 1, which already has its own bordered route
+    # boxes as separation, or the legend column) -- confirmed too
+    # flat/hard to scan as a plain sorted list next to the reference
+    # figure's bordered per-route groups.
+    for ax in axes[1:4]:
         xlim = ax.get_xlim()
         for y in group_boundaries:
             ax.plot(xlim, [y, y], color="0.75", linewidth=0.7, zorder=0)
         ax.set_xlim(xlim)
+
+    # Legend column: a proper stacked legend (colorbars with real numeric
+    # ticks + size keys) instead of only inline panel titles -- confirmed
+    # against the reference figure that this is what read as "cooler":
+    # nothing before this told a reader what a specific color or dot size
+    # actually MEANT quantitatively.
+    legend_ax = axes[4]
+    legend_ax.set_axis_off()
+    legend_ax.set_xlim(0, 1)
+    legend_ax.set_ylim(0, 1)
+
+    def _cbar(mappable: ScalarMappable, y0: float, h: float, title: str) -> None:
+        cax = legend_ax.inset_axes([0.05, y0, 0.35, h])
+        cb = fig.colorbar(mappable, cax=cax)
+        cb.ax.tick_params(labelsize=7)
+        legend_ax.text(
+            0.45, y0 + h, title, transform=legend_ax.transAxes, fontsize=7.5, va="top", ha="left"
+        )
+
+    _cbar(sc1, 0.86, 0.09, "Scaled L-R\npseudobulk exprs product")
+    _cbar(im2, 0.70, 0.09, "Scaled Ligand\nActivity in Receiver")
+    _cbar(im3, 0.54, 0.09, "Ligand\nActivity in Receiver")
+    _cbar(sc4, 0.38, 0.09, "Scaled celltype\nspecificity")
+
+    # Size legend: sender/receiver presence (panel 1).
+    legend_ax.text(
+        0.05,
+        0.29,
+        "Sufficient presence\nof sender & receiver",
+        transform=legend_ax.transAxes,
+        fontsize=7.5,
+        va="top",
+    )
+    for i, (label, size) in enumerate(keep_sizes.items()):
+        y = 0.20 - 0.035 * i
+        legend_ax.scatter(
+            [0.08],
+            [y],
+            s=size,
+            transform=legend_ax.transAxes,
+            c="0.5",
+            edgecolor="0.3",
+            linewidth=0.3,
+        )
+        legend_ax.text(0.18, y, label, transform=legend_ax.transAxes, fontsize=6.5, va="center")
+
+    # Size legend: fraction of expression (panel 4).
+    legend_ax.text(
+        0.05, 0.045, "Fraction of expression", transform=legend_ax.transAxes, fontsize=7.5, va="top"
+    )
+    for i, frac in enumerate((0.25, 0.5, 0.75, 1.0)):
+        x = 0.10 + 0.09 * i
+        legend_ax.scatter(
+            [x],
+            [-0.03],
+            s=200.0 * frac / fraction_vmax if fraction_vmax else 0,
+            transform=legend_ax.transAxes,
+            c="0.5",
+            edgecolor="0.3",
+            linewidth=0.3,
+            clip_on=False,
+        )
+        legend_ax.text(
+            x, -0.075, f"{frac:.2f}", transform=legend_ax.transAxes, fontsize=6, ha="center"
+        )
 
     if "p_val_ligand" in source_d.columns and "p_val_receptor" in source_d.columns:
         fig.text(
