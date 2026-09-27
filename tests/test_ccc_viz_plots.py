@@ -276,6 +276,22 @@ def test_chord_and_sankey_return_figure():
     assert isinstance(sankey_flow(df, palette=pal, top_k=3), Figure)
 
 
+def test_chord_diagram_invokes_link_kws_handler_when_given():
+    from cellquorum.stages.cell_cell_communication.viz._plots import celltype_palette, chord_diagram
+
+    df = _lr(4)
+    pal = celltype_palette(list(set(df["source"]) | set(df["target"])))
+    calls = []
+
+    def handler(a, b):
+        calls.append((a, b))
+        return {}
+
+    fig = chord_diagram(df, palette=pal, link_kws_handler=handler)
+    assert isinstance(fig, Figure)
+    assert len(calls) > 0
+
+
 def test_chord_sankey_fallback_when_dep_missing(monkeypatch):
     import builtins
 
@@ -662,6 +678,76 @@ def test_plot_mnn_sample_activity_labels_sample_groups_above_panel_one():
     assert "Normal" in header_text
 
 
+def test_plot_mnn_sample_activity_sorts_rows_by_score_within_route_block():
+    # Within the same sender->receiver route, the stronger interaction
+    # (higher prioritization_score) should render closer to the top of
+    # that route's block, not just alphabetically by ligand-receptor name.
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    def _rows(id_, sender, receiver, ligand, receptor, score):
+        s = pd.DataFrame(
+            {
+                "id": [id_],
+                "sample": ["P1_LE"],
+                "group": ["Lymphedema"],
+                "sender": [sender],
+                "receiver": [receiver],
+                "ligand": [ligand],
+                "receptor": [receptor],
+                "scaled_LR_pb_prod": [0.5],
+                "keep_sender_receiver": ["Sender & Receiver present"],
+            }
+        )
+        g = pd.DataFrame(
+            {
+                "id": [id_],
+                "sender": [sender],
+                "receiver": [receiver],
+                "ligand": [ligand],
+                "receptor": [receptor],
+                "group": ["Lymphedema"],
+                "activity": [0.02],
+                "activity_scaled": [0.5],
+                "scaled_pb_ligand": [0.5],
+                "scaled_pb_receptor": [0.5],
+                "fraction_ligand_group": [0.5],
+                "fraction_receptor_group": [0.5],
+                "prioritization_score": [score],
+            }
+        )
+        return s, g
+
+    # Names deliberately reversed vs. score, so a plain alphabetical-label
+    # sort would rank them the OPPOSITE way from a score-based sort --
+    # only the real fix passes this.
+    s1, g1 = _rows("Z_Y_X0_X3", "0", "3", "Z", "Y", 0.5)  # alphabetically last, lower score
+    s2, g2 = _rows("A_B_X0_X3", "0", "3", "A", "B", 0.9)  # alphabetically first, higher score
+    sample_df = pd.concat([s1, s2], ignore_index=True)
+    source_df = pd.concat([g1, g2], ignore_index=True)
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    labels = [t.get_text() for t in fig.axes[0].get_yticklabels()]
+    assert labels.index("0 -> 3: A - B") > labels.index("0 -> 3: Z - Y")
+
+
+def test_plot_mnn_sample_activity_marks_significant_cells():
+    # p_val_ligand/p_val_receptor are real DE significance columns
+    # multinichenetr already computes but nothing surfaced anywhere.
+    # Uses raw (unadjusted) p-values with an OR across ligand/receptor,
+    # not p_adj with AND: confirmed against real data that the adjusted-AND
+    # criterion is too conservative to ever fire on a top-N shortlist
+    # (140k+ total LR-sender-receiver tests means heavy multiple-testing
+    # correction; 0 of a real top-20 passed adjusted-OR, 14 of 20 passed
+    # raw-OR).
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    source_df["p_val_ligand"] = [0.001, 0.5, 0.5, 0.5]
+    source_df["p_val_receptor"] = [0.5, 0.5, 0.5, 0.5]
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    marker_text = "".join(t.get_text() for t in fig.axes[1].texts)
+    assert "*" in marker_text
+
+
 def test_plot_mnn_sample_activity_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
 
@@ -868,6 +954,49 @@ def test_cluster_focused_circos_has_a_title():
     )
     assert fig._suptitle is not None
     assert "Papillary" in fig._suptitle.get_text()
+
+
+def test_cluster_focused_circos_styles_outgoing_and_incoming_ribbons_differently():
+    # Direction (is the focus cluster sending or receiving) isn't visible
+    # from ribbon color alone (color = route, not direction) -- confirmed
+    # against a real render. The handler chord_diagram() is called with
+    # must style a (focus, other) outgoing link differently from an
+    # (other, focus) incoming one.
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    df = _mnn_focused_df()
+    palette = {c: "#123456" for c in "0123456"}
+    captured = {}
+
+    import cellquorum.stages.cell_cell_communication.viz._plots as plots_mod
+
+    real_chord = plots_mod.chord_diagram
+
+    def spy(*args, **kwargs):
+        captured["handler"] = kwargs.get("link_kws_handler")
+        return real_chord(*args, **kwargs)
+
+    import unittest.mock as mock
+
+    with mock.patch.object(plots_mod, "chord_diagram", spy):
+        cluster_focused_circos(df, "6", palette=palette, cluster_labels={"6": "Papillary"})
+
+    handler = captured["handler"]
+    assert handler is not None
+    outgoing_style = handler("Papillary", "Progenitor-like")
+    incoming_style = handler("Progenitor-like", "Papillary")
+    assert outgoing_style != incoming_style
+
+
+def test_cluster_focused_circos_legend_explains_width_and_direction_encoding():
+    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+
+    df = _mnn_focused_df()
+    palette = {c: "#123456" for c in "0123456"}
+    fig = cluster_focused_circos(df, "6", palette=palette, cluster_labels={"6": "Papillary"})
+    legend_text = " ".join(t.get_text() for t in fig.texts).lower()
+    assert "prioritization" in legend_text or "score" in legend_text
+    assert "receiv" in legend_text or "sen" in legend_text
 
 
 def test_cluster_focused_circos_empty_when_focus_has_no_edges():

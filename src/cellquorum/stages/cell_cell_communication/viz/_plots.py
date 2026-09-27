@@ -8,6 +8,8 @@ with a matplotlib fallback so a missing dep never raises.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -243,14 +245,25 @@ def plot_mnn_sample_activity(
     group_prioritization_table_source itself, despite both being read from
     the same multi_nichenet_analysis() call's prioritization_tables.
 
-    Deliberately simplified from the reference:
-    rows are a flat, sorted "sender -> receiver: ligand - receptor" list
-    instead of nested facet strips (matplotlib has no facet_grid equivalent,
-    and free per-facet row heights add real complexity for a readability
-    gain a sorted flat list already gets most of), and panels 2/3 show one
-    activity value per group rather than splitting by up/down direction
-    (redundant with activity_scaled's own sign in the near-totality of
-    real rows). A deliberate exception to one-plot-per-file, like
+    Significance markers (panel 2) use RAW p_val_ligand/p_val_receptor with
+    an OR across the two, not p_adj with AND: confirmed against a real
+    MultiNicheNet run that the adjusted-AND criterion never fires on a
+    prioritized top-N shortlist (a real cohort tests 140k+ LR-sender-
+    receiver combinations, so FDR correction is heavy relative to a
+    hand-picked top 20-30) -- 0 of a real top-20 passed adjusted-OR, 14 of
+    20 passed raw-OR. MultiNicheNet's own prioritization_score is already a
+    soft composite that doesn't gate on DE significance, so a marker here
+    is "at least nominal DE support", not a hard significance claim.
+
+    Deliberately simplified from the reference: rows are grouped by
+    sender -> receiver route (separator lines, not nested facet strips --
+    matplotlib has no facet_grid equivalent, and free per-facet row heights
+    add real complexity for a readability gain grouped+separated rows
+    already get most of), sorted by prioritization_score within each route
+    (strongest nearest the top), and panels 2/3 show one activity value per
+    group rather than splitting by up/down direction (redundant with
+    activity_scaled's own sign in the near-totality of real rows). A
+    deliberate exception to one-plot-per-file, like
     plot_tensor_factors: comparing these 4 views for the SAME interactions
     is the entire point of the figure.
     """
@@ -277,14 +290,25 @@ def plot_mnn_sample_activity(
         return _empty_fig()
 
     id_route = source_d.drop_duplicates("id").set_index("id").apply(_route, axis=1).to_dict()
-    rows = sorted(set(id_route.values()))
+    # Ordered by (route, score ascending): same-route ids stay contiguous
+    # (needed for group_boundaries below), and within a route the
+    # STRONGEST interaction lands at the highest row index -- i.e. nearest
+    # the top of that route's block, since row_pos 0 renders at the bottom
+    # (matplotlib's default, non-inverted y-axis; see panel 1). Plain
+    # alphabetical-by-label order (the previous behavior) put rows in
+    # whatever order their ligand/receptor names happened to sort, with no
+    # relationship to how strong the interaction actually was.
+    score_by_id = source_d.groupby("id")["prioritization_score"].max()
+    route_by_id = {i: r.split(": ", 1)[0] for i, r in id_route.items()}
+    ordered_ids = sorted(id_route, key=lambda i: (route_by_id[i], score_by_id[i]))
+    rows = [id_route[i] for i in ordered_ids]
     row_pos = {r: i for i, r in enumerate(rows)}
     sample_d["__row"] = sample_d["id"].map(id_route)
     source_d["__row"] = source_d["id"].map(id_route)
 
     # sender -> receiver prefix only (drop the ": ligand - receptor" suffix),
     # to find where one route's block of rows ends and the next begins --
-    # rows are already sorted so same-route rows are contiguous.
+    # rows are already grouped by route so same-route rows are contiguous.
     route_of_row = {r: r.split(": ", 1)[0] for r in rows}
     group_boundaries = [
         i + 0.5 for i in range(len(rows) - 1) if route_of_row[rows[i]] != route_of_row[rows[i + 1]]
@@ -369,6 +393,26 @@ def plot_mnn_sample_activity(
     ax.set_yticks([])
     ax.set_title("Scaled activity", fontsize=9)
 
+    # Significance marker: real DE p-values multinichenetr already computes
+    # but nothing surfaced anywhere before. Raw (unadjusted) p-values, OR
+    # across ligand/receptor -- NOT p_adj with AND: confirmed against a real
+    # run that the adjusted-AND criterion is too conservative to ever fire
+    # on a top-N shortlist (a real cohort has 140k+ total LR-sender-receiver
+    # tests, so multiple-testing correction is heavy; 0 of a real top-20
+    # passed adjusted-OR, 14 of 20 passed raw-OR). Guarded columns: an
+    # older-schema source_df (pre-dating this) simply gets no markers
+    # rather than a KeyError.
+    if "p_val_ligand" in source_d.columns and "p_val_receptor" in source_d.columns:
+        sig = source_d.assign(
+            __sig=(source_d["p_val_ligand"] < 0.05) | (source_d["p_val_receptor"] < 0.05)
+        )
+        sig_mat = sig.pivot_table(index="__row", columns="group", values="__sig", aggfunc="max")
+        sig_mat = sig_mat.reindex(index=rows, columns=groups)
+        for yi, r in enumerate(rows):
+            for xi, g in enumerate(groups):
+                if bool(sig_mat.loc[r, g]) if pd.notna(sig_mat.loc[r, g]) else False:
+                    ax.text(xi, yi, "*", ha="center", va="center", fontsize=10, color="black")
+
     # Panel 3: raw ligand activity in receiver, one column per group.
     ax = axes[2]
     mat = source_d.pivot_table(index="__row", columns="group", values="activity")
@@ -429,6 +473,18 @@ def plot_mnn_sample_activity(
             ax.plot(xlim, [y, y], color="0.75", linewidth=0.7, zorder=0)
         ax.set_xlim(xlim)
 
+    if "p_val_ligand" in source_d.columns and "p_val_receptor" in source_d.columns:
+        fig.text(
+            0.5,
+            0.995,
+            "* p < 0.05 (ligand or receptor, unadjusted -- see docstring)",
+            ha="center",
+            va="top",
+            fontsize=7,
+            style="italic",
+            color="0.3",
+        )
+
     fig.tight_layout()
     return fig
 
@@ -485,6 +541,18 @@ def cluster_focused_circos(
     d_display[source_col] = d_display[source_col].map(lambda v: labels.get(v, v))
     d_display[target_col] = d_display[target_col].map(lambda v: labels.get(v, v))
     display_palette = {labels.get(k, k): v for k, v in palette.items()}
+    focus_label = labels.get(focus, focus)
+
+    def _direction_style(from_name: str, to_name: str) -> dict | None:
+        # Outgoing (focus sends): normal fill. Incoming (focus receives):
+        # hatched, so direction is readable from the ring itself, not just
+        # by cross-referencing sector position -- ribbon width already
+        # encodes prioritization_score via initialize_from_matrix's own
+        # matrix-value-proportional sizing, but nothing distinguished
+        # direction before this.
+        if to_name == focus_label and from_name != focus_label:
+            return {"hatch": "///", "ec": "black", "lw": 0.6}
+        return {}
 
     fig = chord_diagram(
         d_display,
@@ -493,9 +561,10 @@ def cluster_focused_circos(
         weight_col=weight_col,
         palette=display_palette,
         top_k=top_k,
+        link_kws_handler=_direction_style,
     )
     if title is None:
-        title = labels.get(focus, focus)
+        title = focus_label
     fig.suptitle(title, fontsize=11)
 
     lines = [
@@ -512,6 +581,18 @@ def cluster_focused_circos(
         fontsize=7,
         va="center",
         ha="left",
+    )
+    fig.text(
+        1.02,
+        0.08,
+        "Ribbon width ∝ prioritization_score\nHatched = "
+        f"{focus_label} receiving; solid = {focus_label} sending",
+        transform=fig.transFigure,
+        fontsize=6.5,
+        va="top",
+        ha="left",
+        style="italic",
+        color="0.3",
     )
     return fig
 
@@ -828,8 +909,16 @@ def chord_diagram(
     weight_col: str = "weight",
     palette: dict[str, str],
     top_k: int = 15,
+    link_kws_handler: Callable[[str, str], dict | None] | None = None,
 ) -> Figure:
-    """Circos chord (pycirclize) or matplotlib arc fallback. Never raises."""
+    """Circos chord (pycirclize) or matplotlib arc fallback. Never raises.
+
+    ``link_kws_handler(from_sector, to_sector) -> style dict | None`` lets a
+    caller style individual ribbons (e.g. distinguish direction) -- passed
+    straight through to pycirclize's own per-link hook. Ribbon/sector size is
+    already proportional to weight_col via initialize_from_matrix; this hook
+    only affects a ribbon's own patch styling (fill, edge, hatch), not size.
+    """
     if lr is None or lr.empty:
         return _empty_fig()
     edges = _top_edges(lr, source_col, target_col, weight_col, top_k)
@@ -852,6 +941,7 @@ def chord_diagram(
                 ct: palette.get(ct, _OTHER_GRAY)
                 for ct in sorted(set(matrix.index) | set(matrix.columns))
             },
+            link_kws_handler=link_kws_handler,
         )
         return circos.plotfig()
     except Exception:  # noqa: BLE001  (import OR pycirclize runtime -> fallback)
