@@ -331,39 +331,80 @@ def plot_mnn_sample_activity(
     top_pad = max(1.0, 0.06 * len(rows))
     ylim = (-0.5, len(rows) - 0.5 + top_pad)
 
-    # Margin sizing scales with the actual longest label/route string, not a
-    # fixed guess: a fixed guess badly underestimated real gene-symbol pair
-    # widths on a real render (e.g. "ANGPTL4 - ITGB3"), and the pair-label
-    # text -- right-aligned, extending LEFTWARD from its anchor -- visually
-    # intruded into the route-box column. ~0.16 data-units/character is an
-    # empirical estimate for this fontsize; margins below are deliberately
-    # generous on top of that estimate.
+    # Margin sizing: computed in real INCHES from character counts, not data
+    # units. Data-unit sizing looked fine in isolation but silently broke at
+    # real scale -- pixels-per-data-unit shrinks as len(samples) grows (the
+    # same physical panel width gets divided across more sample columns),
+    # so a margin sized in data units for a small synthetic case was too
+    # narrow once real long route names (e.g. "Mechanosensory ->
+    # Inflammatory") hit a real ~18-sample render and visually collided
+    # with the neighboring row's own label.
+    #
+    # UNIT_IN must be a TRUE constant (inches per gridspec width-ratio
+    # unit), not one implied by a FIXED figsize -- a fixed figsize=19 with
+    # a variable margin_units created a circular underestimate: confirmed
+    # on the real fibroblast run that a large margin_units (from long real
+    # route names) grew panel 1's own share of the fixed 19in canvas,
+    # which shrank the ACTUAL inches-per-unit well below the assumed 0.7,
+    # so margin_frac * panel1's physical width delivered only ~74% of the
+    # margin_in actually budgeted -- still colliding, just less visibly.
+    # Fixed by deriving the figure's WIDTH from total_units * UNIT_IN
+    # instead of the reverse: every unit is then worth exactly UNIT_IN
+    # inches by construction, so margin_frac recovers the full margin_in
+    # regardless of how large margin_units or len(samples) get.
+    CHAR_IN = 0.075
+    UNIT_IN = 0.55
     max_pair_len = max(len(r.split(": ", 1)[1]) for r in rows)
     max_route_len = max(len(v) for v in set(route_of_row.values()))
-    label_margin = max_pair_len * 0.16 + 0.4
-    box_width = max_route_len * 0.11 + 0.5
-    LABEL_X = -0.3
-    BOX_X1 = LABEL_X - label_margin - 0.3
-    BOX_X0 = BOX_X1 - box_width
-    left_margin = -BOX_X0 + 0.3
+    label_margin_in = max_pair_len * CHAR_IN + 0.35
+    box_width_in = max_route_len * CHAR_IN + 0.5
+    gap_in = 0.15
+    margin_in = label_margin_in + box_width_in + gap_in
+    margin_units = margin_in / UNIT_IN
+    content_units = max(2, len(samples))
+    panel2_units = len(groups)
+    panel3_units = len(groups)
+    panel4_units = 2 * len(groups)
+    # 4.2 (was 2.6): the legend column's own physical width now derives
+    # from legend_units * UNIT_IN like every other panel (see below), and
+    # 2.6 units (~1.4in) was too narrow once real numeric colorbars,
+    # 2-line titles, and 4 size-legend dots all had to fit -- confirmed
+    # on a real render: the "Fraction of expression" dots and their
+    # 0.25/0.50/0.75/1.00 labels visibly collided at that width.
+    legend_units = 4.2
+    total_units = (
+        content_units + margin_units + panel2_units + panel3_units + panel4_units + legend_units
+    )
+    fig_width_in = total_units * UNIT_IN
+    # Fraction of panel 1's OWN rendered width reserved for the margin --
+    # placed via a blended transform (x in axes-fraction, y in data) so its
+    # PHYSICAL size stays exactly what was budgeted above regardless of
+    # len(samples), instead of drifting with the data x-range like a plain
+    # negative-x data coordinate would.
+    margin_frac = margin_units / (content_units + margin_units)
+    box_frac_width = (box_width_in / margin_in) * margin_frac
+    gap_frac = (gap_in / margin_in) * margin_frac
+    BOX_X0 = -margin_frac
+    BOX_X1 = BOX_X0 + box_frac_width
+    LABEL_X = -gap_frac  # right-aligned anchor; text extends left toward BOX_X1
 
     fig, axes = plt.subplots(
         1,
         5,
         # 0.5in/row (was 0.35) and extra top margin for the group header --
         # confirmed too cramped on a real render next to the reference.
-        figsize=(19, max(3.5, 0.5 * len(rows) + 1.0)),
+        figsize=(fig_width_in, max(3.5, 0.5 * len(rows) + 1.0)),
         squeeze=True,
         gridspec_kw={
             "width_ratios": [
                 # Extra width for the label/route margin: without it, that
                 # margin visually compresses the actual sample-column area
                 # instead of getting its own physical space.
-                max(2, len(samples)) + left_margin,
-                len(groups),  # panel 2
-                len(groups),  # panel 3
-                2 * len(groups),  # panel 4
-                2.6,  # legend column
+                content_units + margin_units,
+                panel2_units,
+                panel3_units,
+                panel4_units,
+                legend_units,
             ],
             "wspace": 0.35,
         },
@@ -402,16 +443,21 @@ def plot_mnn_sample_activity(
     ax.set_xticklabels(samples, rotation=90, fontsize=8)
     ax.set_yticks([])
     ax.set_title("Sample L-R product", fontsize=9)
-    ax.set_xlim(BOX_X0 - 0.3, len(samples) - 0.5)
+    ax.set_xlim(-0.5, len(samples) - 0.5)
     ax.set_ylim(*ylim)
-    # Pair name (ligand - receptor) drawn manually, not via set_yticklabels:
-    # real y-tick labels render outside the axes into the inter-axes gap,
-    # which collided with a separate route-box axes on a real render.
-    # Drawing both in THIS axes' own negative-x margin (inside its xlim, so
-    # ordinary clipping already covers them) keeps one coordinate system
-    # and guarantees no cross-axes overlap.
+    # Pair name (ligand - receptor) and route boxes drawn manually, not via
+    # set_yticklabels or a second axes: real y-tick labels / a separate
+    # route-box axes both render into the same inter-axes gap and collide.
+    # blended_transform puts x in AXES-FRACTION (fixed physical size,
+    # independent of len(samples)) and y in DATA coordinates (aligned with
+    # each row's row_pos) -- a plain negative-x DATA coordinate was tried
+    # first and looked fine in a small synthetic case, but silently broke
+    # at real ~16-sample scale (see margin_in comment above).
+    blended = ax.get_yaxis_transform()
     for i, r in enumerate(rows):
-        ax.text(LABEL_X, i, r.split(": ", 1)[1], ha="right", va="center", fontsize=8)
+        ax.text(
+            LABEL_X, i, r.split(": ", 1)[1], transform=blended, ha="right", va="center", fontsize=8
+        )
     block_start = 0
     for i in range(1, len(rows) + 1):
         at_end = i == len(rows) or route_of_row[rows[i]] != route_of_row[rows[i - 1]]
@@ -427,12 +473,14 @@ def plot_mnn_sample_activity(
                     edgecolor="0.4",
                     facecolor="0.96",
                     clip_on=False,
+                    transform=blended,
                 )
             )
             ax.text(
                 (BOX_X0 + BOX_X1) / 2,
                 (y0 + y1) / 2,
                 route_of_row[rows[block_start]],
+                transform=blended,
                 ha="center",
                 va="center",
                 fontsize=7.5,
@@ -561,18 +609,37 @@ def plot_mnn_sample_activity(
     legend_ax.set_xlim(0, 1)
     legend_ax.set_ylim(0, 1)
 
+    # Colorbar width in real inches (matches CBAR_WIDTH_IN below regardless
+    # of legend_units), not a fixed axes-fraction: a fixed 0.35 fraction
+    # silently changed physical width whenever legend_units changed.
+    legend_width_in = legend_units * UNIT_IN
+    CBAR_WIDTH_IN = 0.5
+    cbar_frac_width = CBAR_WIDTH_IN / legend_width_in
+
     def _cbar(mappable: ScalarMappable, y0: float, h: float, title: str) -> None:
-        cax = legend_ax.inset_axes([0.05, y0, 0.35, h])
+        cax = legend_ax.inset_axes([0.05, y0, cbar_frac_width, h])
         cb = fig.colorbar(mappable, cax=cax)
         cb.ax.tick_params(labelsize=7)
+        # Title sits ABOVE the colorbar (va="bottom", anchored at the top
+        # edge + a gap) instead of at the top edge itself: anchoring it
+        # there with va="top" put the title's own text in the exact same
+        # spot as the colorbar's own top tick label, since both sit at
+        # y0+h -- confirmed colliding on a real render ("Scaled Ligand" /
+        # "Activity in Receiver" overprinting its own tick numbers).
         legend_ax.text(
-            0.45, y0 + h, title, transform=legend_ax.transAxes, fontsize=7.5, va="top", ha="left"
+            0.05,
+            y0 + h + 0.015,
+            title,
+            transform=legend_ax.transAxes,
+            fontsize=7.5,
+            va="bottom",
+            ha="left",
         )
 
-    _cbar(sc1, 0.86, 0.09, "Scaled L-R\npseudobulk exprs product")
-    _cbar(im2, 0.70, 0.09, "Scaled Ligand\nActivity in Receiver")
-    _cbar(im3, 0.54, 0.09, "Ligand\nActivity in Receiver")
-    _cbar(sc4, 0.38, 0.09, "Scaled celltype\nspecificity")
+    _cbar(sc1, 0.86, 0.07, "Scaled L-R\npseudobulk exprs product")
+    _cbar(im2, 0.68, 0.07, "Scaled Ligand\nActivity in Receiver")
+    _cbar(im3, 0.50, 0.07, "Ligand\nActivity in Receiver")
+    _cbar(sc4, 0.32, 0.07, "Scaled celltype\nspecificity")
 
     # Size legend: sender/receiver presence (panel 1).
     legend_ax.text(
@@ -596,12 +663,19 @@ def plot_mnn_sample_activity(
         )
         legend_ax.text(0.18, y, label, transform=legend_ax.transAxes, fontsize=6.5, va="center")
 
-    # Size legend: fraction of expression (panel 4).
+    # Size legend: fraction of expression (panel 4). Dot spacing computed
+    # from a fixed physical inch budget / legend_width_in, not a flat
+    # axes-fraction step: a flat 0.09 step was tuned for the OLD, narrower
+    # legend_units and visibly crowded the 4 dots and their 0.25/0.50/
+    # 0.75/1.00 labels together once legend_units grew -- confirmed on a
+    # real render.
     legend_ax.text(
         0.05, 0.045, "Fraction of expression", transform=legend_ax.transAxes, fontsize=7.5, va="top"
     )
+    DOT_SPACING_IN = 0.42
+    dot_spacing_frac = DOT_SPACING_IN / legend_width_in
     for i, frac in enumerate((0.25, 0.5, 0.75, 1.0)):
-        x = 0.10 + 0.09 * i
+        x = 0.10 + dot_spacing_frac * i
         legend_ax.scatter(
             [x],
             [-0.03],
@@ -628,7 +702,10 @@ def plot_mnn_sample_activity(
             color="0.3",
         )
 
-    fig.tight_layout()
+    # No fig.tight_layout(): confirmed (by diffing renders with it patched
+    # to a no-op) it changes NOTHING on this figure -- the inset_axes-based
+    # colorbars make it bail out with "results might be incorrect" and
+    # silently skip, so calling it only printed a misleading warning.
     return fig
 
 

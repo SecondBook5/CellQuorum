@@ -798,6 +798,62 @@ def test_plot_mnn_sample_activity_colorbars_show_real_numeric_ticks():
     assert any(t.strip() for t in tick_texts)
 
 
+def test_plot_mnn_sample_activity_long_route_names_do_not_collide_with_pair_labels():
+    # Real bug, confirmed on a real render: a box-width margin sized with
+    # too small a per-character estimate let LONG route names (e.g.
+    # "Perivascular -> Inflammatory") overflow their box and visually
+    # merge with the neighboring row's own "ligand - receptor" label.
+    # Rendered here with canvas.draw() so get_window_extent() reflects
+    # real text metrics, not just the box-width constant.
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df = pd.DataFrame(
+        {
+            "id": ["L_R_X0_X3"],
+            "sample": ["P1_LE"],
+            "group": ["Lymphedema"],
+            "sender": ["0"],
+            "receiver": ["3"],
+            "ligand": ["ANGPTL4"],
+            "receptor": ["ITGB3"],
+            "scaled_LR_pb_prod": [0.5],
+            "keep_sender_receiver": ["Sender & Receiver present"],
+        }
+    )
+    source_df = pd.DataFrame(
+        {
+            "id": ["L_R_X0_X3"],
+            "sender": ["0"],
+            "receiver": ["3"],
+            "ligand": ["ANGPTL4"],
+            "receptor": ["ITGB3"],
+            "group": ["Lymphedema"],
+            "activity": [0.02],
+            "activity_scaled": [0.5],
+            "scaled_pb_ligand": [0.5],
+            "scaled_pb_receptor": [0.5],
+            "fraction_ligand_group": [0.5],
+            "fraction_receptor_group": [0.5],
+            "prioritization_score": [0.9],
+        }
+    )
+    fig = plot_mnn_sample_activity(
+        sample_df,
+        source_df,
+        top_n=20,
+        cluster_labels={"0": "Perivascular", "3": "Inflammatory"},  # a genuinely long route name
+    )
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    route_text = next(t for t in ax.texts if "->" in t.get_text())
+    pair_text = next(t for t in ax.texts if "ANGPTL4 - ITGB3" == t.get_text())
+    route_bbox = route_text.get_window_extent()
+    pair_bbox = pair_text.get_window_extent()
+    assert (
+        route_bbox.x1 <= pair_bbox.x0
+    ), f"route label {route_bbox} overlaps pair label {pair_bbox}"
+
+
 def test_plot_mnn_sample_activity_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
 
