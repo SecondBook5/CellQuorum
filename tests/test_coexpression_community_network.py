@@ -194,6 +194,97 @@ def test_plot_community_network_caps_edges_drawn():
     assert isinstance(fig, Figure)
 
 
+def test_plot_community_network_does_not_let_one_huge_module_starve_the_rest():
+    """Real bug found on the real fibroblast hdWGCNA run: module M2 alone
+    had 14,697 strong within-module edges, so a naive global
+    nlargest(max_edges, 'weight') cut filled the ENTIRE edge budget from
+    M2 (plus one or two other big modules) and 4 of 8 real modules, plus
+    every genuine cross-module bridge, vanished from the figure entirely
+    -- the same "global top-K starves smaller groups" failure mode
+    already fixed elsewhere in this codebase (curvature_network's
+    _guarantee_node_seats) for a different figure. Every real module with
+    at least one edge must keep some representation."""
+    rng = np.random.default_rng(0)
+    # Module BIG: 500 genes, ~500 strong within-module edges (weight ~0.9).
+    big_genes = [f"BIG{i}" for i in range(60)]
+    big_edges = pd.DataFrame(
+        {
+            "gene1": big_genes[:-1],
+            "gene2": big_genes[1:],
+            "weight": rng.uniform(0.85, 0.95, len(big_genes) - 1),
+        }
+    )
+    # Module SMALL: 4 genes, 3 weak within-module edges (weight ~0.1).
+    small_genes = [f"SMALL{i}" for i in range(4)]
+    small_edges = pd.DataFrame(
+        {
+            "gene1": small_genes[:-1],
+            "gene2": small_genes[1:],
+            "weight": rng.uniform(0.08, 0.12, len(small_genes) - 1),
+        }
+    )
+    edge_df = pd.concat([big_edges, small_edges], ignore_index=True)
+    modules_df = pd.DataFrame(
+        {
+            "gene": big_genes + small_genes,
+            "module": ["BIG"] * len(big_genes) + ["SMALL"] * len(small_genes),
+        }
+    )
+
+    fig = plot_community_network(edge_df, modules_df, max_edges=20)
+
+    ax = fig.axes[0]
+    plotted_labels = {t.get_text() for t in ax.get_legend().get_texts()}
+    assert "SMALL" in plotted_labels, "the small module vanished from the figure entirely"
+
+
+def test_plot_community_network_keeps_cross_module_bridges_even_when_weaker():
+    """Second half of the same real bug: even after guaranteeing every
+    module SOME representation, a 'fill remaining budget by raw weight'
+    rule still starves genuine cross-module bridges, because a bridge
+    edge is legitimately weaker than a big module's own internal edges
+    (confirmed on the real fibroblast run -- M1-M7 cross-module edges
+    existed but never outweighed M1's or M2's own remaining internal
+    edges by raw TOM weight). Cross-module edges need their OWN reserved
+    budget, not just leftover scraps ranked by weight against same-module
+    edges that are structurally always stronger."""
+    rng = np.random.default_rng(0)
+    a_genes = [f"A{i}" for i in range(40)]
+    b_genes = [f"B{i}" for i in range(40)]
+    within_a = pd.DataFrame(
+        {
+            "gene1": a_genes[:-1],
+            "gene2": a_genes[1:],
+            "weight": rng.uniform(0.9, 0.99, len(a_genes) - 1),
+        }
+    )
+    within_b = pd.DataFrame(
+        {
+            "gene1": b_genes[:-1],
+            "gene2": b_genes[1:],
+            "weight": rng.uniform(0.9, 0.99, len(b_genes) - 1),
+        }
+    )
+    # A real bridge: weaker than every within-module edge above.
+    bridge = pd.DataFrame({"gene1": ["A0"], "gene2": ["B0"], "weight": [0.15]})
+    edge_df = pd.concat([within_a, within_b, bridge], ignore_index=True)
+    modules_df = pd.DataFrame(
+        {"gene": a_genes + b_genes, "module": ["A"] * len(a_genes) + ["B"] * len(b_genes)}
+    )
+
+    plot_community_network(edge_df, modules_df, max_edges=30)
+
+    # Check via the same selection logic the figure itself uses, since a
+    # single 0.4pt LineCollection segment among 30 is not reliably
+    # recoverable from rendered pixel data.
+    from cellquorum.stages.gene_regulation.coexpression.community_network import _select_edges
+
+    module_of = dict(zip(modules_df["gene"], modules_df["module"], strict=False))
+    selected = _select_edges(edge_df, module_of, max_edges=30)
+    cross = selected[selected["gene1"].map(module_of) != selected["gene2"].map(module_of)]
+    assert not cross.empty, "the weak-but-real cross-module bridge was dropped entirely"
+
+
 def test_plot_community_network_empty_edges_returns_empty_fig():
     fig = plot_community_network(
         pd.DataFrame(columns=["gene1", "gene2", "weight"]), pd.DataFrame(columns=["gene", "module"])

@@ -189,6 +189,59 @@ def pagerank_relevance_scores(
 # ---------------------------------------------------------------------------
 
 
+def _select_edges(edges: pd.DataFrame, module_of: dict[str, str], max_edges: int) -> pd.DataFrame:
+    """Cap edges to ``max_edges`` without letting one huge module starve the rest.
+
+    A naive ``edges.nlargest(max_edges, "weight")`` silently drops entire
+    modules: real coexpression weight scales with module size (more genes
+    -> more strong pairs), so on a real hdWGCNA run one module with
+    thousands of strong within-module edges filled the ENTIRE budget and
+    4 of 8 real modules, plus every genuine cross-module bridge,
+    disappeared from the figure -- confirmed directly against the real
+    fibroblast run. The same "global top-K starves smaller groups"
+    failure mode this codebase already fixed once for a different figure
+    (``curvature_network``'s ``_guarantee_node_seats``).
+
+    Every module with at least one edge keeps its own top
+    ``max_edges // (3 * n_modules)`` SAME-module edges first (so no module
+    can vanish entirely), and cross-module edges get their OWN reserved
+    quarter of the budget, ranked by weight WITHIN that reservation --
+    not mixed into one global ranking against same-module edges. A real
+    cross-module bridge is structurally always weaker than a big module's
+    own internal edges (a bridge connects two neighborhoods; a core edge
+    reinforces one), so "whatever's left over by raw weight" always loses
+    to same-module edges and every bridge vanishes -- confirmed directly:
+    fixing only the per-module floor above left every real cross-module
+    edge (e.g. M1-M7) out of a real fibroblast render. Remaining budget
+    after both reservations goes to the globally strongest leftover
+    edges of either kind.
+    """
+    mod1 = edges["gene1"].astype(str).map(module_of)
+    mod2 = edges["gene2"].astype(str).map(module_of)
+    same_module = mod1 == mod2
+    modules = sorted(set(mod1) | set(mod2))
+    n_modules = max(len(modules), 1)
+    per_module_floor = max(1, max_edges // (3 * n_modules))
+    cross_module_budget = max(1, max_edges // 4)
+
+    guaranteed_parts = []
+    for module_id in modules:
+        in_module = same_module & (mod1 == module_id)
+        guaranteed_parts.append(edges[in_module].nlargest(per_module_floor, "weight"))
+    cross = edges[~same_module].nlargest(cross_module_budget, "weight")
+    guaranteed_parts.append(cross)
+    guaranteed = (
+        pd.concat(guaranteed_parts).drop_duplicates() if guaranteed_parts else edges.iloc[0:0]
+    )
+
+    remaining_budget = max_edges - len(guaranteed)
+    if remaining_budget <= 0:
+        return guaranteed.nlargest(max_edges, "weight")
+    leftover = edges.drop(guaranteed.index, errors="ignore")
+    filler = leftover.nlargest(remaining_budget, "weight")
+    return pd.concat([guaranteed, filler])
+
+
 def plot_community_network(
     edge_df: pd.DataFrame,
     modules_df: pd.DataFrame,
@@ -231,7 +284,7 @@ def plot_community_network(
     ].copy()
     if edges.empty:
         return _empty_fig("no edges between real-module genes")
-    edges = edges.nlargest(max_edges, "weight")
+    edges = _select_edges(edges, module_of, max_edges)
 
     G = nx.Graph()
     for _, r in edges.iterrows():
