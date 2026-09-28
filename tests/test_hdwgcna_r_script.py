@@ -34,6 +34,20 @@ def test_script_reads_and_writes_expected_files() -> None:
     assert "module_umap.csv" in text
 
 
+def test_script_exports_real_tom_edges_for_the_community_network_figure() -> None:
+    """modules.csv alone carries only per-gene module labels + kME, no
+    gene-gene edges -- a community-network figure built from it can only
+    fake within-module cliques. GetTOM() gives the real topological
+    overlap matrix; edges are thresholded to a configurable top quantile
+    (default 0.993, matching the published reference this feature
+    targets) rather than writing the full ~4.5M-entry upper triangle."""
+    text = HDWGCNA_R.read_text()
+    assert "GetTOM" in text
+    assert "tom_edges.csv" in text
+    assert "edge_quantile" in text
+    assert "quantile" in text.lower()
+
+
 def test_script_renders_hdwgcnas_own_dendrogram_and_module_networks() -> None:
     """ConstructNetwork() already computes the gene dendrogram, and
 

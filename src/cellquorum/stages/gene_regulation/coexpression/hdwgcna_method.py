@@ -15,13 +15,17 @@ from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.gene_regulation._shared import resolve_group_by
+from cellquorum.stages.gene_regulation.coexpression.community_network import (
+    diagnostic_odds_ratio,
+    plot_community_network,
+)
 from cellquorum.stages.gene_regulation.coexpression.module_curvature import (
     plot_module_curvature,
 )
 from cellquorum.stages.gene_regulation.coexpression.module_umap_plot import (
     plot_module_umap,
 )
-from cellquorum.visualization.figstyle import render_figure
+from cellquorum.visualization.figstyle import render_figure, save_figure
 
 
 class HdwgcnaMethod(AnalysisMethod):
@@ -80,9 +84,13 @@ class HdwgcnaMethod(AnalysisMethod):
         timeout_seconds = int(config.get("timeout_seconds", 3600))
         curvature_top_k_per_module = int(config.get("curvature_top_k_per_module", 15))
         curvature_ricci_alpha = float(config.get("curvature_ricci_alpha", 0.5))
+        edge_quantile = float(config.get("edge_quantile", 0.993))
+        community_network_max_edges = int(config.get("community_network_max_edges", 1500))
+        community_network_group_col = config.get("community_network_group_col")
 
         # 2. Resolve group_by: config OR first-present of (cell_type, leiden) OR "cell_type"
         group_by = resolve_group_by(adata, group_by_cfg, default="cell_type")
+        community_network_group_col = community_network_group_col or group_by
 
         # 3. Eligibility guards (each → MethodSkip)
         # a. Check minimum cell count
@@ -156,6 +164,7 @@ class HdwgcnaMethod(AnalysisMethod):
             "NA" if soft_power is None else str(soft_power),
             str(seed),
             str(figures_dir),
+            str(edge_quantile),
         ]
 
         # 7. Run the hdWGCNA R script
@@ -213,6 +222,55 @@ class HdwgcnaMethod(AnalysisMethod):
             warnings=warnings,
         )
 
+        # 9b. Community network: needs real TOM edges (tom_edges.csv), not
+        # just module labels -- modules.csv alone can only fake within-
+        # module cliques (module_curvature.py's proxy graph above). Marker
+        # scores (diagnostic_odds_ratio) are computed only over the genes
+        # actually drawn, not the full transcriptome.
+        tom_edges_csv = out_dir / "tom_edges.csv"
+        if tom_edges_csv.exists():
+            try:
+                tom_edges_df = pd.read_csv(tom_edges_csv)
+            except Exception as exc:
+                tom_edges_df = None
+                warnings.append(
+                    f"community network skipped: could not read tom_edges.csv ({str(exc)[:150]})"
+                )
+            if tom_edges_df is not None and not tom_edges_df.empty:
+                network_genes = set(tom_edges_df["gene1"]) | set(tom_edges_df["gene2"])
+                present_genes = sorted(network_genes & set(adata.var_names))
+                marker_log_dor = None
+                if community_network_group_col in adata.obs.columns and present_genes:
+                    try:
+                        marker_log_dor = diagnostic_odds_ratio(
+                            adata,
+                            group_col=community_network_group_col,
+                            layer=layer,
+                            genes=present_genes,
+                        )
+                    except Exception as exc:
+                        warnings.append(
+                            f"community network marker scores skipped: {str(exc)[:150]}"
+                        )
+
+                def _community_network_fig(
+                    edges: pd.DataFrame = tom_edges_df,
+                    markers: pd.DataFrame | None = marker_log_dor,
+                ) -> list[Path]:
+                    fig = plot_community_network(
+                        edges,
+                        modules_df,
+                        markers,
+                        max_edges=community_network_max_edges,
+                        seed=seed,
+                        title="Coexpression community network",
+                    )
+                    return save_figure(fig, figures_dir, "coexpression_community_network")
+
+                render_figure(
+                    "community network", _community_network_fig, figures=figs, warnings=warnings
+                )
+
         # 10. Build artifacts list (only for files that exist)
         artifacts = []
 
@@ -235,6 +293,16 @@ class HdwgcnaMethod(AnalysisMethod):
                     path=eigengenes_csv,
                     kind="csv",
                     description="Module eigengene expression values",
+                )
+            )
+
+        if tom_edges_csv.exists():
+            artifacts.append(
+                StageArtifact(
+                    name="tom_edges",
+                    path=tom_edges_csv,
+                    kind="csv",
+                    description="Real TOM-thresholded coexpression edges (community network input)",
                 )
             )
 

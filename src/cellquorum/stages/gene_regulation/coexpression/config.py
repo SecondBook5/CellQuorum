@@ -31,6 +31,16 @@ class CoexpressionConfig(StrictBaseModel):
         curvature_top_k_per_module: Hub genes kept per module (by kME) for
             the curvature network figure.
         curvature_ricci_alpha: Ollivier-Ricci alpha for the curvature figure.
+        edge_quantile: Quantile of the topological overlap matrix (TOM) kept
+            as real coexpression edges (tom_edges.csv), for the community
+            network figure. 0.993 matches the published reference this
+            feature targets (Adams et al. Sci Adv 2020).
+        community_network_max_edges: Cap on edges actually drawn in the
+            community network figure (tom_edges.csv can still be large at
+            the default quantile on a real HVG count).
+        community_network_group_col: obs column defining cell-type/group
+            identity for the per-community relevance-score bar charts.
+            Falls back to group_by when unset.
     """
 
     # Whether this stage runs.
@@ -88,6 +98,16 @@ class CoexpressionConfig(StrictBaseModel):
 
     # Ollivier-Ricci alpha for the module curvature figure.
     curvature_ricci_alpha: float = 0.5
+
+    # Quantile of the TOM kept as real coexpression edges (tom_edges.csv).
+    edge_quantile: float = 0.993
+
+    # Cap on edges actually drawn in the community network figure.
+    community_network_max_edges: int = 1500
+
+    # obs column for the per-community relevance-score bar charts. None
+    # falls back to group_by.
+    community_network_group_col: str | None = None
 
 
 __all__ = ["CoexpressionConfig"]
