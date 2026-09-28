@@ -111,6 +111,38 @@ def build_regulon_graph(
     return G
 
 
+def compute_regulon_curvature_tables(
+    regulons: pd.DataFrame,
+    *,
+    tf_col: str = "TF",
+    target_genes_col: str = "TargetGenes",
+    top_k_targets: int = 15,
+    ricci_alpha: float = 0.5,
+) -> tuple[nx.DiGraph, pd.DataFrame, pd.DataFrame]:
+    """Build the regulon graph and its Ollivier-Ricci curvature once.
+
+    The single source of truth for both the force-directed curvature
+    hairball (``plot_regulon_curvature``) and the radial-layout curvature
+    figure (``radial_figures.radial_regulon_curvature``) -- Ricci curvature
+    is the expensive part, so a caller rendering both figures should call
+    this once and pass the results to each, not recompute per figure.
+
+    Returns:
+        ``(G, edge_df, node_df)`` -- the directed TF->target graph (needed
+        by the radial figure to re-derive real edge orientation, since
+        ``compute_ricci_curvature`` runs on an undirected copy) plus its
+        edge- and node-level curvature tables. Empty graph/frames when the
+        regulon table has no parseable edges.
+    """
+    G = build_regulon_graph(
+        regulons, tf_col=tf_col, target_genes_col=target_genes_col, top_k_targets=top_k_targets
+    )
+    if G.number_of_edges() == 0:
+        return G, pd.DataFrame(), pd.DataFrame()
+    edge_df, node_df = compute_ricci_curvature(G, ricci_alpha)
+    return G, edge_df, node_df
+
+
 def plot_regulon_curvature(
     regulons: pd.DataFrame,
     out_dir: str | Path,
@@ -142,14 +174,37 @@ def plot_regulon_curvature(
         List of written figure paths (PNG+PDF), or [] when the regulon graph
         has no edges.
     """
-    G = build_regulon_graph(
-        regulons, tf_col=tf_col, target_genes_col=target_genes_col, top_k_targets=top_k_targets
+    _G, edge_df, node_df = compute_regulon_curvature_tables(
+        regulons,
+        tf_col=tf_col,
+        target_genes_col=target_genes_col,
+        top_k_targets=top_k_targets,
+        ricci_alpha=ricci_alpha,
     )
-    if G.number_of_edges() == 0:
-        return []
+    return plot_regulon_curvature_from_tables(_G, edge_df, node_df, out_dir, plot_top_k=plot_top_k)
 
-    edge_df, node_df = compute_ricci_curvature(G, ricci_alpha)
-    if edge_df.empty:
+
+def plot_regulon_curvature_from_tables(
+    G: nx.DiGraph,
+    edge_df: pd.DataFrame,
+    node_df: pd.DataFrame,
+    out_dir: str | Path,
+    *,
+    plot_top_k: int = 30,
+) -> list[Path]:
+    """Render the force-directed curvature hairball from already-computed tables.
+
+    Split out of :func:`plot_regulon_curvature` so a caller rendering BOTH
+    this figure and the radial-layout curvature figure
+    (``radial_figures.radial_regulon_curvature``) can call
+    :func:`compute_regulon_curvature_tables` once and pass the same tables
+    to each, instead of paying for Ollivier-Ricci twice.
+
+    Returns:
+        List of written figure paths (PNG+PDF), or [] when ``edge_df`` is
+        empty.
+    """
+    if edge_df is None or edge_df.empty:
         return []
 
     # curvature_network's own top_k relies on _guarantee_node_seats, whose
@@ -172,4 +227,10 @@ def plot_regulon_curvature(
     return figstyle.save_figure(fig, out_dir, "regulon_curvature_network")
 
 
-__all__ = ["build_regulon_graph", "load_regulons_csv", "plot_regulon_curvature"]
+__all__ = [
+    "build_regulon_graph",
+    "compute_regulon_curvature_tables",
+    "load_regulons_csv",
+    "plot_regulon_curvature",
+    "plot_regulon_curvature_from_tables",
+]

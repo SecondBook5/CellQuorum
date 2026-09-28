@@ -43,6 +43,23 @@ class GrnConfig(StrictBaseModel):
         cluster_labels: optional cluster id -> display name map for the
             RSS/clustermap/cell-clustermap figures, display only (the
             underlying group_by column is never renamed in place).
+        curvature_radial_n_tf: Top TFs shown in the radial curvature figure.
+        curvature_radial_per_tf: Targets kept per TF in the radial curvature
+            figure.
+        curvature_radial_n_sectors: Sectors in the radial curvature figure.
+        radial_enabled: Whether the radial DoRothEA/CollecTRI GRN figure
+            renders (independent of pyscenic's cisTarget requirement).
+        radial_collection: decoupler net collection for the radial figure's
+            TF activity.
+        radial_de_results_filename: DE results CSV read for the radial
+            figure (relative to results/).
+        radial_min_size: Minimum overlapping targets to score a TF (ULM
+            tmin) in the radial figure.
+        radial_n_tf: Top TFs shown in the radial figure.
+        radial_per_tf: Targets kept per TF in the radial figure.
+        radial_n_sectors: Sectors in the radial figure.
+        radial_case_color: Override for the radial figure's case color.
+        radial_control_color: Override for the radial figure's control color.
     """
 
     # Whether this stage runs.
@@ -108,8 +125,57 @@ class GrnConfig(StrictBaseModel):
     # can have thousands; this keeps the plot legible).
     curvature_plot_top_k: int = 30
 
+    # Number of top TFs (by |mean node curvature|) shown as inner-ring
+    # regulators in the radial curvature figure. Separate from
+    # curvature_plot_top_k (a global edge cap for the force-directed
+    # hairball) because the radial layout selects TF-first, per_tf-capped.
+    curvature_radial_n_tf: int = 12
+
+    # Targets kept per TF (by curvature-sorted weight) in the radial
+    # curvature figure.
+    curvature_radial_per_tf: int = 6
+
+    # Sectors the radial curvature figure's TFs are grouped into.
+    curvature_radial_n_sectors: int = 4
+
     # Optional cluster id -> display name map for RSS/clustermap figures.
     cluster_labels: dict[str, str] = {}
+
+    # --- Radial DoRothEA/CollecTRI GRN figure ("the cool circle plot") ---
+    # A different, complementary figure from the pySCENIC ones above: TF
+    # activity from decoupler ULM on the LE-vs-Normal DE CONTRAST (not
+    # per-cell AUCell), against a curated prior net (not the data-driven
+    # pySCENIC regulon graph). Skips cleanly (warning, not error) when the
+    # DE stage's CSV or the prior net is unavailable.
+
+    # Whether the radial figure renders (independent of pyscenic's own
+    # cisTarget-DB requirement -- this path never touches cisTarget).
+    radial_enabled: bool = True
+
+    # decoupler net collection ("dorothea", "collectri", ...).
+    radial_collection: str = "dorothea"
+
+    # DE results CSV to read (relative to results/), matching the
+    # enrichment stage's own de_results_filename convention.
+    radial_de_results_filename: str = "de_pseudobulk_edger.csv"
+
+    # Minimum overlapping targets required to score a TF (decoupler tmin).
+    radial_min_size: int = 5
+
+    # Top TFs shown as inner-ring regulators.
+    radial_n_tf: int = 12
+
+    # Targets kept per TF, ranked by |logFC| with a significance bonus.
+    radial_per_tf: int = 6
+
+    # Sectors TFs are grouped into (by shared-target Jaccard clustering).
+    radial_n_sectors: int = 4
+
+    # Node/edge colors for "up in case" / "up in control" (None -> the
+    # house defaults, figstyle.LE_RED / figstyle.NORMAL_BLUE, same
+    # fallback convention as de_viz's case_color/control_color).
+    radial_case_color: str | None = None
+    radial_control_color: str | None = None
 
 
 __all__ = ["GrnConfig"]

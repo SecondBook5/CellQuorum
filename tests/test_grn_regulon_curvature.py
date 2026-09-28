@@ -8,8 +8,10 @@ import pandas as pd
 
 from cellquorum.stages.gene_regulation.grn.regulon_curvature import (
     build_regulon_graph,
+    compute_regulon_curvature_tables,
     load_regulons_csv,
     plot_regulon_curvature,
+    plot_regulon_curvature_from_tables,
 )
 
 _REAL_SHAPE_CSV = (
@@ -135,6 +137,54 @@ def test_returns_empty_graph_for_empty_input():
     )
 
     assert G.number_of_nodes() == 0
+
+
+def test_compute_regulon_curvature_tables_returns_graph_and_both_curvature_frames():
+    """Both the existing force-directed figure and the new radial-curvature
+    figure need the SAME expensive Ricci computation -- this is the single
+    source of truth both callers should share instead of recomputing."""
+    G, edge_df, node_df = compute_regulon_curvature_tables(_regulons_df(), top_k_targets=10)
+
+    assert G.number_of_edges() > 0
+    assert not edge_df.empty
+    assert not node_df.empty
+    assert {"source", "target", "ricci_curvature", "weight"}.issubset(edge_df.columns)
+
+
+def test_compute_regulon_curvature_tables_empty_input_returns_empty_graph_and_frames():
+    G, edge_df, node_df = compute_regulon_curvature_tables(
+        pd.DataFrame(columns=["TF", "MotifID", "TargetGenes"]), top_k_targets=10
+    )
+
+    assert G.number_of_edges() == 0
+    assert edge_df.empty
+    assert node_df.empty
+
+
+def test_plot_regulon_curvature_from_tables_renders_without_recomputing(
+    tmp_path: Path,
+) -> None:
+    """A caller (pyscenic_method) computes curvature tables ONCE, then hands
+    them to both the hairball renderer and the radial one -- this is the
+    hairball half of that contract, taking already-computed tables instead
+    of a raw regulons DataFrame."""
+    G, edge_df, node_df = compute_regulon_curvature_tables(_regulons_df(), top_k_targets=10)
+
+    figs = plot_regulon_curvature_from_tables(G, edge_df, node_df, tmp_path, plot_top_k=30)
+
+    assert len(figs) > 0
+    assert all(p.exists() for p in figs)
+
+
+def test_plot_regulon_curvature_from_tables_empty_edges_writes_nothing(tmp_path: Path) -> None:
+    import networkx as nx
+
+    figs = plot_regulon_curvature_from_tables(
+        nx.DiGraph(), pd.DataFrame(), pd.DataFrame(), tmp_path
+    )
+
+    assert figs == []
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_plot_regulon_curvature_writes_no_figure_when_graph_is_empty(tmp_path: Path) -> None:

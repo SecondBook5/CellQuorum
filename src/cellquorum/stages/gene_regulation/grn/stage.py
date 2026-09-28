@@ -16,6 +16,20 @@ class GrnStage(MethodDispatchStage):
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "pyscenic")
 
+    def _augment_config(self, context: object, stage_config: dict) -> dict:
+        augmented = dict(stage_config)
+        # Bridge the design block so the radial GRN figure can label
+        # "up in <case>" / "up in <control>" generically instead of a
+        # hardcoded study-specific condition name (same pattern as de_viz).
+        config = getattr(context, "config", None)
+        design = getattr(config, "design", None)
+        if design is not None:
+            if not augmented.get("case"):
+                augmented["case"] = getattr(design, "case", None)
+            if not augmented.get("control"):
+                augmented["control"] = getattr(design, "control", None)
+        return augmented
+
     def _validate_output(self, result: StageResult) -> None:
         """No structural postcondition; the stage writes tables + figures."""
 
