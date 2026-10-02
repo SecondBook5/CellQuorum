@@ -2,8 +2,8 @@
 
 Thanks for looking at the code. This file covers the mechanics: how to get a working
 environment, what CI enforces, and the conventions the codebase follows. For *what*
-the engine does and how a run flows, read [`docs/how-it-works.md`](docs/how-it-works.md)
-and [`docs/architecture.md`](docs/architecture.md) first.
+the engine does and how a run flows, read [`docs/reference/how-it-works.md`](docs/reference/how-it-works.md)
+and [`docs/reference/architecture.md`](docs/reference/architecture.md) first.
 
 ## Table of contents
 
@@ -43,7 +43,7 @@ resulting churn is reviewable on its own.
 Heavyweight backends (RAPIDS, pySCENIC, scCODA, CellOracle, hdWGCNA, R/Bioconductor)
 have mutually incompatible dependency graphs and therefore live in separate conda
 environments under [`envs/`](envs/). You do **not** need them to develop the engine:
-tests that require them skip themselves. See [`docs/backends.md`](docs/backends.md).
+tests that require them skip themselves. See [`docs/guide/backends.md`](docs/guide/backends.md).
 
 ## The test tiers
 
@@ -226,7 +226,7 @@ is the main thing standing between a wet-lab user and a successful run. Before
 adding a field, ask whether the engine can infer it.
 
 If it must exist: give it a **safe default** so existing configs keep working,
-document it in `docs/configuration.md`, and add a validator that fails at load time
+document it in `docs/guide/configuration.md`, and add a validator that fails at load time
 rather than mid-run. Config errors should be impossible to discover late.
 
 ## Figures

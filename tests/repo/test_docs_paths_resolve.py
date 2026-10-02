@@ -4,7 +4,7 @@ The docs are the only findability aid a collaborator has before they know the tr
 and a code pointer that no longer resolves is worse than no pointer: it sends the
 reader looking for a file that was renamed, merged or moved, and there is nothing in
 the doc to say which. The #167 consolidation moved several packages, and
-``docs/backends.md`` was left naming ``cellquorum/backends/r_scripts/soupx_per_library.R``
+``docs/guide/backends.md`` was left naming ``cellquorum/backends/r_scripts/soupx_per_library.R``
 with the ``src/`` prefix dropped — a one-word error, invisible to review, fatal to
 someone trying to read the SoupX adapter.
 
@@ -131,7 +131,7 @@ def test_the_check_catches_a_renamed_file():
     )
     broken = broken_citations(text)
 
-    # Line 1 resolves; line 2 does not exist at any depth. Line 3 is the docs/backends.md
+    # Line 1 resolves; line 2 does not exist at any depth. Line 3 is the docs/guide/backends.md
     # error verbatim — and it must NOT be reported, because suffix matching accepts a
     # path fragment: the file really is at src/cellquorum/backends/r_scripts/.
     assert broken == ["line 2: stages/qc/renamed_away.py"]

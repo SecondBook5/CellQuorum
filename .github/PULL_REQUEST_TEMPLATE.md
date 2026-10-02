@@ -41,7 +41,7 @@ make lint && make typecheck && make test-fast
 - [ ] **No mypy backlog growth.** I did not add a module to the
       `[[tool.mypy.overrides]]` `ignore_errors` list to make this pass.
 - [ ] **Config additions justified.** A new config field has a safe default, a
-      load-time validator, and an entry in `docs/configuration.md` — and the engine
+      load-time validator, and an entry in `docs/guide/configuration.md` — and the engine
       genuinely cannot infer it.
 
 ## Provenance / output impact

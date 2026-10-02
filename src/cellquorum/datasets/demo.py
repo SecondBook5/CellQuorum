@@ -26,7 +26,7 @@ CONFIG_HEADER = """\
 #   input.h5ad      path to your .h5ad file (raw counts in a layer named `counts`)
 #   cohort / design the obs columns that hold sample, donor and condition, and which
 #                   condition is the case and which the control
-#   stages          switch on the analyses you want (see docs/configuration.md)
+#   stages          switch on the analyses you want (see docs/guide/configuration.md)
 #
 """
 

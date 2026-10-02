@@ -5,8 +5,8 @@ contact_links:
   - name: Usage question — how do I configure X?
     url: https://github.com/SecondBook5/cellquorum/discussions
     about: >
-      For "how do I do X" questions, start a Discussion. Check docs/tutorial.md and
-      docs/configuration.md first — the config reference is section-by-section.
+      For "how do I do X" questions, start a Discussion. Check docs/guide/tutorial.md and
+      docs/guide/configuration.md first — the config reference is section-by-section.
   - name: Security vulnerability
     url: https://github.com/SecondBook5/cellquorum/security/advisories/new
     about: Report privately, not as a public issue. See SECURITY.md for the threat model.

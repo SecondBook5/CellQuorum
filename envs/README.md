@@ -205,7 +205,7 @@ access to the conda channels.
 
 The CPU image contains the core and R environments; the GPU target adds the GPU
 environment. Other backends require their separate build targets, and those
-targets still have unresolved build issues. See `docs/docker.md` for the actual
+targets still have unresolved build issues. See `docs/guide/docker.md` for the actual
 target contents and validation limits.
 
 ## Optional SampleQC backend

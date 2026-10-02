@@ -1,4 +1,4 @@
-"""docs/how-it-works.md walks a run through REAL files — pin the spine to disk.
+"""docs/reference/how-it-works.md walks a run through REAL files — pin the spine to disk.
 
 Every file on the run-trace spine must (a) exist and (b) be cited in the doc,
 so the walkthrough can never point a newcomer at a path that moved or vanished.
@@ -7,7 +7,7 @@ so the walkthrough can never point a newcomer at a path that moved or vanished.
 from repo_paths import REPO_ROOT
 
 REPO = REPO_ROOT
-DOC = REPO / "docs" / "how-it-works.md"
+DOC = REPO / "docs" / "reference" / "how-it-works.md"
 
 SPINE = [
     "src/cellquorum/cli/app.py",

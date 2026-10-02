@@ -431,7 +431,7 @@ verify_declared_debris(audit, prior_run_mask)    # raises if the mask is from an
 
 Acting on the finding is `input.exclude` in the config (or `exclude_on`/`exclude_values`
 in a hypothesis manifest) — see
-[Configuration](configuration.md#the-input-section). It drops the audited cluster at
+[Configuration](../guide/configuration.md#the-input-section). It drops the audited cluster at
 load time rather than deleting cells from the shared object, which keeps the atlas one
 file for every analysis that reads it and keeps the removal in the run's own provenance
 (`n_excluded`) instead of in a build script's history. The exclusion is deliberately not

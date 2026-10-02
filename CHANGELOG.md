@@ -100,7 +100,7 @@ public API and the configuration schema.
   Importing `cellquorum.utils` pulls in no heavy optional dependency (`get_net`
   lazy-imports `decoupler` only when called), preserving the skip-not-crash
   invariant. The surface is frozen by `test_public_api_contract` and
-  `test_public_utils_surface`, and documented in `docs/api.md`.
+  `test_public_utils_surface`, and documented in `docs/reference/api.md`.
 - **Tensor-cell2cell decomposition cost guardrail (#140).** The non-negative
   CP factorization cost scales with ``runs x prod(tensor.shape)``, and the
   sender/receiver axes are the cell-type group count — so a fine-grained
@@ -267,7 +267,7 @@ Recent engineering and reproducibility hardening:
   `cq.utils` stay canonical. New legibility docs land alongside: per-stage
   `# Pipeline step (order=…)` module headers, a catalog-pinned ordered stage map
   (`src/cellquorum/stages/README.md`), a file-level run walkthrough
-  (`docs/how-it-works.md`), and a README START-HERE section. **Breaking**
+  (`docs/reference/how-it-works.md`), and a README START-HERE section. **Breaking**
   (permitted pre-1.0): code importing a retired deep path must move to the
   canonical one — `cellquorum.stages.<stage>` for stages, `cellquorum.utils` for
   the reusable helpers, `cellquorum.api.<ns>` for the notebook namespaces (or the
@@ -361,7 +361,7 @@ Recent engineering and reproducibility hardening:
   (`pytorch-cuda`, the `nvidia` channel) with no osx/win build, so the solve
   aborted before any lock file was written. The target now pins `-p linux-64` —
   the image's only build platform and the only one we ship — matching the docs
-  in `envs/README.md` and `docs/backends.md`.
+  in `envs/README.md` and `docs/guide/backends.md`.
 
 - **scCODA counted every credible effect twice.** The fitting helper returns two fits
   stacked in one table whenever a reference is resolved — one at the engine's reference,
@@ -418,7 +418,7 @@ Correctness defects that could silently produce wrong output (#168):
 - **Reserved R preference fields documented (#183).** `r.preferred_backend` and
   `r.fallback_to_rscript` express an rpy2-vs-Rscript preference that is not yet
   wired — every R-backed method dispatches through the Rscript backend. The
-  `RConfig` docstrings and `docs/configuration.md` now state plainly that these
+  `RConfig` docstrings and `docs/guide/configuration.md` now state plainly that these
   fields are reserved and currently no-ops, rather than silently ignoring them.
   Wiring rpy2 dual-dispatch is tracked as future work.
 - **Hypothesis bundling survived neither a failed pair nor the #187 move (#161).**

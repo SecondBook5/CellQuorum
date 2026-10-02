@@ -7,34 +7,53 @@ Python, R/Bioconductor, and GPU backends, and records machine-readable provenanc
 for every step.
 
 Start with the [README](https://github.com/SecondBook5/cellquorum#readme) for an
-overview and installation, then work through the [Tutorial](tutorial.md) for a
+overview and installation, then work through the [Tutorial](guide/tutorial.md) for a
 hands-on first run. The guides below go deeper.
 
-## Guides
+## Get started
+
+- **[Tutorial](guide/tutorial.md)**: a hands-on first run, from a raw `.h5ad` to a
+  provenance-tracked run. Point the config at your data, preview the plan, run it, and read every
+  output.
+- To see it work without any data of your own, run `cellquorum demo my_demo` (see the
+  [README](https://github.com/SecondBook5/cellquorum#see-it-work-in-two-minutes)).
+
+## User guide
 
 | Guide | Contents |
 |---|---|
-| [Tutorial](tutorial.md) | A hands-on first run — from a raw `.h5ad` to a provenance-tracked run: point the config at your data, preview the plan, run it, and read every output. |
-| [Architecture](architecture.md) | The execution model — validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance; the 10-package layout, with the 12 pipeline-step packages grouped under `stages/`. |
-| [Configuration](configuration.md) | The full configuration reference — top-level sections, per-stage blocks, stage enable flags, and how a method is selected per stage. |
-| [Backends & environments](backends.md) | The primary and isolated environments, runtime backend detection, and the R/Rscript bridge. |
-| [Python API](api.md) | The `run_pipeline` entry point and the `tl` / `pp` / `diag` / `evidence` notebook namespaces, generated from the source docstrings. |
-| [Docker](docker.md) | Building and running the layered container image. |
-| [Snakemake](snakemake.md) | Orchestrating runs with Snakemake. |
-| [Developer smoke tests](dev_smoke.md) | Fast local checks. |
-| [Roadmap](ROADMAP.md) | Current capabilities and the engineering/scientific backlog. |
+| [Configuration](guide/configuration.md) | The full configuration reference: top-level sections, per-stage blocks, stage enable flags, and how a method is selected per stage. |
+| [Backends & environments](guide/backends.md) | The primary and isolated environments, runtime backend detection, and the R/Rscript bridge. |
+| [Docker](guide/docker.md) | Building and running the layered container image. |
+| [Snakemake](guide/snakemake.md) | Orchestrating runs across many hypotheses and cell types with Snakemake. |
+
+## Reference
+
+| Page | Contents |
+|---|---|
+| [Python API](reference/api.md) | The `run_pipeline` entry point and the `tl` / `pp` / `diag` / `evidence` notebook namespaces, generated from the source docstrings. |
+| [Architecture](reference/architecture.md) | The execution model: validation, planning, the registry-driven executor, data contracts, method dispatch, compute routing, and provenance. |
+| [How it works](reference/how-it-works.md) | A file-by-file walkthrough of one run. |
+| [Figure gallery](gallery/index.md) | Every figure CellQuorum draws, from synthetic data, pinned by pixel-exact tests. |
+| [Third-party software](reference/third-party-software.md) | The software CellQuorum calls: licenses and citations. |
+
+## Project
+
+| Page | Contents |
+|---|---|
+| [Roadmap](ROADMAP.md) | Current capabilities and the engineering and scientific backlog. |
 | [Changelog](changelog.md) | Release notes. |
+| [Developer smoke tests](dev_smoke.md) | Fast local checks. |
+| [Deployment requirements](design/deployment-goal.md) and [readiness assessment](design/production-readiness-audit.md) | How the package is validated for real deployments. |
+| [GSE140819 benchmark](benchmarks/gse140819.md) | The real-data benchmark. |
 
 Build this site locally with `make docs-serve` (live reload) or `make docs`
 (strict build, as CI runs it).
 
 ## Key facts
 
-- **32 registered stages**, ~60 config-selectable methods, organized into a
+- **40 registered stages** and more than 70 config-selectable methods, organized into a
   best-practices pipeline (see the workflow diagram in the README).
-- **10 top-level packages** under `src/cellquorum/`, with the 12 pipeline-step
-  packages grouped under `stages/` — one canonical import path per public thing
-  (no compatibility shims).
 - **Two front doors:** the `cellquorum` / `cq` CLI and the `cellquorum.run_pipeline`
   Python API.
 - **Fail-loud contracts:** every stage boundary validates its `AnnData`; a method

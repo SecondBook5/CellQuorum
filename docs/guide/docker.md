@@ -24,7 +24,7 @@ The version is read from `cellquorum.__version__`.
 ### GPU Image
 
 The GPU recipe is undergoing compatibility validation; see the
-[deployment status](design/deployment-goal.md). A successful image build alone does not
+[deployment status](../design/deployment-goal.md). A successful image build alone does not
 prove that GPU kernels or complete analyses run.
 
 Build the GPU-enabled image (includes CUDA-enabled PyTorch and scvi-tools):
@@ -167,7 +167,7 @@ than a crash.
 
 ### Using Snakemake Workflow
 
-Run the multi-hypothesis workflow matrix (see `docs/snakemake.md` for details):
+Run the multi-hypothesis workflow matrix (see `docs/guide/snakemake.md` for details):
 
 ```bash
 make matrix
@@ -187,4 +187,4 @@ docker run --rm \
 
 - All isolated backend environments are pre-installed and available inside the image. CellQuorum will automatically invoke the isolated *Python* backends (pySCENIC, hdWGCNA, scCODA, scclr, CellOracle) via `micromamba run -n <env>` as needed. The `cellquorum-r` environment is the exception: R is reached as a direct `Rscript` subprocess, so set `r.rscript_path` as described in "Running R-backed methods" above.
 - The GPU image requires a host with NVIDIA drivers and `nvidia-docker` runtime configured.
-- See `envs/README.md` for details on the environment architecture and `docs/snakemake.md` for the Snakemake workflow structure.
+- See `envs/README.md` for details on the environment architecture and `docs/guide/snakemake.md` for the Snakemake workflow structure.

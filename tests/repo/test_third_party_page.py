@@ -8,7 +8,7 @@ import tomllib
 from repo_paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-PAGE = (ROOT / "docs" / "third-party-software.md").read_text().lower()
+PAGE = (ROOT / "docs" / "reference" / "third-party-software.md").read_text().lower()
 
 
 def _names(requirements: list[str]) -> list[str]:

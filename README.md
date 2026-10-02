@@ -37,7 +37,7 @@ cellquorum run  --config my_demo/config.yaml -o my_demo/run  # a minute or two o
 ```
 
 Then open `my_demo/run/reports/report.html`. To analyse your own data, copy `my_demo/config.yaml`
-and change the input path and the column names; the [tutorial](docs/tutorial.md) walks through it.
+and change the input path and the column names; the [tutorial](docs/guide/tutorial.md) walks through it.
 
 ## What you get
 
@@ -161,11 +161,11 @@ Optional extras: `.[r]` (rpy2 bridge for R/Bioconductor methods), `.[gpu]`
 (scvi-tools). The heavyweight and GPU stacks ([RAPIDS](https://rapids.ai), [pySCENIC](https://github.com/aertslab/pySCENIC), [scCODA](https://github.com/theislab/scCODA), [CellOracle](https://github.com/morris-lab/CellOracle),
 hdWGCNA) live in dedicated environments — see [Backends & environments](#backends--environments)
 and [`envs/README.md`](envs/README.md). A layered Docker image bakes all of them;
-see [`docs/docker.md`](docs/docker.md).
+see [`docs/guide/docker.md`](docs/guide/docker.md).
 
 ## Getting started
 
-**New here? Work through the [hands-on tutorial](docs/tutorial.md).** It takes you
+**New here? Work through the [hands-on tutorial](docs/guide/tutorial.md).** It takes you
 from a raw `.h5ad` to a finished, provenance-tracked run in five steps:
 
 1. Copy the shipped example — `cp configs/generic_pbmc_example.yaml configs/my_run.yaml`
@@ -247,7 +247,7 @@ differential_abundance:
   method: milo         # or: sccoda | propeller | proportion_ttest
 ```
 
-See [`docs/configuration.md`](docs/configuration.md) for the full section-by-section
+See [`docs/guide/configuration.md`](docs/guide/configuration.md) for the full section-by-section
 reference, `configs/generic_pbmc_example.yaml` for a runnable single-object example
 (point `input.h5ad` at your data), and `configs/config.yaml` for the reference
 configuration.
@@ -257,7 +257,7 @@ configuration.
 Each stage validates its input contract, dispatches to the config-selected method,
 and records the outcome. Stages marked *isolated env* run as subprocesses in a
 dedicated environment; *R* methods run over the Rscript/rpy2 bridge. Method names link to
-their projects; licenses and citations are in [Third-party software](docs/third-party-software.md).
+their projects; licenses and citations are in [Third-party software](docs/reference/third-party-software.md).
 
 | Stage | Methods | Backend |
 |---|---|---|
@@ -317,7 +317,7 @@ the dispatch code, so create them exactly as named):
 R/Bioconductor methods ([edgeR](https://bioconductor.org/packages/edgeR), [Milo](https://github.com/MarioniLab/miloR), [propeller](https://github.com/phipsonlab/speckle), [NicheNet](https://github.com/saeyslab/nichenetr), [MultiNicheNet](https://github.com/saeyslab/multinichenetr), [DIALOGUE](https://github.com/livnatje/DIALOGUE),
 [scDiagnostics](https://github.com/ccb-hms/scDiagnostics)) run over the Rscript/rpy2 bridge through one shared abstraction
 (`cellquorum.methods.r_method.RAnalysisMethod`). See
-[`docs/backends.md`](docs/backends.md) and [`envs/README.md`](envs/README.md) for
+[`docs/guide/backends.md`](docs/guide/backends.md) and [`envs/README.md`](envs/README.md) for
 setup and `make lock` for pinned environments.
 
 ## GPU acceleration
@@ -412,19 +412,19 @@ flowchart LR
     EXEC -.-> PROV
 ```
 
-The source is organized into **10 top-level packages** under `src/cellquorum/`, with
-the 12 pipeline-step packages grouped together under `stages/` — one canonical import
+The source is organized into top-level packages under `src/cellquorum/`, with
+the pipeline-step packages grouped together under `stages/` — one canonical import
 path per public thing, no compatibility shims (frozen by
 `tests/repo/test_old_paths_removed.py`). The engine machinery is `core` (context, planner,
 executor, contracts, provenance), `config`, `methods` (dispatch + shared
-abstractions), and `backends`; `stages` holds the 12 step packages
+abstractions), and `backends`; `stages` holds the 14 step packages
 (`ambient_correction`, `qc`, `preprocessing`, `clustering`, `integration`,
-`annotation`, `comparative`, `state_scoring`, `discovery`, `gene_regulation`,
-`cell_cell_communication`, `trajectory`) in run order; and `io`, `visualization`,
-`api` (the public Python API surface), `cli`, and `utils` round out the public
-surfaces. The `stages/comparative` package groups the four "compare groups" analyses
+`annotation`, `comparative`, `composition`, `metacells`, `state_scoring`, `discovery`,
+`gene_regulation`, `cell_cell_communication`, `trajectory`); and `io`, `stats`, `datasets`,
+`visualization`, `api` (the public Python API surface), `cli`, and `utils` round out the
+public surfaces. The `stages/comparative` package groups the four "compare groups" analyses
 as submodules — `differential_expression`, `differential_abundance`, `enrichment`,
-and `multicellular_programs`. See [`docs/architecture.md`](docs/architecture.md).
+and `multicellular_programs`. See [`docs/reference/architecture.md`](docs/reference/architecture.md).
 
 ## Reading the code
 
@@ -432,11 +432,11 @@ Begin with these files (paths below are under `src/cellquorum/`):
 
 1. **Entry point:** The CLI lives in `cli/app.py` — look for the `main()` function that launches the `cellquorum` / `cq` command. The programmatic API lives in `api/pipeline.py` — `run_pipeline` is the main Python entry point.
 
-2. **Run flow:** Read `docs/how-it-works.md` for a complete file-by-file walkthrough of one run: config validation → backend detection → planning → data loading → stage execution → provenance. It names every file on the control-flow spine.
+2. **Run flow:** Read `docs/reference/how-it-works.md` for a complete file-by-file walkthrough of one run: config validation → backend detection → planning → data loading → stage execution → provenance. It names every file on the control-flow spine.
 
-3. **Configuration:** The `config/models.py` file defines the entire configuration schema as Pydantic models — `CellQuorumConfig` is the top-level contract. See `docs/configuration.md` for a section-by-section reference.
+3. **Configuration:** The `config/models.py` file defines the entire configuration schema as Pydantic models — `CellQuorumConfig` is the top-level contract. See `docs/guide/configuration.md` for a section-by-section reference.
 
-4. **Architecture:** `docs/architecture.md` explains the design principles, the execution model, and how the pieces fit together.
+4. **Architecture:** `docs/reference/architecture.md` explains the design principles, the execution model, and how the pieces fit together.
 
 **One-line run trace:** `cli/app.py:main` → validate config (`config/models.py`) → build plan (`core/planner.py` reads `core/stage_catalog.py`) → load data (`io/manifest.py`) → execute stages (`core/executor.py` dispatches to `stages/<stage>/stage.py`, writes via `core/stage_artifact_writer.py`) → final context with annotated `adata`.
 
@@ -455,12 +455,12 @@ tests require an Rscript + Bioconductor backend. Markers: `gpu`, `slow`, `r`,
 ## Documentation
 
 - [`docs/index.md`](docs/index.md) — documentation home
-- [`docs/tutorial.md`](docs/tutorial.md) — hands-on first run, from a raw `.h5ad` to results
-- [`docs/architecture.md`](docs/architecture.md) — engine design and execution model
-- [`docs/configuration.md`](docs/configuration.md) — configuration reference
-- [`docs/backends.md`](docs/backends.md) — backends and environments
-- [`docs/third-party-software.md`](docs/third-party-software.md) — the software CellQuorum calls: licenses and citations
-- [`docs/docker.md`](docs/docker.md) · [`docs/snakemake.md`](docs/snakemake.md) — containerized and orchestrated runs
+- [`docs/guide/tutorial.md`](docs/guide/tutorial.md) — hands-on first run, from a raw `.h5ad` to results
+- [`docs/reference/architecture.md`](docs/reference/architecture.md) — engine design and execution model
+- [`docs/guide/configuration.md`](docs/guide/configuration.md) — configuration reference
+- [`docs/guide/backends.md`](docs/guide/backends.md) — backends and environments
+- [`docs/reference/third-party-software.md`](docs/reference/third-party-software.md) — the software CellQuorum calls: licenses and citations
+- [`docs/guide/docker.md`](docs/guide/docker.md) · [`docs/guide/snakemake.md`](docs/guide/snakemake.md) — containerized and orchestrated runs
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — roadmap and backlog
 - [`CHANGELOG.md`](CHANGELOG.md)
 
@@ -468,14 +468,14 @@ tests require an Rscript + Bioconductor backend. Markers: `gpu`, `slow`, `r`,
 
 If you use CellQuorum in your research, please cite it (GitHub's "Cite this repository" button reads
 [`CITATION.cff`](CITATION.cff); a BibTeX entry is in
-[Third-party software](docs/third-party-software.md#citing-cellquorum)) **and the methods that
+[Third-party software](docs/reference/third-party-software.md#citing-cellquorum)) **and the methods that
 produced your results**. Every method in the stage table above links to its project, and
-[Third-party software](docs/third-party-software.md) lists a citation for each.
+[Third-party software](docs/reference/third-party-software.md) lists a citation for each.
 
 ## License
 
 CellQuorum is released under the BSD 3-Clause License; see [`LICENSE`](LICENSE). The software it
 calls keeps its own licenses, several of them GPL, and one required dependency (`leidenalg`) is
-GPL-3.0-or-later. [Third-party software](docs/third-party-software.md#licensing-notes) lists each
+GPL-3.0-or-later. [Third-party software](docs/reference/third-party-software.md#licensing-notes) lists each
 license and explains what that means if you redistribute a container or use CellQuorum
 commercially.

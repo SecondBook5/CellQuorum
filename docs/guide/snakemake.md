@@ -161,5 +161,5 @@ bundles/
 
 - **Idempotency**: Re-running the workflow skips completed stages (Snakemake detects existing outputs).
 - **Parallel execution**: Increase `--cores` to run multiple hypotheses in parallel.
-- **Docker integration**: Use `make matrix` to run the workflow inside the Docker image (see `docs/docker.md`).
+- **Docker integration**: Use `make matrix` to run the workflow inside the Docker image (see `docs/guide/docker.md`).
 - **Environment isolation**: The workflow automatically invokes isolated backend environments (pyscenic_env, scclr, etc.) as needed via `micromamba run -n <env>`.

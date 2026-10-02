@@ -7,7 +7,7 @@ before any compute runs. Every top-level section has a default, so a minimal con
 is small — but explicit is better than implicit for a publication analysis.
 
 A config can be supplied as a file path, a Python `dict`, or a `CellQuorumConfig`
-instance (see the [Python API](api.md)).
+instance (see the [Python API](../reference/api.md)).
 
 ## Top-level sections
 
@@ -74,7 +74,7 @@ clustering run and not to the cells, so a stale mask deletes whichever cells
 inherited the number and leaves the real artifact in — while the config reads as
 though the artifact had been handled. Identify the clusters on the object in hand
 with `cellquorum.stats.cluster_artifact_audit` (see
-[`api.md`](api.md#are-all-of-these-clusters-cells)), which reports the criteria each
+[`api.md`](../reference/api.md#are-all-of-these-clusters-cells)), which reports the criteria each
 cluster met rather than only a verdict.
 
 In a hypothesis manifest, the same two rules are `subset_on` / `require_agreement`
@@ -192,7 +192,7 @@ cellquorum plan --config configs/config.yaml
 
 which prints, per stage, whether it is enabled, skipped, or unimplemented, and the
 backend it would use. See [`configs/config.yaml`](https://github.com/SecondBook5/cellquorum/blob/main/configs/config.yaml) for a
-complete worked example and [architecture.md](architecture.md) for how method
+complete worked example and [architecture.md](../reference/architecture.md) for how method
 dispatch and data contracts work.
 
 ## Experimental design

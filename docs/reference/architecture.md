@@ -212,8 +212,8 @@ cannot be misreported as the first.
 
 ## Source layout
 
-The package is organized into **10** top-level packages under `src/cellquorum/`.
-The 12 pipeline-step packages live together under `stages/` (see the *Stage packages*
+The package is organized into **12** top-level packages under `src/cellquorum/`.
+The 14 pipeline-step packages live together under `stages/` (see the *Stage packages*
 table below); everything else is engine machinery or a public surface. There are no
 compatibility-shim packages — the clean break left exactly one canonical import path
 per public thing (frozen by `tests/repo/test_old_paths_removed.py`):
@@ -224,8 +224,10 @@ per public thing (frozen by `tests/repo/test_old_paths_removed.py`):
 | `config` | Pydantic models, loader, validation, cohort/design/markers schemas |
 | `methods` | method dispatch base classes, the method registry, and shared abstractions (incl. `RAnalysisMethod`) |
 | `backends` | backend registry + subprocess adapters (pySCENIC, scCODA, CellOracle, scclr) and bundled R scripts |
-| `stages` | the 12 pipeline-step packages, one subpackage each, in run order (see *Stage packages* below and `stages/README.md`) |
+| `stages` | the 14 pipeline-step packages, one subpackage each, in run order (see *Stage packages* below and `stages/README.md`) |
 | `io` | input/output helpers |
+| `stats` | statistical routines the stages and figures share (donor-level tests, multiple-testing correction, concordance, mediation) |
+| `datasets` | the public benchmark loader (GSE140819) and the `cellquorum demo` data |
 | `visualization` | shared figure styling/plotting (`figstyle`) and QC figure builders (`visualization.qc`) |
 | `api` | the public Python API surface (`run_pipeline` + the `tl`/`pp`/`diag`/`evidence` notebook namespaces) |
 | `cli` | the `cellquorum`/`cq` Typer app and the `gen-configs` workflow commands |
@@ -233,7 +235,7 @@ per public thing (frozen by `tests/repo/test_old_paths_removed.py`):
 
 ### Stage packages
 
-The 12 pipeline-step packages live under `cellquorum.stages.*`, one subpackage per
+The 14 pipeline-step packages live under `cellquorum.stages.*`, one subpackage per
 step, and run in the catalog order described in `stages/README.md`:
 
 | Stage package | Responsibility |
@@ -244,6 +246,8 @@ step, and run in the catalog order described in `stages/README.md`:
 | `clustering` | clustering and recursive subclustering |
 | `integration` | batch integration, embeddings, integration benchmark |
 | `annotation` | annotation, consensus, diagnostics, adjudication, reference mapping, population identity |
+| `composition` | descriptive cell-type composition tables and stacked-bar figures |
+| `metacells` | MetaCell-2 metacell construction and its figures |
 | `state_scoring` | curated cell-state program scoring (scanpy `score_genes` + decoupler AUCell) |
 | `discovery` | de-novo program discovery via consensus NMF (cNMF-style replicate fits + KMeans consensus) |
 | `comparative` | the four "compare groups" analyses as submodules: `differential_expression` (donor-aware pseudobulk DE + viz), `differential_abundance` (compositional/abundance testing), `enrichment` (GSEA/ORA/GSVA/decoupler + viz), `multicellular_programs` (cross-cell-type programs via DIALOGUE) |

@@ -72,3 +72,24 @@ def test_the_quickstart_uses_commands_that_exist() -> None:
 @pytest.mark.parametrize("name", ["CHANGELOG.md", "CITATION.cff", "LICENSE", "CONTRIBUTING.md"])
 def test_the_project_files_a_visitor_expects_are_present(name: str) -> None:
     assert (ROOT / name).is_file()
+
+
+def test_the_package_and_stage_counts_in_the_prose_match_the_source_tree() -> None:
+    """The docs once said 10 packages and 12 stage packages; the tree had 12 and 14."""
+    source = ROOT / "src" / "cellquorum"
+    top = [d for d in source.iterdir() if d.is_dir() and not d.name.startswith("__")]
+    stages = [
+        d for d in (source / "stages").iterdir() if d.is_dir() and not d.name.startswith("__")
+    ]
+    architecture = (ROOT / "docs" / "reference" / "architecture.md").read_text()
+    assert f"**{len(top)}** top-level packages" in architecture, len(top)
+    assert f"The {len(stages)} pipeline-step packages live together" in architecture, len(stages)
+    assert f"`stages` holds the {len(stages)} step packages" in README, len(stages)
+
+
+def test_the_docs_index_states_the_real_stage_count() -> None:
+    from cellquorum.core.stages import all_stage_specs
+
+    implemented = sum(1 for spec in all_stage_specs() if spec.is_implemented)
+    index = (ROOT / "docs" / "index.md").read_text()
+    assert f"**{implemented} registered stages**" in index

@@ -160,9 +160,9 @@ To take this to a real dataset, you typically only touch the config:
 
 - [Configuration](configuration.md) — every top-level section and per-stage
   block, and how a method is selected per stage.
-- [Architecture](architecture.md) — how validation, planning, the executor, and
+- [Architecture](../reference/architecture.md) — how validation, planning, the executor, and
   provenance fit together.
 - [Backends & environments](backends.md) — the R/Rscript bridge, the GPU env,
   and the isolated backend environments.
-- [Python API](api.md) — drive the same pipeline from a notebook with
+- [Python API](../reference/api.md) — drive the same pipeline from a notebook with
   `cellquorum.run_pipeline`.
