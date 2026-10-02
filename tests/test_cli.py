@@ -469,3 +469,52 @@ run:
 
     # Confirm the output directory was not created.
     assert not output_dir.exists()
+
+
+def test_cli_quiets_tensorflow_startup_noise_unless_the_user_chose_a_level() -> None:
+    """umap-learn imports TensorFlow when it is installed, and TensorFlow prints a banner.
+
+    A wet-lab user should not see that in front of every analysis, but an explicit setting
+    in the user's environment must win.
+    """
+    import os
+    import subprocess
+    import sys
+
+    probe = "import os; import cellquorum.cli.app; print(os.environ.get('TF_CPP_MIN_LOG_LEVEL'))"
+    env = {k: v for k, v in os.environ.items() if k != "TF_CPP_MIN_LOG_LEVEL"}
+    unset = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, env=env)
+    assert unset.stdout.strip().splitlines()[-1] == "2", unset.stdout + unset.stderr
+    chosen = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        env={**env, "TF_CPP_MIN_LOG_LEVEL": "0"},
+    )
+    assert chosen.stdout.strip().splitlines()[-1] == "0", chosen.stdout + chosen.stderr
+
+
+def test_importing_tensorflow_after_the_cli_is_silent() -> None:
+    """The outcome, not just the setting: no TensorFlow banner on stderr."""
+    import importlib.util
+    import os
+    import subprocess
+    import sys
+
+    import pytest
+
+    if importlib.util.find_spec("tensorflow") is None:
+        pytest.skip("tensorflow is not installed here, so there is no banner to silence")
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"TF_CPP_MIN_LOG_LEVEL", "TF_ENABLE_ONEDNN_OPTS"}
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", "import cellquorum.cli.app; import tensorflow"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    noisy = [line for line in result.stderr.splitlines() if "oneDNN" in line or "absl" in line]
+    assert not noisy, noisy

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 # Import Annotated for Typer-compatible option metadata without B008 violations,
@@ -16,6 +17,15 @@ from rich.table import Table
 # Import the package version. This is a plain string constant, so it is the one
 # engine import cheap enough to do at module scope.
 from cellquorum.version import __version__
+
+# umap-learn (used by scanpy's neighbour graph) imports TensorFlow whenever it is installed, and
+# TensorFlow prints a multi-line C++ startup banner on first load. That is noise in front of
+# every analysis for someone who never asked for TensorFlow. Set the level before anything can
+# import it, and only if the user has not chosen one. The log level alone does not silence the
+# oneDNN notice (measured), so that is switched off too; it only affects TensorFlow's own
+# numerics, which CellQuorum does not use.
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
 # The engine imports (run_pipeline, the config loader, the planner, the exception
 # base) are deliberately NOT at module scope: each reaches
