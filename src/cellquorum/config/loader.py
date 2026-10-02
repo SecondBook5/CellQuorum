@@ -150,7 +150,32 @@ def validate_config_dict(config: Mapping[str, Any]) -> CellQuorumConfig:
 
     # Convert Pydantic validation errors into a CellQuorum-specific error.
     except ValidationError as error:
-        raise ConfigLoadError(f"Invalid CellQuorum configuration:\n{error}") from error
+        raise ConfigLoadError(_format_validation_error(error)) from error
+
+
+def _format_validation_error(error: ValidationError) -> str:
+    """List each configuration problem on one line: where it is, what is wrong, what was given.
+
+    Pydantic's own text repeats the model name and ends every problem with a link to its
+    documentation, which tells a wet-lab user nothing about their YAML file.
+    """
+    problems = error.errors(include_url=False)
+    lines = []
+    for problem in problems:
+        where = ".".join(str(part) for part in problem["loc"]) or "(top level)"
+        kind = problem["type"]
+        if kind == "extra_forbidden":
+            what = "unknown setting (check the spelling, or remove it)"
+        elif kind == "missing":
+            what = "required setting is missing"
+        else:
+            what = str(problem["msg"]).removeprefix("Value error, ")
+            given = problem.get("input")
+            if isinstance(given, str | int | float | bool) and not isinstance(given, bool | None):
+                what += f" (got {given!r})"
+        lines.append(f"  - {where}: {what}")
+    noun = "problem" if len(problems) == 1 else "problems"
+    return f"Invalid CellQuorum configuration ({len(problems)} {noun}):\n" + "\n".join(lines)
 
 
 def save_resolved_config(config: CellQuorumConfig, output_path: str | Path) -> Path:

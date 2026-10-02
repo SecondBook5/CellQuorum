@@ -367,3 +367,30 @@ def test_save_resolved_config_requires_json_suffix(tmp_path: Path) -> None:
     # Confirm non-JSON suffixes are rejected.
     with pytest.raises(ValueError, match="must use a '.json' suffix"):
         save_resolved_config(config, output_path)
+
+
+def test_config_errors_list_each_problem_without_pydantic_boilerplate() -> None:
+    """A wet-lab user needs the setting, the problem and the value, not a documentation URL."""
+    import pytest
+
+    from cellquorum.config.loader import ConfigLoadError, validate_config_dict
+
+    with pytest.raises(ConfigLoadError) as caught:
+        validate_config_dict(
+            {"stages": {"not_a_real_stage": True}, "run": {"random_seed": -5}},
+        )
+    message = str(caught.value)
+    assert message.startswith("Invalid CellQuorum configuration (2 problems):")
+    assert "stages.not_a_real_stage: unknown setting" in message
+    assert "run.random_seed: " in message and "-5" in message
+    assert "errors.pydantic.dev" not in message
+    assert "validation error for" not in message
+
+
+def test_a_single_config_problem_is_not_pluralised() -> None:
+    import pytest
+
+    from cellquorum.config.loader import ConfigLoadError, validate_config_dict
+
+    with pytest.raises(ConfigLoadError, match=r"\(1 problem\):"):
+        validate_config_dict({"run": {"random_seed": -5}})
