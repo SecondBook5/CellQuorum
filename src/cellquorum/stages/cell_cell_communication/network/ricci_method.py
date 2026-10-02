@@ -25,7 +25,9 @@ _NODE_COLS = ["node", "ricci_curvature"]
 def compute_ricci_curvature(G: nx.DiGraph, alpha: float = 0.5) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Edge + node Ollivier-Ricci curvature.
 
-    Empty frames if graph empty, dep absent, or runtime error.
+    Empty frames only when there is nothing to compute: the graph has no edges, or the
+    GraphRicciCurvature dependency is absent. A failure of the optimal-transport solver is
+    an error, not an empty table, and propagates so the caller can say what went wrong.
     """
     if G.number_of_edges() == 0:
         return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
@@ -34,37 +36,33 @@ def compute_ricci_curvature(G: nx.DiGraph, alpha: float = 0.5) -> tuple[pd.DataF
     except ImportError:
         return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
 
-    try:
-        # proc=1: tiny graphs; avoids fork nondeterminism under a threaded interpreter.
-        orc = OllivierRicci(G.to_undirected(), alpha=alpha, proc=1, verbose="ERROR")
-        orc.compute_ricci_curvature()
+    # proc=1: tiny graphs; avoids fork nondeterminism under a threaded interpreter.
+    orc = OllivierRicci(G.to_undirected(), alpha=alpha, proc=1, verbose="ERROR")
+    orc.compute_ricci_curvature()
 
-        edge_rows = []
-        for u, v, data in orc.G.edges(data=True):
-            w = G[u][v].get("weight", 1.0) if G.has_edge(u, v) else G[v][u].get("weight", 1.0)
-            edge_rows.append(
-                {
-                    "source": u,
-                    "target": v,
-                    "ricci_curvature": data.get("ricciCurvature", 0.0),
-                    "weight": w,
-                }
-            )
-        edge_df = pd.DataFrame(edge_rows, columns=_EDGE_COLS).sort_values(
-            ["source", "target"], kind="mergesort"
+    edge_rows = []
+    for u, v, data in orc.G.edges(data=True):
+        w = G[u][v].get("weight", 1.0) if G.has_edge(u, v) else G[v][u].get("weight", 1.0)
+        edge_rows.append(
+            {
+                "source": u,
+                "target": v,
+                "ricci_curvature": data.get("ricciCurvature", 0.0),
+                "weight": w,
+            }
         )
+    edge_df = pd.DataFrame(edge_rows, columns=_EDGE_COLS).sort_values(
+        ["source", "target"], kind="mergesort"
+    )
 
-        node_curv = {}
-        for n in sorted(G.nodes()):
-            inc = edge_df[(edge_df["source"] == n) | (edge_df["target"] == n)]
-            node_curv[n] = float(inc["ricci_curvature"].mean()) if len(inc) else 0.0
-        node_df = pd.DataFrame(
-            {"node": list(node_curv.keys()), "ricci_curvature": list(node_curv.values())}
-        )
-        return edge_df, node_df
-    except Exception:
-        # OT solver / numerical failure -> skip-not-crash.
-        return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
+    node_curv = {}
+    for n in sorted(G.nodes()):
+        inc = edge_df[(edge_df["source"] == n) | (edge_df["target"] == n)]
+        node_curv[n] = float(inc["ricci_curvature"].mean()) if len(inc) else 0.0
+    node_df = pd.DataFrame(
+        {"node": list(node_curv.keys()), "ricci_curvature": list(node_curv.values())}
+    )
+    return edge_df, node_df
 
 
 def compute_differential_curvature(
@@ -153,7 +151,15 @@ class RicciMethod(AnalysisMethod):
             G = self._build(canon, level, gci_max_edges, min_edges, warnings, sparsify_k)
             if G is None:
                 continue
-            edge_df, node_df = compute_ricci_curvature(G, alpha)
+            try:
+                edge_df, node_df = compute_ricci_curvature(G, alpha)
+            except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+                warnings.append(
+                    f"Ollivier-Ricci curvature on the {level.upper()} graph failed "
+                    f"({type(exc).__name__}: {exc}); no {level.upper()} curvature tables or "
+                    "differential curvature were written."
+                )
+                continue
             store_curv[level] = {"edges": edge_df, "nodes": node_df}
             artifacts += self._write(
                 writer,

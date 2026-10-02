@@ -126,26 +126,34 @@ def test_ricci_sparsifies_the_cci_graph_before_computing_curvature(tmp_path):
     assert len(edges) < complete_graph_edge_count
 
 
-def test_ricci_runtime_error_returns_empty_frames(monkeypatch):
-    """FIX 3: guard the OT solver runtime, not just the import."""
-    pytest.importorskip("GraphRicciCurvature")
+def _break_the_solver(monkeypatch):
+    """Make Ollivier-Ricci raise, as the optimal-transport solver does on a bad graph."""
+    import GraphRicciCurvature.OllivierRicci as orm
+
+    def broken(self, *_args, **_kwargs):
+        raise RuntimeError("transport plan did not converge")
+
+    monkeypatch.setattr(orm.OllivierRicci, "compute_ricci_curvature", broken)
+
+
+def test_a_solver_failure_is_an_error_not_an_empty_table(monkeypatch):
+    """An empty curvature table means "no edges"; a solver failure must not look like that."""
     import networkx as nx
 
     from cellquorum.stages.cell_cell_communication.network.ricci_method import (
         compute_ricci_curvature,
     )
 
-    # Monkeypatch OllivierRicci.compute_ricci_curvature to raise a runtime error.
-    def _failing_compute(*args, **kwargs):
-        raise RuntimeError("OT solver failed (simulated)")
+    _break_the_solver(monkeypatch)
+    graph = nx.DiGraph()
+    graph.add_edge("A", "B", weight=1.0)
+    graph.add_edge("B", "C", weight=1.0)
+    with pytest.raises(RuntimeError, match="did not converge"):
+        compute_ricci_curvature(graph)
 
-    from GraphRicciCurvature.OllivierRicci import OllivierRicci
 
-    monkeypatch.setattr(OllivierRicci, "compute_ricci_curvature", _failing_compute)
-
-    G = nx.DiGraph()
-    G.add_edge("A", "B", weight=1.0)
-    edge_df, node_df = compute_ricci_curvature(G, alpha=0.5)
-    # Should return empty frames instead of propagating the error.
-    assert edge_df.empty
-    assert node_df.empty
+def test_a_solver_failure_is_reported_as_a_warning_by_the_stage(tmp_path, monkeypatch):
+    _break_the_solver(monkeypatch)
+    res = RicciMethod().run(_adata(), _config(), _Ctx(tmp_path))
+    assert not isinstance(res, MethodSkip)
+    assert any("curvature" in w and "did not converge" in w for w in res.warnings), res.warnings
