@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import matplotlib
@@ -15,10 +17,9 @@ import anndata as ad  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import gallery_trajectory  # noqa: E402
 
 from cellquorum.stages.comparative.differential_expression.viz.plots import volcano  # noqa: E402
 from cellquorum.stats.donor_comparison import two_group_test_on_donor_medians  # noqa: E402
@@ -37,10 +38,27 @@ from cellquorum.visualization.qc.panels import (  # noqa: E402
     write_qc_overview_figure,
 )
 
-# Per-stage figure registries: {name -> zero-argument builder returning a Figure}.
-# These figures are baselined as PNG only; the six hand-built examples below also
-# ship PDF and SVG.
-STAGE_FIGURES = {**gallery_trajectory.FIGURES}
+
+def _themed(build: Callable[[], Figure], theme: Callable[[], None]) -> Callable[[], Figure]:
+    def themed() -> Figure:
+        theme()
+        return build()
+
+    return themed
+
+
+# Every ``gallery_<stage>.py`` next to this script exposes ``FIGURES``, a
+# {name -> zero-argument builder returning a Figure} registry, and ``THEME``, the
+# stage's own theme call (applied first, as the real pipeline does). These figures are
+# baselined as PNG only; the six hand-built examples below also ship PDF and SVG.
+STAGE_FIGURES = {
+    name: _themed(build, module.THEME)
+    for module in (
+        importlib.import_module(path.stem)
+        for path in sorted(Path(__file__).resolve().parent.glob("gallery_*.py"))
+    )
+    for name, build in module.FIGURES.items()
+}
 
 
 def build_gallery(output: Path) -> list[Path]:

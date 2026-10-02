@@ -122,22 +122,14 @@ def activity_cascade() -> Figure:
     return fig
 
 
-def _themed(build: Callable[[], Figure]) -> Callable[[], Figure]:
-    """Apply the trajectory stage's own theme first, as the real pipeline does."""
-
-    def themed() -> Figure:
-        helpers.apply_theme()
-        return build()
-
-    return themed
-
+THEME = helpers.apply_theme
 
 FIGURES: dict[str, Callable[[], Figure]] = {
-    "trajectory_pseudotime_scatter": _themed(pseudotime_scatter),
-    "trajectory_driver_bar": _themed(driver_bar),
-    "trajectory_driver_heatmap": _themed(driver_heatmap),
-    "trajectory_transition_matrix": _themed(transition_matrix),
-    "trajectory_fate_violin": _themed(fate_violin),
-    "trajectory_pseudotime_heatmap": _themed(pseudotime_heatmap),
-    "trajectory_activity_cascade": _themed(activity_cascade),
+    "trajectory_pseudotime_scatter": pseudotime_scatter,
+    "trajectory_driver_bar": driver_bar,
+    "trajectory_driver_heatmap": driver_heatmap,
+    "trajectory_transition_matrix": transition_matrix,
+    "trajectory_fate_violin": fate_violin,
+    "trajectory_pseudotime_heatmap": pseudotime_heatmap,
+    "trajectory_activity_cascade": activity_cascade,
 }
