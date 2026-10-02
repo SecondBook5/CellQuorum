@@ -318,3 +318,33 @@ def test_radial_regulon_curvature_empty_edges_returns_empty_fig():
     )
 
     assert isinstance(fig, Figure)
+
+
+def test_a_failure_scoring_tf_activity_is_not_disguised_as_no_tfs(monkeypatch):
+    """An empty result means "nothing to score"; an error must stay an error.
+
+    Otherwise a malformed DE table or a decoupler failure reads as "no TF activity scored"
+    and the user chases the wrong cause.
+    """
+    import decoupler as dc
+    import pytest
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("ulm exploded")
+
+    monkeypatch.setattr(dc.mt, "ulm", broken)
+    with pytest.raises(RuntimeError, match="ulm exploded"):
+        tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
+
+
+def test_a_failure_ranking_the_de_table_is_not_disguised_as_no_tfs(monkeypatch):
+    import pytest
+
+    import cellquorum.stages.comparative.enrichment.ranking as ranking
+
+    def broken(*_args, **_kwargs):
+        raise ValueError("bad DE table")
+
+    monkeypatch.setattr(ranking, "de_table_to_ranking", broken)
+    with pytest.raises(ValueError, match="bad DE table"):
+        tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)

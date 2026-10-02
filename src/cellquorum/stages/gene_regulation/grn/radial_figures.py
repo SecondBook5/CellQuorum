@@ -83,8 +83,12 @@ def tf_activity_from_de(
 
     Returns:
         DataFrame indexed by TF (``source``), columns ``score``, ``pvalue``,
-        ``padj``, ``significant``. Empty (same columns, no rows) when the DE
-        table is empty or decoupler is unavailable.
+        ``padj``, ``significant``. Empty (same columns, no rows) only when there
+        is nothing to score: the DE table is empty, or no TF has ``tmin`` targets in it.
+
+    Raises:
+        Exception: Whatever decoupler or the DE ranking raises, unchanged. An error is not
+            an empty result, and the caller reports it with its real cause.
     """
     cols = ["score", "pvalue", "padj", "significant"]
     if de is None or de.empty:
@@ -92,22 +96,13 @@ def tf_activity_from_de(
 
     from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 
-    try:
-        ranking = de_table_to_ranking(de, gene_col=gene_col, lfc_col=lfc_col, p_col=p_col)
-    except Exception:
-        return pd.DataFrame(columns=cols)
+    ranking = de_table_to_ranking(de, gene_col=gene_col, lfc_col=lfc_col, p_col=p_col)
     if ranking.shape[1] == 0:
         return pd.DataFrame(columns=cols)
 
-    try:
-        import decoupler as dc
-    except Exception:
-        return pd.DataFrame(columns=cols)
+    import decoupler as dc
 
-    try:
-        es, pv = dc.mt.ulm(ranking, net, tmin=tmin, verbose=False)
-    except Exception:
-        return pd.DataFrame(columns=cols)
+    es, pv = dc.mt.ulm(ranking, net, tmin=tmin, verbose=False)
     if es.shape[1] == 0:
         return pd.DataFrame(columns=cols)
 
