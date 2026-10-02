@@ -200,3 +200,23 @@ def test_a_misspelled_column_name_is_not_a_silent_success(workspace: dict) -> No
     report = (out / "reports" / "report.md").read_text()
     assert "treatment_typo" in report
     assert "No warnings were emitted" not in report
+
+
+def test_the_readme_quickstart_works_as_written(tmp_path: Path) -> None:
+    """`cellquorum demo`, then `plan`, then `run`: the three commands the README opens with."""
+    demo = tmp_path / "try_it"
+    made = cli("demo", str(demo), cwd=tmp_path)
+    assert made.returncode == 0, output_of(made)
+    config = demo / "config.yaml"
+    assert config.is_file() and (demo / "input.h5ad").is_file()
+
+    planned = cli("plan", "--config", str(config), cwd=tmp_path)
+    assert planned.returncode == 0, output_of(planned)
+
+    ran = cli("run", "--config", str(config), "--output-dir", str(demo / "run"), cwd=tmp_path)
+    text = output_of(ran)
+    assert ran.returncode == 0, text
+    assert "CellQuorum run complete" in text and "Traceback" not in text
+    report = demo / "run" / "reports" / "report.html"
+    assert report.is_file() and "CellQuorum run report" in report.read_text()
+    assert list((demo / "run").rglob("*.png")), "the demo run produced no figures"

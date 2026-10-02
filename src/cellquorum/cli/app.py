@@ -212,6 +212,40 @@ def callback(
         raise typer.Exit()
 
 
+@app.command("demo")
+def demo_command(
+    directory: Annotated[
+        Path,
+        typer.Argument(help="Folder to write the demo data and config into."),
+    ] = Path("cellquorum_demo"),
+) -> None:
+    """
+    Write a tiny synthetic dataset and a ready-to-run config, to try CellQuorum.
+
+    The data is random and means nothing biologically; it exists so a first run needs
+    nothing but this command. The printed next steps run it in about a minute on a laptop.
+
+    Args:
+        directory: Folder to write ``input.h5ad`` and ``config.yaml`` into.
+    """
+
+    if directory.exists() and any(directory.iterdir()):
+        console.print(
+            f"[bold red]Cannot write the demo:[/bold red] {directory} already exists and is "
+            "not empty. Choose another folder, for example `cellquorum demo my_demo`."
+        )
+        raise typer.Exit(code=1)
+
+    from cellquorum.datasets.demo import write_demo_project
+
+    _, config_path = write_demo_project(directory)
+    console.print(f"Wrote a demo dataset and config to {directory}.")
+    console.print("\nTry it:")
+    console.print(f"  cellquorum plan --config {config_path}")
+    console.print(f"  cellquorum run --config {config_path} --output-dir {directory / 'run'}")
+    console.print(f"Then open {directory / 'run' / 'reports' / 'report.html'} in a browser.")
+
+
 @app.command("plan")
 def plan_command(
     config: Annotated[
