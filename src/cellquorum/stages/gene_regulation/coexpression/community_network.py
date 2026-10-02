@@ -39,13 +39,6 @@ if TYPE_CHECKING:
 _GREY = "grey"
 
 
-def _empty_fig(msg: str = "no data") -> Figure:
-    fig, ax = plt.subplots(figsize=(4, 3))
-    ax.text(0.5, 0.5, msg, ha="center", va="center", fontsize=11, color="0.5")
-    ax.set_axis_off()
-    return fig
-
-
 # ---------------------------------------------------------------------------
 # Diagnostic odds ratio (the paper's marker-gene score, p.11)
 # ---------------------------------------------------------------------------
@@ -270,11 +263,11 @@ def plot_community_network(
         module assignment.
     """
     if edge_df is None or edge_df.empty or modules_df is None or modules_df.empty:
-        return _empty_fig("no coexpression edges")
+        return figstyle.empty_figure("no coexpression edges")
 
     modules = modules_df[modules_df[module_col].astype(str) != _GREY]
     if modules.empty:
-        return _empty_fig("no real (non-grey) modules")
+        return figstyle.empty_figure("no real (non-grey) modules")
     module_of = dict(
         zip(modules[gene_col].astype(str), modules[module_col].astype(str), strict=False)
     )
@@ -283,14 +276,14 @@ def plot_community_network(
         edge_df["gene1"].astype(str).isin(module_of) & edge_df["gene2"].astype(str).isin(module_of)
     ].copy()
     if edges.empty:
-        return _empty_fig("no edges between real-module genes")
+        return figstyle.empty_figure("no edges between real-module genes")
     edges = _select_edges(edges, module_of, max_edges)
 
     G = nx.Graph()
     for _, r in edges.iterrows():
         G.add_edge(str(r["gene1"]), str(r["gene2"]), weight=float(r["weight"]))
     if G.number_of_edges() == 0:
-        return _empty_fig("no edges to draw")
+        return figstyle.empty_figure("no edges to draw")
 
     communities = {n: module_of[n] for n in G.nodes() if n in module_of}
     community_ids = sorted(set(communities.values()))

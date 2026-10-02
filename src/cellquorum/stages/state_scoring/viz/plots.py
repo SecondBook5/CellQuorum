@@ -12,14 +12,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from scipy.stats import mannwhitneyu
 
-from cellquorum.visualization.figstyle import raincloud
-
-
-def _empty_fig(msg: str = "no data") -> Figure:
-    fig, ax = plt.subplots(figsize=(4, 3))
-    ax.text(0.5, 0.5, msg, ha="center", va="center")
-    ax.set_axis_off()
-    return fig
+from cellquorum.visualization.figstyle import empty_figure, raincloud
 
 
 def _stars(p: float) -> str:
@@ -53,10 +46,10 @@ def state_score_violin(
     much evidence): the UMAP alone gives a color impression, not a test.
     """
     if df is None or df.empty:
-        return _empty_fig()
+        return empty_figure()
     clusters = sorted(df[cluster_col].astype(str).unique())
     if not clusters:
-        return _empty_fig()
+        return empty_figure()
 
     fig, ax = plt.subplots(figsize=(max(4, 1.1 * len(clusters) + 1), 4.5))
     tops = []

@@ -16,7 +16,7 @@ import colorsys
 import contextlib
 import math
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -315,6 +315,26 @@ def natural_key(label: object) -> tuple[object, ...]:
         for chunk in _NATURAL_CHUNK.split(text)
         if chunk != ""
     )
+
+
+def pretty_label(name: object, labels: Mapping[str, str] | None = None) -> str:
+    """Display text for a set, program or group name: its override if given, else spaced out.
+
+    ``labels`` maps raw names to manuscript wording. Anything missing falls back to the raw
+    name with underscores opened up, so a figure never prints ``HALLMARK_E2F_TARGETS`` as is.
+    """
+    text = str(name)
+    if labels and text in labels:
+        return labels[text]
+    return text.replace("_", " ")
+
+
+def empty_figure(message: str = "no data") -> Figure:
+    """A small figure that says why there is nothing to draw, instead of a blank canvas."""
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.text(0.5, 0.5, message, ha="center", va="center", fontsize=11, color="0.5")
+    ax.set_axis_off()
+    return fig
 
 
 def paired_condition_order(
@@ -1525,6 +1545,8 @@ __all__ = [
     "raincloud",
     "paired_condition_order",
     "natural_key",
+    "pretty_label",
+    "empty_figure",
     # Core contract (pinned).
     "TEXT",
     "render_figure",

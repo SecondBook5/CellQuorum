@@ -38,6 +38,7 @@ from cellquorum.stats.gene_set_overlap import exclusive_combinations, set_sizes
 from cellquorum.visualization.figstyle import (
     apply_cellquorum_axis_style,
     apply_cellquorum_theme,
+    pretty_label,
     significance_stars,
 )
 from cellquorum.visualization.measured_layout import (
@@ -73,12 +74,6 @@ _VALUE_LABELS = {
     "fold_enrichment": "Fold enrichment over chance",
     "intersection": "Shared genes",
 }
-
-
-def _pretty(name: str, labels: Mapping[str, str] | None) -> str:
-    if labels and name in labels:
-        return labels[name]
-    return name.replace("_", " ")
 
 
 def set_overlap_upset(
@@ -212,7 +207,7 @@ def _order_sets(sizes: pd.DataFrame, sort_sets: str) -> pd.DataFrame:
 
 
 def _row_label(name: str, set_labels: Mapping[str, str] | None, exclusive: int) -> str:
-    label = _pretty(name, set_labels)
+    label = pretty_label(name, set_labels)
     return f"{label} ‡" if exclusive == 0 else label
 
 
@@ -396,7 +391,7 @@ def _upset_notes(
 
     wholly_shared = sizes[sizes["exclusive"] == 0]
     if not wholly_shared.empty:
-        named = ", ".join(_pretty(str(name), set_labels) for name in wholly_shared["set"])
+        named = ", ".join(pretty_label(str(name), set_labels) for name in wholly_shared["set"])
         notes.append(
             f"‡ {named}: every member is also in another set, so this is not an "
             "independent readout — it has no column of its own above."
@@ -408,7 +403,7 @@ def _upset_notes(
         outside = sizes[sizes["outside_universe"] > 0]
         if not outside.empty:
             detail = ", ".join(
-                f"{_pretty(str(row['set']), set_labels)} {int(row['outside_universe'])}"
+                f"{pretty_label(str(row['set']), set_labels)} {int(row['outside_universe'])}"
                 for _, row in outside.iterrows()
             )
             notes.append(
@@ -485,7 +480,7 @@ def set_overlap_matrix(
         set_order = list(dict.fromkeys([*overlaps["set_a"], *overlaps["set_b"]]))
     index = {name: position for position, name in enumerate(set_order)}
     n = len(set_order)
-    labels = [_pretty(str(name), set_labels) for name in set_order]
+    labels = [pretty_label(str(name), set_labels) for name in set_order]
 
     values = np.full((n, n), np.nan)
     marks: dict[tuple[int, int], str] = {}
@@ -504,7 +499,7 @@ def set_overlap_matrix(
         fdr = float(row["fdr"]) if "fdr" in overlaps.columns else np.nan
         if not np.isfinite(fdr):
             marks[i, j] = "?"
-            untested.append(f"{_pretty(a, set_labels)}/{_pretty(b, set_labels)}")
+            untested.append(f"{pretty_label(a, set_labels)}/{pretty_label(b, set_labels)}")
         elif fdr < alpha:
             marks[i, j] = significance_stars(fdr)
 

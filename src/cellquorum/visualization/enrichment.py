@@ -44,6 +44,7 @@ from cellquorum.visualization.figstyle import (
     NORMAL_BLUE,
     apply_cellquorum_axis_style,
     apply_cellquorum_theme,
+    pretty_label,
     significance_stars,
 )
 from cellquorum.visualization.measured_layout import (
@@ -107,12 +108,6 @@ def _direction_color(score: float) -> str:
     return LE_RED if float(score) > 0 else NORMAL_BLUE
 
 
-def _pretty(name: str, labels: Mapping[str, str] | None) -> str:
-    if labels and name in labels:
-        return labels[name]
-    return str(name).replace("_", " ")
-
-
 def _row_labels(
     names: Sequence[str], labels: Mapping[str, str] | None, max_chars: int | None
 ) -> tuple[list[str], list[str]]:
@@ -137,7 +132,7 @@ def _row_labels(
     prefix, and stripping it would mangle both.
     """
     supplied = {str(name) for name in names if labels and str(name) in labels}
-    drawn = {str(name): _pretty(str(name), labels) for name in names}
+    drawn = {str(name): pretty_label(str(name), labels) for name in names}
     derived = [name for name in drawn if name not in supplied]
     notes: list[str] = []
 
@@ -534,7 +529,7 @@ def gsea_running_es(
     in_edge = (rank <= rank[peak]) if es > 0 else (rank >= rank[peak])
     edge_hits = int(np.count_nonzero(hit & in_edge))
 
-    label = _pretty(str(source), set_labels)
+    label = pretty_label(str(source), set_labels)
     notes = (
         _walk_notes(
             source=str(source),
@@ -1000,7 +995,7 @@ def _comparison_notes(
     absent = {arm: list(names) for arm, names in untested.items() if names}
     if absent:
         for arm, names in absent.items():
-            shown = ", ".join(_pretty(name, None) for name in names[:3])
+            shown = ", ".join(pretty_label(name, None) for name in names[:3])
             more = f", and {len(names) - 3} more" if len(names) > 3 else ""
             notes.append(
                 f"No dot for {arm} on {shown}{more}: the {row_noun} was never tested in "

@@ -40,6 +40,7 @@ from matplotlib.lines import Line2D
 from cellquorum.visualization.figstyle import (
     apply_cellquorum_axis_style,
     apply_cellquorum_theme,
+    pretty_label,
     significance_stars,
 )
 from cellquorum.visualization.measured_layout import (
@@ -88,14 +89,8 @@ _MAX_NAMED = 4
 _SLOPE_DATA_IN = 3.6
 
 
-def _pretty(name: str, labels: Mapping[str, str] | None) -> str:
-    if labels and name in labels:
-        return labels[name]
-    return str(name).replace("_", " ")
-
-
 def _pair(row: pd.Series, labels: Mapping[str, str] | None) -> str:
-    return f"{_pretty(row['program_a'], labels)}/{_pretty(row['program_b'], labels)}"
+    return f"{pretty_label(row['program_a'], labels)}/{pretty_label(row['program_b'], labels)}"
 
 
 def _enumerate_pairs(names: Sequence[str]) -> str:
@@ -349,7 +344,7 @@ def program_correlation_heatmap(
     order = _program_order(tests, program_order)
     n = len(order)
     position = {name: index for index, name in enumerate(order)}
-    labels = [_pretty(name, program_labels) for name in order]
+    labels = [pretty_label(name, program_labels) for name in order]
 
     raw = pd.to_numeric(tests["r"], errors="coerce")
     adjusted = pd.to_numeric(tests.get("r_adjusted", pd.Series(index=tests.index)), errors="coerce")

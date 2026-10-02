@@ -21,7 +21,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Wedge
 
-from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP
+from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP, empty_figure
 from cellquorum.visualization.figstyle import get_group_palette as _get_group_palette
 
 _OTHER_GRAY = "#9E9E9E"
@@ -64,13 +64,6 @@ def celltype_palette(cell_types: list[str]) -> dict[str, str]:
     background in every CCC figure. palette_colors never cycles or grays out.
     """
     return _get_group_palette(list(cell_types))
-
-
-def _empty_fig(msg: str = "no data") -> Figure:
-    fig, ax = plt.subplots(figsize=(4, 3))
-    ax.text(0.5, 0.5, msg, ha="center", va="center")
-    ax.set_axis_off()
-    return fig
 
 
 def _interaction_dotplot_data(
@@ -141,7 +134,7 @@ def interaction_dotplot(
 ) -> Figure:
     """Top-N LR pairs x top-N source->target combos; color=mean, size=#samples."""
     if lr is None or lr.empty:
-        return _empty_fig()
+        return empty_figure()
     data = _interaction_dotplot_data(
         lr,
         source_col=source_col,
@@ -155,7 +148,7 @@ def interaction_dotplot(
     )
     xs, ys, agg, x_pos, y_pos = data["xs"], data["ys"], data["agg"], data["x_pos"], data["y_pos"]
     if not xs or not ys:
-        return _empty_fig()
+        return empty_figure()
     fig, ax = plt.subplots(figsize=(max(4, 0.6 * len(xs)), max(4, 0.4 * len(ys))))
     w = agg["mean_w"].to_numpy(dtype=float)
     finite_w = w[np.isfinite(w)]
@@ -196,7 +189,7 @@ def cci_heatmap(
 ) -> Figure:
     """source x target summed-weight matrix. Sequential, or diverging (center 0)."""
     if lr is None or lr.empty:
-        return _empty_fig()
+        return empty_figure()
     mat = lr.pivot_table(
         index=source_col, columns=target_col, values=weight_col, aggfunc="sum", fill_value=0.0
     )
@@ -268,7 +261,7 @@ def plot_mnn_sample_activity(
     is the entire point of the figure.
     """
     if sample_df is None or sample_df.empty or source_df is None or source_df.empty:
-        return _empty_fig()
+        return empty_figure()
 
     labels = cluster_labels or {}
 
@@ -287,7 +280,7 @@ def plot_mnn_sample_activity(
     sample_d = sample_df[sample_df["id"].isin(top_ids)].copy()
     source_d = source_df[source_df["id"].isin(top_ids)].copy()
     if sample_d.empty or source_d.empty:
-        return _empty_fig()
+        return empty_figure()
 
     id_route = source_d.drop_duplicates("id").set_index("id").apply(_route, axis=1).to_dict()
     # Ordered by (route, score ascending): same-route ids stay contiguous
@@ -735,14 +728,14 @@ def cluster_focused_circos(
     to name every one's LR pair in a legend instead of guessing from color.
     """
     if df is None or df.empty:
-        return _empty_fig()
+        return empty_figure()
     focus = str(focus)
     d = df.copy()
     d[source_col] = d[source_col].astype(str)
     d[target_col] = d[target_col].astype(str)
     d = d[(d[source_col] == focus) | (d[target_col] == focus)]
     if d.empty:
-        return _empty_fig()
+        return empty_figure()
     # One ribbon per partner: each (source, target) route's single
     # strongest LR pair, ranked, capped to top_k partners.
     d = (
@@ -843,7 +836,7 @@ def mnn_top_lr_lollipop(
     isn't crowded out of the ranking by a high-signal one.
     """
     if df is None or df.empty:
-        return _empty_fig()
+        return empty_figure()
     d = df.copy()
     d[sender_col] = d[sender_col].astype(str)
     d[receiver_col] = d[receiver_col].astype(str)
@@ -855,7 +848,7 @@ def mnn_top_lr_lollipop(
     else:
         d = d.sort_values(score_col, ascending=False).head(top_n)
     if d.empty:
-        return _empty_fig()
+        return empty_figure()
 
     labels = cluster_labels or {}
     d = d.assign(
@@ -917,10 +910,10 @@ def ligand_activity_bar(
     canonical-LR pipeline (built for source/target/weight edges) can show it.
     """
     if activities is None or activities.empty:
-        return _empty_fig()
+        return empty_figure()
     df = activities[[ligand_col, score_col]].dropna()
     if df.empty:
-        return _empty_fig()
+        return empty_figure()
     df = df.sort_values(score_col, ascending=False, kind="mergesort").head(top_n)
     # Bottom-to-top so the strongest ligand renders at the top of the chart.
     df = df.iloc[::-1]
@@ -956,13 +949,13 @@ def ligand_target_heatmap(
     NicheNet's own reference figures render this matrix.
     """
     if weights is None or weights.empty:
-        return _empty_fig()
+        return empty_figure()
     mat = weights.pivot_table(
         index=ligand_col, columns=target_col, values=weight_col, aggfunc="mean", fill_value=0.0
     )
     mat = mat.sort_index(kind="mergesort").sort_index(axis=1, kind="mergesort")
     if mat.empty:
-        return _empty_fig()
+        return empty_figure()
     fig, ax = plt.subplots(figsize=(max(4, 0.4 * mat.shape[1]), max(3, 0.4 * mat.shape[0])))
     vals = mat.to_numpy(dtype=float)
     norm = Normalize(vmin=0.0, vmax=float(np.nanmax(vals)) or 1.0)
@@ -999,13 +992,13 @@ def ligand_receptor_heatmap(
     figure set, so a reader should be able to tell them apart at a glance.
     """
     if weights is None or weights.empty:
-        return _empty_fig()
+        return empty_figure()
     mat = weights.pivot_table(
         index=ligand_col, columns=receptor_col, values=weight_col, aggfunc="mean", fill_value=0.0
     )
     mat = mat.sort_index(kind="mergesort").sort_index(axis=1, kind="mergesort")
     if mat.empty:
-        return _empty_fig()
+        return empty_figure()
     fig, ax = plt.subplots(figsize=(max(4, 0.4 * mat.shape[1]), max(3, 0.4 * mat.shape[0])))
     vals = mat.to_numpy(dtype=float)
     norm = Normalize(vmin=0.0, vmax=float(np.nanmax(vals)) or 1.0)
@@ -1036,10 +1029,10 @@ def sender_ligand_dotplot(
     over a pooled sender pool (see nichenet_method.py's module docstring).
     """
     if expr is None or expr.empty:
-        return _empty_fig()
+        return empty_figure()
     df = expr[[sender_col, ligand_col, frac_col, mean_col]].dropna(subset=[sender_col, ligand_col])
     if df.empty:
-        return _empty_fig()
+        return empty_figure()
     senders = sorted(df[sender_col].astype(str).unique())
     ligands = sorted(df[ligand_col].astype(str).unique())
     x_pos = {v: i for i, v in enumerate(senders)}
@@ -1140,10 +1133,10 @@ def chord_diagram(
     only affects a ribbon's own patch styling (fill, edge, hatch), not size.
     """
     if lr is None or lr.empty:
-        return _empty_fig()
+        return empty_figure()
     edges = _top_edges(lr, source_col, target_col, weight_col, top_k)
     if edges.empty:
-        return _empty_fig()
+        return empty_figure()
     try:
         from pycirclize import Circos  # noqa: F401
 
@@ -1241,7 +1234,7 @@ def sankey_flow(
 ) -> Figure:
     """source->ligand->receptor->target flow. plotly+kaleido, else matplotlib fallback."""
     if lr is None or lr.empty:
-        return _empty_fig()
+        return empty_figure()
     df = lr.copy()
     df["__w"] = df[weight_col].astype(float)
     df = _select_sankey_flows(
@@ -1254,7 +1247,7 @@ def sankey_flow(
         top_k=top_k,
     )
     if df.empty:
-        return _empty_fig()
+        return empty_figure()
     try:
         import plotly.graph_objects as go
         import plotly.io as pio
@@ -1368,7 +1361,7 @@ def curvature_network(
       behind it.
     """
     if edges is None or edges.empty:
-        return _empty_fig()
+        return empty_figure()
     # Guard for missing weight_col (differential curvature frames lack it)
     if weight_col not in edges.columns:
         e = edges.copy()
@@ -1385,7 +1378,7 @@ def curvature_network(
             weight=float(r[weight_col]),
         )
     if G.number_of_edges() == 0:
-        return _empty_fig()
+        return empty_figure()
     n_nodes = max(G.number_of_nodes(), 1)
     pos = nx.spring_layout(G, seed=0, weight="weight", k=2.2 / n_nodes**0.5, iterations=100)
     curvs = np.array([d["curv"] for _, _, d in G.edges(data=True)], dtype=float)
@@ -1551,12 +1544,12 @@ def plot_tensor_factors(
         "lr_pairs": lr_pairs,
     }
     if any(df is None or df.empty for df in frames.values()):
-        return _empty_fig()
+        return empty_figure()
 
     factor_cols = list(contexts.columns)
     n_factors = len(factor_cols)
     if n_factors == 0:
-        return _empty_fig()
+        return empty_figure()
 
     # Cap lr_pairs to its top_k_lr strongest rows (by max loading across
     # factors) so the barcode strip stays a reasonable size to render.

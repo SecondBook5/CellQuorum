@@ -50,13 +50,6 @@ R_IN, R_OUT = 0.60, 1.00
 _SECTOR_TINTS = ["#E8A0B0", "#9CC77E", "#D9C08A", "#9FB6D4", "#D9A066", "#8FC7C0"]
 
 
-def _empty_fig(msg: str = "no data") -> Figure:
-    fig, ax = plt.subplots(figsize=(4, 3))
-    ax.text(0.5, 0.5, msg, ha="center", va="center", fontsize=11, color="0.5")
-    ax.set_axis_off()
-    return fig
-
-
 # ---------------------------------------------------------------------------
 # TF activity from a DE contrast
 # ---------------------------------------------------------------------------
@@ -360,7 +353,7 @@ def radial_grn(
         tf_activity, de, net, n_tf=n_tf, per_tf=per_tf, lfc_col=lfc_col, fdr_col=fdr_col
     )
     if not edges:
-        return _empty_fig("no TF -> target edges for this contrast")
+        return figstyle.empty_figure("no TF -> target edges for this contrast")
 
     children_of: dict[str, set[str]] = {}
     for t, g, _sign, _lfc in edges:
@@ -642,7 +635,7 @@ def radial_regulon_curvature(
         edge_df, node_df, G, n_tf=n_tf, per_tf=per_tf
     )
     if not edges:
-        return _empty_fig("no curvature edges for this graph")
+        return figstyle.empty_figure("no curvature edges for this graph")
 
     children_of: dict[str, set[str]] = {}
     for t, g, _c, _w in edges:
