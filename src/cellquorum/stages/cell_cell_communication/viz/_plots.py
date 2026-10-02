@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import matplotlib as mpl
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -1138,7 +1139,10 @@ def chord_diagram(
     if edges.empty:
         return empty_figure()
     try:
-        from pycirclize import Circos  # noqa: F401
+        # pycirclize rewrites matplotlib's savefig settings when it is first imported. Contain
+        # that, so a chord's margins never depend on whether an earlier figure imported it.
+        with mpl.rc_context():
+            from pycirclize import Circos  # noqa: F401
 
         matrix = edges.pivot_table(
             index=source_col,

@@ -1262,3 +1262,27 @@ def test_sender_ligand_dotplot_empty_guarded():
 
     assert isinstance(sender_ligand_dotplot(pd.DataFrame()), Figure)
     assert isinstance(sender_ligand_dotplot(None), Figure)
+
+
+def test_drawing_a_chord_never_changes_matplotlibs_save_settings():
+    """pycirclize rewrites savefig.pad_inches (and others) when it is first imported.
+
+    Left alone, whichever figure imports it first is saved with wide margins and every later
+    one is not, so a chord's margins would depend on what ran before it.
+    """
+    import sys
+
+    import matplotlib as mpl
+
+    from cellquorum.stages.cell_cell_communication.viz._plots import chord_diagram
+
+    for name in [m for m in sys.modules if m == "pycirclize" or m.startswith("pycirclize.")]:
+        del sys.modules[name]  # force the first-import path again
+    mpl.rcParams["savefig.pad_inches"] = 0.1
+    mpl.rcParams["savefig.bbox"] = "tight"
+    before = (mpl.rcParams["savefig.pad_inches"], mpl.rcParams["savefig.bbox"])
+    edges = pd.DataFrame(
+        {"source": ["A", "B", "C"], "target": ["B", "C", "A"], "weight": [1.0, 0.8, 0.6]}
+    )
+    chord_diagram(edges, palette={"A": "#1f77b4", "B": "#ff7f0e", "C": "#2ca02c"}, top_k=5)
+    assert (mpl.rcParams["savefig.pad_inches"], mpl.rcParams["savefig.bbox"]) == before
