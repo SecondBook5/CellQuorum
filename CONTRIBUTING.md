@@ -12,6 +12,7 @@ and [`docs/architecture.md`](docs/architecture.md) first.
 - [What CI enforces](#what-ci-enforces)
 - [Code conventions](#code-conventions)
 - [Adding a stage](#adding-a-stage)
+- [Figures](#figures)
 - [Adding a config option](#adding-a-config-option)
 - [Commit and PR conventions](#commit-and-pr-conventions)
 - [Releasing](#releasing)
@@ -150,24 +151,22 @@ Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 | Job | Enforces |
 |---|---|
 | **Lint** | `ruff check` and `ruff format --check` on `src` and `tests`, at the exact pinned version. |
-| **Typecheck** | `mypy` on the engine spine (`core`, `config`, `io`, `methods`, `cli`). |
-| **Test** | The suite on Python 3.12 and 3.13. Optional-backend tests self-skip. |
+| **Typecheck** | `mypy` on `core`, `config`, `io`, `methods`, `cli`, `stats`, `datasets` and five small stage packages, with no module exempted. |
+| **Test** | The suite on Python 3.12 and 3.13, with a coverage floor (`fail_under` in `pyproject.toml`). Optional-backend tests self-skip. |
+| **Figures** | `tests/test_figure_gallery.py`: every gallery figure must match its stored baseline pixel for pixel. |
 | **Docs** | `mkdocs build --strict` — a broken link or unresolved API reference fails the build. |
-| **Build** | Builds the wheel and sdist, then asserts the wheel bundles every `.R` script found in source, a non-empty `LICENSE`, and the `py.typed` marker. |
+| **Build** | Builds the wheel and sdist, asserts the wheel bundles every `.R` script, a non-empty `LICENSE` and `py.typed`, then installs the wheel into a clean environment and runs `tests/acceptance` there: the Python API and the command line a user types. |
 
 ### The mypy ratchet
 
-mypy gates the **engine spine only**. A baseline run found 436 errors across 102
-modules — 391 in `stages/`, `visualization/`, and `backends/` (largely untyped-third-party
-fallout) and 45 on the spine. Gating everything at once would mean a permanently red
-job that everyone learns to ignore.
+mypy gates the packages listed in the Typecheck job, and **none of them has an exemption**.
+The rest of the package (`stages/`, `visualization/`, `backends/`) still has type errors,
+mostly untyped-third-party fallout; gating all of it at once would be a permanently red job
+that everyone learns to ignore.
 
-So `pyproject.toml` carries a `[[tool.mypy.overrides]]` block listing modules with
-`ignore_errors = true`. **That list is a backlog, not a policy.** Fixing a module and
-deleting its line is an ideal small PR. When the list is empty, widen the CI command
-to `mypy src/cellquorum` and start the same ratchet on `stages/`.
-
-Do not add a module to that list to make your PR pass.
+To widen the gate, pick one subpackage, run `mypy` on it, fix its errors, then add its path to
+the Typecheck command in `ci.yml`. Never add a package to the command with errors still in it,
+and never add an `ignore_errors` override to make a PR pass.
 
 ## Code conventions
 
@@ -230,6 +229,37 @@ If it must exist: give it a **safe default** so existing configs keep working,
 document it in `docs/configuration.md`, and add a validator that fails at load time
 rather than mid-run. Config errors should be impossible to discover late.
 
+## Figures
+
+Figures are part of the product, so a code change must not alter how one looks by accident.
+
+- **One theme.** Every figure applies its look with `figstyle.apply_theme(style)`, where `style`
+  is `"compact"`, `"notebook"` or `"publication"`. The argument is required. Do not call
+  `matplotlib.rcParams` setters from stage code.
+- **Every figure has a baseline.** Fixtures live in `scripts/gallery_<stage>.py`: small synthetic
+  inputs and the call to the renderer. `scripts/build_figure_gallery.py` discovers them, and
+  `tests/test_figure_gallery.py` compares each output to `docs/gallery/assets/<name>.png`.
+  Run the comparison with `CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/test_figure_gallery.py`.
+- **Adding a figure:** add a function to the stage's `gallery_<stage>.py` registry, build to a
+  scratch folder, look at the result, copy only that PNG into `docs/gallery/assets/`, then run
+  `python scripts/update_gallery_page.py`.
+- **Changing a figure on purpose:** the same recipe. Build, inspect before and after, copy just
+  the PNG you intended to change, and say in the commit message what changed visually.
+
+```bash
+python scripts/build_figure_gallery.py --output /tmp/gallery_new
+cp /tmp/gallery_new/<name>.png docs/gallery/assets/<name>.png
+CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/test_figure_gallery.py
+```
+
+Do not regenerate everything into `docs/gallery/assets`: the PDF and SVG files embed timestamps
+and would show up as changes you did not make.
+
+**Beware libraries that change matplotlib on import.** `pycirclize` and `decoupler` rewrite global
+settings the first time they are imported, so the same figure can look different depending on what
+ran before it. Import such a library inside `with matplotlib.rc_context():` and test it in a
+fresh subprocess; see `tests/test_grn_radial_figures.py` for an example.
+
 ## Commit and PR conventions
 
 Commits follow a `type(scope): summary` convention, matching the existing history:
@@ -254,8 +284,9 @@ make lint && make typecheck && make test-fast
 
 Releases are cut by pushing a tag. The
 [`release.yml`](.github/workflows/release.yml) workflow verifies that the tag
-matches `src/cellquorum/version.py`, rebuilds and re-checks the distributions, and
-publishes to PyPI via Trusted Publishing (no API token stored in the repo).
+matches `src/cellquorum/version.py`, requires a `CHANGELOG.md` heading for the version, runs
+the whole CI workflow (including the clean-install acceptance tests), rebuilds and re-checks the
+distributions, and publishes to PyPI via Trusted Publishing (no API token stored in the repo).
 
 1. Update `__version__` in `src/cellquorum/version.py`.
 2. Move the `CHANGELOG.md` "Unreleased" entries under the new version with a date.
