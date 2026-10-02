@@ -165,6 +165,10 @@ omit = [
 ]
 
 [tool.coverage.report]
+# The measured total (line + branch) was 86.1% locally and 85.9% with the R/GPU/slow tiers
+# excluded, as on CI. The gate sits two points below that so a normal change does not trip
+# it, but a real drop in tested code fails the build. Raise it as coverage improves.
+fail_under = 84
 show_missing = true
 skip_covered = true
 exclude_also = [
