@@ -658,3 +658,49 @@ def test_restack_marks_the_reported_fit_only_when_there_are_two():
 
     alone = SccodaMethod._restack(primary, primary.iloc[0:0])
     assert "is_primary" not in alone.columns
+
+
+def _written_sccoda_table(tmp_path: Path) -> Path:
+    path = tmp_path / "da_sccoda.csv"
+    pd.DataFrame(
+        {
+            "cell_type": ["A", "B", "A", "B"],
+            "log2_fold_change": [1.0, -1.0, 0.8, -0.9],
+            "inclusion_probability": [0.9, 0.8, 0.7, 0.6],
+            "credible_effect": [True, True, False, False],
+            "reference": ["B", "B", "auto", "auto"],
+        }
+    ).to_csv(path, index=False)
+    return path
+
+
+def test_reading_back_the_table_reports_the_reported_fit(tmp_path):
+    path = _written_sccoda_table(tmp_path)
+    df, primary, sensitivity, n_credible, warnings = SccodaMethod()._read_reported_fit(path, "B")
+    assert warnings == []
+    assert n_credible == 2
+    assert set(primary["reference"]) == {"B"}
+    assert set(sensitivity["reference"]) == {"auto"}
+    assert "is_primary" in df.columns
+
+
+def test_an_unreadable_table_is_reported_not_swallowed(tmp_path):
+    """If the table cannot be read back, every credible-effect figure downstream is missing.
+
+    That must be a warning on the run, not a result that looks complete.
+    """
+    missing = tmp_path / "does_not_exist.csv"
+    df, primary, sensitivity, n_credible, warnings = SccodaMethod()._read_reported_fit(missing, "B")
+    assert n_credible is None and primary is None
+    assert len(warnings) == 1
+    assert "could not be read back" in warnings[0]
+    assert "does_not_exist.csv" in warnings[0]
+
+
+def test_a_failed_write_of_the_annotated_table_is_reported(tmp_path):
+    frame = pd.DataFrame({"cell_type": ["A"]})
+    unwritable = tmp_path / "no_such_dir" / "da_sccoda.csv"
+    warnings = SccodaMethod._write_back(frame, unwritable, "donor-concordance annotations")
+    assert len(warnings) == 1
+    assert "donor-concordance annotations" in warnings[0]
+    assert SccodaMethod._write_back(frame, tmp_path / "ok.csv", "x") == []

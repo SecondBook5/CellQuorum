@@ -201,22 +201,9 @@ class SccodaMethod(AnalysisMethod):
         # twice: `credible_effect.sum()` on the stacked frame reported 6 credible
         # effects for a cohort with 3, and it did so on every scCODA run this engine
         # has ever produced. Split the primary fit out before anything is measured.
-        df = None
-        primary = None
-        sensitivity = None
-        n_credible = None
-        try:
-            df = pd.read_csv(out_csv)
-            primary, sensitivity = split_reference_fits(df, resolved_reference)
-            n_credible = int(primary["credible_effect"].sum())
-            # Mark the fit being reported in the file itself, whatever happens
-            # downstream. Without the marker, "which of these two rows for cell type
-            # 3 is the result?" is answerable only by knowing what the engine
-            # resolved, which is in a different file.
-            df = self._restack(primary, sensitivity)
-            df.to_csv(out_csv, index=False)
-        except Exception:
-            pass  # CSV should exist but don't crash if reading fails
+        df, primary, sensitivity, n_credible, warnings = self._read_reported_fit(
+            out_csv, resolved_reference
+        )
 
         # Does the reported credible set survive scCODA's own reference choice? A
         # compositional model's effects are all relative to its denominator, so
@@ -273,10 +260,7 @@ class SccodaMethod(AnalysisMethod):
             if sensitivity is not None and not sensitivity.empty:
                 sensitivity, _ = qualify_abundance_calls(sensitivity, concordance)
             df = self._restack(primary, sensitivity)
-            try:
-                df.to_csv(out_csv, index=False)
-            except Exception:
-                pass
+            warnings += self._write_back(df, out_csv, "donor-concordance annotations")
             notes.extend(concordance_notes)
             extra_artifacts.append(
                 writer.table(
@@ -351,6 +335,7 @@ class SccodaMethod(AnalysisMethod):
                 *figure_artifacts,
             ],
             notes=notes,
+            warnings=warnings,
             metrics={
                 "case": case,
                 "control": control,
@@ -411,6 +396,56 @@ class SccodaMethod(AnalysisMethod):
         if choice.cell_type is None:
             return None, f"left to scCODA ({choice.reason})", choice
         return str(choice.cell_type), choice.reason, choice
+
+    def _read_reported_fit(
+        self, out_csv: Path, resolved_reference: str | None
+    ) -> tuple[
+        pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, int | None, list[str]
+    ]:
+        """Read scCODA's table back and mark the fit being reported in the file itself.
+
+        Without the marker, "which of these two rows for cell type 3 is the result?" is
+        answerable only by knowing what the engine resolved, which is in a different file.
+
+        Returns:
+            ``(table, primary fit, sensitivity fit, number of credible effects, warnings)``.
+            If the table cannot be read, the fits and count are ``None`` and the warning says
+            which downstream figures are therefore unavailable, so the run does not look
+            complete when it is not.
+        """
+        df = None
+        try:
+            df = pd.read_csv(out_csv)
+            primary, sensitivity = split_reference_fits(df, resolved_reference)
+            n_credible = int(primary["credible_effect"].sum())
+            df = self._restack(primary, sensitivity)
+            df.to_csv(out_csv, index=False)
+        except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+            return (
+                df,
+                None,
+                None,
+                None,
+                [
+                    f"scCODA finished but its results table {Path(out_csv).name} could not be read "
+                    f"back ({type(exc).__name__}: {exc}). The credible-effect count, the "
+                    "reference-sensitivity check and the donor-concordance annotations are "
+                    "unavailable for this run."
+                ],
+            )
+        return df, primary, sensitivity, n_credible, []
+
+    @staticmethod
+    def _write_back(frame: pd.DataFrame, out_csv: Path, purpose: str) -> list[str]:
+        """Rewrite the results table; return a warning, not silence, if that fails."""
+        try:
+            frame.to_csv(out_csv, index=False)
+        except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+            return [
+                f"scCODA's results table {Path(out_csv).name} could not be rewritten with its "
+                f"{purpose} ({type(exc).__name__}: {exc}); the file on disk lacks them."
+            ]
+        return []
 
     @staticmethod
     def _restack(primary: pd.DataFrame, sensitivity: pd.DataFrame | None) -> pd.DataFrame:
