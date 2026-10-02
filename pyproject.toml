@@ -196,10 +196,25 @@ mypy_path = "src"
 explicit_package_bases = true
 
 # --- Type-checking ratchet -------------------------------------------------
-# CI gates mypy on the engine spine (core, config, io, methods, cli) and stats/, with no
-# module exempted. The rest of the package (stages/, visualization/, backends/) is not
-# yet gated: a baseline run found hundreds of errors there, mostly untyped-third-party
-# fallout. Widen the CI command one subpackage at a time, fixing that subpackage first.
+# `files` below is the ONE list of what is type-checked. CI, `make typecheck`, and a bare
+# `mypy` all read it, so there is no second copy to drift out of date. No listed package has
+# an exemption. The rest of the package (visualization/, backends/ and the other stages) is
+# not yet gated: a baseline run found hundreds of errors there, mostly untyped-third-party
+# fallout. Widen the list one subpackage at a time, fixing that subpackage first.
+files = [
+  "src/cellquorum/core",
+  "src/cellquorum/config",
+  "src/cellquorum/io",
+  "src/cellquorum/methods",
+  "src/cellquorum/cli",
+  "src/cellquorum/stats",
+  "src/cellquorum/datasets",
+  "src/cellquorum/stages/discovery",
+  "src/cellquorum/stages/metacells",
+  "src/cellquorum/stages/ambient_correction",
+  "src/cellquorum/stages/composition",
+  "src/cellquorum/stages/state_scoring",
+]
 
 [tool.ruff]
 line-length = 100

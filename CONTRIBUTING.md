@@ -58,7 +58,7 @@ single-cell stack. Use the tiers during development and let CI run everything:
 make test-fast     # deselect slow/gpu/r/integration; the loop you use while coding
 make test          # everything the current machine can run, in parallel
 make test-cov      # everything, with a coverage report
-make typecheck     # mypy on the engine spine
+make typecheck     # mypy on the gated packages (the list in pyproject.toml)
 make lint          # ruff check + ruff format --check
 ```
 
@@ -155,7 +155,7 @@ Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 | Job | Enforces |
 |---|---|
 | **Lint** | `ruff check` and `ruff format --check` on `src` and `tests`, at the exact pinned version. |
-| **Typecheck** | `mypy` on `core`, `config`, `io`, `methods`, `cli`, `stats`, `datasets` and five small stage packages, with no module exempted. |
+| **Typecheck** | `mypy` on the packages listed under `files` in `[tool.mypy]` in `pyproject.toml`, with no module exempted. |
 | **Test** | The suite on Python 3.12 and 3.13, with a coverage floor (`fail_under` in `pyproject.toml`). Optional-backend tests self-skip. |
 | **Figures** | `tests/visualization/test_figure_gallery.py`: every gallery figure must match its stored baseline pixel for pixel. |
 | **Docs** | `mkdocs build --strict` — a broken link or unresolved API reference fails the build. |
@@ -170,14 +170,16 @@ cannot turn an unrelated pull request red. A red audit means a dependency needs 
 
 ### The mypy ratchet
 
-mypy gates the packages listed in the Typecheck job, and **none of them has an exemption**.
-The rest of the package (`stages/`, `visualization/`, `backends/`) still has type errors,
+mypy gates the packages listed under `files` in `[tool.mypy]` in `pyproject.toml`, and **none of
+them has an exemption**. That list is the only place the gated packages are named: CI and
+`make typecheck` both just run `mypy`, so there is no second copy to forget to update.
+The rest of the package (`visualization/`, `backends/` and most stages) still has type errors,
 mostly untyped-third-party fallout; gating all of it at once would be a permanently red job
 that everyone learns to ignore.
 
 To widen the gate, pick one subpackage, run `mypy` on it, fix its errors, then add its path to
-the Typecheck command in `ci.yml`. Never add a package to the command with errors still in it,
-and never add an `ignore_errors` override to make a PR pass.
+`files`. Never add a package with errors still in it, and never add an `ignore_errors` override
+to make a PR pass.
 
 ## Code conventions
 

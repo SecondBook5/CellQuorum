@@ -87,23 +87,10 @@ jobs:
       - name: Install package (dev)
         run: pip install -e .[dev]
 
-      # Gated on the engine spine. Widen this list one subpackage at a time: fix a
-      # subpackage's errors, then add it here. See the ratchet note in pyproject.toml.
+      # What is checked is the `files` list in [tool.mypy] in pyproject.toml. Widen that list
+      # one subpackage at a time; see the ratchet note there.
       - name: mypy
-        run: >
-          mypy
-          src/cellquorum/core
-          src/cellquorum/config
-          src/cellquorum/io
-          src/cellquorum/methods
-          src/cellquorum/cli
-          src/cellquorum/stats
-          src/cellquorum/datasets
-          src/cellquorum/stages/discovery
-          src/cellquorum/stages/metacells
-          src/cellquorum/stages/ambient_correction
-          src/cellquorum/stages/composition
-          src/cellquorum/stages/state_scoring
+        run: mypy
 
   test:
     name: Test (Python ${{ matrix.python-version }})

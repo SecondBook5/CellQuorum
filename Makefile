@@ -43,11 +43,9 @@ format:
 	ruff format src tests
 	ruff check --fix src tests
 
-# Mirror the CI typecheck job: the engine spine only. The mypy backlog lives in
-# pyproject.toml under [[tool.mypy.overrides]]; shrinking it widens this gate.
+# Same as the CI typecheck job: both read the `files` list in [tool.mypy] (pyproject.toml).
 typecheck:
-	mypy src/cellquorum/core src/cellquorum/config src/cellquorum/io \
-	     src/cellquorum/methods src/cellquorum/cli
+	mypy
 
 # The tight development loop. Deselects the slow, GPU, R, and integration tiers so
 # the run is dominated by actual assertions rather than backend startup.
