@@ -213,6 +213,7 @@ class NicheNetMethod(RAnalysisMethod):
                 )
         n_ligands = None
         n_edges = None
+        warnings: list[str] = []
         try:
             links = pd.read_csv(links_csv)
             n_ligands = len(links)
@@ -242,12 +243,17 @@ class NicheNetMethod(RAnalysisMethod):
                     index=False,
                 )
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 -- the native tables are already recorded
+            warnings.append(
+                "NicheNet finished but its results could not be converted to the shared "
+                "ligand-receptor format, so ccc_network will have no NicheNet edges "
+                f"({type(exc).__name__}: {exc}). The native NicheNet tables are intact."
+            )
 
         return StageResult(
             adata=adata,
             artifacts=artifacts,
+            warnings=warnings,
             notes=[f"NicheNet: {len(senders)} sender(s)->{receiver}, |geneset|={len(geneset)}."],
             metrics={
                 "sender": sender_label,

@@ -391,3 +391,24 @@ def test_a_single_sender_still_labels_itself(tmp_path, mock_context):
     assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
     canonical = pd.read_csv(tmp_path / "results" / "nichenet_canonical_lr.csv")
     assert set(canonical["source"]) == {"Fib"}
+
+
+def test_failed_canonical_conversion_is_reported_not_swallowed(tmp_path, mock_context, monkeypatch):
+    """A conversion failure must reach the user as a warning, not as silence.
+
+    The canonical table is what ccc_network reads; swallowing the failure leaves that
+    stage with no edges and no explanation, which looks like "nothing was found".
+    """
+    from cellquorum.stages.cell_cell_communication import nichenet_method
+
+    def explode(*_args, **_kwargs):
+        raise ValueError("unexpected column layout")
+
+    monkeypatch.setattr(nichenet_method, "ligand_activity_to_canonical", explode)
+    ctx = _CapturingContext(tmp_path, mock_context)
+    res = NicheNetMethod()._run(_multi_adata(), _config(tmp_path, ["Fib"]), ctx)
+    assert not isinstance(res, MethodSkip)
+    assert any(
+        "could not be converted" in w and "unexpected column layout" in w for w in res.warnings
+    )
+    assert "nichenet_canonical_lr" not in {a.name for a in res.artifacts}
