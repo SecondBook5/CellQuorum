@@ -350,6 +350,12 @@ Recent engineering and reproducibility hardening:
 
 ### Fixed
 
+- **scDiagnostics published its results table from `scratch/`, and with several batches it held
+  only the last one.** The `scdiagnostics_results` artifact pointed at a temporary file, which
+  for a multi-batch reference run was just the final batch's output. The combined per-cell table
+  (one row per cell, keyed by barcode) is now written to `results/annotation_diagnostics/
+  scdiagnostics_results.csv`. The `scdiag_*` columns on the object were never affected.
+
 - **SoupX wrote `rho_per_cell.csv` before anything created the output directory.**
   `soupx_per_library.R` relied on `write_mtx()` to create `out_dir`, but that runs *after*
   the per-cell rho table is written, so a fresh output directory failed with R's "cannot

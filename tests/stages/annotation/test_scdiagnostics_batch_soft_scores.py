@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from cellquorum.core.context import PipelinePaths
+
 
 def _write_reference_h5ad(path: Path, cell_types: list[str], n_genes: int = 10) -> None:
     n = len(cell_types)
@@ -73,7 +75,7 @@ def two_batch_adata_and_backend(tmp_path: Path):
     backend = _RecordingBackend()
     ctx = MagicMock()
     ctx.backend_registry.get.return_value = backend
-    ctx.paths.scratch = tmp_path / "scratch"
+    ctx.paths = PipelinePaths.from_output_dir(tmp_path / "run")
     ctx.paths.scratch.mkdir(parents=True, exist_ok=True)
 
     config = {
@@ -104,3 +106,18 @@ def test_soft_scores_path_reaches_every_batch(two_batch_adata_and_backend):
     assert all(
         arg != "NONE" for arg in soft_scores_args
     ), f"soft_scores path must reach every batch, not just the first -- got {soft_scores_args}"
+
+
+def test_published_table_covers_every_batch_not_only_the_last(two_batch_adata_and_backend):
+    """The registered results table is the combined one, one row per cell, from every batch."""
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    adata, ctx, _backend, config = two_batch_adata_and_backend
+
+    result = ScdiagnosticsMethod()._run(adata, config, ctx)
+
+    (artifact,) = [a for a in result.artifacts if a.name == "scdiagnostics_results"]
+    published = pd.read_csv(artifact.path)
+    assert sorted(published["barcode"]) == sorted(adata.obs_names)

@@ -15,6 +15,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumBackendError
 from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
 
@@ -25,6 +26,18 @@ if TYPE_CHECKING:
 
 # Path to the bundled scDiagnostics R script.
 _SCDIAGNOSTICS_R = r_script_path("scdiagnostics.R")
+
+
+def _write_results_table(
+    table: pd.DataFrame, *, context: PipelineContext, description: str
+) -> StageArtifact:
+    """Publish the per-cell diagnostics under ``results/``, one row per cell, keyed by barcode."""
+    return StageArtifactWriter.from_context(context, default_subdir="annotation_diagnostics").table(
+        table.rename_axis("barcode").reset_index(),
+        "scdiagnostics_results.csv",
+        name="scdiagnostics_results",
+        description=description,
+    )
 
 
 def _write_figures(
@@ -388,10 +401,9 @@ class ScdiagnosticsMethod(RAnalysisMethod):
 
         # Build artifacts list.
         artifacts = [
-            StageArtifact(
-                name="scdiagnostics_results",
-                path=out_csv,
-                kind="csv",
+            _write_results_table(
+                diag_df,
+                context=context,
                 description="Per-cell scDiagnostics confidence metrics.",
             ),
             *_write_figures(
@@ -439,13 +451,11 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         result_adata = adata
         result_adata.obs["scdiag_entropy"] = entropy_values
 
-        out_csv = scratch / "scdiag_results.csv"
-        pd.DataFrame(
-            {
-                "barcode": result_adata.obs_names,
-                "scdiag_entropy": entropy_values,
-            }
-        ).to_csv(out_csv, index=False)
+        results_table = _write_results_table(
+            pd.DataFrame({"scdiag_entropy": entropy_values}, index=result_adata.obs_names),
+            context=context,
+            description="Per-cell annotation entropy from soft label probabilities.",
+        )
 
         figure_artifacts = _write_figures(
             obs=result_adata.obs, cell_type_col=cell_type_col, context=context, config=config
@@ -454,12 +464,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         return StageResult(
             adata=result_adata,
             artifacts=[
-                StageArtifact(
-                    name="scdiagnostics_results",
-                    path=out_csv,
-                    kind="csv",
-                    description="Per-cell annotation entropy from soft label probabilities.",
-                ),
+                results_table,
                 *figure_artifacts,
             ],
             notes=[

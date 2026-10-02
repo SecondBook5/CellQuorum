@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import pytest
 
+from cellquorum.core.context import PipelinePaths
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.methods.base import MethodSkip
@@ -138,8 +140,10 @@ def test_scdiagnostics_entropy_from_soft_scores_without_r(
     adata.obsm["soft_scores"] = np.array(
         [[1.0, 0.0], [0.5, 0.5], [0.25, 0.75], *([[0.9, 0.1]] * 97)]
     )
+    paths = PipelinePaths.from_output_dir(tmp_path / "run")
+    paths.scratch.mkdir(parents=True)
     ctx = MagicMock()
-    ctx.paths.scratch = tmp_path
+    ctx.paths = paths
 
     result = ScdiagnosticsMethod()._run(
         adata,
@@ -147,6 +151,7 @@ def test_scdiagnostics_entropy_from_soft_scores_without_r(
             "cell_type_col": "cell_type",
             "reference_h5ad": None,
             "soft_scores_obsm": "soft_scores",
+            "outputs": {"write_figures": False},
         },
         ctx,
     )
@@ -154,7 +159,48 @@ def test_scdiagnostics_entropy_from_soft_scores_without_r(
     assert "scdiag_entropy" in result.adata.obs
     np.testing.assert_allclose(result.adata.obs["scdiag_entropy"].iloc[:2], [0.0, 1.0])
     assert result.metrics["diagnostics_computed"] == ["scdiag_entropy"]
-    assert (tmp_path / "scdiag_results.csv").exists()
+    assert (paths.results / "annotation_diagnostics" / "scdiagnostics_results.csv").exists()
+
+
+def test_scdiagnostics_results_table_is_published_under_results_not_scratch(
+    minimal_annotated_adata: ad.AnnData,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The artifact the stage registers is the per-cell table, kept in the run's results folder.
+
+    It used to point at a file in ``scratch/``, which holds temporary files, so the one table a
+    user would open was in the wrong place and (with several batches) held only the last batch.
+    """
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    monkeypatch.setattr("shutil.which", lambda x: None)
+    adata = minimal_annotated_adata.copy()
+    adata.obsm["soft_scores"] = np.tile([[0.9, 0.1]], (100, 1))
+    paths = PipelinePaths.from_output_dir(tmp_path / "run")
+    ctx = MagicMock()
+    ctx.paths = paths
+    paths.scratch.mkdir(parents=True)
+
+    result = ScdiagnosticsMethod()._run(
+        adata,
+        {
+            "cell_type_col": "cell_type",
+            "reference_h5ad": None,
+            "soft_scores_obsm": "soft_scores",
+            "outputs": {"write_figures": False},
+        },
+        ctx,
+    )
+
+    (table,) = [a for a in result.artifacts if a.name == "scdiagnostics_results"]
+    assert Path(table.path).is_relative_to(paths.results)
+    assert not Path(table.path).is_relative_to(paths.scratch)
+    saved = pd.read_csv(table.path)
+    assert len(saved) == adata.n_obs
+    assert "scdiag_entropy" in saved.columns
 
 
 def test_scdiagnostics_entropy_path_writes_figures_when_paths_and_flag_allow(
@@ -173,11 +219,12 @@ def test_scdiagnostics_entropy_path_writes_figures_when_paths_and_flag_allow(
     adata.obsm["soft_scores"] = np.array(
         [[1.0, 0.0], [0.5, 0.5], [0.25, 0.75], *([[0.9, 0.1]] * 97)]
     )
+    paths = PipelinePaths.from_output_dir(tmp_path / "run")
+    paths.scratch.mkdir(parents=True)
+    paths.figures.mkdir()
     ctx = MagicMock()
-    ctx.paths.scratch = tmp_path
-    figures_dir = tmp_path / "figures"
-    figures_dir.mkdir()
-    ctx.paths.figures = figures_dir
+    ctx.paths = paths
+    figures_dir = paths.figures
 
     result = ScdiagnosticsMethod()._run(
         adata,
@@ -209,11 +256,12 @@ def test_scdiagnostics_entropy_path_skips_figures_when_flag_is_off(
     adata.obsm["soft_scores"] = np.array(
         [[1.0, 0.0], [0.5, 0.5], [0.25, 0.75], *([[0.9, 0.1]] * 97)]
     )
+    paths = PipelinePaths.from_output_dir(tmp_path / "run")
+    paths.scratch.mkdir(parents=True)
+    paths.figures.mkdir()
     ctx = MagicMock()
-    ctx.paths.scratch = tmp_path
-    figures_dir = tmp_path / "figures"
-    figures_dir.mkdir()
-    ctx.paths.figures = figures_dir
+    ctx.paths = paths
+    figures_dir = paths.figures
 
     result = ScdiagnosticsMethod()._run(
         adata,
@@ -253,7 +301,7 @@ def test_scdiagnostics_method_real_r_run(
     # Build a stub context with real backend.
     ctx = MagicMock()
     ctx.backend_registry.get.return_value = backend
-    ctx.paths.scratch = tmp_path / "scratch"
+    ctx.paths = PipelinePaths.from_output_dir(tmp_path / "run")
     ctx.paths.scratch.mkdir(parents=True, exist_ok=True)
     ctx.config = MagicMock()
 
