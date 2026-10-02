@@ -594,6 +594,21 @@ def _write_final_object(*, config: CellQuorumConfig, context: PipelineContext) -
     return out_path
 
 
+def _add_cohort_warnings_to_plan(plan: PipelinePlan, context: PipelineContext) -> None:
+    """Make a declared-but-absent cohort key visible wherever the plan's warnings are shown.
+
+    ``validate_cohort_against_obs`` deliberately warns instead of raising, because a cohort block
+    may declare keys that only some stages use. That is only safe if the warning reaches the
+    user: the plan's warnings are what the run summary prints, what the report's bootstrap
+    section lists, and what ``planner_warnings.json`` records. Without this a misspelled
+    condition column left only a line in the log and a "No warnings were emitted." report.
+    """
+    for warning in context.metadata.get("cohort_warnings", []):
+        message = f"Cohort/config mismatch: {warning}"
+        if message not in plan.warnings:
+            plan.warnings.append(message)
+
+
 def _write_run_report_after_provenance(
     *,
     config: CellQuorumConfig,
@@ -838,6 +853,7 @@ def bootstrap_pipeline_run(
             config,
             backend_registry=context.backend_registry,
         )
+        _add_cohort_warnings_to_plan(plan, context)
 
         # Mark the end of the bootstrap lifecycle before provenance writing.
         bootstrap_ended_at = datetime.now(UTC)
@@ -1038,6 +1054,7 @@ def execute_pipeline_run(
             config,
             backend_registry=context.backend_registry,
         )
+        _add_cohort_warnings_to_plan(plan, context)
 
         # Mark the end of execution-frame setup before stage execution.
         bootstrap_ended_at = datetime.now(UTC)
