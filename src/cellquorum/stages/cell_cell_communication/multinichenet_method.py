@@ -152,6 +152,7 @@ class MultiNicheNetMethod(RAnalysisMethod):
                     StageArtifact(name=name, path=path, kind="csv", description=description)
                 )
         n_prioritized = None
+        warnings: list[str] = []
         try:
             native = pd.read_csv(native_csv)
             n_prioritized = len(native)
@@ -165,12 +166,17 @@ class MultiNicheNetMethod(RAnalysisMethod):
                     index=False,
                 )
             )
-        except Exception:
-            pass  # native artifact already recorded; never crash on post-processing
+        except Exception as exc:  # noqa: BLE001 -- the native table is already recorded
+            warnings.append(
+                "MultiNicheNet finished but its results could not be converted to the shared "
+                "ligand-receptor format, so ccc_network will have no MultiNicheNet edges "
+                f"({type(exc).__name__}: {exc}). The native table mnn_prioritization.csv is intact."
+            )
 
         return StageResult(
             adata=adata,
             artifacts=artifacts,
+            warnings=warnings,
             notes=[
                 f"MultiNicheNet: {case} vs {control}, top_n_target="
                 f"{config.get('mnn_top_n_target', 250)}."

@@ -226,3 +226,24 @@ def test_multinichenet_skips_without_r_package(tmp_path, mock_context, monkeypat
     res = MultiNicheNetMethod()._run(adata, config, mock_context(tmp_path, has_pkg=False))
     assert isinstance(res, MethodSkip)
     assert "package" in res.reason.lower() or "multinichenetr" in res.reason.lower()
+
+
+def test_failed_canonical_conversion_is_reported_not_swallowed(tmp_path, mock_context, monkeypatch):
+    """A conversion failure must reach the user as a warning.
+
+    The canonical table is what ccc_network reads. Swallowing the failure leaves that
+    stage with no edges and no explanation, which looks like "nothing was found".
+    """
+    from cellquorum.stages.cell_cell_communication import multinichenet_method
+
+    def explode(_native):
+        raise ValueError("unexpected column layout")
+
+    monkeypatch.setattr(multinichenet_method, "mnn_prioritization_to_canonical", explode)
+    ctx = _CapturingContext(tmp_path, mock_context)
+    res = MultiNicheNetMethod()._run(_toy_adata(), _mnn_config(tmp_path), ctx)
+    assert not isinstance(res, MethodSkip)
+    assert any(
+        "could not be converted" in w and "unexpected column layout" in w for w in res.warnings
+    )
+    assert "mnn_canonical_lr" not in {a.name for a in res.artifacts}
