@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
+import pandas as pd
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -237,7 +238,7 @@ def _resolve_manifest(context: PipelineContext) -> list[dict]:
     return df[cols].to_dict("records")
 
 
-def _join_manifest_metadata(adata: ad.AnnData, manifest: object | None) -> None:
+def _join_manifest_metadata(adata: ad.AnnData, manifest: pd.DataFrame | None) -> None:
     """Join sample-level manifest metadata onto obs by sample_id, in place.
 
     Best-effort over whatever metadata the manifest carries. Columns absent or
@@ -246,7 +247,7 @@ def _join_manifest_metadata(adata: ad.AnnData, manifest: object | None) -> None:
     """
 
     # Nothing to join without a manifest or a sample_id column to key on.
-    if manifest is None or "sample_id" not in getattr(adata, "obs", {}).columns:
+    if manifest is None or "sample_id" not in adata.obs.columns:
         return
 
     # Index the manifest by sample_id for per-cell mapping.
@@ -344,7 +345,7 @@ def _write_contamination_figure(
         return f"ambient contamination figure skipped: {str(exc)[:160]}"
 
 
-def _config_get(config: dict | object, key: str, default: object) -> object:
+def _config_get(config: dict | object, key: str, default: Any) -> Any:
     """Read a key from either a dict-like or attribute-style config."""
     if isinstance(config, dict):
         return config.get(key, default)

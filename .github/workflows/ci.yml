@@ -98,6 +98,12 @@ jobs:
           src/cellquorum/methods
           src/cellquorum/cli
           src/cellquorum/stats
+          src/cellquorum/datasets
+          src/cellquorum/stages/discovery
+          src/cellquorum/stages/metacells
+          src/cellquorum/stages/ambient_correction
+          src/cellquorum/stages/composition
+          src/cellquorum/stages/state_scoring
 
   test:
     name: Test (Python ${{ matrix.python-version }})

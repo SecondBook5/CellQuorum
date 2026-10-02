@@ -318,7 +318,11 @@ def load(
 
         if with_truth or barcodes == "annotated":
             labels = truth(sample)
-            labels = labels.assign(barcode=[_bare_barcode(code) for code in labels.index])
+            labels = labels.assign(
+                barcode=pd.Series(
+                    [_bare_barcode(code) for code in labels.index], index=labels.index
+                )
+            )
             labels = labels[labels["barcode"].notna()].drop_duplicates("barcode")
             labels = labels.set_index("barcode")
 

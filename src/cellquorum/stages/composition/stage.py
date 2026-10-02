@@ -21,6 +21,8 @@ from cellquorum.visualization import figstyle
 from cellquorum.visualization.qc.summarise import natural_sort_key
 
 if TYPE_CHECKING:
+    import anndata as ad
+
     from cellquorum.core.context import PipelineContext
 
 
@@ -181,7 +183,7 @@ def _resolve_key(stage_value: str | None, config: object, attr: str, default: st
     return resolve_cohort_key(config, attr=attr, stage_value=default)
 
 
-def _qc_mask(adata: object, config: CompositionConfig) -> np.ndarray | None:
+def _qc_mask(adata: ad.AnnData, config: CompositionConfig) -> np.ndarray | None:
     """Boolean mask restricting to configured QC states, or None for "keep all".
 
     Mirrors the embeddings stage's qc_state_column auto-detect: qc_state_final
