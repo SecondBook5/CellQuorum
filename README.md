@@ -7,7 +7,7 @@
 *One configuration file. One command. A validated, reproducible, provenance-tracked analysis — on CPU or GPU, in Python and R.*
 
 [![CI](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml/badge.svg)](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)
+![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)
 ![License](https://img.shields.io/badge/license-BSD--3--Clause-green)
 ![Interface](https://img.shields.io/badge/interface-CLI%20%7C%20Python-informational)
 ![GPU](https://img.shields.io/badge/GPU-rapids--singlecell-76b900)
@@ -17,24 +17,72 @@
 
 ---
 
-## START HERE
+CellQuorum takes a single-cell RNA-seq experiment from a raw count matrix to a reproducible,
+publication-ready analysis: you describe the dataset and the analysis in one YAML file, and one
+command plans it, validates it, runs it, and records exactly what it did. It is built for
+experiments with donors and conditions, where the question is "what changes between groups" and
+the statistics have to treat donors, not cells, as the replicates.
 
-**Want to run an analysis?** You drive CellQuorum entirely from a config file and the
-CLI — no need to read the source. See **[Getting started](#getting-started)** and the
-hands-on **[tutorial](docs/tutorial.md)**.
+## See it work in two minutes
 
-**Want to read or modify the code?** Begin with these files (paths below are under
-`src/cellquorum/`):
+You do not need any data of your own for a first run.
 
-1. **Entry point:** The CLI lives in `cli/app.py` — look for the `main()` function that launches the `cellquorum` / `cq` command. The programmatic API lives in `api/pipeline.py` — `run_pipeline` is the main Python entry point.
+```bash
+git clone https://github.com/SecondBook5/cellquorum.git && cd cellquorum
+python -m pip install -e .
 
-2. **Run flow:** Read `docs/how-it-works.md` for a complete file-by-file walkthrough of one run: config validation → backend detection → planning → data loading → stage execution → provenance. It names every file on the control-flow spine.
+cellquorum demo my_demo                                      # a tiny synthetic dataset + config
+cellquorum plan --config my_demo/config.yaml                 # what will run, and on which backends
+cellquorum run  --config my_demo/config.yaml -o my_demo/run  # a minute or two on a laptop
+```
 
-3. **Configuration:** The `config/models.py` file defines the entire configuration schema as Pydantic models — `CellQuorumConfig` is the top-level contract. See `docs/configuration.md` for a section-by-section reference.
+Then open `my_demo/run/reports/report.html`. To analyse your own data, copy `my_demo/config.yaml`
+and change the input path and the column names; the [tutorial](docs/tutorial.md) walks through it.
 
-4. **Architecture:** `docs/architecture.md` explains the design principles, the execution model, and how the pieces fit together.
+## What you get
 
-**One-line run trace:** `cli/app.py:main` → validate config (`config/models.py`) → build plan (`core/planner.py` reads `core/stage_catalog.py`) → load data (`io/manifest.py`) → execute stages (`core/executor.py` dispatches to `stages/<stage>/stage.py`, writes via `core/stage_artifact_writer.py`) → final context with annotated `adata`.
+<table>
+  <tr>
+    <td width="33%"><img src="docs/gallery/assets/embeddings_categorical_umap.png" alt="UMAP of four synthetic cell clusters with PAGA connections"></td>
+    <td width="33%"><img src="docs/gallery/assets/de_volcano.png" alt="Volcano plot of differential expression with highlighted genes"></td>
+    <td width="33%"><img src="docs/gallery/assets/da_milo_beeswarm.png" alt="Milo neighbourhood beeswarm of differential abundance by cell type"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Clusters and their relationships</sub></td>
+    <td align="center"><sub>Differential expression, donor-aware</sub></td>
+    <td align="center"><sub>Differential abundance by cell type</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="docs/gallery/assets/ccc_circos.png" alt="Circos plot of cell-cell communication focused on one cell type"></td>
+    <td width="33%"><img src="docs/gallery/assets/grn_radial.png" alt="Radial gene regulatory network of transcription factors and their targets"></td>
+    <td width="33%"><img src="docs/gallery/assets/trajectory_pseudotime_heatmap.png" alt="Gene expression along pseudotime, split by condition"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Cell-cell communication</sub></td>
+    <td align="center"><sub>Regulatory networks</sub></td>
+    <td align="center"><sub>Expression along a trajectory</sub></td>
+  </tr>
+</table>
+
+<sub>These are drawn by CellQuorum's own figure code from small synthetic data, and each one is
+pinned by a pixel-exact test, so a code change cannot quietly alter how a figure looks. See the
+[full gallery](docs/gallery/index.md).</sub>
+
+## Why you can trust a result
+
+- **No silent wrong answers.** Configuration is validated before anything runs. Each stage checks
+  its inputs and, if they are missing, records a skip with the reason instead of guessing. A
+  misspelled column name, a failed figure, or a result that could not be written reaches the run
+  summary and the report; it is not buried in a log.
+- **Donors are the replicates.** Differential expression is pseudobulked per donor and
+  abundance tests can be paired by donor, so a few thousand cells from one person do not masquerade
+  as a few thousand independent observations.
+- **Reproducible and auditable.** Every run writes its resolved configuration, plan, backend
+  versions and an index of every output. A resumed run refuses a checkpoint that was made with
+  different settings.
+- **Tested like software.** Thousands of automated tests, a coverage floor enforced in CI, strict
+  type checking on the core engine, and a test that installs the built package into a clean
+  environment and runs the commands above.
 
 ---
 
@@ -48,7 +96,7 @@ through every stage and recording exactly what it did.
 
 The engine pairs an **execution spine** (strict configuration validation, backend
 detection, planning, provenance) with a **config-driven analysis backbone** of
-**32 stages** and **~60 selectable methods**, spanning quality control through
+**40 stages** and **70+ selectable methods**, spanning quality control through
 gene-regulatory networks, cell-cell communication, and trajectory inference. Stages
 dispatch to Python, R/Bioconductor, or GPU backends transparently, and every stage
 boundary is guarded by **fail-loud data contracts** — a method whose inputs are
@@ -63,7 +111,7 @@ wrong results.
 ## Highlights
 
 - **Config over code.** Every method is chosen in YAML (`integration.method: harmony | scvi`), so a dataset is expressed as configuration, not a script.
-- **32 stages, ~60 methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
+- **40 stages, 70+ methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
 - **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto `rapids-singlecell`/`cupy` when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
 - **Python + R, transparently.** R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, DIALOGUE, SoupX, hdWGCNA) and isolated heavyweight backends (pySCENIC, scCODA, CellOracle) are dispatched behind one interface.
 - **Fail-loud data contracts.** Structural, layer-provenance, and statistical checks reject, for example, raw counts mislabeled as log-normalized.
@@ -91,7 +139,8 @@ inputs or backends are unavailable.*
 
 ## Installation
 
-CellQuorum targets Python 3.12–3.14. From a clone:
+CellQuorum supports Python 3.12 and 3.13, both tested in CI (3.14 is allowed by the package
+metadata but not yet tested). From a clone:
 
 ```bash
 git clone https://github.com/SecondBook5/cellquorum.git
@@ -127,7 +176,7 @@ from a raw `.h5ad` to a finished, provenance-tracked run in five steps:
 
 The command reference below is the quick lookup once you have a config.
 
-## Quickstart
+## Running your own config
 
 ```bash
 # 1. inspect the execution plan for a config (which stages run, on which backends)
@@ -375,6 +424,20 @@ abstractions), and `backends`; `stages` holds the 12 step packages
 surfaces. The `stages/comparative` package groups the four "compare groups" analyses
 as submodules — `differential_expression`, `differential_abundance`, `enrichment`,
 and `multicellular_programs`. See [`docs/architecture.md`](docs/architecture.md).
+
+## Reading the code
+
+Begin with these files (paths below are under `src/cellquorum/`):
+
+1. **Entry point:** The CLI lives in `cli/app.py` — look for the `main()` function that launches the `cellquorum` / `cq` command. The programmatic API lives in `api/pipeline.py` — `run_pipeline` is the main Python entry point.
+
+2. **Run flow:** Read `docs/how-it-works.md` for a complete file-by-file walkthrough of one run: config validation → backend detection → planning → data loading → stage execution → provenance. It names every file on the control-flow spine.
+
+3. **Configuration:** The `config/models.py` file defines the entire configuration schema as Pydantic models — `CellQuorumConfig` is the top-level contract. See `docs/configuration.md` for a section-by-section reference.
+
+4. **Architecture:** `docs/architecture.md` explains the design principles, the execution model, and how the pieces fit together.
+
+**One-line run trace:** `cli/app.py:main` → validate config (`config/models.py`) → build plan (`core/planner.py` reads `core/stage_catalog.py`) → load data (`io/manifest.py`) → execute stages (`core/executor.py` dispatches to `stages/<stage>/stage.py`, writes via `core/stage_artifact_writer.py`) → final context with annotated `adata`.
 
 ## Development
 
