@@ -31,7 +31,7 @@ from cellquorum.visualization.figstyle import (
     NORMAL_BLUE,
     TEXT,
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
+    apply_theme,
     save_cellquorum_figure,
 )
 
@@ -105,7 +105,7 @@ def write_hvg_figure(
         x_plot, y_plot = means, values
         x_label = "Mean expression (log)"
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     import matplotlib
 

@@ -130,7 +130,7 @@ def plot_lineage_family_heatmap(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from cellquorum.visualization.figstyle import save_cellquorum_figure, set_style
+    from cellquorum.visualization.figstyle import apply_theme, save_cellquorum_figure
 
     severity = family_severity(obs)
     if severity.empty or group_column not in obs.columns:
@@ -155,7 +155,7 @@ def plot_lineage_family_heatmap(
     if informative:
         columns, table = informative, table[informative]
 
-    set_style()
+    apply_theme("compact")
     height = max(3.2, 0.42 * len(table) + 2.0)
     figure = plt.figure(figsize=(9.4, height))
     # An explicit grid, because letting colorbar() steal space from a 2-axes layout drew the bar
@@ -285,7 +285,7 @@ def plot_family_cooccurrence(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from cellquorum.visualization.figstyle import save_cellquorum_figure, set_style
+    from cellquorum.visualization.figstyle import apply_theme, save_cellquorum_figure
 
     severity = family_severity(obs)
     if severity.empty:
@@ -320,7 +320,7 @@ def plot_family_cooccurrence(
         return None
     consequence = quarantined.groupby(labels).mean().reindex(counts.index)
 
-    set_style()
+    apply_theme("compact")
     figure, axis = plt.subplots(figsize=(8.4, max(3.0, 0.42 * len(counts) + 1.8)))
 
     positions = range(len(counts))
@@ -484,8 +484,8 @@ def plot_severity_ecdf(
     from cellquorum.visualization.figstyle import (
         LE_RED,
         NORMAL_BLUE,
+        apply_theme,
         save_cellquorum_figure,
-        set_style,
     )
 
     severity = family_severity(obs)
@@ -502,7 +502,7 @@ def plot_severity_ecdf(
     arm_levels = sorted(arms.unique())
     palette = _arm_palette(arm_levels, NORMAL_BLUE, LE_RED)
 
-    set_style()
+    apply_theme("compact")
     figure, (curves, paired) = plt.subplots(
         1, 2, figsize=(10.0, 4.4), gridspec_kw={"width_ratios": [2.1, 1.0], "wspace": 0.28}
     )
@@ -944,11 +944,11 @@ def plot_metric_rainclouds(
         LE_RED,
         NORMAL_BLUE,
         TEXT,
+        apply_theme,
         natural_key,
         paired_condition_order,
         raincloud,
         save_cellquorum_figure,
-        set_style,
     )
 
     required = [metric, donor_column, condition_column]
@@ -1002,7 +1002,7 @@ def plot_metric_rainclouds(
     colours = {arm: NORMAL_BLUE if index == 0 else LE_RED for index, arm in enumerate(arm_order)}
     sides = {arm: "left" if index == 0 else "right" for index, arm in enumerate(arm_order)}
 
-    set_style()
+    apply_theme("compact")
     width = max(4.0, 0.95 * len(categories) + 1.6)
     figure, axis = plt.subplots(figsize=(width, 3.9))
 

@@ -33,7 +33,7 @@ def test_plot_identity_diagnostic_embeddings_applies_the_house_theme(tmp_path, m
     from cellquorum.visualization import reference_identity as viz_module
 
     calls = []
-    monkeypatch.setattr(viz_module, "apply_theme", lambda: calls.append(True))
+    monkeypatch.setattr(viz_module, "apply_theme", lambda style, **kw: calls.append(style))
 
     plot_identity_diagnostic_embeddings(
         _adata(),
@@ -45,7 +45,9 @@ def test_plot_identity_diagnostic_embeddings_applies_the_house_theme(tmp_path, m
         out_dir=tmp_path,
     )
 
-    assert calls, "plot_identity_diagnostic_embeddings must apply the shared house theme"
+    assert calls == [
+        "notebook"
+    ], "plot_identity_diagnostic_embeddings must apply the notebook theme"
 
 
 def test_plot_identity_diagnostic_embeddings_writes_four_standalone_files(tmp_path):

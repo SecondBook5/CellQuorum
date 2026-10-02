@@ -12,11 +12,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from cellquorum.visualization.figstyle import (
-    apply_cellquorum_theme,
-    cell_type_palette,
-    save_cellquorum_figure,
-)
+from cellquorum.visualization.figstyle import apply_theme, cell_type_palette, save_cellquorum_figure
 
 matplotlib.use("Agg")
 
@@ -44,7 +40,7 @@ def plot_anomaly_by_cell_type(obs: pd.DataFrame, cell_type_col: str, out_path: P
     if "scdiag_anomaly" not in obs.columns:
         return None
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     data = obs[[cell_type_col, "scdiag_anomaly"]].dropna(subset=["scdiag_anomaly"])
     order = _ordered_by_median(data, "scdiag_anomaly", cell_type_col)
     palette = cell_type_palette(order)
@@ -85,7 +81,7 @@ def plot_entropy_by_cell_type(obs: pd.DataFrame, cell_type_col: str, out_path: P
     if "scdiag_entropy" not in obs.columns:
         return None
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     data = obs[[cell_type_col, "scdiag_entropy"]].dropna(subset=["scdiag_entropy"])
     order = _ordered_by_median(data, "scdiag_entropy", cell_type_col)
     palette = cell_type_palette(order)
@@ -129,7 +125,7 @@ def plot_knn_confidence(obs: pd.DataFrame, cell_type_col: str, out_path: Path) -
     if "scdiag_knn_prob_group" not in obs.columns:
         return None
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     has_n = "scdiag_knn_prob_group_n" in obs.columns
     cols = [cell_type_col, "scdiag_knn_prob_group", *(["scdiag_knn_prob_group_n"] if has_n else [])]
     agg = {"scdiag_knn_prob_group": "first"}

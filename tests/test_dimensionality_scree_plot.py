@@ -28,11 +28,11 @@ def _captured_figure(monkeypatch, call):
 
 
 def test_write_scree_plot_applies_the_house_theme(tmp_path, monkeypatch):
-    """Every other CellQuorum figure calls apply_cellquorum_theme first; this one didn't."""
+    """Every other CellQuorum figure applies its theme first; this one didn't."""
     from cellquorum.visualization import figstyle
 
     calls = []
-    monkeypatch.setattr(figstyle, "apply_cellquorum_theme", lambda: calls.append(True))
+    monkeypatch.setattr(figstyle, "apply_theme", lambda style, **kw: calls.append(style))
     monkeypatch.setattr(figstyle, "save_cellquorum_figure", lambda fig, path, **kw: [path])
 
     variance_ratio = np.array([0.4, 0.2, 0.1, 0.05, 0.03])

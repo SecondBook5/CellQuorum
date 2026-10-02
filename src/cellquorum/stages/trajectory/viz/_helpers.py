@@ -20,11 +20,7 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 
 from cellquorum.visualization.figio import figure_artifacts, save_figure
-from cellquorum.visualization.figstyle import (
-    MUTED_PALETTE,
-    SEQUENTIAL_CMAP,
-    apply_cellquorum_theme,
-)
+from cellquorum.visualization.figstyle import MUTED_PALETTE, SEQUENTIAL_CMAP
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -72,12 +68,6 @@ def results_file(context: PipelineContext, *parts: str) -> Path:
 # ══════════════════════════════════════════════════════════════════════════════
 # Figure saving (from save.py)
 # ══════════════════════════════════════════════════════════════════════════════
-
-
-def apply_theme() -> None:
-    """Apply the house theme plus trajectory-viz vector-font overrides."""
-    apply_cellquorum_theme()
-    mpl.rcParams.update({"svg.fonttype": "none", "pdf.fonttype": 42})
 
 
 # save_figure/figure_artifacts are re-exported, not redefined: the local copy was
@@ -355,7 +345,6 @@ __all__ = [
     "numeric_obs",
     "results_file",
     # Figure saving
-    "apply_theme",
     "save_figure",
     "figure_artifacts",
     # Plotting primitives

@@ -37,7 +37,7 @@ from matplotlib.lines import Line2D
 from cellquorum.stats.gene_set_overlap import exclusive_combinations, set_sizes
 from cellquorum.visualization.figstyle import (
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
+    apply_theme,
     pretty_label,
     significance_stars,
 )
@@ -140,7 +140,7 @@ def set_overlap_upset(
         ValueError: No sets were given, ``min_size`` left no combinations to draw, or
             ``sort_sets`` is not one of the three orders.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     combos = exclusive_combinations(sets, min_size=min_size, list_elements=False)
     if combos.empty:
@@ -474,7 +474,7 @@ def set_overlap_matrix(
             f"available: {sorted(overlaps.columns)}"
         )
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     if set_order is None:
         set_order = list(dict.fromkeys([*overlaps["set_a"], *overlaps["set_b"]]))

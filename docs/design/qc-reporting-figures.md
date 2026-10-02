@@ -17,7 +17,7 @@ answer *why* a cell was lost, decomposed by evidence family.**
 - Reuse the shared style in `src/cellquorum/visualization/figstyle.py`. Do **not**
   duplicate style code. Available and directly relevant: `NORMAL_BLUE` (`#1B4F8A`),
   `LE_RED` (`#C41E3A`), `QC_FAIL_COLOR` (`#7E858B`, the neutral grey for quarantine),
-  `DOUBLET_COLOR`, `condition_palette()`, `distinct_palette()`, `set_style()`,
+  `DOUBLET_COLOR`, `condition_palette()`, `distinct_palette()`, `apply_theme("compact")`,
   `save_figure()` (PNG + PDF companion), `atomic_savefig()`, `FIGSIZE`, `FONTSIZE`.
 - New module: `src/cellquorum/visualization/qc/graded.py`. `publication.py` is built
   around legacy `cellquorum_qc_keep` / threshold semantics and must not be retrofitted.

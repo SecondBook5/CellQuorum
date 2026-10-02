@@ -39,7 +39,7 @@ from matplotlib.lines import Line2D
 
 from cellquorum.visualization.figstyle import (
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
+    apply_theme,
     pretty_label,
     significance_stars,
 )
@@ -329,7 +329,7 @@ def program_correlation_heatmap(
     Raises:
         ValueError: ``tests`` is empty or is missing the columns the frame is defined by.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     required = {"program_a", "program_b", "r"}
     missing = required - set(tests.columns)
@@ -508,7 +508,7 @@ def program_correlation_slopes(
     Raises:
         ValueError: ``tests`` has no pair with a finite coefficient to draw.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     frame = tests.copy()
     frame["_raw"] = pd.to_numeric(frame["r"], errors="coerce")

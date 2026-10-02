@@ -220,7 +220,7 @@ def plot_regulon_curvature_from_tables(
     # untouched while still bounding what a regulon run can produce.
     edge_df = edge_df.nlargest(plot_top_k, "weight")
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     fig = curvature_network(edge_df, node_df, top_k=plot_top_k)
     fig.suptitle("Regulon curvature (Ollivier-Ricci)", fontsize=12, fontweight="bold")

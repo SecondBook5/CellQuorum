@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 import networkx as nx
@@ -12,7 +13,7 @@ from _gallery_io import via_files
 from matplotlib.figure import Figure
 
 from cellquorum.stages.gene_regulation.grn import radial_figures, regulon_figures
-from cellquorum.visualization.figstyle import set_style
+from cellquorum.visualization.figstyle import apply_theme
 
 TFS = ["SOX9", "FOXC2", "PROX1", "STAT3", "TWIST1", "KLF4"]
 
@@ -120,7 +121,7 @@ def regulon_umap() -> Path:
     )()
 
 
-THEME = set_style
+THEME = partial(apply_theme, "compact")
 
 FIGURES: dict[str, Callable[[], Figure | Path]] = {
     "grn_radial": radial_grn,

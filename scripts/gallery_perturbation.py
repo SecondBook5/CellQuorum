@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,7 @@ from _gallery_io import via_files
 from matplotlib.figure import Figure
 
 from cellquorum.stages.gene_regulation.perturbation import perturbation_figures as pf
-from cellquorum.visualization.figstyle import set_style
+from cellquorum.visualization.figstyle import apply_theme
 
 LABELS = {"0": "Perivascular", "1": "Mechanosensory", "2": "Reticular"}
 
@@ -81,7 +82,7 @@ def grn_connectivity() -> Path:
     return via_files(lambda out: pf.plot_grn_connectivity(grn, out, n_top=15))()
 
 
-THEME = set_style
+THEME = partial(apply_theme, "compact")
 
 FIGURES: dict[str, Callable[[], Figure | Path]] = {
     "perturbation_target_ranking": target_ranking,

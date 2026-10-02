@@ -8,6 +8,7 @@ pixel difference against the stored baseline in ``docs/gallery/assets``.
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,7 @@ from matplotlib.figure import Figure
 from cellquorum.stages.trajectory.viz import _helpers as helpers
 from cellquorum.stages.trajectory.viz.activity_cascade import cascade_heatmap
 from cellquorum.stages.trajectory.viz.heatmap import condition_split_heatmap
+from cellquorum.visualization.figstyle import apply_theme
 
 
 def pseudotime_scatter() -> Figure:
@@ -122,7 +124,7 @@ def activity_cascade() -> Figure:
     return fig
 
 
-THEME = helpers.apply_theme
+THEME = partial(apply_theme, "notebook")
 
 FIGURES: dict[str, Callable[[], Figure]] = {
     "trajectory_pseudotime_scatter": pseudotime_scatter,

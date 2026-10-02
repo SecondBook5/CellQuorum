@@ -46,7 +46,7 @@ def volcano(
         raise ValueError(f"fdr_cut must be strictly between zero and one, got {fdr_cut!r}")
     if ((df["FDR"] < 0) | (df["FDR"] > 1)).any():
         raise ValueError("FDR values must be probabilities between zero and one")
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     d = df.copy()
     d = d[np.isfinite(d["logFC"]) & np.isfinite(d["FDR"])].copy()
     d["neg_log10fdr"] = -np.log10(d["FDR"].clip(lower=1e-300))

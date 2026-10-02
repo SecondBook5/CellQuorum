@@ -88,7 +88,7 @@ class CompositionStage:
 
         figures_dir = Path(context.paths.figures) / "composition"
         formats = tuple(config.figure_formats)
-        figstyle.set_style()
+        figstyle.apply_theme("compact")
 
         condition_present = bool(condition_key) and condition_key in obs.columns
         if condition_present:

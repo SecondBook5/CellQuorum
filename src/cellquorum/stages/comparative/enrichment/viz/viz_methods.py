@@ -14,12 +14,11 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.viz import plots
 from cellquorum.stages.comparative.enrichment.viz.io import (
-    apply_theme,
     collections_from_glob,
     figure_artifacts,
     save_figure,
 )
-from cellquorum.visualization.figstyle import get_group_palette
+from cellquorum.visualization.figstyle import apply_theme, get_group_palette
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -64,7 +63,7 @@ class ActivityVizMethod(AnalysisMethod):
         if not resources:
             return self._skip("no enrichment_activity_*.csv in results")
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for resource in resources:
             try:
@@ -149,7 +148,7 @@ class GseaVizMethod(AnalysisMethod):
         if not collections:
             return self._skip("no enrichment_gsea_*.csv in results")
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for collection in collections:
             try:
@@ -267,7 +266,7 @@ class GsvaVizMethod(AnalysisMethod):
         if not collections:
             return self._skip("no enrichment_gsva_*.csv in results")
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for collection in collections:
             # Figure 6: per-sample heatmap from the scores matrix.
@@ -389,7 +388,7 @@ class OraVizMethod(AnalysisMethod):
         if not collections:
             return self._skip("no enrichment_ora_*.csv in results")
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for collection in collections:
             try:

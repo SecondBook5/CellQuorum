@@ -96,9 +96,9 @@ def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Pat
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from cellquorum.visualization.figstyle import apply_cellquorum_theme, save_cellquorum_figure
+    from cellquorum.visualization.figstyle import apply_theme, save_cellquorum_figure
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     # Show at most the leading 30 PCs for legibility.
     n_show = int(min(30, len(variance_ratio)))

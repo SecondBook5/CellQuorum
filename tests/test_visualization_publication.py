@@ -9,10 +9,10 @@ import pandas as pd
 from cellquorum.visualization.figstyle import (
     LE_RED,
     NORMAL_BLUE,
+    apply_theme,
     categorical_embedding,
     condition_palette,
     pvalue_to_stars,
-    set_publication_style,
     violin_with_stats,
 )
 
@@ -33,7 +33,7 @@ def test_publication_style_sets_editable_vector_fonts() -> None:
 
     import matplotlib as mpl
 
-    set_publication_style(dpi=250, small=True)
+    apply_theme("publication", dpi=250, small=True)
 
     assert mpl.rcParams["pdf.fonttype"] == 42
     assert mpl.rcParams["ps.fonttype"] == 42
@@ -54,7 +54,7 @@ def test_violin_with_stats_and_categorical_embedding_render(tmp_path) -> None:
 
     import matplotlib.pyplot as plt
 
-    set_publication_style(small=True)
+    apply_theme("publication", small=True)
     frame = pd.DataFrame(
         {
             "condition": ["Normal"] * 6 + ["Lymphedema"] * 6,
@@ -108,11 +108,11 @@ def test_publication_sizes_survive_seaborn_defaults() -> None:
     from cellquorum.visualization.figstyle import FONTSIZE
 
     with mpl.rc_context():
-        set_publication_style(small=True)
+        apply_theme("publication", small=True)
         assert mpl.rcParams["font.size"] == 7
         assert mpl.rcParams["axes.titlesize"] == 8
         assert mpl.rcParams["axes.linewidth"] == 0.7
-        set_publication_style(small=False)
+        apply_theme("publication", small=False)
         assert mpl.rcParams["axes.titlesize"] == FONTSIZE["title"]
         assert mpl.rcParams["xtick.labelsize"] == FONTSIZE["tick"]
         assert mpl.rcParams["axes.linewidth"] == 0.75
@@ -128,10 +128,10 @@ def test_render_restores_style_after_success_and_failure() -> None:
         figures, warnings = [], []
 
         def successful():
-            set_publication_style(small=True)
+            apply_theme("publication", small=True)
 
         def failed():
-            set_publication_style(small=True)
+            apply_theme("publication", small=True)
             raise ValueError("test renderer failed")
 
         render_figure("success", successful, figures=figures, warnings=warnings)

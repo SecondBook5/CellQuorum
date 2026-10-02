@@ -42,14 +42,14 @@ def test_plot_panel_before_after_applies_the_house_theme(tmp_path, monkeypatch):
     from cellquorum.visualization import ambient_specificity as viz_module
 
     calls = []
-    monkeypatch.setattr(viz_module, "apply_theme", lambda: calls.append(True))
+    monkeypatch.setattr(viz_module, "apply_theme", lambda style, **kw: calls.append(style))
     before, after = _scores()
 
     plot_panel_before_after(
         _coords(), before, after, title_before="B", title_after="A", out_dir=tmp_path
     )
 
-    assert calls, "plot_panel_before_after must apply the shared house theme"
+    assert calls == ["notebook"], "plot_panel_before_after must apply the notebook house theme"
 
 
 def test_plot_panel_before_after_shares_one_color_scale(tmp_path, monkeypatch):

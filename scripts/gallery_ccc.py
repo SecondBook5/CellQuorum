@@ -8,13 +8,14 @@ change to the figure code shows up as a pixel difference against the stored base
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 
 import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
 from cellquorum.stages.cell_cell_communication.viz import _plots as plots
-from cellquorum.stages.cell_cell_communication.viz._io import apply_theme
+from cellquorum.visualization.figstyle import apply_theme
 
 CLUSTERS = ["0", "1", "2", "3", "4", "5"]
 LABELS = {
@@ -239,7 +240,7 @@ def tensor_factors() -> Figure:
     )
 
 
-THEME = apply_theme
+THEME = partial(apply_theme, "notebook")
 
 FIGURES: dict[str, Callable[[], Figure]] = {
     "ccc_interaction_dotplot": interaction_dotplot,

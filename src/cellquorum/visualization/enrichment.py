@@ -43,7 +43,7 @@ from cellquorum.visualization.figstyle import (
     LE_RED,
     NORMAL_BLUE,
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
+    apply_theme,
     pretty_label,
     significance_stars,
 )
@@ -298,7 +298,7 @@ def gsea_dotplot(
     Raises:
         ValueError: ``table`` has no row with a finite score to draw.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     frame = table.copy()
     frame["_score"] = _numeric(frame, "score")
@@ -505,7 +505,7 @@ def gsea_running_es(
     Raises:
         ValueError: ``walk`` holds no rows for ``source``.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     rows = walk[walk["source"].astype(str) == str(source)]
     if rows.empty:
@@ -771,7 +771,7 @@ def gsea_arm_comparison(
     Raises:
         ValueError: If fewer than two arms are given, or if no pathway survives selection.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     if len(tables) < 2:
         raise ValueError(
             f"an arm comparison needs at least two tables, got {len(tables)} "

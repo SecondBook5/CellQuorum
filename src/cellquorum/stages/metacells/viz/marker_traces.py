@@ -39,7 +39,7 @@ def plot_metacell_marker_traces(
     Returns:
         Written PNG+PDF paths across all genes, or [] when marker_genes is empty.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     if not marker_genes:
         return []
     out_dir = Path(out_dir)

@@ -13,12 +13,7 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.state_scoring.viz.plots import state_score_violin
 from cellquorum.visualization.figio import figure_artifacts
-from cellquorum.visualization.figstyle import (
-    LE_RED,
-    NORMAL_BLUE,
-    apply_cellquorum_theme,
-    save_figure,
-)
+from cellquorum.visualization.figstyle import LE_RED, NORMAL_BLUE, apply_theme, save_figure
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -74,7 +69,7 @@ class StateScoreViolinMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
 
         programs_arr = list(adata.uns[uns_key]["programs"])
-        apply_cellquorum_theme()
+        apply_theme("notebook")
         artifacts = []
         for program in requested:
             idx = programs_arr.index(program)

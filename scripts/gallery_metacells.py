@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +18,7 @@ from cellquorum.stages.metacells.viz import (
     network,
     qc_scatter,
 )
-from cellquorum.visualization.figstyle import set_style
+from cellquorum.visualization.figstyle import apply_theme
 
 GROUPS = ["Fibroblast", "Endothelial", "Pericyte", "Keratinocyte"]
 
@@ -117,7 +118,7 @@ def qc_size_comparison() -> Path:
     )()
 
 
-THEME = set_style
+THEME = partial(apply_theme, "compact")
 
 FIGURES: dict[str, Callable[[], Figure | Path]] = {
     "metacells_composition_bar": composition_bar,

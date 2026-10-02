@@ -24,10 +24,10 @@ from cellquorum.visualization import (
     add_statistical_annotation_box,
     add_volcano_background_panels,
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
     get_cellquorum_colors,
     save_cellquorum_figure,
 )
+from cellquorum.visualization.figstyle import apply_theme
 
 
 def test_color_constants_are_hex_strings() -> None:
@@ -65,7 +65,7 @@ def test_figsize_constants() -> None:
 
 def test_apply_cellquorum_theme() -> None:
     """Test that applying theme doesn't raise errors."""
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     # Verify some key rcParams were set
     assert plt.rcParams["savefig.dpi"] == 300
@@ -230,7 +230,7 @@ def test_complete_volcano_plot_styling() -> None:
     """Test complete volcano plot styling pipeline."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Apply theme
-        apply_cellquorum_theme()
+        apply_theme("notebook")
 
         # Create volcano plot
         fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SQUARE)

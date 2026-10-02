@@ -40,10 +40,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from cellquorum.visualization.figstyle import (
-    apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
-)
+from cellquorum.visualization.figstyle import apply_cellquorum_axis_style, apply_theme
 from cellquorum.visualization.grids import value_grid
 from cellquorum.visualization.measured_layout import (
     ABSENT,
@@ -164,7 +161,7 @@ def ligand_activity_ranking(
         receiver_label=receiver_label,
     )
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     labels = [f"{row.ligand}  ({row.rank})" for row in drawn.itertuples()]
     fig, ax = row_panel_canvas(
         n_rows=len(drawn),
@@ -553,7 +550,7 @@ def ligand_activity_arm_comparison(
         missing=missing,
     )
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     labels = [f"{name} †" if drawn.loc[name].isna().any() else str(name) for name in drawn.index]
     fig, ax = row_panel_canvas(
         n_rows=len(drawn),

@@ -16,7 +16,7 @@ from cellquorum.visualization.figstyle import (
     CELLQUORUM_RED,
     NORMAL_BLUE,
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
+    apply_theme,
     save_cellquorum_figure,
 )
 
@@ -46,7 +46,7 @@ def write_resolution_diagnostic_figure(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     ordered = summary.sort_values("resolution")
     x = ordered["resolution"].to_numpy(dtype=float)

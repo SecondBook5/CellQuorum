@@ -16,8 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import PathPatch, Rectangle
 from matplotlib.path import Path as MplPath
 
-from cellquorum.stages.integration.embeddings.plots import apply_theme
-from cellquorum.visualization.figstyle import cell_type_palette, save_figure
+from cellquorum.visualization.figstyle import apply_theme, cell_type_palette, save_figure
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -83,7 +82,7 @@ def two_column_sankey(
     if total <= 0:
         raise ValueError("crosstab has no flow (every cell is zero) -- nothing to draw.")
 
-    apply_theme()
+    apply_theme("notebook")
     out_path = Path(out_path)
 
     right_order = list(right_order) if right_order is not None else list(crosstab.columns)

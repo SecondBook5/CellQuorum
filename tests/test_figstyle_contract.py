@@ -11,7 +11,7 @@ from cellquorum.visualization import figstyle
 
 
 def test_set_style_sets_editable_vector_fonts():
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     assert matplotlib.rcParams["pdf.fonttype"] == 42
     assert matplotlib.rcParams["ps.fonttype"] == 42
     assert matplotlib.rcParams["svg.fonttype"] == "none"

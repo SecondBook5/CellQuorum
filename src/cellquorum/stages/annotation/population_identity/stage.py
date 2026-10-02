@@ -23,11 +23,11 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.stages.annotation.population_identity.config import PopulationIdentityConfig
 from cellquorum.visualization.figstyle import (
+    apply_theme,
     categorical_embedding,
     clean_axis,
     condition_palette,
     save_publication_figure,
-    set_publication_style,
 )
 
 if TYPE_CHECKING:
@@ -657,7 +657,7 @@ def write_population_identity_figures(
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    set_publication_style(dpi=400, small=True)
+    apply_theme("publication", dpi=400, small=True)
     artifacts: list[StageArtifact] = []
 
     summary = tables["population_summary"]

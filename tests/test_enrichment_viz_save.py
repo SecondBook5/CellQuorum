@@ -5,11 +5,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from cellquorum.stages.comparative.enrichment.viz.io import (
-    apply_theme,
-    figure_artifacts,
-    save_figure,
-)
+from cellquorum.stages.comparative.enrichment.viz.io import figure_artifacts, save_figure
+from cellquorum.visualization.figstyle import apply_theme
 
 
 def test_save_figure_creates_parent_dirs_and_all_formats(tmp_path):
@@ -41,6 +38,6 @@ def test_figure_artifacts_are_tagged_figure(tmp_path):
 def test_apply_theme_sets_svg_fonttype_none():
     import matplotlib as mpl
 
-    apply_theme()
+    apply_theme("notebook")
     assert mpl.rcParams["svg.fonttype"] == "none"
     assert mpl.rcParams["pdf.fonttype"] == 42

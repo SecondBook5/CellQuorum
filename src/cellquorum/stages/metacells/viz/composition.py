@@ -82,7 +82,7 @@ def plot_metacell_composition_bar(
     Returns:
         Written PNG+PDF paths, or [] when assignments is empty.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     if assignments is None or assignments.empty:
         return []
     out_dir = Path(out_dir)

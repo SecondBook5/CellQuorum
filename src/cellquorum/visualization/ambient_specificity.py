@@ -25,7 +25,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from cellquorum.stages.integration.embeddings.plots import continuous_overlay
-from cellquorum.visualization.figstyle import apply_cellquorum_theme, save_figure
+from cellquorum.visualization.figstyle import apply_theme, save_figure
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -224,10 +224,6 @@ def specificity_figure(
     return fig
 
 
-def apply_theme() -> None:
-    apply_cellquorum_theme()
-
-
 def plot_panel_before_after(
     coords: np.ndarray,
     before: pd.Series,
@@ -263,7 +259,7 @@ def plot_panel_before_after(
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    apply_theme()
+    apply_theme("notebook")
 
     before_arr = np.asarray(before, dtype=float)
     after_arr = np.asarray(after, dtype=float)
@@ -291,7 +287,6 @@ def plot_panel_before_after(
 
 
 __all__ = [
-    "apply_theme",
     "marker_detection_matrix",
     "off_diagonal_summary",
     "plot_panel_before_after",

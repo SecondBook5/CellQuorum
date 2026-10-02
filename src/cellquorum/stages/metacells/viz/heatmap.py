@@ -113,7 +113,7 @@ def plot_metacell_gene_heatmap(
     Returns:
         Written PNG+PDF paths, or [] when expr is empty.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     if expr is None or expr.empty:
         return []
     out_dir = Path(out_dir)

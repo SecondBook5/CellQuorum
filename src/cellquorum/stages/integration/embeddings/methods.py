@@ -14,11 +14,8 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.integration.embeddings import compute, overlay, plots
 from cellquorum.stages.integration.embeddings.config import MagicConfig, OverlayConfig
-from cellquorum.stages.integration.embeddings.plots import (
-    apply_theme,
-    figure_artifacts,
-    save_figure,
-)
+from cellquorum.stages.integration.embeddings.plots import figure_artifacts, save_figure
+from cellquorum.visualization.figstyle import apply_theme
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -312,7 +309,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         self._ensure_mixing_metric(adata, config, color_columns)
         subsets = self._resolve_subsets(adata, config)
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for tag in tags:
             spec = plots.EMBEDDING_REGISTRY.get(tag)
@@ -493,7 +490,7 @@ class ContinuousOverlayMethod(AnalysisMethod):
         if not features:
             return self._skip("no resolvable overlay features", warnings=warnings)
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, n_figures = [], 0
         for tag in tags:
             spec = plots.EMBEDDING_REGISTRY.get(tag)

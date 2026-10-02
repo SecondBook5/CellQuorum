@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -14,7 +15,7 @@ from cellquorum.stages.annotation.diagnostics import viz as annotation_viz
 from cellquorum.stages.clustering.resolution_diagnostic_viz import (
     write_resolution_diagnostic_figure,
 )
-from cellquorum.visualization.figstyle import apply_cellquorum_theme
+from cellquorum.visualization.figstyle import apply_theme
 
 CELL_TYPES = ["Fibroblasts", "LEC", "Pericytes", "T/NK", "Macrophages", "Keratinocytes"]
 
@@ -77,7 +78,7 @@ def resolution_diagnostic() -> Path:
     )()
 
 
-THEME = apply_cellquorum_theme
+THEME = partial(apply_theme, "notebook")
 
 FIGURES: dict[str, Callable[[], Figure | Path]] = {
     "annotation_anomaly_by_cell_type": anomaly,

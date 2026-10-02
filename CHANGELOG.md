@@ -205,6 +205,15 @@ Recent engineering and reproducibility hardening:
 
 ### Changed
 
+- **One figure-theme entry point, `cellquorum.visualization.figstyle.apply_theme(style)`**,
+  replaces `set_style()`, `apply_cellquorum_theme()`, `set_publication_style()` and the
+  seven per-stage `apply_theme()` wrappers. `style` is `"compact"`, `"notebook"` or
+  `"publication"` and is required, so a figure never picks up a look by accident. The three
+  presets are the three old functions' bodies unchanged: every figure keeps its exact look
+  (the 72 pixel-exact gallery baselines pass unchanged). Update calls as
+  `set_style()` -> `apply_theme("compact")`, `apply_cellquorum_theme()` ->
+  `apply_theme("notebook")`, `set_publication_style(dpi=..., small=...)` ->
+  `apply_theme("publication", dpi=..., small=...)`.
 - **No tracked file hardcodes a machine-specific path any more.** Five of the six shipped
   configs named the author's filesystem — including `configs/config.yaml`, which the CLI
   loads when no `--config` is given, so a new user's first `cellquorum run` tried to write

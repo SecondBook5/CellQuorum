@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 
 import anndata as ad
 import numpy as np
@@ -11,7 +12,7 @@ from matplotlib.figure import Figure
 from scipy import sparse
 
 from cellquorum.stages.integration.embeddings import plots
-from cellquorum.visualization.figstyle import apply_cellquorum_theme
+from cellquorum.visualization.figstyle import apply_theme
 
 AXES = ("UMAP1", "UMAP2")
 CLUSTERS = {"0": "Papillary", "1": "Reticular", "2": "Perivascular", "3": "Mechanosensory"}
@@ -80,7 +81,7 @@ def score_by_condition() -> Figure:
     )
 
 
-THEME = apply_cellquorum_theme
+THEME = partial(apply_theme, "notebook")
 
 FIGURES: dict[str, Callable[[], Figure]] = {
     "embeddings_categorical_umap": categorical_umap,

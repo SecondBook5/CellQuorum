@@ -26,6 +26,7 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 from cellquorum.stages.trajectory.viz import _helpers
+from cellquorum.visualization.figstyle import apply_theme
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -113,7 +114,7 @@ class ActivityCascadeVizMethod(AnalysisMethod):
 
         from cellquorum.stages.trajectory.viz import activity_cascade as cascade
 
-        _helpers.apply_theme()
+        apply_theme("notebook")
         figures_dir = Path(context.paths.figures) / "trajectory"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))

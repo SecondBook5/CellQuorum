@@ -12,7 +12,6 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.cell_cell_communication.viz import _plots
 from cellquorum.stages.cell_cell_communication.viz._io import (
-    apply_theme,
     figure_artifacts,
     load_canonical_lr_sources,
     load_curvature,
@@ -24,6 +23,7 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     relabel_clusters,
     save_figure,
 )
+from cellquorum.visualization.figstyle import apply_theme
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -59,7 +59,7 @@ class DotplotVizMethod(AnalysisMethod):
         labels = config.get("cluster_labels")
         sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for label, df in sources:
             try:
@@ -115,7 +115,7 @@ class ChordVizMethod(AnalysisMethod):
         labels = config.get("cluster_labels")
         sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for label, df in sources:
             try:
@@ -173,7 +173,7 @@ class SankeyVizMethod(AnalysisMethod):
         labels = config.get("cluster_labels")
         sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for label, df in sources:
             try:
@@ -243,7 +243,7 @@ class NetworkVizMethod(AnalysisMethod):
             for key, df in curv.items()
         }
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         # Whole-cohort levels: cci/gci (edges + nodes).
         for level in levels:
@@ -330,7 +330,7 @@ class SummaryVizMethod(AnalysisMethod):
         sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
         topo = {level: relabel_clusters(df, ["node"], labels) for level, df in topo.items()}
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for label, df in sources:
             try:
@@ -433,7 +433,7 @@ class TensorFactorsVizMethod(AnalysisMethod):
             node_ids = sorted(set(factors["senders"].index) | set(factors["receivers"].index))
             node_palette = _plots.celltype_palette(node_ids)
 
-        apply_theme()
+        apply_theme("notebook")
         try:
             fig = _plots.plot_tensor_factors(
                 factors["contexts"],
@@ -505,7 +505,7 @@ class MultiNicheNetVizMethod(AnalysisMethod):
         circos_top_k = int(config.get("mnn_circos_top_k", 8))
         palette = _plots.celltype_palette(key_clusters)
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for group in groups:
             subset = df[df[group_col].astype(str) == group] if group_col else df
@@ -656,7 +656,7 @@ class NicheNetVizMethod(AnalysisMethod):
                 tables["sender_expression"], ["sender"], labels
             )
 
-        apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
 
         if "activities" in tables:

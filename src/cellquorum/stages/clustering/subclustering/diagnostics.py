@@ -14,7 +14,7 @@ from cellquorum.visualization.figstyle import (
     CELLQUORUM_BLUE,
     CELLQUORUM_RED,
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
+    apply_theme,
     atomic_savefig,
     save_cellquorum_figure,
 )
@@ -49,7 +49,7 @@ def plot_group_recovery(
         return Path(out_path)
 
     # Apply CellQuorum theme.
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     # Sort groups by count (descending).
     sorted_groups = sorted(counts.items(), key=lambda x: x[1], reverse=True)
@@ -122,7 +122,7 @@ def plot_stability_curve(
         return Path(out_path)
 
     # Apply CellQuorum theme.
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     # Sort resolutions numerically.
     sorted_items = sorted(
@@ -193,7 +193,7 @@ def plot_subcluster_qc_panel(
         return Path(out_path)
 
     # Apply CellQuorum theme.
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     clusters_dict = gate_result["clusters"]
 
@@ -306,7 +306,7 @@ def plot_technical_qc_consistency(
     if not clusters_dict:
         return out_path
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     cluster_ids = list(clusters_dict.keys())
     worst_z = []
@@ -452,7 +452,7 @@ def plot_marker_identity_dotplot(
         work.obs["_identity"].astype("category").cat.reorder_categories(labeled_order)
     )
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     fig = sc.pl.dotplot(work, genes, groupby="_identity", standard_scale="var", return_fig=True)
     # DotPlot.savefig() calls make_figure() internally on every call, which
     # rebuilds the axes from scratch and would silently discard any patches

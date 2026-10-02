@@ -12,8 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from cellquorum.stages.integration.embeddings.plots import apply_theme
-from cellquorum.visualization.figstyle import cell_type_palette, save_figure
+from cellquorum.visualization.figstyle import apply_theme, cell_type_palette, save_figure
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -65,7 +64,7 @@ def plot_marker_dotplot(
     if not present_panel:
         return None
 
-    apply_theme()
+    apply_theme("notebook")
     out_path = Path(out_path)
 
     kwargs = {}
@@ -124,7 +123,7 @@ def plot_marker_feature_grid(
     import matplotlib.pyplot as plt
     import scipy.sparse as sp
 
-    apply_theme()
+    apply_theme("notebook")
     out_path = Path(out_path)
 
     genes = [gene for _, gene in present]
@@ -232,7 +231,7 @@ def plot_categorized_dotplot(
     if not present_categories:
         return None
 
-    apply_theme()
+    apply_theme("notebook")
     out_path = Path(out_path)
 
     groups = (

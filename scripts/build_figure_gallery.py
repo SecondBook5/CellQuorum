@@ -26,13 +26,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cellquorum.stages.comparative.differential_expression.viz.plots import volcano  # noqa: E402
 from cellquorum.stats.donor_comparison import two_group_test_on_donor_medians  # noqa: E402
 from cellquorum.visualization.enrichment import gsea_dotplot, gsea_running_es  # noqa: E402
-from cellquorum.visualization.figstyle import (  # noqa: E402
+from cellquorum.visualization.figstyle import (
     LE_RED,
     NORMAL_BLUE,
+    apply_theme,
     categorical_embedding,
     render_figure,
     save_figure,
-    set_publication_style,
 )
 from cellquorum.visualization.qc.panels import (  # noqa: E402
     assemble_qc_frame,
@@ -116,7 +116,7 @@ def build_gallery(output: Path) -> list[Path]:
     embedding_table.to_csv(output / "embedding_source.csv", index=False)
 
     def embedding() -> list[Path]:
-        set_publication_style()
+        apply_theme("publication")
         data = ad.AnnData(
             X=np.zeros((len(embedding_table), 1)),
             obs=embedding_table[["population"]].set_axis(
@@ -161,7 +161,7 @@ def build_gallery(output: Path) -> list[Path]:
     )
 
     def paired() -> list[Path]:
-        set_publication_style()
+        apply_theme("publication")
         fig, ax = plt.subplots(figsize=(5.5, 4.2))
         plot_paired_dumbbell(
             ax,

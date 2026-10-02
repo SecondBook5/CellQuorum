@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +16,7 @@ from cellquorum.stages.gene_regulation.coexpression import (
     module_curvature,
     module_umap_plot,
 )
-from cellquorum.visualization.figstyle import set_style
+from cellquorum.visualization.figstyle import apply_theme
 
 MODULES = ["M1", "M2", "M3"]
 
@@ -99,7 +100,7 @@ def module_umap() -> Path:
     return via_files(write)()
 
 
-THEME = set_style
+THEME = partial(apply_theme, "compact")
 
 FIGURES: dict[str, Callable[[], Figure | Path]] = {
     "coexpression_community_network": community_network_figure,

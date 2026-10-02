@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +13,7 @@ from matplotlib.figure import Figure
 
 from cellquorum.stages.comparative.module_remodeling import mr_figures
 from cellquorum.stages.comparative.multicellular_programs.mcp_figures import plot_mcp_summary
-from cellquorum.visualization.figstyle import set_style
+from cellquorum.visualization.figstyle import apply_theme
 
 GROUPS = ["Papillary", "Reticular", "Perivascular", "Mechanosensory"]
 PROGRAMS = {
@@ -145,7 +146,7 @@ def mcp_summary() -> Path:
     )()
 
 
-THEME = set_style
+THEME = partial(apply_theme, "compact")
 
 FIGURES: dict[str, Callable[[], Figure | Path]] = {
     "programs_module_dotgrid": module_dotgrid,

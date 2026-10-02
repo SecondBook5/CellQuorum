@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cellquorum.stages.integration.embeddings.plots import apply_theme, categorical_embedding
-from cellquorum.visualization.figstyle import save_figure
+from cellquorum.stages.integration.embeddings.plots import categorical_embedding
+from cellquorum.visualization.figstyle import apply_theme, save_figure
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -94,7 +94,7 @@ def plot_granular_panels_per_coarse_type(
             continue
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        apply_theme()
+        apply_theme("notebook")
 
         sub = ad.AnnData(
             X=np.zeros((int(mask.sum()), 1), dtype="float32"),

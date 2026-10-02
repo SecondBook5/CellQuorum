@@ -4,11 +4,8 @@ import scanpy as sc
 from matplotlib.figure import Figure
 
 from cellquorum.stages.integration.embeddings import plots
-from cellquorum.stages.integration.embeddings.plots import (
-    apply_theme,
-    figure_artifacts,
-    save_figure,
-)
+from cellquorum.stages.integration.embeddings.plots import figure_artifacts, save_figure
+from cellquorum.visualization.figstyle import apply_theme
 
 
 def _adata_umap_paga():
@@ -171,7 +168,7 @@ def test_plot_score_by_condition_cluster_labels_rename_state_panel_text():
 
 
 def test_save_figure_writes_both_formats(tmp_path):
-    apply_theme()
+    apply_theme("notebook")
     fig = Figure()
     fig.add_subplot(111).plot([0, 1], [0, 1])
     paths = save_figure(fig, tmp_path / "figs", "demo", formats=("pdf", "png"), dpi=100)

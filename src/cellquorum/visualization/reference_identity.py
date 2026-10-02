@@ -15,12 +15,8 @@ from typing import TYPE_CHECKING
 import matplotlib.pyplot as plt
 import numpy as np
 
-from cellquorum.stages.integration.embeddings.plots import (
-    apply_theme,
-    categorical_embedding,
-    continuous_overlay,
-)
-from cellquorum.visualization.figstyle import cell_type_palette, save_figure
+from cellquorum.stages.integration.embeddings.plots import categorical_embedding, continuous_overlay
+from cellquorum.visualization.figstyle import apply_theme, cell_type_palette, save_figure
 
 if TYPE_CHECKING:
     import anndata as ad
@@ -63,7 +59,7 @@ def plot_identity_diagnostic_embeddings(
     if basis not in adata.obsm:
         return written
 
-    apply_theme()
+    apply_theme("notebook")
 
     if cell_type_col in adata.obs.columns:
         fig = categorical_embedding(
@@ -119,7 +115,7 @@ def plot_lineage_confidence_bar(
     Returns:
         The PNG path written.
     """
-    apply_theme()
+    apply_theme("notebook")
     out_path = Path(out_path)
 
     mean_entropy = entropy.groupby(cell_type.to_numpy()).mean().sort_values()

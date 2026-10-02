@@ -297,6 +297,7 @@ def _write_contamination_figure(
         from cellquorum.visualization.figstyle import (
             LE_RED,
             NORMAL_BLUE,
+            apply_theme,
             save_figure,
         )
 
@@ -315,7 +316,7 @@ def _write_contamination_figure(
         levels = sorted(set(condition_of.values()))
         condition_colors = {levels[0]: NORMAL_BLUE, levels[1]: LE_RED} if len(levels) == 2 else None
 
-        ambient_viz.apply_theme()
+        apply_theme("notebook")
         figure = ambient_viz.contamination_figure(
             fractions,
             condition_of=condition_of or None,

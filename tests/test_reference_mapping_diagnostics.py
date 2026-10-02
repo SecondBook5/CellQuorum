@@ -32,20 +32,20 @@ def test_plot_loss_curves_applies_the_house_theme(tmp_path, monkeypatch):
     from cellquorum.stages.annotation.reference_mapping import diagnostics as diag_module
 
     calls = []
-    monkeypatch.setattr(diag_module, "apply_cellquorum_theme", lambda: calls.append(True))
+    monkeypatch.setattr(diag_module, "apply_theme", lambda style, **kw: calls.append(style))
     monkeypatch.setattr(diag_module, "save_cellquorum_figure", lambda fig, path, **kw: [path])
 
     loss_history = {"scvi": {"elbo": [10.0, 8.0, 6.0]}}
     plot_loss_curves(loss_history, tmp_path / "loss.png")
 
-    assert calls, "plot_loss_curves must apply the shared CellQuorum theme"
+    assert calls == ["notebook"], "plot_loss_curves must apply the notebook house theme"
 
 
 def test_plot_uncertainty_applies_the_house_theme(tmp_path, monkeypatch):
     from cellquorum.stages.annotation.reference_mapping import diagnostics as diag_module
 
     calls = []
-    monkeypatch.setattr(diag_module, "apply_cellquorum_theme", lambda: calls.append(True))
+    monkeypatch.setattr(diag_module, "apply_theme", lambda style, **kw: calls.append(style))
     monkeypatch.setattr(diag_module, "save_cellquorum_figure", lambda fig, path, **kw: [path])
 
     obs = pd.DataFrame({"transfer_knn_entropy": [0.1, 0.5, 0.9]})

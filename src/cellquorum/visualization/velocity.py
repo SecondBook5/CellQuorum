@@ -26,10 +26,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
-from cellquorum.visualization.figstyle import (
-    apply_cellquorum_theme,
-    get_group_palette,
-)
+from cellquorum.visualization.figstyle import get_group_palette
 
 if TYPE_CHECKING:
     import anndata as ad
@@ -391,14 +388,8 @@ def velocity_diagnostics_figure(
     return fig
 
 
-def apply_theme() -> None:
-    """House theme for velocity figures."""
-    apply_cellquorum_theme()
-
-
 __all__ = [
     "VelocityRenderError",
-    "apply_theme",
     "resolve_group_key",
     "velocity_diagnostics_figure",
     "velocity_stream_figure",

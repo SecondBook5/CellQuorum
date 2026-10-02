@@ -10,7 +10,6 @@ House-style figure saving integrated from save.py for the embeddings stage.
 from __future__ import annotations
 
 import anndata as ad
-import matplotlib as mpl
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -18,7 +17,7 @@ from matplotlib.figure import Figure
 from cellquorum.visualization.figio import figure_artifacts, save_figure
 from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
-from cellquorum.visualization.figstyle import apply_cellquorum_theme, muted_palette_colors
+from cellquorum.visualization.figstyle import muted_palette_colors
 
 # Single source of truth: tag -> obsm key + axis labels.
 EMBEDDING_REGISTRY: dict[str, dict] = {
@@ -664,12 +663,6 @@ def magic_zscore_layer(
     return True
 
 
-def apply_theme() -> None:
-    """Apply the house theme plus embeddings vector-font overrides."""
-    apply_cellquorum_theme()
-    mpl.rcParams.update({"svg.fonttype": "none", "pdf.fonttype": 42})
-
-
 # save_figure/figure_artifacts are re-exported, not redefined: the local copy was
 # a bare savefig loop that left truncated files behind and abandoned the remaining
 # formats when one raised mid-write. See visualization.figio.
@@ -677,7 +670,6 @@ def apply_theme() -> None:
 
 __all__ = [
     "EMBEDDING_REGISTRY",
-    "apply_theme",
     "categorical_embedding",
     "continuous_overlay",
     "figure_artifacts",

@@ -18,7 +18,7 @@ import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -250,8 +250,43 @@ def distinct_palette(n: int) -> list[str]:
     return hexes
 
 
-def set_style() -> None:
-    """Apply the house rcParams (idempotent)."""
+Theme = Literal["compact", "notebook", "publication"]
+
+
+def apply_theme(style: Theme, *, dpi: int | None = None, small: bool = False) -> None:
+    """Apply the house figure theme. This is the one entry point for figure styling.
+
+    Every stage names the look it uses. There is deliberately no default, so a figure never
+    picks up a style by accident.
+
+    Args:
+        style: ``"compact"`` is the journal-panel look (8 pt type, bold titles, no legend
+            frame). ``"notebook"`` is the larger look (seaborn notebook scale, 10 pt type,
+            300 dpi saves, normal-weight titles). ``"publication"`` is the compact paper-scale
+            look (7 pt type, 300 dpi saves, the shared categorical colour cycle).
+        dpi: Save resolution; ``"publication"`` only (default 300).
+        small: Smaller type for dense panels; ``"publication"`` only.
+
+    Raises:
+        ValueError: For an unknown style, or ``dpi``/``small`` with another style.
+    """
+    if style == "publication":
+        _apply_publication(dpi=300 if dpi is None else dpi, small=small)
+        return
+    if dpi is not None or small:
+        raise ValueError(f"dpi and small apply only to the 'publication' style, not {style!r}")
+    if style == "compact":
+        _apply_compact()
+    elif style == "notebook":
+        _apply_notebook()
+    else:
+        raise ValueError(
+            f"unknown figure style {style!r}; use 'compact', 'notebook' or 'publication'"
+        )
+
+
+def _apply_compact() -> None:
+    """The compact journal-panel preset: 8 pt type, bold titles, no legend frame."""
     mpl.rcParams.update(
         {
             "pdf.fonttype": 42,
@@ -663,11 +698,11 @@ def panel_letter(
 # ===========================================================================
 
 
-def apply_cellquorum_theme() -> None:
+def _apply_notebook() -> None:
     """
-    Apply the CellQuorum seaborn + matplotlib theme.
+    The larger "notebook" preset (seaborn notebook scale, 10 pt type, 300 dpi saves).
 
-    This sets up the base aesthetic that all CellQuorum figures share:
+    The base aesthetic:
     - Clean white background
     - Minimal grid
     - Sans-serif fonts
@@ -726,7 +761,7 @@ def apply_cellquorum_theme() -> None:
             "ps.fonttype": 42,  # TrueType fonts in PS
             "svg.fonttype": "none",
             # Tufte-style by default: a caller that only ever calls
-            # apply_cellquorum_theme() (never the per-axis
+            # apply_theme("notebook") (never the per-axis
             # apply_cellquorum_axis_style() follow-up) still gets clean spines,
             # instead of silently keeping matplotlib's default boxed axes.
             "axes.spines.top": False,
@@ -747,7 +782,7 @@ def apply_cellquorum_axis_style(ax: Axes, remove_top_right: bool = True) -> None
         remove_top_right: Whether to remove top and right spines (Tufte style).
     """
     # Remove top and right spines (Tufte-style). Explicit in both directions,
-    # not just when removing: apply_cellquorum_theme() now defaults new axes
+    # not just when removing: apply_theme("notebook") now defaults new axes
     # to hidden top/right spines via rcParams, so "keep all spines" has to
     # actively re-show them rather than just skipping the hide call.
     ax.spines["top"].set_visible(not remove_top_right)
@@ -1088,8 +1123,8 @@ def add_statistical_annotation_box(
 # ===========================================================================
 
 
-def set_publication_style(*, dpi: int = 300, small: bool = False) -> None:
-    """Apply the shared compact publication style globally."""
+def _apply_publication(*, dpi: int, small: bool) -> None:
+    """The compact publication preset: 7 pt paper-scale type, the shared categorical cycle."""
 
     sns.set_style(
         "ticks",
@@ -1546,6 +1581,8 @@ __all__ = [
     "paired_condition_order",
     "natural_key",
     "pretty_label",
+    "apply_theme",
+    "Theme",
     "empty_figure",
     # Core contract (pinned).
     "TEXT",
@@ -1556,7 +1593,6 @@ __all__ = [
     "MUTED_PALETTE",
     "distinct_palette",
     "muted_palette_colors",
-    "set_style",
     "condition_palette",
     "diverging_norm",
     "significance_stars",
@@ -1584,7 +1620,6 @@ __all__ = [
     "BACKGROUND_GRAY",
     "BACKGROUND_RED",
     # Theme / axis helpers.
-    "apply_cellquorum_theme",
     "apply_cellquorum_axis_style",
     "get_cellquorum_colors",
     "get_group_palette",
@@ -1605,7 +1640,6 @@ __all__ = [
     "add_embedding_scalebar",
     "categorical_embedding",
     "save_publication_figure",
-    "set_publication_style",
     "categorical_palette",
     "cell_type_palette",
 ]

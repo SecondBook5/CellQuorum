@@ -120,7 +120,7 @@ def plot_metacell_network(
     Returns:
         Written PNG+PDF paths, or [] when there are no edges to draw.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     if edges is None or len(edges) == 0:
         return []
     out_dir = Path(out_dir)

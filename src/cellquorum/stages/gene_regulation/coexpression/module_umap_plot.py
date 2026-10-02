@@ -187,7 +187,7 @@ def plot_module_umap(
     Returns:
         List of written figure paths (PNG+PDF), or [] when the CSV has no non-grey genes.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

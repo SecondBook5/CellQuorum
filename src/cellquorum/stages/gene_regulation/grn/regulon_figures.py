@@ -120,7 +120,7 @@ def plot_regulon_cell_clustermap(
 
     import seaborn as sns
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -327,7 +327,7 @@ def plot_rss_panels(
     if auc_mtx is None or auc_mtx.shape[0] == 0 or auc_mtx.shape[1] == 0:
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     auc_mtx, groups = _align(auc_mtx, groups)
@@ -391,7 +391,7 @@ def plot_regulon_clustermap(
     if auc_mtx is None or auc_mtx.shape[0] == 0 or auc_mtx.shape[1] == 0:
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     auc_mtx, groups = _align(auc_mtx, groups)
@@ -501,7 +501,7 @@ def plot_regulon_umap(
     if auc_mtx is None or auc_mtx.shape[0] == 0 or auc_mtx.shape[1] == 0:
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

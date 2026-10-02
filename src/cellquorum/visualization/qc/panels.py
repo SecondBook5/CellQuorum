@@ -44,13 +44,7 @@ from matplotlib.patches import Patch
 from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.stages.qc.mixture import MIQC_POSTERIOR_COLUMN
 from cellquorum.stats.donor_comparison import TwoGroupTest
-from cellquorum.visualization.figstyle import (
-    LE_RED,
-    NORMAL_BLUE,
-    TEXT,
-    save_figure,
-    set_publication_style,
-)
+from cellquorum.visualization.figstyle import LE_RED, NORMAL_BLUE, TEXT, apply_theme, save_figure
 from cellquorum.visualization.qc.summarise import (
     as_float,
     condition_rank,
@@ -2272,7 +2266,7 @@ def write_qc_overview_figure(
         Written paths.
     """
 
-    set_publication_style(dpi=dpi)
+    apply_theme("publication", dpi=dpi)
     sample_table = summarize_by_sample(frame)
     rule_table = summarize_rules(frame, thresholds)
 
@@ -2413,7 +2407,7 @@ def write_qc_cell_type_figure(
     if len(display) < 2:
         return []
 
-    set_publication_style(dpi=dpi)
+    apply_theme("publication", dpi=dpi)
     fig = plt.figure(figsize=(12.6, min(2.0 + 0.27 * len(display), 22.0)), layout="constrained")
     _tune_layout(fig, w_pad=0.06, h_pad=0.10, wspace=0.03)
     # The left panel carries the shared row labels, so it needs the width they eat
@@ -2501,7 +2495,7 @@ def write_qc_panels(
         )
     )
 
-    set_publication_style(dpi=dpi)
+    apply_theme("publication", dpi=dpi)
     sample_table = summarize_by_sample(frame)
     rule_table = summarize_rules(frame, thresholds)
 

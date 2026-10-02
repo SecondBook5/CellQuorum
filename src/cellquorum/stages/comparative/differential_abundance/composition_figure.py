@@ -18,12 +18,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
-from cellquorum.visualization.figstyle import (
-    LE_RED,
-    NORMAL_BLUE,
-    cell_type_palette,
-    set_style,
-)
+from cellquorum.visualization.figstyle import LE_RED, NORMAL_BLUE, apply_theme, cell_type_palette
 
 
 def composition_cell_type_order(proportions: pd.DataFrame) -> list[str]:
@@ -107,7 +102,7 @@ def plot_condition_composition(
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
-    set_style()
+    apply_theme("compact")
     cluster_labels = cluster_labels or {}
     order = cell_type_order or composition_cell_type_order(proportions)
     colors = cell_type_palette(order)
@@ -196,7 +191,7 @@ def plot_per_patient_composition(
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
-    set_style()
+    apply_theme("compact")
     cluster_labels = cluster_labels or {}
     order = cell_type_order or composition_cell_type_order(proportions)
     colors = cell_type_palette(order)

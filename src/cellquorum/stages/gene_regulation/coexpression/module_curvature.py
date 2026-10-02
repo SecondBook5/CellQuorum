@@ -106,7 +106,7 @@ def plot_module_curvature(
     if modules is None or modules.empty:
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     paths: list[Path] = []
     for module_id in sorted(modules[module_col].astype(str).unique()):

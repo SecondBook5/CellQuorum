@@ -50,7 +50,7 @@ def plot_mcp_summary(
     Path
         Path to the saved .png file.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     ax_heatmap, ax_scores = axes

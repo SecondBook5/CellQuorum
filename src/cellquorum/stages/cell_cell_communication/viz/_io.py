@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib as mpl
 import pandas as pd
 
 from cellquorum.stages.cell_cell_communication.network._networks import liana_to_canonical
 from cellquorum.visualization.figio import figure_artifacts, save_figure
-from cellquorum.visualization.figstyle import apply_cellquorum_theme
 
 # ─── Input discovery ───────────────────────────────────────────────────────
 
@@ -188,12 +186,6 @@ def load_curvature(results_dir: Path) -> dict[str, pd.DataFrame]:
 # ─── Figure saving ─────────────────────────────────────────────────────────
 
 
-def apply_theme() -> None:
-    """Apply the house theme plus vector-font overrides."""
-    apply_cellquorum_theme()
-    mpl.rcParams.update({"svg.fonttype": "none", "pdf.fonttype": 42})
-
-
 # save_figure/figure_artifacts are re-exported, not redefined: the local copy was
 # a bare savefig loop that left truncated files behind and abandoned the remaining
 # formats when one raised mid-write. See visualization.figio.
@@ -207,7 +199,6 @@ __all__ = [
     "load_topology",
     "load_curvature",
     "load_tensor_factors",
-    "apply_theme",
     "save_figure",
     "figure_artifacts",
 ]

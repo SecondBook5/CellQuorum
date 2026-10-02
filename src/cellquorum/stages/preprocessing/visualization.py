@@ -18,7 +18,7 @@ from cellquorum.visualization.figstyle import (
     CELLQUORUM_GRAY,
     CELLQUORUM_RED,
     apply_cellquorum_axis_style,
-    apply_cellquorum_theme,
+    apply_theme,
     save_cellquorum_figure,
 )
 
@@ -77,7 +77,7 @@ def write_normalization_figures(
         PreprocessingVisualizationError: If visualization fails.
     """
     # Apply CellQuorum theme
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     # Create output directory
     output_dir = Path(output_dir)

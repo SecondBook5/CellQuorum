@@ -21,6 +21,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory.viz import _helpers
+from cellquorum.visualization.figstyle import apply_theme
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -129,7 +130,7 @@ class VelocityVizMethod(AnalysisMethod):
         figures_dir = Path(context.paths.figures) / "trajectory"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
-        velocity_viz.apply_theme()
+        apply_theme("notebook")
 
         try:
             sub = ad.read_h5ad(whole)
@@ -257,7 +258,7 @@ class MacrostateVizMethod(AnalysisMethod):
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
 
-        _helpers.apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n = [], [], 0
 
         # plot_macrostates needs an embedding basis.
@@ -372,7 +373,7 @@ class FateVizMethod(AnalysisMethod):
         cluster_key = config.get("cluster_key")
         fate_labels = config.get("fate_labels")
 
-        _helpers.apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n = [], [], 0
         for col, name in lineages:
             try:
@@ -488,7 +489,7 @@ class DriverVizMethod(AnalysisMethod):
         genes = np.asarray(adata.var_names)
         fate_labels = config.get("fate_labels")
 
-        _helpers.apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n = [], [], 0
         # One heatmap, top_k genes OVERALL (not top_k per lineage unioned --
         # that scaled with n_lineages and produced an unbounded, block-seamed

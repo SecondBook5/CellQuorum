@@ -53,7 +53,7 @@ def plot_metacell_qc_unclassified_vs_size(
     Returns:
         Written PNG+PDF paths, or [] when there is nothing to plot.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     if assignments is None or assignments.empty or nodes is None or nodes.empty:
         return []
     out_dir = Path(out_dir)
@@ -104,7 +104,7 @@ def plot_metacell_qc_size_comparison(
     Returns:
         Written PNG+PDF paths, or [] when there are no outlier cells to compare.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     if assignments is None or assignments.empty:
         return []
     outliers = assignments[assignments["metacell_id"] == _OUTLIER_LABEL]

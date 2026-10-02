@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from cellquorum.visualization.figstyle import apply_cellquorum_theme
+from cellquorum.visualization.figstyle import apply_theme
 from cellquorum.visualization.measured_layout import (
     ABSENT,
     INK,
@@ -132,7 +132,7 @@ def value_grid(
     import matplotlib.pyplot as plt
     from matplotlib.colors import Normalize
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     # The colourbar is as tall as the data area, so its label has to be wrapped to that
     # height before the canvas is sized — on a landscape grid the bar is an inch tall and a
     # label naming the quantity is three inches long, which matplotlib draws straight off the

@@ -3,9 +3,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from cellquorum.stages.trajectory.viz._helpers import apply_theme, figure_artifacts, save_figure
+from cellquorum.stages.trajectory.viz._helpers import figure_artifacts, save_figure
 from cellquorum.stages.trajectory.viz.config import TrajectoryVizConfig
 from cellquorum.stages.trajectory.viz.stage import TrajectoryVizStage
+from cellquorum.visualization.figstyle import apply_theme
 
 
 def test_config_defaults_are_render_only():
@@ -44,7 +45,7 @@ def test_new_config_fields_reach_methods_through_the_stage_whitelist():
 
 
 def test_save_figure_writes_all_formats_and_tags_figure(tmp_path):
-    apply_theme()
+    apply_theme("notebook")
     fig = plt.figure()
     paths = save_figure(fig, tmp_path / "trajectory", "demo", formats=("pdf", "png"), dpi=72)
     assert [p.name for p in paths] == ["demo.pdf", "demo.png"]

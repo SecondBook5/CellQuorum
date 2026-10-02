@@ -8,7 +8,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from cellquorum.visualization.figstyle import apply_cellquorum_theme, save_cellquorum_figure
+from cellquorum.visualization.figstyle import apply_theme, save_cellquorum_figure
 
 matplotlib.use("Agg")
 
@@ -21,7 +21,7 @@ def plot_loss_curves(loss_history: dict[str, dict[str, list[float]]], out_path: 
         loss_history: {phase: {metric: values}} from model.history serialization.
         out_path: Path to write the figure PNG. A ``.pdf`` is written beside it.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     phases = ["scvi", "scanvi", "query_surgery"]
     # Widened, with extra gutter between panels: each panel's legend sits outside
@@ -67,7 +67,7 @@ def plot_uncertainty(obs: pd.DataFrame, key_added: str, out_path: Path) -> None:
         key_added: Base name for uncertainty columns.
         out_path: Path to write the figure PNG. A ``.pdf`` is written beside it.
     """
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     fig, axes = plt.subplots(1, 3, figsize=(10, 3))
 

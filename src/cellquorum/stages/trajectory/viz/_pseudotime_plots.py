@@ -19,6 +19,7 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory.viz import _helpers, heatmap
 from cellquorum.visualization import figstyle
+from cellquorum.visualization.figstyle import apply_theme
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -59,7 +60,7 @@ class PseudotimeVizMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
         coords = adata.obsm[basis]
 
-        _helpers.apply_theme()
+        apply_theme("notebook")
         artifacts, warnings, n = [], [], 0
         for key in pts:
             try:
@@ -127,7 +128,7 @@ class GeneTrendVizMethod(AnalysisMethod):
         figures_dir = Path(context.paths.figures) / "trajectory"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
-        _helpers.apply_theme()
+        apply_theme("notebook")
         warnings = []
         try:
             model = cr.models.GAM(fate)
@@ -346,7 +347,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                     {int(v) for c in condition_order for v in track["tracks"][c] if v >= 0}
                 )
 
-            figstyle.set_style()
+            figstyle.apply_theme("compact")
             figures_dir = Path(context.paths.figures) / "trajectory"
             formats = tuple(config.get("figure_formats", ["pdf", "png"]))
             dpi = int(config.get("dpi", 300))

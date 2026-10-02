@@ -32,9 +32,9 @@ from cellquorum.visualization.figstyle import (
     LE_RED,
     NORMAL_BLUE,
     TEXT,
+    apply_theme,
     diverging_norm,
     save_figure,
-    set_style,
 )
 
 # Neutral greys shared across the DA figures (non-significant marks, connectors).
@@ -213,7 +213,7 @@ def plot_milo_beeswarm(
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
-    set_style()
+    apply_theme("compact")
     cluster_labels = cluster_labels or {}
     rng = np.random.default_rng(seed)
     prepared = prepare_milo_beeswarm(da, spatial_fdr=spatial_fdr)
@@ -354,7 +354,7 @@ def plot_sccoda_composition(
         The composed matplotlib :class:`~matplotlib.figure.Figure`.
     """
 
-    set_style()
+    apply_theme("compact")
     cluster_labels = cluster_labels or {}
     eff = sccoda_single_reference(effects, reference=reference).set_index("cell_type")
     order = sccoda_composition_order(eff.reset_index(), proportions, case=case)

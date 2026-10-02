@@ -10,8 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cellquorum.stages.integration.embeddings.plots import apply_theme
-from cellquorum.visualization.figstyle import save_figure
+from cellquorum.visualization.figstyle import apply_theme, save_figure
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -40,7 +39,7 @@ def plot_condition_enrichment_bar(
     if candidates.empty:
         return None
 
-    apply_theme()
+    apply_theme("notebook")
     out_path = Path(out_path)
 
     values = candidates["condition_enrichment"].to_numpy()

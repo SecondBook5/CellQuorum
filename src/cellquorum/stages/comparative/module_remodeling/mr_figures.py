@@ -158,7 +158,7 @@ def plot_module_dotgrid(
     Returns:
         The written paths.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
 
     programs = list(dict.fromkeys(effects["program"]))
     groups = list(group_order) if group_order else list(dict.fromkeys(effects["group"]))
@@ -375,7 +375,7 @@ def plot_contrast_index(
     Returns:
         The written paths.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
 
     groups = list(dict.fromkeys(values[group_col]))
     conditions = [c for c in (control, case) if c] or list(dict.fromkeys(values[condition_col]))
@@ -499,7 +499,7 @@ def plot_permanova(
     — kept separate on purpose, because a tall bar from four samples and a tall
     bar from eighteen are not the same claim.
     """
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
 
     frame = permanova.dropna(subset=["R2"]).copy()
     if frame.empty:

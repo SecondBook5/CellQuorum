@@ -19,8 +19,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from matplotlib.figure import Figure
 
-from cellquorum.visualization.figstyle import apply_cellquorum_theme
-
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -212,8 +210,4 @@ def _readable_on(rgba: tuple) -> str:
     return _INK if (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.6 else "white"
 
 
-def apply_theme() -> None:
-    apply_cellquorum_theme()
-
-
-__all__ = ["apply_theme", "contamination_figure"]
+__all__ = ["contamination_figure"]

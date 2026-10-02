@@ -7,6 +7,7 @@ and state scoring, each drawn from small synthetic tables with a fixed seed.
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,7 +18,7 @@ from cellquorum.stages.comparative.differential_abundance import composition_fig
 from cellquorum.stages.comparative.differential_expression.viz import plots as de_plots
 from cellquorum.stages.comparative.enrichment.viz import plots as enrich
 from cellquorum.stages.state_scoring.viz.plots import state_score_violin
-from cellquorum.visualization.figstyle import LE_RED, NORMAL_BLUE, apply_cellquorum_theme
+from cellquorum.visualization.figstyle import LE_RED, NORMAL_BLUE, apply_theme
 
 CASE, CONTROL = "Lymphedema", "Normal"
 TYPES = {"0": "Papillary", "1": "Reticular", "2": "Perivascular", "3": "Mechanosensory"}
@@ -275,7 +276,7 @@ def state_score() -> Figure:
     )
 
 
-THEME = apply_cellquorum_theme
+THEME = partial(apply_theme, "notebook")
 
 FIGURES: dict[str, Callable[[], Figure]] = {
     "de_volcano": volcano,

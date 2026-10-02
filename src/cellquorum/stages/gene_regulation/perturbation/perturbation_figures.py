@@ -119,7 +119,7 @@ def plot_target_ranking(
     """Horizontal lollipop of the top-N knockout targets by shift score."""
     if ranking_df is None or ranking_df.shape[0] == 0 or "score" not in ranking_df:
         return []
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     df = ranking_df.sort_values("score", ascending=False).head(n_top).iloc[::-1]
@@ -173,7 +173,7 @@ def plot_ko_shift_field(
     if len(common) == 0:
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -351,7 +351,7 @@ def plot_ko_shift_grid(
     if not keep.any():
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(8, 7))
@@ -435,7 +435,7 @@ def plot_ko_fate_summary(
     if "cluster" not in fate_df.columns or "delta" not in fate_df.columns:
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -486,7 +486,7 @@ def plot_grn_connectivity(
     if "degree" not in grn_summary_df.columns and "n_targets" not in grn_summary_df.columns:
         return []
 
-    figstyle.set_style()
+    figstyle.apply_theme("compact")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

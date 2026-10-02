@@ -39,7 +39,7 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
-from cellquorum.visualization.figstyle import apply_cellquorum_axis_style, apply_cellquorum_theme
+from cellquorum.visualization.figstyle import apply_cellquorum_axis_style, apply_theme
 from cellquorum.visualization.measured_layout import INK, MUTED
 
 if TYPE_CHECKING:
@@ -190,7 +190,7 @@ def mediation_forest(
     if panel.empty:
         raise ValueError(f"no rows for group {group!r}; present groups are {groups}")
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
 
     mediators = list(dict.fromkeys(panel["mediator"]))
     owns_figure = ax is None
@@ -387,7 +387,7 @@ def mediation_sensitivity(
             + (f" for group {group!r}" if group is not None else "")
         )
 
-    apply_cellquorum_theme()
+    apply_theme("notebook")
     owns_figure = ax is None
     if ax is None:
         height = max(2.6, 0.34 * len(mediators) * max(len(labels), 2) + 1.6)
