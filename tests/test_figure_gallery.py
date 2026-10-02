@@ -18,7 +18,7 @@ def test_gallery_exports_and_source_contracts(tmp_path):
     names = {"enrichment", "embedding", "paired", "running_score", "volcano", "qc_summary"}
     assert set(paths) == {
         tmp_path / f"{name}.{fmt}" for name in names for fmt in ("png", "pdf", "svg")
-    }
+    } | {tmp_path / f"{name}.png" for name in gallery.STAGE_FIGURES}
     for path in paths:
         assert path.stat().st_size > 100
         if path.suffix == ".pdf":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -14,6 +15,10 @@ import anndata as ad  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import gallery_trajectory  # noqa: E402
 
 from cellquorum.stages.comparative.differential_expression.viz.plots import volcano  # noqa: E402
 from cellquorum.stats.donor_comparison import two_group_test_on_donor_medians  # noqa: E402
@@ -31,6 +36,11 @@ from cellquorum.visualization.qc.panels import (  # noqa: E402
     plot_paired_dumbbell,
     write_qc_overview_figure,
 )
+
+# Per-stage figure registries: {name -> zero-argument builder returning a Figure}.
+# These figures are baselined as PNG only; the six hand-built examples below also
+# ship PDF and SVG.
+STAGE_FIGURES = {**gallery_trajectory.FIGURES}
 
 
 def build_gallery(output: Path) -> list[Path]:
@@ -224,11 +234,18 @@ def build_gallery(output: Path) -> list[Path]:
         )
 
     render_figure("qc_summary", qc_summary, figures=figures, warnings=warnings)
+    for name, build in STAGE_FIGURES.items():
+        render_figure(
+            name,
+            lambda name=name, build=build: save_figure(build(), output, name, formats=("png",)),
+            figures=figures,
+            warnings=warnings,
+        )
     expected = {
         output / f"{name}.{suffix}"
         for name in ("enrichment", "embedding", "paired", "running_score", "volcano", "qc_summary")
         for suffix in ("png", "pdf", "svg")
-    }
+    } | {output / f"{name}.png" for name in STAGE_FIGURES}
     if warnings or set(figures) != expected:
         raise RuntimeError(f"Incomplete gallery output: {warnings}; written={figures}")
     return figures
