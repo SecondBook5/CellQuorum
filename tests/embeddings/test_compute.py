@@ -207,3 +207,34 @@ def test_resolve_paga_groupby_granular_absent_falls_through_to_leiden():
         )
         == "leiden"
     )
+
+
+def test_compute_umap_reports_the_cpu_when_rapids_is_not_installed(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "rapids_singlecell", None)  # import raises ImportError
+    implementation, note = compute.compute_umap(
+        _adata_with_neighbors(), min_dist=0.3, random_state=1337
+    )
+    assert implementation == "cpu"
+    assert note is None  # no GPU was attempted, so there is nothing to explain
+
+
+def test_a_failed_gpu_umap_is_reported_not_swallowed(monkeypatch):
+    """GPU and CPU UMAP give different layouts, so a silent fallback changes the figure.
+
+    The run must say which implementation produced the coordinates and why.
+    """
+    import sys
+    import types
+
+    def broken_umap(*_args, **_kwargs):
+        raise RuntimeError("cuml is missing")
+
+    fake = types.SimpleNamespace(tl=types.SimpleNamespace(umap=broken_umap))
+    monkeypatch.setitem(sys.modules, "rapids_singlecell", fake)
+    a = _adata_with_neighbors()
+    implementation, note = compute.compute_umap(a, min_dist=0.3, random_state=1337)
+    assert implementation == "cpu"
+    assert a.obsm["X_umap"].shape == (60, 2)  # the CPU result is still produced
+    assert "GPU UMAP failed" in note and "cuml is missing" in note and "CPU" in note

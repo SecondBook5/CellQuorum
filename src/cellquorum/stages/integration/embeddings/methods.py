@@ -65,7 +65,7 @@ class UmapMethod(AnalysisMethod):
         use_rep = config.get("use_rep")
         n_neighbors = config.get("n_neighbors")
         try:
-            compute.compute_umap(
+            implementation, gpu_note = compute.compute_umap(
                 adata,
                 min_dist=float(config.get("umap_min_dist", 0.3)),
                 random_state=_seed(config, context),
@@ -80,8 +80,8 @@ class UmapMethod(AnalysisMethod):
             note += f" from '{use_rep}'"
         return StageResult(
             adata=adata,
-            notes=[note],
-            metrics={"method": self.name, "use_rep": use_rep},
+            notes=[note, *([gpu_note] if gpu_note else [])],
+            metrics={"method": self.name, "use_rep": use_rep, "compute": implementation},
             backend="python",
         )
 

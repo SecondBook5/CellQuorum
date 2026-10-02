@@ -71,10 +71,16 @@ def compute_umap(
     random_state: int,
     use_rep: str | None = None,
     n_neighbors: int | None = None,
-) -> None:
+) -> tuple[str, str | None]:
     """Compute UMAP on the neighbors graph; write obsm['X_umap'].
 
     GPU via rapids_singlecell if available, else scanpy CPU. Seed threaded.
+
+    Returns:
+        ``(implementation, note)``. ``implementation`` is ``"gpu"`` or ``"cpu"``: the two
+        give different layouts, so the run records which one produced the coordinates.
+        ``note`` explains a GPU attempt that failed before the CPU fallback, and is ``None``
+        when no GPU was attempted (rapids not installed) or the GPU succeeded.
 
     If ``use_rep`` is specified and differs from the existing neighbors graph's
     use_rep, neighbors will be recomputed on the specified representation before
@@ -112,17 +118,25 @@ def compute_umap(
     # CPU path. A CPU-path failure (e.g. a neighbors graph too small for UMAP's
     # spectral init) is retyped as ComputeFailed so the method skips, never
     # crashing the pipeline.
+    gpu_note = None
     try:
         import rapids_singlecell as rsc
-
-        rsc.tl.umap(adata, min_dist=min_dist, random_state=random_state)
-        return
-    except Exception:  # noqa: BLE001 — GPU absent or failed; fall back to CPU
-        pass
+    except ImportError:
+        rsc = None  # not installed: plain CPU run, nothing to explain
+    if rsc is not None:
+        try:
+            rsc.tl.umap(adata, min_dist=min_dist, random_state=random_state)
+            return "gpu", None
+        except Exception as exc:  # noqa: BLE001 — fall back to CPU, and say so
+            gpu_note = (
+                f"GPU UMAP failed ({type(exc).__name__}: {str(exc)[:80]}); computed on the CPU "
+                "instead, which gives a different layout."
+            )
     try:
         sc.tl.umap(adata, min_dist=min_dist, random_state=random_state)
     except Exception as exc:  # noqa: BLE001 — retype any backend failure as a typed skip
         raise ComputeFailed(f"umap computation failed: {exc}") from exc
+    return "cpu", gpu_note
 
 
 def compute_phate(
