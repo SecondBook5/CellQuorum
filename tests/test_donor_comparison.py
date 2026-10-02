@@ -268,3 +268,19 @@ def test_result_rejects_inconsistent_scientific_metadata(change):
     fields.update(change)
     with pytest.raises(CellQuorumDataError):
         TwoGroupTest(**fields)
+
+
+def test_design_option_errors_name_the_value_that_was_passed():
+    import pandas as pd
+    import pytest
+
+    from cellquorum.stats.donor_comparison import two_group_test_on_donor_medians
+
+    frame = pd.DataFrame({"donor": ["a"], "condition": ["x"], "value": [1.0]})
+    common = dict(
+        value_col="value", group_col="condition", donor_col="donor", group1="x", group2="y"
+    )
+    with pytest.raises(ValueError, match="paired.*'yes'"):
+        two_group_test_on_donor_medians(frame, paired="yes", **common)
+    with pytest.raises(ValueError, match="incomplete_pairs.*'keep'"):
+        two_group_test_on_donor_medians(frame, paired=True, incomplete_pairs="keep", **common)

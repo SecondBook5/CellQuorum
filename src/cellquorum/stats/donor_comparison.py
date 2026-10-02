@@ -100,11 +100,11 @@ def two_group_test_on_donor_medians(
     minus group1: median paired difference or difference of independent medians.
     """
     if type(paired) is not bool:
-        raise ValueError("paired must explicitly be True or False.")
+        raise ValueError(f"paired must explicitly be True or False, got {paired!r}.")
     if type(min_donors) is not int or min_donors < 2:
-        raise ValueError("min_donors must be an integer of at least two.")
+        raise ValueError(f"min_donors must be an integer of at least two, got {min_donors!r}.")
     if incomplete_pairs not in ("error", "drop"):
-        raise ValueError("incomplete_pairs must be 'error' or 'drop'.")
+        raise ValueError(f"incomplete_pairs must be 'error' or 'drop', got {incomplete_pairs!r}.")
     if group1 == group2 or not group1.strip() or not group2.strip():
         raise ValueError("The comparison requires two distinct, nonblank group labels.")
     required = [value_col, group_col, donor_col]

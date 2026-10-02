@@ -160,3 +160,20 @@ def test_volcano_rejects_invalid_probabilities_and_thresholds():
     for override in ({"fc_cut": -1}, {"fdr_cut": 0}, {"fdr_cut": 1}):
         with pytest.raises(ValueError):
             plots.volcano(_demo_df(), **(defaults | override))
+
+
+def test_a_bad_volcano_cutoff_names_the_value_that_was_passed():
+    import numpy as np
+    import pandas as pd
+    import pytest
+
+    from cellquorum.stages.comparative.differential_expression.viz.plots import volcano
+
+    table = pd.DataFrame({"gene": ["a"], "logFC": [1.0], "FDR": [0.01]})
+    kwargs = dict(case_color="r", control_color="b", x_label="x")
+    with pytest.raises(ValueError, match="fc_cut.*-1"):
+        volcano(table, fc_cut=-1, fdr_cut=0.05, **kwargs)
+    with pytest.raises(ValueError, match="fdr_cut.*1.5"):
+        volcano(table, fc_cut=1, fdr_cut=1.5, **kwargs)
+    with pytest.raises(ValueError, match="fc_cut.*nan"):
+        volcano(table, fc_cut=np.nan, fdr_cut=0.05, **kwargs)

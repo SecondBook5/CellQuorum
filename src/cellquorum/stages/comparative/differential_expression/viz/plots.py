@@ -41,9 +41,9 @@ def volcano(
     glance, not something the significance filter should hide.
     """
     if not np.isfinite(fc_cut) or fc_cut < 0:
-        raise ValueError("fc_cut must be finite and nonnegative")
+        raise ValueError(f"fc_cut must be finite and nonnegative, got {fc_cut!r}")
     if not np.isfinite(fdr_cut) or not 0 < fdr_cut < 1:
-        raise ValueError("fdr_cut must be between zero and one")
+        raise ValueError(f"fdr_cut must be strictly between zero and one, got {fdr_cut!r}")
     if ((df["FDR"] < 0) | (df["FDR"] > 1)).any():
         raise ValueError("FDR values must be probabilities between zero and one")
     figstyle.set_style()
