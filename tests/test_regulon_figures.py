@@ -164,3 +164,25 @@ def test_no_theme_import() -> None:
     assert "crrt" not in src
     assert "get_stage_colors_for_cancer" not in src
     assert "plot_rss_vs_rcond" not in src
+
+
+def test_a_failure_in_the_specificity_scores_is_not_swallowed(tmp_path: Path, monkeypatch) -> None:
+    """The stage wraps each figure in render_figure, which turns an error into a warning.
+
+    A handler inside the figure function that returns [] would intercept the error first,
+    so the run would lack the figure and say nothing.
+    """
+    import pytest
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("scores unavailable")
+
+    monkeypatch.setattr(rf, "regulon_specificity_scores", broken)
+    auc = _auc()
+    groups = _groups(auc)
+    with pytest.raises(RuntimeError, match="scores unavailable"):
+        rf.plot_rss_panels(auc, groups, tmp_path, top_n=3)
+    with pytest.raises(RuntimeError, match="scores unavailable"):
+        rf.plot_regulon_clustermap(auc, groups, tmp_path, top_n=3)
+    with pytest.raises(RuntimeError, match="scores unavailable"):
+        rf.plot_regulon_cell_clustermap(auc, groups.to_frame("g"), tmp_path, top_n=3)

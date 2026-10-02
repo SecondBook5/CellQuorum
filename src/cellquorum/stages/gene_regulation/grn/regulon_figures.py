@@ -150,15 +150,12 @@ def plot_regulon_cell_clustermap(
 
     # column selection: top-N RSS regulons per category (union), so we show marker regulons not all
     grp = rss_groups.loc[auc.index].astype(str) if rss_groups is not None else ann.iloc[:, 0]
-    try:
-        rss = regulon_specificity_scores(auc, grp)
-        topreg: list[str] = []
-        for c in rss.index:
-            topreg.extend(rss.loc[c].sort_values(ascending=False).head(top_n).index.tolist())
-        topreg = sorted(set(topreg))
-        if not topreg:
-            return []
-    except Exception:
+    rss = regulon_specificity_scores(auc, grp)
+    topreg: list[str] = []
+    for c in rss.index:
+        topreg.extend(rss.loc[c].sort_values(ascending=False).head(top_n).index.tolist())
+    topreg = sorted(set(topreg))
+    if not topreg:
         return []
 
     # Z-score each regulon across cells (the protocol's auc_mtx_Z)
@@ -335,12 +332,9 @@ def plot_rss_panels(
     out_dir.mkdir(parents=True, exist_ok=True)
     auc_mtx, groups = _align(auc_mtx, groups)
 
-    try:
-        rss = regulon_specificity_scores(auc_mtx, groups)
-        cats = list(rss.index)
-        if not cats:
-            return []
-    except Exception:
+    rss = regulon_specificity_scores(auc_mtx, groups)
+    cats = list(rss.index)
+    if not cats:
         return []
 
     ncol = min(len(cats), 4)
@@ -402,17 +396,14 @@ def plot_regulon_clustermap(
     out_dir.mkdir(parents=True, exist_ok=True)
     auc_mtx, groups = _align(auc_mtx, groups)
 
-    try:
-        rss = regulon_specificity_scores(auc_mtx, groups)
+    rss = regulon_specificity_scores(auc_mtx, groups)
 
-        # union of top-N specific regulons per category
-        topreg = []
-        for c in rss.index:
-            topreg.extend(rss.loc[c].sort_values(ascending=False).head(top_n).index.tolist())
-        topreg = sorted(set(topreg))
-        if not topreg:
-            return []
-    except Exception:
+    # union of top-N specific regulons per category
+    topreg = []
+    for c in rss.index:
+        topreg.extend(rss.loc[c].sort_values(ascending=False).head(top_n).index.tolist())
+    topreg = sorted(set(topreg))
+    if not topreg:
         return []
 
     # Z-score each regulon across cells, then average per category for a compact, legible map
