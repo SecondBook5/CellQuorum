@@ -17,6 +17,7 @@ listed in [`.github/CODEOWNERS`](.github/CODEOWNERS) are reviewed by their owner
 - [Adding a stage](#adding-a-stage)
 - [Figures](#figures)
 - [Adding a config option](#adding-a-config-option)
+- [Public API and deprecation](#public-api-and-deprecation)
 - [Commit and PR conventions](#commit-and-pr-conventions)
 - [Releasing](#releasing)
 
@@ -269,6 +270,37 @@ and would show up as changes you did not make.
 settings the first time they are imported, so the same figure can look different depending on what
 ran before it. Import such a library inside `with matplotlib.rc_context():` and test it in a
 fresh subprocess; see `tests/stages/gene_regulation/grn/test_grn_radial_figures.py` for an example.
+
+## Public API and deprecation
+
+Three things count as the public interface, and changes to them are treated differently from
+changes to internals:
+
+1. **Python names** listed in the `__all__` of the top-level packages. The list is frozen in
+   `tests/api/test_public_api_contract.py`; a rename or removal fails that test, so it cannot
+   happen by accident. Anything not in an `__all__` (including everything under `stages/`
+   unless re-exported) is internal and may change in any release.
+2. **The configuration file.** Settings are validated strictly, so a renamed or removed key
+   makes an existing config fail with an "unknown setting" error rather than being ignored.
+3. **The `cellquorum` command and the layout of a run folder** (`results/`, `figures/`,
+   `reports/`, `objects/`, `provenance/`).
+
+CellQuorum is pre-1.0, so a minor release (0.2 to 0.3) is allowed to break any of these. The rules
+below are about doing it deliberately rather than quietly:
+
+- **Say it in the CHANGELOG.** Every break goes under `Changed` or `Removed` in the release's
+  entry, and for a renamed config key it states the old name and the new one, because that is
+  the sentence a lab member will search for when their config stops loading.
+- **Deprecate first where it is cheap.** A function that is superseded stays for at least one
+  minor release and calls `warnings.warn(..., DeprecationWarning, stacklevel=2)` with the name
+  of the replacement and the reason (`module_gene_overlap` in `stats/module_remodeling.py` is
+  the model). A config key is the exception: because configs are strict, keep accepting the old
+  key only if it can be mapped to the new one without ambiguity, and warn when it is used.
+- **Never change what a result means under the same name.** If the statistics of a table or
+  figure change, change its name or add a note to its provenance, so that two runs of different
+  versions are not silently compared as if they were the same analysis.
+- **From 1.0 on,** the rule tightens to semantic versioning: breaking changes only in a major
+  release, and a deprecation lasts at least one minor release.
 
 ## Commit and PR conventions
 
