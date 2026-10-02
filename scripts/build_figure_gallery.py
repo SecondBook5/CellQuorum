@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib
 import json
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -39,12 +41,22 @@ from cellquorum.visualization.qc.panels import (  # noqa: E402
 )
 
 
-def _themed(build: Callable[[], Figure], theme: Callable[[], None]) -> Callable[[], Figure]:
-    def themed() -> Figure:
+def _themed(
+    build: Callable[[], Figure | Path], theme: Callable[[], None]
+) -> Callable[[], Figure | Path]:
+    def themed() -> Figure | Path:
         theme()
         return build()
 
     return themed
+
+
+def _write_stage_figure(name: str, build: Callable[[], Figure | Path], output: Path) -> list[Path]:
+    """Save a registry builder's result as ``name.png``: a Figure, or a PNG already written."""
+    result = build()
+    if isinstance(result, Figure):
+        return save_figure(result, output, name, formats=("png",))
+    return [Path(shutil.copyfile(result, output / f"{name}.png"))]
 
 
 # Every ``gallery_<stage>.py`` next to this script exposes ``FIGURES``, a
@@ -255,7 +267,7 @@ def build_gallery(output: Path) -> list[Path]:
     for name, build in STAGE_FIGURES.items():
         render_figure(
             name,
-            lambda name=name, build=build: save_figure(build(), output, name, formats=("png",)),
+            functools.partial(_write_stage_figure, name, build, output),
             figures=figures,
             warnings=warnings,
         )
