@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-# Import Mapping and Sequence for defensive runtime validation.
 from collections.abc import Mapping, Sequence
-
-# Import dataclass for structured validation issues.
 from dataclasses import dataclass, field
-
-# Import Literal for constrained severity labels.
 from typing import Literal
 
-# Import shared configuration exception type.
 from cellquorum.core.exceptions import CellQuorumConfigError
 
 ValidationSeverity = Literal["error", "warning"]
@@ -34,16 +28,12 @@ class ValidationIssue:
         details: Optional structured details for provenance or reports.
     """
 
-    # Store the dot-separated field path.
     field_path: str
 
-    # Store the human-readable validation message.
     message: str
 
-    # Store the validation issue severity.
     severity: ValidationSeverity = "error"
 
-    # Store optional structured validation details.
     details: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
@@ -54,7 +44,6 @@ class ValidationIssue:
             Dictionary representation of the validation issue.
         """
 
-        # Return a JSON-friendly validation issue dictionary.
         return {
             "field_path": self.field_path,
             "message": self.message,
@@ -98,7 +87,6 @@ def format_field_path(*parts: str | int) -> str:
     if any(not part for part in cleaned_parts):
         raise ConfigValidationError(f"Field path contains an empty component: {cleaned_parts}.")
 
-    # Return the dot-separated field path.
     return ".".join(cleaned_parts)
 
 
@@ -124,7 +112,6 @@ def require_mapping(value: object, *, field_path: str) -> dict[str, object]:
             f"Received: {type(value).__name__}."
         )
 
-    # Return a plain dictionary copy.
     return dict(value)
 
 
@@ -218,7 +205,6 @@ def require_non_empty_string(value: object, *, field_path: str) -> str:
     if not cleaned_value:
         raise ConfigValidationError(f"Configuration field '{field_path}' cannot be empty.")
 
-    # Return the cleaned string.
     return cleaned_value
 
 
@@ -244,7 +230,6 @@ def require_bool(value: object, *, field_path: str) -> bool:
             f"Received: {type(value).__name__}."
         )
 
-    # Return the validated boolean.
     return value
 
 
@@ -296,7 +281,6 @@ def require_int(
             f"Configuration field '{field_path}' must be <= {maximum}. " f"Received: {value}."
         )
 
-    # Return the validated integer.
     return value
 
 
@@ -351,7 +335,6 @@ def require_float(
             f"Configuration field '{field_path}' must be <= {maximum}. " f"Received: {float_value}."
         )
 
-    # Return the validated float.
     return float_value
 
 
@@ -408,7 +391,6 @@ def require_allowed_value(
             f"{', '.join(allowed_values)}. Received: '{cleaned_value}'."
         )
 
-    # Return the validated allowed value.
     return cleaned_value
 
 
@@ -440,7 +422,6 @@ def require_string_list(value: object, *, field_path: str) -> list[str]:
             f"Received: {type(value).__name__}."
         )
 
-    # Initialize the cleaned string list.
     cleaned_values: list[str] = []
 
     # Validate each list element.
@@ -451,7 +432,6 @@ def require_string_list(value: object, *, field_path: str) -> list[str]:
         # Validate and append the cleaned item.
         cleaned_values.append(require_non_empty_string(item, field_path=item_path))
 
-    # Return the cleaned list.
     return cleaned_values
 
 
@@ -471,7 +451,6 @@ def collect_validation_issues(
         Combined list of validation issues.
     """
 
-    # Initialize the combined issue list.
     issues: list[ValidationIssue] = []
 
     # Add errors when provided.
@@ -482,7 +461,6 @@ def collect_validation_issues(
     if warnings is not None:
         issues.extend(warnings)
 
-    # Return the combined issue list.
     return issues
 
 

@@ -31,19 +31,14 @@ class RscriptBackend(BaseBackend):
         requirement_list: Requirements checked by this backend.
     """
 
-    # Store the stable backend name.
     name: str = "rscript"
 
-    # Store the backend family.
     kind: str = "rscript"
 
-    # Store the Rscript executable name or path.
     rscript_path: str = "Rscript"
 
-    # Store the timeout used for availability checks.
     timeout_seconds: int = 30
 
-    # Store the timeout used for script execution (separate from availability checks).
     script_timeout_seconds: int = 600
 
     # Address-space ceiling for the R child, in GB. 0 or None disables it.
@@ -66,7 +61,6 @@ class RscriptBackend(BaseBackend):
     # vector of size 31.6 Gb".
     max_memory_gb: float | None = 32.0
 
-    # Store Rscript backend requirements.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(
@@ -91,13 +85,10 @@ class RscriptBackend(BaseBackend):
             BackendStatus describing Rscript availability.
         """
 
-        # Initialize the missing requirement list.
         missing: list[str] = []
 
-        # Initialize the warning list.
         warnings: list[str] = []
 
-        # Initialize additional backend details.
         details: dict[str, str | int | bool] = {
             "rscript_path": self.rscript_path,
             "timeout_seconds": self.timeout_seconds,
@@ -108,7 +99,6 @@ class RscriptBackend(BaseBackend):
             # Record the missing executable as a mandatory missing requirement.
             missing.append(self.rscript_path)
 
-            # Return immediately because R package checks require Rscript.
             return BackendStatus(
                 name=self.name,
                 kind=self.kind,
@@ -161,7 +151,6 @@ class RscriptBackend(BaseBackend):
         # Determine backend availability from missing mandatory requirements.
         available = len(missing) == 0
 
-        # Return structured backend status.
         return BackendStatus(
             name=self.name,
             kind=self.kind,
@@ -333,7 +322,6 @@ class RscriptBackend(BaseBackend):
             True if Rscript is available, otherwise False.
         """
 
-        # Return whether the configured executable can be found on PATH.
         return shutil.which(self.rscript_path) is not None
 
     def _r_package_available(self, package_name: str) -> bool:
@@ -368,7 +356,6 @@ class RscriptBackend(BaseBackend):
         # Run the R package availability expression.
         result = self.run_expression(expression)
 
-        # Return whether Rscript reported success.
         return result.returncode == 0
 
     @staticmethod
@@ -387,7 +374,6 @@ class RscriptBackend(BaseBackend):
         if not isinstance(package_name, str):
             return False
 
-        # Return whether the package name matches a conservative R package pattern.
         return re.fullmatch(r"[A-Za-z][A-Za-z0-9._]*", package_name) is not None
 
 
@@ -434,7 +420,6 @@ def build_rscript_backend(
             )
         )
 
-    # Return the configured Rscript backend.
     return RscriptBackend(
         rscript_path=rscript_path,
         timeout_seconds=timeout_seconds,

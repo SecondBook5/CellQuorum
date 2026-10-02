@@ -2,136 +2,57 @@
 
 from __future__ import annotations
 
-# Import Counter for detecting repeated contrast names.
 from collections import Counter
-
-# Import Path for filesystem-like configuration fields.
 from pathlib import Path
-
-# Import Literal for constrained string configuration options.
 from typing import Annotated, Literal
 
-# Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator, model_validator
 
-# Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
-
-# Import the central cohort schema (structural keys declared once).
 from cellquorum.config.cohort import CohortConfig
-
-# Import the markers, design, and contrasts configuration models.
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
-
-# Import the ambient-correction configuration model.
 from cellquorum.stages.ambient_correction.config import AmbientCorrectionConfig
-
-# Import the adjudication configuration model.
 from cellquorum.stages.annotation.adjudication.config import AdjudicationConfig
-
-# Import the annotation configuration model.
 from cellquorum.stages.annotation.config import AnnotationConfig
-
-# Import the annotation-consensus configuration model.
 from cellquorum.stages.annotation.consensus.config import AnnotationConsensusConfig
-
-# Import the annotation-diagnostics configuration model.
 from cellquorum.stages.annotation.diagnostics.config import AnnotationDiagnosticsConfig
-
-# Import the population-identity configuration model.
 from cellquorum.stages.annotation.population_identity.config import PopulationIdentityConfig
-
-# Import the reference-mapping configuration model.
 from cellquorum.stages.annotation.reference_mapping.config import ReferenceMappingConfig
-
-# Import the cell-cell-communication configuration model.
 from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
-
-# Import the ccc-network (topology + curvature) configuration model.
 from cellquorum.stages.cell_cell_communication.network.config import CCCNetworkConfig
-
-# Import the CCC-visualization configuration model.
 from cellquorum.stages.cell_cell_communication.viz.config import CccVizConfig
-
-# Import the subclustering configuration model.
 from cellquorum.stages.clustering.subclustering.config import SubclusteringConfig
-
-# Import the differential-abundance configuration model.
 from cellquorum.stages.comparative.differential_abundance.config import DifferentialAbundanceConfig
-
-# Import the differential-expression configuration model.
 from cellquorum.stages.comparative.differential_expression.config import (
     DifferentialExpressionConfig,
 )
-
-# Import the differential-expression-visualization configuration model.
 from cellquorum.stages.comparative.differential_expression.viz.config import DeVizConfig
-
-# Import the differential-state configuration model.
 from cellquorum.stages.comparative.differential_state.config import DifferentialStateConfig
-
-# Import the enrichment configuration model.
 from cellquorum.stages.comparative.enrichment.config import EnrichmentConfig
-
-# Import the enrichment-visualization configuration model.
 from cellquorum.stages.comparative.enrichment.viz.config import EnrichmentVizConfig
-
-# Import the module-remodeling configuration model.
 from cellquorum.stages.comparative.module_remodeling.config import ModuleRemodelingConfig
-
-# Import the multicellular-programs configuration model.
 from cellquorum.stages.comparative.multicellular_programs.config import MulticellularProgramsConfig
-
-# Import the composition (cell-type composition summary) configuration model.
 from cellquorum.stages.composition.config import CompositionConfig
-
-# Import the discovery (consensus-NMF) configuration model.
 from cellquorum.stages.discovery.config import DiscoveryConfig
-
-# Import the coexpression configuration model.
 from cellquorum.stages.gene_regulation.coexpression.config import CoexpressionConfig
-
-# Import the GRN configuration model.
 from cellquorum.stages.gene_regulation.grn.config import GrnConfig
-
-# Import the perturbation configuration model.
 from cellquorum.stages.gene_regulation.perturbation.config import PerturbationConfig
-
-# Import the integration-benchmark configuration model.
 from cellquorum.stages.integration.benchmark.config import IntegrationBenchmarkConfig
-
-# Import the integration configuration model.
 from cellquorum.stages.integration.config import IntegrationConfig
-
-# Import the embeddings configuration model.
 from cellquorum.stages.integration.embeddings.config import EmbeddingsConfig
-
-# Import the metacells (MetaCell2) configuration model.
 from cellquorum.stages.metacells.config import MetacellsConfig
-
-# Import the preprocessing configuration model.
 from cellquorum.stages.preprocessing.config import PreprocessingConfig
-
-# Import the feature-selection configuration model.
 from cellquorum.stages.preprocessing.feature_selection.config import FeatureSelectionConfig
-
-# Import the QC configuration model.
 from cellquorum.stages.qc.config import (
     QCConfig,
     QCFinalizationConfig,
     QCSpliceMetricsConfig,
     QueryProjectionConfig,
 )
-
-# Import the state-scoring configuration model.
 from cellquorum.stages.state_scoring.config import StateScoringConfig
 from cellquorum.stages.state_scoring.viz.config import StateScoringVizConfig
-
-# Import the trajectory configuration model.
 from cellquorum.stages.trajectory.config import TrajectoryConfig
-
-# Import the trajectory-visualization configuration model.
 from cellquorum.stages.trajectory.viz.config import TrajectoryVizConfig
 
 
@@ -150,16 +71,12 @@ class ProjectConfig(StrictBaseModel):
         species_id: NCBI taxonomy identifier, such as 9606 for human.
     """
 
-    # Store a short project name.
     name: str = "cellquorum_project"
 
-    # Store an optional human-readable project description.
     description: str | None = None
 
-    # Store the organism label.
     organism: str = "human"
 
-    # Store the NCBI taxonomy identifier.
     species_id: int = 9606
 
     @field_validator("name")
@@ -188,7 +105,6 @@ class ProjectConfig(StrictBaseModel):
         if not cleaned:
             raise ValueError("Project name cannot be empty.")
 
-        # Return the cleaned project name.
         return cleaned
 
 
@@ -208,19 +124,14 @@ class PathConfig(StrictBaseModel):
         output_dir: Optional explicit output directory for the current run.
     """
 
-    # Store an optional root directory for datasets.
     data_root: Path | None = None
 
-    # Store an optional root directory for run outputs.
     run_root: Path | None = None
 
-    # Store an optional root directory for temporary files.
     scratch_root: Path | None = None
 
-    # Store an optional sample manifest path.
     manifest: Path | None = None
 
-    # Store an optional explicit output directory.
     output_dir: Path | None = None
 
 
@@ -265,16 +176,12 @@ class InputSubsetConfig(StrictBaseModel):
             those fits are stripped rather than silently kept.
     """
 
-    # Store the obs column to filter rows on.
     column: str
 
-    # Store the accepted values; a row is kept when its column value is in here.
     values: list[str] = Field(min_length=1)
 
-    # Store an optional second annotation column that must agree with `column`.
     require_agreement: str | None = None
 
-    # Store whether to skip stripping population-level fits after restriction.
     preserve_population_fits: bool = False
 
     @field_validator("column", "require_agreement")
@@ -337,10 +244,8 @@ class InputExcludeConfig(StrictBaseModel):
         values: values of ``column`` whose rows are dropped.
     """
 
-    # Store the obs column to drop rows on.
     column: str
 
-    # Store the values whose rows are dropped.
     values: list[str] = Field(min_length=1)
 
     @field_validator("column")
@@ -381,16 +286,12 @@ class InputConfig(StrictBaseModel):
             both).
     """
 
-    # Store an optional AnnData h5ad input path.
     h5ad: Path | None = None
 
-    # Store an optional AnnData layer containing raw counts.
     counts_layer: str | None = None
 
-    # Store an optional row restriction (e.g. cell_type == Fibroblasts).
     subset: InputSubsetConfig | None = None
 
-    # Store an optional row exclusion (e.g. leiden in the audited debris clusters).
     exclude: InputExcludeConfig | None = None
 
     @field_validator("h5ad")
@@ -417,7 +318,6 @@ class InputConfig(StrictBaseModel):
         if value.suffix.lower() != ".h5ad":
             raise ValueError(f"input.h5ad must point to a '.h5ad' file. Received: {value.name}")
 
-        # Return the validated path.
         return value
 
     @field_validator("counts_layer")
@@ -447,7 +347,6 @@ class InputConfig(StrictBaseModel):
         if not cleaned:
             raise ValueError("input.counts_layer cannot be empty.")
 
-        # Return the cleaned layer name.
         return cleaned
 
 
@@ -470,7 +369,6 @@ class RunConfig(StrictBaseModel):
         log_level: Output detail level.
     """
 
-    # Store the high-level analysis profile.
     profile: Literal[
         "standard",
         "publication",
@@ -481,16 +379,12 @@ class RunConfig(StrictBaseModel):
         "full",
     ] = "standard"
 
-    # Store an optional stable run identifier.
     run_id: str | None = None
 
-    # Store the random seed used by stochastic methods.
     random_seed: int = 1337
 
-    # Store whether existing output directories can be reused.
     overwrite: bool = False
 
-    # Store whether completed stages may be skipped on rerun (opt-in resume).
     resume: bool = False
 
     # Write the AnnData after each stage so a later run can start mid-pipeline.
@@ -505,10 +399,8 @@ class RunConfig(StrictBaseModel):
     # to be able to stop anywhere. Narrow it to bound disk on large cohorts.
     checkpoint_after: list[str] = Field(default_factory=list)
 
-    # Store whether to produce runtime output.
     verbose: bool = True
 
-    # Store the output detail level.
     log_level: Literal["quiet", "normal", "verbose"] = "normal"
 
     # Store whether the final in-memory AnnData is written to disk at the end of
@@ -516,7 +408,6 @@ class RunConfig(StrictBaseModel):
     # in memory and discards it — leaving no annotated deliverable on disk.
     write_final_object: bool = True
 
-    # Store the filename (under the run's objects dir) for the final AnnData.
     final_object_name: str = "final_annotated.h5ad"
 
     # Store whether execution continues past a failed stage. Default False keeps
@@ -546,7 +437,6 @@ class RunConfig(StrictBaseModel):
         if value < 0:
             raise ValueError("random_seed must be non-negative.")
 
-        # Return the validated seed.
         return value
 
 
@@ -578,13 +468,10 @@ class ComputeConfig(StrictBaseModel):
             through ``core.context.resolve_n_jobs``.
     """
 
-    # Store the preferred compute backend.
     backend: Literal["auto", "cpu", "gpu", "rapids"] = "auto"
 
-    # Store whether GPU acceleration should be preferred when available.
     prefer_gpu: bool = True
 
-    # Store whether CPU fallback is allowed when GPU is unavailable.
     fallback_to_cpu: bool = True
 
     # Store the number of CPU workers, or "auto" to derive one from the machine.
@@ -626,19 +513,14 @@ class RConfig(StrictBaseModel):
             to the R package being unavailable.
     """
 
-    # Store whether R-backed methods are allowed.
     enabled: bool = True
 
-    # Store the preferred R backend. Reserved: not yet honored (see class NOTE).
     preferred_backend: Literal["auto", "r", "rscript"] = "auto"
 
-    # Store whether Rscript fallback is allowed. Reserved: not yet honored.
     fallback_to_rscript: bool = True
 
-    # Store the Rscript executable path. Honored: threaded to the Rscript backend.
     rscript_path: str = "Rscript"
 
-    # Store timeout for lightweight R backend checks.
     timeout_seconds: int = Field(default=30, ge=1)
 
     # Store the RLIMIT_AS ceiling for Rscript subprocesses, in GB. None disables it.
@@ -664,19 +546,14 @@ class ReportConfig(StrictBaseModel):
         fail_on_report_error: Whether report failure should mark the run failed.
     """
 
-    # Store whether report generation is enabled.
     enabled: bool = True
 
-    # Store whether an HTML report should be rendered.
     html: bool = True
 
-    # Store whether a Markdown report should be rendered.
     markdown: bool = True
 
-    # Store whether PDF report rendering should be attempted.
     pdf: bool = False
 
-    # Store whether report generation failure should fail the run.
     fail_on_report_error: bool = False
 
 
@@ -699,10 +576,8 @@ class DimensionalityConfig(StrictBaseModel):
             dtype; float64 increases working memory but can improve numerical stability.
     """
 
-    # Store whether the dimensionality stage may run.
     enabled: bool = True
 
-    # Store the reduction method registry key.
     method: str = "pca"
 
     # Store the layer to run PCA on; must be a log-normalized layer.
@@ -728,7 +603,6 @@ class DimensionalityConfig(StrictBaseModel):
     # `true` demands the HVGs and fails if they are absent; `false` forces all genes.
     use_highly_variable: bool | None = None
 
-    # Store the PCA random seed.
     random_state: int = 0
 
     precision: Literal["input", "float32", "float64"] = "input"
@@ -806,22 +680,16 @@ class ClusteringConfig(StrictBaseModel):
             resolutions; see ResolutionDiagnosticConfig.
     """
 
-    # Store whether the clustering stage may run.
     enabled: bool = True
 
-    # Store the clustering method registry key.
     method: str = "leiden"
 
-    # Store the kNN neighborhood size.
     n_neighbors: int = 15
 
-    # Store the Leiden resolution.
     resolution: float = 1.0
 
-    # Store the clustering random seed.
     random_state: int = 0
 
-    # Store the obs column that receives cluster labels.
     key_added: str = "leiden"
 
     # Embedding to cluster on (set to the integration output, e.g.
@@ -880,58 +748,44 @@ class StageSelectionConfig(StrictBaseModel):
     # generates one, so enabling it on a run with no looms is a no-op skip.
     qc_splice_metrics: bool = False
 
-    # Store whether quality control is enabled.
     qc_evidence: bool = True
 
-    # Store whether preprocessing is enabled.
     preprocessing: bool = True
 
     # Store whether the feature-selection (HVG) stage may run. Opt-in: flagging HVGs
     # changes which genes PCA and scVI see, so it is a stated methodological choice.
     feature_selection: bool = False
 
-    # Store whether dimensionality reduction is enabled.
     dimensionality: bool = True
 
-    # Store whether clustering is enabled.
     clustering: bool = True
 
-    # Store whether integration is enabled.
     integration: bool = True
 
-    # Store whether annotation is enabled.
     annotation: bool = True
 
     # Store whether annotation-diagnostics evaluation is enabled. Opt-in: needs R and
     # the scDiagnostics package.
     annotation_diagnostics: bool = False
 
-    # Store whether annotation-consensus reconciliation is enabled.
     annotation_consensus: bool = True
 
     # Store whether reference mapping is enabled. Opt-in: requires an atlas h5ad, which
     # has no default.
     reference_mapping: bool = False
 
-    # Store whether integration-benchmark evaluation is enabled. Opt-in: a diagnostic.
     integration_benchmark: bool = False
 
-    # Store whether integration-gate filtering is enabled (reserved).
     integration_gate: bool = False
 
-    # Store whether population/state identity evidence output is enabled.
     population_identity: bool = True
 
-    # Store whether state scoring is enabled.
     state_scoring: bool = True
 
-    # Store whether state-scoring visualization (violin + p-value per cluster) is enabled.
     state_scoring_viz: bool = True
 
-    # Store whether automatic discovery is enabled.
     discovery: bool = True
 
-    # Store whether subclustering is enabled. Opt-in: needs a target population named.
     subclustering: bool = False
 
     # Store whether query projection is enabled: place borderline cells on the frozen
@@ -944,68 +798,48 @@ class StageSelectionConfig(StrictBaseModel):
     # can only mark every borderline cell unresolved.
     qc_finalization: bool = False
 
-    # Store whether cluster/state adjudication is enabled.
     adjudication: bool = True
 
     # Store whether the metacell (MetaCell2) diagnostic stage is enabled. Opt-in:
     # a QC/identity diagnostic, not a required pipeline step.
     metacells: bool = False
 
-    # Store whether composition analysis is enabled.
     composition: bool = True
 
-    # Store whether differential expression is enabled.
     differential_expression: bool = True
 
-    # Store whether donor-paired testing of per-cell state/program scores is enabled.
     differential_state: bool = True
 
-    # Store whether co-expression (hdWGCNA) is enabled.
     coexpression: bool = True
 
-    # Store whether GRN (pySCENIC) regulon inference is enabled.
     grn: bool = True
 
-    # Store whether in-silico perturbation (CellOracle) is enabled.
     perturbation: bool = True
 
-    # Store whether differential abundance is enabled.
     differential_abundance: bool = True
 
-    # Store whether enrichment / pathway-activity is enabled.
     enrichment: bool = True
 
-    # Store whether enrichment visualization is enabled.
     enrichment_viz: bool = True
 
-    # Store whether differential-expression visualization is enabled.
     de_viz: bool = True
 
-    # Store whether CCC visualization is enabled.
     ccc_viz: bool = True
 
-    # Store whether the embeddings stage (UMAP/PHATE/PAGA + overlays) is enabled.
     embeddings: bool = True
 
-    # Store whether the trajectory stage (velocity/RNA-velocity/potency) is enabled.
     trajectory: bool = True
 
-    # Store whether trajectory visualization (figures from producer outputs) is enabled.
     trajectory_viz: bool = True
 
-    # Store whether molecular inference is enabled as a gated capability.
     molecular_inference: bool = True
 
-    # Store whether cell-cell communication analysis is enabled as a gated capability.
     cell_cell_communication: bool = True
 
-    # Store whether network analysis is enabled as a gated capability.
     network_analysis: bool = True
 
-    # Store whether multicellular programs analysis is enabled as a gated capability.
     multicellular_programs: bool = True
 
-    # Store whether module remodeling analysis is enabled as a gated capability.
     module_remodeling: bool = True
 
 
@@ -1033,174 +867,122 @@ class CellQuorumConfig(StrictBaseModel):
         clustering: Clustering settings.
     """
 
-    # Store project-level metadata.
     project: ProjectConfig = Field(default_factory=ProjectConfig)
 
-    # Store input/output path settings.
     paths: PathConfig = Field(default_factory=PathConfig)
 
-    # Store input data settings.
     input: InputConfig = Field(default_factory=InputConfig)
 
-    # Store run-level execution settings.
     run: RunConfig = Field(default_factory=RunConfig)
 
-    # Store compute backend preferences.
     compute: ComputeConfig = Field(default_factory=ComputeConfig)
 
-    # Store R backend preferences.
     r: RConfig = Field(default_factory=RConfig)
 
-    # Store final report settings.
     report: ReportConfig = Field(default_factory=ReportConfig)
 
-    # Store major stage enablement flags.
     stages: StageSelectionConfig = Field(default_factory=StageSelectionConfig)
 
-    # Store ambient-correction settings.
     ambient_correction: AmbientCorrectionConfig = Field(default_factory=AmbientCorrectionConfig)
 
-    # Store quality-control settings.
     qc_evidence: QCConfig = Field(default_factory=QCConfig)
 
-    # Store preprocessing settings.
     preprocessing: PreprocessingConfig = Field(default_factory=PreprocessingConfig)
 
-    # Store feature-selection settings.
     feature_selection: FeatureSelectionConfig = Field(default_factory=FeatureSelectionConfig)
 
-    # Store dimensionality-reduction settings.
     dimensionality: DimensionalityConfig = Field(default_factory=DimensionalityConfig)
 
-    # Store clustering settings.
     clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
 
-    # Store integration settings.
     integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
 
-    # Store annotation settings.
     annotation: AnnotationConfig = Field(default_factory=AnnotationConfig)
 
-    # Store annotation-diagnostics evaluation settings.
     annotation_diagnostics: AnnotationDiagnosticsConfig = Field(
         default_factory=AnnotationDiagnosticsConfig
     )
 
-    # Store annotation-consensus reconciliation settings.
     annotation_consensus: AnnotationConsensusConfig = Field(
         default_factory=AnnotationConsensusConfig
     )
 
-    # Store integration-benchmark evaluation settings.
     integration_benchmark: IntegrationBenchmarkConfig = Field(
         default_factory=IntegrationBenchmarkConfig
     )
 
-    # Store reference-mapping settings.
     reference_mapping: ReferenceMappingConfig = Field(default_factory=ReferenceMappingConfig)
 
-    # Store population/state identity evidence settings.
     population_identity: PopulationIdentityConfig = Field(default_factory=PopulationIdentityConfig)
 
-    # Store subclustering settings.
     subclustering: SubclusteringConfig = Field(default_factory=SubclusteringConfig)
 
-    # Store splice-QC settings (optional intronic-fraction extraction, order 15).
     qc_splice_metrics: QCSpliceMetricsConfig = Field(default_factory=QCSpliceMetricsConfig)
 
-    # Store query-projection settings (borderline → frozen core manifold, order 105).
     query_projection: QueryProjectionConfig = Field(default_factory=QueryProjectionConfig)
 
-    # Store QC-finalization settings (per-cell rescue → qc_state_final, order 135).
     qc_finalization: QCFinalizationConfig = Field(default_factory=QCFinalizationConfig)
 
-    # Store adjudication settings.
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
 
-    # Store metacell (MetaCell2) diagnostic settings.
     metacells: MetacellsConfig = Field(default_factory=MetacellsConfig)
 
-    # Store differential-abundance settings.
     differential_abundance: DifferentialAbundanceConfig = Field(
         default_factory=DifferentialAbundanceConfig
     )
 
-    # Store differential-expression settings.
     differential_expression: DifferentialExpressionConfig = Field(
         default_factory=DifferentialExpressionConfig
     )
 
-    # Store differential-state settings.
     differential_state: DifferentialStateConfig = Field(default_factory=DifferentialStateConfig)
 
-    # Store co-expression (hdWGCNA) settings.
     coexpression: CoexpressionConfig = Field(default_factory=CoexpressionConfig)
 
-    # Store GRN (pySCENIC) settings.
     grn: GrnConfig = Field(default_factory=GrnConfig)
 
-    # Store in-silico perturbation (CellOracle) settings.
     perturbation: PerturbationConfig = Field(default_factory=PerturbationConfig)
 
-    # Store enrichment / pathway-activity settings.
     enrichment: EnrichmentConfig = Field(default_factory=EnrichmentConfig)
 
-    # Store enrichment-visualization settings.
     enrichment_viz: EnrichmentVizConfig = Field(default_factory=EnrichmentVizConfig)
 
-    # Store differential-expression-visualization settings.
     de_viz: DeVizConfig = Field(default_factory=DeVizConfig)
 
-    # Store CCC-visualization settings.
     ccc_viz: CccVizConfig = Field(default_factory=CccVizConfig)
 
-    # Store cell-state program scoring settings.
     state_scoring: StateScoringConfig = Field(default_factory=StateScoringConfig)
 
-    # Store state-scoring-visualization settings.
     state_scoring_viz: StateScoringVizConfig = Field(default_factory=StateScoringVizConfig)
 
-    # Store de-novo program discovery (consensus-NMF) settings.
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
 
-    # Store cell-type composition summary settings.
     composition: CompositionConfig = Field(default_factory=CompositionConfig)
 
-    # Store embeddings settings.
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
 
-    # Store trajectory settings.
     trajectory: TrajectoryConfig = Field(default_factory=TrajectoryConfig)
 
-    # Store trajectory-visualization settings.
     trajectory_viz: TrajectoryVizConfig = Field(default_factory=TrajectoryVizConfig)
 
-    # Store cell-cell-communication settings.
     cell_cell_communication: CellCellCommunicationConfig = Field(
         default_factory=CellCellCommunicationConfig
     )
 
-    # Store ccc_network (topology + curvature) settings.
     ccc_network: CCCNetworkConfig = Field(default_factory=CCCNetworkConfig)
 
-    # Store multicellular-programs settings.
     multicellular_programs: MulticellularProgramsConfig = Field(
         default_factory=MulticellularProgramsConfig
     )
 
-    # Store module-remodeling settings.
     module_remodeling: ModuleRemodelingConfig = Field(default_factory=ModuleRemodelingConfig)
 
-    # Store named marker gene panels.
     markers: MarkersConfig = Field(default_factory=MarkersConfig)
 
-    # Store the central cohort schema (structural obs keys declared once).
     cohort: CohortConfig = Field(default_factory=CohortConfig)
 
-    # Store experimental-design settings.
     design: DesignConfig = Field(default_factory=DesignConfig)
 
-    # Store named case/control contrasts.
     contrasts: ContrastsConfig = Field(default_factory=ContrastsConfig)
 
     @model_validator(mode="after")
@@ -1222,7 +1004,6 @@ class CellQuorumConfig(StrictBaseModel):
                 "Use compute.backend='gpu' or 'rapids' for explicit GPU-only execution."
             )
 
-        # Return the validated config object.
         return self
 
     @model_validator(mode="after")

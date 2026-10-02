@@ -95,7 +95,6 @@ class MethodRegistry:
     def names(self, stage_category: str) -> list[str]:
         """Return registered method names for a stage category, in registration order."""
 
-        # Return the names for the category (empty list if none).
         return list(self._methods.get(stage_category, {}).keys())
 
 

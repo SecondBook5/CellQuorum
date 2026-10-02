@@ -100,7 +100,6 @@ def _decode_strings(values: Any) -> Any:
         A one-dimensional NumPy object array containing Python strings.
     """
 
-    # Import NumPy locally after the dependency gate in main.
     import numpy as np
 
     # Convert the input to a flat NumPy array.
@@ -130,7 +129,6 @@ def _read_h5_vector(node: Any) -> Any:
         ValueError: If the encoding is unsupported or malformed.
     """
 
-    # Import h5py and NumPy locally after dependency validation.
     import h5py
     import numpy as np
 
@@ -172,7 +170,6 @@ def _read_h5_vector(node: Any) -> Any:
         # Mark missing entries explicitly.
         result[mask] = None
 
-        # Return the decoded nullable vector.
         return result
 
     # Read categorical vectors from categories and integer codes.
@@ -203,7 +200,6 @@ def _read_h5_vector(node: Any) -> Any:
                     f"code {code} exceeds {categories.shape[0]} categories."
                 )
 
-        # Return the decoded categorical vector.
         return result
 
     # Reject unknown group encodings rather than silently misreading data.
@@ -226,7 +222,6 @@ def _read_h5_matrix(node: Any) -> Any:
         ValueError: If the matrix encoding is unsupported or malformed.
     """
 
-    # Import h5py, NumPy, and SciPy locally after dependency validation.
     import h5py
     import numpy as np
     import scipy.sparse as sp
@@ -284,7 +279,6 @@ def _read_axis_names(handle: Any, axis_name: str) -> Any:
         ValueError: If its index cannot be read.
     """
 
-    # Import NumPy locally after dependency validation.
     import numpy as np
 
     # Require the requested axis group.
@@ -323,7 +317,6 @@ def _assert_raw_counts(matrix: Any, source: str) -> None:
         ValueError: If values are non-finite, negative, or non-integer.
     """
 
-    # Import NumPy and SciPy locally after dependency validation.
     import numpy as np
     import scipy.sparse as sp
 
@@ -402,16 +395,9 @@ def main() -> None:
 
     # Import only the dependencies required by the direct HDF5 exporter.
     try:
-        # Import HDF5 access.
         import h5py
-
-        # Import loom writing support.
         import loompy as lp
-
-        # Import NumPy.
         import numpy as np
-
-        # Import sparse matrix support.
         import scipy.sparse as sp
 
     # Preserve the existing harmless-skip behavior for missing dependencies.

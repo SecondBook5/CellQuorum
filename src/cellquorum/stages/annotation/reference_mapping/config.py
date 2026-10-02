@@ -121,7 +121,6 @@ class ReferenceMappingConfig(StrictBaseModel):
     # obs column that receives the transferred label.
     key_added: str = "ref_state"
 
-    # Compute backend preference (auto | cpu | gpu).
     compute_backend: str = "auto"
 
     # Whether to write loss curves to artifacts.

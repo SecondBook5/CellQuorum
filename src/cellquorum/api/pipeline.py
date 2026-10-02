@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-# Import Path for file and output directory arguments.
 from pathlib import Path
 
-# Import backend registry typing for custom execution contexts.
 from cellquorum.backends.registry import BackendRegistry
-
-# Import config validation helper for dictionary-based API calls.
 from cellquorum.config.loader import validate_config_dict
-
-# Import the validated top-level config model.
 from cellquorum.config.models import CellQuorumConfig
-
-# Import bootstrap and execution pipeline utilities.
 from cellquorum.core.pipeline import (
     PipelineRunResult,
     bootstrap_pipeline_run,
@@ -141,7 +133,6 @@ def run_pipeline(
     if isinstance(config, str | Path):
         # Load and optionally override verbosity.
         if quiet:
-            # Import config loader.
             from cellquorum.config.loader import load_config
 
             loaded_config = load_config(config)

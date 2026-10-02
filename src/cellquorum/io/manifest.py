@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-# Import Iterator for typed manifest iteration.
 from collections.abc import Iterator
-
-# Import dataclass for structured manifest records.
 from dataclasses import dataclass, field
-
-# Import Path for filesystem path normalization and resolution.
 from pathlib import Path
 from typing import Any
 
-# Import pandas for CSV/TSV manifest loading and tabular validation.
 import pandas as pd
 
-# Import shared CellQuorum manifest exception.
 from cellquorum.core.exceptions import CellQuorumManifestError
 
 
@@ -67,41 +60,30 @@ class ManifestRecord:
         extra_metadata: Additional manifest columns preserved for downstream use.
     """
 
-    # Store the unique sample identifier.
     sample_id: str
 
-    # Store the input data path (None for CellRanger-only rows).
     path: Path | None = None
 
     # Store the CellRanger outs-parent directory locator (relative or absolute,
     # resolved later against ambient_correction.cellranger_root — NOT here).
     cellranger_path: str | None = None
 
-    # Store the optional loom file path for velocity analysis (relative or absolute).
     loom_path: str | None = None
 
-    # Store the optional donor or patient identifier.
     donor_id: str | None = None
 
-    # Store the optional biological or experimental condition.
     condition: str | None = None
 
-    # Store the optional technical batch identifier.
     batch: str | None = None
 
-    # Store the optional tissue or anatomical source.
     tissue: str | None = None
 
-    # Store the optional timepoint label.
     timepoint: str | None = None
 
-    # Store the optional assay label.
     assay: str | None = None
 
-    # Store the optional species or organism label.
     species: str | None = None
 
-    # Store additional manifest metadata columns.
     extra_metadata: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
@@ -116,7 +98,6 @@ class ManifestRecord:
             extra metadata.
         """
 
-        # Build the base dictionary from required and standard metadata fields.
         record: dict[str, object] = {
             "sample_id": self.sample_id,
             "path": str(self.path) if self.path is not None else None,
@@ -134,7 +115,6 @@ class ManifestRecord:
         # Add any extra metadata columns after standard fields.
         record.update(self.extra_metadata)
 
-        # Return the dictionary representation.
         return record
 
 
@@ -156,19 +136,14 @@ class Manifest:
         data_root: Optional root used to resolve relative input paths.
     """
 
-    # Store validated manifest records.
     records: list[ManifestRecord]
 
-    # Store the source manifest path when loaded from disk.
     source_path: Path | None = None
 
-    # Store the optional root used to resolve relative input paths.
     data_root: Path | None = None
 
-    # Store required manifest columns (an input locator is validated per-row).
     REQUIRED_COLUMNS: tuple[str, ...] = ("sample_id",)
 
-    # Store standard optional manifest metadata columns.
     OPTIONAL_COLUMNS: tuple[str, ...] = (
         "path",
         "cellranger_path",
@@ -191,7 +166,6 @@ class Manifest:
             Ordered list of sample IDs.
         """
 
-        # Return sample IDs from each record.
         return [record.sample_id for record in self.records]
 
     @property
@@ -204,7 +178,6 @@ class Manifest:
             loom-only sample) are omitted.
         """
 
-        # Return paths from each record that has one.
         return [record.path for record in self.records if record.path is not None]
 
     def __len__(self) -> int:
@@ -215,7 +188,6 @@ class Manifest:
             Number of manifest records.
         """
 
-        # Return the record count.
         return len(self.records)
 
     def __iter__(self) -> Iterator[ManifestRecord]:
@@ -226,7 +198,6 @@ class Manifest:
             Iterator over ManifestRecord objects.
         """
 
-        # Return an iterator over records.
         return iter(self.records)
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -240,7 +211,6 @@ class Manifest:
         # Convert each record to a dictionary.
         rows = [record.to_dict() for record in self.records]
 
-        # Return the manifest as a DataFrame.
         return pd.DataFrame(rows)
 
     def metadata_columns(self) -> list[str]:
@@ -261,7 +231,6 @@ class Manifest:
         # Define columns that are not metadata fields.
         excluded_columns = set(self.REQUIRED_COLUMNS)
 
-        # Return all non-required columns.
         return [column for column in dataframe.columns if column not in excluded_columns]
 
     def has_column(self, column: str) -> bool:
@@ -275,7 +244,6 @@ class Manifest:
             True if the column exists in the manifest, otherwise False.
         """
 
-        # Return whether the requested column is present.
         return column in self.to_dataframe().columns
 
     def has_non_null_column(self, column: str) -> bool:
@@ -301,7 +269,6 @@ class Manifest:
         if column not in dataframe.columns:
             return False
 
-        # Return whether at least one value is non-null after string cleanup.
         return bool(dataframe[column].apply(_is_present_value).any())
 
     def metadata_availability(self) -> dict[str, bool]:
@@ -373,7 +340,6 @@ def _is_present_value(value: object) -> bool:
         True when the value is not missing.
     """
 
-    # Return the inverse of the missing-value predicate.
     return not _is_missing_value(value)
 
 
@@ -416,7 +382,6 @@ def _clean_required_string(value: object, *, column: str, row_number: int) -> st
     if _is_missing_value(value):
         raise ManifestError(f"Manifest row {row_number} has an empty required '{column}' value.")
 
-    # Return the cleaned string value.
     return str(value).strip()
 
 
@@ -488,7 +453,6 @@ def _normalize_columns(dataframe: pd.DataFrame) -> pd.DataFrame:
     # Assign cleaned column names.
     normalized.columns = cleaned_columns
 
-    # Return the normalized DataFrame.
     return normalized
 
 
@@ -597,10 +561,8 @@ def validate_manifest_dataframe(
     # Normalize the optional data root.
     resolved_data_root = Path(data_root).expanduser().resolve() if data_root else None
 
-    # Initialize the manifest record list.
     records: list[ManifestRecord] = []
 
-    # Initialize the sample ID set for uniqueness validation.
     seen_sample_ids: set[str] = set()
 
     # Iterate over manifest rows with one-based row numbers.
@@ -635,7 +597,6 @@ def validate_manifest_dataframe(
             _resolve_manifest_path(raw_path, resolved_data_root) if raw_path is not None else None
         )
 
-        # Build extra metadata by preserving non-standard columns.
         extra_metadata: dict[str, object] = {
             str(column): value
             for column, value in row.items()
@@ -661,7 +622,6 @@ def validate_manifest_dataframe(
         # Append the validated record.
         records.append(record)
 
-    # Return the validated manifest object.
     return Manifest(
         records=records,
         source_path=resolved_source_path,

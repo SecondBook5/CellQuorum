@@ -94,7 +94,6 @@ class StageArtifactWriter:
         # on-disk namespace layout and produced absolute paths are unchanged.
         manager = ArtifactManager.from_root(context.paths.root)
 
-        # Return a writer bound to this run's paths and manager.
         return cls(
             context.paths,
             manager,
@@ -129,7 +128,6 @@ class StageArtifactWriter:
         # Resolve the effective subdirectory (default when the call omits one).
         effective_subdir = subdir if subdir is not None else self._default_subdir
 
-        # Build the absolute target under the namespace directory.
         base: Path = getattr(self._paths, effective_namespace)
         target = base / effective_subdir / filename if effective_subdir else base / filename
 

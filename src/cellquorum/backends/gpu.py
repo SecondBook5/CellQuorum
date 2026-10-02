@@ -31,19 +31,14 @@ class GPUBackend(BaseBackend):
         requirement_list: Requirements checked by this backend.
     """
 
-    # Store the stable backend name.
     name: str = "gpu"
 
-    # Store the backend family.
     kind: str = "gpu"
 
-    # Store the command used to check visible NVIDIA GPUs.
     cuda_check_command: tuple[str, ...] = ("nvidia-smi",)
 
-    # Store the timeout used for command-line GPU checks.
     timeout_seconds: int = 10
 
-    # Store GPU backend requirements.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(
@@ -76,13 +71,10 @@ class GPUBackend(BaseBackend):
             BackendStatus describing GPU-related availability and warnings.
         """
 
-        # Initialize the missing requirement list.
         missing: list[str] = []
 
-        # Initialize the warning list.
         warnings: list[str] = []
 
-        # Initialize additional backend details.
         details: dict[str, Any] = {
             "cuda_check_command": list(self.cuda_check_command),
             "timeout_seconds": self.timeout_seconds,
@@ -129,7 +121,6 @@ class GPUBackend(BaseBackend):
         # Treat the generic GPU backend as available when either NVIDIA or torch CUDA is visible.
         available = bool(details["nvidia_gpu_visible"] or details["torch_cuda_available"])
 
-        # Return structured backend status.
         return BackendStatus(
             name=self.name,
             kind=self.kind,
@@ -165,14 +156,12 @@ class GPUBackend(BaseBackend):
 
         # Treat subprocess failures as no visible GPU.
         except (OSError, subprocess.TimeoutExpired):
-            # Return False when the command cannot complete safely.
             return False
 
         # Return False when nvidia-smi exits with an error.
         if result.returncode != 0:
             return False
 
-        # Return whether at least one non-empty GPU name was reported.
         return bool(result.stdout.strip())
 
     @staticmethod
@@ -187,7 +176,6 @@ class GPUBackend(BaseBackend):
             True if the package can be found, otherwise False.
         """
 
-        # Return whether importlib can find the requested package.
         return importlib.util.find_spec(package_name) is not None
 
     @staticmethod
@@ -201,7 +189,6 @@ class GPUBackend(BaseBackend):
 
         # Import torch lazily so CPU-only users can import CellQuorum.
         try:
-            # Import PyTorch only during the availability check.
             import torch
 
         # Return False when PyTorch is not installed or cannot be imported.
@@ -209,7 +196,6 @@ class GPUBackend(BaseBackend):
             # Report CUDA as unavailable without raising.
             return False
 
-        # Return whether PyTorch can access CUDA.
         return bool(torch.cuda.is_available())
 
 
@@ -227,5 +213,4 @@ def build_gpu_backend(
         Configured GPUBackend instance.
     """
 
-    # Return the configured general GPU backend.
     return GPUBackend(timeout_seconds=timeout_seconds)

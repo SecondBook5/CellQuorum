@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
-# Import JSON for optional machine-readable CLI output.
 import json
-
-# Import Path for config and output directory arguments.
 from pathlib import Path
 
 # Import Annotated for Typer-compatible option metadata without B008 violations,
 # and TYPE_CHECKING so engine types can be annotated without importing the engine.
 from typing import TYPE_CHECKING, Annotated, Any
 
-# Import Typer for the command-line interface.
 import typer
-
-# Import Rich console rendering for readable terminal output.
 from rich.console import Console
-
-# Import Rich tables for stage and backend summaries.
 from rich.table import Table
 
 # Import the package version. This is a plain string constant, so it is the one
@@ -272,7 +264,6 @@ def plan_command(
         # Serialize the plan dictionary as formatted JSON without Rich wrapping.
         typer.echo(json.dumps(pipeline_plan.to_dict(), indent=2))
 
-        # Return after printing JSON.
         return
 
     # Print a concise plan header.
@@ -417,7 +408,6 @@ def run_command(
     skipped_stages = execution_result.skipped_stage_names() if execution_result else []
     failed_stages = execution_result.failed_stage_names() if execution_result else []
 
-    # Build a machine-readable run summary.
     summary: dict[str, Any] = {
         "run_id": result.context.run_id,
         "profile": result.plan.profile,
@@ -443,7 +433,6 @@ def run_command(
         if failed_stages:
             raise typer.Exit(code=1)
 
-        # Return after printing JSON.
         return
 
     # Print the run header.

@@ -27,16 +27,12 @@ class BackendRequirement:
         install_hint: Optional user-facing instruction for installing the requirement.
     """
 
-    # Store the requirement name.
     name: str
 
-    # Store the requirement type.
     requirement_type: Literal["python_package", "r_package", "executable", "cuda", "other"]
 
-    # Store whether this requirement is mandatory.
     required: bool = True
 
-    # Store an optional install hint for user-facing error messages.
     install_hint: str | None = None
 
 
@@ -59,25 +55,18 @@ class BackendStatus:
         details: Additional JSON-serializable backend metadata.
     """
 
-    # Store the stable backend name.
     name: str
 
-    # Store the backend family.
     kind: BackendKind
 
-    # Store whether the backend is available.
     available: bool
 
-    # Store all requirements considered for the backend.
     requirements: list[BackendRequirement] = field(default_factory=list)
 
-    # Store missing mandatory requirements.
     missing: list[str] = field(default_factory=list)
 
-    # Store non-fatal backend warnings.
     warnings: list[str] = field(default_factory=list)
 
-    # Store additional backend metadata.
     details: dict[str, Any] = field(default_factory=dict)
 
     def raise_if_unavailable(self) -> None:
@@ -143,10 +132,8 @@ class Backend(Protocol):
     or executable details.
     """
 
-    # Store the stable backend name.
     name: str
 
-    # Store the backend family.
     kind: BackendKind
 
     def requirements(self) -> list[BackendRequirement]:
@@ -185,13 +172,10 @@ class BaseBackend:
         requirement_list: Requirements checked by this backend.
     """
 
-    # Store the stable backend name.
     name: str
 
-    # Store the backend family.
     kind: BackendKind
 
-    # Store the requirements checked by this backend.
     requirement_list: list[BackendRequirement] = field(default_factory=list)
 
     def requirements(self) -> list[BackendRequirement]:
@@ -202,7 +186,6 @@ class BaseBackend:
             List of backend requirements.
         """
 
-        # Return a shallow copy so callers cannot mutate the backend state.
         return list(self.requirement_list)
 
     def status(self) -> BackendStatus:
@@ -217,10 +200,8 @@ class BaseBackend:
             BackendStatus describing availability, missing requirements, and warnings.
         """
 
-        # Initialize the missing requirement list.
         missing: list[str] = []
 
-        # Initialize the warning list.
         warnings: list[str] = []
 
         # Iterate through each declared backend requirement.
@@ -264,7 +245,6 @@ class BaseBackend:
         # Determine availability from missing mandatory requirements.
         available = len(missing) == 0
 
-        # Return structured backend status.
         return BackendStatus(
             name=self.name,
             kind=self.kind,
@@ -287,7 +267,6 @@ class BaseBackend:
             True if the package can be found, otherwise False.
         """
 
-        # Return whether importlib can find the requested package.
         return importlib.util.find_spec(package_name) is not None
 
     @staticmethod
@@ -302,5 +281,4 @@ class BaseBackend:
             True if the executable can be found, otherwise False.
         """
 
-        # Return whether shutil can locate the executable on PATH.
         return shutil.which(executable_name) is not None

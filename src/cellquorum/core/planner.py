@@ -31,16 +31,12 @@ class PlannedStage:
         reason: Explanation of why the stage is enabled or disabled.
     """
 
-    # Store the stable stage name.
     name: str
 
-    # Store whether the stage is allowed by configuration.
     enabled: bool
 
-    # Store the stage planning status.
     status: StagePlanStatus
 
-    # Store the planning explanation.
     reason: str
 
 
@@ -60,16 +56,12 @@ class PipelinePlan:
         warnings: Planner-level warnings.
     """
 
-    # Store the selected run profile.
     profile: str
 
-    # Store planned stages.
     stages: list[PlannedStage] = field(default_factory=list)
 
-    # Store backend status rows.
     backend_status_table: list[BackendStatusRow] = field(default_factory=list)
 
-    # Store planner-level warnings.
     warnings: list[str] = field(default_factory=list)
 
     def enabled_stage_names(self) -> list[str]:
@@ -80,7 +72,6 @@ class PipelinePlan:
             Ordered list of enabled stage names.
         """
 
-        # Return enabled stage names in plan order.
         return [stage.name for stage in self.stages if stage.enabled]
 
     def disabled_stage_names(self) -> list[str]:
@@ -91,7 +82,6 @@ class PipelinePlan:
             Ordered list of disabled stage names.
         """
 
-        # Return disabled stage names in plan order.
         return [stage.name for stage in self.stages if not stage.enabled]
 
     def to_dict(self) -> dict[str, object]:
@@ -113,7 +103,6 @@ class PipelinePlan:
             for stage in self.stages
         ]
 
-        # Return the full plan dictionary.
         return {
             "profile": self.profile,
             "stages": stage_rows,
@@ -177,7 +166,6 @@ class PipelinePlanner:
         # Build planner warnings.
         warnings = self._build_warnings()
 
-        # Return the complete pipeline plan.
         return PipelinePlan(
             profile=self.config.run.profile,
             stages=stages,
@@ -202,12 +190,10 @@ class PipelinePlanner:
             (spec.name, getattr(self.config.stages, spec.config_flag)) for spec in all_stage_specs()
         ]
 
-        # Initialize the planned stage list.
         planned_stages: list[PlannedStage] = []
 
         # Convert each stage flag into a PlannedStage object.
         for stage_name, enabled in stage_flags:
-            # Set the stage status from the enabled flag.
             status: StagePlanStatus = "enabled" if enabled else "disabled"
 
             # Create the explanatory reason.
@@ -228,7 +214,6 @@ class PipelinePlanner:
                 )
             )
 
-        # Return the ordered stage plan.
         return planned_stages
 
     def _build_warnings(self) -> list[str]:
@@ -239,7 +224,6 @@ class PipelinePlanner:
             List of warning messages.
         """
 
-        # Initialize planner warnings.
         warnings: list[str] = []
         registered = set(self.backend_registry.names())
 
@@ -271,7 +255,6 @@ class PipelinePlanner:
                     "available. R-backed stages will be skipped or require installation."
                 )
 
-        # Return planner warnings.
         return warnings
 
 

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-# Import the package so the method registers itself as a side effect.
 import cellquorum.stages.comparative.differential_expression  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.exceptions import CellQuorumConfigError

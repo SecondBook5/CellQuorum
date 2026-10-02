@@ -1,6 +1,5 @@
 """Reference mapping package for atlas-based label transfer."""
 
-# Import find_spec to probe for scvi WITHOUT executing it (see the note below).
 from importlib.util import find_spec
 
 from cellquorum.stages.annotation.reference_mapping.config import ReferenceMappingConfig

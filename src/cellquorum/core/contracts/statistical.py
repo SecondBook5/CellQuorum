@@ -51,7 +51,6 @@ def _to_sample(X: np.ndarray | sp.spmatrix, n: int = 10000) -> np.ndarray:
     if values.size > n:
         values = values[:n]
 
-    # Return as float64 for uniform downstream arithmetic.
     return values.astype(np.float64, copy=False)
 
 

@@ -33,10 +33,8 @@ class MethodSkip:
         details: Structured details for provenance and reports.
     """
 
-    # Store the human-readable skip reason.
     reason: str
 
-    # Store structured skip details.
     details: dict[str, object] = field(default_factory=dict)
 
 

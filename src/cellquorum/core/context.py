@@ -39,28 +39,20 @@ class PipelinePaths:
         scratch: Directory for temporary stage-specific files.
     """
 
-    # Store the root directory for the current run.
     root: Path
 
-    # Store the directory for machine-readable result tables.
     results: Path
 
-    # Store the directory for generated figures.
     figures: Path
 
-    # Store the directory for human-readable reports.
     reports: Path
 
-    # Store the directory for serialized analysis objects.
     objects: Path
 
-    # Store the directory for reproducibility and provenance metadata.
     provenance: Path
 
-    # Store the directory for logs and warning records.
     logs: Path
 
-    # Store the directory for temporary stage-specific files.
     scratch: Path
 
     @classmethod
@@ -84,7 +76,6 @@ class PipelinePaths:
         # Resolve the root output directory so downstream paths are absolute.
         root = Path(output_dir).expanduser().resolve()
 
-        # Return the standardized run directory layout.
         return cls(
             root=root,
             results=root / "results",
@@ -227,28 +218,20 @@ class PipelineContext:
         metadata: Additional JSON-serializable runtime metadata.
     """
 
-    # Store the validated runtime configuration.
     config: Any
 
-    # Store the standardized run directories.
     paths: PipelinePaths
 
-    # Store the active AnnData object, if already loaded.
     adata: ad.AnnData | None = None
 
-    # Store the sample manifest table, if already loaded.
     manifest: pd.DataFrame | None = None
 
-    # Store the backend registry for Python, R, GPU, and external execution.
     backend_registry: Any | None = None
 
-    # Store a stable run identifier.
     run_id: str = "cellquorum-run"
 
-    # Store the random seed used by stochastic stages.
     random_seed: int = 1337
 
-    # Store additional runtime metadata.
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def require_adata(self) -> ad.AnnData:
@@ -274,7 +257,6 @@ class PipelineContext:
                 "Run an ingestion/loading stage before executing this stage."
             )
 
-        # Return the active AnnData object.
         return self.adata
 
     def require_manifest(self) -> pd.DataFrame:
@@ -300,7 +282,6 @@ class PipelineContext:
                 "Load and validate a manifest before executing this stage."
             )
 
-        # Return the active manifest table.
         return self.manifest
 
     def with_adata(self, adata: ad.AnnData) -> PipelineContext:
@@ -318,7 +299,6 @@ class PipelineContext:
             PipelineContext with the updated AnnData object.
         """
 
-        # Return a new context with the updated AnnData object.
         return PipelineContext(
             config=self.config,
             paths=self.paths,

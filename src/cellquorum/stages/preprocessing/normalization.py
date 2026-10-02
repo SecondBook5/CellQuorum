@@ -2,30 +2,17 @@
 
 from __future__ import annotations
 
-# Import dataclass and field for structured result objects.
 import logging
 from dataclasses import dataclass, field
-
-# Import Path for backend scratch-file exchange.
 from pathlib import Path
 
-# Import AnnData for single-cell data handling.
 import anndata as ad
-
-# Import numpy for count matrix transformations.
 import numpy as np
 import pandas as pd
-
-# Import scipy sparse for sparse matrix support.
 import scipy.sparse as sp
 
-# Import layer tagging for provenance contracts.
 from cellquorum.core.contracts import set_layer_tag
-
-# Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
-
-# Import normalization configuration.
 from cellquorum.stages.preprocessing.config import NormalizationConfig
 from cellquorum.stages.qc.eligibility import fitting_cells
 
@@ -57,25 +44,18 @@ class NormalizationResult:
         warnings: Warning messages produced during normalization.
     """
 
-    # Store the normalized AnnData object.
     adata: ad.AnnData
 
-    # Store the recipe that was applied.
     recipe: str
 
-    # Store the input layer name.
     input_layer: str | None
 
-    # Store the output layer name.
     output_layer: str
 
-    # Store the raw-counts preservation layer name.
     preserve_counts_layer: str
 
-    # Store diagnostic metrics.
     diagnostics: dict[str, object] = field(default_factory=dict)
 
-    # Store warnings.
     warnings: list[str] = field(default_factory=list)
 
 
@@ -201,7 +181,6 @@ def normalize_adata(
         recipe_diagnostics=recipe_diagnostics,
     )
 
-    # Return the normalization result.
     return NormalizationResult(
         adata=working_adata,
         recipe=config.recipe,
@@ -238,7 +217,6 @@ def get_input_matrix(adata: ad.AnnData, input_layer: str | None) -> np.ndarray |
             f"Input layer '{input_layer}' not found in AnnData.layers."
         )
 
-    # Return the input layer.
     return adata.layers[input_layer]
 
 
@@ -308,7 +286,6 @@ def preserve_raw_counts(
         # Preserve named input layer.
         adata.layers[preserve_layer] = adata.layers[input_layer].copy()
 
-    # Return AnnData with preserved counts.
     return adata
 
 
@@ -372,7 +349,6 @@ def apply_recipe_none(
     # Copy the matrix unchanged.
     output = matrix.copy()
 
-    # Return with empty diagnostics and warnings.
     return output, {}, []
 
 
@@ -426,7 +402,6 @@ def apply_recipe_pf_v1(
         "n_zero_depth_cells": n_zero_depth,
     }
 
-    # Return normalized matrix, diagnostics, and warnings.
     return output, diagnostics, warnings
 
 
@@ -487,7 +462,6 @@ def apply_recipe_log1p_cp10k_v1(
         "target_sum": target_sum,
     }
 
-    # Return normalized matrix, diagnostics, and warnings.
     return output, diagnostics, warnings
 
 
@@ -545,7 +519,6 @@ def apply_recipe_log1p_pf_v1(
         "n_zero_depth_cells": n_zero_depth,
     }
 
-    # Return normalized matrix, diagnostics, and warnings.
     return output, diagnostics, warnings
 
 
@@ -894,7 +867,6 @@ def build_normalization_diagnostics(
         **recipe_diagnostics,
     }
 
-    # Return diagnostics.
     return diagnostics
 
 

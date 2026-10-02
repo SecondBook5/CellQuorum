@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-# Import regular expressions for validating stable stage names.
 import re
-
-# Import Iterator for typed registry iteration.
 from collections.abc import Iterator
-
-# Import dataclass for immutable registry snapshots.
 from dataclasses import dataclass
 
-# Import shared CellQuorum exception base.
 from cellquorum.core.exceptions import CellQuorumError
-
-# Import the stage protocol.
 from cellquorum.core.stage import PipelineStage
 
 
@@ -44,10 +36,8 @@ class StageRegistrySnapshot:
         n_stages: Number of registered stages.
     """
 
-    # Store registered stage names in registry order.
     stage_names: tuple[str, ...]
 
-    # Store the number of registered stages.
     n_stages: int
 
     def to_dict(self) -> dict[str, object]:
@@ -58,7 +48,6 @@ class StageRegistrySnapshot:
             Dictionary containing stage names and stage count.
         """
 
-        # Return a JSON-friendly snapshot payload.
         return {
             "stage_names": list(self.stage_names),
             "n_stages": self.n_stages,
@@ -160,7 +149,6 @@ class StageRegistry:
         # Normalize and validate the requested stage name.
         normalized_name = self._normalize_stage_name(stage_name)
 
-        # Return the stage if present.
         return self._stages.get(normalized_name)
 
     def require(self, stage_name: str) -> PipelineStage:
@@ -190,7 +178,6 @@ class StageRegistry:
                 f"Available stages: {self.names()}."
             )
 
-        # Return the registered stage.
         return stage
 
     def has(self, stage_name: str) -> bool:
@@ -210,7 +197,6 @@ class StageRegistry:
         # Normalize and validate the requested stage name.
         normalized_name = self._normalize_stage_name(stage_name)
 
-        # Return whether the normalized stage name is registered.
         return normalized_name in self._stages
 
     def names(self) -> list[str]:
@@ -221,7 +207,6 @@ class StageRegistry:
             Ordered list of registered stage names.
         """
 
-        # Return registry keys as an ordered list.
         return list(self._stages.keys())
 
     def stages(self) -> list[PipelineStage]:
@@ -232,7 +217,6 @@ class StageRegistry:
             Ordered list of registered stage objects.
         """
 
-        # Return registry values as an ordered list.
         return list(self._stages.values())
 
     def items(self) -> list[tuple[str, PipelineStage]]:
@@ -243,7 +227,6 @@ class StageRegistry:
             Ordered list of stage name and stage object pairs.
         """
 
-        # Return registry items as an ordered list.
         return list(self._stages.items())
 
     def clear(self) -> None:
@@ -276,7 +259,6 @@ class StageRegistry:
             Dictionary containing registered stage names and stage count.
         """
 
-        # Return the snapshot dictionary representation.
         return self.snapshot().to_dict()
 
     def __contains__(self, stage_name: object) -> bool:
@@ -311,7 +293,6 @@ class StageRegistry:
             Number of registered stages.
         """
 
-        # Return the stage count.
         return len(self._stages)
 
     def __iter__(self) -> Iterator[PipelineStage]:
@@ -322,7 +303,6 @@ class StageRegistry:
             Iterator over registered stage objects in insertion order.
         """
 
-        # Return an iterator over stage objects.
         return iter(self._stages.values())
 
     @classmethod
@@ -365,7 +345,6 @@ class StageRegistry:
                 f"Received: '{stage_name}'."
             )
 
-        # Return the normalized stage name.
         return normalized_name
 
     @classmethod
@@ -399,7 +378,6 @@ class StageRegistry:
                 f"Stage '{normalized_name}' must define a callable run(context) method."
             )
 
-        # Return the normalized stage name.
         return normalized_name
 
 
@@ -425,7 +403,6 @@ def build_stage_registry(stages: list[PipelineStage] | None = None) -> StageRegi
     for stage in stages:
         registry.register(stage)
 
-    # Return the populated registry.
     return registry
 
 

@@ -42,7 +42,6 @@ if TYPE_CHECKING:
     from cellquorum import utils
     from cellquorum.api import diag, evidence, pp, run_pipeline, tl
 
-# Define the public symbols exposed by `from cellquorum import *`.
 __all__: list[str] = [
     "__version__",
     "diag",
@@ -76,7 +75,6 @@ def __getattr__(name: str) -> object:
     if module_path is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-    # Import the owning module.
     from importlib import import_module
 
     module = import_module(module_path)
@@ -88,7 +86,6 @@ def __getattr__(name: str) -> object:
     # Cache on the package so later lookups bypass __getattr__ entirely.
     globals()[name] = value
 
-    # Return the resolved object to the caller.
     return value
 
 

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-# Import Path for path-like type aliases.
 from pathlib import Path
-
-# Import runtime-checkable protocols and typed dictionary helpers.
 from typing import TYPE_CHECKING, Protocol, TypedDict, runtime_checkable
 
 if TYPE_CHECKING:
@@ -51,16 +48,12 @@ class ArtifactPayload(TypedDict):
         description: Human-readable explanation of the artifact.
     """
 
-    # Store the stable artifact name.
     name: str
 
-    # Store the artifact path as a string.
     path: str
 
-    # Store the artifact kind.
     kind: str
 
-    # Store the artifact description.
     description: str
 
 
@@ -87,43 +80,30 @@ class StageExecutionPayload(TypedDict, total=False):
         error: Optional structured execution error.
     """
 
-    # Store the stable stage name.
     stage_name: str
 
-    # Store the stage status.
     status: str
 
-    # Store the UTC start timestamp.
     started_at_utc: str
 
-    # Store the UTC end timestamp.
     ended_at_utc: str
 
-    # Store the stage duration in seconds.
     duration_seconds: float
 
-    # Store the backend used by the stage.
     backend_used: str | None
 
-    # Store serialized input artifacts.
     input_artifacts: list[ArtifactPayload]
 
-    # Store serialized output artifacts.
     output_artifacts: list[ArtifactPayload]
 
-    # Store stage notes.
     notes: list[str]
 
-    # Store stage warnings.
     warnings: list[str]
 
-    # Store structured stage metrics.
     metrics: dict[str, JsonValue]
 
-    # Store an optional skip reason payload.
     skip_reason: dict[str, JsonValue] | None
 
-    # Store an optional error payload.
     error: dict[str, JsonValue] | None
 
 
@@ -155,7 +135,6 @@ class SupportsName(Protocol):
     a stable name for lookup, provenance, and reporting.
     """
 
-    # Store the stable object name.
     name: str
 
 
@@ -192,7 +171,6 @@ def is_path_like(value: object) -> bool:
         True when the value is a string or Path object, otherwise False.
     """
 
-    # Return whether the value is a supported path-like type.
     return isinstance(value, str | Path)
 
 
@@ -207,7 +185,6 @@ def is_scalar_value(value: object) -> bool:
         True when the value is a supported scalar value, otherwise False.
     """
 
-    # Return whether the value is one of the supported scalar types.
     return value is None or isinstance(value, str | int | float | bool)
 
 

@@ -17,7 +17,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Import the process-level probe cache (see _probe.py for why this exists).
 from cellquorum.backends._probe import env_python_module_available, resolve_env, resolve_launcher
 from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
 

@@ -2,27 +2,16 @@
 
 from __future__ import annotations
 
-# Import PathLike for filesystem-like input path typing.
 from collections.abc import Mapping
 from os import PathLike
-
-# Import Path for robust filesystem validation.
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-# Import AnnData for return type validation.
 import anndata as ad
-
-# Import numpy for the boolean row masks the subset/exclude rules build.
 import numpy as np
-
-# Import pandas for obs frame typing in the column helper.
 import pandas as pd
 
-# Import the layer-tag writer so a layer read into X keeps saying what it is.
 from cellquorum.core.contracts.layer_tags import set_layer_tag
-
-# Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
 
 if TYPE_CHECKING:
@@ -106,7 +95,6 @@ def normalize_adata_path(path: str | PathLike[str] | Path) -> Path:
             f"Received: {type(path).__name__}."
         ) from error
 
-    # Return the normalized path.
     return normalized_path
 
 
@@ -142,7 +130,6 @@ def validate_adata_path(path: str | PathLike[str] | Path) -> Path:
             f"Received: {normalized_path.name}"
         )
 
-    # Return the validated path.
     return normalized_path
 
 
@@ -474,7 +461,6 @@ def load_adata(
             f"{type(loaded_adata).__name__}."
         )
 
-    # Return the loaded AnnData object.
     return loaded_adata
 
 

@@ -34,7 +34,6 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
 
     X = sp.load_npz(args.counts)
 
-    # Resolve target: numeric string -> fixed K, else the named strategy.
     target: object = args.target
     try:
         target = float(args.target)

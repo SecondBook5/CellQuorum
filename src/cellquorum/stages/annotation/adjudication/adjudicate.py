@@ -37,16 +37,12 @@ class EvidenceItem:
         reason: Human-readable explanation.
     """
 
-    # Store a stable evidence identifier.
     name: str
 
-    # Store the JSON-friendly evidence value.
     value: object
 
-    # Store how the evidence affects the claim.
     polarity: EvidencePolarity
 
-    # Store the human-readable rationale.
     reason: str
 
     def to_dict(self) -> dict[str, object]:
@@ -78,34 +74,24 @@ class ClusterEvidence:
         notes: Optional freeform notes from upstream diagnostics.
     """
 
-    # Store the candidate id.
     cluster_id: str
 
-    # Store the candidate size.
     n_cells: int
 
-    # Store cell counts per donor.
     donor_counts: dict[str, int] = field(default_factory=dict)
 
-    # Store cell counts per condition.
     condition_counts: dict[str, int] = field(default_factory=dict)
 
-    # Store marker support in [0, 1], when available.
     marker_support: float | None = None
 
-    # Store reproducibility support in [0, 1], when available.
     reproducibility_score: float | None = None
 
-    # Store technical artifact score in [0, 1], when available.
     technical_score: float | None = None
 
-    # Store continuum/program score in [0, 1], when available.
     continuity_score: float | None = None
 
-    # Store formal split support in [0, 1], when available.
     split_support: float | None = None
 
-    # Store upstream notes.
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -174,31 +160,22 @@ class AdjudicationRuleConfig:
         reproducibility_min: Minimum reproducibility score for reproducible states.
     """
 
-    # Store minimum cells for claims.
     min_cells: int = 30
 
-    # Store minimum donors for replicated claims.
     min_replicated_donors: int = 3
 
-    # Store dominant-donor fraction that triggers a donor-restricted label.
     donor_dominance_veto: float = 0.8
 
-    # Store dominant-condition fraction that triggers condition restriction.
     condition_restriction_fraction: float = 0.9
 
-    # Store technical score that triggers a technical label.
     technical_veto_score: float = 0.75
 
-    # Store continuity score that triggers a continuous-program label.
     continuity_score: float = 0.7
 
-    # Store minimum formal split support.
     split_support_min: float = 0.6
 
-    # Store minimum marker support.
     marker_support_min: float = 0.5
 
-    # Store minimum reproducibility score.
     reproducibility_min: float = 0.6
 
 
@@ -216,22 +193,16 @@ class AdjudicationResult:
         evidence: Full evidence trail considered by the rules.
     """
 
-    # Store candidate id.
     cluster_id: str
 
-    # Store assigned taxonomy class.
     taxonomy_class: TaxonomyClass
 
-    # Store conservative confidence.
     confidence: float
 
-    # Store concise human-readable reasons.
     reasons: list[str] = field(default_factory=list)
 
-    # Store vetoing evidence.
     vetoes: list[EvidenceItem] = field(default_factory=list)
 
-    # Store all evidence considered.
     evidence: list[EvidenceItem] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:

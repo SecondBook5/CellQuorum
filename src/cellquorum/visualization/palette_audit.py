@@ -29,19 +29,11 @@ explicitly, which is what :mod:`tests.test_palette_audit` does.
 
 from __future__ import annotations
 
-# Import dataclass for the frozen audit result.
 from dataclasses import dataclass
-
-# Import combinations for the all-pairs sweep.
 from itertools import combinations
 
-# Import numpy for the distance arithmetic.
 import numpy as np
-
-# Import the CVD simulation and CAM02-UCS conversion.
 from colorspacious import cspace_convert
-
-# Import matplotlib's colour parser so any matplotlib-legal colour spec works.
 from matplotlib.colors import to_rgb
 
 # The light chart surface every CellQuorum figure renders on. A colour that is

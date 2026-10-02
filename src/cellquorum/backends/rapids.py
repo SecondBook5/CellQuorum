@@ -28,13 +28,10 @@ class RapidsBackend(BaseBackend):
         requirement_list: RAPIDS-related Python package requirements.
     """
 
-    # Store the stable backend name.
     name: str = "rapids"
 
-    # Store the backend family.
     kind: str = "rapids"
 
-    # Store RAPIDS backend requirements.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(
@@ -87,13 +84,10 @@ class RapidsBackend(BaseBackend):
             warnings, and backend details.
         """
 
-        # Initialize the missing requirement list.
         missing: list[str] = []
 
-        # Initialize the warning list.
         warnings: list[str] = []
 
-        # Initialize additional backend details.
         details: dict[str, Any] = {
             "rapids_singlecell_available": self._python_package_available("rapids_singlecell"),
             "cupy_available": self._python_package_available("cupy"),
@@ -158,7 +152,6 @@ class RapidsBackend(BaseBackend):
         # Determine backend availability from missing mandatory requirements.
         available = len(missing) == 0
 
-        # Return structured RAPIDS backend status.
         return BackendStatus(
             name=self.name,
             kind=self.kind,
@@ -181,7 +174,6 @@ class RapidsBackend(BaseBackend):
             True if the package can be found, otherwise False.
         """
 
-        # Return whether importlib can find the requested package.
         return importlib.util.find_spec(package_name) is not None
 
     @staticmethod
@@ -196,7 +188,6 @@ class RapidsBackend(BaseBackend):
 
         # Import CuPy lazily so CPU-only users can import CellQuorum.
         try:
-            # Import CuPy only during the RAPIDS availability check.
             import cupy as cp
 
         # Return zero when CuPy is unavailable.
@@ -205,7 +196,6 @@ class RapidsBackend(BaseBackend):
 
         # Try to query CUDA device count through CuPy.
         try:
-            # Return the number of visible CUDA devices.
             return int(cp.cuda.runtime.getDeviceCount())
 
         # Return zero when CUDA runtime discovery fails.
@@ -221,5 +211,4 @@ def build_rapids_backend() -> RapidsBackend:
         Configured RapidsBackend instance.
     """
 
-    # Return the configured RAPIDS backend.
     return RapidsBackend()

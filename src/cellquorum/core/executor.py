@@ -2,28 +2,14 @@
 
 from __future__ import annotations
 
-# Import Mapping for immutable-style stage registry inputs.
 from collections.abc import Mapping
-
-# Import dataclass and field for structured executor result objects.
 from dataclasses import dataclass, field
-
-# Import UTC datetime for stage lifecycle timing.
 from datetime import UTC, datetime
 
-# Import pipeline context.
 from cellquorum.core.context import PipelineContext
-
-# Import deterministic stage input fingerprinting.
 from cellquorum.core.fingerprint import compute_input_fingerprint
-
-# Import pipeline planning objects.
 from cellquorum.core.planner import PipelinePlan, PlannedStage
-
-# Import runtime progress reporter.
 from cellquorum.core.run_reporter import RunReporter
-
-# Import stage execution contracts and lifecycle records.
 from cellquorum.core.stage import (
     PipelineStage,
     StageExecutionRecord,
@@ -44,7 +30,6 @@ class StageRegistry:
         stages: Mapping from stable stage name to executable stage object.
     """
 
-    # Store the executable stage mapping.
     stages: Mapping[str, PipelineStage] = field(default_factory=dict)
 
     def get(self, stage_name: str) -> PipelineStage | None:
@@ -58,7 +43,6 @@ class StageRegistry:
             Registered stage object, or None if no implementation is registered.
         """
 
-        # Return the registered stage if present.
         return self.stages.get(stage_name)
 
     def registered_stage_names(self) -> list[str]:
@@ -69,7 +53,6 @@ class StageRegistry:
             Sorted registered stage names.
         """
 
-        # Return registered names in deterministic order.
         return sorted(self.stages)
 
     def with_stage(self, stage: PipelineStage) -> StageRegistry:
@@ -96,7 +79,6 @@ class StageRegistry:
         # Add or replace the stage by stable name.
         updated_stages[stage.name] = stage
 
-        # Return a new registry.
         return StageRegistry(stages=updated_stages)
 
 
@@ -110,10 +92,8 @@ class PipelineExecutionResult:
         stage_execution_records: Lifecycle records for every planned stage decision.
     """
 
-    # Store the final pipeline context.
     context: PipelineContext
 
-    # Store lifecycle records for every planned stage decision.
     stage_execution_records: list[StageExecutionRecord] = field(default_factory=list)
 
     def succeeded_stage_names(self) -> list[str]:
@@ -124,7 +104,6 @@ class PipelineExecutionResult:
             Stage names with success records.
         """
 
-        # Return success stage names in execution order.
         return [
             record.stage_name
             for record in self.stage_execution_records
@@ -139,7 +118,6 @@ class PipelineExecutionResult:
             Stage names with skipped records.
         """
 
-        # Return skipped stage names in execution order.
         return [
             record.stage_name
             for record in self.stage_execution_records
@@ -154,7 +132,6 @@ class PipelineExecutionResult:
             Stage names with failed records.
         """
 
-        # Return failed stage names in execution order.
         return [
             record.stage_name
             for record in self.stage_execution_records
@@ -208,16 +185,12 @@ class PipelineExecutor:
             Stops on the named stage whatever its OUTCOME — see ``run``.
     """
 
-    # Store executable stage implementations.
     registry: StageRegistry = field(default_factory=build_default_stage_registry)
 
-    # Store whether execution should stop after a stage failure.
     stop_on_failure: bool = True
 
-    # Store the backend label for Python-native stage execution.
     backend_used: str = "python"
 
-    # Store the stage to stop after (None runs the whole plan).
     until_stage: str | None = None
 
     def run(
@@ -342,7 +315,6 @@ class PipelineExecutor:
                     self._note_until_stop(reporter, planned_stage.name)
                     break
 
-        # Return the complete execution result.
         return PipelineExecutionResult(
             context=current_context,
             stage_execution_records=stage_execution_records,
@@ -578,7 +550,6 @@ class PipelineExecutor:
             backend_used=self.backend_used,
         )
 
-        # Return the successful result and record.
         return stage_result, stage_record
 
 

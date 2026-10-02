@@ -110,7 +110,6 @@ class RunReporter:
             # Fall back to all enabled stages from config.
             enabled_stages = []
             stage_config = config.stages.model_dump()
-            # Iterate through StageSelectionConfig fields in order.
             from cellquorum.config.models import StageSelectionConfig
 
             for field_name in StageSelectionConfig.model_fields.keys():

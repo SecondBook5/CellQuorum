@@ -97,7 +97,6 @@ def __getattr__(name: str) -> object:
     if module_path is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-    # Import the owning module and pull the requested object out of it.
     from importlib import import_module
 
     value = getattr(import_module(module_path), name)
@@ -106,7 +105,6 @@ def __getattr__(name: str) -> object:
     # entirely and cost exactly what an eager re-export would have.
     globals()[name] = value
 
-    # Return the resolved object to the caller.
     return value
 
 

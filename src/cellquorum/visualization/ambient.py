@@ -69,7 +69,6 @@ def contamination_figure(
     if not clean:
         return None
 
-    # Resolve the donor x arm grid when possible.
     grid: dict[str, dict[str, float]] = {}
     if donor_of and condition_of:
         for library, value in clean.items():

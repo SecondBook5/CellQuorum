@@ -21,13 +21,10 @@ class PythonBackend(BaseBackend):
         requirement_list: Python package requirements for the backend.
     """
 
-    # Store the stable backend name.
     name: str = "python"
 
-    # Store the backend family.
     kind: str = "python"
 
-    # Store Python package requirements for the backend.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(
@@ -79,13 +76,10 @@ class PythonOptionalBackend(BaseBackend):
         requirement_list: Optional Python package requirements.
     """
 
-    # Store the stable backend name.
     name: str = "python_optional"
 
-    # Store the backend family.
     kind: str = "python"
 
-    # Store optional Python package requirements.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(
@@ -124,7 +118,6 @@ def build_default_python_backends() -> list[BaseBackend]:
         List containing the core Python backend and optional Python backend.
     """
 
-    # Return the default Python backend instances.
     return [
         PythonBackend(),
         PythonOptionalBackend(),

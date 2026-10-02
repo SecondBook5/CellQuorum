@@ -86,7 +86,6 @@ class ScANVIMethod(AnalysisMethod):
                 f"scANVI label_key '{label_key}' is not present in adata.obs.",
             )
 
-        # Import scvi lazily (heavy) and train.
         import scvi
 
         batch_key = config.get("batch_key", "patient_id")

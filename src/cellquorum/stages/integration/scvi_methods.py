@@ -193,7 +193,6 @@ class ScVIMethod(AnalysisMethod):
         # Self-gate on GPU availability via the backend registry when present.
         require_gpu(context, method_name="scVI")
 
-        # Import scvi lazily (heavy) and train.
         import scvi
 
         batch_key = config.get("batch_key", "patient_id")

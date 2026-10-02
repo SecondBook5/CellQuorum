@@ -20,22 +20,17 @@ class AdjudicationConfig(StrictBaseModel):
         output_prefix: Prefix used for output artifact filenames.
     """
 
-    # Store whether adjudication may run.
     enabled: bool = True
 
-    # Store the cluster obs column.
     cluster_key: str = "leiden"
 
-    # Store donor/condition columns. None means inherit from design config.
     donor_key: str | None = None
     condition_key: str | None = None
 
-    # Store optional evidence columns.
     marker_support_key: str | None = None
     technical_score_key: str | None = None
     technical_flag_key: str | None = "predicted_doublet"
 
-    # Store output filename prefix.
     output_prefix: str = "adjudication"
 
 

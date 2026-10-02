@@ -67,7 +67,6 @@ class MethodDispatchStage(ABC):
         # Pull the active AnnData off the context.
         adata = context.require_adata()
 
-        # Resolve this stage's config sub-block (handles both dict and pydantic).
         from cellquorum.methods.context_access import resolve_stage_config
 
         stage_config = resolve_stage_config(context, self.name)

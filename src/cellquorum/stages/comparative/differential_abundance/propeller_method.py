@@ -204,7 +204,6 @@ class PropellerMethod(RAnalysisMethod):
                 f"{fallback_reason}. A null from this fit is not a within-donor null."
             )
 
-        # Return the DA table as an artifact plus provenance metrics.
         return StageResult(
             adata=adata,
             artifacts=[

@@ -55,16 +55,10 @@ report inventories a suspicion it cannot resolve on its own.
 
 from __future__ import annotations
 
-# Import dataclass for the frozen finding.
 from dataclasses import dataclass
-
-# Import datetime for the inherited-artifact cutoff.
 from datetime import UTC, datetime
-
-# Import Path for the directory walk.
 from pathlib import Path
 
-# Import the engine's base error so callers catch one family.
 from cellquorum.core.exceptions import CellQuorumError
 
 # The output subtrees a stage may own a directory in.

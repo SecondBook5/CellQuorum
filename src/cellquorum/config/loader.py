@@ -148,7 +148,6 @@ def validate_config_dict(config: Mapping[str, Any]) -> CellQuorumConfig:
 
     # Try validating the mapping with the strict top-level Pydantic model.
     try:
-        # Return the validated CellQuorum configuration model.
         return CellQuorumConfig.model_validate(dict(config))
 
     # Convert Pydantic validation errors into a CellQuorum-specific error.
@@ -198,5 +197,4 @@ def save_resolved_config(config: CellQuorumConfig, output_path: str | Path) -> P
     # Write the validated config as pretty JSON.
     path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
 
-    # Return the written path.
     return path

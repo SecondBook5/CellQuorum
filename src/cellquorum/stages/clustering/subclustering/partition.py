@@ -76,7 +76,6 @@ def run_choir(
             f"CHOIR requires counts layer '{counts_layer}'; " f"not found in adata.layers"
         )
 
-    # Resolve CHOIR config.
     partition_config: PartitionConfig = config.partition
     choir_config = partition_config.choir
     alpha = choir_config.get("alpha", 0.05)

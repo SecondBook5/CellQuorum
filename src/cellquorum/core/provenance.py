@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
-# Import JSON for serializability validation.
 import json
-
-# Import dataclass helpers for structured provenance records.
 from dataclasses import asdict, dataclass, is_dataclass
-
-# Import datetime utilities for UTC provenance timestamps.
 from datetime import UTC, datetime
-
-# Import Path for filesystem-safe provenance payload handling.
 from pathlib import Path
 
 # Import numpy because method outputs are numpy-typed by default: a p-value is an
 # np.float64, a cell count an np.int64, a neighbourhood size vector an ndarray.
 import numpy as np
 
-# Import shared provenance exception.
 from cellquorum.core.exceptions import CellQuorumProvenanceError
 
 # Define primitive JSON-compatible values.
@@ -46,19 +38,14 @@ class ProvenanceRecord:
         created_at_utc: UTC timestamp when the record was created.
     """
 
-    # Store the stable provenance record name.
     name: str
 
-    # Store the provenance record category.
     kind: str
 
-    # Store the JSON-safe structured payload.
     payload: JsonValue
 
-    # Store the human-readable provenance record description.
     description: str
 
-    # Store the UTC creation timestamp.
     created_at_utc: datetime
 
     def to_dict(self) -> dict[str, JsonValue]:
@@ -75,7 +62,6 @@ class ProvenanceRecord:
         # Normalize the creation timestamp to a UTC ISO string.
         created_at = ensure_utc_datetime(self.created_at_utc).isoformat()
 
-        # Build the JSON-safe provenance payload.
         record: dict[str, JsonValue] = {
             "name": self.name,
             "kind": self.kind,
@@ -87,7 +73,6 @@ class ProvenanceRecord:
         # Validate the record before returning it.
         validate_json_payload(record, context=f"provenance record '{self.name}'")
 
-        # Return the validated record.
         return record
 
 
@@ -99,7 +84,6 @@ def utc_now() -> datetime:
         Current UTC datetime.
     """
 
-    # Return the current UTC datetime.
     return datetime.now(UTC)
 
 
@@ -111,7 +95,6 @@ def utc_now_iso() -> str:
         Current UTC timestamp as an ISO string.
     """
 
-    # Return the current UTC datetime as an ISO string.
     return utc_now().isoformat()
 
 
@@ -190,7 +173,6 @@ def make_provenance_record(
     # Resolve the creation timestamp.
     created_at = utc_now() if created_at_utc is None else ensure_utc_datetime(created_at_utc)
 
-    # Return the validated provenance record.
     return ProvenanceRecord(
         name=record_name,
         kind=record_kind,
@@ -314,7 +296,6 @@ def _dict_to_json_safe(value: dict[object, object]) -> dict[str, JsonValue]:
         CellQuorumProvenanceError: If a key is missing or unsupported.
     """
 
-    # Initialize the converted dictionary.
     converted: dict[str, JsonValue] = {}
 
     # Iterate over key-value pairs.
@@ -325,7 +306,6 @@ def _dict_to_json_safe(value: dict[object, object]) -> dict[str, JsonValue]:
         # Convert the dictionary value recursively.
         converted[converted_key] = to_json_safe(item)
 
-    # Return the converted dictionary.
     return converted
 
 
@@ -356,7 +336,6 @@ def _json_key_to_string(key: object) -> str:
         if not stripped_key:
             raise CellQuorumProvenanceError("JSON provenance dictionary keys cannot be empty.")
 
-        # Return the cleaned key.
         return stripped_key
 
     # Convert simple scalar keys to strings.
@@ -399,7 +378,6 @@ def _require_non_empty_string(value: object, *, field_name: str) -> str:
     if not cleaned_value:
         raise CellQuorumProvenanceError(f"Provenance field '{field_name}' cannot be empty.")
 
-    # Return the cleaned string.
     return cleaned_value
 
 

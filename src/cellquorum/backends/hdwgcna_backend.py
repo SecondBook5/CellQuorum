@@ -43,25 +43,18 @@ class HdwgcnaBackend(BaseBackend):
         requirement_list: Requirements checked by this backend.
     """
 
-    # Store the stable backend name.
     name: str = "hdwgcna_r"
 
-    # Store the backend family.
     kind: str = "external"
 
-    # Store the isolated environment name that provides hdWGCNA.
     env_name: str = "hdwgcna_env"
 
-    # Store the environment launcher used to enter the hdwgcna env.
     launcher: str = "micromamba"
 
-    # Store the timeout used for the availability check.
     timeout_seconds: int = 60
 
-    # Store the timeout used for helper-script execution.
     script_timeout_seconds: int = 3600
 
-    # Store backend requirements.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(
@@ -245,7 +238,6 @@ class HdwgcnaBackend(BaseBackend):
         if not isinstance(package_name, str):
             return False
 
-        # Return whether the package name matches a conservative R package pattern.
         return re.fullmatch(r"[A-Za-z][A-Za-z0-9._]*", package_name) is not None
 
 

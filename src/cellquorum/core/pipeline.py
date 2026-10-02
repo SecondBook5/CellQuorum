@@ -2,75 +2,34 @@
 
 from __future__ import annotations
 
-# Import importlib.metadata so dependency versions can be resolved from metadata.
 import importlib.metadata
-
-# Import logging so startup config/data-mismatch warnings surface where they occur.
 import logging
-
-# Import platform so run metadata can stamp the interpreter and OS environment.
 import platform
-
-# Import time for wall-clock measurement.
 import time
-
-# Import dataclass for structured run result objects.
 from dataclasses import dataclass
-
-# Import datetime so run metadata can include a UTC timestamp.
 from datetime import UTC, datetime
-
-# Import Path for output directory handling.
 from pathlib import Path
-
-# Import Any for JSON-like runtime metadata typing.
 from typing import Any
 
-# Import AnnData for configured input-loading return typing.
 import anndata as ad
-
-# Import pandas so stage and backend plans can be written as tables.
 import pandas as pd
 
-# Import the backend registry builder.
 from cellquorum.backends.registry import BackendRegistry, build_default_backend_registry
-
-# Import config loading and saving utilities.
 from cellquorum.config.loader import load_config, save_resolved_config
-
-# Import the validated top-level config model.
 from cellquorum.config.models import CellQuorumConfig
-
-# Import the artifact manager.
 from cellquorum.core.artifacts import ArtifactManager
-
-# Import pipeline context objects.
 from cellquorum.core.context import PipelineContext, PipelinePaths
-
-# Import the stage executor.
 from cellquorum.core.executor import PipelineExecutionResult, PipelineExecutor
-
-# Import the run-directory hygiene gate and the inherited-artifact report.
 from cellquorum.core.output_hygiene import (
     InheritedArtifact,
     assert_output_dir_matches_config,
     find_inherited_artifacts,
     format_inherited_artifacts,
 )
-
-# Import planner utilities.
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
-
-# Import runtime progress reporter.
 from cellquorum.core.run_reporter import RunReporter
-
-# Import stage lifecycle records.
 from cellquorum.core.stage import StageExecutionRecord
-
-# Import AnnData input loading utility.
 from cellquorum.io import load_adata
-
-# Import package version.
 from cellquorum.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -96,19 +55,14 @@ class PipelineRunResult:
         execution_result: Optional stage execution result for executed runs.
     """
 
-    # Store the validated runtime configuration.
     config: CellQuorumConfig
 
-    # Store the generated pipeline plan.
     plan: PipelinePlan
 
-    # Store the initialized pipeline context.
     context: PipelineContext
 
-    # Store the artifact manager used during bootstrap or execution.
     artifacts: ArtifactManager
 
-    # Store stage execution results when stages have been executed.
     execution_result: PipelineExecutionResult | None = None
 
 
@@ -143,17 +97,14 @@ def resolve_output_dir(config: CellQuorumConfig, output_dir: str | Path | None =
 
     # Use the explicit output directory when provided by the caller.
     if output_dir is not None:
-        # Return the explicit output directory as an absolute Path.
         return Path(output_dir).expanduser().resolve()
 
     # Use the config output directory when provided.
     if config.paths.output_dir is not None:
-        # Return the config output directory as an absolute Path.
         return config.paths.output_dir.expanduser().resolve()
 
     # Use the run root and project name when a run root is configured.
     if config.paths.run_root is not None:
-        # Return a default run directory under the configured run root.
         return (config.paths.run_root / config.project.name).expanduser().resolve()
 
     # Raise a clear error when no output location exists.
@@ -296,7 +247,6 @@ def build_pipeline_context(
         manifest_obj = load_manifest(config.paths.manifest, data_root=config.paths.data_root)
         loaded_manifest = manifest_obj.to_dataframe()
 
-    # Build runtime metadata for provenance and reporting.
     metadata: dict[str, Any] = {
         "project_name": config.project.name,
         "profile": config.run.profile,
@@ -430,7 +380,6 @@ def _stage_plan_dataframe(plan: PipelinePlan) -> pd.DataFrame:
         for stage in plan.stages
     ]
 
-    # Return the stage plan table.
     return pd.DataFrame(rows, columns=["name", "enabled", "status", "reason"])
 
 
@@ -460,7 +409,6 @@ def _backend_status_dataframe(plan: PipelinePlan) -> pd.DataFrame:
         for row in plan.backend_status_table
     ]
 
-    # Return the backend status table.
     return pd.DataFrame(rows, columns=["name", "kind", "available", "missing", "warnings"])
 
 
@@ -500,7 +448,6 @@ def _stage_execution_records_dataframe(
         for record in records
     ]
 
-    # Return the execution records table.
     return pd.DataFrame(
         rows,
         columns=[
@@ -544,7 +491,6 @@ def _stage_completion_sidecar_payload(record: StageExecutionRecord) -> dict[str,
         for artifact in record.output_artifacts
     ]
 
-    # Return a compact but complete completion marker.
     return {
         "schema_version": 1,
         "stage_name": record.stage_name,
@@ -852,7 +798,6 @@ def write_pipeline_provenance(
     # Write the artifact manifest.
     artifact_manager.write_manifest()
 
-    # Return the artifact manager for programmatic inspection.
     return artifact_manager
 
 
@@ -926,7 +871,6 @@ def bootstrap_pipeline_run(
             stage_execution_records=[bootstrap_record],
         )
 
-        # Return the pipeline run result.
         return PipelineRunResult(
             config=config,
             plan=plan,
@@ -1265,7 +1209,6 @@ def execute_pipeline_run(
             artifact_manager=artifacts,
         )
 
-        # Return the executed pipeline run result.
         return PipelineRunResult(
             config=config,
             plan=plan,

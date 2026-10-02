@@ -32,16 +32,12 @@ class StageArtifact:
         description: Human-readable explanation of what the artifact contains.
     """
 
-    # Store the stable artifact name used by reports and downstream stages.
     name: str
 
-    # Store the artifact path.
     path: Path
 
-    # Store the artifact kind, such as csv, json, figure, h5ad, or directory.
     kind: str
 
-    # Store a human-readable artifact description.
     description: str
 
     def to_dict(self) -> dict[str, str]:
@@ -56,7 +52,6 @@ class StageArtifact:
             Dictionary representation of the artifact.
         """
 
-        # Return a JSON-friendly artifact dictionary.
         return {
             "name": self.name,
             "path": str(self.path),
@@ -107,10 +102,8 @@ class StageResult:
         metrics: JSON-serializable structured metrics for summaries and reports.
     """
 
-    # Store the updated AnnData object after the stage has run.
     adata: ad.AnnData
 
-    # Store files or directories produced by the stage.
     artifacts: list[StageArtifact] = field(default_factory=list)
 
     # Store how the stage ran (verbose console + provenance only; see the class
@@ -121,31 +114,22 @@ class StageResult:
     # and counted in report.md's n_warnings).
     warnings: list[str] = field(default_factory=list)
 
-    # Store JSON-serializable structured metrics for summaries and reports.
     metrics: dict[str, object] = field(default_factory=dict)
 
-    # Store the stage-level lifecycle status returned by the stage itself.
     status: StageStatus = "success"
 
-    # Store the explicit skip reason when status is skipped.
     skip_reason: str | None = None
 
-    # Store the method implementation version, when known.
     method_version: str | None = None
 
-    # Store the backend used by the stage, when known.
     backend: str | None = None
 
-    # Store the execution device used by the stage, when known.
     device: str | None = None
 
-    # Store a fingerprint of the inputs consumed by the stage, when known.
     input_fingerprint: str | None = None
 
-    # Store a fingerprint of the outputs produced by the stage, when known.
     output_fingerprint: str | None = None
 
-    # Store an optional checkpoint path for resumable execution.
     checkpoint_path: Path | None = None
 
     def __post_init__(self) -> None:
@@ -234,7 +218,6 @@ class StageResult:
             JSON-friendly summary of the stage result.
         """
 
-        # Return a JSON-friendly result summary.
         return {
             "status": self.status,
             "skip_reason": self.skip_reason,
@@ -267,13 +250,10 @@ class StageSkipReason:
         details: Optional structured details for provenance and reports.
     """
 
-    # Store the skipped stage name.
     stage_name: str
 
-    # Store the human-readable skip reason.
     reason: str
 
-    # Store optional structured skip details.
     details: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
@@ -284,7 +264,6 @@ class StageSkipReason:
             JSON-friendly skip reason dictionary.
         """
 
-        # Return the skip reason as a JSON-friendly dictionary.
         return {
             "stage_name": self.stage_name,
             "reason": self.reason,
@@ -317,19 +296,14 @@ class StageExecutionError:
         traceback: Formatted traceback of the raising exception, when available.
     """
 
-    # Store the failed stage name.
     stage_name: str
 
-    # Store the error type or category.
     error_type: str
 
-    # Store the human-readable error message.
     message: str
 
-    # Store optional structured error details.
     details: dict[str, object] = field(default_factory=dict)
 
-    # Store the formatted traceback, so a failure names its own location.
     traceback: str | None = None
 
     @classmethod
@@ -377,7 +351,6 @@ class StageExecutionError:
             JSON-friendly error dictionary.
         """
 
-        # Return the execution error as a JSON-friendly dictionary.
         return {
             "stage_name": self.stage_name,
             "error_type": self.error_type,
@@ -413,58 +386,40 @@ class StageExecutionRecord:
         error: Structured error when status is failed.
     """
 
-    # Store the stable stage name.
     stage_name: str
 
-    # Store the execution status.
     status: StageStatus
 
-    # Store the UTC start timestamp.
     started_at_utc: datetime
 
-    # Store the UTC end timestamp.
     ended_at_utc: datetime
 
-    # Store stage duration in seconds.
     duration_seconds: float
 
-    # Store the backend used by the stage, when applicable.
     backend_used: str | None = None
 
-    # Store the method implementation version, when reported by the stage.
     method_version: str | None = None
 
-    # Store the execution device used by the stage, when reported by the stage.
     device: str | None = None
 
-    # Store a fingerprint of the stage inputs, when reported by the stage.
     input_fingerprint: str | None = None
 
-    # Store a fingerprint of the stage outputs, when reported by the stage.
     output_fingerprint: str | None = None
 
-    # Store an optional checkpoint path for resumable execution.
     checkpoint_path: Path | None = None
 
-    # Store artifacts consumed by the stage.
     input_artifacts: list[StageArtifact] = field(default_factory=list)
 
-    # Store artifacts produced by the stage.
     output_artifacts: list[StageArtifact] = field(default_factory=list)
 
-    # Store non-critical stage notes.
     notes: list[str] = field(default_factory=list)
 
-    # Store important stage warnings.
     warnings: list[str] = field(default_factory=list)
 
-    # Store structured stage metrics.
     metrics: dict[str, object] = field(default_factory=dict)
 
-    # Store the skip reason when the stage is skipped.
     skip_reason: StageSkipReason | None = None
 
-    # Store the structured execution error when the stage fails.
     error: StageExecutionError | None = None
 
     @classmethod
@@ -493,7 +448,6 @@ class StageExecutionRecord:
             Successful StageExecutionRecord.
         """
 
-        # Return a successful execution record.
         return cls(
             stage_name=stage_name,
             status="success",
@@ -565,7 +519,6 @@ class StageExecutionRecord:
             details={} if details is None else dict(details),
         )
 
-        # Return a skipped execution record.
         return cls(
             stage_name=stage_name,
             status="skipped",
@@ -628,7 +581,6 @@ class StageExecutionRecord:
             else StageExecutionError.from_exception(stage_name=stage_name, error=error)
         )
 
-        # Return a failed execution record.
         return cls(
             stage_name=stage_name,
             status="failed",
@@ -653,7 +605,6 @@ class StageExecutionRecord:
             JSON-friendly execution record dictionary.
         """
 
-        # Return a JSON-friendly execution record.
         return {
             "stage_name": self.stage_name,
             "status": self.status,
@@ -685,7 +636,6 @@ class PipelineStage(Protocol):
     execution spine is being bootstrapped.
     """
 
-    # Store the stable stage name.
     name: str
 
     def run(self, context: PipelineContext) -> StageResult:
@@ -769,5 +719,4 @@ def _duration_seconds(started_at_utc: datetime, ended_at_utc: datetime) -> float
             f"Start: {start.isoformat()}, end: {end.isoformat()}."
         )
 
-    # Return the duration in seconds.
     return delta

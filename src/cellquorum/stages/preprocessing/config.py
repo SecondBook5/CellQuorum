@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-# Import Literal for constrained recipe options.
 from typing import Literal
 
-# Import Pydantic primitives for strict runtime validation.
 from pydantic import Field, field_validator
 
-# Import the shared strict base model used by CellQuorum configuration models.
 from cellquorum.config.base import StrictBaseModel
 
 
@@ -34,10 +31,8 @@ class NormalizationConfig(StrictBaseModel):
         overwrite: Whether existing output layers may be overwritten.
     """
 
-    # Store whether normalization is enabled.
     enabled: bool = True
 
-    # Store the normalization transformation recipe.
     recipe: Literal[
         "none",
         "cellquorum_pf_v1",
@@ -46,25 +41,18 @@ class NormalizationConfig(StrictBaseModel):
         "cellquorum_pf_log1p_pf_v1",
     ] = "cellquorum_pf_log1p_pf_v1"
 
-    # Store the optional input layer name.
     input_layer: str | None = None
 
-    # Store the output layer name.
     output_layer: str = "cellquorum_normalized"
 
-    # Store the raw-counts preservation layer name.
     preserve_counts_layer: str = "counts"
 
-    # Store the target sum for scaling recipes.
     target_sum: float = 10000.0
 
-    # Store the pseudocount for log-family recipes.
     pseudocount: float = 1.0
 
-    # Store the PFlog1pPF depth target used by the scclr backend.
     scclr_target: str = "auto"
 
-    # Store whether existing output layers may be overwritten.
     overwrite: bool = False
 
     @field_validator("output_layer", "preserve_counts_layer")
@@ -90,7 +78,6 @@ class NormalizationConfig(StrictBaseModel):
         if not cleaned:
             raise ValueError("Layer names cannot be empty.")
 
-        # Return the cleaned layer name.
         return cleaned
 
     @field_validator("target_sum")
@@ -113,7 +100,6 @@ class NormalizationConfig(StrictBaseModel):
         if value <= 0:
             raise ValueError("target_sum must be positive.")
 
-        # Return the validated target sum.
         return value
 
     @field_validator("pseudocount")
@@ -136,7 +122,6 @@ class NormalizationConfig(StrictBaseModel):
         if value <= 0:
             raise ValueError("pseudocount must be positive.")
 
-        # Return the validated pseudocount.
         return value
 
 
@@ -156,19 +141,14 @@ class PreprocessingConfig(StrictBaseModel):
         figure_dpi: Figure resolution in dots per inch.
     """
 
-    # Store whether preprocessing is enabled.
     enabled: bool = True
 
-    # Store normalization configuration.
     normalization: NormalizationConfig = Field(default_factory=NormalizationConfig)
 
-    # Store whether to write the normalization diagnostic figures.
     write_figures: bool = True
 
-    # Store the figure file format.
     figure_format: str = "png"
 
-    # Store the figure resolution.
     figure_dpi: int = 300
 
 

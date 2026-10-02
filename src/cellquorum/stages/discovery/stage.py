@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-# Import the package so the method registers itself as a side effect.
 import cellquorum.stages.discovery  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage

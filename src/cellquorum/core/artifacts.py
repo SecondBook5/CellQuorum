@@ -54,10 +54,8 @@ class ArtifactManager:
         artifacts: List of artifacts written through this manager.
     """
 
-    # Store the root directory where artifacts are written.
     root: Path
 
-    # Store all artifacts written through this manager.
     artifacts: list[StageArtifact] = field(default_factory=list)
 
     @classmethod
@@ -79,7 +77,6 @@ class ArtifactManager:
         # Resolve the root directory to an absolute path.
         resolved_root = Path(root).expanduser().resolve()
 
-        # Return a manager configured for the resolved root.
         return cls(root=resolved_root)
 
     def ensure_root(self) -> None:
@@ -122,7 +119,6 @@ class ArtifactManager:
                 f"Received absolute path: {path}"
             )
 
-        # Return the artifact path resolved under the root directory.
         return (self.root / path).resolve()
 
     def register(
@@ -165,7 +161,6 @@ class ArtifactManager:
         # Store the artifact record for this manager.
         self.artifacts.append(artifact)
 
-        # Return the artifact record to the caller.
         return artifact
 
     def write_dataframe(
@@ -422,7 +417,6 @@ class ArtifactManager:
             for artifact in self.artifacts
         ]
 
-        # Return the artifact manifest table.
         return pd.DataFrame(rows, columns=["name", "path", "kind", "description"])
 
     def write_manifest(

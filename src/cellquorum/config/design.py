@@ -103,25 +103,18 @@ class DesignValidationResult:
         warnings: Non-fatal design caveats.
     """
 
-    # Store the compared case condition.
     case: str
 
-    # Store the compared control condition.
     control: str
 
-    # Store whether the comparison is paired.
     paired: bool
 
-    # Store distinct case donors.
     case_donors: set[str] = field(default_factory=set)
 
-    # Store distinct control donors.
     control_donors: set[str] = field(default_factory=set)
 
-    # Store donors with both case and control observations.
     complete_pair_donors: set[str] = field(default_factory=set)
 
-    # Store non-fatal caveats.
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:

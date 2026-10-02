@@ -40,25 +40,18 @@ class SccodaBackend(BaseBackend):
         script_timeout_seconds: Timeout for helper-script execution.
     """
 
-    # Store the stable backend name.
     name: str = "sccoda"
 
-    # Store the backend family.
     kind: str = "external"
 
-    # Store the isolated environment name that provides scCODA.
     env_name: str = "sccoda_env"
 
-    # Store the environment launcher used to enter the scCODA env.
     launcher: str = "micromamba"
 
-    # Store the timeout used for the availability check.
     timeout_seconds: int = 60
 
-    # Store the timeout used for helper-script execution.
     script_timeout_seconds: int = 3600
 
-    # Store backend requirements.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(

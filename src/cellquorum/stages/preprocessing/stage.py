@@ -3,42 +3,25 @@
 
 from __future__ import annotations
 
-# Import JSON for summary artifact writing.
 import json
-
-# Import Mapping for dictionary-like config resolution.
 from collections.abc import Mapping
-
-# Import dataclass for the concrete stage object.
 from dataclasses import dataclass
-
-# Import Path for stage output directory handling.
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-# Import AnnData for stage input and output typing.
 import anndata as ad
 
-# Import shared CellQuorum data exception.
 from cellquorum.core.exceptions import CellQuorumDataError
-
-# Import pipeline stage artifact and result contracts.
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
-
-# Import preprocessing configuration.
 from cellquorum.stages.preprocessing.config import (
     PreprocessingConfig,
     validate_preprocessing_config_dict,
 )
-
-# Import normalization implementation.
 from cellquorum.stages.preprocessing.normalization import (
     NormalizationResult,
     normalize_adata,
 )
-
-# Import normalization diagnostic figures.
 from cellquorum.stages.preprocessing.visualization import write_normalization_figures
 
 if TYPE_CHECKING:
@@ -85,10 +68,8 @@ class PreprocessingStage:
             preprocessing artifacts should be written.
     """
 
-    # Store an optional explicit preprocessing configuration override.
     config: PreprocessingConfig | None = None
 
-    # Store the results subdirectory used for preprocessing artifacts.
     output_subdir: str = "preprocessing"
 
     def run(self, context: PipelineContext) -> StageResult:
@@ -226,7 +207,6 @@ class PreprocessingStage:
             else "cpu"
         )
 
-        # Return the stage result.
         return StageResult(
             adata=normalization_result.adata,
             artifacts=stage_artifacts,
@@ -272,7 +252,6 @@ def resolve_preprocessing_config(
                 f"Received: {type(override).__name__}."
             )
 
-        # Return the override.
         return override
 
     # Read the context-level config if present.
@@ -408,7 +387,6 @@ def get_context_adata(context: PipelineContext) -> ad.AnnData:
             f"Received: {type(adata).__name__}."
         )
 
-    # Return AnnData.
     return adata
 
 
@@ -449,7 +427,6 @@ def get_preprocessing_output_dir(context: PipelineContext, output_subdir: str) -
     # Resolve the results directory.
     results_dir = Path(paths.results)
 
-    # Return the preprocessing output directory.
     return results_dir / output_subdir
 
 
@@ -471,7 +448,6 @@ def build_disabled_preprocessing_stage_result(
         StageResult representing a disabled preprocessing no-op.
     """
 
-    # Return a no-op stage result.
     return StageResult(
         adata=adata,
         artifacts=[],
@@ -503,7 +479,6 @@ def build_disabled_normalization_stage_result(
         StageResult representing a disabled normalization no-op.
     """
 
-    # Return a no-op stage result.
     return StageResult(
         adata=adata,
         artifacts=[],
@@ -562,7 +537,6 @@ def write_preprocessing_summary(
     with summary_path.open("w") as f:
         json.dump(summary, f, indent=2)
 
-    # Return summary path.
     return summary_path
 
 
@@ -595,7 +569,6 @@ def build_preprocessing_stage_notes(
         ),
     ]
 
-    # Return stage notes.
     return notes
 
 
@@ -621,7 +594,6 @@ def build_preprocessing_stage_metrics(
         JSON-friendly stage metrics.
     """
 
-    # Return structured metrics.
     return {
         "stage_name": stage_name,
         "enabled": True,

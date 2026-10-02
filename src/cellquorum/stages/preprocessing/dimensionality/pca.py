@@ -91,7 +91,6 @@ def write_scree_plot(variance_ratio: np.ndarray, chosen_n: int, output_path: Pat
             three figures in a run that had no vector form.
     """
 
-    # Use a non-interactive backend so this is safe in headless runs.
     import matplotlib
 
     matplotlib.use("Agg")

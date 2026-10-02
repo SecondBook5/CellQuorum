@@ -32,16 +32,12 @@ class RBackend(BaseBackend):
         requirement_list: Requirements checked by this backend.
     """
 
-    # Store the stable backend name.
     name: str = "r"
 
-    # Store the backend family.
     kind: str = "r"
 
-    # Store the timeout used by future R availability or execution checks.
     timeout_seconds: int = 30
 
-    # Store R backend requirements.
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
             BackendRequirement(
@@ -66,13 +62,10 @@ class RBackend(BaseBackend):
             BackendStatus describing rpy2 and R package availability.
         """
 
-        # Initialize the missing requirement list.
         missing: list[str] = []
 
-        # Initialize the warning list.
         warnings: list[str] = []
 
-        # Initialize additional backend details.
         details: dict[str, Any] = {
             "timeout_seconds": self.timeout_seconds,
             "execution_mode": "rpy2",
@@ -83,7 +76,6 @@ class RBackend(BaseBackend):
             # Record rpy2 as a missing mandatory requirement.
             missing.append("rpy2")
 
-            # Return immediately because R package checks require rpy2.
             return BackendStatus(
                 name=self.name,
                 kind=self.kind,
@@ -136,7 +128,6 @@ class RBackend(BaseBackend):
         # Determine backend availability from missing mandatory requirements.
         available = len(missing) == 0
 
-        # Return structured backend status.
         return BackendStatus(
             name=self.name,
             kind=self.kind,
@@ -183,7 +174,6 @@ class RBackend(BaseBackend):
 
         # Import rpy2 lazily so Python-only users can import CellQuorum.
         try:
-            # Import the rpy2 R object for expression execution.
             from rpy2.robjects import r
         except ImportError as error:
             # Raise a clearer backend-oriented import error.
@@ -228,10 +218,8 @@ class RBackend(BaseBackend):
 
         # Convert the rpy2 vector-like result into a Python boolean.
         try:
-            # Return the first element as a boolean.
             return bool(result[0])
         except (TypeError, IndexError, ValueError):
-            # Return False when the result cannot be interpreted safely.
             return False
 
     @staticmethod
@@ -246,7 +234,6 @@ class RBackend(BaseBackend):
             True if the package can be found, otherwise False.
         """
 
-        # Return whether importlib can find the requested package.
         return importlib.util.find_spec(package_name) is not None
 
     @staticmethod
@@ -265,7 +252,6 @@ class RBackend(BaseBackend):
         if not isinstance(package_name, str):
             return False
 
-        # Return whether the package name matches a conservative R package pattern.
         return re.fullmatch(r"[A-Za-z][A-Za-z0-9._]*", package_name) is not None
 
 
@@ -307,7 +293,6 @@ def build_r_backend(
             )
         )
 
-    # Return the configured rpy2 backend.
     return RBackend(
         timeout_seconds=timeout_seconds,
         requirement_list=requirements,

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# Import the package so the method registers itself as a side effect.
 import cellquorum.stages.trajectory  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage

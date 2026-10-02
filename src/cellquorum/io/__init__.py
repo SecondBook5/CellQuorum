@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# Import AnnData loading public objects.
 from cellquorum.io.anndata import (
     AnnDataLoadError,
     load_adata,

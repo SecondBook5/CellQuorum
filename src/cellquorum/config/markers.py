@@ -20,7 +20,6 @@ class MarkersConfig(StrictBaseModel):
     def names(self) -> list[str]:
         """Return the registered panel names."""
 
-        # Return the panel keys as a list.
         return list(self.panels.keys())
 
     def panel(self, name: str) -> list[str]:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# Import Pydantic primitives for strict runtime validation.
 from pydantic import BaseModel, ConfigDict
 
 

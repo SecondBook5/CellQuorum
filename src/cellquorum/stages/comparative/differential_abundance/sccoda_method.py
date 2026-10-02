@@ -328,7 +328,6 @@ class SccodaMethod(AnalysisMethod):
 
         warnings += figure_warnings
 
-        # Return the DA table as an artifact plus provenance metrics.
         return StageResult(
             adata=adata,
             artifacts=[

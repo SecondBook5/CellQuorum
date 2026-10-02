@@ -56,7 +56,6 @@ class BackendRegistry:
         backends: Mapping from backend name to backend object.
     """
 
-    # Store backend objects by stable backend name.
     backends: dict[str, Backend] = field(default_factory=dict)
 
     def register(self, backend: Backend, *, overwrite: bool = False) -> None:
@@ -98,7 +97,6 @@ class BackendRegistry:
             True when the backend is registered, otherwise False.
         """
 
-        # Return whether the requested backend name exists in the registry.
         return name in self.backends
 
     def get(self, name: str) -> Backend:
@@ -133,7 +131,6 @@ class BackendRegistry:
             Sorted list of registered backend names.
         """
 
-        # Return backend names in deterministic sorted order.
         return sorted(self.backends)
 
     def statuses(self) -> dict[str, BackendStatus]:
@@ -172,7 +169,6 @@ class BackendRegistry:
             True if the backend status is available, otherwise False.
         """
 
-        # Return the availability flag from the backend status.
         return self.status(name).available
 
     def require(self, name: str) -> Backend:
@@ -203,7 +199,6 @@ class BackendRegistry:
         # Raise a backend-specific error if unavailable.
         status.raise_if_unavailable()
 
-        # Return the available backend.
         return backend
 
     def require_any(self, names: list[str]) -> Backend:
@@ -229,7 +224,6 @@ class BackendRegistry:
         if not names:
             raise ValueError("require_any expected at least one backend name.")
 
-        # Store unavailable backend messages for a final aggregated error.
         unavailable_messages: list[str] = []
 
         # Check each backend in caller-provided priority order.
@@ -268,7 +262,6 @@ class BackendRegistry:
             List of dictionaries describing registered backend status.
         """
 
-        # Initialize status rows.
         rows: list[BackendStatusRow] = []
 
         # Iterate over backend statuses in deterministic backend-name order.
@@ -297,7 +290,6 @@ class BackendRegistry:
                 }
             )
 
-        # Return the status rows.
         return rows
 
 
@@ -371,5 +363,4 @@ def build_default_backend_registry(
     # Register the isolated-env metacells (MetaCell2) backend.
     registry.register(build_metacells_backend())
 
-    # Return the populated backend registry.
     return registry
