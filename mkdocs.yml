@@ -83,6 +83,7 @@ nav:
       - Figure gallery: gallery/index.md
       - Third-party software: reference/third-party-software.md
   - Project:
+      - Maintaining CellQuorum: maintaining.md
       - Roadmap: ROADMAP.md
       - Changelog: changelog.md
       - Developer smoke tests: dev_smoke.md

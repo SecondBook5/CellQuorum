@@ -4,6 +4,8 @@ Thanks for looking at the code. This file covers the mechanics: how to get a wor
 environment, what CI enforces, and the conventions the codebase follows. For *what*
 the engine does and how a run flows, read [`docs/reference/how-it-works.md`](docs/reference/how-it-works.md)
 and [`docs/reference/architecture.md`](docs/reference/architecture.md) first.
+If you look after the repository rather than change the science, [`docs/maintaining.md`](docs/maintaining.md)
+is the shorter page: what each CI job means, routine jobs, and how to read a run's records.
 
 Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Changes to the files
 listed in [`.github/CODEOWNERS`](.github/CODEOWNERS) are reviewed by their owners.
