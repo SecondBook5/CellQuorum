@@ -179,16 +179,7 @@ class MiloMethod(RAnalysisMethod):
         if proc.returncode != 0:
             return self._skip("milo script failed", stderr=proc.stderr.strip()[:500])
 
-        # Read output CSV to compute metrics + back the beeswarm figure (skip-not-crash).
-        df = None
-        n_nhoods = None
-        n_da = None
-        try:
-            df = pd.read_csv(out_csv)
-            n_nhoods = len(df)
-            n_da = int((df["SpatialFDR"] < spatial_fdr).sum())
-        except Exception:
-            pass  # CSV should exist but don't crash if reading fails
+        df, n_nhoods, n_da, warnings = self._read_results(out_csv, spatial_fdr)
 
         # Auto-emit the neighborhood beeswarm figure (gated, skip-not-crash).
         figure_artifacts = self._beeswarm_artifacts(
@@ -218,6 +209,7 @@ class MiloMethod(RAnalysisMethod):
                 f"Milo DA: {case} vs {control}, k={k}, prop={prop}, paired={paired}.",
                 *label_notes,
             ],
+            warnings=warnings,
             metrics={
                 "case": case,
                 "control": control,
@@ -230,6 +222,36 @@ class MiloMethod(RAnalysisMethod):
             },
             backend="rscript",
         )
+
+    @staticmethod
+    def _read_results(
+        out_csv: Path, spatial_fdr: float
+    ) -> tuple[pd.DataFrame | None, int | None, int | None, list[str]]:
+        """Read Milo's table back for the run metrics and the beeswarm figure.
+
+        Returns:
+            ``(table, neighbourhoods, differentially abundant neighbourhoods, warnings)``.
+            Anything that could not be computed is ``None`` and explained in the warnings,
+            so a run missing its counts and its figure does not look complete.
+        """
+        df = None
+        n_nhoods = None
+        try:
+            df = pd.read_csv(out_csv)
+            n_nhoods = len(df)
+            n_da = int((df["SpatialFDR"] < spatial_fdr).sum())
+        except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+            return (
+                df,
+                n_nhoods,
+                None,
+                [
+                    f"Milo finished but its results table {Path(out_csv).name} could not be read "
+                    f"back ({type(exc).__name__}: {exc}). The differentially-abundant "
+                    "neighbourhood count and the beeswarm figure are unavailable for this run."
+                ],
+            )
+        return df, n_nhoods, n_da, []
 
     def _beeswarm_artifacts(
         self,

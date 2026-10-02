@@ -321,3 +321,29 @@ def test_milo_beeswarm_helper_skips_when_unannotated(tmp_path, mock_context):
         context=context,
     )
     assert artifacts == []
+
+
+def test_reading_back_the_milo_table_counts_neighbourhoods(tmp_path):
+    path = tmp_path / "da_milo.csv"
+    pd.DataFrame({"SpatialFDR": [0.01, 0.2, 0.04, 0.9]}).to_csv(path, index=False)
+    df, n_nhoods, n_da, warnings = MiloMethod()._read_results(path, spatial_fdr=0.1)
+    assert (n_nhoods, n_da, warnings) == (4, 2, [])
+    assert len(df) == 4
+
+
+def test_an_unreadable_milo_table_is_reported_not_swallowed(tmp_path):
+    """No table means no neighbourhood counts and no beeswarm; the run must say so."""
+    df, n_nhoods, n_da, warnings = MiloMethod()._read_results(
+        tmp_path / "missing.csv", spatial_fdr=0.1
+    )
+    assert df is None and n_nhoods is None and n_da is None
+    assert len(warnings) == 1
+    assert "could not be read back" in warnings[0] and "missing.csv" in warnings[0]
+
+
+def test_a_milo_table_without_spatial_fdr_is_reported(tmp_path):
+    path = tmp_path / "da_milo.csv"
+    pd.DataFrame({"logFC": [1.0]}).to_csv(path, index=False)
+    _, _, n_da, warnings = MiloMethod()._read_results(path, spatial_fdr=0.1)
+    assert n_da is None
+    assert "SpatialFDR" in warnings[0]
