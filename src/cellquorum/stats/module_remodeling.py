@@ -39,7 +39,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from scipy import special, stats
-from statsmodels.stats.multitest import multipletests
+
+from cellquorum.stats.multiple_testing import bh_fdr
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -446,23 +447,6 @@ def _label_permutation_p(
     mask[0, :] = False
     mask[0, :k] = True
     return float((_statistic(mask) >= observed - tol).mean()), "label_perm_mc"
-
-
-def bh_fdr(pvalues: np.ndarray | list[float], method: str = "fdr_bh") -> np.ndarray:
-    """Benjamini-Hochberg FDR that tolerates NaN p-values.
-
-    NaNs (a test family member that could not be computed) are held out of the
-    correction and returned as NaN in place, so a single un-fittable row never
-    drags the whole family's q-values around. Finite p-values are corrected
-    among themselves exactly as :func:`statsmodels.stats.multitest.multipletests`
-    would on that subset.
-    """
-    p = np.asarray(pvalues, dtype=float)
-    out = np.full(p.shape, np.nan, dtype=float)
-    finite = np.isfinite(p)
-    if finite.any():
-        out[finite] = multipletests(p[finite], method=method)[1]
-    return out
 
 
 def signature_argmax_labels(

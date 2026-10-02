@@ -8,7 +8,6 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 from scipy import stats
-from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -20,6 +19,7 @@ from cellquorum.stages.comparative.differential_abundance.aggregation import (
     build_composition_proportions,
 )
 from cellquorum.stats.claim_support import annotate_fdr_reachability, group_resolution
+from cellquorum.stats.multiple_testing import bh_fdr
 
 
 class ProportionTTestMethod(AnalysisMethod):
@@ -208,13 +208,7 @@ class ProportionTTestMethod(AnalysisMethod):
             # Convert to DataFrame
             results_df = pd.DataFrame(results)
 
-            # Compute FDR (mask out NaN pvalues for multipletests)
-            pvalues = results_df["pvalue"].values
-            finite_mask = np.isfinite(pvalues)
-            fdr_values = np.full_like(pvalues, np.nan)
-            if finite_mask.sum() > 0:
-                fdr_values[finite_mask] = multipletests(pvalues[finite_mask], method=fdr_method)[1]
-            results_df["fdr"] = fdr_values
+            results_df["fdr"] = bh_fdr(results_df["pvalue"].to_numpy(), method=fdr_method)
 
             # The design floor beside the FDR. A paired arcsine t is parametric and so is NOT
             # bounded by the floor -- that is what the distributional assumption buys -- but a
@@ -354,13 +348,7 @@ class ProportionTTestMethod(AnalysisMethod):
             # Convert to DataFrame
             results_df = pd.DataFrame(results)
 
-            # Compute FDR
-            pvalues = results_df["pvalue"].values
-            finite_mask = np.isfinite(pvalues)
-            fdr_values = np.full_like(pvalues, np.nan)
-            if finite_mask.sum() > 0:
-                fdr_values[finite_mask] = multipletests(pvalues[finite_mask], method=fdr_method)[1]
-            results_df["fdr"] = fdr_values
+            results_df["fdr"] = bh_fdr(results_df["pvalue"].to_numpy(), method=fdr_method)
 
             # Same floor, computed from the unpaired design: with no donor spanning both
             # arms the randomization set is C(n, n_case) rather than 2**k, which is far

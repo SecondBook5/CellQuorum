@@ -116,7 +116,6 @@ from cellquorum.stats.module_remodeling import (
     DEFAULT_FDR_COLUMNS,
     FAMILY_COLUMNS,
     PANEL_MEMBERSHIP_COLUMNS,
-    bh_fdr,
     declared_panel_membership,
     fdr_floor_reachability,
     leading_edge_jaccard,
@@ -130,6 +129,7 @@ from cellquorum.stats.module_remodeling import (
     signed_program_contrast_index,
     upset_membership,
 )
+from cellquorum.stats.multiple_testing import bh_fdr
 from cellquorum.stats.paired_concordance import (
     donor_unanimous,
     mark_called,

@@ -19,21 +19,13 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 from scipy.stats import hypergeom
-from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
-
-
-def _bh(pvalues: np.ndarray, method: str) -> np.ndarray:
-    out = np.full_like(pvalues, np.nan, dtype=float)
-    finite = np.isfinite(pvalues)
-    if finite.sum() > 0:
-        out[finite] = multipletests(pvalues[finite], method=method)[1]
-    return out
+from cellquorum.stats.multiple_testing import bh_fdr
 
 
 class OraMethod(AnalysisMethod):
@@ -143,7 +135,7 @@ class OraMethod(AnalysisMethod):
                 continue
             out = pd.concat(rows, ignore_index=True)
             # Single BH/FDR over the genuine raw hypergeometric p-values.
-            out["padj"] = _bh(out["pvalue"].values.astype(float), fdr_method)
+            out["padj"] = bh_fdr(out["pvalue"].values.astype(float), fdr_method)
             out["significant"] = out["padj"] < fdr
             out = out[
                 [

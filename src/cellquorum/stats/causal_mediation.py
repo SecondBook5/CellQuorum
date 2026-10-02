@@ -92,7 +92,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.stats.depth_confounding import MIN_PAIRED_BLOCKS
-from cellquorum.stats.module_remodeling import bh_fdr
+from cellquorum.stats.multiple_testing import bh_fdr
 
 DEFAULT_SEED = 1337
 

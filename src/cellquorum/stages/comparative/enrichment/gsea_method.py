@@ -8,7 +8,6 @@ from pathlib import Path
 import anndata as ad
 import numpy as np
 import pandas as pd
-from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -16,16 +15,7 @@ from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
-
-
-def _bh(pvalues: np.ndarray, method: str) -> np.ndarray:
-    """BH-adjust p-values, masking non-finite entries then reindexing."""
-    out = np.full_like(pvalues, np.nan, dtype=float)
-    finite = np.isfinite(pvalues)
-    if finite.sum() > 0:
-        out[finite] = multipletests(pvalues[finite], method=method)[1]
-    return out
-
+from cellquorum.stats.multiple_testing import bh_fdr
 
 # Cap on how many sources get a persisted running-ES walk per collection, to
 # bound file size. Significant sources are taken first; the remainder is filled
@@ -274,7 +264,7 @@ class GseaMethod(AnalysisMethod):
             raw = pvalue.to_numpy(dtype=float)
             at_limit = np.isfinite(raw) & (raw < resolution)
             floored = np.where(at_limit, resolution, raw)
-            padj = _bh(floored, fdr_method)
+            padj = bh_fdr(floored, fdr_method)
             out = pd.DataFrame(
                 {
                     "source": score.index,

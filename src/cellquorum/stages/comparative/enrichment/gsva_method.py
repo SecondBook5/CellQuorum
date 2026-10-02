@@ -7,7 +7,6 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 from scipy import stats
-from statsmodels.stats.multitest import multipletests
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -15,14 +14,7 @@ from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.differential_expression.pseudobulk import aggregate_pseudobulk
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
-
-
-def _bh(pvalues: np.ndarray, method: str) -> np.ndarray:
-    out = np.full_like(pvalues, np.nan, dtype=float)
-    finite = np.isfinite(pvalues)
-    if finite.sum() > 0:
-        out[finite] = multipletests(pvalues[finite], method=method)[1]
-    return out
+from cellquorum.stats.multiple_testing import bh_fdr
 
 
 class GsvaMethod(AnalysisMethod):
@@ -206,7 +198,7 @@ class GsvaMethod(AnalysisMethod):
 
             contrast = pd.DataFrame(rows)
             # Single BH/FDR over the t-test's own raw p-values.
-            contrast["padj"] = _bh(contrast["pvalue"].values.astype(float), fdr_method)
+            contrast["padj"] = bh_fdr(contrast["pvalue"].values.astype(float), fdr_method)
             contrast["significant"] = contrast["padj"] < fdr
             contrast = contrast[
                 [

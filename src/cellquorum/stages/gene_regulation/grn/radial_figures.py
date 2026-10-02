@@ -36,6 +36,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Arc, Patch, PathPatch
 from matplotlib.path import Path as MPath
 
+from cellquorum.stats.multiple_testing import bh_fdr
 from cellquorum.visualization import figstyle
 
 if TYPE_CHECKING:
@@ -107,7 +108,6 @@ def tf_activity_from_de(
 
     try:
         import decoupler as dc
-        from statsmodels.stats.multitest import multipletests
     except Exception:
         return pd.DataFrame(columns=cols)
 
@@ -121,11 +121,7 @@ def tf_activity_from_de(
     out = pd.DataFrame(
         {"score": es.iloc[0].to_numpy(), "pvalue": pv.iloc[0].to_numpy()}, index=es.columns
     )
-    finite = np.isfinite(out["pvalue"].to_numpy())
-    padj = np.full(out.shape[0], np.nan)
-    if finite.sum():
-        padj[finite] = multipletests(out["pvalue"].to_numpy()[finite], method="fdr_bh")[1]
-    out["padj"] = padj
+    out["padj"] = bh_fdr(out["pvalue"].to_numpy())
     out["significant"] = out["padj"] < fdr
     return out
 

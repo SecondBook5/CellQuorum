@@ -69,7 +69,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from cellquorum.stats.module_remodeling import bh_fdr
+from cellquorum.stats.multiple_testing import bh_fdr
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Iterable, Mapping
@@ -169,7 +169,7 @@ def set_overlap_tests(
             experiment, or the annotation the sets were drawn from. Required, because the
             p-value is a function of it and the convenient default (the union of the sets)
             is the one that makes every overlap look significant.
-        fdr_method: Passed to :func:`cellquorum.stats.module_remodeling.bh_fdr`.
+        fdr_method: Passed to :func:`cellquorum.stats.multiple_testing.bh_fdr`.
 
     Returns:
         One row per unordered pair, with the intersection, two similarity coefficients,
@@ -262,7 +262,7 @@ def cross_overlap_tests(
         right: Name to members, for the second family.
         universe: The elements that could have been shared. Required, for the reason given
             in :func:`set_overlap_tests`.
-        fdr_method: Passed to :func:`cellquorum.stats.module_remodeling.bh_fdr`. BH is
+        fdr_method: Passed to :func:`cellquorum.stats.multiple_testing.bh_fdr`. BH is
             corrected over the full ``left`` x ``right`` family; its members are not
             independent of each other, which BH tolerates.
         list_elements: Fill ``shared_elements``. ``False`` for a compact table.
