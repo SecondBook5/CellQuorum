@@ -1,0 +1,61 @@
+name: Security
+
+# Two independent checks, kept out of ci.yml so a newly published advisory for a
+# third-party package cannot turn an unrelated pull request red.
+#
+#   * CodeQL reads our own code for injection, path-handling and unsafe-deserialization bugs.
+#   * pip-audit checks the packages a user actually gets from `pip install cellquorum`
+#     against the public advisory databases.
+#
+# Both run weekly as well as on changes, because the advisory databases move even when our
+# code does not.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - ".github/workflows/security.yml"
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL (Python)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v3
+
+  dependency-audit:
+    name: pip-audit (installed dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Install CellQuorum into a clean environment so only its own dependency tree is
+      # audited, not whatever else is on the runner. pip itself is upgraded first: it is the
+      # installer, not a dependency, and an old pip on the runner is not a finding about us.
+      - run: python -m venv "$RUNNER_TEMP/audit-env"
+      - run: |
+          "$RUNNER_TEMP/audit-env/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/audit-env/bin/python" -m pip install .
+      - run: python -m pip install pip-audit
+      # --path audits what is installed. A cellquorum row is skipped (it is not on PyPI under
+      # this version yet); that skip is expected and is not a failure.
+      - run: >
+          pip-audit --progress-spinner off
+          --path "$RUNNER_TEMP/audit-env/lib/python3.12/site-packages"

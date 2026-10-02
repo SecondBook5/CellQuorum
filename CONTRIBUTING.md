@@ -160,6 +160,13 @@ Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 | **Docs** | `mkdocs build --strict` — a broken link or unresolved API reference fails the build. |
 | **Build** | Builds the wheel and sdist, asserts the wheel bundles every `.R` script, a non-empty `LICENSE` and `py.typed`, then installs the wheel into a clean environment and runs `tests/acceptance` there: the Python API and the command line a user types. |
 
+A separate workflow, [`.github/workflows/security.yml`](.github/workflows/security.yml), runs weekly
+and on changes to `pyproject.toml`: **CodeQL** reads our own code for injection and unsafe-file-handling
+bugs, and **pip-audit** checks the packages a clean `pip install` brings in against public advisory
+databases. It is kept apart from CI so that a newly published advisory for someone else's package
+cannot turn an unrelated pull request red. A red audit means a dependency needs a newer floor in
+`pyproject.toml` (or, if no fix exists, a note in `SECURITY.md`).
+
 ### The mypy ratchet
 
 mypy gates the packages listed in the Typecheck job, and **none of them has an exemption**.
