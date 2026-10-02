@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -15,6 +17,9 @@ from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.differential_expression.pseudobulk import aggregate_pseudobulk
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 from cellquorum.stats.multiple_testing import bh_fdr
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class GsvaMethod(AnalysisMethod):
@@ -42,7 +47,9 @@ class GsvaMethod(AnalysisMethod):
         # and the contract re-checks it before _run.
         return ["counts"]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         condition_col = config.get("condition_col", "condition")
         donor_col = config.get("donor_col", "patient_id")
         counts_layer = config.get("counts_layer", "counts")

@@ -13,6 +13,8 @@ skip, not a failure: the axis this feeds (``NUCLEAR_INTEGRITY``, alongside
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -22,6 +24,9 @@ from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.context_access import resolve_stage_config
 from cellquorum.stages.qc.config import QCSpliceMetricsConfig
 from cellquorum.stages.trajectory._loom_io import reconcile_looms
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 INTRONIC_FRACTION_COLUMN = "qc_splice_intronic_fraction"
 
@@ -43,7 +48,7 @@ def _column_sums(matrix: object) -> np.ndarray:
 class QCSpliceMetricsStage:
     """Attach obs['qc_splice_intronic_fraction'] from reconciled velocyto looms."""
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """Execute the qc_splice_metrics stage."""
         adata = context.require_adata()
         config = QCSpliceMetricsConfig.model_validate(

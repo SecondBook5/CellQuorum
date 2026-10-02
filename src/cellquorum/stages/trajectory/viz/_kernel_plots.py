@@ -12,6 +12,7 @@ from __future__ import annotations
 import inspect
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -20,6 +21,9 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory.viz import _helpers
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _FATE_KEYS = ("cellrank_fate_probabilities", "palantir_fate_probabilities")
 
@@ -103,7 +107,9 @@ class VelocityVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Render ONE velocity figure for the whole object, plus diagnostics.
 
         Rewritten twice over. It used to call
@@ -222,7 +228,9 @@ class MacrostateVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         try:
             import cellrank as cr
         except Exception as exc:  # noqa: BLE001
@@ -345,7 +353,9 @@ class FateVizMethod(AnalysisMethod):
             return [(i, nm) for i, nm in enumerate(names) if nm in keep]
         return list(enumerate(names))
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         fate_key = next((k for k in _FATE_KEYS if k in adata.obsm), None)
         if fate_key is None:
             return self._skip("no *_fate_probabilities in obsm")
@@ -430,7 +440,9 @@ class DriverVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         if "cellrank_lineage_drivers" not in adata.varm:
             return self._skip("no cellrank_lineage_drivers in varm")
         mat = np.asarray(adata.varm["cellrank_lineage_drivers"], dtype="float64")

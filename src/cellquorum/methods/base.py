@@ -12,11 +12,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @dataclass(frozen=True)
@@ -60,7 +64,9 @@ class AnalysisMethod(ABC):
         """Return the DataContract this method requires on its input."""
 
     @abstractmethod
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Execute the method. Implementations assume the contract has passed."""
 
     def min_donors(self) -> int:
@@ -92,7 +98,7 @@ class AnalysisMethod(ABC):
         self,
         adata: ad.AnnData,
         config: dict,
-        context: object,
+        context: PipelineContext,
         *,
         donor_col: str | None = None,
     ) -> StageResult | MethodSkip:

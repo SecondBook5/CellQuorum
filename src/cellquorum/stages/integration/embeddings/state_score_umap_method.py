@@ -16,6 +16,7 @@ after the later of the two.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
@@ -29,6 +30,9 @@ from cellquorum.stages.integration.embeddings.plots import (
 from cellquorum.visualization.figio import figure_artifacts
 from cellquorum.visualization.figstyle import save_figure
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 class StateScoreUmapMethod(AnalysisMethod):
     """Render one cluster-state + per-condition score figure per program."""
@@ -40,7 +44,9 @@ class StateScoreUmapMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         score_source = config.get("score_source", "aucell")
         obsm_key = f"X_state_{score_source}"
         uns_key = f"state_{score_source}"

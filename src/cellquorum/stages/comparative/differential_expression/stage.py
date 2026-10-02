@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -16,6 +17,9 @@ from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.stage_base import MethodDispatchStage, _apply_cohort_overlay
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -34,7 +38,7 @@ class DifferentialExpressionStage(MethodDispatchStage):
         # Default to the donor-blocked pseudobulk edgeR method.
         return config.get("method", "pseudobulk_edger")
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """Run the configured DE method, pooled and (if configured) per subcluster.
 
         ``cell_type_col`` unset: identical to the base dispatch (one pooled
@@ -150,7 +154,7 @@ class DifferentialExpressionStage(MethodDispatchStage):
         self._validate_output(result)
         return result
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """
         Bridge the project-level ``design`` block into the DE method's config.
 

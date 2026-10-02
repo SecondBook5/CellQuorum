@@ -14,6 +14,7 @@ direct test yields a genuine raw p-value, so BH/FDR is applied exactly once here
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -27,6 +28,9 @@ from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 from cellquorum.stats.multiple_testing import bh_fdr
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 class OraMethod(AnalysisMethod):
     """ORA on DE up/down gene sets; background = all tested genes."""
@@ -38,7 +42,9 @@ class OraMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         de_name = config.get("de_results_filename", "de_pseudobulk_edger.csv")
         collections = config.get("gene_set_collections", ["hallmark", "reactome"])
         gmt_path = config.get("gmt_path")

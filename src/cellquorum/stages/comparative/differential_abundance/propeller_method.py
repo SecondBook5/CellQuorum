@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -18,6 +19,9 @@ from cellquorum.stages.comparative.differential_abundance.aggregation import (
     aggregate_celltype_counts,
 )
 from cellquorum.stats.claim_support import annotate_fdr_reachability
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Path to the bundled propeller script.
 _PROPELLER_R = r_script_path("propeller.R")
@@ -88,7 +92,9 @@ class PropellerMethod(RAnalysisMethod):
         # Require all design columns to exist.
         return [condition_col, donor_col, cell_type_col]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Aggregate cell-type counts, fit propeller, and return the DA table."""
 
         # Resolve config fields (all schema-driven; no hardcoded study assumptions).

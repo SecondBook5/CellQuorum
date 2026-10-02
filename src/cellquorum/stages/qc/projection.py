@@ -23,6 +23,7 @@ retrains anything, which is what keeps the core manifold immutable
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -33,6 +34,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.context_access import resolve_stage_config
 from cellquorum.stages.qc.config import QueryProjectionConfig
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @dataclass(frozen=True)
@@ -246,7 +250,7 @@ class QueryProjectionStage:
                 return col
         return None
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """Execute the query-projection stage."""
         adata = context.require_adata()
         config = QueryProjectionConfig.model_validate(

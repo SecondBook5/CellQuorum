@@ -16,6 +16,7 @@ from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.methods.base import MethodSkip
 
 if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
     from cellquorum.stages.clustering.subclustering.config import (
         PartitionConfig,
         SubclusteringConfig,
@@ -387,7 +388,7 @@ def run_leiden_stability(
     config: SubclusteringConfig,
     *,
     reduction_key: str,
-    context: object = None,
+    context: PipelineContext = None,
 ) -> ad.AnnData | MethodSkip:
     """Bootstrap-validated Leiden partition: an alternative to CHOIR, not a fallback.
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -29,6 +30,9 @@ from cellquorum.stages.cell_cell_communication._nichenet_io import (
     ligand_activity_to_canonical,
 )
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 _NICHENET_R = r_script_path("nichenet.R")
 
 
@@ -45,7 +49,9 @@ class NicheNetMethod(RAnalysisMethod):
     def requires_obs(self, config: dict) -> list[str]:
         return [config.get("cell_type_col", "cell_type")]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         cell_type_col = config.get("cell_type_col", "cell_type")
         sender = config.get("nichenet_sender")
         receiver = config.get("nichenet_receiver")

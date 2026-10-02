@@ -7,10 +7,15 @@ drift on the check or the message.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from cellquorum.core.exceptions import CellQuorumStageError
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
-def require_gpu(context: object, *, method_name: str) -> None:
+
+def require_gpu(context: PipelineContext, *, method_name: str) -> None:
     """Raise unless the context's backend registry reports a GPU as available.
 
     Args:

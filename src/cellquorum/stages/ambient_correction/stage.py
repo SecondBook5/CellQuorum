@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
@@ -26,6 +27,9 @@ from cellquorum.stages.ambient_correction.soupx import (
     run_soupx_library,
 )
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 @register_stage(
     name="ambient_correction",
@@ -37,7 +41,7 @@ from cellquorum.stages.ambient_correction.soupx import (
 class AmbientCorrectionStage:
     """SoupX ambient-RNA correction stage (runs first, per library)."""
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Run SoupX per library and record contamination fractions.
 
@@ -201,7 +205,7 @@ class AmbientCorrectionStage:
         )
 
 
-def _resolve_manifest(context: object) -> list[dict]:
+def _resolve_manifest(context: PipelineContext) -> list[dict]:
     """Return the manifest rows (sample_id + cellranger_path) or [].
 
     CONFIRMED: PipelineContext.manifest is a pandas DataFrame (or None); the
@@ -254,7 +258,7 @@ def _join_manifest_metadata(adata: ad.AnnData, manifest: object | None) -> None:
             adata.obs[col] = adata.obs["sample_id"].map(lookup[col])
 
 
-def _resolve_rscript_backend(context: object) -> object | None:
+def _resolve_rscript_backend(context: PipelineContext) -> object | None:
     """Return the Rscript backend from the context registry, or None."""
 
     registry = getattr(context, "backend_registry", None)
@@ -266,7 +270,7 @@ def _resolve_rscript_backend(context: object) -> object | None:
         return None
 
 
-def _resolve_output_base(context: object, output_dir: str) -> Path:
+def _resolve_output_base(context: PipelineContext, output_dir: str) -> Path:
     """Return the base directory for corrected matrices."""
 
     paths = getattr(context, "paths", None)
@@ -277,7 +281,7 @@ def _resolve_output_base(context: object, output_dir: str) -> Path:
 
 
 def _write_contamination_figure(
-    context: object,
+    context: PipelineContext,
     fractions: dict[str, float],
     adata: ad.AnnData,
     artifacts: list[StageArtifact],

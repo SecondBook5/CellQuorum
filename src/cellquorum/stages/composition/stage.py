@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,9 @@ from cellquorum.stages.composition.compute import grouped_composition, overall_c
 from cellquorum.stages.composition.config import CompositionConfig
 from cellquorum.visualization import figstyle
 from cellquorum.visualization.qc.summarise import natural_sort_key
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -36,7 +40,7 @@ class CompositionStage:
     not every cohort has both.
     """
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Execute the composition stage.
 

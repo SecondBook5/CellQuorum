@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -40,6 +41,9 @@ from cellquorum.stages.comparative.multicellular_programs.diagnostics import (
 from cellquorum.stages.comparative.multicellular_programs.mcp_figures import plot_mcp_summary
 from cellquorum.visualization.figstyle import render_figure
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 _DIALOGUE_R = r_script_path("dialogue.R")
 
 
@@ -57,7 +61,9 @@ class MulticellularProgramsMethod(RAnalysisMethod):
     def requires_obs(self, config: dict) -> list[str]:
         return [c for c in (config.get("cell_type_col"), config.get("sample_col")) if c]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         # ---- Config resolution. The cohort overlay (applied by the stage) only
         # maps batch/sample/donor/condition *_key names, not this stage's *_col
         # identity fields, so those are read straight from the per-stage config

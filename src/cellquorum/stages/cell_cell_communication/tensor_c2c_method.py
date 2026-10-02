@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
@@ -12,6 +13,9 @@ from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Stable mapping from cell2cell's OrderedDict keys to our output slugs. Fixed
 # order → deterministic iteration and file naming.
@@ -114,7 +118,7 @@ class TensorCell2CellMethod(AnalysisMethod):
             config.get("sample_col", "sample_id"),
         ]
 
-    def _resolve_device(self, config: dict, context: object) -> str:
+    def _resolve_device(self, config: dict, context: PipelineContext) -> str:
         """Decide the tensor-decomposition device.
 
         Precedence: an explicit ``device`` in the CCC config wins; otherwise
@@ -165,7 +169,9 @@ class TensorCell2CellMethod(AnalysisMethod):
                 pass
             return "cpu", f"GPU requested but unavailable ({str(exc)[:150]}); ran on CPU."
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         seed = int(config.get("seed", 42))
 
         # Hard dependency on LIANA's per-sample output.

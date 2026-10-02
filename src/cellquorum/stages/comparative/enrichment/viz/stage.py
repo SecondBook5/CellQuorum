@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Import the package so the methods register themselves as a side effect.
 import cellquorum.stages.comparative.enrichment.viz  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Keys bridged from config.enrichment_viz into each dispatched viz method's config.
 _VIZ_CONFIG_KEYS = (
@@ -34,7 +39,7 @@ class EnrichmentVizStage(MethodDispatchStage):
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "gsea_viz")
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Bridge config.enrichment_viz into the method config; inject method list."""
         augmented = dict(stage_config)
         config = getattr(context, "config", None)

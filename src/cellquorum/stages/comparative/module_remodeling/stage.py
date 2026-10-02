@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Import the package so the method registers itself as a side effect.
 import cellquorum.stages.comparative.module_remodeling  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -29,7 +34,7 @@ class ModuleRemodelingStage(MethodDispatchStage):
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "module_remodeling")
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Bridge the project-level ``design``/``cohort`` blocks into this config.
 
         A manifest declares the donor column, the condition column, the sample

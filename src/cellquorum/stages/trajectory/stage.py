@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Import the package so the method registers itself as a side effect.
 import cellquorum.stages.trajectory  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Keys flattened from config.velocity.* into each method's config dict.
 _VELOCITY_KEYS = (
@@ -136,7 +141,7 @@ class TrajectoryStage(MethodDispatchStage):
             if key in block_dict and key not in target:
                 target[key] = block_dict[key]
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
 
         # Determine which method blocks are actually selected, so we only flatten

@@ -114,7 +114,7 @@ class MethodDispatchStage(ABC):
         self,
         adata: object,
         method_config: dict,
-        context: object,
+        context: PipelineContext,
     ) -> StageResult | MethodSkip:
         """
         Resolve and execute one method from its config sub-block.
@@ -143,7 +143,7 @@ class MethodDispatchStage(ABC):
         adata: object,
         stage_config: dict,
         methods: list[dict],
-        context: object,
+        context: PipelineContext,
     ) -> StageResult:
         """
         Run a list of method sub-configs in order against the same AnnData.
@@ -222,7 +222,7 @@ class MethodDispatchStage(ABC):
             metrics=aggregate_metrics,
         )
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:  # noqa: B027
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:  # noqa: B027
         """
         Hook for a stage to inject additional resolved config keys.
 
@@ -265,7 +265,7 @@ _COHORT_OVERLAY_KEYS: tuple[str, ...] = (
 )
 
 
-def _apply_cohort_overlay(context: object, stage_config: dict) -> dict:
+def _apply_cohort_overlay(context: PipelineContext, stage_config: dict) -> dict:
     """
     Return a copy of ``stage_config`` with cohort-declared keys overlaid.
 

@@ -11,11 +11,16 @@ offline, CPU.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class PassthroughAnnotationMethod(AnalysisMethod):
@@ -43,7 +48,7 @@ class PassthroughAnnotationMethod(AnalysisMethod):
     # skip). A subrepo pointed at an object with no trusted label is a hard
     # misconfiguration that must fail loud, not silently leave key_added absent.
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
         """
         Carry an existing trusted label into ``key_added``.
 

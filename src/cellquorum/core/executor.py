@@ -358,7 +358,7 @@ class PipelineExecutor:
     def _maybe_write_checkpoint(
         self,
         *,
-        context: object,
+        context: PipelineContext,
         planned_stage: object,
         stage_result: object,
         reporter: object,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -19,6 +20,9 @@ from cellquorum.stages.comparative.enrichment.viz.io import (
     save_figure,
 )
 from cellquorum.visualization.figstyle import get_group_palette
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Cap on how many running-ES per-source curves to render per collection.
 _MAX_RUNNING_ES_FIGS = 6
@@ -39,7 +43,9 @@ class ActivityVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "enrichment"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -125,7 +131,9 @@ class GseaVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "enrichment"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -239,7 +247,9 @@ class GsvaVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "enrichment"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -363,7 +373,9 @@ class OraVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "enrichment"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))

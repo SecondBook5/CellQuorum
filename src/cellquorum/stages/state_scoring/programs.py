@@ -14,6 +14,10 @@ overrides an earlier one on name collision — into one ``name -> [gene, ...]`` 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Curated human cell-state signatures. Compact, canonical marker sets — not
 # exhaustive gene sets. Cell-cycle is deliberately absent: it is scored upstream
@@ -140,7 +144,7 @@ def read_gmt(gmt_path: str) -> dict[str, list[str]]:
     return programs
 
 
-def resolve_programs(config: dict, context: object | None = None) -> dict[str, list[str]]:
+def resolve_programs(config: dict, context: PipelineContext | None = None) -> dict[str, list[str]]:
     """Merge every configured program source into one ``name -> [gene, ...]`` map.
 
     Sources are applied in order so a later one overrides an earlier one on a

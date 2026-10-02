@@ -21,6 +21,8 @@ from cellquorum.methods.r_method import RAnalysisMethod
 if TYPE_CHECKING:
     import pandas as pd
 
+    from cellquorum.core.context import PipelineContext
+
 # Path to the bundled scDiagnostics R script.
 _SCDIAGNOSTICS_R = r_script_path("scdiagnostics.R")
 
@@ -29,7 +31,7 @@ def _write_figures(
     *,
     obs: pd.DataFrame,
     cell_type_col: str,
-    context: object,
+    context: PipelineContext,
     config: dict,
 ) -> list[StageArtifact]:
     """Render the scDiagnostics figures when configured and possible.
@@ -139,7 +141,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         self,
         adata: ad.AnnData,
         config: dict,
-        context: object,
+        context: PipelineContext,
     ) -> StageResult | MethodSkip:
         """Execute scDiagnostics via R; return read-only diagnostics."""
 
@@ -415,7 +417,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         soft_scores_obsm: str,
         scratch: Path,
         cell_type_col: str,
-        context: object,
+        context: PipelineContext,
         config: dict,
     ) -> StageResult:
         """Compute per-cell annotation entropy from an obsm probability matrix."""

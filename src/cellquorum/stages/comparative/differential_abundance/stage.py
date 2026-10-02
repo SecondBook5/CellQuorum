@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Import the package so the methods register themselves as a side effect.
 import cellquorum.stages.comparative.differential_abundance  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -27,7 +32,7 @@ class DifferentialAbundanceStage(MethodDispatchStage):
         # Default to milo.
         return config.get("method", "milo")
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """
         Bridge the project-level ``design`` block into the DA method's config.
 

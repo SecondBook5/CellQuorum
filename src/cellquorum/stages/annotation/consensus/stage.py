@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -13,6 +14,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.stages.annotation.consensus.config import AnnotationConsensusConfig
 from cellquorum.stages.annotation.consensus.consensus import normalize_label, reconcile_votes
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -24,7 +28,7 @@ from cellquorum.stages.annotation.consensus.consensus import normalize_label, re
 class AnnotationConsensusStage:
     """Reconcile several obs label columns into a consensus label + confidence."""
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Execute the annotation-consensus stage.
 
@@ -155,7 +159,7 @@ class AnnotationConsensusStage:
         )
 
 
-def _resolve_config(context: object) -> AnnotationConsensusConfig:
+def _resolve_config(context: PipelineContext) -> AnnotationConsensusConfig:
     """
     Resolve the annotation_consensus config from a PipelineContext-like object.
 

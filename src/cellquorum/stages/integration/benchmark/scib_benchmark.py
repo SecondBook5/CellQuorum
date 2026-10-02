@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -10,6 +11,9 @@ import numpy as np
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class ScibBenchmarkMethod(AnalysisMethod):
@@ -39,7 +43,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
             required_obs=[batch_key],
         )
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
         """Compute scib-metrics for each embedding; return ranking + metrics."""
         # Suppress JAX CPU fallback warning from scib_metrics.
         with warnings.catch_warnings():

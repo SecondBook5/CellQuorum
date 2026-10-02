@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -19,12 +20,15 @@ from cellquorum.stages.integration.embeddings.plots import (
     save_figure,
 )
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 # Per-cell neighbourhood-mixing metrics, written to obs when high-mixing exclusion is on.
 _NEIGHBORHOOD_ENTROPY_COLUMN = "neighborhood_label_entropy"
 _EFFECTIVE_LABELS_COLUMN = "neighborhood_effective_labels"
 
 
-def _seed(config: dict, context: object) -> int:
+def _seed(config: dict, context: PipelineContext) -> int:
     """Prefer config random_state, else context.random_seed, else 1337."""
     if config.get("random_state") is not None:
         return int(config["random_state"])
@@ -59,7 +63,9 @@ class UmapMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         if not _basis_requested(config, "umap"):
             return self._skip("umap not in config.embeddings")
         use_rep = config.get("use_rep")
@@ -96,7 +102,9 @@ class PhateMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         if not _basis_requested(config, "phate"):
             return self._skip("phate not in config.embeddings")
         try:
@@ -127,7 +135,9 @@ class PagaMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         groupby = compute.resolve_paga_groupby(
             adata,
             config.get("paga_groupby"),
@@ -284,7 +294,9 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                 return key
         return None
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         figures_dir = Path(context.paths.figures) / "embeddings"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
@@ -383,7 +395,7 @@ def _as_overlay(value: object) -> OverlayConfig:
 
 
 def _overlay_with_declared_panels(
-    overlay_cfg: OverlayConfig, context: object
+    overlay_cfg: OverlayConfig, context: PipelineContext
 ) -> tuple[OverlayConfig, list[str]]:
     """Let ``config.markers.panels`` supply the overlay programs when it can.
 
@@ -442,7 +454,9 @@ class ContinuousOverlayMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         figures_dir = Path(context.paths.figures) / "embeddings"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
@@ -24,6 +25,9 @@ from cellquorum.stages.cell_cell_communication.viz._io import (
     save_figure,
 )
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 # ─── Dotplot ───────────────────────────────────────────────────────────────
 
 
@@ -37,7 +41,9 @@ class DotplotVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -91,7 +97,9 @@ class ChordVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -147,7 +155,9 @@ class SankeyVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -209,7 +219,9 @@ class NetworkVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -298,7 +310,9 @@ class SummaryVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -374,7 +388,9 @@ class TensorFactorsVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -467,7 +483,9 @@ class MultiNicheNetVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -620,7 +638,9 @@ class NicheNetVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         figures_dir = Path(context.paths.figures) / "ccc"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))

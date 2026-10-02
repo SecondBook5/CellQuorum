@@ -36,6 +36,7 @@ figure is drawn through ``render_figure`` so one bad panel cannot sink a stage.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -61,6 +62,9 @@ from cellquorum.visualization.program_correlation import (
     program_correlation_heatmap,
     program_correlation_slopes,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Subdirectory used under both the results and figures namespaces.
 _STAGE_DIR = "module_remodeling"
@@ -270,7 +274,9 @@ class ModuleRemodelingMethod(AnalysisMethod):
     # ------------------------------------------------------------------ #
     # run                                                                 #
     # ------------------------------------------------------------------ #
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         donor_col = config.get("donor_col")
         condition_col = config.get("condition_col")
         sample_col = config.get("sample_col")

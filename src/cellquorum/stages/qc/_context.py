@@ -11,15 +11,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
 from cellquorum.stages.qc._errors import QCStageError
 from cellquorum.stages.qc.config import QCConfig, validate_qc_config_dict
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 def resolve_qc_config(
-    context: object,
+    context: PipelineContext,
     *,
     override: QCConfig | None = None,
 ) -> QCConfig:
@@ -84,7 +88,7 @@ def coerce_qc_config(value: object) -> QCConfig:
     )
 
 
-def is_qc_stage_enabled(context: object, qc_config: QCConfig) -> bool:
+def is_qc_stage_enabled(context: PipelineContext, qc_config: QCConfig) -> bool:
     """Return whether the QC stage should execute.
 
     Args:
@@ -114,7 +118,7 @@ def is_qc_stage_enabled(context: object, qc_config: QCConfig) -> bool:
     return True
 
 
-def get_context_adata(context: object) -> ad.AnnData:
+def get_context_adata(context: PipelineContext) -> ad.AnnData:
     """Retrieve AnnData from a PipelineContext-like object.
 
     Args:
@@ -148,7 +152,7 @@ def get_context_adata(context: object) -> ad.AnnData:
     return adata
 
 
-def get_qc_output_dir(context: object, output_subdir: str) -> Path:
+def get_qc_output_dir(context: PipelineContext, output_subdir: str) -> Path:
     """Resolve the QC stage output directory.
 
     Args:

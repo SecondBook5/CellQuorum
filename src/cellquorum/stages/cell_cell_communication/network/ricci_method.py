@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 import networkx as nx
 import pandas as pd
@@ -17,6 +19,9 @@ from cellquorum.stages.cell_cell_communication.network._networks import (
     resolve_condition_arms,
     sparsify_top_k_per_node,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _EDGE_COLS = ["source", "target", "ricci_curvature", "weight"]
 _NODE_COLS = ["node", "ricci_curvature"]
@@ -108,7 +113,9 @@ class RicciMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract(required_obs=[], required_layers=[])
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         try:
             import GraphRicciCurvature  # noqa: F401
         except Exception as exc:

@@ -9,8 +9,13 @@ both settings without branching.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
-def resolve_stage_config(context: object, stage_name: str) -> dict:
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
+
+def resolve_stage_config(context: PipelineContext, stage_name: str) -> dict:
     """
     Return a stage's config sub-block as a plain dict.
 

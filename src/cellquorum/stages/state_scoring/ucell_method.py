@@ -18,6 +18,7 @@ import json
 import signal
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -29,6 +30,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.state_scoring.programs import resolve_programs
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class UcellMethod(AnalysisMethod):
@@ -49,7 +53,9 @@ class UcellMethod(AnalysisMethod):
     def requires_layers(self) -> list[str]:
         return ["cellquorum_normalized"]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         layer = config.get("layer", "cellquorum_normalized")
         cell_type_col = config.get("cell_type_col", "cell_type")
         min_genes = int(config.get("min_program_genes", 3))

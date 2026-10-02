@@ -16,6 +16,7 @@ failure records a clean skip instead of aborting sibling methods.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -25,6 +26,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 from cellquorum.stages.trajectory.viz import _helpers
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Weighted nets (signed regulons / pathway weights) score better with the
 # multivariate linear model; unweighted gene sets with the univariate one.
@@ -68,7 +72,9 @@ class ActivityCascadeVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         pts = _helpers.available_pseudotimes(adata, config.get("pseudotime_keys"))
         if not pts:
             return self._skip("no *_pseudotime obs column")

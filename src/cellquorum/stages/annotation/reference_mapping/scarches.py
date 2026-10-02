@@ -7,7 +7,7 @@ import warnings
 from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import numpy as np
@@ -22,6 +22,9 @@ from cellquorum.core.exceptions import CellQuorumDataError, CellQuorumStageError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 #: ``var`` columns that conventionally hold gene symbols on a public reference. CellxGene
 #: releases index ``var_names`` by Ensembl ID and put the symbol in ``feature_name``, so an
@@ -409,7 +412,9 @@ class ScArchesMethod(AnalysisMethod):
             expected_kind="counts",
         )
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Execute scVI→scANVI→query surgery with multi-seed consensus."""
         # Extract config params.
         atlas_h5ad = config.get("atlas_h5ad")

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 # Import Path for stage output directory handling.
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Import AnnData for stage input and output typing.
 import anndata as ad
@@ -39,6 +40,9 @@ from cellquorum.stages.preprocessing.normalization import (
 
 # Import normalization diagnostic figures.
 from cellquorum.stages.preprocessing.visualization import write_normalization_figures
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class PreprocessingStageError(CellQuorumDataError):
@@ -87,7 +91,7 @@ class PreprocessingStage:
     # Store the results subdirectory used for preprocessing artifacts.
     output_subdir: str = "preprocessing"
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Execute the preprocessing stage.
 
@@ -233,7 +237,7 @@ class PreprocessingStage:
 
 
 def resolve_preprocessing_config(
-    context: object,
+    context: PipelineContext,
     *,
     override: PreprocessingConfig | None = None,
 ) -> PreprocessingConfig:
@@ -320,7 +324,7 @@ def coerce_preprocessing_config(value: object) -> PreprocessingConfig:
 
 
 def is_preprocessing_stage_enabled(
-    context: object, preprocessing_config: PreprocessingConfig
+    context: PipelineContext, preprocessing_config: PreprocessingConfig
 ) -> bool:
     """
     Return whether the preprocessing stage should execute.
@@ -363,7 +367,7 @@ def is_preprocessing_stage_enabled(
     return True
 
 
-def get_context_adata(context: object) -> ad.AnnData:
+def get_context_adata(context: PipelineContext) -> ad.AnnData:
     """
     Retrieve AnnData from a PipelineContext-like object.
 
@@ -408,7 +412,7 @@ def get_context_adata(context: object) -> ad.AnnData:
     return adata
 
 
-def get_preprocessing_output_dir(context: object, output_subdir: str) -> Path:
+def get_preprocessing_output_dir(context: PipelineContext, output_subdir: str) -> Path:
     """
     Resolve the preprocessing stage output directory.
 
@@ -521,7 +525,7 @@ def write_preprocessing_summary(
     output_dir: Path,
     normalization_result: NormalizationResult,
     preprocessing_config: PreprocessingConfig,
-    context: object,
+    context: PipelineContext,
     stage_name: str,
 ) -> Path:
     """

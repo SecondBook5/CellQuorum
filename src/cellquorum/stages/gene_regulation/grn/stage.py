@@ -3,10 +3,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import cellquorum.stages.gene_regulation.grn  # noqa: F401  (registers the method as a side effect)
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(name="grn", order=270, config_flag="grn", config_field="grn", category="grn")
@@ -16,7 +21,7 @@ class GrnStage(MethodDispatchStage):
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "pyscenic")
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
         # Bridge the design block so the radial GRN figure can label
         # "up in <case>" / "up in <control>" generically instead of a

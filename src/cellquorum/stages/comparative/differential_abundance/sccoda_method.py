@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -27,6 +28,9 @@ from cellquorum.stats.paired_concordance import (
     paired_abundance_concordance,
     qualify_abundance_calls,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # An acceptance rate outside this band means the sampler, not the data, decided the
 # answer: near zero the chain never moved, and near one it is taking steps too small
@@ -70,7 +74,9 @@ class SccodaMethod(AnalysisMethod):
         # Require all design columns to exist.
         return [condition_col, donor_col, cell_type_col]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Aggregate cell-type counts, fit scCODA, and return the DA table."""
 
         # Resolve config fields (all schema-driven; no hardcoded study assumptions).
@@ -688,7 +694,7 @@ class SccodaMethod(AnalysisMethod):
         case: str,
         control: str,
         config: dict,
-        context: object,
+        context: PipelineContext,
         reference: str = "auto",
     ) -> tuple[list[StageArtifact], list[str]]:
         """Build the two-panel scCODA composition figure (gated, default on).

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -41,6 +42,9 @@ from cellquorum.stages.clustering.subclustering.partition import (
 from cellquorum.stages.clustering.subclustering.qc_consistency import (
     subcluster_qc_consistency,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class SubclusteringFocusError(CellQuorumConfigError):
@@ -84,7 +88,7 @@ class SubclusteringStage:
     Task 1 scope: steps 1-2 only (extract + group_filter).
     """
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Run principled subclustering pipeline.
 
@@ -834,7 +838,7 @@ class SubclusteringStage:
             return pd.Categorical(widened)
         return widened
 
-    def _resolve_rscript_backend(self, context: object) -> object | None:
+    def _resolve_rscript_backend(self, context: PipelineContext) -> object | None:
         """Return the Rscript backend from context registry, or None."""
         registry = getattr(context, "backend_registry", None)
         if registry is None:

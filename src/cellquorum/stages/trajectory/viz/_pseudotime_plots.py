@@ -9,6 +9,7 @@ Combines:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -18,6 +19,9 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory.viz import _helpers, heatmap
 from cellquorum.visualization import figstyle
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _SCORE_FALLBACKS = ("G2M_score", "S_score", "phase_score")
 _STATE_FALLBACKS = ("cell_type", "leiden")
@@ -40,7 +44,9 @@ class PseudotimeVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         basis = _helpers.resolve_basis(adata, config.get("embedding_basis"))
         if basis is None:
             return self._skip("no embedding basis in obsm")
@@ -94,7 +100,9 @@ class GeneTrendVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         genes = config.get("genes")
         if not genes:  # no defaulted biology
             return self._skip("no genes configured")
@@ -262,7 +270,9 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
         idx = idx[np.argsort(-rhos[idx])][:max_genes]
         return [str(adata.var_names[i]) for i in idx]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         pts = _helpers.available_pseudotimes(adata, config.get("pseudotime_keys"))
         if not pts:
             return self._skip("no *_pseudotime obs column")

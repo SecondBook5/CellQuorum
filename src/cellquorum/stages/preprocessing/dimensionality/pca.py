@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -26,6 +27,9 @@ from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.qc.eligibility import fitting_cells
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +193,7 @@ class PCAMethod(AnalysisMethod):
             expected_kind="lognorm",
         )
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
         """
         Compute PCA, select components, truncate, and emit a scree artifact.
 
@@ -413,7 +417,7 @@ class PCAMethod(AnalysisMethod):
         n_comps: int,
         mask_var: str | None,
         random_state: int,
-        context: object,
+        context: PipelineContext,
         precision: str = "input",
     ) -> tuple[str, str | None, str]:
         """Fit the PCA basis on the QC fit population, then project every cell onto it.
@@ -498,7 +502,7 @@ class PCAMethod(AnalysisMethod):
         n_comps: int,
         mask_var: str | None,
         random_state: int,
-        context: object,
+        context: PipelineContext,
         precision: str = "input",
     ) -> tuple[str, str | None]:
         """Fit with explicit arithmetic precision and preserve the expression layer."""
@@ -530,7 +534,7 @@ class PCAMethod(AnalysisMethod):
         n_comps: int,
         mask_var: str | None,
         random_state: int,
-        context: object,
+        context: PipelineContext,
     ) -> tuple[str, str | None]:
         """Run standard scanpy/rapids PCA on a dense/standard lognorm layer.
 
@@ -600,7 +604,7 @@ class PCAMethod(AnalysisMethod):
         n_comps: int,
         mask_var: str | None,
         random_state: int,
-        context: object,
+        context: PipelineContext,
     ) -> None:
         """Run scclr's implicit-centered sparse PCA on a scclr-normalized layer.
 

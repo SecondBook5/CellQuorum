@@ -46,12 +46,16 @@ cannot drift from what the real clustering run actually does.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 
 from cellquorum.stages.clustering.neighbors_leiden import run_neighbors_leiden_routed
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 #: obs column the diagnostic writes its own Leiden runs into; never left on the object.
 _DIAG_KEY = "_resolution_diagnostic_leiden"
@@ -90,7 +94,7 @@ def _best_match_jaccard(reference_cells: set, subsample_clusters: dict[str, set]
 def _run_one_clustering(
     target: ad.AnnData,
     *,
-    context: object,
+    context: PipelineContext,
     n_neighbors: int,
     use_rep: str,
     resolution: float,
@@ -114,7 +118,7 @@ def _run_one_clustering(
 def _bootstrap_round(
     adata: ad.AnnData,
     *,
-    context: object,
+    context: PipelineContext,
     n_neighbors: int,
     use_rep: str,
     resolution: float,
@@ -227,7 +231,7 @@ def compute_resolution_stability(
     n_bootstraps: int,
     subsample_fraction: float,
     random_state: int,
-    context: object = None,
+    context: PipelineContext = None,
     adaptive: bool = True,
     initial_fraction: float = 0.3,
     force_cpu: bool = False,

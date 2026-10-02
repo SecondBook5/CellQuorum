@@ -9,7 +9,7 @@ Combines:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import matplotlib as mpl
@@ -25,6 +25,9 @@ from cellquorum.visualization.figstyle import (
     SEQUENTIAL_CMAP,
     apply_cellquorum_theme,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Input resolvers (from inputs.py)
@@ -62,7 +65,7 @@ def numeric_obs(adata: ad.AnnData, key: str) -> np.ndarray:
         raise VizInputError(f"obs['{key}'] is not numeric: {exc}") from exc
 
 
-def results_file(context: object, *parts: str) -> Path:
+def results_file(context: PipelineContext, *parts: str) -> Path:
     return Path(context.paths.results).joinpath("trajectory", *parts)
 
 

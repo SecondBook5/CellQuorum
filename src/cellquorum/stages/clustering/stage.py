@@ -8,11 +8,16 @@ cluster labels landed in obs before handing the AnnData downstream.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
 from cellquorum.methods.registry import MethodRegistry
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -41,7 +46,7 @@ class ClusteringStage(MethodDispatchStage):
         # Read the method key from the resolved sub-block.
         return config.get("method", "leiden")
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Store key_added for validation, and auto-couple use_rep to integration's output.
 
         This must mutate and return the SAME config MethodDispatchStage.run() dispatches
@@ -129,7 +134,7 @@ class ClusteringStage(MethodDispatchStage):
 
         return stage_config
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """Override run to disclose the auto-couple outcome. Both flags are set inside
         _augment_config, which runs synchronously as part of super().run() below, so
         they are already populated by the time it returns."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -16,6 +17,9 @@ from cellquorum.stages.qc.config import QCConfig
 from cellquorum.stages.qc.floors import FLOOR_REASON_COLUMN, FloorResult
 from cellquorum.stages.qc.metrics import QCMetricsResult
 from cellquorum.stats.donor_comparison import TwoGroupTest, two_group_test_on_donor_medians
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 KEEP_COLUMN = "cellquorum_qc_keep"
 
@@ -378,7 +382,7 @@ def build_disabled_qc_stage_result(
 
 def build_qc_stage_summary_extra(
     *,
-    context: object,
+    context: PipelineContext,
     qc_config: QCConfig,
     stage_name: str,
 ) -> dict[str, object]:

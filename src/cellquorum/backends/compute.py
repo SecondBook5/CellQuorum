@@ -12,7 +12,12 @@ This is the single place that answer lives, so every stage routes consistently.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from cellquorum.core.exceptions import CellQuorumBackendError
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Cache the capability probe result for the process (it cannot change mid-run).
 _GPU_AVAILABLE: bool | None = None
@@ -46,7 +51,7 @@ def gpu_compute_available() -> bool:
     return available
 
 
-def _compute_settings(context: object) -> tuple[str, bool, bool]:
+def _compute_settings(context: PipelineContext) -> tuple[str, bool, bool]:
     """Extract (backend, prefer_gpu, fallback_to_cpu) from a context, with defaults."""
 
     # ComputeConfig defaults: backend="auto", prefer_gpu=True, fallback_to_cpu=True.
@@ -69,12 +74,12 @@ def _compute_settings(context: object) -> tuple[str, bool, bool]:
     )
 
 
-def should_use_gpu(context: object) -> bool:
+def should_use_gpu(context: PipelineContext) -> bool:
     """Resolve GPU use while enforcing the configured fallback policy."""
     return resolve_compute(context)["use_gpu"]
 
 
-def resolve_compute(context: object) -> dict:
+def resolve_compute(context: PipelineContext) -> dict:
     """Resolve compute, raising when required GPU support is unavailable.
 
     Explicit GPU requests that permit CPU fallback carry a human-readable reason.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil  # noqa: F401 - test mocks through this module path
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -20,6 +21,9 @@ from cellquorum.stages.cell_cell_communication._nichenet_io import (
     export_sce_inputs,
     mnn_prioritization_to_canonical,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _MNN_R = r_script_path("multinichenet.R")
 
@@ -47,7 +51,9 @@ class MultiNicheNetMethod(RAnalysisMethod):
             config.get("condition_col", "condition"),
         ]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         cell_type_col = config.get("cell_type_col", "cell_type")
         sample_col = config.get("sample_col", "sample_id")
         condition_col = config.get("condition_col", "condition")

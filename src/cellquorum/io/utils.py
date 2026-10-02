@@ -6,7 +6,10 @@ from __future__ import annotations
 from pathlib import Path
 
 # Import runtime-checkable protocols and typed dictionary helpers.
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypedDict, runtime_checkable
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Define filesystem path-like inputs accepted by public APIs.
 type PathLike = str | Path
@@ -165,7 +168,7 @@ class SupportsRun(Protocol):
     contracts are defined in `cellquorum.core.stage`.
     """
 
-    def run(self, context: object) -> object:
+    def run(self, context: PipelineContext) -> object:
         """
         Execute the object against a runtime context.
 

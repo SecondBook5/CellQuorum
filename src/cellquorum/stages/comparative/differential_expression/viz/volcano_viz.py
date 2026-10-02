@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -12,6 +13,9 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.differential_expression.viz import plots
 from cellquorum.visualization import figstyle
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _CSV_NAME = "de_pseudobulk_edger.csv"
 _LOGFC_ALIASES = ("logFC", "log2FoldChange", "log2fc", "avg_log2FC")
@@ -66,7 +70,9 @@ class VolcanoVizMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         df = load_de_table(results_dir)
         if df is None:

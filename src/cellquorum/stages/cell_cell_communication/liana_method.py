@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 
@@ -10,6 +11,9 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class LianaMethod(AnalysisMethod):
@@ -36,7 +40,9 @@ class LianaMethod(AnalysisMethod):
             config.get("sample_col", "sample_id"),
         ]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         cell_type_col = config.get("cell_type_col", "cell_type")
         sample_col = config.get("sample_col", "sample_id")
         layer = config.get("layer", "cellquorum_normalized")

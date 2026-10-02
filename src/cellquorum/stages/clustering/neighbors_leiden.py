@@ -21,6 +21,7 @@ was the partition derived from it, and Leiden never sees the full graph.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -31,6 +32,9 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.qc.eligibility import Analysis, fitting_cells
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +101,7 @@ def _neighbors_and_leiden(
 def run_neighbors_leiden_routed(
     target: ad.AnnData,
     *,
-    context: object,
+    context: PipelineContext,
     n_neighbors: int,
     use_rep: str,
     resolution: float,
@@ -209,7 +213,7 @@ class LeidenMethod(AnalysisMethod):
         use_rep = config.get("use_rep", "X_pca")
         return DataContract(required_obsm=[use_rep])
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
         """
         Build the neighbor graph and run Leiden clustering.
 
@@ -300,7 +304,7 @@ class LeidenMethod(AnalysisMethod):
     def _run_resolution_diagnostic(
         target: ad.AnnData,
         *,
-        context: object,
+        context: PipelineContext,
         n_neighbors: int,
         use_rep: str,
         diag_config: dict,

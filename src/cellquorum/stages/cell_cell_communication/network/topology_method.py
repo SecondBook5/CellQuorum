@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 import pandas as pd
 
@@ -18,6 +20,9 @@ from cellquorum.stages.cell_cell_communication.network._networks import (
     resolve_condition_arms,
 )
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 class TopologyMethod(AnalysisMethod):
     """CCI/GCI topology ranking + comparative layer when a design is present."""
@@ -30,7 +35,9 @@ class TopologyMethod(AnalysisMethod):
         # Operates on an uns LR table, not on X/layers.
         return DataContract(required_obs=[], required_layers=[])
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         source_key = config.get("source_key", "liana_res")
         sample_col = config.get("sample_col", "sample")
         build_gci = bool(config.get("build_gci", True))

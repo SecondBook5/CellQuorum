@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 
 from cellquorum.core.contracts import DataContract
@@ -9,6 +11,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class ActivityMethod(AnalysisMethod):
@@ -37,7 +42,9 @@ class ActivityMethod(AnalysisMethod):
         # (and its lognorm tag) before _run.
         return ["cellquorum_normalized"]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         resources = config.get("activity_resources", ["collectri", "progeny"])
         cell_type_col = config.get("cell_type_col", "cell_type")
         layer = config.get("layer", "cellquorum_normalized")

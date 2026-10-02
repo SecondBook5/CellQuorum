@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -15,6 +16,9 @@ from cellquorum.core.labels import as_label_strings
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Path to the bundled milo script.
 _MILO_R = r_script_path("milo.R")
@@ -53,7 +57,9 @@ class MiloMethod(RAnalysisMethod):
         # Require condition_col and donor_col to exist.
         return [condition_col, donor_col]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Build Milo neighborhoods, fit DA model, and return the DA table."""
 
         # Resolve config fields (all schema-driven; no hardcoded study assumptions).
@@ -263,7 +269,7 @@ class MiloMethod(RAnalysisMethod):
         control: str,
         spatial_fdr: float,
         config: dict,
-        context: object,
+        context: PipelineContext,
     ) -> tuple[list[StageArtifact], list[str]]:
         """Build the Milo neighborhood beeswarm figure (gated, default on).
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -19,6 +20,9 @@ from cellquorum.visualization.figstyle import (
     save_figure,
 )
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 class StateScoreViolinMethod(AnalysisMethod):
     """Render one violin+p-value figure per scored program: score by
@@ -33,7 +37,9 @@ class StateScoreViolinMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         score_source = config.get("score_source", "aucell")
         obsm_key = f"X_state_{score_source}"
         uns_key = f"state_{score_source}"

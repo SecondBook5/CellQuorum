@@ -10,6 +10,8 @@ strictly opt-in via config.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 
 from cellquorum.core.contracts import DataContract
@@ -21,6 +23,9 @@ from cellquorum.stages.integration._fit_population import resolve_training_set
 from cellquorum.stages.integration._gpu_gate import require_gpu
 from cellquorum.stages.integration._hvg_selection import restrict_to_highly_variable
 from cellquorum.stages.integration._provenance import record_integration_provenance
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class ScANVIMethod(AnalysisMethod):
@@ -54,7 +59,7 @@ class ScANVIMethod(AnalysisMethod):
         required_obs = [batch_key] + ([label_key] if label_key else [])
         return DataContract(required_layers=["counts"], required_obs=required_obs)
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
         """
         Train scVI then scANVI and write the batch-corrected latent embedding.
 

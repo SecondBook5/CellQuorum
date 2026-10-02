@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -26,6 +27,9 @@ from cellquorum.stages.gene_regulation.coexpression.module_umap_plot import (
     plot_module_umap,
 )
 from cellquorum.visualization.figstyle import render_figure, save_figure
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class HdwgcnaMethod(AnalysisMethod):
@@ -67,7 +71,9 @@ class HdwgcnaMethod(AnalysisMethod):
         # Don't hard-require columns that may be absent - the R script handles fallbacks
         return []
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Run hdWGCNA co-expression analysis."""
 
         # 1. Resolve config fields

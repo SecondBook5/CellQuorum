@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -24,6 +25,9 @@ from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.clustering.subclustering.diagnostics import select_marker_genes
 from cellquorum.stages.comparative.differential_expression.viz import plots
 from cellquorum.visualization import figstyle
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _BY_CLUSTER_CSV = "de_pseudobulk_edger_by_subcluster.csv"
 
@@ -43,7 +47,9 @@ class VolcanoBySubclusterMethod(AnalysisMethod):
         layer = config.get("layer", "cellquorum_normalized")
         return DataContract(required_layers=[layer], required_obs=[], expected_kind="normalized")
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         results_dir = Path(context.paths.results)
         de_csv = results_dir / _BY_CLUSTER_CSV
         if not de_csv.exists():

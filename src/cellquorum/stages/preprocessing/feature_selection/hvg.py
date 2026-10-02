@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import scanpy as sc
@@ -18,6 +19,9 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.preprocessing.feature_selection.visualization import write_hvg_figure
 from cellquorum.stages.qc.eligibility import fitting_cells
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Flavors that require raw counts vs. the log-normalized layer.
 _COUNT_FLAVORS = {"seurat_v3", "pearson_residuals"}
@@ -53,7 +57,7 @@ class HVGMethod(AnalysisMethod):
             expected_kind="lognorm",
         )
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
         """Compute HVGs, strip excluded patterns, flag var['highly_variable']."""
 
         # Fallbacks match FeatureSelectionConfig; that model is the source of truth, these

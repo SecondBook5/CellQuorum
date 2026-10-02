@@ -8,7 +8,12 @@ scDiagnostics) otherwise copy-pastes. Subclasses set ``r_package`` and call
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class RAnalysisMethod(AnalysisMethod):
@@ -33,7 +38,7 @@ class RAnalysisMethod(AnalysisMethod):
     r_package: str
 
     def _resolve_rscript_backend(
-        self, context: object, config: dict | None = None
+        self, context: PipelineContext, config: dict | None = None
     ) -> tuple[object | None, MethodSkip | None]:
         """Return (rscript_backend, None) when R is runnable, else (None, skip).
 

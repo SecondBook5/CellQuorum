@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -13,6 +14,9 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory import _cellrank
 from cellquorum.stages.trajectory.save import record_write, write_cellrank_h5ad
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class CellRankMethod(AnalysisMethod):
@@ -27,7 +31,9 @@ class CellRankMethod(AnalysisMethod):
         # contract, so a missing column yields MethodSkip rather than a raise.
         return DataContract(required_obs=[], required_layers=[])
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         cluster_key = config.get("cluster_key", "cell_type")
         seed = int(config.get("seed", 1337))
         notes: list[str] = []
@@ -192,7 +198,7 @@ class CellRankMethod(AnalysisMethod):
     def _load_velocity_adata(
         self,
         config: dict,
-        context: object,
+        context: PipelineContext,
         work: ad.AnnData,
         warnings: list[str],
     ) -> ad.AnnData | None:

@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import numpy as np
@@ -29,6 +29,9 @@ from cellquorum.visualization.figstyle import (
     save_publication_figure,
     set_publication_style,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @dataclass(frozen=True)
@@ -57,7 +60,7 @@ class IdentityResolution:
 class PopulationIdentityStage:
     """Write generic population/state identity tables, plots, and evidence."""
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """Execute the population-identity stage."""
 
         adata = context.require_adata()
@@ -156,7 +159,7 @@ class PopulationIdentityStage:
         )
 
 
-def resolve_population_identity_config(context: object) -> PopulationIdentityConfig:
+def resolve_population_identity_config(context: PipelineContext) -> PopulationIdentityConfig:
     """Resolve population-identity config from a PipelineContext-like object."""
 
     context_config = getattr(context, "config", None)
@@ -176,7 +179,7 @@ def resolve_population_identity_config(context: object) -> PopulationIdentityCon
 
 def resolve_identity_columns(
     adata: ad.AnnData,
-    context: object,
+    context: PipelineContext,
     config: PopulationIdentityConfig,
 ) -> IdentityResolution | None:
     """Resolve candidate population and supporting evidence columns."""
@@ -240,7 +243,7 @@ def resolve_identity_columns(
 
 
 def resolve_design_keys(
-    context: object,
+    context: PipelineContext,
     config: PopulationIdentityConfig,
 ) -> tuple[str, str]:
     """Resolve donor and condition columns from config or design settings."""
@@ -274,7 +277,7 @@ def resolve_design_keys(
     return donor_key, condition_key
 
 
-def resolve_case_control(context: object) -> tuple[str | None, str | None]:
+def resolve_case_control(context: PipelineContext) -> tuple[str | None, str | None]:
     """Resolve primary case/control condition tokens from the design config."""
 
     context_config = getattr(context, "config", None)

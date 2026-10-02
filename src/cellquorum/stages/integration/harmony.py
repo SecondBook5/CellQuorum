@@ -15,6 +15,8 @@ fallback into a loud failure.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 import numpy as np
 
@@ -28,6 +30,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
 from cellquorum.stages.integration._provenance import record_integration_provenance
 from cellquorum.stages.qc.eligibility import fitting_cells
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class HarmonyMethod(AnalysisMethod):
@@ -126,7 +131,7 @@ class HarmonyMethod(AnalysisMethod):
             max_iter_harmony=max_iter_harmony,
         )
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult:
+    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
         """
         Run Harmony on the input embedding and write the corrected embedding.
 

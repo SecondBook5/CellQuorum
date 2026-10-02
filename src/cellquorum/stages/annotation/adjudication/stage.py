@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -17,6 +18,9 @@ from cellquorum.stages.annotation.adjudication.evidence import (
     cluster_evidence_to_dataframe,
 )
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 @register_stage(
     name="adjudication", order=145, config_flag="adjudication", config_field="adjudication"
@@ -24,7 +28,7 @@ from cellquorum.stages.annotation.adjudication.evidence import (
 class AdjudicationStage:
     """Build cluster evidence, adjudicate claims, and write audit artifacts."""
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Execute the adjudication stage.
 
@@ -186,7 +190,7 @@ def build_adjudication_markdown(results_df: pd.DataFrame) -> str:
     return "\n".join(lines) + "\n"
 
 
-def resolve_adjudication_config(context: object) -> AdjudicationConfig:
+def resolve_adjudication_config(context: PipelineContext) -> AdjudicationConfig:
     """
     Resolve adjudication config from a PipelineContext-like object.
 
@@ -213,7 +217,7 @@ def resolve_adjudication_config(context: object) -> AdjudicationConfig:
 
 
 def resolve_design_keys(
-    context: object,
+    context: PipelineContext,
     config: AdjudicationConfig,
 ) -> tuple[str, str]:
     """

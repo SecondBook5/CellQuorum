@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -26,6 +27,9 @@ from cellquorum.stages.comparative.differential_expression.pseudobulk import (
     aggregate_pseudobulk,
     resolve_donor_pairing,
 )
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Path to the bundled edgeR script.
 _EDGER_R = r_script_path("edger.R")
@@ -126,7 +130,9 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
         # Require all design columns to exist.
         return [condition_col, donor_col, *covariates]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Aggregate pseudobulk, fit edgeR, and return the DE table."""
 
         # Resolve config fields (all schema-driven; no hardcoded study assumptions).

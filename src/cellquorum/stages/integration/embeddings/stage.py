@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Import the package so methods register themselves as a side effect.
 import cellquorum.stages.integration.embeddings  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Keys bridged from config.embeddings into each dispatched method's config.
 _EMB_CONFIG_KEYS = (
@@ -62,7 +67,7 @@ class EmbeddingsStage(MethodDispatchStage):
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "umap")
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Bridge config.embeddings; inject method list + structural resolver keys."""
         augmented = dict(stage_config)
         config = getattr(context, "config", None)

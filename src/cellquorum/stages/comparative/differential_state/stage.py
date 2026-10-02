@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
 from statsmodels.stats.multitest import multipletests
@@ -18,6 +20,9 @@ from cellquorum.stages.comparative.differential_state.compute import (
 )
 from cellquorum.stages.comparative.differential_state.config import DifferentialStateConfig
 from cellquorum.stats.donor_comparison import two_group_test_on_donor_medians
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -39,7 +44,7 @@ class DifferentialStateStage:
     per-program "insufficient_donors" row, never a stage-wide crash.
     """
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Execute the differential-state stage.
 

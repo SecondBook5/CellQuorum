@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -13,6 +14,9 @@ from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory import _pseudotime
 from cellquorum.stages.trajectory.save import record_write, write_pseudotime_h5ad
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class DptMethod(AnalysisMethod):
@@ -25,7 +29,9 @@ class DptMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         return DataContract(required_obs=[], required_layers=[])
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         notes: list[str] = []
         warnings: list[str] = []
 

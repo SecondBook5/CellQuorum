@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 # Import the package so the methods register themselves as a side effect.
 import cellquorum.stages.state_scoring  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 @register_stage(
@@ -23,7 +28,7 @@ class StateScoringStage(MethodDispatchStage):
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "score_genes")
 
-    def _augment_config(self, context: object, stage_config: dict) -> dict:
+    def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Default to running both methods (obs scores + obsm AUCs) when unset."""
         augmented = dict(stage_config)
         if not augmented.get("methods") and "method" not in augmented:

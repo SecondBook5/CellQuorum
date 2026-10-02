@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 import anndata as ad
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 StageStatus = Literal["success", "skipped", "failed"]
 
@@ -685,7 +688,7 @@ class PipelineStage(Protocol):
     # Store the stable stage name.
     name: str
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Execute the stage.
 

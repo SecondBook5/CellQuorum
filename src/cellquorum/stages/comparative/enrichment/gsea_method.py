@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
@@ -16,6 +17,9 @@ from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
 from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 from cellquorum.stats.multiple_testing import bh_fdr
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 # Cap on how many sources get a persisted running-ES walk per collection, to
 # bound file size. Significant sources are taken first; the remainder is filled
@@ -185,7 +189,9 @@ class GseaMethod(AnalysisMethod):
         """GSEA reads the DE CSV, not the matrix — no obs/layer requirement."""
         return DataContract()
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         de_name = config.get("de_results_filename", "de_pseudobulk_edger.csv")
         collections = config.get("gene_set_collections", ["hallmark", "reactome"])
         gmt_path = config.get("gmt_path")

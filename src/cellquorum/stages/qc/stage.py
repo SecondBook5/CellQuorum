@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import anndata as ad
 import numpy as np
@@ -53,6 +53,9 @@ from cellquorum.stages.qc.reporting import (
 )
 from cellquorum.stages.qc.selfcheck import run_self_check
 from cellquorum.stages.qc.validation import get_qc_matrix
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +221,7 @@ class QCStage:
     config: QCConfig | None = None
     output_subdir: str = "qc"
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """Execute the QC stage.
 
         Args:
@@ -557,7 +560,7 @@ class QCStage:
         *,
         qc_config: QCConfig,
         addon_metrics: dict[str, dict],
-        context: object,
+        context: PipelineContext,
     ) -> ad.AnnData:
         """Run doublet detection using the selected QC count source.
 
@@ -647,7 +650,7 @@ class QCStage:
         metrics_result: QCMetricsResult,
         mixture: MitoMixtureResult | None,
         lineage: pd.Series | None,
-        context: object,
+        context: PipelineContext,
         expression_adata: ad.AnnData | None = None,
     ) -> tuple[dict[str, object], list[str]]:
         """Score technical evidence, adjudicate, and write per-analysis eligibility.

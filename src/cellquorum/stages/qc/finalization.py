@@ -19,6 +19,8 @@ quarantine pass through unchanged; only borderline cells are adjudicated here.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
 
@@ -26,6 +28,9 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.context_access import resolve_stage_config
 from cellquorum.stages.qc.config import QCFinalizationConfig
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _STATE_INITIAL = "qc_state_initial"
 _STATE_FINAL = "qc_state_final"
@@ -47,7 +52,7 @@ _CONTRADICTION_SEVERITY_COLUMNS = (
 class QCFinalizationStage:
     """Adjudicate borderline cells into qc_state_final via the rescue rule."""
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """Execute QC finalization."""
         adata = context.require_adata()
         config = QCFinalizationConfig.model_validate(

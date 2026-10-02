@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -17,6 +18,9 @@ from cellquorum.stages.trajectory._velocyto import ensure_loom
 from cellquorum.stages.trajectory.config import VelocityGenerationConfig
 from cellquorum.stages.trajectory.save import record_write, write_velocity_h5ad
 
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
+
 
 class VelocityMethod(AnalysisMethod):
     """RNA velocity via scVelo, computed once per group and re-projected."""
@@ -30,7 +34,9 @@ class VelocityMethod(AnalysisMethod):
         # precondition on the incoming atlas.
         return DataContract(required_obs=[], required_layers=[])
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         sample_col = config.get("sample_col", "sample_id")
         loom_path_col = config.get("loom_path_col", "loom_path")
         grouping_col = config.get("grouping_col", "cell_type")

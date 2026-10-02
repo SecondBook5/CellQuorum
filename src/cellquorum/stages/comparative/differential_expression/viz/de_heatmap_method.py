@@ -14,6 +14,7 @@ from __future__ import annotations
 import signal
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
@@ -24,6 +25,9 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 _DE_HEATMAP_R = r_script_path("de_heatmap.R")
 _BY_CLUSTER_CSV = "de_pseudobulk_edger_by_subcluster.csv"
@@ -66,7 +70,9 @@ class DeHeatmapMethod(RAnalysisMethod):
         layer = config.get("layer", "cellquorum_normalized")
         return DataContract(required_layers=[layer], required_obs=[], expected_kind="normalized")
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         backend, skip = self._resolve_rscript_backend(context, config)
         if skip is not None:
             return skip

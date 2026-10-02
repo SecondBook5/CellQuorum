@@ -10,6 +10,8 @@ loadings table plus an optional per-cell-type mean-usage table are written.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -19,6 +21,9 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class NmfMethod(AnalysisMethod):
@@ -46,7 +51,9 @@ class NmfMethod(AnalysisMethod):
         # re-checks the configured layer (and its lognorm tag) before _run.
         return ["cellquorum_normalized"]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         layer = config.get("layer", "cellquorum_normalized")
         k = int(config.get("n_components", 10))
         n_runs = int(config.get("n_runs", 20))

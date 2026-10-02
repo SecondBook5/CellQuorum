@@ -8,6 +8,8 @@ CellTypist on that. The input contract asserts the counts layer really is counts
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import anndata as ad
 import pandas as pd
 import scanpy as sc
@@ -15,6 +17,9 @@ import scanpy as sc
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class CellTypistMethod(AnalysisMethod):
@@ -34,7 +39,9 @@ class CellTypistMethod(AnalysisMethod):
             expected_kind="counts",
         )
 
-    def _run(self, adata: ad.AnnData, config: dict, context: object) -> StageResult | MethodSkip:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Normalize counts to CP10k-log, run CellTypist, write labels."""
 
         counts_layer = config.get("counts_layer", "counts")
