@@ -14,11 +14,12 @@ import pandas as pd
 from cellquorum.core.stage import StageArtifact
 
 
-def _atomic_write(path: Path, write_fn: Callable[[Path], None]) -> None:
+def _atomic_write(path: Path, write_fn: Callable[[Path], object]) -> None:
     """Write ``path`` via a temp-file-then-replace so a crash mid-write can
     never leave ``path`` holding a partial file.
 
-    ``write_fn`` receives the temp path and performs the actual write; once it
+    ``write_fn`` receives the temp path and performs the actual write (its return
+    value is ignored, so ``Path.write_text`` can be passed directly); once it
     returns, the temp file is atomically moved into place. On any failure the
     temp file is removed and the exception re-raised, leaving a previously
     existing ``path`` untouched. Mirrors the pattern
