@@ -108,6 +108,8 @@ dev = [
 Homepage = "https://github.com/SecondBook5/cellquorum"
 Documentation = "https://github.com/SecondBook5/cellquorum/tree/main/docs"
 Issues = "https://github.com/SecondBook5/cellquorum/issues"
+Changelog = "https://github.com/SecondBook5/cellquorum/blob/main/CHANGELOG.md"
+Source = "https://github.com/SecondBook5/cellquorum"
 
 [project.scripts]
 cellquorum = "cellquorum.cli.app:main"

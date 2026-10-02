@@ -27,6 +27,8 @@ repos:
 
       # Detect unresolved merge conflict markers.
       - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
 
   # Ruff handles linting and import sorting.
   - repo: https://github.com/astral-sh/ruff-pre-commit

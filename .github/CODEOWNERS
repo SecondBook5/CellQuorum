@@ -1,0 +1,4 @@
+# Code owners are asked to review every pull request that touches the paths they own, and GitHub can
+# require their approval before a merge. Add lab members here as they take on parts of the project,
+# for example:  /src/cellquorum/stages/trajectory/  @their-github-handle
+*                       @SecondBook5

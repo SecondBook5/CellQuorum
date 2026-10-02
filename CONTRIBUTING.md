@@ -5,6 +5,9 @@ environment, what CI enforces, and the conventions the codebase follows. For *wh
 the engine does and how a run flows, read [`docs/reference/how-it-works.md`](docs/reference/how-it-works.md)
 and [`docs/reference/architecture.md`](docs/reference/architecture.md) first.
 
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Changes to the files
+listed in [`.github/CODEOWNERS`](.github/CODEOWNERS) are reviewed by their owners.
+
 ## Table of contents
 
 - [Getting set up](#getting-set-up)
