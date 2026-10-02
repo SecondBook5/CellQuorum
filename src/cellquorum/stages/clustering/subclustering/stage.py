@@ -10,8 +10,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -44,11 +45,23 @@ from cellquorum.stages.clustering.subclustering.qc_consistency import (
 )
 
 if TYPE_CHECKING:
+    import anndata as ad
+
     from cellquorum.core.context import PipelineContext
 
 
 class SubclusteringFocusError(CellQuorumConfigError):
     """The configured focus selects no cells, so there is nothing to subcluster."""
+
+
+@dataclass
+class _Report:
+    """What a stage run accumulates for its result, passed to each phase as one object."""
+
+    notes: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    artifacts: list[StageArtifact] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 # order=155, moved from 100.
@@ -118,6 +131,105 @@ class SubclusteringStage:
                 metrics={"skipped": True, "reason": "no adata"},
             )
 
+        focus_config = self._resolve_focus_config(config, sc_config)
+        report = _Report()
+        focused = self._extract_focus(adata, focus_config, sc_config, report)
+        filtered = self._filter_groups(context, sc_config, focused, report)
+
+        # Task 2: partition + formal_test.
+        # Resolve backend from context.
+        backend = self._resolve_rscript_backend(context)
+        scratch = Path(getattr(getattr(context, "paths", None), "scratch", "."))
+
+        # The nuisance variable CHOIR corrects for and sc-SHC conditions on.
+        nuisance_key = self._resolve_nuisance_key(config, sc_config)
+        if nuisance_key is None:
+            report.warnings.append(
+                "Subclustering has no batch/donor key to correct for: declare "
+                "cohort.batch_key or cohort.donor_key. CHOIR will partition an "
+                "uncorrected embedding, so its cluster count may be donor-driven."
+            )
+        else:
+            report.notes.append(f"Batch correction / conditioning key: {nuisance_key}")
+            report.metrics["nuisance_key"] = nuisance_key
+
+        # Run partition (CHOIR or fallback). Initialized here (not just inside the
+        # "choir" branch) so the donor gate below can look at it regardless of
+        # which partition method ran, without a NameError.
+        partition_reduction_key: str | None = None
+        if sc_config.partition.method == "choir":
+            filtered, partition_reduction_key = self._partition_choir(
+                filtered, sc_config, backend, scratch, nuisance_key, report
+            )
+        elif sc_config.partition.method == "leiden_stability":
+            filtered = self._partition_leiden_stability(
+                context, filtered, sc_config, nuisance_key, report
+            )
+        elif sc_config.partition.method == "leiden_grid":
+            # Minimal scanpy fallback (defer detailed implementation).
+            report.notes.append("leiden_grid partition: deferred (CHOIR is primary method)")
+            report.metrics["partition_skipped"] = True
+            report.metrics["partition_skip_reason"] = "leiden_grid not implemented"
+        else:
+            report.notes.append(f"Unknown partition method: {sc_config.partition.method}")
+            report.warnings.append(f"Unknown partition method: {sc_config.partition.method}")
+
+        cluster_key = sc_config.key_added
+        has_cluster_labels = (
+            cluster_key in filtered.obs.columns and filtered.obs[cluster_key].notna().any()
+        )
+
+        filtered = self._run_donor_gate(
+            context,
+            config,
+            sc_config,
+            filtered,
+            partition_reduction_key,
+            cluster_key,
+            has_cluster_labels,
+            report,
+        )
+        filtered = self._run_technical_qc(
+            context, sc_config, filtered, cluster_key, has_cluster_labels, report
+        )
+        self._add_marker_dotplot(
+            context, sc_config, filtered, cluster_key, has_cluster_labels, report
+        )
+
+        # Generate clustree plot (if leiden_grid labels present).
+        # Note: clustree expects multiple cluster columns with a common prefix.
+        # This will be driven by leiden_grid labels when implemented.
+        # For now, defer clustree generation to full leiden_grid implementation.
+        if sc_config.diagnostics.clustree:
+            report.notes.append("Clustree: deferred (leiden_grid not implemented)")
+
+        # Project subclustering results back onto the ORIGINAL parent object and
+        # return THAT, not the focus subset. extract_focus stripped the parent's
+        # X_* embeddings and (under a group filter or focus < all cells) shrank
+        # the cell set; returning it would deprive downstream stages of the
+        # integration embedding they depend on. Instead we keep the parent (all
+        # cells, embeddings intact) and merge the per-cell subcluster labels /
+        # donor-QC flags back on by obs index. Cells outside the analyzed focus
+        # simply carry NaN for those columns.
+        result_adata = self._project_onto_parent(
+            parent=adata,
+            focused=focused,
+            filtered=filtered,
+            sc_config=sc_config,
+        )
+
+        return StageResult(
+            adata=result_adata,
+            artifacts=report.artifacts,
+            notes=report.notes,
+            warnings=report.warnings,
+            metrics=report.metrics,
+        )
+
+    @staticmethod
+    def _resolve_focus_config(config: object, sc_config: object) -> object:
+        """Resolve the focus lineage from the cohort schema if the block declared none."""
+
         # Resolve the focus lineage from the central cohort schema when the
         # subclustering block did not declare its own (declare-once). The
         # cohort focus is the generic replacement for a hard-coded lineage.
@@ -132,6 +244,14 @@ class SubclusteringStage:
                 }
             )
 
+        return focus_config
+
+    @staticmethod
+    def _extract_focus(
+        adata: ad.AnnData, focus_config: object, sc_config: object, report: _Report
+    ) -> ad.AnnData:
+        """Subset to the focus lineage and refuse a focus that matches no cells."""
+
         # Extract focus lineage.
         focused = extract_focus(
             adata,
@@ -139,21 +259,16 @@ class SubclusteringStage:
             sc_config.counts_layer,
         )
 
-        notes = []
-        warnings = []
-        artifacts = []
-        metrics = {}
-
         # Record focus extraction provenance.
         if "subcluster_extraction" in focused.uns:
             prov = focused.uns["subcluster_extraction"]
-            notes.append(
+            report.notes.append(
                 f"Focus extracted: {prov['n_cells_kept']} / "
                 f"{prov['n_cells_total']} cells "
                 f"({prov['label_key']} in {prov['labels']})"
             )
-            metrics["n_cells_before_focus"] = prov["n_cells_total"]
-            metrics["n_cells_after_focus"] = prov["n_cells_kept"]
+            report.metrics["n_cells_before_focus"] = prov["n_cells_total"]
+            report.metrics["n_cells_after_focus"] = prov["n_cells_kept"]
 
         # Guard: a focus that matches zero cells must NOT propagate an empty
         # object as the pipeline's working adata. Doing so previously poisoned
@@ -175,6 +290,14 @@ class SubclusteringStage:
                 "stages.subclustering false if this lineage should not be subclustered."
             )
 
+        return focused
+
+    @staticmethod
+    def _filter_groups(
+        context: PipelineContext, sc_config: object, focused: ad.AnnData, report: _Report
+    ) -> ad.AnnData:
+        """Drop groups with too few focus cells (when configured) and plot the recovery curve."""
+
         # Apply group filter (if configured).
         group_key = sc_config.group_filter.group_key
         min_cells = sc_config.group_filter.min_cells
@@ -189,16 +312,16 @@ class SubclusteringStage:
             if filter_prov["applied"]:
                 n_kept = len(filter_prov["kept"])
                 n_dropped = len(filter_prov["dropped"])
-                notes.append(
+                report.notes.append(
                     f"Group filter: kept {n_kept} groups, "
                     f"dropped {n_dropped} groups "
                     f"(< {min_cells} cells in {group_key})"
                 )
                 if filter_prov["dropped"]:
-                    warnings.append(f"Dropped groups: {', '.join(filter_prov['dropped'])}")
-                metrics["n_groups_kept"] = n_kept
-                metrics["n_groups_dropped"] = n_dropped
-                metrics["n_cells_after_group_filter"] = filtered.n_obs
+                    report.warnings.append(f"Dropped groups: {', '.join(filter_prov['dropped'])}")
+                report.metrics["n_groups_kept"] = n_kept
+                report.metrics["n_groups_dropped"] = n_dropped
+                report.metrics["n_cells_after_group_filter"] = filtered.n_obs
 
                 # Generate recovery plot.
                 paths = getattr(context, "paths", None)
@@ -211,7 +334,7 @@ class SubclusteringStage:
                         group_key,
                         recovery_path,
                     )
-                    artifacts.append(
+                    report.artifacts.append(
                         StageArtifact(
                             name="subclustering_group_recovery",
                             path=recovery_path,
@@ -224,202 +347,215 @@ class SubclusteringStage:
                     )
             else:
                 filtered = focused
-                notes.append("Group filter: skipped (not configured)")
+                report.notes.append("Group filter: skipped (not configured)")
         else:
             filtered = focused
-            notes.append("Group filter: skipped (not configured)")
+            report.notes.append("Group filter: skipped (not configured)")
 
-        # Task 2: partition + formal_test.
-        # Resolve backend from context.
-        backend = self._resolve_rscript_backend(context)
-        scratch = Path(getattr(getattr(context, "paths", None), "scratch", "."))
+        return filtered
 
-        # The nuisance variable CHOIR corrects for and sc-SHC conditions on.
-        nuisance_key = self._resolve_nuisance_key(config, sc_config)
-        if nuisance_key is None:
-            warnings.append(
-                "Subclustering has no batch/donor key to correct for: declare "
-                "cohort.batch_key or cohort.donor_key. CHOIR will partition an "
-                "uncorrected embedding, so its cluster count may be donor-driven."
-            )
+    def _partition_choir(
+        self,
+        filtered: ad.AnnData,
+        sc_config: object,
+        backend: object,
+        scratch: Path,
+        nuisance_key: str | None,
+        report: _Report,
+    ) -> tuple[ad.AnnData, str | None]:
+        """Re-embed batch-aware, partition with CHOIR, then test the partition with sc-SHC.
+
+        Returns the (possibly labelled) object and the reduction CHOIR used, which the donor
+        gate reuses so it tests on the same corrected space."""
+
+        # Batch-aware re-embedding must happen BEFORE partitioning: CHOIR
+        # needs it to cluster on a corrected space, and the donor gate
+        # reuses this SAME corrected embedding below rather than deriving
+        # its own uncorrected one -- see the donor-gate section.
+        partition_reduction_key = reembed_focus_batch_aware(
+            filtered,
+            counts_layer=sc_config.counts_layer,
+            batch_key=nuisance_key,
+            random_state=(sc_config.partition.seeds[0] if sc_config.partition.seeds else 0),
+            max_iter_harmony=sc_config.reembed.max_iter_harmony,
+            diagnostics=report.warnings,
+        )
+        if partition_reduction_key:
+            report.notes.append(f"CHOIR reduction: {partition_reduction_key}")
+            report.metrics["choir_reduction"] = partition_reduction_key
         else:
-            notes.append(f"Batch correction / conditioning key: {nuisance_key}")
-            metrics["nuisance_key"] = nuisance_key
-
-        # Run partition (CHOIR or fallback). Initialized here (not just inside the
-        # "choir" branch) so the donor gate below can look at it regardless of
-        # which partition method ran, without a NameError.
-        partition_reduction_key: str | None = None
-        if sc_config.partition.method == "choir":
-            # Batch-aware re-embedding must happen BEFORE partitioning: CHOIR
-            # needs it to cluster on a corrected space, and the donor gate
-            # reuses this SAME corrected embedding below rather than deriving
-            # its own uncorrected one -- see the donor-gate section.
-            partition_reduction_key = reembed_focus_batch_aware(
-                filtered,
-                counts_layer=sc_config.counts_layer,
-                batch_key=nuisance_key,
-                random_state=(sc_config.partition.seeds[0] if sc_config.partition.seeds else 0),
-                max_iter_harmony=sc_config.reembed.max_iter_harmony,
-                diagnostics=warnings,
+            # A warning, not a note. CHOIR declares its cluster count
+            # significant *in the space it was given*, so an uncorrected
+            # space means the count can be a donor effect wearing a
+            # subtype's name — and one LEC partition was exactly that.
+            report.warnings.append(
+                "CHOIR reduction unavailable: CHOIR will compute its own "
+                "UNCORRECTED reduction, so the cluster count may be donor-driven."
             )
-            if partition_reduction_key:
-                notes.append(f"CHOIR reduction: {partition_reduction_key}")
-                metrics["choir_reduction"] = partition_reduction_key
-            else:
-                # A warning, not a note. CHOIR declares its cluster count
-                # significant *in the space it was given*, so an uncorrected
-                # space means the count can be a donor effect wearing a
-                # subtype's name — and one LEC partition was exactly that.
-                warnings.append(
-                    "CHOIR reduction unavailable: CHOIR will compute its own "
-                    "UNCORRECTED reduction, so the cluster count may be donor-driven."
-                )
-            partition_result = run_choir(
-                filtered,
-                sc_config,
-                backend,
-                scratch,
-                reduction_key=partition_reduction_key,
+        partition_result = run_choir(
+            filtered,
+            sc_config,
+            backend,
+            scratch,
+            reduction_key=partition_reduction_key,
+        )
+
+        if isinstance(partition_result, MethodSkip):
+            # CHOIR unavailable: record skip and continue without labels. A
+            # warning, because the config named CHOIR as the partition method
+            # and the object comes out of this stage with no subcluster labels
+            # at all — the same shape as a run that never asked for any.
+            report.warnings.append(f"CHOIR partition skipped: {partition_result.reason}")
+            report.metrics["partition_skipped"] = True
+            report.metrics["partition_skip_reason"] = partition_result.reason
+        else:
+            # CHOIR succeeded: update filtered with labeled adata.
+            filtered = partition_result
+            n_subclusters = filtered.obs[sc_config.key_added].nunique()
+            report.notes.append(
+                f"CHOIR partition: {n_subclusters} subclusters identified "
+                f"(alpha={sc_config.partition.choir.get('alpha', 0.05)})"
             )
+            report.metrics["n_subclusters"] = int(n_subclusters)
+            report.metrics["partition_method"] = "choir"
 
-            if isinstance(partition_result, MethodSkip):
-                # CHOIR unavailable: record skip and continue without labels. A
-                # warning, because the config named CHOIR as the partition method
-                # and the object comes out of this stage with no subcluster labels
-                # at all — the same shape as a run that never asked for any.
-                warnings.append(f"CHOIR partition skipped: {partition_result.reason}")
-                metrics["partition_skipped"] = True
-                metrics["partition_skip_reason"] = partition_result.reason
-            else:
-                # CHOIR succeeded: update filtered with labeled adata.
-                filtered = partition_result
-                n_subclusters = filtered.obs[sc_config.key_added].nunique()
-                notes.append(
-                    f"CHOIR partition: {n_subclusters} subclusters identified "
-                    f"(alpha={sc_config.partition.choir.get('alpha', 0.05)})"
+            # Run formal significance test (sc-SHC).
+            if sc_config.formal_test.method == "scshc":
+                test_result = run_scshc_test(
+                    filtered,
+                    sc_config.key_added,
+                    sc_config,
+                    backend,
+                    scratch,
+                    batch_key=nuisance_key,
                 )
-                metrics["n_subclusters"] = int(n_subclusters)
-                metrics["partition_method"] = "choir"
 
-                # Run formal significance test (sc-SHC).
-                if sc_config.formal_test.method == "scshc":
-                    test_result = run_scshc_test(
-                        filtered,
-                        sc_config.key_added,
-                        sc_config,
-                        backend,
-                        scratch,
-                        batch_key=nuisance_key,
+                if isinstance(test_result, MethodSkip):
+                    # A warning: sc-SHC is the test that says which splits are
+                    # real, so without it the subclusters ship unvalidated.
+                    report.warnings.append(f"sc-SHC test skipped: {test_result.reason}")
+                    report.metrics["formal_test_skipped"] = True
+                else:
+                    # sc-SHC succeeded: record significance in metrics + uns.
+                    n_sig = test_result["n_significant"]
+                    n_tested = test_result["n_splits_tested"]
+                    report.notes.append(
+                        f"sc-SHC test: {n_sig}/{n_tested} splits significant "
+                        f"(alpha={test_result['alpha']})"
                     )
+                    report.metrics["formal_test_n_significant"] = n_sig
+                    report.metrics["formal_test_n_splits"] = n_tested
 
-                    if isinstance(test_result, MethodSkip):
-                        # A warning: sc-SHC is the test that says which splits are
-                        # real, so without it the subclusters ship unvalidated.
-                        warnings.append(f"sc-SHC test skipped: {test_result.reason}")
-                        metrics["formal_test_skipped"] = True
-                    else:
-                        # sc-SHC succeeded: record significance in metrics + uns.
-                        n_sig = test_result["n_significant"]
-                        n_tested = test_result["n_splits_tested"]
-                        notes.append(
-                            f"sc-SHC test: {n_sig}/{n_tested} splits significant "
-                            f"(alpha={test_result['alpha']})"
+                    # The reconciled partition, when the R script produced one.
+                    surviving = test_result.get("n_labels_surviving")
+                    if surviving is not None:
+                        report.notes.append(
+                            f"sc-SHC reconciled partition: {surviving} of "
+                            f"{n_subclusters} CHOIR clusters survive as distinct "
+                            f"(labels in obs['{test_result['labels_key']}'])"
                         )
-                        metrics["formal_test_n_significant"] = n_sig
-                        metrics["formal_test_n_splits"] = n_tested
+                        report.metrics["formal_test_n_labels_surviving"] = surviving
 
-                        # The reconciled partition, when the R script produced one.
-                        surviving = test_result.get("n_labels_surviving")
-                        if surviving is not None:
-                            notes.append(
-                                f"sc-SHC reconciled partition: {surviving} of "
-                                f"{n_subclusters} CHOIR clusters survive as distinct "
-                                f"(labels in obs['{test_result['labels_key']}'])"
-                            )
-                            metrics["formal_test_n_labels_surviving"] = surviving
+                    # A warning when the test does not uphold the partition.
+                    # This has to be loud: every downstream per-subcluster
+                    # result — abundance swaps, per-subtype effect sizes — is
+                    # keyed on labels the engine's own significance test has
+                    # just declined to defend, and "0/1 splits significant"
+                    # in the notes is not a sentence anyone reads. A run whose
+                    # eight LEC subclusters all collapsed to one shipped a
+                    # headline per-subtype table without this warning.
+                    if test_result.get("merged_to_one"):
+                        report.warnings.append(
+                            f"sc-SHC merged all {n_subclusters} subclusters into ONE: "
+                            f"the partition is NOT statistically supported at "
+                            f"alpha={test_result['alpha']} (conditioned on "
+                            f"{test_result['batch_key']}). Whole-lineage results are "
+                            "unaffected; every per-subcluster result is exploratory "
+                            "and must be reported as such."
+                        )
+                    elif n_sig == 0 and n_tested > 0:
+                        report.warnings.append(
+                            f"sc-SHC found 0 of {n_tested} tested splits significant at "
+                            f"alpha={test_result['alpha']}: the CHOIR partition is not "
+                            "upheld by the formal test."
+                        )
 
-                        # A warning when the test does not uphold the partition.
-                        # This has to be loud: every downstream per-subcluster
-                        # result — abundance swaps, per-subtype effect sizes — is
-                        # keyed on labels the engine's own significance test has
-                        # just declined to defend, and "0/1 splits significant"
-                        # in the notes is not a sentence anyone reads. A run whose
-                        # eight LEC subclusters all collapsed to one shipped a
-                        # headline per-subtype table without this warning.
-                        if test_result.get("merged_to_one"):
-                            warnings.append(
-                                f"sc-SHC merged all {n_subclusters} subclusters into ONE: "
-                                f"the partition is NOT statistically supported at "
-                                f"alpha={test_result['alpha']} (conditioned on "
-                                f"{test_result['batch_key']}). Whole-lineage results are "
-                                "unaffected; every per-subcluster result is exploratory "
-                                "and must be reported as such."
-                            )
-                        elif n_sig == 0 and n_tested > 0:
-                            warnings.append(
-                                f"sc-SHC found 0 of {n_tested} tested splits significant at "
-                                f"alpha={test_result['alpha']}: the CHOIR partition is not "
-                                "upheld by the formal test."
-                            )
+                    # Store full test results in uns.
+                    if "subclustering" not in filtered.uns:
+                        filtered.uns["subclustering"] = {}
+                    filtered.uns["subclustering"]["formal_test"] = test_result
 
-                        # Store full test results in uns.
-                        if "subclustering" not in filtered.uns:
-                            filtered.uns["subclustering"] = {}
-                        filtered.uns["subclustering"]["formal_test"] = test_result
-        elif sc_config.partition.method == "leiden_stability":
-            # An alternative to CHOIR, not a fallback: bootstrap-validated Leiden
-            # resolution selection, for when CHOIR is unavailable, fails outright,
-            # or its own sc-SHC test rejects the partition it proposes -- three
-            # distinct failure modes this project hit in practice on real data.
-            reduction_key = reembed_focus_batch_aware(
-                filtered,
-                counts_layer=sc_config.counts_layer,
-                batch_key=nuisance_key,
-                random_state=(sc_config.partition.seeds[0] if sc_config.partition.seeds else 0),
-                max_iter_harmony=sc_config.reembed.max_iter_harmony,
-                diagnostics=warnings,
-            )
-            if reduction_key:
-                notes.append(f"leiden_stability reduction: {reduction_key}")
-                metrics["leiden_stability_reduction"] = reduction_key
-            else:
-                warnings.append(
-                    "leiden_stability reduction unavailable: clustering will use an "
-                    "UNCORRECTED reduction, so the resolution choice may be donor-driven."
-                )
-                reduction_key = "X_pca"
+        return filtered, partition_reduction_key
 
-            partition_result = run_leiden_stability(
-                filtered,
-                sc_config,
-                reduction_key=reduction_key,
-                context=context,
-            )
+    @staticmethod
+    def _partition_leiden_stability(
+        context: PipelineContext,
+        filtered: ad.AnnData,
+        sc_config: object,
+        nuisance_key: str | None,
+        report: _Report,
+    ) -> ad.AnnData:
+        """Partition with bootstrap-validated Leiden resolution selection (not a CHOIR fallback)."""
 
-            if isinstance(partition_result, MethodSkip):
-                warnings.append(f"leiden_stability partition skipped: {partition_result.reason}")
-                metrics["partition_skipped"] = True
-                metrics["partition_skip_reason"] = partition_result.reason
-            else:
-                filtered = partition_result
-                n_subclusters = filtered.obs[sc_config.key_added].nunique()
-                chosen = filtered.uns["subclustering"]["leiden_stability"]["chosen_resolution"]
-                notes.append(
-                    f"leiden_stability partition: {n_subclusters} subclusters identified "
-                    f"(bootstrap-selected resolution={chosen})"
-                )
-                metrics["n_subclusters"] = int(n_subclusters)
-                metrics["partition_method"] = "leiden_stability"
-                metrics["leiden_stability_resolution"] = chosen
-        elif sc_config.partition.method == "leiden_grid":
-            # Minimal scanpy fallback (defer detailed implementation).
-            notes.append("leiden_grid partition: deferred (CHOIR is primary method)")
-            metrics["partition_skipped"] = True
-            metrics["partition_skip_reason"] = "leiden_grid not implemented"
+        # An alternative to CHOIR, not a fallback: bootstrap-validated Leiden
+        # resolution selection, for when CHOIR is unavailable, fails outright,
+        # or its own sc-SHC test rejects the partition it proposes -- three
+        # distinct failure modes this project hit in practice on real data.
+        reduction_key = reembed_focus_batch_aware(
+            filtered,
+            counts_layer=sc_config.counts_layer,
+            batch_key=nuisance_key,
+            random_state=(sc_config.partition.seeds[0] if sc_config.partition.seeds else 0),
+            max_iter_harmony=sc_config.reembed.max_iter_harmony,
+            diagnostics=report.warnings,
+        )
+        if reduction_key:
+            report.notes.append(f"leiden_stability reduction: {reduction_key}")
+            report.metrics["leiden_stability_reduction"] = reduction_key
         else:
-            notes.append(f"Unknown partition method: {sc_config.partition.method}")
-            warnings.append(f"Unknown partition method: {sc_config.partition.method}")
+            report.warnings.append(
+                "leiden_stability reduction unavailable: clustering will use an "
+                "UNCORRECTED reduction, so the resolution choice may be donor-driven."
+            )
+            reduction_key = "X_pca"
+
+        partition_result = run_leiden_stability(
+            filtered,
+            sc_config,
+            reduction_key=reduction_key,
+            context=context,
+        )
+
+        if isinstance(partition_result, MethodSkip):
+            report.warnings.append(f"leiden_stability partition skipped: {partition_result.reason}")
+            report.metrics["partition_skipped"] = True
+            report.metrics["partition_skip_reason"] = partition_result.reason
+        else:
+            filtered = partition_result
+            n_subclusters = filtered.obs[sc_config.key_added].nunique()
+            chosen = filtered.uns["subclustering"]["leiden_stability"]["chosen_resolution"]
+            report.notes.append(
+                f"leiden_stability partition: {n_subclusters} subclusters identified "
+                f"(bootstrap-selected resolution={chosen})"
+            )
+            report.metrics["n_subclusters"] = int(n_subclusters)
+            report.metrics["partition_method"] = "leiden_stability"
+            report.metrics["leiden_stability_resolution"] = chosen
+
+        return filtered
+
+    def _run_donor_gate(
+        self,
+        context: PipelineContext,
+        config: object,
+        sc_config: object,
+        filtered: ad.AnnData,
+        partition_reduction_key: str | None,
+        cluster_key: str,
+        has_cluster_labels: bool,
+        report: _Report,
+    ) -> ad.AnnData:
+        """Test whether any cluster is really one donor; flag or drop failures; plot the panel."""
 
         # Task 3: donor_gate + diagnostics.
         # Run donor gate if group_key set AND cluster labels exist. The donor
@@ -429,10 +565,6 @@ class SubclusteringStage:
 
         group_key = resolve_cohort_key(
             config, attr="donor_key", stage_value=sc_config.donor_gate.group_key
-        )
-        cluster_key = sc_config.key_added
-        has_cluster_labels = (
-            cluster_key in filtered.obs.columns and filtered.obs[cluster_key].notna().any()
         )
 
         # The donor gate tests whether a cluster's identity is really just donor
@@ -458,11 +590,11 @@ class SubclusteringStage:
                 random_state=0,
             )
             if not embedding_ready:
-                notes.append(
+                report.notes.append(
                     "Donor gate: skipped (could not derive an embedding for the "
                     "focus subset; too few cells or genes)."
                 )
-                warnings.append("Donor gate skipped: focus subset could not be re-embedded.")
+                report.warnings.append("Donor gate skipped: focus subset could not be re-embedded.")
 
         if group_key is not None and has_cluster_labels and embedding_ready:
             # Run donor reproducibility gatekeeper.
@@ -478,17 +610,17 @@ class SubclusteringStage:
                 embedding_key=donor_gate_embedding_key,
                 random_state=0,
             )
-            metrics["donor_gate_embedding_key"] = donor_gate_embedding_key
+            report.metrics["donor_gate_embedding_key"] = donor_gate_embedding_key
 
             # Record summary metrics.
             n_pass = gate_result["summary"]["n_pass"]
             n_fail = gate_result["summary"]["n_fail"]
-            notes.append(
+            report.notes.append(
                 f"Donor gate: {n_pass} clusters PASS, "
                 f"{n_fail} clusters FAIL (min_groups={sc_config.donor_gate.min_groups})"
             )
-            metrics["donor_gate_n_pass"] = n_pass
-            metrics["donor_gate_n_fail"] = n_fail
+            report.metrics["donor_gate_n_pass"] = n_pass
+            report.metrics["donor_gate_n_fail"] = n_fail
 
             if "subclustering" not in filtered.uns:
                 filtered.uns["subclustering"] = {}
@@ -500,7 +632,7 @@ class SubclusteringStage:
                 figures_dir = Path(getattr(paths, "figures", "."))
                 qc_panel_path = figures_dir / "subclustering_donor_qc_panel.png"
                 plot_subcluster_qc_panel(gate_result, qc_panel_path)
-                artifacts.append(
+                report.artifacts.append(
                     StageArtifact(
                         name="subclustering_donor_qc_panel",
                         path=qc_panel_path,
@@ -524,18 +656,31 @@ class SubclusteringStage:
                 filtered = filtered[filtered.obs["donor_qc_qc_pass"]].copy()
                 n_cells_after = filtered.n_obs
                 n_dropped = n_cells_before - n_cells_after
-                notes.append(f"Action=drop: removed {n_dropped} cells in failed clusters")
-                warnings.append(f"Dropped {n_dropped} cells (action='drop' configured)")
-                metrics["donor_gate_n_cells_dropped"] = n_dropped
+                report.notes.append(f"Action=drop: removed {n_dropped} cells in failed clusters")
+                report.warnings.append(f"Dropped {n_dropped} cells (action='drop' configured)")
+                report.metrics["donor_gate_n_cells_dropped"] = n_dropped
             else:
                 # Default: flag-not-drop.
-                notes.append("Action=flag: retained all cells with QC flags")
+                report.notes.append("Action=flag: retained all cells with QC flags")
         elif group_key is None:
-            notes.append("Donor gate: skipped (group_key not configured)")
+            report.notes.append("Donor gate: skipped (group_key not configured)")
         elif not has_cluster_labels:
-            notes.append("Donor gate: skipped (no cluster labels)")
+            report.notes.append("Donor gate: skipped (no cluster labels)")
         # The embedding-failed case (group_key set + labels present but
         # embedding_ready is False) already recorded its own skip note above.
+
+        return filtered
+
+    @staticmethod
+    def _run_technical_qc(
+        context: PipelineContext,
+        sc_config: object,
+        filtered: ad.AnnData,
+        cluster_key: str,
+        has_cluster_labels: bool,
+        report: _Report,
+    ) -> ad.AnnData:
+        """Compare each subcluster's QC evidence to its siblings and flag or drop the outliers."""
 
         # Technical-QC consistency: does any subcluster's QC evidence (mito%,
         # counts, complexity, multiplet rate) look like an outlier against its
@@ -554,17 +699,19 @@ class SubclusteringStage:
                 z_threshold=sc_config.technical_qc.z_threshold,
             )
             if qc_result["summary"]["skipped"]:
-                notes.append("Technical-QC consistency: skipped (no QC evidence columns present)")
+                report.notes.append(
+                    "Technical-QC consistency: skipped (no QC evidence columns present)"
+                )
             else:
                 n_pass = qc_result["summary"]["n_pass"]
                 n_fail = qc_result["summary"]["n_fail"]
-                notes.append(
+                report.notes.append(
                     f"Technical-QC consistency: {n_pass} subclusters within normal range, "
                     f"{n_fail} flagged as outliers vs. their siblings "
                     f"(z_threshold={sc_config.technical_qc.z_threshold})"
                 )
-                metrics["technical_qc_n_pass"] = n_pass
-                metrics["technical_qc_n_fail"] = n_fail
+                report.metrics["technical_qc_n_pass"] = n_pass
+                report.metrics["technical_qc_n_fail"] = n_fail
 
                 if "subclustering" not in filtered.uns:
                     filtered.uns["subclustering"] = {}
@@ -576,7 +723,7 @@ class SubclusteringStage:
                         for cid, c in qc_result["clusters"].items()
                         if not c["qc_pass"]
                     }
-                    warnings.append(
+                    report.warnings.append(
                         "Technical-QC consistency: subcluster(s) "
                         f"{sorted(failed)} look like QC-confounded populations, not "
                         f"necessarily real biological states -- {failed}"
@@ -593,17 +740,17 @@ class SubclusteringStage:
                         filtered = filtered[filtered.obs["technical_qc_qc_pass"]].copy()
                         n_cells_after = filtered.n_obs
                         n_dropped = n_cells_before - n_cells_after
-                        notes.append(
+                        report.notes.append(
                             f"Action=drop: removed {n_dropped} cells in "
                             f"QC-confounded clusters {sorted(failed)}"
                         )
-                        warnings.append(
+                        report.warnings.append(
                             f"Dropped {n_dropped} cells in QC-confounded clusters "
                             "(action='drop' configured)"
                         )
-                        metrics["technical_qc_n_cells_dropped"] = n_dropped
+                        report.metrics["technical_qc_n_cells_dropped"] = n_dropped
                     else:
-                        notes.append(
+                        report.notes.append(
                             "Action=flag: retained all cells despite QC-confounded clusters"
                         )
 
@@ -613,7 +760,7 @@ class SubclusteringStage:
                     qc_consistency_path = figures_dir / "subclustering_technical_qc_consistency.png"
                     plot_technical_qc_consistency(qc_result, qc_consistency_path)
                     if qc_consistency_path.exists():
-                        artifacts.append(
+                        report.artifacts.append(
                             StageArtifact(
                                 name="subclustering_technical_qc_consistency",
                                 path=qc_consistency_path,
@@ -635,7 +782,7 @@ class SubclusteringStage:
                         import pandas as pd
 
                         writer = StageArtifactWriter.from_context(context)
-                        artifacts.append(
+                        report.artifacts.append(
                             writer.table(
                                 pd.DataFrame(rows),
                                 "subclustering_technical_qc_consistency.csv",
@@ -646,7 +793,20 @@ class SubclusteringStage:
                             )
                         )
         elif sc_config.technical_qc.enabled and not has_cluster_labels:
-            notes.append("Technical-QC consistency: skipped (no cluster labels)")
+            report.notes.append("Technical-QC consistency: skipped (no cluster labels)")
+
+        return filtered
+
+    @staticmethod
+    def _add_marker_dotplot(
+        context: PipelineContext,
+        sc_config: object,
+        filtered: ad.AnnData,
+        cluster_key: str,
+        has_cluster_labels: bool,
+        report: _Report,
+    ) -> None:
+        """Draw the marker identity dotplot on the final cluster set; a failure only warns."""
 
         # Marker-gene identity dotplot: auto-derived top markers per cluster,
         # on the FINAL (post-drop) cluster set -- "what is this cluster,"
@@ -673,10 +833,10 @@ class SubclusteringStage:
                         cluster_labels=sc_config.diagnostics.marker_dotplot_cluster_labels,
                     )
                 except Exception as exc:  # noqa: BLE001 -- a figure must never sink the stage
-                    warnings.append(f"marker identity dotplot failed: {str(exc)[:200]}")
+                    report.warnings.append(f"marker identity dotplot failed: {str(exc)[:200]}")
                 else:
                     if dotplot_path.exists():
-                        artifacts.append(
+                        report.artifacts.append(
                             StageArtifact(
                                 name="subclustering_marker_identity_dotplot",
                                 path=dotplot_path,
@@ -687,36 +847,6 @@ class SubclusteringStage:
                                 ),
                             )
                         )
-
-        # Generate clustree plot (if leiden_grid labels present).
-        # Note: clustree expects multiple cluster columns with a common prefix.
-        # This will be driven by leiden_grid labels when implemented.
-        # For now, defer clustree generation to full leiden_grid implementation.
-        if sc_config.diagnostics.clustree:
-            notes.append("Clustree: deferred (leiden_grid not implemented)")
-
-        # Project subclustering results back onto the ORIGINAL parent object and
-        # return THAT, not the focus subset. extract_focus stripped the parent's
-        # X_* embeddings and (under a group filter or focus < all cells) shrank
-        # the cell set; returning it would deprive downstream stages of the
-        # integration embedding they depend on. Instead we keep the parent (all
-        # cells, embeddings intact) and merge the per-cell subcluster labels /
-        # donor-QC flags back on by obs index. Cells outside the analyzed focus
-        # simply carry NaN for those columns.
-        result_adata = self._project_onto_parent(
-            parent=adata,
-            focused=focused,
-            filtered=filtered,
-            sc_config=sc_config,
-        )
-
-        return StageResult(
-            adata=result_adata,
-            artifacts=artifacts,
-            notes=notes,
-            warnings=warnings,
-            metrics=metrics,
-        )
 
     @staticmethod
     def _resolve_nuisance_key(config: object, sc_config: object) -> str | None:
