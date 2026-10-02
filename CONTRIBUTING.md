@@ -73,7 +73,7 @@ Markers are declared in `pyproject.toml` under `[tool.pytest.ini_options]`. Beca
 
 ### External datasets — never hardcode a path
 
-**No tracked file may name a specific machine's filesystem.** `tests/test_no_hardcoded_machine_paths.py`
+**No tracked file may name a specific machine's filesystem.** `tests/config/test_no_hardcoded_machine_paths.py`
 enforces this: it scans every git-tracked file under `configs/`, `src/`, `tests/`, and
 `scripts/` for absolute paths rooted at `/mnt/`, `/home/`, `/Users/`, `/media/`,
 `/Volumes/`, or a Windows drive letter, and fails with the full list.
@@ -124,7 +124,7 @@ switch on multi-minute integration tests.
 
 A test that only checks a config *validates* should stub these rather than depend on your
 environment — use `stub_config_env(monkeypatch, tmp_path)` from `tests/_external_data.py`.
-`tests/test_no_hardcoded_machine_paths.py` also walks every shipped config and asserts it
+`tests/config/test_no_hardcoded_machine_paths.py` also walks every shipped config and asserts it
 still validates, so a field renamed in `config/models.py` fails there instead of in a
 user's first run.
 
@@ -133,7 +133,7 @@ that line to opt out.
 
 ### The lazy-import invariant
 
-`tests/test_import_cost.py` asserts that a bare `import cellquorum` does not pull in
+`tests/repo/test_import_cost.py` asserts that a bare `import cellquorum` does not pull in
 `torch`, `scvi`, `lightning`, `celltypist`, or `decoupler`, and stays under a module
 ceiling. This is load-bearing, not cosmetic: a single module-scope
 `import scvi` in a stage package once made `cellquorum --version` take 4.7 seconds
@@ -153,7 +153,7 @@ Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 | **Lint** | `ruff check` and `ruff format --check` on `src` and `tests`, at the exact pinned version. |
 | **Typecheck** | `mypy` on `core`, `config`, `io`, `methods`, `cli`, `stats`, `datasets` and five small stage packages, with no module exempted. |
 | **Test** | The suite on Python 3.12 and 3.13, with a coverage floor (`fail_under` in `pyproject.toml`). Optional-backend tests self-skip. |
-| **Figures** | `tests/test_figure_gallery.py`: every gallery figure must match its stored baseline pixel for pixel. |
+| **Figures** | `tests/visualization/test_figure_gallery.py`: every gallery figure must match its stored baseline pixel for pixel. |
 | **Docs** | `mkdocs build --strict` — a broken link or unresolved API reference fails the build. |
 | **Build** | Builds the wheel and sdist, asserts the wheel bundles every `.R` script, a non-empty `LICENSE` and `py.typed`, then installs the wheel into a clean environment and runs `tests/acceptance` there: the Python API and the command line a user types. |
 
@@ -238,8 +238,8 @@ Figures are part of the product, so a code change must not alter how one looks b
   `matplotlib.rcParams` setters from stage code.
 - **Every figure has a baseline.** Fixtures live in `scripts/gallery_<stage>.py`: small synthetic
   inputs and the call to the renderer. `scripts/build_figure_gallery.py` discovers them, and
-  `tests/test_figure_gallery.py` compares each output to `docs/gallery/assets/<name>.png`.
-  Run the comparison with `CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/test_figure_gallery.py`.
+  `tests/visualization/test_figure_gallery.py` compares each output to `docs/gallery/assets/<name>.png`.
+  Run the comparison with `CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/visualization/test_figure_gallery.py`.
 - **Adding a figure:** add a function to the stage's `gallery_<stage>.py` registry, build to a
   scratch folder, look at the result, copy only that PNG into `docs/gallery/assets/`, then run
   `python scripts/update_gallery_page.py`.
@@ -249,7 +249,7 @@ Figures are part of the product, so a code change must not alter how one looks b
 ```bash
 python scripts/build_figure_gallery.py --output /tmp/gallery_new
 cp /tmp/gallery_new/<name>.png docs/gallery/assets/<name>.png
-CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/test_figure_gallery.py
+CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/visualization/test_figure_gallery.py
 ```
 
 Do not regenerate everything into `docs/gallery/assets`: the PDF and SVG files embed timestamps
@@ -258,7 +258,7 @@ and would show up as changes you did not make.
 **Beware libraries that change matplotlib on import.** `pycirclize` and `decoupler` rewrite global
 settings the first time they are imported, so the same figure can look different depending on what
 ran before it. Import such a library inside `with matplotlib.rc_context():` and test it in a
-fresh subprocess; see `tests/test_grn_radial_figures.py` for an example.
+fresh subprocess; see `tests/stages/gene_regulation/grn/test_grn_radial_figures.py` for an example.
 
 ## Commit and PR conventions
 

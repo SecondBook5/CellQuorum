@@ -1,6 +1,6 @@
 # Pipeline step (order=155): subclustering — resolve finer structure within populations.
 #
-# The first line is a machine-read contract (tests/test_stage_headers.py): one line,
+# The first line is a machine-read contract (tests/core/test_stage_headers.py): one line,
 # `order=` matching the registration, ending in a period. Wrapping the sentence onto a
 # second line breaks it, so context goes here instead.
 #

@@ -415,7 +415,7 @@ flowchart LR
 The source is organized into **10 top-level packages** under `src/cellquorum/`, with
 the 12 pipeline-step packages grouped together under `stages/` — one canonical import
 path per public thing, no compatibility shims (frozen by
-`tests/test_old_paths_removed.py`). The engine machinery is `core` (context, planner,
+`tests/repo/test_old_paths_removed.py`). The engine machinery is `core` (context, planner,
 executor, contracts, provenance), `config`, `methods` (dispatch + shared
 abstractions), and `backends`; `stages` holds the 12 step packages
 (`ambient_correction`, `qc`, `preprocessing`, `clustering`, `integration`,

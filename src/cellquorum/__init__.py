@@ -11,7 +11,7 @@ which aggregates all 30 stage config modules. That made ``cellquorum --version``
 a five-second command and put a multi-second import tax on every one of the
 ~294 test modules. Deferring resolution keeps ``from cellquorum import pp`` and
 ``cq.run_pipeline(...)`` working exactly as before while making the bare import
-essentially free; ``tests/test_import_cost.py`` pins the invariant so it cannot
+essentially free; ``tests/repo/test_import_cost.py`` pins the invariant so it cannot
 silently regress again.
 """
 

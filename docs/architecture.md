@@ -216,7 +216,7 @@ The package is organized into **10** top-level packages under `src/cellquorum/`.
 The 12 pipeline-step packages live together under `stages/` (see the *Stage packages*
 table below); everything else is engine machinery or a public surface. There are no
 compatibility-shim packages — the clean break left exactly one canonical import path
-per public thing (frozen by `tests/test_old_paths_removed.py`):
+per public thing (frozen by `tests/repo/test_old_paths_removed.py`):
 
 | Package | Responsibility |
 |---|---|
@@ -285,8 +285,8 @@ To add a new stage, a contributor touches four things — and no more:
    line to `src/cellquorum/core/stages.py`, in the canonical-order position, so the decorator actually
    runs when the engine starts.
 
-`tests/test_stage_catalog.py` is the safety net: it fails loudly if a stage's flag or
+`tests/core/test_stage_catalog.py` is the safety net: it fails loudly if a stage's flag or
 config block is missing or orphaned, if two stages claim the same `order`, or if the
-run order drifts from the frozen golden list. Run it (`pytest tests/test_stage_catalog.py`)
+run order drifts from the frozen golden list. Run it (`pytest tests/core/test_stage_catalog.py`)
 after adding a stage and it will tell you exactly which of the four steps is
 incomplete.

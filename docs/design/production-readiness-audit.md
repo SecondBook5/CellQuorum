@@ -11,7 +11,7 @@ The assessment below is kept as written. These findings no longer hold, or have 
 - **Donor-count defect (issue 1):** fixed. `two_group_test_on_donor_medians` now returns `None` for
   three donor labels with one missing and `min_donors=3`; paired versus unpaired must be declared.
 - **Image-baseline figure tests:** 72 pixel-exact baselines (`scripts/gallery_*.py`,
-  `docs/gallery/assets`, `tests/test_figure_gallery.py`) run in CI and cover every tuned figure
+  `docs/gallery/assets`, `tests/visualization/test_figure_gallery.py`) run in CI and cover every tuned figure
   family. Two figures were order-dependent through third-party import side effects
   (`pycirclize`, `decoupler`) and are now deterministic.
 - **Installed-wheel acceptance (issue 2):** `tests/acceptance` runs from a wheel-only virtual

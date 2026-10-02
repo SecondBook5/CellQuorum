@@ -87,7 +87,7 @@ python scripts/build_figure_gallery.py
 ```
 
 The generator requires every requested format to be saved and fails if a renderer
-reports an error. `tests/test_figure_gallery.py` regenerates all six examples,
+reports an error. `tests/visualization/test_figure_gallery.py` regenerates all six examples,
 checks the 18 exports, verifies SVG text remains editable, and checks source-data
 counts, pairing effects, rule flags, and the running-score endpoint. These tests
 run as part of the normal suite. A separate CI job installs the reference renderer
@@ -96,7 +96,7 @@ gallery images. Reproduce that check with:
 
 ```bash
 pip install -e '.[dev]' -c envs/figure-constraints.txt
-CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/test_figure_gallery.py
+CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/visualization/test_figure_gallery.py
 ```
 
 The reference rendering uses Matplotlib's bundled DejaVu Sans fallback, with no
@@ -111,7 +111,7 @@ figures or robust layout across arbitrary datasets.
 
 ## Every figure, by stage
 
-Each image is drawn by the stage's own renderer from small synthetic data and is pinned by a pixel-exact test (`tests/test_figure_gallery.py`). Click one for the full size.
+Each image is drawn by the stage's own renderer from small synthetic data and is pinned by a pixel-exact test (`tests/visualization/test_figure_gallery.py`). Click one for the full size.
 
 ### Annotation diagnostics
 

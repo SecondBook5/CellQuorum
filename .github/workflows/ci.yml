@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install pytest==9.0.2 PyYAML packaging
-      - run: python -m pytest tests/test_environment_locks.py
+      - run: python -m pytest tests/repo/test_environment_locks.py
 
   lint:
     name: Lint
@@ -163,7 +163,7 @@ jobs:
       - name: Install reference renderer
         run: pip install -e '.[dev]' -c envs/figure-constraints.txt
       - name: Compare rendered figures with reviewed references
-        run: pytest tests/test_figure_gallery.py --basetemp=/tmp/figure-comparisons -q
+        run: pytest tests/visualization/test_figure_gallery.py --basetemp=/tmp/figure-comparisons -q
       - name: Upload comparison artifacts
         if: failure()
         uses: actions/upload-artifact@v4

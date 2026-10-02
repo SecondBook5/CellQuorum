@@ -21,7 +21,7 @@
 # NOTE ON CONVERGENCE: DIALOGUE only recovers programs when the per-sample structure
 # in X is real and shared across cell types (ANOVA filter needs >=5 sample-varying
 # features; sparse-CCA needs cross-type correlation). Pure noise -> "features passed
-# the ANOVA filter" error (nonzero exit = method skip). See tests/test_mcp_dialogue_script.py.
+# the ANOVA filter" error (nonzero exit = method skip). See tests/backends/test_mcp_dialogue_script.py.
 suppressPackageStartupMessages({ library(DIALOGUE); library(Matrix); library(jsonlite) })
 
 args <- commandArgs(trailingOnly = TRUE)

@@ -110,7 +110,7 @@ Check that:
 The smoke script has its own test suite:
 
 ```bash
-mamba run -n cellquorum-dev pytest tests/test_smoke_real_h5ad_script.py -v
+mamba run -n cellquorum-dev pytest tests/backends/test_smoke_real_h5ad_script.py -v
 ```
 
 This creates tiny synthetic h5ad files and verifies the script works correctly.

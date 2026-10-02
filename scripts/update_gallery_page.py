@@ -47,7 +47,8 @@ def build_index() -> str:
         "## Every figure, by stage",
         "",
         "Each image is drawn by the stage's own renderer from small synthetic data and is pinned "
-        "by a pixel-exact test (`tests/test_figure_gallery.py`). Click one for the full size.",
+        "by a pixel-exact test (`tests/visualization/test_figure_gallery.py`). Click one for the "
+        "full size.",
         "",
     ]
     for prefix in sorted(groups, key=lambda key: STAGES.get(key, key)):

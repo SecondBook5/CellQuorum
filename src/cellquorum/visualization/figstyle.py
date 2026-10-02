@@ -133,10 +133,11 @@ FONTSIZE = {
 
 # 18-hue ordered categorical palette. What it guarantees, MEASURED, is narrower than
 # what this comment used to claim; the numbers below come from
-# `cellquorum.visualization.palette_audit` and are pinned by tests/test_palette_audit.py,
-# so they fail loudly if a hue changes. CAM02-UCS distance, worst of normal vision plus
-# full-severity deuteranomaly / protanomaly / tritanomaly, on the light chart surface
-# `#fcfcfb` (cellquorum renders light-mode only, so that is the only surface audited).
+# `cellquorum.visualization.palette_audit` and are pinned by
+# tests/visualization/test_palette_audit.py, so they fail loudly if a hue changes. CAM02-UCS
+# distance, worst of normal vision plus full-severity deuteranomaly / protanomaly /
+# tritanomaly, on the light chart surface `#fcfcfb` (cellquorum renders light-mode only, so
+# that is the only surface audited).
 #
 #   Slots 1-8   the validated dataviz reference categorical theme. ALL PAIRS separated
 #               (worst 6.97, orange vs red under tritanomaly). Up to 8 categories can
@@ -191,7 +192,7 @@ CATEGORICAL_PALETTE: list[str] = [
 # 30-80) as recorded in the analysis repo. Ordered so an angular sweep (see
 # embeddings.plots) puts contrasting hues on spatially adjacent clusters.
 # 2026-09-15: colors 7-13 (teal/indigo/dark-red/olive/cyan/light-orange/navy)
-# were never audited (see tests/test_palette_audit.py) and, measured, failed
+# were never audited (see tests/visualization/test_palette_audit.py) and, measured, failed
 # the same dE>=6.9 all-pairs floor CATEGORICAL_PALETTE holds -- the longest
 # genuinely safe prefix was only 6 of 13 (color 7, teal #44AA99, collided
 # with color 1, soft blue #6699CC, at dE=5.24 under tritanomaly). Confirmed

@@ -10,7 +10,7 @@ literal metacell_id "Outliers" -- never silently dropped.
 
 Argument parsing and every skip-gate check happen BEFORE `import metacells`,
 so the graceful-skip path is exercisable without the metacells package
-installed (see tests/test_metacell2_script.py, which runs this script with
+installed (see tests/backends/test_metacell2_script.py, which runs this script with
 the caller's own bare interpreter).
 
 Positional args:

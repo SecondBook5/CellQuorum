@@ -10,7 +10,7 @@ in ``core/planner.py``.
 
 Adding a stage: put ``@register_stage(...)`` on the stage class (in its own
 module) and add the matching ``StageSelectionConfig`` flag and
-``CellQuorumConfig`` sub-block field. ``tests/test_stage_catalog.py`` fails
+``CellQuorumConfig`` sub-block field. ``tests/core/test_stage_catalog.py`` fails
 loudly if either config field is missing or orphaned.
 """
 
@@ -122,7 +122,7 @@ class StageSpec:
             decorated class); ``None`` for planned-only stages.
         cell_scope: Declaration of whose cells the stage may fit, transform, and infer
             from. ``None`` means undeclared, which
-            ``tests/test_stage_cell_scope.py`` rejects for any stage that fits a model
+            ``tests/core/test_stage_cell_scope.py`` rejects for any stage that fits a model
             across cells.
     """
 

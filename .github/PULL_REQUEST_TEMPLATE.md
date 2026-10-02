@@ -32,7 +32,7 @@ make lint && make typecheck && make test-fast
       backend (`torch`, `scvi`, `celltypist`, `decoupler`, …). Optional deps are
       probed with `importlib.util.find_spec`, not `import` inside `try/except`, and
       imported inside the method body that uses them.
-      `tests/test_import_cost.py` enforces this.
+      `tests/repo/test_import_cost.py` enforces this.
 - [ ] **Honest annotations.** No new `: object` used to sidestep an import; real
       types with `if TYPE_CHECKING:` where needed.
 - [ ] **Markers, not just skipif.** Any test needing R, a GPU, or an external tool

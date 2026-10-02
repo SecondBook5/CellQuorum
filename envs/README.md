@@ -231,7 +231,7 @@ If using a separate R library directory, expose it through `R_LIBS` to both the
 availability check and the Python test process. Validate the adapter with:
 
 ```bash
-python -m pytest tests/test_qc_sampleqc.py -rA
+python -m pytest tests/stages/qc/test_qc_sampleqc.py -rA
 ```
 
 All 13 tests must pass, including the three `test_upstream_sampleqc_smoke` cases;

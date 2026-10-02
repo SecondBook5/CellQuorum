@@ -37,7 +37,7 @@ public API and the configuration schema.
   so genuinely shared biology (a marker peaking in a related cell type but real in both)
   survives the specificity gate on its own, with an optional `group_map` for
   deliberately-curated coarser compartments.
-- **`tests/test_no_hardcoded_machine_paths.py`** keeps machine-specific paths from
+- **`tests/config/test_no_hardcoded_machine_paths.py`** keeps machine-specific paths from
   coming back (see *Changed* below for the removal itself). It scans
   every git-tracked file under `configs/`, `src/`, `tests/`, and `scripts/` for absolute
   paths rooted at `/mnt/`, `/home/`, `/Users/`, `/media/`, `/Volumes/`, or a Windows drive
@@ -56,12 +56,12 @@ public API and the configuration schema.
   real-data tests, so `pytest -m "not integration"` deselects them even on a machine that
   *does* have the data — which `skipif` alone cannot do. The markers were declared in
   `pyproject.toml` but used by nothing.
-- **`tests/test_backend_probe_cache.py`** covers the new probe cache: the probe runs
+- **`tests/backends/test_backend_probe_cache.py`** covers the new probe cache: the probe runs
   once per distinct question, distinct questions never share an answer (a narrowed
   cache key would misreport one environment's availability as another's), a missing
   launcher or timeout still reads as "unavailable" rather than raising, and module-name
   validation still happens in the backend method ahead of the cache.
-- **`tests/test_import_cost.py` pins the lazy-import invariant.** Asserts that a bare
+- **`tests/repo/test_import_cost.py` pins the lazy-import invariant.** Asserts that a bare
   `import cellquorum` pulls in none of torch, scvi, lightning, celltypist, or
   decoupler, stays under a module ceiling, that importing the CLI does not pull in
   the engine, and that every lazily bound public name still resolves. The invariant
@@ -261,7 +261,7 @@ Recent engineering and reproducibility hardening:
   with **10** top-level packages (`core`, `config`, `methods`, `backends`,
   `stages`, `io`, `visualization`, `api`, `cli`, `utils`). Every retired
   re-export shim is deleted (see *Removed*), so each stage, config, and utility
-  has exactly one import path — frozen by `tests/test_old_paths_removed.py`. The
+  has exactly one import path — frozen by `tests/repo/test_old_paths_removed.py`. The
   convenience top-level re-exports on the `cellquorum` package are unchanged:
   `cq.run_pipeline`, `cq.tl` / `cq.pp` / `cq.diag` / `cq.evidence`, and
   `cq.utils` stay canonical. New legibility docs land alongside: per-stage
@@ -331,7 +331,7 @@ Recent engineering and reproducibility hardening:
 
 - **All 12 backward-compatibility re-export shims (API clean break).** The
   pre-consolidation import paths no longer resolve — each raises
-  `ModuleNotFoundError`, frozen gone by `tests/test_old_paths_removed.py`: the
+  `ModuleNotFoundError`, frozen gone by `tests/repo/test_old_paths_removed.py`: the
   four comparative-analysis package shims `cellquorum.differential_expression`,
   `cellquorum.differential_abundance`, `cellquorum.enrichment`,
   `cellquorum.multicellular_programs`; the five notebook/API standalone-module
@@ -391,7 +391,7 @@ Recent engineering and reproducibility hardening:
   reported themselves unavailable and skipped, which looks exactly like a missing R
   install. Script paths now resolve from the package root
   (`cellquorum.backends.script_paths.r_script_path`), which cannot drift with module
-  depth, and `tests/test_r_script_paths.py` asserts every referenced script resolves to a
+  depth, and `tests/backends/test_r_script_paths.py` asserts every referenced script resolves to a
   real file.
 - **Paired concordance rendered cell-type labels its own way.** It is callable on any
   count matrix, not only one from `aggregate_celltype_counts`, so a raw numeric state
@@ -459,7 +459,7 @@ Correctness defects that could silently produce wrong output (#168):
 
   Scrublet is unaffected and still splits in Python — it has no `samples=` equivalent,
   and handing it the pooled object would quietly turn per-capture detection into pooled
-  detection. `tests/test_qc_doublets.py` pins which detectors are allowed to skip the
+  detection. `tests/stages/qc/test_qc_doublets.py` pins which detectors are allowed to skip the
   Python-side loop, that the sample column really reaches R, and (under real R) that the
   scores come back in input cell order rather than in whatever order scDblFinder
   rebinds its splits.
