@@ -75,6 +75,7 @@ nav:
   - Configuration: configuration.md
   - Figure gallery: gallery/index.md
   - Backends & environments: backends.md
+  - Third-party software: third-party-software.md
   - Python API: api.md
   - Docker: docker.md
   - Snakemake: snakemake.md

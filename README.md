@@ -112,8 +112,8 @@ wrong results.
 
 - **Config over code.** Every method is chosen in YAML (`integration.method: harmony | scvi`), so a dataset is expressed as configuration, not a script.
 - **40 stages, 70+ methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
-- **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto `rapids-singlecell`/`cupy` when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
-- **Python + R, transparently.** R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, DIALOGUE, SoupX, hdWGCNA) and isolated heavyweight backends (pySCENIC, scCODA, CellOracle) are dispatched behind one interface.
+- **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto [`rapids-singlecell`](https://github.com/scverse/rapids_singlecell)/[`cupy`](https://cupy.dev) when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
+- **Python + R, transparently.** R/Bioconductor methods ([edgeR](https://bioconductor.org/packages/edgeR), [Milo](https://github.com/MarioniLab/miloR), [propeller](https://github.com/phipsonlab/speckle), [NicheNet](https://github.com/saeyslab/nichenetr), [DIALOGUE](https://github.com/livnatje/DIALOGUE), [SoupX](https://github.com/constantAmateur/SoupX), [hdWGCNA](https://github.com/smorabit/hdWGCNA)) and isolated heavyweight backends ([pySCENIC](https://github.com/aertslab/pySCENIC), [scCODA](https://github.com/theislab/scCODA), [CellOracle](https://github.com/morris-lab/CellOracle)) are dispatched behind one interface.
 - **Fail-loud data contracts.** Structural, layer-provenance, and statistical checks reject, for example, raw counts mislabeled as log-normalized.
 - **Reproducible & auditable.** A standardized run directory plus machine-readable provenance (resolved config, plan, backend status, environment/version stamp, artifact manifest).
 - **Two front doors.** A `cellquorum` / `cq` CLI and a `run_pipeline` Python API.
@@ -158,7 +158,7 @@ pre-commit install
 ```
 
 Optional extras: `.[r]` (rpy2 bridge for R/Bioconductor methods), `.[gpu]`
-(scvi-tools). The heavyweight and GPU stacks (RAPIDS, pySCENIC, scCODA, CellOracle,
+(scvi-tools). The heavyweight and GPU stacks ([RAPIDS](https://rapids.ai), [pySCENIC](https://github.com/aertslab/pySCENIC), [scCODA](https://github.com/theislab/scCODA), [CellOracle](https://github.com/morris-lab/CellOracle),
 hdWGCNA) live in dedicated environments — see [Backends & environments](#backends--environments)
 and [`envs/README.md`](envs/README.md). A layered Docker image bakes all of them;
 see [`docs/docker.md`](docs/docker.md).
@@ -256,38 +256,39 @@ configuration.
 
 Each stage validates its input contract, dispatches to the config-selected method,
 and records the outcome. Stages marked *isolated env* run as subprocesses in a
-dedicated environment; *R* methods run over the Rscript/rpy2 bridge.
+dedicated environment; *R* methods run over the Rscript/rpy2 bridge. Method names link to
+their projects; licenses and citations are in [Third-party software](docs/third-party-software.md).
 
 | Stage | Methods | Backend |
 |---|---|---|
-| `ambient_correction` | SoupX | R |
-| `qc` | MAD/fixed thresholds; Scrublet + scDblFinder doublet consensus; Tirosh cell-cycle | Python (+R) |
+| `ambient_correction` | [SoupX](https://github.com/constantAmateur/SoupX) | R |
+| `qc` | MAD/fixed thresholds; [Scrublet](https://github.com/swolock/scrublet) + [scDblFinder](https://github.com/plger/scDblFinder) doublet consensus; [SampleQC](https://github.com/wmacnair/SampleQC) joint profiles; [Tirosh](https://doi.org/10.1126/science.aad0501) cell-cycle | Python (+R) |
 | `preprocessing` | PFlog1pPF / log1p-CP10k normalization (layer-tagged) | Python · GPU |
-| `feature_selection` | HVG; Seurat v3; Pearson-residuals/deviance | Python |
-| `dimensionality` | PCA + scree + `n_pcs: auto` (knee, logged) | Python · GPU |
-| `integration` | Harmony (CPU); scVI (GPU-gated) | Python · GPU |
-| `clustering` | Leiden + neighbors on the integrated embedding | Python · GPU |
-| `subclustering` | recursive Leiden with sc-SHC significance | Python |
-| `annotation` (+ consensus, diagnostics, adjudication) | marker-vote; CellTypist; passthrough; scDiagnostics | Python (+R) |
-| `reference_mapping` | scArches (atlas-agnostic) | Python |
-| `integration_benchmark` | scIB-style metrics | Python |
+| `feature_selection` | HVG; [Seurat v3](https://doi.org/10.1016/j.cell.2019.05.031); [Pearson-residuals](https://doi.org/10.1186/s13059-021-02451-7)/[deviance](https://doi.org/10.1186/s13059-019-1861-6) | Python |
+| `dimensionality` | PCA + scree + `n_pcs: auto` ([knee](https://github.com/arvkevi/kneed), logged) | Python · GPU |
+| `integration` | [Harmony](https://github.com/slowkow/harmonypy) (CPU); [scVI](https://github.com/scverse/scvi-tools) (GPU-gated) | Python · GPU |
+| `clustering` | [Leiden](https://github.com/vtraag/leidenalg) + neighbors on the integrated embedding | Python · GPU |
+| `subclustering` | recursive Leiden with [sc-SHC](https://github.com/igrabski/sc-SHC) significance; [CHOIR](https://github.com/corceslab/CHOIR) | Python |
+| `annotation` (+ consensus, diagnostics, adjudication) | marker-vote; [CellTypist](https://github.com/Teichlab/celltypist); passthrough; [scDiagnostics](https://github.com/ccb-hms/scDiagnostics) | Python (+R) |
+| `reference_mapping` | [scArches](https://github.com/theislab/scarches) (atlas-agnostic) | Python |
+| `integration_benchmark` | [scIB](https://github.com/theislab/scib)-style metrics | Python |
 | `population_identity` | population-level identity scoring | Python |
-| `state_scoring` | curated cell-state program scoring — scanpy `score_genes` + decoupler AUCell (stress/HSP, hypoxia, IFN, senescence, fibrosis) | Python |
-| `discovery` | de-novo program discovery — consensus NMF (replicate fits + KMeans consensus spectra, cNMF-style) | Python |
+| `state_scoring` | curated cell-state program scoring — [scanpy](https://github.com/scverse/scanpy) `score_genes` + [decoupler](https://github.com/scverse/decoupler) [AUCell](https://doi.org/10.1038/nmeth.4463) (stress/HSP, hypoxia, IFN, senescence, fibrosis) | Python |
+| `discovery` | de-novo program discovery — consensus NMF (replicate fits + KMeans consensus spectra, [cNMF](https://doi.org/10.7554/eLife.43803)-style) | Python |
 | `composition` | descriptive cell-type composition — overall, per-condition, per-sample proportions + stacked-bar figures | Python |
-| `embeddings` | UMAP + PHATE + PAGA (incl. PAGA-on-UMAP); feature/score overlays with opt-in MAGIC | Python |
-| `differential_expression` (+ `de_viz`) | donor-aware pseudobulk (edgeR); volcano | R |
+| `embeddings` | [UMAP](https://github.com/lmcinnes/umap) + [PHATE](https://github.com/KrishnaswamyLab/PHATE) + [PAGA](https://doi.org/10.1186/s13059-019-1663-x) (incl. PAGA-on-UMAP); feature/score overlays with opt-in [MAGIC](https://github.com/KrishnaswamyLab/MAGIC) | Python |
+| `differential_expression` (+ `de_viz`) | donor-aware pseudobulk ([edgeR](https://bioconductor.org/packages/edgeR)); volcano | R |
 | `differential_state` | donor-paired testing of per-cell state/program scores between conditions | Python |
-| `differential_abundance` | paired arcsin-sqrt t-test; Milo; scCODA; propeller | Python + R + isolated env |
-| `enrichment` (+ `enrichment_viz`) | GSEA; ORA; GSVA; decoupler activity (CollecTRI/PROGENy) | Python |
-| `coexpression` | hdWGCNA co-expression modules | isolated R env |
-| `grn` | pySCENIC regulons (GRNBoost2 → cisTarget → AUCell) | isolated env |
-| `perturbation` | CellOracle in-silico TF knockouts (ranked target table) | isolated env |
-| `cell_cell_communication` | LIANA consensus; Tensor-cell2cell; NicheNet + MultiNicheNet | Python + R |
-| `multicellular_programs` | DIALOGUE cross-cell-type coordinated programs | R |
-| `ccc_network` | topology (roles + PageRank); Ollivier-Ricci curvature | Python |
+| `differential_abundance` | paired arcsin-sqrt t-test; [Milo](https://github.com/MarioniLab/miloR); [scCODA](https://github.com/theislab/scCODA); [propeller](https://github.com/phipsonlab/speckle) | Python + R + isolated env |
+| `enrichment` (+ `enrichment_viz`) | [GSEA](https://doi.org/10.1073/pnas.0506580102); ORA; [GSVA](https://doi.org/10.1186/1471-2105-14-7); [decoupler](https://github.com/scverse/decoupler) activity ([CollecTRI](https://doi.org/10.1093/nar/gkad841)/[PROGENy](https://doi.org/10.1038/s41467-017-02391-6)) | Python |
+| `coexpression` | [hdWGCNA](https://github.com/smorabit/hdWGCNA) co-expression modules | isolated R env |
+| `grn` | [pySCENIC](https://github.com/aertslab/pySCENIC) regulons ([GRNBoost2](https://github.com/aertslab/arboreto) → cisTarget → [AUCell](https://doi.org/10.1038/nmeth.4463)) | isolated env |
+| `perturbation` | [CellOracle](https://github.com/morris-lab/CellOracle) in-silico TF knockouts (ranked target table) | isolated env |
+| `cell_cell_communication` | [LIANA](https://github.com/saezlab/liana-py) consensus; [Tensor-cell2cell](https://github.com/earmingol/cell2cell); [NicheNet](https://github.com/saeyslab/nichenetr) + [MultiNicheNet](https://github.com/saeyslab/multinichenetr) | Python + R |
+| `multicellular_programs` | [DIALOGUE](https://github.com/livnatje/DIALOGUE) cross-cell-type coordinated programs | R |
+| `ccc_network` | topology (roles + PageRank); [Ollivier-Ricci curvature](https://github.com/saibalmars/GraphRicciCurvature) | Python |
 | `ccc_viz` | dotplot / chord / Sankey / curvature-network / summary | Python |
-| `trajectory` (+ `trajectory_viz`) | scVelo RNA velocity per lineage (velocyto loom ingestion) | Python |
+| `trajectory` (+ `trajectory_viz`) | [scVelo](https://github.com/theislab/scvelo) RNA velocity per lineage ([velocyto](https://github.com/velocyto-team/velocyto.py) loom ingestion); [CellRank](https://github.com/theislab/cellrank) fate probabilities; [Palantir](https://github.com/dpeerlab/Palantir) and diffusion pseudotime; [CytoTRACE 2](https://github.com/digitalcytometry/cytotrace2) | Python |
 
 Two further slots (`integration_gate`, `molecular_inference`) are reserved in the
 planner and skip as *not yet implemented*.
@@ -307,14 +308,14 @@ the dispatch code, so create them exactly as named):
 
 | Environment | Powers | Why isolated |
 |---|---|---|
-| `pyscenic_env` | `grn` (pySCENIC) | pins `numpy`/`pandas`/`setuptools` incompatible with the core stack |
-| `hdwgcna_env` | `coexpression` (hdWGCNA) | R + Seurat/WGCNA stack |
-| `sccoda_env` | `differential_abundance` (scCODA) | older scipy/tensorflow pins |
-| `celloracle_env` | `perturbation` (CellOracle) | dependency isolation for reproducibility |
+| `pyscenic_env` | `grn` ([pySCENIC](https://github.com/aertslab/pySCENIC)) | pins `numpy`/`pandas`/`setuptools` incompatible with the core stack |
+| `hdwgcna_env` | `coexpression` ([hdWGCNA](https://github.com/smorabit/hdWGCNA)) | R + Seurat/WGCNA stack |
+| `sccoda_env` | `differential_abundance` ([scCODA](https://github.com/theislab/scCODA)) | older scipy/tensorflow pins |
+| `celloracle_env` | `perturbation` ([CellOracle](https://github.com/morris-lab/CellOracle)) | dependency isolation for reproducibility |
 | `scclr` | `preprocessing`/`dimensionality` (sparse PFlog1pPF + PCA) | pins `anndata<0.11`, Python ≤ 3.13 |
 
-R/Bioconductor methods (edgeR, Milo, propeller, NicheNet, MultiNicheNet, DIALOGUE,
-scDiagnostics) run over the Rscript/rpy2 bridge through one shared abstraction
+R/Bioconductor methods ([edgeR](https://bioconductor.org/packages/edgeR), [Milo](https://github.com/MarioniLab/miloR), [propeller](https://github.com/phipsonlab/speckle), [NicheNet](https://github.com/saeyslab/nichenetr), [MultiNicheNet](https://github.com/saeyslab/multinichenetr), [DIALOGUE](https://github.com/livnatje/DIALOGUE),
+[scDiagnostics](https://github.com/ccb-hms/scDiagnostics)) run over the Rscript/rpy2 bridge through one shared abstraction
 (`cellquorum.methods.r_method.RAnalysisMethod`). See
 [`docs/backends.md`](docs/backends.md) and [`envs/README.md`](envs/README.md) for
 setup and `make lock` for pinned environments.
@@ -458,15 +459,23 @@ tests require an Rscript + Bioconductor backend. Markers: `gpu`, `slow`, `r`,
 - [`docs/architecture.md`](docs/architecture.md) — engine design and execution model
 - [`docs/configuration.md`](docs/configuration.md) — configuration reference
 - [`docs/backends.md`](docs/backends.md) — backends and environments
+- [`docs/third-party-software.md`](docs/third-party-software.md) — the software CellQuorum calls: licenses and citations
 - [`docs/docker.md`](docs/docker.md) · [`docs/snakemake.md`](docs/snakemake.md) — containerized and orchestrated runs
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — roadmap and backlog
 - [`CHANGELOG.md`](CHANGELOG.md)
 
 ## Citing
 
-If you use CellQuorum in your research, please cite it using the metadata in
-[`CITATION.cff`](CITATION.cff).
+If you use CellQuorum in your research, please cite it (GitHub's "Cite this repository" button reads
+[`CITATION.cff`](CITATION.cff); a BibTeX entry is in
+[Third-party software](docs/third-party-software.md#citing-cellquorum)) **and the methods that
+produced your results**. Every method in the stage table above links to its project, and
+[Third-party software](docs/third-party-software.md) lists a citation for each.
 
 ## License
 
-BSD 3-Clause License. See [`LICENSE`](LICENSE).
+CellQuorum is released under the BSD 3-Clause License; see [`LICENSE`](LICENSE). The software it
+calls keeps its own licenses, several of them GPL, and one required dependency (`leidenalg`) is
+GPL-3.0-or-later. [Third-party software](docs/third-party-software.md#licensing-notes) lists each
+license and explains what that means if you redistribute a container or use CellQuorum
+commercially.
