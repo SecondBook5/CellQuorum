@@ -357,7 +357,6 @@ def _evaluate_qc(
         else:
             reasons.append(f"n_groups < min_groups ({effective_groups} < {min_groups})")
 
-    # Check one-donor-dominated.
     if max_group_frac_threshold is not None and max_group_frac > max_group_frac_threshold:
         reasons.append(
             f"one-donor-dominated (max_group_frac={max_group_frac:.2f} "

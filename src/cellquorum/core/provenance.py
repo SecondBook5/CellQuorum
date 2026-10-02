@@ -13,7 +13,6 @@ import numpy as np
 
 from cellquorum.core.exceptions import CellQuorumProvenanceError
 
-# Define primitive JSON-compatible values.
 type JsonPrimitive = str | int | float | bool | None
 
 # Define recursive JSON-compatible values.
@@ -155,19 +154,15 @@ def make_provenance_record(
         CellQuorumProvenanceError: If name, kind, description, or payload is invalid.
     """
 
-    # Validate the record name.
     record_name = _require_non_empty_string(name, field_name="name")
 
-    # Validate the record kind.
     record_kind = _require_non_empty_string(kind, field_name="kind")
 
-    # Validate the record description.
     record_description = _require_non_empty_string(description, field_name="description")
 
     # Convert the payload into a JSON-safe object.
     json_safe_payload = to_json_safe(payload)
 
-    # Validate the JSON-safe payload.
     validate_json_payload(json_safe_payload, context=f"provenance record '{record_name}'")
 
     # Resolve the creation timestamp.
@@ -236,7 +231,6 @@ def to_json_safe(value: object) -> JsonValue:
         # Retrieve the to_dict method.
         to_dict_method = value.to_dict
 
-        # Validate that to_dict is callable.
         if callable(to_dict_method):
             return to_json_safe(to_dict_method())
 
@@ -332,7 +326,6 @@ def _json_key_to_string(key: object) -> str:
         # Strip harmless whitespace.
         stripped_key = key.strip()
 
-        # Reject empty keys.
         if not stripped_key:
             raise CellQuorumProvenanceError("JSON provenance dictionary keys cannot be empty.")
 

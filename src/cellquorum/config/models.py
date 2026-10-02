@@ -101,7 +101,6 @@ class ProjectConfig(StrictBaseModel):
         # Strip surrounding whitespace from the project name.
         cleaned = value.strip()
 
-        # Reject empty project names.
         if not cleaned:
             raise ValueError("Project name cannot be empty.")
 
@@ -433,7 +432,6 @@ class RunConfig(StrictBaseModel):
             ValueError: If the seed is negative.
         """
 
-        # Reject negative random seeds.
         if value < 0:
             raise ValueError("random_seed must be non-negative.")
 

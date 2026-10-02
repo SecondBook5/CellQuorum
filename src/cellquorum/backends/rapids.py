@@ -99,7 +99,6 @@ class RapidsBackend(BaseBackend):
 
         # Iterate over declared requirements.
         for requirement in self.requirements():
-            # Check Python package requirements.
             if requirement.requirement_type == "python_package":
                 # Determine whether the Python package can be found.
                 package_available = self._python_package_available(requirement.name)
@@ -128,7 +127,6 @@ class RapidsBackend(BaseBackend):
             # Count visible CUDA devices through CuPy.
             device_count = self._cupy_cuda_device_count()
 
-            # Store the visible CUDA device count.
             details["cuda_device_count"] = device_count
 
             # Store whether CUDA appears visible through CuPy.

@@ -56,7 +56,6 @@ def load_config(config_path: str | Path) -> CellQuorumConfig:
     # Normalize the config path to a Path object.
     path = Path(config_path).expanduser()
 
-    # Validate that the config file exists.
     if not path.exists():
         raise ConfigLoadError(f"Configuration file does not exist: {path}")
 
@@ -118,7 +117,6 @@ def validate_omegaconf(config: DictConfig | ListConfig) -> CellQuorumConfig:
     except Exception as error:
         raise ConfigLoadError(f"Failed to resolve OmegaConf configuration: {error}") from error
 
-    # Validate that the resolved container is a mapping.
     if not isinstance(container, Mapping):
         raise ConfigLoadError(
             "Resolved configuration must be a mapping at the top level. "
@@ -185,7 +183,6 @@ def save_resolved_config(config: CellQuorumConfig, output_path: str | Path) -> P
     # Normalize the output path.
     path = Path(output_path).expanduser()
 
-    # Validate that the output path uses a JSON suffix.
     if path.suffix.lower() != ".json":
         raise ValueError(
             "Resolved configuration output must use a '.json' suffix. " f"Received: {path.name}"

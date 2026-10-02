@@ -160,7 +160,6 @@ class AmbientCorrectionStage:
         else:
             corrected_adata = adata
 
-        # Write the contamination-fraction CSV artifact.
         artifacts = []
         if fractions:
             csv_path = out_base / "soupx_contamination_fractions.csv"

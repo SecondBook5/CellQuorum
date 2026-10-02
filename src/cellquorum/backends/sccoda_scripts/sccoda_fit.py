@@ -229,7 +229,6 @@ def _run_fit(
     # Set FDR threshold
     res.set_fdr(est_fdr=0.1)
 
-    # Extract effect_df
     effect_df = res.effect_df
 
     # Keep only the rows for the condition term. With extra covariates in the

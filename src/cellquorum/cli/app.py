@@ -61,10 +61,8 @@ def _print_stage_table(plan: PipelinePlan) -> None:
     # Add the stage name column.
     table.add_column("Stage", style="cyan", no_wrap=True)
 
-    # Add the status column.
     table.add_column("Status", style="bold")
 
-    # Add the reason column.
     table.add_column("Reason")
 
     # Iterate over each planned stage.
@@ -75,14 +73,12 @@ def _print_stage_table(plan: PipelinePlan) -> None:
         # Choose a display style based on stage status.
         status_style = "green" if stage.enabled else "red"
 
-        # Add the stage row.
         table.add_row(
             stage.name,
             f"[{status_style}]{status_label}[/{status_style}]",
             stage.reason,
         )
 
-    # Print the table to the console.
     console.print(table)
 
 
@@ -113,7 +109,6 @@ def _print_backend_table(plan: PipelinePlan) -> None:
     # Add the missing requirements column.
     table.add_column("Missing")
 
-    # Add the warnings column.
     table.add_column("Warnings")
 
     # Iterate over each backend status row.
@@ -142,7 +137,6 @@ def _print_backend_table(plan: PipelinePlan) -> None:
             warnings,
         )
 
-    # Print the table to the console.
     console.print(table)
 
 
@@ -248,7 +242,6 @@ def plan_command(
         # Load the resolved CellQuorum configuration.
         loaded_config = load_config(config)
 
-        # Build the pipeline plan.
         pipeline_plan = build_pipeline_plan(loaded_config)
 
     # Convert configuration errors into CLI-friendly failures.
@@ -272,13 +265,11 @@ def plan_command(
     # Print the selected profile.
     console.print(f"Profile: [cyan]{pipeline_plan.profile}[/cyan]\n")
 
-    # Print the stage plan table.
     _print_stage_table(pipeline_plan)
 
     # Print the backend status table.
     _print_backend_table(pipeline_plan)
 
-    # Print planner warnings.
     _print_planner_warnings(pipeline_plan)
 
 
@@ -453,10 +444,8 @@ def run_command(
     # Print the provenance directory.
     console.print(f"Provenance: [cyan]{summary['provenance_dir']}[/cyan]")
 
-    # Print the artifact manifest path.
     console.print(f"Artifact manifest: [cyan]{summary['artifact_manifest']}[/cyan]")
 
-    # Print the pipeline plan path.
     console.print(f"Pipeline plan: [cyan]{summary['pipeline_plan']}[/cyan]")
 
     # Print the backend status path.
@@ -466,15 +455,12 @@ def run_command(
     if executed:
         console.print("\n[bold]Stage execution summary[/bold]")
 
-        # Print successful stages.
         if successful_stages:
             console.print(f"[green]Successful: {', '.join(successful_stages)}[/green]")
 
-        # Print skipped stages.
         if skipped_stages:
             console.print(f"[yellow]Skipped: {', '.join(skipped_stages)}[/yellow]")
 
-        # Print failed stages.
         if failed_stages:
             console.print(f"[red]Failed: {', '.join(failed_stages)}[/red]")
 

@@ -14,7 +14,6 @@ type PathLike = str | Path
 # Define scalar values commonly used in configuration, metadata, and metrics.
 type ScalarValue = str | int | float | bool | None
 
-# Define primitive JSON-compatible values.
 type JsonPrimitive = str | int | float | bool | None
 
 # Define recursive JSON-compatible values.

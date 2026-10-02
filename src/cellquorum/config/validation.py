@@ -83,7 +83,6 @@ def format_field_path(*parts: str | int) -> str:
     # Convert every path component into a stripped string.
     cleaned_parts = [str(part).strip() for part in parts]
 
-    # Reject empty path components.
     if any(not part for part in cleaned_parts):
         raise ConfigValidationError(f"Field path contains an empty component: {cleaned_parts}.")
 
@@ -320,7 +319,6 @@ def require_float(
             f"Received: {type(value).__name__}."
         )
 
-    # Convert the value to a float.
     float_value = float(value)
 
     # Validate the lower bound when supplied.
@@ -378,7 +376,6 @@ def require_allowed_value(
         ConfigValidationError: If value is not a string or is unsupported.
     """
 
-    # Validate the value as a non-empty string.
     cleaned_value = require_non_empty_string(value, field_path=field_path)
 
     # Convert allowed values into a set for lookup.
@@ -426,10 +423,8 @@ def require_string_list(value: object, *, field_path: str) -> list[str]:
 
     # Validate each list element.
     for index, item in enumerate(value):
-        # Build the item field path.
         item_path = format_field_path(field_path, index)
 
-        # Validate and append the cleaned item.
         cleaned_values.append(require_non_empty_string(item, field_path=item_path))
 
     return cleaned_values

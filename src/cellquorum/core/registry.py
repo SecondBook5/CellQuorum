@@ -333,7 +333,6 @@ class StageRegistry:
         # Strip harmless surrounding whitespace.
         normalized_name = stage_name.strip()
 
-        # Reject empty names.
         if not normalized_name:
             raise StageRegistryError("Stage name cannot be empty.")
 
@@ -392,7 +391,6 @@ def build_stage_registry(stages: list[PipelineStage] | None = None) -> StageRegi
         StageRegistry containing the supplied stages.
     """
 
-    # Create an empty stage registry.
     registry = StageRegistry()
 
     # Return the empty registry when no stages are provided.

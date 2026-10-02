@@ -74,7 +74,6 @@ class NormalizationConfig(StrictBaseModel):
         # Strip surrounding whitespace.
         cleaned = value.strip()
 
-        # Reject empty layer names.
         if not cleaned:
             raise ValueError("Layer names cannot be empty.")
 

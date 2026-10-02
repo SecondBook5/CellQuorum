@@ -182,14 +182,12 @@ class RscriptBackend(BaseBackend):
             subprocess.TimeoutExpired: If Rscript exceeds the timeout.
         """
 
-        # Validate that the expression is a string.
         if not isinstance(expression, str):
             raise TypeError(
                 "run_expression expected a string R expression. "
                 f"Received: {type(expression).__name__}"
             )
 
-        # Validate that the expression is not empty.
         if not expression.strip():
             raise ValueError("run_expression expected a non-empty R expression.")
 

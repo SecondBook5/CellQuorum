@@ -204,7 +204,6 @@ class PipelinePlanner:
                 else "Disabled by configuration."
             )
 
-            # Add the planned stage.
             planned_stages.append(
                 PlannedStage(
                     name=stage_name,
@@ -273,5 +272,4 @@ def build_pipeline_plan(
         PipelinePlan describing configured stages and backend status.
     """
 
-    # Create a planner and build the plan.
     return PipelinePlanner(config=config, backend_registry=backend_registry).build_plan()

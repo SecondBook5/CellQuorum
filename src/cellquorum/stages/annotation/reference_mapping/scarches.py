@@ -469,7 +469,6 @@ class ScArchesMethod(AnalysisMethod):
         min_label_prob = config.get("min_label_prob")
         label_prob_col = config.get("label_prob_col")
 
-        # Load atlas.
         atlas = sc.read_h5ad(atlas_path)
 
         # Apply generic filters to the reference atlas.
@@ -712,7 +711,6 @@ class ScArchesMethod(AnalysisMethod):
                 pred_hard = qmodel.predict(q)
                 pred_soft = qmodel.predict(q, soft=True)
 
-                # Get latents.
                 q_latent = qmodel.get_latent_representation(q)
                 ref_latent = scanvi.get_latent_representation(atlas_train)
 

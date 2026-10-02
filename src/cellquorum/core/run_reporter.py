@@ -65,7 +65,6 @@ class RunReporter:
         if not self._verbose or self._level == "quiet":
             return
 
-        # Build banner text.
         banner_text = f"CellQuorum v{version} · {project_name} · run {run_id}"
 
         # Render banner as a Rich panel.
@@ -97,7 +96,6 @@ class RunReporter:
         table.add_column("Key", style="cyan")
         table.add_column("Value")
 
-        # Add compute backend and seed.
         table.add_row("Backend", config.compute.backend)
         table.add_row("Random seed", str(config.run.random_seed))
 
@@ -174,7 +172,6 @@ class RunReporter:
                     if params:
                         table.add_row(f"  {stage_name}", ", ".join(params))
 
-        # Print the table.
         self._console.print(table)
 
     def stage_start(self, name: str, index: int, total: int) -> None:
@@ -270,7 +267,6 @@ class RunReporter:
         if not self._verbose:
             return
 
-        # Create summary table.
         table = Table(title="Run Summary")
         table.add_column("Stage", style="cyan")
         table.add_column("Status")
@@ -301,7 +297,6 @@ class RunReporter:
                 style=status_style,
             )
 
-        # Print the table.
         self._console.print(table)
 
         # Print summary stats.

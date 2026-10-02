@@ -92,7 +92,6 @@ def assert_integer_valued(X: np.ndarray | sp.spmatrix, *, layer: str) -> None:
     if sample.size == 0:
         return
 
-    # Reject negatives.
     if sample.min() < 0:
         raise CellQuorumContractError(
             f"Layer '{layer}' declared as counts but contains negatives (min={sample.min():.4g})."

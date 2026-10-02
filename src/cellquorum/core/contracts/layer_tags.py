@@ -47,7 +47,6 @@ def set_layer_tag(
     # Ensure the layer_tags sub-namespace exists.
     tags = cq.setdefault("layer_tags", {})
 
-    # Store the tag for this layer.
     tags[layer] = {"kind": kind, "recipe": recipe}
 
 

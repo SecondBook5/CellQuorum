@@ -96,12 +96,10 @@ def export_dialogue_inputs(
         # Write expr.mtx (genes × cells, so transpose)
         scipy.io.mmwrite(ct_dir / "expr.mtx", mat.T.tocoo())
 
-        # Write genes.txt
         with open(ct_dir / "genes.txt", "w") as f:
             for gene in adata_sub.var_names:
                 f.write(f"{gene}\n")
 
-        # Write cells.txt
         cell_ids = list(adata_sub.obs_names)
         with open(ct_dir / "cells.txt", "w") as f:
             for cell_id in cell_ids:
@@ -113,7 +111,6 @@ def export_dialogue_inputs(
         X_df.insert(0, "cell", cell_ids)
         X_df.to_csv(ct_dir / "X.csv", index=False)
 
-        # Compute cellQ
         if quality_col is not None:
             cellQ = adata_sub.obs[quality_col].to_numpy()
         else:
@@ -132,13 +129,11 @@ def export_dialogue_inputs(
         if condition_col is not None:
             meta_df["pheno"] = adata_sub.obs[condition_col].to_numpy()
 
-        # Add confounders
         for conf in confounders:
             meta_df[conf] = adata_sub.obs[conf].to_numpy()
 
         meta_df.to_csv(ct_dir / "meta.csv", index=False)
 
-    # Write celltypes.json
     with open(scratch / "celltypes.json", "w") as f:
         json.dump(celltypes_json, f, indent=2)
 

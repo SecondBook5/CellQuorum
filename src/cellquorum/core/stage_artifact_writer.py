@@ -64,7 +64,6 @@ class StageArtifactWriter:
         # Store the ArtifactManager that owns the tested write/register logic.
         self._manager = manager
 
-        # Store the default namespace applied when a call omits one.
         self._default_namespace = default_namespace
 
         # Store the default subdirectory applied when a call omits one.

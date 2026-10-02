@@ -92,7 +92,6 @@ def plot_group_recovery(
     # Apply CellQuorum axis style.
     apply_cellquorum_axis_style(ax)
 
-    # Save figure.
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     save_cellquorum_figure(fig, out_path)
@@ -159,7 +158,6 @@ def plot_stability_curve(
     # Apply CellQuorum axis style.
     apply_cellquorum_axis_style(ax)
 
-    # Save figure.
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     save_cellquorum_figure(fig, out_path)
@@ -273,7 +271,6 @@ def plot_subcluster_qc_panel(
     # Adjust layout.
     plt.tight_layout()
 
-    # Save figure.
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     save_cellquorum_figure(fig, out_path)

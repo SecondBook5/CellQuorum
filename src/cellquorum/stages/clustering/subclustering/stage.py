@@ -98,7 +98,6 @@ class SubclusteringStage:
         Returns:
             StageResult with focused/filtered subset as adata.
         """
-        # Resolve config and adata.
         config = getattr(context, "config", None)
         sc_config = getattr(config, "subclustering", None)
         adata = getattr(context, "adata", None)
@@ -491,7 +490,6 @@ class SubclusteringStage:
             metrics["donor_gate_n_pass"] = n_pass
             metrics["donor_gate_n_fail"] = n_fail
 
-            # Store gate results in uns.
             if "subclustering" not in filtered.uns:
                 filtered.uns["subclustering"] = {}
             filtered.uns["subclustering"]["donor_gate"] = gate_result
@@ -533,10 +531,8 @@ class SubclusteringStage:
                 # Default: flag-not-drop.
                 notes.append("Action=flag: retained all cells with QC flags")
         elif group_key is None:
-            # Skip donor gate: not configured.
             notes.append("Donor gate: skipped (group_key not configured)")
         elif not has_cluster_labels:
-            # Skip donor gate: no cluster labels to gate.
             notes.append("Donor gate: skipped (no cluster labels)")
         # The embedding-failed case (group_key set + labels present but
         # embedding_ready is False) already recorded its own skip note above.

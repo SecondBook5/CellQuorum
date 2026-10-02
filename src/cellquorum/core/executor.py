@@ -69,7 +69,6 @@ class StageRegistry:
             TypeError: If the stage does not expose a usable name.
         """
 
-        # Validate that the stage exposes a string name.
         if not isinstance(getattr(stage, "name", None), str):
             raise TypeError("Registered pipeline stages must expose a string 'name' attribute.")
 
@@ -216,7 +215,6 @@ class PipelineExecutor:
             TypeError: If context or plan has the wrong type.
         """
 
-        # Validate executor inputs.
         validate_executor_inputs(context=context, plan=plan)
 
         # Default to a no-op reporter when none provided (backward compat).
@@ -573,14 +571,12 @@ def validate_executor_inputs(*, context: PipelineContext, plan: PipelinePlan) ->
         TypeError: If either input has the wrong type.
     """
 
-    # Validate the context type.
     if not isinstance(context, PipelineContext):
         raise TypeError(
             "PipelineExecutor.run expected context to be a PipelineContext. "
             f"Received: {type(context).__name__}"
         )
 
-    # Validate the plan type.
     if not isinstance(plan, PipelinePlan):
         raise TypeError(
             "PipelineExecutor.run expected plan to be a PipelinePlan. "

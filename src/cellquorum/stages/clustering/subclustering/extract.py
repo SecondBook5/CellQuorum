@@ -118,7 +118,6 @@ def apply_group_filter(
     mask = adata.obs[group_key].isin(kept)
     filtered = adata[mask].copy()
 
-    # Build provenance.
     provenance = {
         "applied": True,
         "group_key": group_key,

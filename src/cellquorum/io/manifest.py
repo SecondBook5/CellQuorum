@@ -354,7 +354,6 @@ def _clean_optional_string(value: object) -> str | None:
         Cleaned string value, or None when the value is missing.
     """
 
-    # Return None for missing values.
     if _is_missing_value(value):
         return None
 
@@ -428,10 +427,8 @@ def _normalize_columns(dataframe: pd.DataFrame) -> pd.DataFrame:
         ManifestError: If column names are empty or duplicated after stripping.
     """
 
-    # Build cleaned column names.
     cleaned_columns = [str(column).strip() for column in dataframe.columns]
 
-    # Reject empty column names.
     if any(not column for column in cleaned_columns):
         raise ManifestError("Manifest contains one or more empty column names.")
 
@@ -545,14 +542,12 @@ def validate_manifest_dataframe(
             f"Received: {type(dataframe).__name__}."
         )
 
-    # Reject empty manifests.
     if dataframe.empty:
         raise ManifestError("Manifest must contain at least one sample row.")
 
     # Normalize column names before validation.
     normalized = _normalize_columns(dataframe)
 
-    # Validate required columns.
     _validate_required_columns(normalized)
 
     # Normalize the optional source path.
@@ -574,7 +569,6 @@ def validate_manifest_dataframe(
             row_number=row_offset,
         )
 
-        # Reject duplicate sample IDs.
         if sample_id in seen_sample_ids:
             raise ManifestError(f"Manifest contains duplicate sample_id: '{sample_id}'.")
 

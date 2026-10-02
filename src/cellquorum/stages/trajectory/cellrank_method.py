@@ -79,7 +79,6 @@ class CellRankMethod(AnalysisMethod):
         # Optionally load the whole-object velocity h5ad for a VelocityKernel.
         velocity_adata = self._load_velocity_adata(config, context, work, warnings)
 
-        # Build the kernel.
         try:
             kernel, kernel_info = _cellrank.build_kernel(
                 work,

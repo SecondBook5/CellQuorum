@@ -95,7 +95,6 @@ def normalize_adata(
             "normalize_adata expected an AnnData object. " f"Received: {type(adata).__name__}."
         )
 
-    # Validate config type.
     if not isinstance(config, NormalizationConfig):
         raise PreprocessingNormalizationError(
             "config must be a NormalizationConfig. " f"Received: {type(config).__name__}."
@@ -114,7 +113,6 @@ def normalize_adata(
         preserve_layer=config.preserve_counts_layer,
     )
 
-    # Validate input matrix.
     validate_count_matrix(input_matrix)
 
     # PFlog1pPF is the real Booeshaghi/Pachter transform, run through the
@@ -231,7 +229,6 @@ def validate_count_matrix(matrix: np.ndarray | sp.spmatrix) -> None:
         PreprocessingNormalizationError: If the matrix is invalid.
     """
 
-    # Validate that the matrix is numeric.
     if not np.issubdtype(matrix.dtype, np.number):
         raise PreprocessingNormalizationError("Count matrix must be numeric.")
 
@@ -397,7 +394,6 @@ def apply_recipe_pf_v1(
         # Dense division.
         output = matrix / safe_cell_totals[:, np.newaxis]
 
-    # Build diagnostics.
     diagnostics = {
         "n_zero_depth_cells": n_zero_depth,
     }
@@ -456,7 +452,6 @@ def apply_recipe_log1p_cp10k_v1(
     else:
         output = np.log1p(scaled)
 
-    # Build diagnostics.
     diagnostics = {
         "n_zero_depth_cells": n_zero_depth,
         "target_sum": target_sum,
@@ -514,7 +509,6 @@ def apply_recipe_log1p_pf_v1(
     else:
         output = np.log1p(pf)
 
-    # Build diagnostics.
     diagnostics = {
         "n_zero_depth_cells": n_zero_depth,
     }

@@ -106,7 +106,6 @@ class MarkerVoteMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         """Require the cluster column and a log-normalized score layer."""
 
-        # Read the cluster key + score layer from config.
         cluster_key = config.get("cluster_key", "leiden")
         score_layer = config.get("score_layer", "cellquorum_normalized")
 
@@ -121,7 +120,6 @@ class MarkerVoteMethod(AnalysisMethod):
     def requires_obs(self, config: dict) -> list[str]:
         """Return the cluster key that must exist for annotation to run."""
 
-        # Read the cluster key from config.
         cluster_key = config.get("cluster_key", "leiden")
 
         # Require the cluster column to exist.

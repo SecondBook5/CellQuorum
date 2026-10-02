@@ -506,7 +506,6 @@ class StageExecutionRecord:
             Skipped StageExecutionRecord.
         """
 
-        # Resolve the start timestamp.
         resolved_start = _ensure_utc_datetime(started_at_utc or datetime.now(UTC))
 
         # Resolve the end timestamp.

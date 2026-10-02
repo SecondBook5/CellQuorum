@@ -206,7 +206,6 @@ class ScibBenchmarkMethod(AnalysisMethod):
         batch_metrics = {}
         bio_metrics = {}
 
-        # Build kNN neighbors.
         nbrs = pynndescent(X_post, n_neighbors=n_neighbors)
 
         # --- Batch metrics (label-free) --- #
@@ -318,13 +317,11 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 details={"method": self.name},
             )
 
-        # Extract config.
         batch_key = config.get("batch_key", "batch")
         label_key = config.get("label_key", "cell_type")
         label_key_fallback = config.get("label_key_fallback")
         embeddings = config.get("embeddings", [])
 
-        # Resolve label column.
         label_col = None
         if label_key in adata.obs.columns:
             label_col = label_key

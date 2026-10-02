@@ -121,7 +121,6 @@ class AnnotationConsensusStage:
         }
         adata.uns.setdefault("cellquorum", {})["annotation_consensus"] = payload
 
-        # Write artifacts.
         manager = ArtifactManager.from_root(context.paths.root)
         artifacts = [
             manager.write_dataframe(

@@ -167,7 +167,6 @@ class RBackend(BaseBackend):
                 f"Received: {type(expression).__name__}"
             )
 
-        # Validate that the expression is not empty.
         if not expression.strip():
             # Raise a specific value error for empty expressions.
             raise ValueError("run_expression expected a non-empty R expression.")

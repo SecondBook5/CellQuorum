@@ -56,7 +56,6 @@ class HarmonyMethod(AnalysisMethod):
     def requires_obs(self, config: dict) -> list[str]:
         """Return the batch key that must exist for integration to run."""
 
-        # Read the batch column from config.
         batch_key = config.get("batch_key", "patient_id")
 
         # Require the batch column to exist.

@@ -146,7 +146,6 @@ class PreprocessingStage:
             stage_name=self.name,
         )
 
-        # Build stage artifacts.
         stage_artifacts = [
             StageArtifact(
                 name="preprocessing_summary",
@@ -363,13 +362,11 @@ def get_context_adata(context: PipelineContext) -> ad.AnnData:
     # Prefer the formal PipelineContext helper when present.
     require_adata = getattr(context, "require_adata", None)
 
-    # Use require_adata when callable.
     if callable(require_adata):
         try:
             # Retrieve AnnData through the context helper.
             adata = require_adata()
 
-        # Convert context errors into preprocessing stage errors.
         except Exception as error:
             raise PreprocessingStageError(
                 "Preprocessing stage requires an AnnData object in context."
@@ -532,7 +529,6 @@ def write_preprocessing_summary(
         },
     }
 
-    # Write summary to JSON.
     summary_path = output_dir / "preprocessing_summary.json"
     with summary_path.open("w") as f:
         json.dump(summary, f, indent=2)
@@ -560,7 +556,6 @@ def build_preprocessing_stage_notes(
         Stage note strings.
     """
 
-    # Initialize notes.
     notes = [
         f"Preprocessing completed with recipe '{normalization_result.recipe}'.",
         (

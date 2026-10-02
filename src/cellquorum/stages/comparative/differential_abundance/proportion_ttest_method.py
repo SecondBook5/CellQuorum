@@ -86,7 +86,6 @@ class ProportionTTestMethod(AnalysisMethod):
             cell_type_col=cell_type_col,
         )
 
-        # Compute proportions: counts / total_per_sample
         total_per_sample = cc.counts.sum(axis=1)
         proportion_df = cc.counts.div(total_per_sample, axis=0)
 
@@ -133,7 +132,6 @@ class ProportionTTestMethod(AnalysisMethod):
             paired_mask = sample_df[donor_col].isin(paired_donors)
             sample_df = sample_df[paired_mask].copy()
 
-            # Build results for each cell type
             results = []
             cell_types = [col for col in cc.counts.columns]
 
@@ -211,7 +209,6 @@ class ProportionTTestMethod(AnalysisMethod):
                     }
                 )
 
-            # Convert to DataFrame
             results_df = pd.DataFrame(results)
 
             results_df["fdr"] = bh_fdr(results_df["pvalue"].to_numpy(), method=fdr_method)
@@ -351,7 +348,6 @@ class ProportionTTestMethod(AnalysisMethod):
                     }
                 )
 
-            # Convert to DataFrame
             results_df = pd.DataFrame(results)
 
             results_df["fdr"] = bh_fdr(results_df["pvalue"].to_numpy(), method=fdr_method)

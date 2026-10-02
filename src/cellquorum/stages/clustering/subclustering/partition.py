@@ -55,7 +55,6 @@ def run_choir(
     Raises:
         CellQuorumBackendError: If CHOIR fails after starting.
     """
-    # Skip if backend unavailable.
     if backend is None or shutil.which("Rscript") is None:
         return MethodSkip(
             reason="CHOIR partition skipped: Rscript unavailable",
@@ -141,7 +140,6 @@ def run_choir(
         reduction_arg,
     ]
 
-    # Run choir.R.
     timeout = choir_config.get("timeout_seconds", 1800)
     result = backend.run_script(_CHOIR_R, args, timeout=timeout)
 
@@ -203,7 +201,6 @@ def run_scshc_test(
     Raises:
         CellQuorumBackendError: If sc-SHC fails after starting.
     """
-    # Skip if backend unavailable.
     if backend is None or shutil.which("Rscript") is None:
         return MethodSkip(
             reason="sc-SHC test skipped: Rscript unavailable",
@@ -245,7 +242,6 @@ def run_scshc_test(
     clusters_csv = scratch_dir / "scshc_clusters.csv"
     out_csv = scratch_dir / "scshc_output.csv"
 
-    # Write adata with counts as X.
     scshc_adata = ad.AnnData(X=adata.layers[counts_layer].copy())
     scshc_adata.obs_names = adata.obs_names
     scshc_adata.var_names = adata.var_names
@@ -265,7 +261,6 @@ def run_scshc_test(
     # Build R script args.
     args = [str(in_h5ad), str(clusters_csv), str(out_csv), str(alpha), batch_arg]
 
-    # Run scshc_test.R.
     timeout = 1800
     result = backend.run_script(_SCSHC_TEST_R, args, timeout=timeout)
 
@@ -338,7 +333,6 @@ def _read_barcode_csv(path: Path, value_col: str) -> pd.DataFrame:
     if value_col not in df.columns:
         raise ValueError(f"CSV missing value column '{value_col}': {path}")
 
-    # Set barcode as index and return value_col.
     df = df.set_index(barcode_col)[[value_col]]
     return df
 

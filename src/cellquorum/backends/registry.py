@@ -231,7 +231,6 @@ class BackendRegistry:
             # Retrieve the backend, raising KeyError if the name is invalid.
             backend = self.get(name)
 
-            # Check the backend status.
             status = backend.status()
 
             # Return the first backend that is available.

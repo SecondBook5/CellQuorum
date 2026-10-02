@@ -655,7 +655,6 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         if df.empty:
             return pd.DataFrame()
 
-        # Set barcode as index.
         df = df.set_index(barcode_col)
         return df
 

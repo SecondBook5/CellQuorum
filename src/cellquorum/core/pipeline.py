@@ -277,7 +277,6 @@ def build_pipeline_context(
         "bootstrap_time_utc": datetime.now(UTC).isoformat(),
     }
 
-    # Build and return the pipeline context.
     return PipelineContext(
         config=config,
         paths=paths,
@@ -726,7 +725,6 @@ def write_pipeline_provenance(
         index=False,
     )
 
-    # Write the backend status as JSON.
     artifact_manager.write_json(
         plan.backend_status_table,
         name="backend_status_json",
@@ -743,7 +741,6 @@ def write_pipeline_provenance(
         index=False,
     )
 
-    # Write planner warnings as JSON.
     artifact_manager.write_json(
         {"warnings": plan.warnings},
         name="planner_warnings",
@@ -795,7 +792,6 @@ def write_pipeline_provenance(
     # durable primitive that future resume logic can read stage-by-stage.
     _write_stage_completion_sidecars(artifact_manager, records)
 
-    # Write the artifact manifest.
     artifact_manager.write_manifest()
 
     return artifact_manager
@@ -846,7 +842,6 @@ def bootstrap_pipeline_run(
         # Mark the end of the bootstrap lifecycle before provenance writing.
         bootstrap_ended_at = datetime.now(UTC)
 
-        # Build the bootstrap execution record.
         bootstrap_record = StageExecutionRecord(
             stage_name="bootstrap",
             status="success",
@@ -1160,7 +1155,6 @@ def execute_pipeline_run(
             logger.warning(inherited_warning)
             _write_inherited_artifacts_report(context=context, artifacts=inherited)
 
-        # Build the bootstrap execution record.
         bootstrap_record = StageExecutionRecord(
             stage_name="bootstrap",
             status="success",

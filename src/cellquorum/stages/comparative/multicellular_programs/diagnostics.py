@@ -132,7 +132,6 @@ def program_stability(
     -------
     DataFrame with columns: program, mean_stability, n_resamples
     """
-    # Collect all programs
     all_programs = set()
     for match_dict in matches:
         all_programs.update(match_dict.keys())

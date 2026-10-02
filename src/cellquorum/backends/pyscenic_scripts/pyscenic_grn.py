@@ -139,7 +139,6 @@ def _read_h5_vector(node: Any) -> Any:
 
     # Read ordinary datasets directly.
     if isinstance(node, h5py.Dataset):
-        # Load the dataset values.
         values = np.asarray(node[()])
 
         # Decode string-like datasets into normal Python strings.
@@ -157,7 +156,6 @@ def _read_h5_vector(node: Any) -> Any:
         # Read the missing-value mask.
         mask = np.asarray(node["mask"][()], dtype=bool).reshape(-1)
 
-        # Reject malformed nullable vectors.
         if values.shape[0] != mask.shape[0]:
             raise ValueError(
                 f"Malformed nullable vector {node.name!r}: "
@@ -258,7 +256,6 @@ def _read_h5_matrix(node: Any) -> Any:
     if encoding_type == "csc_matrix":
         return sp.csc_matrix((data, indices, indptr), shape=shape)
 
-    # Reject unsupported matrix encodings.
     raise ValueError(
         f"Unsupported H5AD matrix encoding at {node.name!r}: " f"encoding_type={encoding_type!r}."
     )
@@ -298,7 +295,6 @@ def _read_axis_names(handle: Any, axis_name: str) -> Any:
     # Decode the index vector directly.
     raw_names = _read_h5_vector(group[index_key])
 
-    # Reject missing names.
     if any(value is None for value in raw_names):
         raise ValueError(f"/{axis_name}/{index_key} contains missing names.")
 
@@ -331,11 +327,9 @@ def _assert_raw_counts(matrix: Any, source: str) -> None:
     if not np.isfinite(values).all():
         raise ValueError(f"{source} contains NaN or infinite values.")
 
-    # Reject negative values.
     if np.any(values < 0):
         raise ValueError(f"{source} contains negative values and is not raw counts.")
 
-    # Reject non-integer values.
     if not np.allclose(values, np.rint(values), rtol=0.0, atol=1e-6):
         raise ValueError(
             f"{source} contains non-integer values. pySCENIC requires raw counts, "
@@ -346,7 +340,6 @@ def _assert_raw_counts(matrix: Any, source: str) -> None:
 def main() -> None:
     """Export raw counts to loom and run the pySCENIC CLI."""
 
-    # Create the argument parser.
     p = argparse.ArgumentParser(
         description="pySCENIC GRN inference (protocol CLI; backend, opt-in)"
     )
@@ -370,19 +363,15 @@ def main() -> None:
     # Add the output directory argument.
     p.add_argument("--out-dir", required=True)
 
-    # Add the tag argument.
     p.add_argument("--tag", required=True)
 
-    # Add the worker count argument.
     p.add_argument("--num-workers", type=int, default=16)
 
     # Add the maximum cell count argument.
     p.add_argument("--max-cells", type=int, default=20000)
 
-    # Add the layer argument.
     p.add_argument("--layer", default="counts")
 
-    # Add the seed argument.
     p.add_argument("--seed", type=int, default=0)
 
     # Parse command-line arguments.
@@ -453,7 +442,6 @@ def main() -> None:
 
         # Fall back to X only when the count layer is absent.
         elif "X" in f:
-            # Read the fallback matrix.
             matrix = _read_h5_matrix(f["X"])
 
             # Record the fallback matrix source.
@@ -463,13 +451,11 @@ def main() -> None:
         else:
             raise KeyError(f"H5AD contains neither /layers/{args.layer} nor /X.")
 
-        # Read cell identifiers directly from /obs.
         cell_ids = _read_axis_names(f, "obs")
 
         # Read gene identifiers directly from /var.
         gene_ids = _read_axis_names(f, "var")
 
-    # Validate matrix dimensions.
     if matrix.shape != (cell_ids.shape[0], gene_ids.shape[0]):
         raise ValueError(
             f"H5AD dimension mismatch: matrix={matrix.shape}, "
@@ -549,7 +535,6 @@ def main() -> None:
 
         # Open the persistent log in append mode.
         with open(log_path, "a", encoding="utf-8") as lg:
-            # Write the command header.
             lg.write(f"\n===== [scenic:{args.tag}] " f"{step}: {' '.join(cmd)} =====\n")
 
             # Flush the command header before execution.
@@ -570,13 +555,11 @@ def main() -> None:
 
             # Stream output to both SLURM and the persistent log.
             for line in proc.stdout:
-                # Write to the live job log.
                 sys.stdout.write(line)
 
                 # Flush the live job log immediately.
                 sys.stdout.flush()
 
-                # Write to the persistent log.
                 lg.write(line)
 
                 # Flush the persistent log immediately.
