@@ -74,6 +74,18 @@ STAGE_FIGURES = {
 
 
 def build_gallery(output: Path) -> list[Path]:
+    """Build every reference figure, starting from pristine matplotlib defaults.
+
+    Figure styling mutates matplotlib's global settings, so a baseline drawn after some other
+    code has applied a theme would differ from one drawn in a fresh process. Starting each
+    build from the library defaults makes the pictures independent of what ran before.
+    """
+    pristine = {key: value for key, value in matplotlib.rcParamsDefault.items() if key != "backend"}
+    with matplotlib.rc_context(pristine):
+        return _build_gallery(output)
+
+
+def _build_gallery(output: Path) -> list[Path]:
     output.mkdir(parents=True, exist_ok=True)
     table = pd.DataFrame(
         {
