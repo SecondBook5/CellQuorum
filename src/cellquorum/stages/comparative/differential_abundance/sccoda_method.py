@@ -299,8 +299,11 @@ class SccodaMethod(AnalysisMethod):
         # Sampler diagnostics: the only thing that separates "healthy chain found
         # nothing" from "chain never explored the posterior", both of which produce
         # an empty result table.
-        diagnostics, diagnostic_notes = self._read_diagnostics(diagnostics_json, n_credible)
+        diagnostics, diagnostic_notes, diagnostic_warnings = self._read_diagnostics(
+            diagnostics_json, n_credible
+        )
         notes.extend(diagnostic_notes)
+        warnings += diagnostic_warnings
 
         # Auto-emit the compositional DA figure (gated, skip-not-crash). Shows the
         # resolved reference's block rather than scCODA's automatic one, so the
@@ -596,25 +599,37 @@ class SccodaMethod(AnalysisMethod):
         )
 
     @staticmethod
-    def _read_diagnostics(path: Path, n_credible: int | None) -> tuple[dict, list[str]]:
+    def _read_diagnostics(path: Path, n_credible: int | None) -> tuple[dict, list[str], list[str]]:
         """Summarise the sampler diagnostics and flag a fit that cannot be trusted.
 
         The distinction this exists for: an empty result table from a healthy chain
         is a finding, and an empty result table from a chain that never moved is a
         bug. The acceptance rate is what tells them apart, and scCODA prints it to
         stdout and then discards it.
+
+        Returns:
+            ``(metrics, notes, warnings)``. A diagnostics file that exists but cannot be read
+            is a warning: without it an empty result table cannot be interpreted.
         """
 
         if not path.exists():
-            return {}, []
+            return {}, [], []
         try:
             payload = json.loads(path.read_text())
-        except Exception:
-            return {}, []
+        except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+            return (
+                {},
+                [],
+                [
+                    f"scCODA's sampler diagnostics {path.name} could not be read "
+                    f"({type(exc).__name__}: {exc}), so an empty result cannot be told apart "
+                    "from a chain that never explored the posterior."
+                ],
+            )
 
         fits = payload.get("fits") or []
         if not fits:
-            return {}, []
+            return {}, [], []
 
         notes: list[str] = []
         low, high = HEALTHY_ACCEPTANCE_RANGE
@@ -661,7 +676,7 @@ class SccodaMethod(AnalysisMethod):
                 f"Requested covariate(s) {', '.join(map(str, missing))} were not present in the "
                 f"aggregated sample table and were dropped from the model formula."
             )
-        return metrics, notes
+        return metrics, notes, []
 
     def _composition_artifacts(
         self,

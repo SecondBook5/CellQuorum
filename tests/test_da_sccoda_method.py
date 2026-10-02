@@ -704,3 +704,20 @@ def test_a_failed_write_of_the_annotated_table_is_reported(tmp_path):
     assert len(warnings) == 1
     assert "donor-concordance annotations" in warnings[0]
     assert SccodaMethod._write_back(frame, tmp_path / "ok.csv", "x") == []
+
+
+def test_an_unreadable_diagnostics_file_is_reported_not_ignored(tmp_path):
+    """The diagnostics separate a healthy empty result from a chain that never moved.
+
+    Losing them silently leaves an empty result table uninterpretable.
+    """
+    broken = tmp_path / "diag.json"
+    broken.write_text("{ not json")
+    metrics, notes, warnings = SccodaMethod._read_diagnostics(broken, n_credible=0)
+    assert metrics == {} and notes == []
+    assert len(warnings) == 1
+    assert "diag.json" in warnings[0] and "could not be read" in warnings[0]
+
+
+def test_absent_diagnostics_are_not_a_warning(tmp_path):
+    assert SccodaMethod._read_diagnostics(tmp_path / "absent.json", n_credible=0) == ({}, [], [])
