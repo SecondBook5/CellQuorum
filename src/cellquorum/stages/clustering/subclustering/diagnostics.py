@@ -15,6 +15,7 @@ from cellquorum.visualization.figstyle import (
     CELLQUORUM_RED,
     apply_cellquorum_axis_style,
     apply_cellquorum_theme,
+    atomic_savefig,
     save_cellquorum_figure,
 )
 
@@ -481,7 +482,8 @@ def plot_marker_identity_dotplot(
             )
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    fig = plt.gcf()
+    atomic_savefig(fig, out_path, dpi=300, bbox_inches="tight")
+    atomic_savefig(fig, out_path.with_suffix(".pdf"), bbox_inches="tight")
     plt.close("all")
     return out_path
