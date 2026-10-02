@@ -4,6 +4,33 @@ Assessment date: 2026-09-10. Scope: current working tree, including the ongoing 
 refactor and SampleQC integration. This is a sampled engineering assessment, not
 a certification, a code-coverage percentage, or the percentage of work completed.
 
+## Addendum, 2026-10-02: what has changed since this assessment
+
+The assessment below is kept as written. These findings no longer hold, or have been closed:
+
+- **Donor-count defect (issue 1):** fixed. `two_group_test_on_donor_medians` now returns `None` for
+  three donor labels with one missing and `min_donors=3`; paired versus unpaired must be declared.
+- **Image-baseline figure tests:** 72 pixel-exact baselines (`scripts/gallery_*.py`,
+  `docs/gallery/assets`, `tests/test_figure_gallery.py`) run in CI and cover every tuned figure
+  family. Two figures were order-dependent through third-party import side effects
+  (`pycirclize`, `decoupler`) and are now deterministic.
+- **Installed-wheel acceptance (issue 2):** `tests/acceptance` runs from a wheel-only virtual
+  environment in CI: the Python API (analysis, resume, stale-config rejection) and the command
+  line (plan, run, re-run, and the usual user mistakes giving one readable error).
+- **Release gating:** `release.yml` checks tag against version, requires a changelog entry, and
+  runs the whole CI workflow (including the acceptance job) before it builds or publishes.
+- **Type checking:** the CI mypy gate now has no exempted modules and covers `core`, `config`,
+  `io`, `methods`, `cli`, `stats`, `datasets` and five small stage packages. Whole-package errors
+  fell from 619 to 379.
+- **Coverage:** measured at 86.1% (85.9% with the R/GPU tiers excluded) and gated at 84%.
+- **Silent failures:** thirteen handlers that swallowed an error without a trace now report it.
+- **Style entry points:** one `figstyle.apply_theme(style)` replaces three setters and seven
+  per-stage wrappers, with every figure's look unchanged.
+
+Still open from this assessment: provisioned R and GPU CI jobs, fully resolved runtime environment
+locks, scientific validation on independent datasets, and the remaining type errors and long
+functions.
+
 ## Estimate and scoring basis
 
 **Approximately 60/100; a reasonable judgment range is 55–65.** Define production
