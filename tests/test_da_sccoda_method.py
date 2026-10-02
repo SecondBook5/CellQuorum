@@ -552,7 +552,7 @@ def test_sccoda_composition_helper_emits_figure(synthetic_adata, mock_context):
         condition_col="condition",
         cell_type_col="cell_type",
     )
-    artifacts = SccodaMethod()._composition_artifacts(
+    artifacts, warnings = SccodaMethod()._composition_artifacts(
         _sccoda_effects_auto(),
         cc,
         condition_col="condition",
@@ -582,7 +582,7 @@ def test_sccoda_composition_helper_respects_disable_flag(synthetic_adata, mock_c
         condition_col="condition",
         cell_type_col="cell_type",
     )
-    artifacts = SccodaMethod()._composition_artifacts(
+    artifacts, warnings = SccodaMethod()._composition_artifacts(
         _sccoda_effects_auto(),
         cc,
         condition_col="condition",

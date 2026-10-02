@@ -271,7 +271,7 @@ def test_milo_beeswarm_helper_emits_figure(tmp_path, mock_context):
     """The beeswarm helper renders a figure artifact to disk (no R needed)."""
 
     context = mock_context(tmp_path)
-    artifacts = MiloMethod()._beeswarm_artifacts(
+    artifacts, warnings = MiloMethod()._beeswarm_artifacts(
         _annotated_milo_df(),
         case="case",
         control="control",
@@ -281,6 +281,7 @@ def test_milo_beeswarm_helper_emits_figure(tmp_path, mock_context):
     )
 
     assert artifacts, "expected a beeswarm figure artifact"
+    assert warnings == []
     assert all(a.kind == "figure" and a.name == "da_milo_beeswarm" for a in artifacts)
     suffixes = set()
     for a in artifacts:
@@ -294,7 +295,7 @@ def test_milo_beeswarm_helper_respects_disable_flag(tmp_path, mock_context):
     """Setting write_da_figure=False suppresses the beeswarm figure."""
 
     context = mock_context(tmp_path)
-    artifacts = MiloMethod()._beeswarm_artifacts(
+    artifacts, warnings = MiloMethod()._beeswarm_artifacts(
         _annotated_milo_df(),
         case="case",
         control="control",
@@ -312,7 +313,7 @@ def test_milo_beeswarm_helper_skips_when_unannotated(tmp_path, mock_context):
     df["majority_celltype"] = np.nan
 
     context = mock_context(tmp_path)
-    artifacts = MiloMethod()._beeswarm_artifacts(
+    artifacts, warnings = MiloMethod()._beeswarm_artifacts(
         df,
         case="case",
         control="control",

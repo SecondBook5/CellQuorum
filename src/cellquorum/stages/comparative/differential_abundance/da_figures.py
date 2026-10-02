@@ -15,6 +15,9 @@ validated ``plot_da_beeswarm.py`` and ``plot_sccoda.py`` scripts.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -24,11 +27,13 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
+from cellquorum.core.stage import StageArtifact
 from cellquorum.visualization.figstyle import (
     LE_RED,
     NORMAL_BLUE,
     TEXT,
     diverging_norm,
+    save_figure,
     set_style,
 )
 
@@ -485,6 +490,38 @@ def plot_sccoda_composition(
     return fig
 
 
+def render_da_figure(
+    build: Callable[[], Figure | None],
+    figures_dir: Path,
+    stem: str,
+    description: str,
+) -> tuple[list[StageArtifact], list[str]]:
+    """Draw, save and register one differential-abundance figure.
+
+    ``build`` returns the figure, or ``None`` when there is nothing to draw (no warning:
+    that is a legitimate empty result). If drawing or saving raises, the stage must not
+    crash, but the user asked for this figure and did not get it, so the failure comes back
+    as a warning rather than as silence.
+
+    Returns:
+        ``(artifacts, warnings)``: one artifact per file written, and at most one warning.
+    """
+    try:
+        fig = build()
+        if fig is None:
+            return [], []
+        paths = save_figure(fig, figures_dir, stem)
+    except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+        return [], [
+            f"The {stem} figure could not be drawn ({type(exc).__name__}: {exc}); "
+            "the analysis tables are unaffected."
+        ]
+    return [
+        StageArtifact(name=stem, path=path, kind="figure", description=description)
+        for path in paths
+    ], []
+
+
 __all__ = [
     "prepare_milo_beeswarm",
     "sccoda_single_reference",
@@ -492,4 +529,5 @@ __all__ = [
     "sccoda_composition_order",
     "plot_milo_beeswarm",
     "plot_sccoda_composition",
+    "render_da_figure",
 ]

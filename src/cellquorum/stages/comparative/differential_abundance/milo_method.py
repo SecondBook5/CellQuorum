@@ -182,7 +182,7 @@ class MiloMethod(RAnalysisMethod):
         df, n_nhoods, n_da, warnings = self._read_results(out_csv, spatial_fdr)
 
         # Auto-emit the neighborhood beeswarm figure (gated, skip-not-crash).
-        figure_artifacts = self._beeswarm_artifacts(
+        figure_artifacts, figure_warnings = self._beeswarm_artifacts(
             df,
             case=case,
             control=control,
@@ -190,6 +190,8 @@ class MiloMethod(RAnalysisMethod):
             config=config,
             context=context,
         )
+
+        warnings += figure_warnings
 
         # Return the DA table as an artifact plus provenance metrics.
         return StageResult(
@@ -262,7 +264,7 @@ class MiloMethod(RAnalysisMethod):
         spatial_fdr: float,
         config: dict,
         context: object,
-    ) -> list[StageArtifact]:
+    ) -> tuple[list[StageArtifact], list[str]]:
         """Build the Milo neighborhood beeswarm figure (gated, default on).
 
         Renders the neighborhood-level log-fold-change swarm from the Milo DA
@@ -270,55 +272,38 @@ class MiloMethod(RAnalysisMethod):
         condition labels/colors come from config, no biology hardcoded. Emits
         nothing when disabled, when the table is unreadable, or when no
         neighborhood carries a majority cell type (nothing to place on the
-        categorical axis). Never raises — a plotting failure skips the figure.
+        categorical axis). Never raises: a plotting failure comes back as a warning.
         """
 
-        if not config.get("write_da_figure", True):
-            return []
-        if da is None or da.empty:
-            return []
+        if not config.get("write_da_figure", True) or da is None or da.empty:
+            return [], []
 
         # Local imports keep matplotlib off the pure-method import path.
         from cellquorum.stages.comparative.differential_abundance.da_figures import (
             plot_milo_beeswarm,
             prepare_milo_beeswarm,
+            render_da_figure,
         )
-        from cellquorum.visualization.figstyle import save_figure
 
-        try:
-            prepared = prepare_milo_beeswarm(da, spatial_fdr=spatial_fdr)
-            if prepared.empty:
-                return []
-            fig = plot_milo_beeswarm(
+        def build() -> object:
+            if prepare_milo_beeswarm(da, spatial_fdr=spatial_fdr).empty:
+                return None  # no majority cell type to place on the categorical axis
+            return plot_milo_beeswarm(
                 da,
                 case=case,
                 control=control,
                 spatial_fdr=spatial_fdr,
                 cluster_labels=config.get("cluster_labels") or {},
             )
-        except Exception:
-            return []
 
         figures_dir = Path(getattr(context.paths, "figures", context.paths.results))
-        figures_dir = figures_dir / "differential_abundance"
-        artifacts: list[StageArtifact] = []
-        try:
-            for path in save_figure(fig, figures_dir, "da_milo_beeswarm"):
-                artifacts.append(
-                    StageArtifact(
-                        name="da_milo_beeswarm",
-                        path=path,
-                        kind="figure",
-                        description=(
-                            f"Milo neighborhood beeswarm ({case} vs {control}): "
-                            f"log-fold-change swarmed by majority cell type, "
-                            f"SpatialFDR < {spatial_fdr:.2f}."
-                        ),
-                    )
-                )
-        except Exception:
-            return []
-        return artifacts
+        return render_da_figure(
+            build,
+            figures_dir / "differential_abundance",
+            "da_milo_beeswarm",
+            f"Milo neighborhood beeswarm ({case} vs {control}): log-fold-change swarmed by "
+            f"majority cell type, SpatialFDR < {spatial_fdr:.2f}.",
+        )
 
 
 __all__ = ["MiloMethod"]

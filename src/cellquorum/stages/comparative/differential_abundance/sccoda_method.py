@@ -305,7 +305,7 @@ class SccodaMethod(AnalysisMethod):
         # Auto-emit the compositional DA figure (gated, skip-not-crash). Shows the
         # resolved reference's block rather than scCODA's automatic one, so the
         # figure and the reported effects share a denominator.
-        figure_artifacts = self._composition_artifacts(
+        figure_artifacts, figure_warnings = self._composition_artifacts(
             df,
             cc,
             condition_col=condition_col,
@@ -316,6 +316,8 @@ class SccodaMethod(AnalysisMethod):
             context=context,
             reference=resolved_reference or "auto",
         )
+
+        warnings += figure_warnings
 
         # Return the DA table as an artifact plus provenance metrics.
         return StageResult(
@@ -673,7 +675,7 @@ class SccodaMethod(AnalysisMethod):
         config: dict,
         context: object,
         reference: str = "auto",
-    ) -> list[StageArtifact]:
+    ) -> tuple[list[StageArtifact], list[str]]:
         """Build the two-panel scCODA composition figure (gated, default on).
 
         Pairs a per-condition proportion dumbbell with each cell type's posterior
@@ -681,13 +683,11 @@ class SccodaMethod(AnalysisMethod):
         aggregated sample × cell-type counts. Study-agnostic: condition
         labels/colors come from config, no biology hardcoded. Emits nothing when
         disabled, when the effects table is unreadable/empty, or when the counts
-        yield no proportions. Never raises — a plotting failure skips the figure.
+        yield no proportions. Never raises: a plotting failure comes back as a warning.
         """
 
-        if not config.get("write_da_figure", True):
-            return []
-        if effects is None or effects.empty:
-            return []
+        if not config.get("write_da_figure", True) or effects is None or effects.empty:
+            return [], []
 
         # Local imports keep matplotlib off the pure-method import path.
         from cellquorum.stages.comparative.differential_abundance.aggregation import (
@@ -695,10 +695,10 @@ class SccodaMethod(AnalysisMethod):
         )
         from cellquorum.stages.comparative.differential_abundance.da_figures import (
             plot_sccoda_composition,
+            render_da_figure,
         )
-        from cellquorum.visualization.figstyle import save_figure
 
-        try:
+        def build() -> object:
             proportions = build_composition_proportions(
                 cc.counts,
                 cc.sample_meta[condition_col],
@@ -707,8 +707,8 @@ class SccodaMethod(AnalysisMethod):
                 control=control,
             )
             if proportions.empty:
-                return []
-            fig = plot_sccoda_composition(
+                return None
+            return plot_sccoda_composition(
                 effects,
                 proportions,
                 case=case,
@@ -716,28 +716,15 @@ class SccodaMethod(AnalysisMethod):
                 reference=reference,
                 cluster_labels=config.get("cluster_labels") or {},
             )
-        except Exception:
-            return []
 
         figures_dir = Path(getattr(context.paths, "figures", context.paths.results))
-        figures_dir = figures_dir / "differential_abundance"
-        artifacts: list[StageArtifact] = []
-        try:
-            for path in save_figure(fig, figures_dir, "da_sccoda_composition"):
-                artifacts.append(
-                    StageArtifact(
-                        name="da_sccoda_composition",
-                        path=path,
-                        kind="figure",
-                        description=(
-                            f"scCODA compositional DA ({case} vs {control}): per-condition "
-                            "proportion dumbbell + posterior inclusion probability."
-                        ),
-                    )
-                )
-        except Exception:
-            return []
-        return artifacts
+        return render_da_figure(
+            build,
+            figures_dir / "differential_abundance",
+            "da_sccoda_composition",
+            f"scCODA compositional DA ({case} vs {control}): per-condition proportion "
+            "dumbbell + posterior inclusion probability.",
+        )
 
 
 __all__ = ["SccodaMethod"]

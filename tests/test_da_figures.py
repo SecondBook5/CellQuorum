@@ -275,3 +275,49 @@ def test_plot_sccoda_composition_cluster_labels_rename_yticks_only():
     labels = [t.get_text() for t in ax_a.get_yticklabels()]
     # sccoda_composition_order is TypeC, TypeA, TypeB (ascending case proportion).
     assert labels == ["Perivascular", "Papillary", "Reticular"]
+
+
+def _tiny_figure() -> Figure:
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.plot([0, 1], [0, 1])
+    return fig
+
+
+def test_render_da_figure_registers_every_written_file(tmp_path):
+    from cellquorum.stages.comparative.differential_abundance.da_figures import render_da_figure
+
+    artifacts, warnings = render_da_figure(_tiny_figure, tmp_path, "da_demo", "A demo figure.")
+    assert warnings == []
+    assert {a.path.suffix for a in artifacts} == {".pdf", ".png"}
+    assert all(a.kind == "figure" and a.name == "da_demo" and a.path.exists() for a in artifacts)
+
+
+def test_render_da_figure_is_quiet_when_there_is_nothing_to_draw(tmp_path):
+    from cellquorum.stages.comparative.differential_abundance.da_figures import render_da_figure
+
+    assert render_da_figure(lambda: None, tmp_path, "da_demo", "x") == ([], [])
+
+
+def test_render_da_figure_reports_a_failed_drawing(tmp_path):
+    """A figure that failed to draw is something the user asked for that did not happen."""
+    from cellquorum.stages.comparative.differential_abundance.da_figures import render_da_figure
+
+    def explode() -> Figure:
+        raise ValueError("no usable neighbourhoods")
+
+    artifacts, warnings = render_da_figure(explode, tmp_path, "da_demo", "x")
+    assert artifacts == []
+    assert len(warnings) == 1
+    assert "da_demo" in warnings[0] and "no usable neighbourhoods" in warnings[0]
+
+
+def test_render_da_figure_reports_a_failed_save(tmp_path):
+    from cellquorum.stages.comparative.differential_abundance.da_figures import render_da_figure
+
+    blocker = tmp_path / "blocked"
+    blocker.write_text("a file where a directory must go")
+    artifacts, warnings = render_da_figure(_tiny_figure, blocker, "da_demo", "x")
+    assert artifacts == []
+    assert len(warnings) == 1 and "da_demo" in warnings[0]
