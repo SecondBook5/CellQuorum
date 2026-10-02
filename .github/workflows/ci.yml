@@ -256,6 +256,6 @@ jobs:
         run: |
           /tmp/wheelcheck/bin/pip install "pytest==9.0.2"
           mkdir -p /tmp/wheelcheck/acceptance
-          cp tests/acceptance/test_installed_workflow.py /tmp/wheelcheck/acceptance/
+          cp tests/acceptance/*.py /tmp/wheelcheck/acceptance/
           cd /tmp/wheelcheck
           /tmp/wheelcheck/bin/python -m pytest acceptance -q -o 'markers=integration: installed workflow acceptance' --strict-markers
