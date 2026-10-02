@@ -198,9 +198,11 @@ def group_resolution(
             arm_medians[name] = np.full(matrix.shape[1], np.nan)
             continue
         aligned = conditions.reindex(counts.index).astype(str)
-        rows = np.flatnonzero((aligned == str(label)).to_numpy())
+        arm_rows = np.flatnonzero((aligned == str(label)).to_numpy())
         arm_medians[name] = (
-            np.median(matrix[rows], axis=0) if rows.size else np.full(matrix.shape[1], np.nan)
+            np.median(matrix[arm_rows], axis=0)
+            if arm_rows.size
+            else np.full(matrix.shape[1], np.nan)
         )
 
     medians = np.median(matrix, axis=0)

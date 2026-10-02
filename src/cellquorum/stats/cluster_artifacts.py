@@ -161,7 +161,7 @@ def _as_labels(values: pd.Series | None, n: int) -> pd.Series | None:
         raise ValueError(f"label vector has {len(labels)} entries, expected {n}")
     labels = labels.where(~pd.isna(labels), other=None)
     labels = labels.map(lambda v: None if v is None else str(v))
-    return labels.replace({"": None, "nan": None, "NaN": None, "None": None}).reset_index(drop=True)
+    return labels.where(~labels.isin(["", "nan", "NaN", "None"]), other=None).reset_index(drop=True)
 
 
 def _normalised_entropy(counts: pd.Series, n_categories: int) -> float:

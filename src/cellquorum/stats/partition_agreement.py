@@ -93,7 +93,7 @@ def _as_labels(values: pd.Series) -> pd.Series:
     labels = pd.Series(values).astype("object")
     labels = labels.where(~pd.isna(labels), other=None)
     labels = labels.map(lambda v: None if v is None else str(v))
-    return labels.replace({"": None, "nan": None, "NaN": None, "None": None})
+    return labels.where(~labels.isin(["", "nan", "NaN", "None"]), other=None)
 
 
 def align_partitions(

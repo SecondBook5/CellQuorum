@@ -87,6 +87,7 @@ this module deliberately never touches.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -562,7 +563,7 @@ def _fit_one_group(
 ) -> list[dict[str, object]]:
     """Fit and summarise one group, or record why it could not be fitted."""
     method = "donor_bootstrap"
-    n_donors = int(context["n_donors"])  # type: ignore[arg-type]
+    n_donors = int(cast("int", context["n_donors"]))
 
     if n_donors < min_donors:
         return _not_estimable(
@@ -571,7 +572,7 @@ def _fit_one_group(
             f"decomposition at this n reports the resampling, not the mechanism",
             method,
         )
-    if int(context["n_case"]) < 2 or int(context["n_control"]) < 2:  # type: ignore[arg-type]
+    if int(cast("int", context["n_case"])) < 2 or int(cast("int", context["n_control"])) < 2:
         return _not_estimable(
             context,
             f"one arm has fewer than 2 samples ({context['n_case']} case, "

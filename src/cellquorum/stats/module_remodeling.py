@@ -34,7 +34,7 @@ from __future__ import annotations
 import itertools
 import warnings
 from functools import cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pandas as pd
@@ -677,7 +677,7 @@ def lmm_effect_sizes(
         donors_case = set(gmeta[donor_col][is_case])
         donors_control = set(gmeta[donor_col][~is_case])
         n_donors = len(donors_case | donors_control)
-        floor_p, n_pairs = randomization_floor(gmeta[donor_col].to_numpy(), is_case)
+        floor_p, n_pairs = randomization_floor(gmeta[donor_col].tolist(), is_case.tolist())
 
         for prog in progs:
             y = gscores[prog].to_numpy(dtype=float)
@@ -1355,7 +1355,7 @@ def upset_membership(sets: dict[str, list[str]]) -> pd.DataFrame:
 def program_correlation_matrix(
     scores: pd.DataFrame,
     *,
-    method: str = "spearman",
+    method: Literal["pearson", "kendall", "spearman"] = "spearman",
 ) -> pd.DataFrame:
     """Program x program correlation matrix across cells (Spearman default).
 

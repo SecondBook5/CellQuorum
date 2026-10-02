@@ -97,6 +97,7 @@ jobs:
           src/cellquorum/io
           src/cellquorum/methods
           src/cellquorum/cli
+          src/cellquorum/stats
 
   test:
     name: Test (Python ${{ matrix.python-version }})

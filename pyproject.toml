@@ -195,8 +195,8 @@ mypy_path = "src"
 explicit_package_bases = true
 
 # --- Type-checking ratchet -------------------------------------------------
-# CI gates mypy on the engine spine (core, config, io, methods, cli), with no module
-# exempted. The rest of the package (stages/, visualization/, backends/, stats/) is not
+# CI gates mypy on the engine spine (core, config, io, methods, cli) and stats/, with no
+# module exempted. The rest of the package (stages/, visualization/, backends/) is not
 # yet gated: a baseline run found hundreds of errors there, mostly untyped-third-party
 # fallout. Widen the CI command one subpackage at a time, fixing that subpackage first.
 

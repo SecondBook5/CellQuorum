@@ -46,6 +46,9 @@ the unadjusted test is the one a declared family was corrected over.
 
 from __future__ import annotations
 
+from collections.abc import Hashable
+from typing import cast
+
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -81,6 +84,11 @@ NOTABLE_COUPLING_RHO = 0.5
 # is NaN on these rows rather than a number the reader has to know to distrust. The
 # adjusted and raw deltas are both still there for anyone who wants the ratio anyway.
 _NO_RAW_CLAIM = frozenset({"no_raw_effect", "depth_masked", "insufficient_pairs"})
+
+
+def _numeric_cell(table: pd.DataFrame, position: Hashable, column: str) -> float:
+    """One cell of a numeric results column as a float (``DataFrame.at`` is typed as any scalar)."""
+    return float(cast("float", table.at[position, column]))
 
 
 def _same_cells(left: pd.Index, right: pd.Index) -> bool:
@@ -443,7 +451,7 @@ def depth_confound_audit(
     )
     depth_p = float(depth_test["t_p"])
     depth_is_confounded = bool(
-        depth_test["n_pairs"] >= min_pairs and np.isfinite(depth_p) and depth_p < alpha
+        float(depth_test["n_pairs"]) >= min_pairs and np.isfinite(depth_p) and depth_p < alpha
     )
 
     samples = (donors + "|" + conditions).to_numpy()
@@ -742,7 +750,7 @@ def depth_stratified_abundance(
     stratum_rows = table[table["stratum"] != "all"]
     for position in table.index[table["stratum"] == "all"]:
         label = table.at[position, "label"]
-        pooled_delta = table.at[position, "delta"]
+        pooled_delta = _numeric_cell(table, position, "delta")
         mine = stratum_rows[stratum_rows["label"] == label]
         estimable = mine[mine["n_pairs"] >= min_pairs]
         same_sign = (
@@ -756,12 +764,12 @@ def depth_stratified_abundance(
         table.at[position, "n_strata_significant"] = float(significant)
 
         n_strata = estimable.shape[0]
-        pooled_p = table.at[position, "t_p"]
-        if table.at[position, "n_pairs"] < min_pairs:
+        pooled_p = _numeric_cell(table, position, "t_p")
+        if _numeric_cell(table, position, "n_pairs") < min_pairs:
             verdict, reason = (
                 "insufficient_pairs",
                 (
-                    f"{int(table.at[position, 'n_pairs'])} complete pair(s) is below "
+                    f"{int(_numeric_cell(table, position, 'n_pairs'))} complete pair(s) is below "
                     f"min_pairs={min_pairs}"
                 ),
             )
