@@ -348,3 +348,42 @@ def test_a_failure_ranking_the_de_table_is_not_disguised_as_no_tfs(monkeypatch):
     monkeypatch.setattr(ranking, "de_table_to_ranking", broken)
     with pytest.raises(ValueError, match="bad DE table"):
         tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
+
+
+def test_scoring_tf_activity_never_changes_the_figure_theme():
+    """decoupler rewrites matplotlib's legend settings the first time it is imported.
+
+    The radial figure imports it after the theme is applied, so in a fresh process it would
+    override the theme's legend size and spacing, while in a process that had already imported
+    decoupler it would not: the same figure, two looks. First import can only be tested in a
+    fresh interpreter.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    code = textwrap.dedent(
+        """
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib as mpl
+        import pandas as pd
+        from cellquorum.visualization.figstyle import apply_theme
+        from cellquorum.stages.gene_regulation.grn.radial_figures import tf_activity_from_de
+
+        apply_theme("compact")
+        keys = ("legend.fontsize", "legend.borderpad", "legend.frameon")
+        before = {k: mpl.rcParams[k] for k in keys}
+        genes = [f"G{i}" for i in range(20)]
+        de = pd.DataFrame({"gene": genes, "logFC": [2.0 - 0.1 * i for i in range(20)],
+                           "PValue": [0.001] * 10 + [0.5] * 10, "FDR": [0.01] * 10 + [0.6] * 10})
+        net = pd.DataFrame({"source": ["TF1"] * 6 + ["TF2"] * 6, "target": genes[:6] + genes[4:10],
+                            "weight": 1.0})
+        tf_activity_from_de(de, net, tmin=2)
+        after = {k: mpl.rcParams[k] for k in before}
+        assert after == before, (before, after)
+        print("OK")
+        """
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert "OK" in result.stdout, result.stdout + result.stderr

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -100,7 +101,10 @@ def tf_activity_from_de(
     if ranking.shape[1] == 0:
         return pd.DataFrame(columns=cols)
 
-    import decoupler as dc
+    # decoupler rewrites matplotlib's legend settings the first time it is imported. Contain
+    # that so it cannot override the theme applied before this figure is drawn.
+    with mpl.rc_context():
+        import decoupler as dc
 
     es, pv = dc.mt.ulm(ranking, net, tmin=tmin, verbose=False)
     if es.shape[1] == 0:
