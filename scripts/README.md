@@ -11,6 +11,8 @@ and rendering into the package rather than copying it between scripts.
 | `verify_gpu.py` | Probe RAPIDS or PyTorch/scVI CUDA execution capabilities. |
 | `lock_environments.py` | Run pinned conda-lock with its missing manylinux tags restored. |
 | `build_figure_gallery.py` | Generate publication examples and synthetic source tables. |
+| `gallery_<stage>.py` | Per-stage fixtures for the figure gallery: small synthetic inputs and the renderer call for each figure. `build_figure_gallery.py` discovers them; add a figure by adding a function to the registry and re-saving its baseline. |
+| `update_gallery_page.py` | Regenerate the by-stage figure index in `docs/gallery/index.md` after adding a baseline. |
 | `smoke_real_h5ad.py` | Exercise the pipeline against an existing H5AD file. |
 | `inspect_reference_atlas.py` | Inspect SCP2613 reference metadata and query gene overlap. |
 | `inspect_celltypist_labels.py` | Inspect CellTypist model labels. |
