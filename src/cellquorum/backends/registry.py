@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 from cellquorum.backends.base import Backend, BackendStatus, BackendUnavailableError
 from cellquorum.backends.celloracle_backend import build_celloracle_backend
@@ -17,6 +18,27 @@ from cellquorum.backends.rapids import build_rapids_backend
 from cellquorum.backends.rscript import build_rscript_backend
 from cellquorum.backends.scclr_backend import build_scclr_backend
 from cellquorum.backends.sccoda_backend import build_sccoda_backend
+
+
+class BackendRequirementRow(TypedDict):
+    """One requirement of a backend, as written to the status table."""
+
+    name: str
+    requirement_type: str
+    required: bool
+    install_hint: str | None
+
+
+class BackendStatusRow(TypedDict):
+    """One backend's availability, as written to the status table and provenance JSON."""
+
+    name: str
+    kind: str
+    available: bool
+    missing: list[str]
+    warnings: list[str]
+    requirements: list[BackendRequirementRow]
+    details: dict[str, object]
 
 
 @dataclass
@@ -235,7 +257,7 @@ class BackendRegistry:
             ),
         )
 
-    def to_status_table(self) -> list[dict[str, object]]:
+    def to_status_table(self) -> list[BackendStatusRow]:
         """
         Return backend statuses as a JSON-serializable table.
 
@@ -247,7 +269,7 @@ class BackendRegistry:
         """
 
         # Initialize status rows.
-        rows: list[dict[str, object]] = []
+        rows: list[BackendStatusRow] = []
 
         # Iterate over backend statuses in deterministic backend-name order.
         for name in self.names():

@@ -43,7 +43,7 @@ def _to_sample(X: np.ndarray | sp.spmatrix, n: int = 10000) -> np.ndarray:
 
     # Extract stored values for sparse, or a raveled dense view.
     if sp.issparse(X):
-        values = X.data
+        values = np.asarray(X.data)
     else:
         values = np.asarray(X).ravel()
 

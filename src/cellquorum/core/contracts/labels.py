@@ -53,7 +53,7 @@ class LabelContract(StrictBaseModel):
         # Coerce distinct values to str so categorical/object dtypes compare alike.
         return set(map(str, adata.obs[col].unique()))
 
-    def validate(self, adata: ad.AnnData) -> None:
+    def validate(self, adata: ad.AnnData) -> None:  # type: ignore[override]  # shadows pydantic's deprecated BaseModel.validate on purpose
         """
         Verify the columns exist and all expected tokens are present.
 

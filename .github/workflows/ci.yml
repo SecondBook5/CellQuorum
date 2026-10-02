@@ -87,15 +87,8 @@ jobs:
       - name: Install package (dev)
         run: pip install -e .[dev]
 
-      # Gated on the engine spine, not the whole package. A baseline run found 436
-      # errors across 102 modules, 391 of them in stages/, visualization/, and
-      # backends/ (largely untyped-third-party fallout). Gating everything at once
-      # would mean a permanently red job that everyone learns to ignore.
-      #
-      # pyproject.toml carries a [[tool.mypy.overrides]] list of spine modules with
-      # ignore_errors = true. That list is a BACKLOG: fixing a module and deleting
-      # its line is a good small PR. When it is empty, change this command to
-      # `mypy src/cellquorum` and start the same ratchet on stages/.
+      # Gated on the engine spine. Widen this list one subpackage at a time: fix a
+      # subpackage's errors, then add it here. See the ratchet note in pyproject.toml.
       - name: mypy
         run: >
           mypy

@@ -326,7 +326,7 @@ class StageRegistry:
         return iter(self._stages.values())
 
     @classmethod
-    def _normalize_stage_name(cls, stage_name: str) -> str:
+    def _normalize_stage_name(cls, stage_name: object) -> str:
         """
         Normalize and validate a stage name.
 

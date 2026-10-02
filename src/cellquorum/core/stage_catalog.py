@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 from cellquorum.core.stage import PipelineStage
 
@@ -196,7 +197,7 @@ def register_stage(
     """
     target = catalog if catalog is not None else _DEFAULT_CATALOG
 
-    def _decorate(cls: type) -> type:
+    def _decorate(cls: Any) -> Any:
         cls.name = name
         if category is not None:
             cls.stage_category = category

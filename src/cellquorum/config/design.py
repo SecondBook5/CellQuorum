@@ -540,7 +540,7 @@ def analyze_design(
 
     return DesignMatrixReport(
         factors=list(factors),
-        interactions=[tuple(pair) for pair in interactions],
+        interactions=[(a, b) for a, b in interactions],
         n_samples=len(sample_meta),
         n_columns=n_columns,
         rank=rank,

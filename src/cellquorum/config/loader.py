@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from pydantic import ValidationError
 
 from cellquorum.config.models import CellQuorumConfig
@@ -83,7 +83,7 @@ def load_config(config_path: str | Path) -> CellQuorumConfig:
     return validate_omegaconf(raw_config)
 
 
-def validate_omegaconf(config: DictConfig) -> CellQuorumConfig:
+def validate_omegaconf(config: DictConfig | ListConfig) -> CellQuorumConfig:
     """
     Validate an OmegaConf configuration object.
 
@@ -126,7 +126,7 @@ def validate_omegaconf(config: DictConfig) -> CellQuorumConfig:
         )
 
     # Validate the resolved mapping through Pydantic.
-    return validate_config_dict(container)
+    return validate_config_dict({str(key): value for key, value in container.items()})
 
 
 def validate_config_dict(config: Mapping[str, Any]) -> CellQuorumConfig:

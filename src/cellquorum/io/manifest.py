@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 # Import Path for filesystem path normalization and resolution.
 from pathlib import Path
+from typing import Any
 
 # Import pandas for CSV/TSV manifest loading and tabular validation.
 import pandas as pd
@@ -116,7 +117,7 @@ class ManifestRecord:
         """
 
         # Build the base dictionary from required and standard metadata fields.
-        record = {
+        record: dict[str, object] = {
             "sample_id": self.sample_id,
             "path": str(self.path) if self.path is not None else None,
             "cellranger_path": self.cellranger_path,
@@ -199,11 +200,12 @@ class Manifest:
         Return manifest input paths in manifest order.
 
         Returns:
-            Ordered list of input paths.
+            Ordered list of input paths. Records without a file path (for example a
+            loom-only sample) are omitted.
         """
 
-        # Return paths from each record.
-        return [record.path for record in self.records]
+        # Return paths from each record that has one.
+        return [record.path for record in self.records if record.path is not None]
 
     def __len__(self) -> int:
         """
@@ -337,7 +339,7 @@ class Manifest:
         raise ManifestError(f"Sample ID '{sample_id}' was not found in the manifest.")
 
 
-def _is_missing_value(value: object) -> bool:
+def _is_missing_value(value: Any) -> bool:
     """
     Return whether a manifest value should be treated as missing.
 
@@ -634,8 +636,8 @@ def validate_manifest_dataframe(
         )
 
         # Build extra metadata by preserving non-standard columns.
-        extra_metadata = {
-            column: value
+        extra_metadata: dict[str, object] = {
+            str(column): value
             for column, value in row.items()
             if column not in Manifest.REQUIRED_COLUMNS and column not in Manifest.OPTIONAL_COLUMNS
         }

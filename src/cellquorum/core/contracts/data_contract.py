@@ -49,7 +49,7 @@ class DataContract(StrictBaseModel):
     # Guardrail: reject imputed data where statistics are not allowed.
     forbid_imputed: bool = False
 
-    def validate(self, adata: ad.AnnData) -> None:
+    def validate(self, adata: ad.AnnData) -> None:  # type: ignore[override]  # shadows pydantic's deprecated BaseModel.validate on purpose
         """
         Validate an AnnData object against this contract.
 
@@ -71,10 +71,10 @@ class DataContract(StrictBaseModel):
         matrix = self._resolve_matrix(adata, self.expression_layer)
 
         # ---- Level 2: semantic (tag) ---- #
-        self._check_semantic(adata)
+        self._check_semantic(adata, self.expression_layer)
 
         # ---- Level 3: statistical (values) ---- #
-        self._check_statistical(matrix)
+        self._check_statistical(matrix, self.expression_layer)
 
     def _check_structural(self, adata: ad.AnnData) -> None:
         """Verify all required containers are present."""
@@ -121,18 +121,18 @@ class DataContract(StrictBaseModel):
             )
         return adata.layers[layer]
 
-    def _check_semantic(self, adata: ad.AnnData) -> None:
+    def _check_semantic(self, adata: ad.AnnData, layer: str) -> None:
         """Verify the target layer's tag matches the expected kind/recipe."""
 
         # Read the tag (may be None if the layer was never tagged).
-        tag = get_layer_tag(adata, self.expression_layer)
+        tag = get_layer_tag(adata, layer)
 
         # Imputed guardrail: block imputed data where forbidden.
         if self.forbid_imputed:
             declared_kind = tag["kind"] if tag else None
             if declared_kind == "imputed":
                 raise CellQuorumContractError(
-                    f"Layer '{self.expression_layer}' is tagged 'imputed'; imputed data is "
+                    f"Layer '{layer}' is tagged 'imputed'; imputed data is "
                     "forbidden as input to this stage (statistics on imputed values are invalid)."
                 )
 
@@ -140,13 +140,12 @@ class DataContract(StrictBaseModel):
         if self.expected_kind is not None:
             if tag is None:
                 raise CellQuorumContractError(
-                    f"Layer '{self.expression_layer}' has no provenance tag; expected kind "
+                    f"Layer '{layer}' has no provenance tag; expected kind "
                     f"'{self.expected_kind}'."
                 )
             if tag["kind"] != self.expected_kind:
                 raise CellQuorumContractError(
-                    f"Layer '{self.expression_layer}' kind '{tag['kind']}' != expected "
-                    f"'{self.expected_kind}'."
+                    f"Layer '{layer}' kind '{tag['kind']}' != expected " f"'{self.expected_kind}'."
                 )
 
         # Expected-recipe check: prefer the layer tag, fall back to preprocessing provenance.
@@ -158,16 +157,15 @@ class DataContract(StrictBaseModel):
                 recipe = get_normalization_recipe(adata)
             if recipe != self.expected_recipe:
                 raise CellQuorumContractError(
-                    f"Layer '{self.expression_layer}' recipe '{recipe}' != expected "
-                    f"'{self.expected_recipe}'."
+                    f"Layer '{layer}' recipe '{recipe}' != expected " f"'{self.expected_recipe}'."
                 )
 
-    def _check_statistical(self, matrix: np.ndarray | sp.spmatrix) -> None:
+    def _check_statistical(self, matrix: np.ndarray | sp.spmatrix, layer: str) -> None:
         """Run value-level checks appropriate to the expected kind."""
 
         # Counts: must be non-negative integers.
         if self.expected_kind == "counts":
-            assert_integer_valued(matrix, layer=self.expression_layer)
+            assert_integer_valued(matrix, layer=layer)
             return
 
         # Log-normalized: not all-integer, within log range. Non-negativity is
@@ -177,8 +175,8 @@ class DataContract(StrictBaseModel):
         # raw-counts-in-lognorm bug is caught by the all-integer guard below
         # (raw counts are non-negative, so a non-negativity check would miss it).
         if self.expected_kind == "lognorm":
-            assert_non_integer_or_zero(matrix, layer=self.expression_layer)
-            assert_log_range(matrix, layer=self.expression_layer)
+            assert_non_integer_or_zero(matrix, layer=layer)
+            assert_log_range(matrix, layer=layer)
             return
 
         # Scaled/imputed/unspecified: scaled data may legitimately be negative,

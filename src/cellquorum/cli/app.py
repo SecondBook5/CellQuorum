@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Import Annotated for Typer-compatible option metadata without B008 violations,
 # and TYPE_CHECKING so engine types can be annotated without importing the engine.
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 # Import Typer for the command-line interface.
 import typer
@@ -413,12 +413,12 @@ def run_command(
     # Determine execution state from result.
     execution_result = result.execution_result
     executed = execution_result is not None
-    successful_stages = execution_result.succeeded_stage_names() if executed else []
-    skipped_stages = execution_result.skipped_stage_names() if executed else []
-    failed_stages = execution_result.failed_stage_names() if executed else []
+    successful_stages = execution_result.succeeded_stage_names() if execution_result else []
+    skipped_stages = execution_result.skipped_stage_names() if execution_result else []
+    failed_stages = execution_result.failed_stage_names() if execution_result else []
 
     # Build a machine-readable run summary.
-    summary = {
+    summary: dict[str, Any] = {
         "run_id": result.context.run_id,
         "profile": result.plan.profile,
         "output_dir": str(result.context.paths.root),

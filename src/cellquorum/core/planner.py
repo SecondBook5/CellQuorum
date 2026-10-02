@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from cellquorum.backends.registry import BackendRegistry, build_default_backend_registry
+from cellquorum.backends.registry import (
+    BackendRegistry,
+    BackendStatusRow,
+    build_default_backend_registry,
+)
 from cellquorum.config.models import CellQuorumConfig
 
 StagePlanStatus = Literal["enabled", "disabled"]
@@ -63,7 +67,7 @@ class PipelinePlan:
     stages: list[PlannedStage] = field(default_factory=list)
 
     # Store backend status rows.
-    backend_status_table: list[dict[str, object]] = field(default_factory=list)
+    backend_status_table: list[BackendStatusRow] = field(default_factory=list)
 
     # Store planner-level warnings.
     warnings: list[str] = field(default_factory=list)

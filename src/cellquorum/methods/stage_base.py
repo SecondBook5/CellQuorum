@@ -10,10 +10,14 @@ class that satisfies the existing ``PipelineStage`` Protocol.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.registry import METHOD_REGISTRY, MethodRegistry
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class MethodDispatchStage(ABC):
@@ -43,7 +47,7 @@ class MethodDispatchStage(ABC):
     def _select_method_name(self, config: dict) -> str:
         """Return the configured method name for this stage from the run config."""
 
-    def run(self, context: object) -> StageResult:
+    def run(self, context: PipelineContext) -> StageResult:
         """
         Resolve and execute the configured method, or a list of methods.
 

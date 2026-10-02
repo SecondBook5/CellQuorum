@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cellquorum.config.models import CellQuorumConfig
+    from cellquorum.core.artifacts import ArtifactManager
     from cellquorum.core.stage import StageExecutionRecord
 
 
@@ -226,7 +227,7 @@ def write_run_report(
     *,
     config: CellQuorumConfig,
     records: list[StageExecutionRecord],
-    artifact_manager: object,
+    artifact_manager: ArtifactManager,
 ) -> list[str]:
     """
     Render and write the configured report artifacts under ``reports/``.

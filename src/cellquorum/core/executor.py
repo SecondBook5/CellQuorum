@@ -184,7 +184,7 @@ def build_default_stage_registry() -> StageRegistry:
     from cellquorum.core.stages import all_stage_specs
 
     return StageRegistry(
-        stages={spec.name: spec.factory() for spec in all_stage_specs() if spec.is_implemented}
+        stages={spec.name: spec.factory() for spec in all_stage_specs() if spec.factory is not None}
     )
 
 
