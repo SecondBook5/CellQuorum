@@ -96,11 +96,16 @@ class CellTypistMethod(AnalysisMethod):
         # result would otherwise scramble every cell's label with no error at all.
         adata.obs[key_added] = labels_df[label_col].reindex(adata.obs_names).to_numpy()
         adata.obs[key_added] = adata.obs[key_added].astype("category")
+        warnings: list[str] = []
         try:
             conf = predictions.probability_matrix.max(axis=1).reindex(adata.obs_names).to_numpy()
             adata.obs[f"{key_added}_conf"] = conf
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+            warnings.append(
+                f"CellTypist assigned labels but the confidence column {key_added}_conf could not "
+                f"be written ({type(exc).__name__}: {exc}); anything that filters on annotation "
+                "confidence will not have it for this run."
+            )
 
         n_types = int(adata.obs[key_added].nunique())
         return StageResult(
@@ -113,6 +118,7 @@ class CellTypistMethod(AnalysisMethod):
                 "majority_voting": majority_voting,
             },
             notes=[f"celltypist ({model}) assigned {n_types} cell types -> {key_added}."],
+            warnings=warnings,
         )
 
 
