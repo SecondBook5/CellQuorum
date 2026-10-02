@@ -286,3 +286,45 @@ def test_seed_checkpoint_roundtrip_and_stale_rejection(tmp_path: Path) -> None:
         )
         is None
     )
+
+
+class _SavableModel:
+    def __init__(self, fail: bool = False):
+        self.fail = fail
+        self.saved_to = None
+
+    def save(self, path, overwrite=False):
+        if self.fail:
+            raise OSError("disk full")
+        self.saved_to = path
+
+
+def test_saving_the_reference_models_reports_success_quietly(tmp_path):
+    from cellquorum.stages.annotation.reference_mapping.scarches import _save_reference_models
+
+    scvi, scanvi = _SavableModel(), _SavableModel()
+    warnings = _save_reference_models(
+        objects_path=tmp_path, key_added="ct", seed=3, scvi_model=scvi, scanvi_model=scanvi
+    )
+    assert warnings == []
+    assert scvi.saved_to.endswith("ct_seed3_scvi_reference")
+    assert scanvi.saved_to.endswith("ct_seed3_scanvi_reference")
+
+
+def test_a_failed_reference_model_save_is_reported_not_swallowed(tmp_path):
+    """Without the saved models the reference cannot be reused or recovered after a crash.
+
+    Mapping itself is unaffected, so the run continues, but the user must be told.
+    """
+    from cellquorum.stages.annotation.reference_mapping.scarches import _save_reference_models
+
+    warnings = _save_reference_models(
+        objects_path=tmp_path,
+        key_added="ct",
+        seed=3,
+        scvi_model=_SavableModel(fail=True),
+        scanvi_model=_SavableModel(),
+    )
+    assert len(warnings) == 1
+    assert "seed 3" in warnings[0] and "disk full" in warnings[0]
+    assert "retrain" in warnings[0]

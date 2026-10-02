@@ -611,6 +611,7 @@ class ScArchesMethod(AnalysisMethod):
         seed_loss_history = {}
         resumed_seeds: list[int] = []
         trained_seeds: list[int] = []
+        save_warnings: list[str] = []
 
         # scvi is an optional GPU backend, absent from the core install and CI. Import
         # it lazily here (never at module scope) so importing this module — e.g. during
@@ -673,7 +674,7 @@ class ScArchesMethod(AnalysisMethod):
                 # recovered after a crash without retraining. Best-effort: a save
                 # failure must not abort mapping.
                 if objects_path is not None:
-                    _save_reference_models(
+                    save_warnings += _save_reference_models(
                         objects_path=objects_path,
                         key_added=key_added,
                         seed=int(seed),
@@ -1019,7 +1020,13 @@ class ScArchesMethod(AnalysisMethod):
         if gene_space_note is not None:
             notes.append(gene_space_note)
 
-        return StageResult(adata=result_query, metrics=metrics, artifacts=artifacts, notes=notes)
+        return StageResult(
+            adata=result_query,
+            metrics=metrics,
+            artifacts=artifacts,
+            notes=notes,
+            warnings=save_warnings,
+        )
 
 
 def _serialize_history(model: object) -> dict[str, list[float]]:
@@ -1094,14 +1101,15 @@ def _save_reference_models(
     seed: int,
     scvi_model: object,
     scanvi_model: object,
-) -> None:
+) -> list[str]:
     """
     Persist the trained reference scVI + scANVI models under ``objects/``.
 
     Saving the reference models makes a run reproducible and lets the trained
     reference be reused across query datasets or recovered after a crash without
-    retraining. This is best-effort: scvi's ``save`` writes a directory, and any
-    failure here is swallowed so it never aborts label transfer.
+    retraining. A failure does not abort label transfer, since mapping itself is
+    unaffected, but it is returned as a warning: the user is otherwise left believing the
+    reference is saved when it is not.
 
     Args:
         objects_path: The run's objects directory.
@@ -1109,6 +1117,9 @@ def _save_reference_models(
         seed: Seed whose reference models are being saved.
         scvi_model: Trained scVI model.
         scanvi_model: Trained scANVI model.
+
+    Returns:
+        An empty list on success, or one warning describing what was not saved.
     """
 
     try:
@@ -1116,8 +1127,13 @@ def _save_reference_models(
         scanvi_dir = objects_path / f"{key_added}_seed{seed}_scanvi_reference"
         scvi_model.save(str(scvi_dir), overwrite=True)
         scanvi_model.save(str(scanvi_dir), overwrite=True)
-    except Exception:  # pragma: no cover - persistence is best-effort
-        pass
+    except Exception as exc:  # noqa: BLE001 -- reported below, never silent
+        return [
+            f"The trained reference models for seed {seed} could not be saved "
+            f"({type(exc).__name__}: {exc}). Label transfer is unaffected, but this reference "
+            "cannot be reused or recovered after a crash without retraining."
+        ]
+    return []
 
 
 def _build_seed_checkpoint_meta(
