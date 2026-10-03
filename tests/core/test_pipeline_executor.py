@@ -483,6 +483,27 @@ def test_executor_records_disabled_stage_as_skipped(tmp_path: Path) -> None:
     assert execution_result.succeeded_stage_names() == []
 
 
+def test_switched_off_stages_are_told_apart_from_stages_that_could_not_run(
+    tmp_path: Path,
+) -> None:
+    """A stage the user did not ask for must not read like a stage that was asked for and skipped.
+
+    Both are recorded as skipped, but a CLI that lists thirty-six switched-off stages next to the
+    one that could not run hides the one that matters.
+    """
+    context = build_test_context(tmp_path)
+    plan = make_plan(
+        make_disabled_stage("qc_evidence"),
+        make_enabled_stage("molecular_inference"),
+    )
+
+    execution_result = PipelineExecutor().run(context=context, plan=plan)
+
+    assert execution_result.skipped_stage_names() == ["qc_evidence", "molecular_inference"]
+    assert execution_result.disabled_stage_names() == ["qc_evidence"]
+    assert execution_result.unable_to_run_stage_names() == ["molecular_inference"]
+
+
 def test_executor_records_unimplemented_enabled_stage_as_skipped(tmp_path: Path) -> None:
     """
     Verify enabled planned stages without implementations are skipped explicitly.

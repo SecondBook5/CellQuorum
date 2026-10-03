@@ -348,6 +348,14 @@ Recent engineering and reproducibility hardening:
   `cellquorum.comparative`) now raises `ModuleNotFoundError`; the canonical path
   is `cellquorum.stages.<stage>`.
 
+### Changed
+
+- **The run summary no longer lists every switched-off stage as "Skipped".** A run that
+  enables six stages used to print thirty-six skipped ones in yellow, which buried a stage that
+  really could not run. The summary now lists only stages that were wanted but could not run
+  (`Skipped (could not run)`) and counts the rest (`Not enabled in this configuration`). The JSON
+  summary keeps `skipped_stages` unchanged and adds `disabled_stages`.
+
 ### Fixed
 
 - **scDiagnostics published its results table from `scratch/`, and with several batches it held

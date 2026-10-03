@@ -217,6 +217,9 @@ def test_the_readme_quickstart_works_as_written(tmp_path: Path) -> None:
     text = output_of(ran)
     assert ran.returncode == 0, text
     assert "CellQuorum run complete" in text and "Traceback" not in text
+    # The stages the demo leaves switched off are counted, not listed as skipped.
+    assert "Not enabled in this configuration" in text
+    assert "Skipped" not in text
     report = demo / "run" / "reports" / "report.html"
     assert report.is_file() and "CellQuorum run report" in report.read_text()
     assert list((demo / "run").rglob("*.png")), "the demo run produced no figures"

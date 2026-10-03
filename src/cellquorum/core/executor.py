@@ -81,6 +81,12 @@ class StageRegistry:
         return StageRegistry(stages=updated_stages)
 
 
+def _skipped_because_disabled(record: StageExecutionRecord) -> bool:
+    """Whether a skipped record is the plan's "disabled by configuration" decision."""
+    reason = record.skip_reason
+    return reason is not None and reason.details.get("plan_status") == "disabled"
+
+
 @dataclass(frozen=True)
 class PipelineExecutionResult:
     """
@@ -121,6 +127,41 @@ class PipelineExecutionResult:
             record.stage_name
             for record in self.stage_execution_records
             if record.status == "skipped"
+        ]
+
+    def disabled_stage_names(self) -> list[str]:
+        """
+        Return names of skipped stages that the configuration switched off.
+
+        These are not problems: the user did not ask for them. They are a subset of
+        :meth:`skipped_stage_names`, which still lists every skip.
+
+        Returns:
+            Stage names whose skip came from the plan marking them disabled.
+        """
+
+        return [
+            record.stage_name
+            for record in self.stage_execution_records
+            if record.status == "skipped" and _skipped_because_disabled(record)
+        ]
+
+    def unable_to_run_stage_names(self) -> list[str]:
+        """
+        Return names of skipped stages that were wanted but could not run.
+
+        Covers a stage that is enabled but not implemented, and one that skipped itself
+        at run time (missing input, missing backend). These deserve a reader's attention;
+        :meth:`disabled_stage_names` does not.
+
+        Returns:
+            Skipped stage names that were not simply switched off.
+        """
+
+        return [
+            record.stage_name
+            for record in self.stage_execution_records
+            if record.status == "skipped" and not _skipped_because_disabled(record)
         ]
 
     def failed_stage_names(self) -> list[str]:

@@ -441,6 +441,8 @@ def run_command(
     executed = execution_result is not None
     successful_stages = execution_result.succeeded_stage_names() if execution_result else []
     skipped_stages = execution_result.skipped_stage_names() if execution_result else []
+    disabled_stages = execution_result.disabled_stage_names() if execution_result else []
+    unable_stages = execution_result.unable_to_run_stage_names() if execution_result else []
     failed_stages = execution_result.failed_stage_names() if execution_result else []
 
     summary: dict[str, Any] = {
@@ -456,6 +458,7 @@ def run_command(
         "executed": executed,
         "successful_stages": successful_stages,
         "skipped_stages": skipped_stages,
+        "disabled_stages": disabled_stages,
         "failed_stages": failed_stages,
     }
 
@@ -502,8 +505,16 @@ def run_command(
         if successful_stages:
             console.print(f"[green]Successful: {', '.join(successful_stages)}[/green]")
 
-        if skipped_stages:
-            console.print(f"[yellow]Skipped: {', '.join(skipped_stages)}[/yellow]")
+        # Only stages that were wanted but could not run are worth a colour. The many that the
+        # configuration simply left off are counted, not listed: a long yellow list of them
+        # buried the one stage that mattered.
+        if unable_stages:
+            console.print(f"[yellow]Skipped (could not run): {', '.join(unable_stages)}[/yellow]")
+        if disabled_stages:
+            console.print(
+                f"Not enabled in this configuration: {len(disabled_stages)} stages "
+                "(listed in provenance/stage_plan.csv)"
+            )
 
         if failed_stages:
             console.print(f"[red]Failed: {', '.join(failed_stages)}[/red]")

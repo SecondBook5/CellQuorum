@@ -79,8 +79,9 @@ A run writes everything under its output folder. The parts you will open:
 
 To diagnose a stage that did not do what was expected, open its record in
 `stage_execution_records.json` (or the `.csv` beside it): `status`, `skip_reason`, `error` and
-`warnings` say why. A stage that is switched off in the configuration is listed as skipped, so a
-long "Skipped" list in the terminal summary is normal and does not mean anything failed.
+`warnings` say why. A stage that is switched off in the configuration is recorded as skipped too, with the reason
+"Disabled by configuration"; the terminal summary counts those and lists by name only the stages
+that were wanted but could not run.
 
 Two things about a run folder are easy to be surprised by. The `logs/` folder is created but
 nothing writes to it yet, so the provenance records and the terminal output are the log. And
