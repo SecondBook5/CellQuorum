@@ -215,6 +215,7 @@ files = [
   "src/cellquorum/stages/preprocessing",
   "src/cellquorum/stages/cell_cell_communication",
   "src/cellquorum/stages/trajectory",
+  "src/cellquorum/backends",
   "src/cellquorum/stages/metacells",
   "src/cellquorum/stages/ambient_correction",
   "src/cellquorum/stages/composition",

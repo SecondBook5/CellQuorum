@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cellquorum.backends._probe import resolve_launcher
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the partipy environment.
 _PARTIPY_SCRIPTS_DIR = Path(__file__).parent / "partipy_scripts"
@@ -58,7 +58,7 @@ class PartipyBackend(BaseBackend):
     """
 
     name: str = "partipy"
-    kind: str = "external"
+    kind: BackendKind = "external"
     env_name: str = "partipy"
     launcher: str = "micromamba"
     timeout_seconds: int = 60

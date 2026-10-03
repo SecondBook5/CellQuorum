@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from cellquorum.backends.base import BackendRequirement, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BaseBackend
 
 
 @dataclass
@@ -23,7 +23,7 @@ class PythonBackend(BaseBackend):
 
     name: str = "python"
 
-    kind: str = "python"
+    kind: BackendKind = "python"
 
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
@@ -78,7 +78,7 @@ class PythonOptionalBackend(BaseBackend):
 
     name: str = "python_optional"
 
-    kind: str = "python"
+    kind: BackendKind = "python"
 
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [

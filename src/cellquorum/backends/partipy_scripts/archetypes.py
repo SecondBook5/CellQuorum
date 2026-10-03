@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import Any
 
 
 def _cmd_fit(args: argparse.Namespace) -> int:
@@ -131,7 +132,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
     return 0
 
 
-def _select_n_archetypes(metrics: object, floor: int) -> int:
+def _select_n_archetypes(metrics: Any, floor: int) -> int:
     """Archetype count minimising partipy's information criterion.
 
     IC already balances variance explained against the cost of an extra vertex, so a minimum
@@ -148,7 +149,7 @@ def _select_n_archetypes(metrics: object, floor: int) -> int:
         return floor
 
 
-def _serialize_metrics(metrics: object) -> list[dict[str, float]]:
+def _serialize_metrics(metrics: Any) -> list[dict[str, float]]:
     """Selection metrics as plain records, whatever shape partipy returned."""
     try:
         frame = metrics.reset_index()

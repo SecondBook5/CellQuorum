@@ -19,7 +19,7 @@ from pathlib import Path
 # Import the process-level probe cache (see _probe.py for why this exists: importing
 # celloracle in a subprocess costs ~7.7s and the probe used to run uncached).
 from cellquorum.backends._probe import env_python_module_available, resolve_launcher
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the celloracle environment.
 _CELLORACLE_SCRIPTS_DIR = Path(__file__).parent / "celloracle_scripts"
@@ -57,7 +57,7 @@ class CellOracleBackend(BaseBackend):
     """
 
     name: str = "celloracle"
-    kind: str = "external"
+    kind: BackendKind = "external"
     env_name: str = "celloracle_env"
     launcher: str = "micromamba"
     timeout_seconds: int = 60

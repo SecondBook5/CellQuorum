@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cellquorum.backends._probe import env_python_module_available, resolve_env, resolve_launcher
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the pyscenic environment.
 _PYSCENIC_SCRIPTS_DIR = Path(__file__).parent / "pyscenic_scripts"
@@ -43,7 +43,7 @@ class PyscenicBackend(BaseBackend):
     """
 
     name: str = "pyscenic"
-    kind: str = "external"
+    kind: BackendKind = "external"
     env_name: str = "pyscenic_env"
     launcher: str = "micromamba"
     timeout_seconds: int = 60

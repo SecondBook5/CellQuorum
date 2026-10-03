@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cellquorum.backends._probe import resolve_env, resolve_launcher
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the hdwgcna environment.
 _HDWGCNA_SCRIPTS_DIR = Path(__file__).parent / "r_scripts"
@@ -45,7 +45,7 @@ class HdwgcnaBackend(BaseBackend):
 
     name: str = "hdwgcna_r"
 
-    kind: str = "external"
+    kind: BackendKind = "external"
 
     env_name: str = "hdwgcna_env"
 

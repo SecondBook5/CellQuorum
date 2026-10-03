@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cellquorum.backends._probe import resolve_launcher
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 # Directory holding the in-env helper scripts run INSIDE the sccoda environment.
 _SCCODA_SCRIPTS_DIR = Path(__file__).parent / "sccoda_scripts"
@@ -42,7 +42,7 @@ class SccodaBackend(BaseBackend):
 
     name: str = "sccoda"
 
-    kind: str = "external"
+    kind: BackendKind = "external"
 
     env_name: str = "sccoda_env"
 

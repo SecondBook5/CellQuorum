@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 
 @dataclass
@@ -33,7 +33,7 @@ class RscriptBackend(BaseBackend):
 
     name: str = "rscript"
 
-    kind: str = "rscript"
+    kind: BackendKind = "rscript"
 
     rscript_path: str = "Rscript"
 

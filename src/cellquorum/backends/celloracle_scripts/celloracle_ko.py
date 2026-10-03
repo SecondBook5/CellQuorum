@@ -25,6 +25,10 @@ import argparse
 import csv
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd  # imported lazily at run time; this is only for annotations
 
 _RANKING_HEADER = ["tf", "score", "n_cells", "direction"]
 
@@ -91,12 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _stratified_subsample(
-    obs: pd.DataFrame,  # noqa: F821 -- pandas kept unimported at module level
+    obs: pd.DataFrame,
     cluster_key: str,
     condition_key: str | None,
     max_cells: int,
     seed: int,
-) -> pd.Index:  # noqa: F821
+) -> pd.Index:
     """Return obs_names to keep, proportionally stratified by cluster (+condition).
 
     velocyto's speedboosted.pyx (called by estimate_transition_prob) crashes with
@@ -160,7 +164,7 @@ def _parse_tf_list(raw: str) -> list[str]:
     return [t for t in raw.replace(",", " ").split() if t]
 
 
-def _load_base_grn(co, organism: str):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN202 -- pragma: no cover
+def _load_base_grn(co, organism: str):  # noqa: ANN001, ANN202 -- pragma: no cover
     """Load CellOracle's built-in promoter base GRN for the organism.
 
     Returns the base-GRN DataFrame, or None if no loader matches the organism.
@@ -359,7 +363,7 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
 
     # Step 7: Simulate each TF KO -> per-cell shift field -> score.
     n_neighbors = min(int(args.knn_n_neighbors), n_cell - 1)
-    tf_scores = []
+    tf_scores: list[dict[str, Any]] = []
     n_sim_errors = 0  # TFs that raised in the simulate/transition/shift calls
     for tf in tfs_to_screen:
         print(f"[celloracle] Simulating KO: {tf}")

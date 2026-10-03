@@ -5,9 +5,9 @@ from __future__ import annotations
 import importlib.util
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 
 @dataclass
@@ -34,7 +34,7 @@ class RBackend(BaseBackend):
 
     name: str = "r"
 
-    kind: str = "r"
+    kind: BackendKind = "r"
 
     timeout_seconds: int = 30
 
@@ -217,7 +217,7 @@ class RBackend(BaseBackend):
 
         # Convert the rpy2 vector-like result into a Python boolean.
         try:
-            return bool(result[0])
+            return bool(cast("Any", result)[0])
         except (TypeError, IndexError, ValueError):
             return False
 

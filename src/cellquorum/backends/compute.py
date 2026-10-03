@@ -88,7 +88,7 @@ def resolve_compute(context: PipelineContext) -> dict:
     backend, prefer_gpu, fallback = _compute_settings(context)
     wants_gpu = backend in {"gpu", "rapids"} or (backend == "auto" and prefer_gpu)
     use_gpu = wants_gpu and gpu_compute_available()
-    result = {"use_gpu": bool(use_gpu), "fallback_to_cpu": bool(fallback)}
+    result: dict[str, bool | str] = {"use_gpu": bool(use_gpu), "fallback_to_cpu": bool(fallback)}
     if wants_gpu and not use_gpu:
         reason = "CuPy, rapids-singlecell, or a working CUDA device is unavailable."
         if not fallback:

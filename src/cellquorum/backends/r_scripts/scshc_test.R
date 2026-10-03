@@ -14,6 +14,8 @@ clusters_csv <- args[2]
 out_csv <- args[3]
 alpha <- as.numeric(args[4])
 batch_arg <- args[5]
+seed <- if (length(args) >= 6) as.integer(args[6]) else 1337L
+set.seed(seed)
 
 # Wrap everything in tryCatch for fail-loud behavior.
 tryCatch(
@@ -35,6 +37,13 @@ tryCatch(
 
     # Extract counts matrix (genes × cells).
     counts_matrix <- assay(sce, "counts")
+    values <- if (inherits(counts_matrix, "sparseMatrix")) counts_matrix@x else as.vector(counts_matrix)
+    if (any(!is.finite(values)) || any(values < 0) || any(values != floor(values))) {
+      stop("sc-SHC requires finite non-negative integer counts; do not supply corrected fractional or normalized expression.")
+    }
+    if (any(Matrix::colSums(counts_matrix) <= 0)) stop("sc-SHC input contains zero-count cells.")
+    # Zero-count genes contain no testable information, and can destabilize feature selection.
+    counts_matrix <- counts_matrix[Matrix::rowSums(counts_matrix) > 0, , drop = FALSE]
 
     # Read cluster labels CSV (barcode, cluster).
     clusters_df <- read.csv(clusters_csv, stringsAsFactors = FALSE)
@@ -65,12 +74,13 @@ tryCatch(
       stop("Cluster CSV barcodes do not match h5ad cell names; misalignment detected.")
     }
 
-    cluster_ids <- clusters_df$cluster
+    cluster_ids <- as.character(clusters_df$cluster)
 
     # Resolve batch labels (colData column or NULL).
     batch_labels <- NULL
     if (batch_arg != "NONE" && batch_arg %in% colnames(colData(sce))) {
-      batch_labels <- colData(sce)[[batch_arg]]
+      batch_labels <- as.character(colData(sce)[[batch_arg]])
+      if (anyNA(batch_labels) || any(!nzchar(batch_labels))) stop("Missing sc-SHC batch labels.")
     }
 
     # Run testClusters (sc-SHC formal split significance test). scSHC also needs
@@ -80,7 +90,9 @@ tryCatch(
       data = counts_matrix,
       cluster_ids = cluster_ids,
       batch = batch_labels,
-      alpha = alpha
+      alpha = alpha,
+      num_features = min(2500L, nrow(counts_matrix)),
+      num_PCs = min(30L, nrow(counts_matrix) - 1L, ncol(counts_matrix) - 1L)
     )
 
     # testClusters returns list(cluster_labels, node0):

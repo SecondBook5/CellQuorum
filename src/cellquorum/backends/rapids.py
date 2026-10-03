@@ -6,7 +6,7 @@ import importlib.util
 from dataclasses import dataclass, field
 from typing import Any
 
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 
 @dataclass
@@ -30,7 +30,7 @@ class RapidsBackend(BaseBackend):
 
     name: str = "rapids"
 
-    kind: str = "rapids"
+    kind: BackendKind = "rapids"
 
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [

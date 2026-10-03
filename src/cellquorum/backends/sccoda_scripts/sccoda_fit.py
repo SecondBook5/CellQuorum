@@ -29,7 +29,7 @@ import argparse
 import json
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # CRITICAL: these must be set BEFORE importing tensorflow/sccoda, because each is
 # read once when the library initialises.
@@ -307,7 +307,7 @@ def _run_fit(
     return frame, diagnostics
 
 
-def _as_float(value: object) -> float | None:
+def _as_float(value: Any) -> float | None:
     """Coerce a diagnostic to a JSON-serialisable float, or None if it will not go."""
 
     if value is None:

@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
-from cellquorum.backends.base import BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
 
 
 @dataclass
@@ -33,7 +33,7 @@ class GPUBackend(BaseBackend):
 
     name: str = "gpu"
 
-    kind: str = "gpu"
+    kind: BackendKind = "gpu"
 
     cuda_check_command: tuple[str, ...] = ("nvidia-smi",)
 
