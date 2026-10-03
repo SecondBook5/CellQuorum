@@ -120,6 +120,35 @@ def _report_figure_order(written: object) -> list[Path]:
     return [by_name[name] for name in preferred if name in by_name]
 
 
+@dataclass
+class _ArtifactWrite:
+    """Everything the QC artifact writers share: the inputs, and the three result collectors.
+
+    ``write_qc_artifacts`` builds one of these and hands it to one writer per artifact group, so
+    the groups stay independent and each can be read on its own.
+    """
+
+    qc_config: QCConfig
+    metrics_result: QCMetricsResult
+    floors: FloorResult
+    mixture: MitoMixtureResult | None
+    adata: ad.AnnData | None
+    figure_source: ad.AnnData | None
+    publication_keys: dict[str, str] | None
+    group_key: str | None
+    report_groups: pd.Series | None
+    report_group_name: str
+    attrition_audit: AttritionAudit | None
+    donor_comparisons: dict[str, TwoGroupTest] | None
+    removed_cells: pd.DataFrame | None
+    summary_extra: dict[str, object] | None
+    output_path: Path
+    figures_path: Path
+    artifacts: dict[str, Path | list[str]] = field(default_factory=dict)
+    skipped: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
 def write_qc_artifacts(
     *,
     output_dir: str | PathLike[str] | Path,
@@ -203,106 +232,142 @@ def write_qc_artifacts(
     output_path = prepare_qc_output_dir(output_dir)
     figures_path = prepare_qc_output_dir(figures_dir) if figures_dir is not None else output_path
 
-    artifacts: dict[str, Path | list[str]] = {}
+    w = _ArtifactWrite(
+        qc_config=qc_config,
+        metrics_result=metrics_result,
+        floors=floors,
+        mixture=mixture,
+        adata=adata,
+        figure_source=figure_adata if figure_adata is not None else adata,
+        publication_keys=publication_keys,
+        group_key=group_key,
+        report_groups=report_groups,
+        report_group_name=report_group_name,
+        attrition_audit=attrition_audit,
+        donor_comparisons=donor_comparisons,
+        removed_cells=removed_cells,
+        summary_extra=summary_extra,
+        output_path=output_path,
+        figures_path=figures_path,
+    )
 
-    skipped: list[str] = []
+    _write_donor_comparisons(w)
+    _write_tables(w)
+    _write_cell_labels(w)
+    _write_report_and_h5ad(w)
+    _write_figures(w)
+    _write_publication_tables(w)
+    _write_html_report(w)
+    _write_summary(w)
 
-    warnings: list[str] = []
+    return QCArtifactManifest(
+        output_dir=output_path,
+        artifacts=w.artifacts,
+        skipped=w.skipped,
+        warnings=w.warnings,
+    )
 
-    if donor_comparisons:
+
+def _write_donor_comparisons(w: _ArtifactWrite) -> None:
+    """Write the donor-level comparison table."""
+    if w.donor_comparisons:
         records = []
-        for metric, comparison in donor_comparisons.items():
+        for metric, comparison in w.donor_comparisons.items():
             record = {"metric": metric, **comparison.to_dict()}
             for key in ("donors_group1", "donors_group2"):
                 record[key] = json.dumps(record[key])
             records.append(record)
-        artifacts["donor_comparisons"] = write_dataframe_artifact(
+        w.artifacts["donor_comparisons"] = write_dataframe_artifact(
             pd.DataFrame(records),
-            output_path / "qc_donor_comparisons.csv",
+            w.output_path / "qc_donor_comparisons.csv",
             index=False,
         )
 
-    if qc_config.outputs.write_metrics_table:
-        artifacts["cell_metrics"] = write_dataframe_artifact(
-            _metrics_with_posterior(metrics_result.cell_metrics, mixture),
-            output_path / "cell_metrics.csv",
+
+def _write_tables(w: _ArtifactWrite) -> None:
+    """Write the metric, mixture, floor, attrition and removed-cell tables the config asks for."""
+    if w.qc_config.outputs.write_metrics_table:
+        w.artifacts["cell_metrics"] = write_dataframe_artifact(
+            _metrics_with_posterior(w.metrics_result.cell_metrics, w.mixture),
+            w.output_path / "cell_metrics.csv",
             index=True,
         )
 
-        artifacts["gene_metrics"] = write_dataframe_artifact(
-            metrics_result.gene_metrics,
-            output_path / "gene_metrics.csv",
+        w.artifacts["gene_metrics"] = write_dataframe_artifact(
+            w.metrics_result.gene_metrics,
+            w.output_path / "gene_metrics.csv",
             index=True,
         )
 
-        artifacts["feature_masks"] = write_dataframe_artifact(
-            metrics_result.feature_masks,
-            output_path / "feature_masks.csv",
+        w.artifacts["feature_masks"] = write_dataframe_artifact(
+            w.metrics_result.feature_masks,
+            w.output_path / "feature_masks.csv",
             index=True,
         )
 
     else:
-        skipped.extend(["cell_metrics", "gene_metrics", "feature_masks"])
+        w.skipped.extend(["cell_metrics", "gene_metrics", "feature_masks"])
 
-    if qc_config.outputs.write_mixture_table:
-        if mixture is not None:
-            artifacts["mito_mixture"] = write_dataframe_artifact(
-                mixture.to_dataframe(),
-                output_path / "qc_mito_mixture.csv",
+    if w.qc_config.outputs.write_mixture_table:
+        if w.mixture is not None:
+            w.artifacts["mito_mixture"] = write_dataframe_artifact(
+                w.mixture.to_dataframe(),
+                w.output_path / "qc_mito_mixture.csv",
                 index=False,
             )
 
         else:
-            skipped.append("mito_mixture")
+            w.skipped.append("mito_mixture")
 
     else:
-        skipped.append("mito_mixture")
+        w.skipped.append("mito_mixture")
 
-    if qc_config.outputs.write_filter_table:
-        artifacts["cell_floors"] = write_dataframe_artifact(
-            floors.cell_table(),
-            output_path / "cell_floors.csv",
+    if w.qc_config.outputs.write_filter_table:
+        w.artifacts["cell_floors"] = write_dataframe_artifact(
+            w.floors.cell_table(),
+            w.output_path / "cell_floors.csv",
             index=True,
         )
 
-        artifacts["gene_floors"] = write_dataframe_artifact(
-            floors.gene_table(),
-            output_path / "gene_floors.csv",
+        w.artifacts["gene_floors"] = write_dataframe_artifact(
+            w.floors.gene_table(),
+            w.output_path / "gene_floors.csv",
             index=True,
         )
 
     else:
-        skipped.extend(["cell_floors", "gene_floors"])
+        w.skipped.extend(["cell_floors", "gene_floors"])
 
-    if qc_config.outputs.attrition_audit and attrition_audit is not None:
-        artifacts["attrition"] = write_dataframe_artifact(
-            attrition_audit.to_dataframe(),
-            output_path / "qc_attrition.csv",
+    if w.qc_config.outputs.attrition_audit and w.attrition_audit is not None:
+        w.artifacts["attrition"] = write_dataframe_artifact(
+            w.attrition_audit.to_dataframe(),
+            w.output_path / "qc_attrition.csv",
             index=False,
         )
 
     else:
-        skipped.append("attrition")
+        w.skipped.append("attrition")
 
-    if qc_config.outputs.removed_cells and removed_cells is not None:
-        artifacts["removed_cells"] = write_dataframe_artifact(
-            removed_cells,
-            output_path / "removed_cells.csv",
+    if w.qc_config.outputs.removed_cells and w.removed_cells is not None:
+        w.artifacts["removed_cells"] = write_dataframe_artifact(
+            w.removed_cells,
+            w.output_path / "removed_cells.csv",
             index=True,
         )
 
     else:
-        skipped.append("removed_cells")
+        w.skipped.append("removed_cells")
 
-    figure_source = figure_adata if figure_adata is not None else adata
 
-    if qc_config.outputs.cell_labels:
-        if figure_source is not None:
+def _write_cell_labels(w: _ArtifactWrite) -> None:
+    """Write the per-cell label table (sample, donor, condition, cell type)."""
+    if w.qc_config.outputs.cell_labels:
+        if w.figure_source is not None:
             from cellquorum.visualization.qc.panels import resolve_cell_type_keys
 
-            keys = publication_keys or {}
+            keys = w.publication_keys or {}
 
-            coarse_key, granular_key = resolve_cell_type_keys(figure_source.obs)
+            coarse_key, granular_key = resolve_cell_type_keys(w.figure_source.obs)
             label_columns = {
                 "sample": keys.get("sample_key") or keys.get("patient_key"),
                 "donor": keys.get("patient_key"),
@@ -310,227 +375,241 @@ def write_qc_artifacts(
                 "cell_type": coarse_key,
                 "cell_type_granular": granular_key,
             }
-            labels = pd.DataFrame(index=figure_source.obs_names.copy())
+            labels = pd.DataFrame(index=w.figure_source.obs_names.copy())
             for name, column in label_columns.items():
-                if column and column in figure_source.obs.columns:
-                    labels[name] = figure_source.obs[column].astype(str).to_numpy()
+                if column and column in w.figure_source.obs.columns:
+                    labels[name] = w.figure_source.obs[column].astype(str).to_numpy()
 
             if len(labels.columns):
-                artifacts["cell_labels"] = write_dataframe_artifact(
+                w.artifacts["cell_labels"] = write_dataframe_artifact(
                     labels,
-                    output_path / "cell_labels.csv",
+                    w.output_path / "cell_labels.csv",
                     index=True,
                 )
             else:
-                skipped.append("cell_labels")
+                w.skipped.append("cell_labels")
         else:
-            skipped.append("cell_labels")
+            w.skipped.append("cell_labels")
 
     else:
-        skipped.append("cell_labels")
+        w.skipped.append("cell_labels")
 
-    if qc_config.outputs.write_report_table:
+
+def _write_report_and_h5ad(w: _ArtifactWrite) -> None:
+    """Write the per-group QC report table and the QC-annotated ``qc.h5ad``."""
+    if w.qc_config.outputs.write_report_table:
         report_table = build_qc_report_table(
-            floors.cell_table(),
-            groups=report_groups,
-            group_name=report_group_name,
+            w.floors.cell_table(),
+            groups=w.report_groups,
+            group_name=w.report_group_name,
         )
 
-        artifacts["report"] = write_dataframe_artifact(
+        w.artifacts["report"] = write_dataframe_artifact(
             report_table,
-            output_path / "qc_report.csv",
+            w.output_path / "qc_report.csv",
             index=False,
         )
 
     else:
-        skipped.append("report")
+        w.skipped.append("report")
 
-    if qc_config.outputs.write_h5ad:
-        if adata is not None:
-            artifacts["qc_h5ad"] = write_h5ad_artifact(adata, output_path / "qc.h5ad")
+    if w.qc_config.outputs.write_h5ad:
+        if w.adata is not None:
+            w.artifacts["qc_h5ad"] = write_h5ad_artifact(w.adata, w.output_path / "qc.h5ad")
 
         else:
-            skipped.append("qc_h5ad")
-            warnings.append(
+            w.skipped.append("qc_h5ad")
+            w.warnings.append(
                 "QCOutputConfig.write_h5ad is true, but no AnnData object was provided."
             )
 
     else:
-        skipped.append("qc_h5ad")
+        w.skipped.append("qc_h5ad")
 
-    if qc_config.outputs.write_figures:
-        if figure_source is not None:
+
+def _write_figures(w: _ArtifactWrite) -> None:
+    """Write the graded QC figures and the overview panels."""
+    if w.qc_config.outputs.write_figures:
+        if w.figure_source is not None:
             figure_paths: list[str] = []
 
             try:
                 from cellquorum.visualization.qc.graded import write_graded_qc_figures
 
                 graded_paths, graded_warnings = write_graded_qc_figures(
-                    figure_source.obs,
-                    figures_path,
-                    concern_severity=qc_config.graded.concern_severity,
-                    sample_column=group_key or "sample_id",
-                    pair_column=(publication_keys or {}).get("patient_key") or "donor_id",
-                    condition_column=(publication_keys or {}).get("condition_key") or "condition",
-                    dpi=qc_config.outputs.figure_dpi,
+                    w.figure_source.obs,
+                    w.figures_path,
+                    concern_severity=w.qc_config.graded.concern_severity,
+                    sample_column=w.group_key or "sample_id",
+                    pair_column=(w.publication_keys or {}).get("patient_key") or "donor_id",
+                    condition_column=(w.publication_keys or {}).get("condition_key") or "condition",
+                    dpi=w.qc_config.outputs.figure_dpi,
                 )
                 figure_paths.extend(str(path) for path in graded_paths)
-                warnings.extend(graded_warnings)
+                w.warnings.extend(graded_warnings)
             except Exception as exc:  # pragma: no cover - defensive figure fallback
-                warnings.append(
+                w.warnings.append(
                     f"Graded QC figures could not be written: {type(exc).__name__}: {exc}"
                 )
 
-            if qc_config.outputs.overview_figures:
+            if w.qc_config.outputs.overview_figures:
                 try:
                     from cellquorum.visualization.qc.panels import (
                         assemble_qc_frame,
                         write_qc_panels,
                     )
 
-                    keys = publication_keys or {}
+                    keys = w.publication_keys or {}
                     panel_frame = assemble_qc_frame(
-                        obs=figure_source.obs,
-                        cell_metrics=_metrics_with_posterior(metrics_result.cell_metrics, mixture),
-                        cell_decisions=floors.cell_table(),
+                        obs=w.figure_source.obs,
+                        cell_metrics=_metrics_with_posterior(
+                            w.metrics_result.cell_metrics, w.mixture
+                        ),
+                        cell_decisions=w.floors.cell_table(),
                         sample_key=keys.get("sample_key") or keys.get("patient_key"),
                         donor_key=keys.get("patient_key"),
                         condition_key=keys.get("condition_key"),
                     )
-                    mixture_models, mixture_ceiling = resolve_mixture_panel_inputs(mixture)
+                    mixture_models, mixture_ceiling = resolve_mixture_panel_inputs(w.mixture)
                     figure_paths.extend(
                         str(p)
                         for p in write_qc_panels(
                             panel_frame,
-                            figures_path,
+                            w.figures_path,
                             case_label=keys.get("disease_label"),
-                            comparisons=donor_comparisons,
-                            formats=(qc_config.outputs.figure_format,),
-                            dpi=qc_config.outputs.figure_dpi,
+                            comparisons=w.donor_comparisons,
+                            formats=(w.qc_config.outputs.figure_format,),
+                            dpi=w.qc_config.outputs.figure_dpi,
                             mixture_models=mixture_models,
                             mixture_ceiling=mixture_ceiling,
-                            mixture_posterior_cutoff=qc_config.mito_mixture.posterior_cutoff,
+                            mixture_posterior_cutoff=w.qc_config.mito_mixture.posterior_cutoff,
                         )
                     )
                 except Exception as exc:  # pragma: no cover - defensive figure fallback
-                    warnings.append(
+                    w.warnings.append(
                         "QC overview panels could not be written: " f"{type(exc).__name__}: {exc}"
                     )
 
-            artifacts["figures"] = figure_paths
+            w.artifacts["figures"] = figure_paths
         else:
-            skipped.append("figures")
-            warnings.append("QCOutputConfig.write_figures is true, but no AnnData was provided.")
+            w.skipped.append("figures")
+            w.warnings.append("QCOutputConfig.write_figures is true, but no AnnData was provided.")
 
     else:
-        skipped.append("figures")
+        w.skipped.append("figures")
 
-    if qc_config.outputs.publication_tables:
-        if figure_source is not None:
+
+def _write_publication_tables(w: _ArtifactWrite) -> None:
+    """Write the per-sample publication tables."""
+    if w.qc_config.outputs.publication_tables:
+        if w.figure_source is not None:
             try:
                 from cellquorum.visualization.qc.publication_table import (
                     write_qc_publication_tables,
                 )
 
-                keys = publication_keys or {}
-                artifacts["publication_tables"] = [
+                keys = w.publication_keys or {}
+                w.artifacts["publication_tables"] = [
                     str(path)
                     for path in write_qc_publication_tables(
-                        figures_path,
-                        cell_metrics=metrics_result.cell_metrics,
-                        cell_decisions=floors.cell_table(),
-                        obs=figure_source.obs,
+                        w.figures_path,
+                        cell_metrics=w.metrics_result.cell_metrics,
+                        cell_decisions=w.floors.cell_table(),
+                        obs=w.figure_source.obs,
                         sample_key=(
                             keys.get("sample_key") or keys.get("patient_key") or "sample_id"
                         ),
                         donor_key=keys.get("patient_key"),
                         condition_key=keys.get("condition_key"),
                         gene_summary={
-                            "n_genes": int(len(floors.gene_keep)),
-                            "n_genes_kept": int(floors.gene_keep.sum()),
+                            "n_genes": int(len(w.floors.gene_keep)),
+                            "n_genes_kept": int(w.floors.gene_keep.sum()),
                         },
                         case_label=keys.get("disease_label"),
-                        project=output_path.parent.parent.name or "CellQuorum",
-                        formats=("html", "tex", qc_config.outputs.figure_format),
-                        dpi=qc_config.outputs.figure_dpi,
+                        project=w.output_path.parent.parent.name or "CellQuorum",
+                        formats=("html", "tex", w.qc_config.outputs.figure_format),
+                        dpi=w.qc_config.outputs.figure_dpi,
                     )
                 ]
             except Exception as exc:  # pragma: no cover - defensive table fallback
-                skipped.append("publication_tables")
-                warnings.append(
+                w.skipped.append("publication_tables")
+                w.warnings.append(
                     f"Publication QC tables could not be written: {type(exc).__name__}: {exc}"
                 )
         else:
-            skipped.append("publication_tables")
-            warnings.append(
+            w.skipped.append("publication_tables")
+            w.warnings.append(
                 "QCOutputConfig.publication_tables is true, but no AnnData was provided, so "
                 "the per-sample table has no sample labels to group by."
             )
     else:
-        skipped.append("publication_tables")
+        w.skipped.append("publication_tables")
 
-    if qc_config.outputs.html_report:
-        if figure_source is not None:
+
+def _write_html_report(w: _ArtifactWrite) -> None:
+    """Write the self-contained HTML QC report."""
+    if w.qc_config.outputs.html_report:
+        if w.figure_source is not None:
             try:
                 from cellquorum.visualization.qc.html_report import write_qc_html_report
 
-                keys = publication_keys or {}
+                keys = w.publication_keys or {}
 
-                artifacts["html_report"] = write_qc_html_report(
-                    output_path / "qc_report.html",
-                    cell_metrics=metrics_result.cell_metrics,
-                    cell_decisions=floors.cell_table(),
-                    obs=figure_source.obs,
+                w.artifacts["html_report"] = write_qc_html_report(
+                    w.output_path / "qc_report.html",
+                    cell_metrics=w.metrics_result.cell_metrics,
+                    cell_decisions=w.floors.cell_table(),
+                    obs=w.figure_source.obs,
                     sample_key=keys.get("sample_key") or keys.get("patient_key") or "sample_id",
                     donor_key=keys.get("patient_key"),
                     condition_key=keys.get("condition_key"),
                     gene_summary={
-                        "n_genes": int(len(floors.gene_keep)),
-                        "n_genes_kept": int(floors.gene_keep.sum()),
+                        "n_genes": int(len(w.floors.gene_keep)),
+                        "n_genes_kept": int(w.floors.gene_keep.sum()),
                     },
-                    project=output_path.parent.parent.name or "CellQuorum",
-                    floors=qc_config.floors.model_dump(),
+                    project=w.output_path.parent.parent.name or "CellQuorum",
+                    floors=w.qc_config.floors.model_dump(),
                     case_label=keys.get("disease_label"),
-                    figures=_report_figure_order(artifacts.get("figures")),
-                    notes=[warning for warning in warnings if "no distribution plotted" in warning],
+                    figures=_report_figure_order(w.artifacts.get("figures")),
+                    notes=[
+                        warning for warning in w.warnings if "no distribution plotted" in warning
+                    ],
                 )
             except Exception as exc:  # pragma: no cover - defensive report fallback
-                skipped.append("html_report")
-                warnings.append(f"HTML QC report could not be written: {type(exc).__name__}: {exc}")
+                w.skipped.append("html_report")
+                w.warnings.append(
+                    f"HTML QC report could not be written: {type(exc).__name__}: {exc}"
+                )
         else:
-            skipped.append("html_report")
-            warnings.append(
+            w.skipped.append("html_report")
+            w.warnings.append(
                 "QCOutputConfig.html_report is true, but no AnnData was provided, so the "
                 "per-sample attrition table has no sample labels to group by."
             )
 
     else:
-        skipped.append("html_report")
+        w.skipped.append("html_report")
 
-    if qc_config.outputs.write_summary_json:
+
+def _write_summary(w: _ArtifactWrite) -> None:
+    """Write ``qc_summary.json``, which records what was written, skipped and warned."""
+    if w.qc_config.outputs.write_summary_json:
         summary_payload = build_qc_summary_payload(
-            metrics_result=metrics_result,
-            floors=floors,
-            artifact_names=artifacts,
-            skipped=skipped,
-            warnings=warnings,
-            summary_extra=summary_extra,
+            metrics_result=w.metrics_result,
+            floors=w.floors,
+            artifact_names=w.artifacts,
+            skipped=w.skipped,
+            warnings=w.warnings,
+            summary_extra=w.summary_extra,
         )
 
-        artifacts["summary"] = write_json_artifact(
+        w.artifacts["summary"] = write_json_artifact(
             summary_payload,
-            output_path / "qc_summary.json",
+            w.output_path / "qc_summary.json",
         )
 
     else:
-        skipped.append("summary")
-
-    return QCArtifactManifest(
-        output_dir=output_path,
-        artifacts=artifacts,
-        skipped=skipped,
-        warnings=warnings,
-    )
+        w.skipped.append("summary")
 
 
 def _metrics_with_posterior(
