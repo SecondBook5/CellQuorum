@@ -274,7 +274,7 @@ def reembed_focus_batch_aware(
     sc.tl.pca(hvg_subset, n_comps=comps, svd_solver="arpack", random_state=random_state)
     embedding = hvg_subset.obsm["X_pca"]
 
-    if n_batches > 1:
+    if n_batches > 1 and batch_key is not None:
         result = _harmony_embedding(
             embedding,
             scratch.obs[batch_key],

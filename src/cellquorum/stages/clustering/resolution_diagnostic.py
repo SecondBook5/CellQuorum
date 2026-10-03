@@ -46,7 +46,7 @@ cannot drift from what the real clustering run actually does.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import anndata as ad
 import numpy as np
@@ -94,7 +94,7 @@ def _best_match_jaccard(reference_cells: set, subsample_clusters: dict[str, set]
 def _run_one_clustering(
     target: ad.AnnData,
     *,
-    context: PipelineContext,
+    context: PipelineContext | None,
     n_neighbors: int,
     use_rep: str,
     resolution: float,
@@ -118,7 +118,7 @@ def _run_one_clustering(
 def _bootstrap_round(
     adata: ad.AnnData,
     *,
-    context: PipelineContext,
+    context: PipelineContext | None,
     n_neighbors: int,
     use_rep: str,
     resolution: float,
@@ -196,18 +196,18 @@ def _round2_allocation(
     summary = grouped.agg(
         median="median", q25=lambda s: s.quantile(0.25), q75=lambda s: s.quantile(0.75)
     )
-    summary = summary.reindex(resolutions).fillna(0.0)
+    summary = summary.reindex(list(resolutions)).fillna(0.0)
 
     iqr = summary["q75"] - summary["q25"]
     medians = summary["median"]
     transition = pd.Series(0.0, index=list(resolutions))
-    for i, resolution in enumerate(resolutions):
+    for i in range(len(resolutions)):
         deltas = []
         if i > 0:
             deltas.append(abs(medians.iloc[i] - medians.iloc[i - 1]))
         if i < len(resolutions) - 1:
             deltas.append(abs(medians.iloc[i] - medians.iloc[i + 1]))
-        transition.loc[resolution] = max(deltas) if deltas else 0.0
+        transition.iloc[i] = max(deltas) if deltas else 0.0
 
     priority = _normalize(iqr) + _normalize(transition)
     total = priority.sum()
@@ -231,7 +231,7 @@ def compute_resolution_stability(
     n_bootstraps: int,
     subsample_fraction: float,
     random_state: int,
-    context: PipelineContext = None,
+    context: PipelineContext | None = None,
     adaptive: bool = True,
     initial_fraction: float = 0.3,
     force_cpu: bool = False,
@@ -349,12 +349,15 @@ def summarize_resolution_stability(
         )
 
     grouped = long_df.groupby("resolution")["jaccard"]
-    summary = grouped.agg(
-        median_jaccard="median",
-        q25=lambda s: s.quantile(0.25),
-        q75=lambda s: s.quantile(0.75),
-        n_bootstrap_observations="count",
-    ).reindex(resolutions)
+    summary = cast(
+        "pd.DataFrame",
+        grouped.agg(
+            median_jaccard="median",
+            q25=lambda s: s.quantile(0.25),
+            q75=lambda s: s.quantile(0.75),
+            n_bootstrap_observations="count",
+        ).reindex(resolutions),
+    )
     summary["n_clusters"] = [n_clusters_by_resolution[r] for r in resolutions]
     summary["n_bootstrap_observations"] = summary["n_bootstrap_observations"].fillna(0).astype(int)
     summary = summary.reset_index()

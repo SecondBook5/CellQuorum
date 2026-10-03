@@ -46,8 +46,10 @@ from cellquorum.stages.clustering.subclustering.qc_consistency import (
 
 if TYPE_CHECKING:
     import anndata as ad
+    import pandas as pd
 
     from cellquorum.core.context import PipelineContext
+    from cellquorum.stages.clustering.subclustering.config import FocusConfig, SubclusteringConfig
 
 
 class SubclusteringFocusError(CellQuorumConfigError):
@@ -227,7 +229,7 @@ class SubclusteringStage:
         )
 
     @staticmethod
-    def _resolve_focus_config(config: object, sc_config: object) -> object:
+    def _resolve_focus_config(config: Any, sc_config: SubclusteringConfig) -> FocusConfig:
         """Resolve the focus lineage from the cohort schema if the block declared none."""
 
         # Resolve the focus lineage from the central cohort schema when the
@@ -248,7 +250,10 @@ class SubclusteringStage:
 
     @staticmethod
     def _extract_focus(
-        adata: ad.AnnData, focus_config: object, sc_config: object, report: _Report
+        adata: ad.AnnData,
+        focus_config: FocusConfig,
+        sc_config: SubclusteringConfig,
+        report: _Report,
     ) -> ad.AnnData:
         """Subset to the focus lineage and refuse a focus that matches no cells."""
 
@@ -294,7 +299,10 @@ class SubclusteringStage:
 
     @staticmethod
     def _filter_groups(
-        context: PipelineContext, sc_config: object, focused: ad.AnnData, report: _Report
+        context: PipelineContext,
+        sc_config: SubclusteringConfig,
+        focused: ad.AnnData,
+        report: _Report,
     ) -> ad.AnnData:
         """Drop groups with too few focus cells (when configured) and plot the recovery curve."""
 
@@ -357,8 +365,8 @@ class SubclusteringStage:
     def _partition_choir(
         self,
         filtered: ad.AnnData,
-        sc_config: object,
-        backend: object,
+        sc_config: SubclusteringConfig,
+        backend: Any,
         scratch: Path,
         nuisance_key: str | None,
         report: _Report,
@@ -491,7 +499,7 @@ class SubclusteringStage:
     def _partition_leiden_stability(
         context: PipelineContext,
         filtered: ad.AnnData,
-        sc_config: object,
+        sc_config: SubclusteringConfig,
         nuisance_key: str | None,
         report: _Report,
     ) -> ad.AnnData:
@@ -547,8 +555,8 @@ class SubclusteringStage:
     def _run_donor_gate(
         self,
         context: PipelineContext,
-        config: object,
-        sc_config: object,
+        config: Any,
+        sc_config: SubclusteringConfig,
         filtered: ad.AnnData,
         partition_reduction_key: str | None,
         cluster_key: str,
@@ -674,7 +682,7 @@ class SubclusteringStage:
     @staticmethod
     def _run_technical_qc(
         context: PipelineContext,
-        sc_config: object,
+        sc_config: SubclusteringConfig,
         filtered: ad.AnnData,
         cluster_key: str,
         has_cluster_labels: bool,
@@ -800,7 +808,7 @@ class SubclusteringStage:
     @staticmethod
     def _add_marker_dotplot(
         context: PipelineContext,
-        sc_config: object,
+        sc_config: SubclusteringConfig,
         filtered: ad.AnnData,
         cluster_key: str,
         has_cluster_labels: bool,
@@ -849,7 +857,7 @@ class SubclusteringStage:
                         )
 
     @staticmethod
-    def _resolve_nuisance_key(config: object, sc_config: object) -> str | None:
+    def _resolve_nuisance_key(config: Any, sc_config: SubclusteringConfig) -> str | None:
         """
         Resolve the one column CHOIR corrects for and sc-SHC conditions on.
 
@@ -875,11 +883,11 @@ class SubclusteringStage:
 
     def _project_onto_parent(
         self,
-        parent: object,
-        focused: object,
-        filtered: object,
-        sc_config: object,
-    ) -> object:
+        parent: ad.AnnData,
+        focused: ad.AnnData,
+        filtered: ad.AnnData,
+        sc_config: SubclusteringConfig,
+    ) -> ad.AnnData:
         """
         Merge subclustering outputs back onto the parent object.
 
@@ -928,7 +936,9 @@ class SubclusteringStage:
         return parent
 
     @staticmethod
-    def _project_labels(series: object, index: object) -> object:
+    def _project_labels(
+        series: pd.Series, index: pd.Index
+    ) -> pd.Series | pd.api.extensions.ExtensionArray:
         """Reindex a per-cell column onto a larger axis, keeping it writable.
 
         Widening a column has to put something in the gap, and pandas puts float
@@ -964,7 +974,7 @@ class SubclusteringStage:
             return pd.Categorical(widened)
         return widened
 
-    def _resolve_rscript_backend(self, context: PipelineContext) -> object | None:
+    def _resolve_rscript_backend(self, context: PipelineContext) -> Any | None:
         """Return the Rscript backend from context registry, or None."""
         registry = getattr(context, "backend_registry", None)
         if registry is None:

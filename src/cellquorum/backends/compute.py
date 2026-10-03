@@ -51,8 +51,11 @@ def gpu_compute_available() -> bool:
     return available
 
 
-def _compute_settings(context: PipelineContext) -> tuple[str, bool, bool]:
-    """Extract (backend, prefer_gpu, fallback_to_cpu) from a context, with defaults."""
+def _compute_settings(context: PipelineContext | None) -> tuple[str, bool, bool]:
+    """Extract (backend, prefer_gpu, fallback_to_cpu) from a context, with defaults.
+
+    ``None`` (no run context, as in a unit test or a direct call) gives the defaults.
+    """
 
     # ComputeConfig defaults: backend="auto", prefer_gpu=True, fallback_to_cpu=True.
     config = getattr(context, "config", None)
@@ -79,7 +82,7 @@ def should_use_gpu(context: PipelineContext) -> bool:
     return resolve_compute(context)["use_gpu"]
 
 
-def resolve_compute(context: PipelineContext) -> dict:
+def resolve_compute(context: PipelineContext | None) -> dict:
     """Resolve compute, raising when required GPU support is unavailable.
 
     Explicit GPU requests that permit CPU fallback carry a human-readable reason.

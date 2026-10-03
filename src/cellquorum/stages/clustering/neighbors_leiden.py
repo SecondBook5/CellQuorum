@@ -101,7 +101,7 @@ def _neighbors_and_leiden(
 def run_neighbors_leiden_routed(
     target: ad.AnnData,
     *,
-    context: PipelineContext,
+    context: PipelineContext | None,
     n_neighbors: int,
     use_rep: str,
     resolution: float,
