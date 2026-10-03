@@ -33,12 +33,16 @@ The manifest (`workflow/hypotheses.yaml`) defines the set of hypotheses to run. 
       genes: [VIM, SNAI1, TWIST1, ZEB1]
   ```
 
-- **`config_overrides`**: Dictionary of config overrides applied to the generated configs for this hypothesis. Use dot-notation keys to override nested fields. Example:
+- **`config_overrides`**: A nested block merged into the generated config for this hypothesis, written the way the config file itself is laid out (not as dotted keys). Example:
   ```yaml
   config_overrides:
-    "qc.min_genes": 500
-    "de.method": "wilcoxon"
+    qc_evidence:
+      floors:
+        min_genes_per_cell: 500
+    stages:
+      annotation: false
   ```
+  `stages` is special. It switches a stage on or off outright, and it may not switch off a stage that a method listed as running depends on: record that omission under `skip:` instead, so it appears in the status matrix with its reason.
 
 ### Example Manifest Entry
 

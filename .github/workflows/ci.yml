@@ -159,6 +159,23 @@ jobs:
           path: /tmp/figure-comparisons
           if-no-files-found: warn
 
+  snakemake-workflow:
+    name: Snakemake workflow (end to end)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package with the workflow extra
+        run: pip install -e '.[dev,workflow]'
+      # Runs the real workflow (generate configs, run the engine, bundle, status matrix) on
+      # the synthetic demo project. The plain test job skips this because it does not
+      # install snakemake.
+      - name: Run the end-to-end workflow test
+        run: pytest tests/workflow/test_snakemake_end_to_end.py -p no:cacheprovider
+
   docs:
     name: Docs build (strict)
     runs-on: ubuntu-latest

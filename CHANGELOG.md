@@ -205,6 +205,11 @@ Recent engineering and reproducibility hardening:
 
 ### Changed
 
+- **The Snakemake workflow is now tested end to end, in its own CI job**, and has a `workflow`
+  install extra (`pip install 'cellquorum[workflow]'`). The guide's description of
+  `config_overrides` was wrong: it showed dotted keys, which generate a config the engine rejects.
+  It now shows the nested form the generator actually merges.
+
 - **One figure-theme entry point, `cellquorum.visualization.figstyle.apply_theme(style)`**,
   replaces `set_style()`, `apply_cellquorum_theme()`, `set_publication_style()` and the
   seven per-stage `apply_theme()` wrappers. `style` is `"compact"`, `"notebook"` or

@@ -160,6 +160,7 @@ Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 | **Typecheck** | `mypy` on the packages listed under `files` in `[tool.mypy]` in `pyproject.toml`, with no module exempted. |
 | **Test** | The suite on Python 3.12 and 3.13, with a coverage floor (`fail_under` in `pyproject.toml`). Optional-backend tests self-skip. |
 | **Figures** | `tests/visualization/test_figure_gallery.py`: every gallery figure must match its stored baseline pixel for pixel. |
+| **Snakemake workflow** | `tests/workflow/test_snakemake_end_to_end.py`: the multi-hypothesis workflow runs from manifest to status matrix on the synthetic demo project. Needs the `workflow` extra, so the plain Test job skips it. |
 | **Docs** | `mkdocs build --strict` — a broken link or unresolved API reference fails the build. |
 | **Build** | Builds the wheel and sdist, asserts the wheel bundles every `.R` script, a non-empty `LICENSE` and `py.typed`, then installs the wheel into a clean environment and runs `tests/acceptance` there: the Python API and the command line a user types. |
 

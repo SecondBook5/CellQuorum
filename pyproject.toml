@@ -66,6 +66,10 @@ r = [
 gpu = [
   "scvi-tools>=1.2",
 ]
+# The multi-hypothesis matrix workflow (workflow/Snakefile, docs/guide/snakemake.md).
+workflow = [
+  "snakemake>=8",
+]
 # Development tooling is pinned to EXACT versions, unlike the runtime
 # dependencies above, which stay as lower bounds. The asymmetry is deliberate:
 #
