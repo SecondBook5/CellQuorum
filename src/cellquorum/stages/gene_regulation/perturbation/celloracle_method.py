@@ -264,6 +264,7 @@ class CellOracleMethod(AnalysisMethod):
                         warnings.append(f"could not read {shift_pq.name}: {str(exc)[:150]}")
 
                     def _shift_field() -> list[Path] | None:
+                        assert shift_df is not None  # only drawn under `if shift_df is not None`
                         emb = pd.DataFrame(
                             adata.obsm[embedding_key][:, :2],
                             index=adata.obs_names,
@@ -288,6 +289,7 @@ class CellOracleMethod(AnalysisMethod):
 
                     # Gridded vector field (CellOracle-style) — the publication view
                     def _shift_grid() -> list[Path] | None:
+                        assert shift_df is not None  # only drawn under `if shift_df is not None`
                         emb_grid = pd.DataFrame(
                             adata.obsm[embedding_key][:, :2],
                             index=adata.obs_names,
@@ -312,6 +314,7 @@ class CellOracleMethod(AnalysisMethod):
 
                     # Fate summary: per-cluster mean shift magnitude (direction-agnostic)
                     def _fate_summary() -> list[Path] | None:
+                        assert shift_df is not None  # only drawn under `if shift_df is not None`
                         common = shift_df.index.intersection(adata.obs_names)
                         if len(common) == 0:
                             return None
@@ -325,8 +328,9 @@ class CellOracleMethod(AnalysisMethod):
                                     "delta": mags,
                                 }
                             )
-                            .groupby("cluster", as_index=False)["delta"]
+                            .groupby("cluster")["delta"]
                             .mean()
+                            .reset_index()
                         )
                         return pfig.plot_ko_fate_summary(fate_df, figures_dir, tf=top_tf)
 

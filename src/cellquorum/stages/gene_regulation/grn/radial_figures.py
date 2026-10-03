@@ -25,7 +25,7 @@ regulon graph (real structure from this cohort), not the curated prior net.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -370,7 +370,7 @@ def radial_grn(
 
     case_color = case_color or figstyle.LE_RED
     control_color = control_color or figstyle.NORMAL_BLUE
-    cmap = plt.cm.RdBu_r
+    cmap = plt.get_cmap("RdBu_r")
     lfcs = np.array([lf for _, _, _, lf in edges])
     vlfc = max(0.5, float(np.percentile(np.abs(lfcs), 95)))
     nlfc = plt.Normalize(-vlfc, vlfc)
@@ -425,7 +425,7 @@ def radial_grn(
             [y],
             s=180,
             marker="s",
-            c=[cmap(nact(tf_activity.loc[t, "score"]))],
+            c=[cmap(nact(float(cast("Any", tf_activity.loc[t, "score"]))))],
             edgecolors=figstyle.TEXT,
             linewidths=0.8,
             zorder=5,
@@ -447,16 +447,16 @@ def radial_grn(
     sm_lfc.set_array([])
     sm_act = plt.cm.ScalarMappable(cmap=cmap, norm=nact)
     sm_act.set_array([])
-    cax1 = fig.add_axes([0.055, 0.50, 0.016, 0.30])
-    cax2 = fig.add_axes([0.055, 0.16, 0.016, 0.22])
+    cax1 = fig.add_axes((0.055, 0.50, 0.016, 0.30))
+    cax2 = fig.add_axes((0.055, 0.16, 0.016, 0.22))
     cb1 = fig.colorbar(sm_lfc, cax=cax1)
     cb1.set_label("target log$_2$FC  (●)", fontsize=8.5)
     cb1.ax.tick_params(labelsize=7.5)
-    cb1.outline.set_visible(False)
+    cast("Any", cb1.outline).set_visible(False)  # stubs type Spine as not callable
     cb2 = fig.colorbar(sm_act, cax=cax2)
     cb2.set_label("TF activity, ULM  (■)", fontsize=8.5)
     cb2.ax.tick_params(labelsize=7.5)
-    cb2.outline.set_visible(False)
+    cast("Any", cb2.outline).set_visible(False)  # stubs type Spine as not callable
     case_label = f"up in {case}" if case else "up in case"
     control_label = f"up in {control}" if control else "up in control"
     cax1.text(
@@ -570,7 +570,14 @@ def select_curvature_targets(
         ``(tfs, edges, tf_curvature, target_curvature)`` where ``edges`` is
         ``(tf, target, curvature, weight)``.
     """
-    empty = ([], [], {}, {})
+    empty: tuple[
+        list[str], list[tuple[str, str, float, float]], dict[str, float], dict[str, float]
+    ] = (
+        [],
+        [],
+        {},
+        {},
+    )
     if edge_df is None or edge_df.empty or G is None or G.number_of_edges() == 0:
         return empty
 
@@ -648,7 +655,7 @@ def radial_regulon_curvature(
         s: f"{sec_members[s][0]} module" if sec_members[s] else f"module {s}" for s in sec_ids
     }
 
-    cmap = plt.cm.RdBu_r
+    cmap = plt.get_cmap("RdBu_r")
     curvs = np.array(
         [c for _t, _g, c, _w in edges] + list(tf_curv.values()) + list(tgt_curv.values())
     )
@@ -737,11 +744,11 @@ def radial_regulon_curvature(
 
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cax = fig.add_axes([0.055, 0.35, 0.016, 0.30])
+    cax = fig.add_axes((0.055, 0.35, 0.016, 0.30))
     cb = fig.colorbar(sm, cax=cax)
     cb.set_label("Ollivier-Ricci curvature", fontsize=8.5)
     cb.ax.tick_params(labelsize=7.5)
-    cb.outline.set_visible(False)
+    cast("Any", cb.outline).set_visible(False)  # stubs type Spine as not callable
     cax.text(
         -0.6,
         1.0,

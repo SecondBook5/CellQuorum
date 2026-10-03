@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import cast
 
 import matplotlib
 import pandas as pd
@@ -211,7 +212,10 @@ def plot_module_umap(
 
     hubs = df[df["hub"] == "hub"]
     top_hub = (
-        hubs.sort_values("kME", ascending=False).groupby("module").first()["gene"].to_dict()
+        cast(
+            "dict[str, str]",
+            hubs.sort_values("kME", ascending=False).groupby("module").first()["gene"].to_dict(),
+        )
         if len(hubs)
         else {}
     )

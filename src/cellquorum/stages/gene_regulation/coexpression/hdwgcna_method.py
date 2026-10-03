@@ -243,6 +243,7 @@ class HdwgcnaMethod(AnalysisMethod):
                     f"community network skipped: could not read tom_edges.csv ({str(exc)[:150]})"
                 )
             if tom_edges_df is not None and not tom_edges_df.empty:
+                network_edges = tom_edges_df
                 network_genes = set(tom_edges_df["gene1"]) | set(tom_edges_df["gene2"])
                 present_genes = sorted(network_genes & set(adata.var_names))
                 marker_log_dor = None
@@ -260,7 +261,7 @@ class HdwgcnaMethod(AnalysisMethod):
                         )
 
                 def _community_network_fig(
-                    edges: pd.DataFrame = tom_edges_df,
+                    edges: pd.DataFrame = network_edges,
                     markers: pd.DataFrame | None = marker_log_dor,
                 ) -> list[Path]:
                     fig = plot_community_network(

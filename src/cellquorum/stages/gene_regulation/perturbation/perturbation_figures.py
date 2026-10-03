@@ -492,11 +492,7 @@ def plot_grn_connectivity(
 
     df = grn_summary_df
     if "degree" not in df.columns:
-        df = (
-            df.groupby("tf", as_index=False)["n_targets"]
-            .sum()
-            .rename(columns={"n_targets": "degree"})
-        )
+        df = df.groupby("tf")["n_targets"].sum().rename("degree").reset_index()
     df = df.sort_values("degree", ascending=False).head(n_top).iloc[::-1]
     color = figstyle.CATEGORICAL_PALETTE[2]  # aqua
 

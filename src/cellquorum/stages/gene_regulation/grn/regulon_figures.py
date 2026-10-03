@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import matplotlib
 
@@ -38,11 +38,11 @@ def _sort_categories(cats: Iterable[object]) -> list[str]:
     puts "10" before "2" -- correct for real names, wrong for numeric cluster ids,
     which is exactly the labels this module groups by.
     """
-    cats = [str(c) for c in cats]
+    names = [str(c) for c in cats]
     try:
-        return sorted(cats, key=int)
+        return sorted(names, key=int)
     except ValueError:
-        return sorted(cats)
+        return sorted(names)
 
 
 def regulon_specificity_scores(auc_mtx: pd.DataFrame, groups: pd.Series) -> pd.DataFrame:
@@ -140,9 +140,9 @@ def plot_regulon_cell_clustermap(
         rng = np.random.default_rng(0)
         key = ann.iloc[:, 0]
         frac = max_cells / len(auc)
-        keep = []
-        for _, ix in key.groupby(key).groups.items():
-            ix = np.array(ix)
+        keep: list[Any] = []
+        for _, group_index in key.groupby(key).groups.items():
+            ix = np.array(group_index)
             k = max(1, int(round(len(ix) * frac)))
             keep.extend(rng.choice(ix, size=min(k, len(ix)), replace=False))
         auc = auc.loc[keep]

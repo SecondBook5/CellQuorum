@@ -6,7 +6,10 @@ import glob
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
+from typing import Any
 
 import anndata as ad
 import pandas as pd
@@ -289,6 +292,9 @@ class PyscenicMethod(AnalysisMethod):
                 adata, skip_reason, figs=figs, warnings=warnings, **skip_kwargs
             )
 
+        # A skip_reason of None means every check above passed, which needs a backend.
+        assert backend is not None
+
         # 5. Write counts h5ad to scratch
         scratch = Path(getattr(context.paths, "scratch", "."))
         scratch.mkdir(parents=True, exist_ok=True)
@@ -456,21 +462,21 @@ class PyscenicMethod(AnalysisMethod):
                 groups.index = adata.obs_names
             common = auc.index.intersection(adata.obs_names)
             if groups is not None and len(common) > 0:
-                for fn, kwargs in (
-                    (
-                        rf.plot_rss_panels,
-                        {"group_label": group_by, "top_n": top_n, "cluster_labels": cluster_labels},
-                    ),
-                    (
-                        rf.plot_regulon_clustermap,
-                        {"group_label": group_by, "top_n": top_n, "cluster_labels": cluster_labels},
-                    ),
-                ):
-                    # Bound as defaults: the lambda outlives this iteration, and
-                    # closing over the loop variables would draw the last pair twice.
+                figure_kwargs = {
+                    "group_label": group_by,
+                    "top_n": top_n,
+                    "cluster_labels": cluster_labels,
+                }
+                figure_calls: tuple[Callable[..., Any], ...] = (
+                    rf.plot_rss_panels,
+                    rf.plot_regulon_clustermap,
+                )
+                for fn in figure_calls:
+                    # partial binds fn now: closing over the loop variable would draw the
+                    # last function twice.
                     render_figure(
                         fn.__name__,
-                        lambda fn=fn, kwargs=kwargs: fn(auc, groups, figures_dir, **kwargs),
+                        partial(fn, auc, groups, figures_dir, **figure_kwargs),
                         figures=figs,
                         warnings=warnings,
                     )
