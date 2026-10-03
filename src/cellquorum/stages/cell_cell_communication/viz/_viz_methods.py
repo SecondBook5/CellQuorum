@@ -228,7 +228,7 @@ class NetworkVizMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
         top_k = int(config.get("top_k", 15))
         wanted_levels = config.get("levels")
-        levels = ("cci", "gci")
+        levels: tuple[str, ...] = ("cci", "gci")
         if wanted_levels:
             levels = tuple(lv for lv in levels if lv in set(wanted_levels))
 

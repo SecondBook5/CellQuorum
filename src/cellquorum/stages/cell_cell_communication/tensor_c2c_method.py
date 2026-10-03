@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 
@@ -145,7 +145,7 @@ class TensorCell2CellMethod(AnalysisMethod):
             return "cpu"
         return "cpu"
 
-    def _place_tensor_on_device(self, tensor: object, device: str) -> tuple[str, str | None]:
+    def _place_tensor_on_device(self, tensor: Any, device: str) -> tuple[str, str | None]:
         """Move the tensor onto ``device`` for decomposition.
 
         Returns the device actually used and an optional note. GPU needs the

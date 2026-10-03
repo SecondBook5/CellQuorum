@@ -13,6 +13,8 @@ from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from cellquorum.core.context import PipelineContext
 
 
@@ -72,7 +74,7 @@ class LianaMethod(AnalysisMethod):
         # sinks the entire CCC stage. We iterate ourselves and tolerate per-sample
         # failures, keeping every sample that scores and recording the rest.
         samples = adata.obs[sample_col].astype("category").cat.categories
-        per_sample: dict[str, object] = {}
+        per_sample: dict[str, pd.DataFrame] = {}
         skipped: dict[str, str] = {}
         for sample in samples:
             sub = adata[adata.obs[sample_col] == sample]

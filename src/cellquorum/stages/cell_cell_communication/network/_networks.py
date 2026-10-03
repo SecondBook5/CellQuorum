@@ -7,9 +7,14 @@ between the adapter, the network builders, and the two methods.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import networkx as nx
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    import anndata as ad
 
 # Canonical LR edge columns in stable order.
 CANONICAL_COLUMNS = ["source", "target", "ligand", "receptor", "weight", "sample"]
@@ -177,7 +182,7 @@ def _comparative_pagerank(
 
 
 def resolve_condition_arms(
-    adata: object,
+    adata: ad.AnnData,
     canon: pd.DataFrame,
     sample_col: str,
     condition_col: str | None,

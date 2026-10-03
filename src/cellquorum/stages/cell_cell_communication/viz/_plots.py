@@ -197,6 +197,7 @@ def cci_heatmap(
     mat = mat.sort_index(kind="mergesort").sort_index(axis=1, kind="mergesort")
     fig, ax = plt.subplots(figsize=(max(4, 0.5 * mat.shape[1]), max(4, 0.5 * mat.shape[0])))
     vals = mat.to_numpy(dtype=float)
+    norm: Normalize
     if diverging:
         norm = signed_norm(vals.ravel())
         cmap = "RdBu_r"
@@ -292,7 +293,7 @@ def plot_mnn_sample_activity(
     # alphabetical-by-label order (the previous behavior) put rows in
     # whatever order their ligand/receptor names happened to sort, with no
     # relationship to how strong the interaction actually was.
-    score_by_id = source_d.groupby("id")["prioritization_score"].max()
+    score_by_id = source_d.groupby("id")["prioritization_score"].max().to_dict()
     route_by_id = {i: r.split(": ", 1)[0] for i, r in id_route.items()}
     ordered_ids = sorted(id_route, key=lambda i: (route_by_id[i], score_by_id[i]))
     rows = [id_route[i] for i in ordered_ids]
@@ -551,16 +552,21 @@ def plot_mnn_sample_activity(
     cols = [f"{lr}\n{g}" for g in groups for lr in ("ligand", "receptor")]
     col_pos = {c: i for i, c in enumerate(cols)}
     cs_rows = []
-    for _, r in source_d.iterrows():
+    for _, source_row in source_d.iterrows():
         cs_rows.append(
-            (f"ligand\n{r['group']}", r["__row"], r["scaled_pb_ligand"], r["fraction_ligand_group"])
+            (
+                f"ligand\n{source_row['group']}",
+                source_row["__row"],
+                source_row["scaled_pb_ligand"],
+                source_row["fraction_ligand_group"],
+            )
         )
         cs_rows.append(
             (
-                f"receptor\n{r['group']}",
-                r["__row"],
-                r["scaled_pb_receptor"],
-                r["fraction_receptor_group"],
+                f"receptor\n{source_row['group']}",
+                source_row["__row"],
+                source_row["scaled_pb_receptor"],
+                source_row["fraction_receptor_group"],
             )
         )
     cs = pd.DataFrame(cs_rows, columns=["col", "row", "specificity", "fraction"])
@@ -1327,7 +1333,7 @@ def _sankey_fallback(
 
 def curvature_network(
     edges: pd.DataFrame,
-    nodes: pd.DataFrame,
+    nodes: pd.DataFrame | None,
     *,
     source_col: str = "source",
     target_col: str = "target",
@@ -1497,6 +1503,7 @@ def topology_facet_figures(
             ax.set_yticks([])
         else:
             straddles = float(np.nanmin(vals)) < 0 < float(np.nanmax(vals))
+            norm: Normalize
             if straddles:
                 norm = signed_norm(vals)
                 colors = plt.get_cmap("RdBu_r")(norm(vals))
