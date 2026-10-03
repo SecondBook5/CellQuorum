@@ -30,7 +30,13 @@ from cellquorum.stats.paired_concordance import (
 )
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
     from cellquorum.core.context import PipelineContext
+    from cellquorum.stages.comparative.differential_abundance.aggregation import CelltypeCounts
+    from cellquorum.stages.comparative.differential_abundance.reference_selection import (
+        ReferenceChoice,
+    )
 
 # An acceptance rate outside this band means the sampler, not the data, decided the
 # answer: near zero the chain never moved, and near one it is taking steps too small
@@ -379,7 +385,7 @@ class SccodaMethod(AnalysisMethod):
 
     def _resolve_reference(
         self, counts: pd.DataFrame, config: dict, configured: str | None
-    ) -> tuple[str | None, str, object]:
+    ) -> tuple[str | None, str, ReferenceChoice | None]:
         """Pick the compositional reference and explain the choice.
 
         Precedence is config, then the engine's criterion, then scCODA's own
@@ -686,7 +692,7 @@ class SccodaMethod(AnalysisMethod):
     def _composition_artifacts(
         self,
         effects: pd.DataFrame | None,
-        cc: object,
+        cc: CelltypeCounts,
         *,
         condition_col: str,
         donor_col: str,
@@ -718,7 +724,7 @@ class SccodaMethod(AnalysisMethod):
             render_da_figure,
         )
 
-        def build() -> object:
+        def build() -> Figure | None:
             proportions = build_composition_proportions(
                 cc.counts,
                 cc.sample_meta[condition_col],

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import anndata as ad
 import pandas as pd
@@ -21,6 +21,8 @@ from cellquorum.stages.comparative.enrichment.viz.io import (
 from cellquorum.visualization.figstyle import apply_theme, get_group_palette
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
     from cellquorum.core.context import PipelineContext
 
 # Cap on how many running-ES per-source curves to render per collection.
@@ -166,7 +168,11 @@ class GseaVizMethod(AnalysisMethod):
                     df, value_col="score", label_col="source", pvalue_col="padj", top_k=top_k
                 )
                 paths = save_figure(
-                    ax.figure, figures_dir, f"gsea_diverging_{collection}", formats=formats, dpi=dpi
+                    cast("Figure", ax.figure),
+                    figures_dir,
+                    f"gsea_diverging_{collection}",
+                    formats=formats,
+                    dpi=dpi,
                 )
                 artifacts += figure_artifacts(
                     paths,
@@ -183,7 +189,11 @@ class GseaVizMethod(AnalysisMethod):
                     df, value_col="score", label_col="source", pvalue_col="padj", top_k=top_k
                 )
                 paths = save_figure(
-                    ax.figure, figures_dir, f"gsea_activity_{collection}", formats=formats, dpi=dpi
+                    cast("Figure", ax.figure),
+                    figures_dir,
+                    f"gsea_activity_{collection}",
+                    formats=formats,
+                    dpi=dpi,
                 )
                 artifacts += figure_artifacts(
                     paths,
@@ -332,7 +342,7 @@ class GsvaVizMethod(AnalysisMethod):
                         top_k=top_k,
                     )
                     paths = save_figure(
-                        ax.figure,
+                        cast("Figure", ax.figure),
                         figures_dir,
                         f"gsva_contrast_{collection}",
                         formats=formats,

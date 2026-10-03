@@ -29,7 +29,9 @@ here are the two house condition colours.
 from __future__ import annotations
 
 import textwrap
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -170,7 +172,7 @@ def plot_module_dotgrid(
     for i, program in enumerate(programs):
         for j, group in enumerate(groups):
             if (program, group) in grid.index:
-                row = grid.loc[(program, group)]
+                row = cast("pd.Series", grid.loc[(program, group)])
                 effect[i, j] = float(row["effect"])
                 fdr[i, j] = float(row["fdr"]) if np.isfinite(row["fdr"]) else 1.0
 
@@ -206,8 +208,8 @@ def plot_module_dotgrid(
         c=effect[tested],
         cmap="RdBu_r",
         norm=norm,
-        edgecolors=np.where(fdr[tested] < 0.05, _SIG_RING, _NULL_RING),
-        linewidths=np.where(fdr[tested] < 0.05, 1.1, 0.5),
+        edgecolors=cast("Any", np.where(fdr[tested] < 0.05, _SIG_RING, _NULL_RING)),
+        linewidths=cast("Any", np.where(fdr[tested] < 0.05, 1.1, 0.5)),
         zorder=3,
     )
     if (~tested).any():
@@ -276,7 +278,7 @@ def plot_module_dotgrid(
     bar = fig.colorbar(scatter, ax=ax, fraction=0.030, pad=bar_pad, shrink=0.85)
     bar.set_label(f"effect, {direction}", fontsize=8, labelpad=8)
     bar.ax.tick_params(labelsize=7)
-    bar.outline.set_linewidth(0.5)
+    cast("Any", bar.outline).set_linewidth(0.5)  # matplotlib's stubs type Spine as not callable
 
     # The size key runs horizontally across the header. Stacked vertically and
     # anchored outside the axes it landed on top of the colourbar's label and its
@@ -398,7 +400,7 @@ def plot_contrast_index(
         if not data:
             continue
         parts = ax.violinplot(data, positions=positions, widths=0.34, showextrema=False)
-        for body in parts["bodies"]:
+        for body in cast("Iterable[Any]", parts["bodies"]):
             body.set_facecolor(palette.get(condition, figstyle.CELLQUORUM_GRAY))
             body.set_edgecolor("none")
             body.set_alpha(0.85)

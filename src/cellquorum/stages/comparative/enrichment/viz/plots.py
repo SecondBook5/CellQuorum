@@ -509,8 +509,8 @@ def cross_group_dotplot(
     """
     col_labels = col_labels or {}
     var_by_row = df.groupby(row_col)[value_col].var().fillna(0.0)
-    keep_rows = var_by_row.sort_values(kind="mergesort", ascending=False).head(top_k).index
-    keep_rows = sorted(keep_rows)
+    top_rows = var_by_row.sort_values(kind="mergesort", ascending=False).head(top_k).index
+    keep_rows = sorted(top_rows)
     cols = sorted(df[col_col].astype(str).unique())
     sub = df[df[row_col].isin(keep_rows)]
     row_pos = {r: i for i, r in enumerate(keep_rows)}
@@ -563,8 +563,8 @@ def cross_group_dotplot_by_condition(
     pivot = sub.pivot_table(index=row_col, columns="_group", values=value_col, aggfunc="mean")
 
     var_by_row = pivot.var(axis=1).fillna(0.0)
-    keep_rows = var_by_row.sort_values(kind="mergesort", ascending=False).head(top_k).index
-    keep_rows = sorted(keep_rows)
+    top_rows = var_by_row.sort_values(kind="mergesort", ascending=False).head(top_k).index
+    keep_rows = sorted(top_rows)
 
     row_mean = pivot.loc[keep_rows].mean(axis=1)
     row_std = pivot.loc[keep_rows].std(axis=1).replace(0.0, 1.0).fillna(1.0)

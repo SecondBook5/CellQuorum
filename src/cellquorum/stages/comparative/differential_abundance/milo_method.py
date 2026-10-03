@@ -18,6 +18,8 @@ from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.r_method import RAnalysisMethod
 
 if TYPE_CHECKING:
+    from matplotlib.figure import Figure
+
     from cellquorum.core.context import PipelineContext
 
 # Path to the bundled milo script.
@@ -290,7 +292,7 @@ class MiloMethod(RAnalysisMethod):
             render_da_figure,
         )
 
-        def build() -> object:
+        def build() -> Figure | None:
             if prepare_milo_beeswarm(da, spatial_fdr=spatial_fdr).empty:
                 return None  # no majority cell type to place on the categorical axis
             return plot_milo_beeswarm(

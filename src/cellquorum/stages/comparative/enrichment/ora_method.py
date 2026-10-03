@@ -141,7 +141,7 @@ class OraMethod(AnalysisMethod):
                 continue
             out = pd.concat(rows, ignore_index=True)
             # Single BH/FDR over the genuine raw hypergeometric p-values.
-            out["padj"] = bh_fdr(out["pvalue"].values.astype(float), fdr_method)
+            out["padj"] = bh_fdr(out["pvalue"].to_numpy(dtype=float), fdr_method)
             out["significant"] = out["padj"] < fdr
             out = out[
                 [

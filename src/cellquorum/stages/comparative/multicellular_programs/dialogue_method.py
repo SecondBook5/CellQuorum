@@ -42,6 +42,7 @@ from cellquorum.stages.comparative.multicellular_programs.mcp_figures import plo
 from cellquorum.visualization.figstyle import render_figure
 
 if TYPE_CHECKING:
+    from cellquorum.backends.rscript import RscriptBackend
     from cellquorum.core.context import PipelineContext
 
 _DIALOGUE_R = r_script_path("dialogue.R")
@@ -392,7 +393,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         *,
         adata: ad.AnnData,
         full_programs: pd.DataFrame,
-        backend: object,
+        backend: RscriptBackend,
         scratch_root: Path,
         sample_col: str,
         cell_type_col: str,

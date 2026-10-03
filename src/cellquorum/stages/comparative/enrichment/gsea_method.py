@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import anndata as ad
 import numpy as np
@@ -144,14 +144,19 @@ def _add_leading_edge(
     run cannot answer that" and "this pathway has no leading edge".
     """
     out = out.copy()
-    out.insert(out.columns.get_loc("score") + 1, "es", pd.NA)
+    out.insert(cast("int", out.columns.get_loc("score")) + 1, "es", cast("Any", pd.NA))
     out["set_size"] = pd.NA
     out["leading_edge_size"] = pd.NA
     out["leading_edge"] = pd.NA
     try:
         universe = set(map(str, metric.index))
-        by_source = net.groupby("source")["target"].agg(lambda targets: set(map(str, targets)))
-        sizes, raw_scores, edge_sizes, edges = [], [], [], []
+        by_source = {
+            source: set(map(str, targets)) for source, targets in net.groupby("source")["target"]
+        }
+        sizes: list[int] = []
+        raw_scores: list[Any] = []
+        edge_sizes: list[Any] = []
+        edges: list[Any] = []
         for source in out["source"]:
             members = by_source.get(source, set()) & universe
             found = leading_edge(metric, members) if members else None
@@ -315,7 +320,10 @@ class GseaMethod(AnalysisMethod):
                         ordered_sources.append(src)
                     if len(ordered_sources) >= _RUNNING_ES_MAX_SOURCES:
                         break
-                source_targets = net.groupby("source")["target"].agg(lambda t: set(map(str, t)))
+                source_targets = {
+                    source: set(map(str, targets))
+                    for source, targets in net.groupby("source")["target"]
+                }
                 walk_rows = []
                 for src in ordered_sources:
                     members = source_targets.get(src, set()) & set(ranking.columns)

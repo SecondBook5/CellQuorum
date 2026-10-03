@@ -7,6 +7,7 @@ integer count tables, used by abundance testing methods (scCODA, propeller).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, cast
 
 import anndata as ad
 import numpy as np
@@ -236,9 +237,9 @@ def build_cell_distribution_summary(
     if test_results is not None and not test_results.empty:
         keyed = test_results.set_index(test_results[test_cell_type_col].astype(str))
         if pvalue_col in keyed.columns:
-            pvalue_lookup = keyed[pvalue_col].to_dict()
+            pvalue_lookup = {str(k): float(v) for k, v in keyed[pvalue_col].items()}
         if adj_pvalue_col in keyed.columns:
-            adj_pvalue_lookup = keyed[adj_pvalue_col].to_dict()
+            adj_pvalue_lookup = {str(k): float(v) for k, v in keyed[adj_pvalue_col].items()}
 
     rows = []
     for ct in cell_types:
@@ -337,7 +338,7 @@ def build_composition_proportions(
     for sample in ordered_samples:
         total = float(sample_totals.get(sample, 0))
         for ct in cell_types:
-            count = int(counts.at[sample, ct])
+            count = int(cast("Any", counts.at[sample, ct]))
             rows.append(
                 {
                     "sample": str(sample),

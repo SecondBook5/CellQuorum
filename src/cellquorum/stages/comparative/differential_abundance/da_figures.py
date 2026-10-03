@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -314,7 +315,7 @@ def plot_milo_beeswarm(
     cbar = fig.colorbar(sm, ax=ax, fraction=0.025, pad=0.13, aspect=22)
     cbar.set_label(f"logFC (SpatialFDR < {spatial_fdr:.2f})", fontsize=7)
     cbar.ax.tick_params(labelsize=6)
-    cbar.outline.set_visible(False)
+    cast("Any", cbar.outline).set_visible(False)  # stubs type Spine as not callable
     return fig
 
 
@@ -361,12 +362,12 @@ def plot_sccoda_composition(
     n = len(order)
 
     means = (
-        proportions.groupby(["condition", "cell_type"])["proportion"].mean().unstack(fill_value=0.0)
+        proportions.groupby(["condition", "cell_type"])["proportion"].mean().unstack(fill_value=0)
     )
 
     def mean_pct(cond: str, ct: str) -> float:
         try:
-            return float(means.loc[cond, ct]) * 100.0
+            return float(cast("Any", means.loc[cond, ct])) * 100.0
         except KeyError:
             return 0.0
 
@@ -458,7 +459,10 @@ def plot_sccoda_composition(
 
     # --- Panel B: posterior inclusion probability ----------------------------
     incl = np.array(
-        [float(eff.loc[ct, "inclusion_probability"]) if ct in eff.index else 0.0 for ct in order]
+        [
+            float(cast("Any", eff.loc[ct, "inclusion_probability"])) if ct in eff.index else 0.0
+            for ct in order
+        ]
     )
     cred = np.array(
         [bool(eff.loc[ct, "credible_effect"]) if ct in eff.index else False for ct in order]

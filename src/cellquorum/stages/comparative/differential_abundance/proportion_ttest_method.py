@@ -24,6 +24,7 @@ from cellquorum.stats.multiple_testing import bh_fdr
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
+    from cellquorum.stages.comparative.differential_abundance.aggregation import CelltypeCounts
 
 
 class ProportionTTestMethod(AnalysisMethod):
@@ -438,7 +439,7 @@ class ProportionTTestMethod(AnalysisMethod):
 
     def _resolution_artifacts(
         self,
-        cc: object,
+        cc: CelltypeCounts,
         *,
         condition_col: str,
         case: str,
@@ -524,7 +525,7 @@ class ProportionTTestMethod(AnalysisMethod):
 
     def _composition_artifacts(
         self,
-        cc: object,
+        cc: CelltypeCounts,
         *,
         condition_col: str,
         donor_col: str,
@@ -639,8 +640,8 @@ def _bootstrap_ci_unpaired(
         boot_control = rng.choice(control_props, size=n_control, replace=True).mean()
         boot_diffs.append(100 * (boot_case - boot_control))
 
-    boot_diffs = np.array(boot_diffs)
-    return tuple(np.quantile(boot_diffs, [0.025, 0.975]))
+    lower, upper = np.quantile(np.array(boot_diffs), [0.025, 0.975])
+    return (lower, upper)
 
 
 __all__ = ["ProportionTTestMethod"]

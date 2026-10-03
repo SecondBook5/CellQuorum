@@ -172,12 +172,12 @@ class GsvaMethod(AnalysisMethod):
                         control_by_donor = pd.Series(
                             es.loc[control_mask, source].values, index=control_donor.values
                         ).loc[paired_donors]
-                        case_vals = case_by_donor.values
-                        control_vals = control_by_donor.values
+                        case_vals = case_by_donor.to_numpy()
+                        control_vals = control_by_donor.to_numpy()
                         res = stats.ttest_rel(case_vals, control_vals)
                     else:
-                        case_vals = es.loc[case_mask, source].values
-                        control_vals = es.loc[control_mask, source].values
+                        case_vals = es.loc[case_mask, source].to_numpy()
+                        control_vals = es.loc[control_mask, source].to_numpy()
                         res = stats.ttest_ind(case_vals, control_vals, equal_var=False)
                     rows.append(
                         {
@@ -205,7 +205,7 @@ class GsvaMethod(AnalysisMethod):
 
             contrast = pd.DataFrame(rows)
             # Single BH/FDR over the t-test's own raw p-values.
-            contrast["padj"] = bh_fdr(contrast["pvalue"].values.astype(float), fdr_method)
+            contrast["padj"] = bh_fdr(contrast["pvalue"].to_numpy(dtype=float), fdr_method)
             contrast["significant"] = contrast["padj"] < fdr
             contrast = contrast[
                 [

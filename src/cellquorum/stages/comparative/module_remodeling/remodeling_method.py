@@ -36,7 +36,7 @@ figure is drawn through ``render_figure`` so one bad panel cannot sink a stage.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 import anndata as ad
 import numpy as np
@@ -290,9 +290,10 @@ class ModuleRemodelingMethod(AnalysisMethod):
 
         if not case or not control:
             return self._skip("case/control condition labels not set in config")
-        for label, column in (("donor_col", donor_col), ("condition_col", condition_col)):
-            if not column or column not in adata.obs.columns:
-                return self._skip(f"{label} '{column}' unresolved or absent from obs")
+        if not donor_col or donor_col not in adata.obs.columns:
+            return self._skip(f"donor_col '{donor_col}' unresolved or absent from obs")
+        if not condition_col or condition_col not in adata.obs.columns:
+            return self._skip(f"condition_col '{condition_col}' unresolved or absent from obs")
 
         scores = self._score_frame(adata, config)
         if isinstance(scores, MethodSkip):
@@ -459,7 +460,9 @@ class ModuleRemodelingMethod(AnalysisMethod):
         # 2,000 observations — so the matrix is written without any significance
         # attached to it, and the significance lives beside it at the donor level.
         correlation_method = str(config.get("correlation_method", "spearman"))
-        correlation = scores.corr(method=correlation_method)
+        correlation = scores.corr(
+            method=cast("Literal['pearson', 'kendall', 'spearman']", correlation_method)
+        )
         correlation.index.name = "program"
 
         unit_col = sample_col if sample_col and sample_col in metadata.columns else None
@@ -859,9 +862,11 @@ class ModuleRemodelingMethod(AnalysisMethod):
             # Annotated from the table beside it, so a star on the panel and a row in
             # the CSV are the same number.
             significance = {
-                str(row.group): float(row.fdr)
-                for row in index_effects.itertuples()
-                if np.isfinite(row.fdr)
+                str(group): fdr
+                for group, fdr in zip(
+                    index_effects["group"], index_effects["fdr"].astype(float), strict=True
+                )
+                if np.isfinite(fdr)
             }
             paths: list = []
             render_figure(

@@ -92,7 +92,7 @@ class VolcanoBySubclusterMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
 
         figures_dir = Path(context.paths.figures) / "differential_expression"
-        artifacts = []
+        artifacts: list[StageArtifact] = []
         for group in sorted(csv_groups):
             sub = df[df["cell_type"].astype(str) == group]
             if sub.empty:
