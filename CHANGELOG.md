@@ -356,6 +356,11 @@ Recent engineering and reproducibility hardening:
 
 ### Fixed
 
+- **A stage's figure styling no longer outlives the stage.** Figure code sets matplotlib's
+  process-wide style (`apply_theme`), and nothing undid it, so a stage that did not set its own
+  look inherited the previous stage's, and after a Python-API run the caller's own plots came out
+  restyled. The executor now restores matplotlib's style when each stage ends. Figures that set
+  their own look are unchanged; the 72 gallery baselines still match.
 - **scDiagnostics published its results table from `scratch/`, and with several batches it held
   only the last one.** The `scdiagnostics_results` artifact pointed at a temporary file, which
   for a multi-batch reference run was just the final batch's output. The combined per-cell table

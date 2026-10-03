@@ -281,6 +281,37 @@ class FailingStage:
         raise RuntimeError("Intentional executor test failure.")
 
 
+class RestylingStage:
+    """A stage that restyles matplotlib the way the figure code does (``apply_theme``)."""
+
+    name = "echo"
+
+    def run(self, context: object) -> StageResult:
+        import matplotlib as mpl
+
+        mpl.rcParams["font.size"] = 33.0
+        mpl.rcParams["axes.grid"] = True
+        return StageResult(adata=context.require_adata())  # type: ignore[attr-defined]
+
+
+def test_a_stage_that_restyles_matplotlib_does_not_leak_into_the_next_one(
+    tmp_path: Path,
+) -> None:
+    """Figure styling is per stage. If it outlives the stage, a later stage that does not set
+    its own look inherits the earlier one, and a user's own plots after a run change too."""
+    import matplotlib as mpl
+
+    before = {key: value for key, value in mpl.rcParams.items() if key != "backend"}
+    registry = StageRegistry().with_stage(RestylingStage())
+
+    PipelineExecutor(registry=registry).run(
+        context=build_test_context(tmp_path), plan=make_plan(make_enabled_stage("echo"))
+    )
+
+    after = {key: value for key, value in mpl.rcParams.items() if key != "backend"}
+    assert after == before
+
+
 def test_default_stage_registry_contains_qc() -> None:
     """
     Verify the default registry exposes the implemented stages.

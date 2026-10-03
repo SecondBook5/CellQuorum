@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import sys
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -79,6 +81,29 @@ class StageRegistry:
         updated_stages[stage.name] = stage
 
         return StageRegistry(stages=updated_stages)
+
+
+@contextmanager
+def _contained_matplotlib_style() -> Iterator[None]:
+    """Undo whatever a stage did to matplotlib's global style when the stage ends.
+
+    Figure code applies its look with ``apply_theme``, which sets matplotlib's process-wide
+    rcParams. Left alone, that look outlives the stage: the next stage that does not set its
+    own inherits it, so a figure's appearance depends on which stages ran before, and the
+    user's own plots after a Python-API run come out restyled. matplotlib is only touched if it
+    is loaded, so a run that draws nothing does not pay for importing it.
+    """
+    matplotlib = sys.modules.get("matplotlib")
+    saved = dict(matplotlib.rcParams) if matplotlib is not None else None
+    try:
+        yield
+    finally:
+        matplotlib = sys.modules.get("matplotlib")
+        if matplotlib is not None:
+            # The backend is left alone: changing it mid-process can close open figures.
+            restore = saved if saved is not None else dict(matplotlib.rcParamsOrig)
+            restore.pop("backend", None)
+            matplotlib.rcParams.update(restore)
 
 
 def _skipped_because_disabled(record: StageExecutionRecord) -> bool:
@@ -535,7 +560,8 @@ class PipelineExecutor:
 
         # Execute the registered stage.
         try:
-            stage_result = stage.run(context)
+            with _contained_matplotlib_style():
+                stage_result = stage.run(context)
 
         # Convert stage exceptions into structured failed records.
         except Exception as error:

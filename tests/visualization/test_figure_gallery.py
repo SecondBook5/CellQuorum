@@ -3,6 +3,9 @@
 import importlib.util
 import json
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,7 +17,21 @@ def test_gallery_exports_and_source_contracts(tmp_path):
     spec = importlib.util.spec_from_file_location("build_figure_gallery", script)
     gallery = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gallery)
-    paths = gallery.build_gallery(tmp_path)
+    # Built in a fresh interpreter. The figures are pixel-compared, and anything an earlier test
+    # left behind in this process (a library imported, a stage run, a global changed) can move
+    # a glyph by a pixel; a reference image is only meaningful against a clean process.
+    built = subprocess.run(
+        [sys.executable, str(script), "--output", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    assert built.returncode == 0, built.stderr[-2000:]
+    paths = [
+        Path(line.strip())
+        for line in built.stdout.splitlines()
+        if line.strip() and Path(line.strip()).parent == tmp_path
+    ]
     names = {"enrichment", "embedding", "paired", "running_score", "volcano", "qc_summary"}
     assert set(paths) == {
         tmp_path / f"{name}.{fmt}" for name in names for fmt in ("png", "pdf", "svg")

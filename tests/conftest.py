@@ -20,3 +20,22 @@ integration tests against real data.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_matplotlib_style() -> Iterator[None]:
+    """Give every test the matplotlib style it started with.
+
+    Figure code restyles matplotlib for the whole process (``apply_theme``). A run through the
+    executor undoes that when each stage ends, but a test that calls a stage or a plotting
+    function directly does not, and the figure-gallery pixel comparisons then fail depending on
+    which test happened to run before them.
+    """
+    from cellquorum.core.executor import _contained_matplotlib_style
+
+    with _contained_matplotlib_style():
+        yield
