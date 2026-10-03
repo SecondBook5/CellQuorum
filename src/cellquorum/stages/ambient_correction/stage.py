@@ -83,7 +83,6 @@ class AmbientCorrectionStage:
                 metrics={"skipped": True, "reason": "no manifest"},
             )
 
-        # Resolve the Rscript backend from the context's backend registry.
         backend = _resolve_rscript_backend(context)
         if backend is None:
             return StageResult(

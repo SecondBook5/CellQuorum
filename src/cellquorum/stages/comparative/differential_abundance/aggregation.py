@@ -119,7 +119,6 @@ def aggregate_celltype_counts(
     condition = as_label_strings(obs[condition_col])
     sample_key = donor.to_numpy().astype(str) + "_" + condition.to_numpy().astype(str)
 
-    # Get cell types as canonical label strings.
     cell_types = as_label_strings(obs[cell_type_col])
 
     # Nothing survived the label check. Return the empty shape with the note

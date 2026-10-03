@@ -163,7 +163,6 @@ class ScibBenchmarkMethod(AnalysisMethod):
             reverse=True,
         )
 
-        # Build metrics dict.
         metrics = {
             "embeddings": embedding_metrics,
             "ranking": ranking,

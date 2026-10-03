@@ -177,7 +177,6 @@ class ScVIMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         """Require the counts layer and the batch obs column."""
 
-        # Read the batch column from config.
         batch_key = config.get("batch_key", "patient_id")
         return DataContract(required_layers=["counts"], required_obs=[batch_key])
 

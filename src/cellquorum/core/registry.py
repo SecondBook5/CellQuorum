@@ -68,7 +68,6 @@ class StageRegistry:
     configuration files, artifact paths, provenance records, and CLI output.
     """
 
-    # Store the allowed stage-name pattern.
     _VALID_STAGE_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
     def __init__(self) -> None:
@@ -102,7 +101,6 @@ class StageRegistry:
                 "Pass overwrite=True to replace it intentionally."
             )
 
-        # Store the stage object by name.
         self._stages[stage_name] = stage
 
     def unregister(self, stage_name: str) -> PipelineStage:
@@ -245,7 +243,6 @@ class StageRegistry:
             StageRegistrySnapshot containing registered stage names and count.
         """
 
-        # Build the immutable registry snapshot.
         return StageRegistrySnapshot(
             stage_names=tuple(self.names()),
             n_stages=len(self),
@@ -324,7 +321,6 @@ class StageRegistry:
             StageRegistryError: If the stage name is not a valid string.
         """
 
-        # Reject non-string stage names.
         if not isinstance(stage_name, str):
             raise StageRegistryError(
                 "Stage name must be a string. " f"Received: {type(stage_name).__name__}."
@@ -336,7 +332,6 @@ class StageRegistry:
         if not normalized_name:
             raise StageRegistryError("Stage name cannot be empty.")
 
-        # Reject names that do not match the stable stage-name pattern.
         if cls._VALID_STAGE_NAME_PATTERN.fullmatch(normalized_name) is None:
             raise StageRegistryError(
                 "Stage name must be lowercase snake_case, begin with a letter, "
@@ -362,7 +357,6 @@ class StageRegistry:
                 `name` attribute and callable `run` method.
         """
 
-        # Extract the stage name from the object.
         stage_name = getattr(stage, "name", None)
 
         # Normalize and validate the stage name.

@@ -48,10 +48,8 @@ def plot_group_recovery(
     if not counts:
         return Path(out_path)
 
-    # Apply CellQuorum theme.
     apply_theme("notebook")
 
-    # Sort groups by count (descending).
     sorted_groups = sorted(counts.items(), key=lambda x: x[1], reverse=True)
     groups = [g for g, _ in sorted_groups]
     values = [c for _, c in sorted_groups]
@@ -89,7 +87,6 @@ def plot_group_recovery(
     # Legend.
     ax.legend(loc="upper right", frameon=False)
 
-    # Apply CellQuorum axis style.
     apply_cellquorum_axis_style(ax)
 
     out_path = Path(out_path)
@@ -121,7 +118,6 @@ def plot_stability_curve(
     if not per_resolution_stability:
         return Path(out_path)
 
-    # Apply CellQuorum theme.
     apply_theme("notebook")
 
     # Sort resolutions numerically.
@@ -155,7 +151,6 @@ def plot_stability_curve(
         fontweight="bold",
     )
 
-    # Apply CellQuorum axis style.
     apply_cellquorum_axis_style(ax)
 
     out_path = Path(out_path)
@@ -192,12 +187,10 @@ def plot_subcluster_qc_panel(
     if not gate_result.get("clusters"):
         return Path(out_path)
 
-    # Apply CellQuorum theme.
     apply_theme("notebook")
 
     clusters_dict = gate_result["clusters"]
 
-    # Extract cluster IDs and metrics.
     cluster_ids = list(clusters_dict.keys())
     n_groups = [clusters_dict[cid]["n_groups"] for cid in cluster_ids]
     max_group_frac = [clusters_dict[cid]["max_group_frac"] for cid in cluster_ids]
@@ -208,7 +201,6 @@ def plot_subcluster_qc_panel(
     # Assign colors (pass=blue, fail=red).
     colors = [CELLQUORUM_BLUE if p else CELLQUORUM_RED for p in qc_pass]
 
-    # Create figure with 4 subplots.
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     axes = axes.flatten()
 

@@ -257,7 +257,6 @@ class SubclusteringStage:
     ) -> ad.AnnData:
         """Subset to the focus lineage and refuse a focus that matches no cells."""
 
-        # Extract focus lineage.
         focused = extract_focus(
             adata,
             focus_config,
@@ -306,7 +305,6 @@ class SubclusteringStage:
     ) -> ad.AnnData:
         """Drop groups with too few focus cells (when configured) and plot the recovery curve."""
 
-        # Apply group filter (if configured).
         group_key = sc_config.group_filter.group_key
         min_cells = sc_config.group_filter.min_cells
         if group_key is not None and min_cells is not None:
@@ -620,7 +618,6 @@ class SubclusteringStage:
             )
             report.metrics["donor_gate_embedding_key"] = donor_gate_embedding_key
 
-            # Record summary metrics.
             n_pass = gate_result["summary"]["n_pass"]
             n_fail = gate_result["summary"]["n_fail"]
             report.notes.append(
@@ -649,7 +646,6 @@ class SubclusteringStage:
                     )
                 )
 
-            # Apply QC flags to obs.
             apply_qc_flags(
                 filtered,
                 cluster_key,
@@ -657,7 +653,6 @@ class SubclusteringStage:
                 key_added="donor_qc",
             )
 
-            # Apply action (flag or drop).
             if sc_config.action == "drop":
                 # Drop cells in failed clusters.
                 n_cells_before = filtered.n_obs

@@ -115,7 +115,6 @@ class RscriptBackend(BaseBackend):
             if requirement.requirement_type == "executable":
                 continue
 
-            # Check declared R package requirements.
             if requirement.requirement_type == "r_package":
                 # Check whether the requested R package can be loaded.
                 package_available = self._r_package_available(requirement.name)

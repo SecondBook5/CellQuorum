@@ -40,7 +40,6 @@ if TYPE_CHECKING:
 DEFAULT_CONFIG_PATH = Path("configs/config.yaml")
 
 
-# Create the Typer application.
 app = typer.Typer(
     name="cellquorum",
     help="CellQuorum: publication-grade scRNA-seq workflow engine.",
@@ -65,10 +64,8 @@ def _print_stage_table(plan: PipelinePlan) -> None:
         plan: PipelinePlan object produced by the planner.
     """
 
-    # Create a Rich table for planned stages.
     table = Table(title="CellQuorum stage plan")
 
-    # Add the stage name column.
     table.add_column("Stage", style="cyan", no_wrap=True)
 
     table.add_column("Status", style="bold")
@@ -104,24 +101,18 @@ def _print_backend_table(plan: PipelinePlan) -> None:
         plan: PipelinePlan object produced by the planner.
     """
 
-    # Create a Rich table for backend statuses.
     table = Table(title="CellQuorum backend status")
 
-    # Add the backend name column.
     table.add_column("Backend", style="cyan", no_wrap=True)
 
-    # Add the backend kind column.
     table.add_column("Kind", no_wrap=True)
 
-    # Add the availability column.
     table.add_column("Available", style="bold", no_wrap=True)
 
-    # Add the missing requirements column.
     table.add_column("Missing")
 
     table.add_column("Warnings")
 
-    # Iterate over each backend status row.
     for row in plan.backend_status_table:
         # Extract the availability flag.
         available = bool(row["available"])
@@ -138,7 +129,6 @@ def _print_backend_table(plan: PipelinePlan) -> None:
         # Build a readable warning string.
         warnings = "; ".join(str(item) for item in row["warnings"]) or "-"
 
-        # Add the backend row.
         table.add_row(
             str(row["name"]),
             str(row["kind"]),
@@ -166,12 +156,10 @@ def _print_planner_warnings(plan: PipelinePlan) -> None:
     if not plan.warnings:
         return
 
-    # Print a warning heading.
     console.print("\n[bold yellow]Planner warnings[/bold yellow]")
 
     # Iterate over planner warnings.
     for warning in plan.warnings:
-        # Print each warning as a bullet.
         console.print(f"[yellow]- {warning}[/yellow]")
 
 
@@ -197,7 +185,6 @@ def callback(
 
     # Print the package version when requested.
     if version:
-        # Print the version string.
         console.print(f"cellquorum {__version__}")
 
         # Exit after printing the version.
@@ -205,7 +192,6 @@ def callback(
 
     # Show help when no subcommand is provided.
     if context.invoked_subcommand is None:
-        # Print command help.
         console.print(context.get_help())
 
         # Exit successfully after printing help.
@@ -290,13 +276,11 @@ def plan_command(
 
     # Convert configuration errors into CLI-friendly failures.
     except ConfigLoadError as error:
-        # Print the error message in red.
         console.print(f"[bold red]Configuration error:[/bold red] {error}")
 
         # Exit with a non-zero status code.
         raise typer.Exit(code=1) from error
 
-    # Print JSON output when requested.
     if json_output:
         # Serialize the plan dictionary as formatted JSON without Rich wrapping.
         typer.echo(json.dumps(pipeline_plan.to_dict(), indent=2))
@@ -306,12 +290,10 @@ def plan_command(
     # Print a concise plan header.
     console.print("[bold]CellQuorum plan[/bold]")
 
-    # Print the selected profile.
     console.print(f"Profile: [cyan]{pipeline_plan.profile}[/cyan]\n")
 
     _print_stage_table(pipeline_plan)
 
-    # Print the backend status table.
     _print_backend_table(pipeline_plan)
 
     _print_planner_warnings(pipeline_plan)
@@ -414,7 +396,6 @@ def run_command(
 
     # Convert configuration failures into CLI-friendly errors.
     except ConfigLoadError as error:
-        # Print the configuration error message in red.
         console.print(f"[bold red]Configuration error:[/bold red] {error}")
 
         # Exit with a non-zero status code.
@@ -422,7 +403,6 @@ def run_command(
 
     # Convert CellQuorum runtime failures into CLI-friendly errors.
     except CellQuorumError as error:
-        # Print the run error message in red.
         console.print(f"[bold red]Run error:[/bold red] {error}")
 
         # Exit with a non-zero status code.
@@ -430,13 +410,11 @@ def run_command(
 
     # Convert unexpected bootstrap failures into CLI-friendly errors.
     except (TypeError, ValueError, RuntimeError) as error:
-        # Print the unexpected run error message in red.
         console.print(f"[bold red]Run error:[/bold red] {error}")
 
         # Exit with a non-zero status code.
         raise typer.Exit(code=1) from error
 
-    # Determine execution state from result.
     execution_result = result.execution_result
     executed = execution_result is not None
     successful_stages = execution_result.succeeded_stage_names() if execution_result else []
@@ -462,7 +440,6 @@ def run_command(
         "failed_stages": failed_stages,
     }
 
-    # Print JSON output when requested.
     if json_output:
         # Serialize the run summary without Rich wrapping.
         typer.echo(json.dumps(summary, indent=2))
@@ -479,23 +456,18 @@ def run_command(
     else:
         console.print("[bold]CellQuorum run initialized[/bold]")
 
-    # Print the run identifier.
     console.print(f"Run ID: [cyan]{summary['run_id']}[/cyan]")
 
-    # Print the selected profile.
     console.print(f"Profile: [cyan]{summary['profile']}[/cyan]")
 
-    # Print the root output directory.
     console.print(f"Output directory: [cyan]{summary['output_dir']}[/cyan]")
 
-    # Print the provenance directory.
     console.print(f"Provenance: [cyan]{summary['provenance_dir']}[/cyan]")
 
     console.print(f"Artifact manifest: [cyan]{summary['artifact_manifest']}[/cyan]")
 
     console.print(f"Pipeline plan: [cyan]{summary['pipeline_plan']}[/cyan]")
 
-    # Print the backend status path.
     console.print(f"Backend status: [cyan]{summary['backend_status']}[/cyan]")
 
     # Print execution summary when stages were executed.
@@ -521,10 +493,8 @@ def run_command(
 
     # Print planner warnings when present.
     if summary["warnings"]:
-        # Print a warning heading.
         console.print("\n[bold yellow]Planner warnings[/bold yellow]")
 
-        # Print each warning as a bullet.
         for warning in summary["warnings"]:
             console.print(f"[yellow]- {warning}[/yellow]")
 

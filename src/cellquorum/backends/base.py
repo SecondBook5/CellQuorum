@@ -85,10 +85,8 @@ class BackendStatus:
         if self.available:
             return
 
-        # Build a readable missing-requirements message.
         missing_message = ", ".join(self.missing) if self.missing else "unknown requirement"
 
-        # Raise a backend-specific availability error.
         raise BackendUnavailableError(
             backend_name=self.name,
             message=(

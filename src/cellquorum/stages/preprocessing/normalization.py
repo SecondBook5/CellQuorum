@@ -134,7 +134,6 @@ def normalize_adata(
             scratch_dir=scratch_dir,
         )
     else:
-        # Apply the configured (pure-matrix) normalization recipe.
         normalized_matrix, recipe_diagnostics, recipe_warnings = apply_normalization_recipe(
             matrix=input_matrix,
             recipe=config.recipe,
@@ -143,7 +142,6 @@ def normalize_adata(
             use_gpu=use_gpu,
         )
 
-    # Write normalized matrix to output layer.
     write_normalized_layer(
         working_adata,
         normalized_matrix=normalized_matrix,
@@ -159,7 +157,6 @@ def normalize_adata(
     if row_center is not None and len(np.asarray(row_center)) == working_adata.n_obs:
         working_adata.obs[f"{config.output_layer}_row_center"] = np.asarray(row_center)
 
-    # Write provenance to uns.
     write_normalization_provenance(
         working_adata,
         config=config,
@@ -177,7 +174,6 @@ def normalize_adata(
         recipe=config.recipe,
     )
 
-    # Build final diagnostics.
     diagnostics = build_normalization_diagnostics(
         adata=working_adata,
         input_matrix=input_matrix,
@@ -349,7 +345,6 @@ def apply_recipe_none(
         Tuple of (matrix copy, diagnostics, warnings).
     """
 
-    # Copy the matrix unchanged.
     output = matrix.copy()
 
     return output, {}, []
@@ -371,7 +366,6 @@ def apply_recipe_pf_v1(
         Tuple of (normalized matrix, diagnostics, warnings).
     """
 
-    # Compute per-cell total counts.
     cell_totals = np.asarray(matrix.sum(axis=1)).flatten()
 
     # Detect zero-depth cells.
@@ -424,7 +418,6 @@ def apply_recipe_log1p_cp10k_v1(
         Tuple of (normalized matrix, diagnostics, warnings).
     """
 
-    # Compute per-cell total counts.
     cell_totals = np.asarray(matrix.sum(axis=1)).flatten()
 
     # Detect zero-depth cells.
@@ -480,7 +473,6 @@ def apply_recipe_log1p_pf_v1(
         Tuple of (normalized matrix, diagnostics, warnings).
     """
 
-    # Compute per-cell total counts.
     cell_totals = np.asarray(matrix.sum(axis=1)).flatten()
 
     # Detect zero-depth cells.
@@ -752,7 +744,6 @@ def write_normalized_layer(
         PreprocessingNormalizationError: If layer exists and overwrite is False.
     """
 
-    # Check for existing output layer.
     if output_layer in adata.layers and not overwrite:
         raise PreprocessingNormalizationError(
             f"Output layer '{output_layer}' already exists. " "Set overwrite=True to replace it."
@@ -807,15 +798,12 @@ def write_normalization_provenance(
         diagnostics: Diagnostic metrics.
     """
 
-    # Initialize uns structure.
     if "cellquorum" not in adata.uns:
         adata.uns["cellquorum"] = {}
 
-    # Initialize preprocessing structure.
     if "preprocessing" not in adata.uns["cellquorum"]:
         adata.uns["cellquorum"]["preprocessing"] = {}
 
-    # Write normalization provenance.
     adata.uns["cellquorum"]["preprocessing"]["normalization"] = {
         "recipe": config.recipe,
         "input_layer": config.input_layer,
@@ -846,10 +834,8 @@ def build_normalization_diagnostics(
         Complete diagnostics dictionary.
     """
 
-    # Compute input matrix summary statistics.
     cell_totals = np.asarray(input_matrix.sum(axis=1)).flatten()
 
-    # Build complete diagnostics.
     diagnostics = {
         "n_cells": int(adata.n_obs),
         "n_genes": int(adata.n_vars),

@@ -148,7 +148,6 @@ def _read_h5_vector(node: Any) -> Any:
         # Flatten numeric or Boolean vectors.
         return values.reshape(-1)
 
-    # Read nullable arrays from their values and mask children.
     if encoding_type.startswith("nullable-") or ("values" in node and "mask" in node):
         # Read the underlying values recursively.
         values = _read_h5_vector(node["values"])
@@ -170,7 +169,6 @@ def _read_h5_vector(node: Any) -> Any:
 
         return result
 
-    # Read categorical vectors from categories and integer codes.
     if encoding_type == "categorical" or ("categories" in node and "codes" in node):
         # Read the category labels.
         categories = _read_h5_vector(node["categories"])
@@ -240,7 +238,6 @@ def _read_h5_matrix(node: Any) -> Any:
     if raw_shape is None:
         raise ValueError(f"Sparse matrix {node.name!r} is missing its shape.")
 
-    # Convert the HDF5 shape to a Python tuple.
     shape = tuple(int(value) for value in np.asarray(raw_shape).reshape(-1))
 
     # Read the sparse matrix components.
@@ -282,10 +279,8 @@ def _read_axis_names(handle: Any, axis_name: str) -> Any:
     if axis_name not in handle:
         raise KeyError(f"H5AD file is missing /{axis_name}.")
 
-    # Resolve the H5AD dataframe group.
     group = handle[axis_name]
 
-    # Read the configured index key.
     index_key = _decode_attr(group.attrs.get("_index", "_index"))
 
     # Require the index node.
@@ -298,7 +293,6 @@ def _read_axis_names(handle: Any, axis_name: str) -> Any:
     if any(value is None for value in raw_names):
         raise ValueError(f"/{axis_name}/{index_key} contains missing names.")
 
-    # Convert names to strings.
     return np.asarray([str(value) for value in raw_names], dtype=object)
 
 
@@ -344,13 +338,11 @@ def main() -> None:
         description="pySCENIC GRN inference (protocol CLI; backend, opt-in)"
     )
 
-    # Add the H5AD input argument.
     p.add_argument("--h5ad", required=True)
 
     # Add the transcription-factor list argument.
     p.add_argument("--tfs", default="")
 
-    # Add the motif annotation argument.
     p.add_argument("--motifs", default="")
 
     # Add the cisTarget ranking database argument.
@@ -367,7 +359,6 @@ def main() -> None:
 
     p.add_argument("--num-workers", type=int, default=16)
 
-    # Add the maximum cell count argument.
     p.add_argument("--max-cells", type=int, default=20000)
 
     p.add_argument("--layer", default="counts")
@@ -437,14 +428,12 @@ def main() -> None:
             # Read raw counts from the specified layer.
             matrix = _read_h5_matrix(f["layers"][args.layer])
 
-            # Record the selected matrix source.
             matrix_source = f"layers/{args.layer}"
 
         # Fall back to X only when the count layer is absent.
         elif "X" in f:
             matrix = _read_h5_matrix(f["X"])
 
-            # Record the fallback matrix source.
             matrix_source = "X"
 
         # Reject H5AD files without an expression matrix.
@@ -453,7 +442,6 @@ def main() -> None:
 
         cell_ids = _read_axis_names(f, "obs")
 
-        # Read gene identifiers directly from /var.
         gene_ids = _read_axis_names(f, "var")
 
     if matrix.shape != (cell_ids.shape[0], gene_ids.shape[0]):
@@ -465,7 +453,6 @@ def main() -> None:
     # Verify that the selected matrix is genuinely raw counts.
     _assert_raw_counts(matrix, matrix_source)
 
-    # Report the exact matrix source.
     print(f"[scenic] matrix source: {matrix_source} " f"shape={matrix.shape} dtype={matrix.dtype}")
 
     # Downsample before converting the sparse count matrix to dense.
@@ -492,7 +479,6 @@ def main() -> None:
     # Convert only the selected matrix to a dense array for loompy.
     X = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
 
-    # Define the loom output path.
     loom_path = out_dir / f"scenic_input_{args.tag}.loom"
 
     # Remove a stale partial loom before writing.
@@ -518,7 +504,6 @@ def main() -> None:
 
     # 3. pySCENIC CLI: grn -> ctx ----------------------------------------------
 
-    # Define the persistent pySCENIC log path.
     log_path = out_dir / f"scenic_log_{args.tag}.txt"
 
     def _run_logged(cmd: list[str], step: str) -> None:

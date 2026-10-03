@@ -416,7 +416,6 @@ class ScArchesMethod(AnalysisMethod):
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
         """Execute scVI→scANVI→query surgery with multi-seed consensus."""
-        # Extract config params.
         atlas_h5ad = config.get("atlas_h5ad")
         if atlas_h5ad is None:
             return MethodSkip(
@@ -744,7 +743,6 @@ class ScArchesMethod(AnalysisMethod):
                     knn_entropy_vals[i] = entropy(p)
                     knn_agreement_vals[i] = (neigh == pred_hard[i]).mean()
 
-                # Store per-seed results.
                 seed_predictions[seed] = {
                     "hard": pred_hard,
                     "soft": pred_soft,

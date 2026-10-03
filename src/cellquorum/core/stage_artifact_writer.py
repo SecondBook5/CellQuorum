@@ -116,7 +116,6 @@ class StageArtifactWriter:
             ValueError: If ``namespace`` is not an allowed run namespace.
         """
 
-        # Resolve the effective namespace and validate it.
         effective_namespace = namespace or self._default_namespace
         if effective_namespace not in _ALLOWED_NAMESPACES:
             raise ValueError(

@@ -240,7 +240,6 @@ class MarkerVoteMethod(AnalysisMethod):
                 best_type = UNASSIGNED
             assignments[cluster] = best_type
 
-        # Write the per-cell assignment.
         adata.obs[key_added] = clusters.map(assignments).astype("category")
 
         warnings = []

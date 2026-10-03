@@ -995,7 +995,6 @@ class CellQuorumConfig(StrictBaseModel):
             ValueError: If an unavailable fallback policy is requested.
         """
 
-        # Reject automatic backend selection when CPU fallback is disabled.
         if self.compute.backend == "auto" and not self.compute.fallback_to_cpu:
             raise ValueError(
                 "compute.backend='auto' requires compute.fallback_to_cpu=True. "

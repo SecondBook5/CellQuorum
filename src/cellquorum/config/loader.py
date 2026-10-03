@@ -59,7 +59,6 @@ def load_config(config_path: str | Path) -> CellQuorumConfig:
     if not path.exists():
         raise ConfigLoadError(f"Configuration file does not exist: {path}")
 
-    # Validate that the config path points to a file.
     if not path.is_file():
         raise ConfigLoadError(f"Configuration path is not a file: {path}")
 
@@ -216,7 +215,6 @@ def save_resolved_config(config: CellQuorumConfig, output_path: str | Path) -> P
     # Create the parent directory if needed.
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write the validated config as pretty JSON.
     path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
 
     return path

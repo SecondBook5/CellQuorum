@@ -173,7 +173,6 @@ class MethodDispatchStage(ABC):
         current = adata
 
         for entry in methods:
-            # Build this method's effective config: shared keys then entry keys.
             method_config = {**shared, **dict(entry)}
             outcome = self._run_single_method(current, method_config, context)
 

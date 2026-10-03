@@ -163,7 +163,6 @@ class PipelinePlanner:
         # Build backend status rows for planner/report output.
         backend_status_table = self.backend_registry.to_status_table()
 
-        # Build planner warnings.
         warnings = self._build_warnings()
 
         return PipelinePlan(
@@ -192,11 +191,9 @@ class PipelinePlanner:
 
         planned_stages: list[PlannedStage] = []
 
-        # Convert each stage flag into a PlannedStage object.
         for stage_name, enabled in stage_flags:
             status: StagePlanStatus = "enabled" if enabled else "disabled"
 
-            # Create the explanatory reason.
             reason = (
                 "Enabled by configuration. Method gates will decide whether this stage "
                 "actually runs on the dataset."

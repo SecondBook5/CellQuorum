@@ -91,7 +91,6 @@ class RunReporter:
         if not self._verbose or self._level == "quiet":
             return
 
-        # Create a table for configuration display.
         table = Table(title="Configuration", show_header=False, box=None)
         table.add_column("Key", style="cyan")
         table.add_column("Value")
@@ -306,7 +305,6 @@ class RunReporter:
         self._console.print(f"Total time: {total_seconds:.1f}s")
         self._console.print(f"Outputs: {run_root}")
 
-    # Define a simple progress handle.
     class _ProgressHandle:
         def __init__(self, bar: tqdm | None) -> None:
             self._bar = bar
@@ -329,7 +327,6 @@ class RunReporter:
         Yields:
             Progress handle with advance() method.
         """
-        # Create progress bar when verbose and not quiet.
         if self._verbose and self._level != "quiet":
             bar = tqdm(total=total, leave=False)
             self._active_bar = bar

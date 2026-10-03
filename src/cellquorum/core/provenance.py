@@ -15,7 +15,6 @@ from cellquorum.core.exceptions import CellQuorumProvenanceError
 
 type JsonPrimitive = str | int | float | bool | None
 
-# Define recursive JSON-compatible values.
 type JsonValue = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
 
 
@@ -160,7 +159,6 @@ def make_provenance_record(
 
     record_description = _require_non_empty_string(description, field_name="description")
 
-    # Convert the payload into a JSON-safe object.
     json_safe_payload = to_json_safe(payload)
 
     validate_json_payload(json_safe_payload, context=f"provenance record '{record_name}'")
@@ -238,7 +236,6 @@ def to_json_safe(value: object) -> JsonValue:
     if isinstance(value, dict):
         return _dict_to_json_safe(value)
 
-    # Convert list and tuple values recursively.
     if isinstance(value, list | tuple):
         return [to_json_safe(item) for item in value]
 
@@ -292,9 +289,7 @@ def _dict_to_json_safe(value: dict[object, object]) -> dict[str, JsonValue]:
 
     converted: dict[str, JsonValue] = {}
 
-    # Iterate over key-value pairs.
     for key, item in value.items():
-        # Convert the dictionary key into a JSON-safe string.
         converted_key = _json_key_to_string(key)
 
         # Convert the dictionary value recursively.
@@ -317,7 +312,6 @@ def _json_key_to_string(key: object) -> str:
         CellQuorumProvenanceError: If the key cannot be represented safely.
     """
 
-    # Reject missing keys.
     if key is None:
         raise CellQuorumProvenanceError("JSON provenance dictionary keys cannot be None.")
 

@@ -100,7 +100,6 @@ def resolve_output_dir(config: CellQuorumConfig, output_dir: str | Path | None =
     if output_dir is not None:
         return Path(output_dir).expanduser().resolve()
 
-    # Use the config output directory when provided.
     if config.paths.output_dir is not None:
         return config.paths.output_dir.expanduser().resolve()
 
@@ -842,7 +841,6 @@ def bootstrap_pipeline_run(
         # Mark the start of the bootstrap lifecycle.
         bootstrap_started_at = datetime.now(UTC)
 
-        # Build the initialized pipeline context.
         context = build_pipeline_context(
             config,
             output_dir=output_dir,
@@ -875,7 +873,6 @@ def bootstrap_pipeline_run(
             },
         )
 
-        # Write initial provenance artifacts.
         artifacts = write_pipeline_provenance(
             config=config,
             plan=plan,
@@ -976,7 +973,6 @@ def _config_disabled_stage_names(
 
     disabled: set[str] = set()
 
-    # Read the top-level stage flags.
     for name, flag in config.stages.model_dump().items():
         if flag is False:
             disabled.add(name)
@@ -1170,7 +1166,6 @@ def execute_pipeline_run(
             context = _context_from_checkpoint(context, config, from_stage)
             plan = _restrict_plan_from_stage(plan, from_stage)
 
-        # Build the run reporter from config verbosity settings.
         reporter = RunReporter(verbose=config.run.verbose, level=config.run.log_level)
 
         # Print startup banner with version and project metadata.
@@ -1207,7 +1202,6 @@ def execute_pipeline_run(
         # Measure elapsed wall-clock time.
         execution_elapsed = time.perf_counter() - execution_start
 
-        # Print the final run summary.
         reporter.run_summary(
             execution_result.stage_execution_records,
             str(context.paths.root),

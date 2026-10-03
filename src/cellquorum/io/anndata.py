@@ -115,7 +115,6 @@ def validate_adata_path(path: str | PathLike[str] | Path) -> Path:
     # Normalize the input path.
     normalized_path = normalize_adata_path(path)
 
-    # Reject missing paths.
     if not normalized_path.exists():
         raise AnnDataLoadError(f"AnnData file does not exist: {normalized_path}")
 

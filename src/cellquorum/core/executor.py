@@ -77,7 +77,6 @@ class StageRegistry:
         # Copy the existing mapping.
         updated_stages = dict(self.stages)
 
-        # Add or replace the stage by stable name.
         updated_stages[stage.name] = stage
 
         return StageRegistry(stages=updated_stages)
@@ -211,7 +210,6 @@ class PipelineExecutionResult:
             True if at least one failed record exists.
         """
 
-        # Report whether failed stages exist.
         return bool(self.failed_stage_names())
 
 
@@ -296,16 +294,13 @@ class PipelineExecutor:
                 # Announce stage start.
                 reporter.stage_start(planned_stage.name, i + 1, len(plan.stages))
 
-                # Execute one planned stage decision.
                 stage_result, stage_record = self.execute_planned_stage(
                     context=current_context,
                     planned_stage=planned_stage,
                 )
 
-                # Store the lifecycle record for this planned stage.
                 stage_execution_records.append(stage_record)
 
-                # Report stage completion.
                 reporter.stage_end(stage_record)
 
                 # Advance the progress bar.
@@ -329,7 +324,6 @@ class PipelineExecutor:
                     # Continue to the next planned stage when failure stopping is disabled.
                     continue
 
-                # Keep context unchanged for skipped stages.
                 if stage_record.status == "skipped":
                     if reached_until:
                         self._note_until_stop(reporter, planned_stage.name)
@@ -606,7 +600,6 @@ class PipelineExecutor:
             # storing the result + propagating the unchanged adata.
             return None, stage_record
 
-        # Build a successful stage execution record.
         stage_record = StageExecutionRecord.success(
             stage_name=planned_stage.name,
             result=stage_result,

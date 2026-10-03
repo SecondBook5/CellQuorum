@@ -100,7 +100,6 @@ class SccodaMethod(AnalysisMethod):
         if not case or not control:
             return self._skip("case/control labels not set in config")
 
-        # Resolve the sccoda backend from the context registry.
         registry = getattr(context, "backend_registry", None)
         backend = None
         if registry is not None:
@@ -171,7 +170,6 @@ class SccodaMethod(AnalysisMethod):
         writer = StageArtifactWriter.from_context(context)
         diagnostics_json = scratch / "da_sccoda_diagnostics.json"
 
-        # Build helper args.
         args = [
             str(counts_meta_csv),
             str(out_csv),

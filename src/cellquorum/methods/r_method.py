@@ -58,7 +58,6 @@ class RAnalysisMethod(AnalysisMethod):
         # Resolve package name with config override support.
         pkg = (config or {}).get("r_package", self.r_package)
 
-        # Resolve the Rscript backend from the run's registry.
         registry = getattr(context, "backend_registry", None)
         backend = None
         if registry is not None:

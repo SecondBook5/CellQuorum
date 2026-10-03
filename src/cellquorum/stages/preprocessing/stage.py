@@ -114,7 +114,6 @@ class PreprocessingStage:
                 preprocessing_config=preprocessing_config,
             )
 
-        # Resolve the preprocessing artifact output directory.
         output_dir = get_preprocessing_output_dir(context, self.output_subdir)
 
         # Ensure the output directory exists.
@@ -139,7 +138,6 @@ class PreprocessingStage:
             scratch_dir=scratch_dir,
         )
 
-        # Write preprocessing summary artifact.
         summary_path = write_preprocessing_summary(
             output_dir=output_dir,
             normalization_result=normalization_result,
@@ -186,7 +184,6 @@ class PreprocessingStage:
             )
             warnings.extend(figure_result.warnings)
 
-        # Build human-readable stage notes.
         notes = build_preprocessing_stage_notes(
             preprocessing_config=preprocessing_config,
             normalization_result=normalization_result,
@@ -194,7 +191,6 @@ class PreprocessingStage:
             output_adata=normalization_result.adata,
         )
 
-        # Build structured stage metrics for provenance.
         stage_metrics = build_preprocessing_stage_metrics(
             stage_name=self.name,
             preprocessing_config=preprocessing_config,
@@ -246,7 +242,6 @@ def resolve_preprocessing_config(
 
     # Prefer the explicit stage-level override.
     if override is not None:
-        # Validate override type.
         if not isinstance(override, PreprocessingConfig):
             raise PreprocessingStageError(
                 "PreprocessingStage config override must be a PreprocessingConfig object. "
@@ -255,18 +250,15 @@ def resolve_preprocessing_config(
 
         return override
 
-    # Read the context-level config if present.
     context_config = getattr(context, "config", None)
 
     # Accept context.config as a PreprocessingConfig directly.
     if isinstance(context_config, PreprocessingConfig):
         return context_config
 
-    # Resolve context.config["preprocessing"] for dictionary-like configs.
     if isinstance(context_config, Mapping) and "preprocessing" in context_config:
         return coerce_preprocessing_config(context_config["preprocessing"])
 
-    # Resolve context.config.preprocessing for object-like configs.
     if context_config is not None and hasattr(context_config, "preprocessing"):
         return coerce_preprocessing_config(context_config.preprocessing)
 
@@ -324,12 +316,10 @@ def is_preprocessing_stage_enabled(
     if not preprocessing_config.enabled:
         return False
 
-    # Read the context-level config if present.
     context_config = getattr(context, "config", None)
 
     # Handle dictionary-style stage selection.
     if isinstance(context_config, Mapping):
-        # Extract the stages mapping.
         stages = context_config.get("stages")
 
         # Respect a dictionary-style stages.preprocessing flag when present.
@@ -423,7 +413,6 @@ def get_preprocessing_output_dir(context: PipelineContext, output_subdir: str) -
     if not hasattr(paths, "results"):
         raise PreprocessingStageError("Preprocessing stage requires context.paths.results.")
 
-    # Resolve the results directory.
     results_dir = Path(paths.results)
 
     return results_dir / output_subdir
@@ -516,7 +505,6 @@ def write_preprocessing_summary(
         Path to written summary JSON.
     """
 
-    # Build summary dictionary.
     summary = {
         "stage_name": stage_name,
         "run_id": str(getattr(context, "run_id", "cellquorum-run")),

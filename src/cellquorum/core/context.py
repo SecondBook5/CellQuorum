@@ -129,7 +129,6 @@ class PipelinePaths:
             self.logs,
             self.scratch,
         ):
-            # Create each directory and any missing parent directories.
             directory.mkdir(parents=True, exist_ok=True)
 
 

@@ -182,7 +182,6 @@ class PCAMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         """PCA operates on the configured normalized layer."""
 
-        # Read the input layer from config (default to cellquorum_normalized).
         input_layer = config.get("input_layer", "cellquorum_normalized")
 
         # Require the layer to exist and be tagged as lognorm.

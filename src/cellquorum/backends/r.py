@@ -92,9 +92,7 @@ class RBackend(BaseBackend):
             if requirement.requirement_type == "python_package" and requirement.name == "rpy2":
                 continue
 
-            # Check R package requirements through rpy2.
             if requirement.requirement_type == "r_package":
-                # Check whether the requested R package is available.
                 package_available = self._r_package_available(requirement.name)
 
                 # Record missing mandatory R packages.
@@ -159,7 +157,6 @@ class RBackend(BaseBackend):
             ImportError: If rpy2 is unavailable.
         """
 
-        # Validate that the expression is a string.
         if not isinstance(expression, str):
             # Raise a specific type error for malformed calls.
             raise TypeError(
@@ -168,7 +165,6 @@ class RBackend(BaseBackend):
             )
 
         if not expression.strip():
-            # Raise a specific value error for empty expressions.
             raise ValueError("run_expression expected a non-empty R expression.")
 
         # Import rpy2 lazily so Python-only users can import CellQuorum.
@@ -181,7 +177,6 @@ class RBackend(BaseBackend):
                 "Install CellQuorum R extras or use the Rscript backend."
             ) from error
 
-        # Execute and return the R expression result.
         return r(expression)
 
     def _r_package_available(self, package_name: str) -> bool:
@@ -209,7 +204,6 @@ class RBackend(BaseBackend):
                 f"starting with a letter. Received: {package_name}"
             )
 
-        # Build the R expression for checking package availability.
         expression = f"requireNamespace('{package_name}', quietly = TRUE)"
 
         # Evaluate the package availability expression.

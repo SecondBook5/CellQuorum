@@ -208,7 +208,6 @@ class Manifest:
             DataFrame containing one row per manifest record.
         """
 
-        # Convert each record to a dictionary.
         rows = [record.to_dict() for record in self.records]
 
         return pd.DataFrame(rows)
@@ -298,11 +297,9 @@ class Manifest:
 
         # Search for the requested sample ID.
         for record in self.records:
-            # Return the matching record.
             if record.sample_id == sample_id:
                 return record
 
-        # Raise a clear error when the sample ID is absent.
         raise ManifestError(f"Sample ID '{sample_id}' was not found in the manifest.")
 
 
@@ -572,7 +569,6 @@ def validate_manifest_dataframe(
         if sample_id in seen_sample_ids:
             raise ManifestError(f"Manifest contains duplicate sample_id: '{sample_id}'.")
 
-        # Store the sample ID as observed.
         seen_sample_ids.add(sample_id)
 
         # Clean the optional path and cellranger_path locators.
@@ -597,7 +593,6 @@ def validate_manifest_dataframe(
             if column not in Manifest.REQUIRED_COLUMNS and column not in Manifest.OPTIONAL_COLUMNS
         }
 
-        # Build the validated manifest record.
         record = ManifestRecord(
             sample_id=sample_id,
             path=resolved_path,
@@ -613,7 +608,6 @@ def validate_manifest_dataframe(
             extra_metadata=extra_metadata,
         )
 
-        # Append the validated record.
         records.append(record)
 
     return Manifest(
@@ -666,7 +660,6 @@ def load_manifest(
     except Exception as error:
         raise ManifestError(f"Failed to read manifest file '{path}': {error}") from error
 
-    # Validate and return the loaded manifest.
     return validate_manifest_dataframe(
         dataframe,
         source_path=path,

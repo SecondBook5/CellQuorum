@@ -113,7 +113,6 @@ class BackendRegistry:
             KeyError: If the backend is not registered.
         """
 
-        # Return the backend when it exists.
         if name in self.backends:
             return self.backends[name]
 
@@ -193,7 +192,6 @@ class BackendRegistry:
         # Retrieve the requested backend.
         backend = self.get(name)
 
-        # Get the backend availability status.
         status = backend.status()
 
         # Raise a backend-specific error if unavailable.
@@ -265,7 +263,6 @@ class BackendRegistry:
 
         # Iterate over backend statuses in deterministic backend-name order.
         for name in self.names():
-            # Get the backend status.
             status = self.status(name)
 
             # Add one JSON-serializable status row.
@@ -320,7 +317,6 @@ def build_default_backend_registry(
         BackendRegistry containing Python, R, Rscript, GPU, and RAPIDS backends.
     """
 
-    # Create an empty backend registry.
     registry = BackendRegistry()
 
     # Register core and optional Python backends.

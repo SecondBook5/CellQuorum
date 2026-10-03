@@ -61,7 +61,6 @@ def aggregate_pseudobulk(
     if layer not in adata.layers:
         raise KeyError(f"Layer '{layer}' not found; available: {list(adata.layers)}.")
 
-    # Confirm required obs columns exist.
     for column in (donor_col, condition_col, *(extra_obs or [])):
         if column not in adata.obs.columns:
             raise KeyError(f"obs column '{column}' not found for pseudobulk aggregation.")

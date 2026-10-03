@@ -104,7 +104,6 @@ def require_mapping(value: object, *, field_path: str) -> dict[str, object]:
         ConfigValidationError: If value is not a mapping.
     """
 
-    # Reject non-mapping values.
     if not isinstance(value, Mapping):
         raise ConfigValidationError(
             f"Configuration field '{field_path}' must be a mapping. "
@@ -161,7 +160,6 @@ def reject_unknown_keys(
         ConfigValidationError: If unknown keys are present.
     """
 
-    # Convert allowed keys into a set for lookup.
     allowed_key_set = set(allowed_keys)
 
     # Identify unknown keys.
@@ -351,7 +349,6 @@ def require_probability(value: object, *, field_path: str) -> float:
         ConfigValidationError: If value is not numeric or outside [0, 1].
     """
 
-    # Validate the value as a bounded float.
     return require_float(value, field_path=field_path, minimum=0.0, maximum=1.0)
 
 
@@ -378,10 +375,8 @@ def require_allowed_value(
 
     cleaned_value = require_non_empty_string(value, field_path=field_path)
 
-    # Convert allowed values into a set for lookup.
     allowed_value_set = set(allowed_values)
 
-    # Reject unsupported values.
     if cleaned_value not in allowed_value_set:
         raise ConfigValidationError(
             f"Configuration field '{field_path}' must be one of: "
@@ -412,7 +407,6 @@ def require_string_list(value: object, *, field_path: str) -> list[str]:
             f"Configuration field '{field_path}' must be a list of strings, not a string."
         )
 
-    # Reject non-sequence values.
     if not isinstance(value, Sequence):
         raise ConfigValidationError(
             f"Configuration field '{field_path}' must be a list of strings. "
@@ -448,11 +442,9 @@ def collect_validation_issues(
 
     issues: list[ValidationIssue] = []
 
-    # Add errors when provided.
     if errors is not None:
         issues.extend(errors)
 
-    # Add warnings when provided.
     if warnings is not None:
         issues.extend(warnings)
 
@@ -474,14 +466,11 @@ def raise_if_errors(issues: Sequence[ValidationIssue], *, context: str) -> None:
     # Keep only error-severity issues.
     errors = [issue for issue in issues if issue.severity == "error"]
 
-    # Return when no errors exist.
     if not errors:
         return
 
-    # Build readable error messages.
     messages = [f"{issue.field_path}: {issue.message}" for issue in errors]
 
-    # Raise one combined validation error.
     raise ConfigValidationError(
         f"{context} failed validation with {len(errors)} error(s): " + " | ".join(messages)
     )

@@ -508,10 +508,8 @@ class StageExecutionRecord:
 
         resolved_start = _ensure_utc_datetime(started_at_utc or datetime.now(UTC))
 
-        # Resolve the end timestamp.
         resolved_end = _ensure_utc_datetime(ended_at_utc or resolved_start)
 
-        # Build the structured skip reason.
         skip_reason = StageSkipReason(
             stage_name=stage_name,
             reason=reason,
@@ -573,7 +571,6 @@ class StageExecutionRecord:
             Failed StageExecutionRecord.
         """
 
-        # Convert exceptions into structured execution errors.
         structured_error = (
             error
             if isinstance(error, StageExecutionError)

@@ -74,7 +74,6 @@ class ArtifactManager:
             ArtifactManager with a resolved artifact root.
         """
 
-        # Resolve the root directory to an absolute path.
         resolved_root = Path(root).expanduser().resolve()
 
         return cls(root=resolved_root)
@@ -201,7 +200,6 @@ class ArtifactManager:
                 f"Received: {type(dataframe).__name__}"
             )
 
-        # Resolve the target path.
         path = self.resolve_path(relative_path)
 
         # Normalize the suffix for format dispatch.
@@ -270,10 +268,8 @@ class ArtifactManager:
                 f"Received: {type(payload).__name__}"
             )
 
-        # Resolve the target path.
         path = self.resolve_path(relative_path)
 
-        # Validate the expected JSON suffix.
         if path.suffix.lower() != ".json":
             raise ValueError("JSON artifacts must use a '.json' suffix. " f"Received: {path.name}")
 
@@ -285,7 +281,6 @@ class ArtifactManager:
 
         safe_payload = to_json_safe(payload)
 
-        # Write the JSON payload with stable formatting.
         encoded = json.dumps(safe_payload, indent=indent, sort_keys=True)
         _atomic_write(path, lambda temp_path: temp_path.write_text(encoded, encoding="utf-8"))
 
@@ -334,10 +329,8 @@ class ArtifactManager:
                 "write_text expected a string payload. " f"Received: {type(text).__name__}"
             )
 
-        # Resolve the target path.
         path = self.resolve_path(relative_path)
 
-        # Write the text payload as UTF-8.
         _atomic_write(path, lambda temp_path: temp_path.write_text(text, encoding="utf-8"))
 
         # Register and return the written artifact.

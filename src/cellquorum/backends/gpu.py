@@ -84,7 +84,6 @@ class GPUBackend(BaseBackend):
             "torch_cuda_available": False,
         }
 
-        # Check NVIDIA GPU visibility through nvidia-smi when available.
         if details["nvidia_smi_available"]:
             # Run nvidia-smi to check whether a GPU is visible.
             gpu_visible = self._nvidia_gpu_visible()

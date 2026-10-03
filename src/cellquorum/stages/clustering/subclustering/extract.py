@@ -114,7 +114,6 @@ def apply_group_filter(
     kept = [g for g, n in counts.items() if n >= min_cells]
     dropped = [g for g, n in counts.items() if n < min_cells]
 
-    # Filter to kept groups.
     mask = adata.obs[group_key].isin(kept)
     filtered = adata[mask].copy()
 

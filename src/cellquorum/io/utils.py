@@ -16,7 +16,6 @@ type ScalarValue = str | int | float | bool | None
 
 type JsonPrimitive = str | int | float | bool | None
 
-# Define recursive JSON-compatible values.
 type JsonValue = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
 
 # Define simple metric payloads used by stages and reports.

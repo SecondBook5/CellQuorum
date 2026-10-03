@@ -158,7 +158,6 @@ class ScdiagnosticsMethod(RAnalysisMethod):
     ) -> StageResult | MethodSkip:
         """Execute scDiagnostics via R; return read-only diagnostics."""
 
-        # Resolve config fields.
         cell_type_col = config.get("cell_type_col", "cell_type")
         expression_layer = config.get("expression_layer", "lognorm")
         reference_h5ad = config.get("reference_h5ad")
@@ -399,7 +398,6 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 "soft_scores_obsm to enable diagnostics."
             )
 
-        # Build artifacts list.
         artifacts = [
             _write_results_table(
                 diag_df,
