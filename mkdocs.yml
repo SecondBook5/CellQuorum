@@ -89,4 +89,5 @@ nav:
       - Developer smoke tests: dev_smoke.md
       - Deployment requirements and validation: design/deployment-goal.md
       - Baseline readiness assessment: design/production-readiness-audit.md
+      - Design note, run log: design/run-log.md
       - GSE140819 benchmark: benchmarks/gse140819.md
