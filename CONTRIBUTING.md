@@ -176,9 +176,11 @@ cannot turn an unrelated pull request red. A red audit means a dependency needs 
 mypy gates the packages listed under `files` in `[tool.mypy]` in `pyproject.toml`, and **none of
 them has an exemption**. That list is the only place the gated packages are named: CI and
 `make typecheck` both just run `mypy`, so there is no second copy to forget to update.
-The rest of the package (`visualization/`, `backends/` and most stages) still has type errors,
-mostly untyped-third-party fallout; gating all of it at once would be a permanently red job
-that everyone learns to ignore.
+Nearly the whole package is gated. `stages/clustering` is not yet: one file in it
+(`subclustering/partition.py`) still has type errors, and it is added to `files` as soon as they
+are fixed. The type errors left in any ungated package are mostly untyped-third-party fallout;
+gating a package that still has them would make the job permanently red, and a job everyone
+learns to ignore protects nothing.
 
 To widen the gate, pick one subpackage, run `mypy` on it, fix its errors, then add its path to
 `files`. Never add a package with errors still in it, and never add an `ignore_errors` override

@@ -106,6 +106,6 @@ These are open on purpose and written down so nobody assumes they are covered.
 
 - The R and GPU tests are skipped on the standard CI runners, because the runners have neither.
   They pass on a machine that has them; run the full suite there (`make test`) before a release.
-- The type checker covers part of the package, not all of it. The ratchet in CONTRIBUTING describes
-  how to widen it.
+- The type checker covers all of the package except `stages/clustering`, which has one file left to
+  fix. The ratchet in CONTRIBUTING describes how to widen it.
 - Runs have no log file of their own; see above.

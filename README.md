@@ -81,8 +81,9 @@ pinned by a pixel-exact test, so a code change cannot quietly alter how a figure
   versions and an index of every output. A resumed run refuses a checkpoint that was made with
   different settings.
 - **Tested like software.** Thousands of automated tests, a coverage floor enforced in CI, strict
-  type checking on the core engine, and a test that installs the built package into a clean
-  environment and runs the commands above.
+  type checking on nearly the whole package, weekly security scans (CodeQL and a dependency
+  audit), and a test that installs the built package into a clean environment and runs the
+  commands above.
 
 ---
 
@@ -158,7 +159,7 @@ pre-commit install
 ```
 
 Optional extras: `.[r]` (rpy2 bridge for R/Bioconductor methods), `.[gpu]`
-(scvi-tools). The heavyweight and GPU stacks ([RAPIDS](https://rapids.ai), [pySCENIC](https://github.com/aertslab/pySCENIC), [scCODA](https://github.com/theislab/scCODA), [CellOracle](https://github.com/morris-lab/CellOracle),
+(scvi-tools), `.[workflow]` (Snakemake, for the multi-hypothesis matrix workflow). The heavyweight and GPU stacks ([RAPIDS](https://rapids.ai), [pySCENIC](https://github.com/aertslab/pySCENIC), [scCODA](https://github.com/theislab/scCODA), [CellOracle](https://github.com/morris-lab/CellOracle),
 hdWGCNA) live in dedicated environments — see [Backends & environments](#backends--environments)
 and [`envs/README.md`](envs/README.md). A layered Docker image bakes all of them;
 see [`docs/guide/docker.md`](docs/guide/docker.md).

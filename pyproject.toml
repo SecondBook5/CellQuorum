@@ -202,9 +202,9 @@ explicit_package_bases = true
 # --- Type-checking ratchet -------------------------------------------------
 # `files` below is the ONE list of what is type-checked. CI, `make typecheck`, and a bare
 # `mypy` all read it, so there is no second copy to drift out of date. No listed package has
-# an exemption. The rest of the package (visualization/, backends/ and the other stages) is
-# not yet gated: a baseline run found hundreds of errors there, mostly untyped-third-party
-# fallout. Widen the list one subpackage at a time, fixing that subpackage first.
+# an exemption. Only stages/clustering is missing, because one file in it
+# (subclustering/partition.py) still has errors. Never list a package that has errors left in
+# it; fix the package first, then add it.
 files = [
   "src/cellquorum/core",
   "src/cellquorum/config",
