@@ -42,7 +42,7 @@ their own copy.
 from __future__ import annotations
 
 import textwrap
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -106,7 +106,7 @@ def measure_labels_in(labels: Sequence[str], fontsize: float = 9.0) -> list[floa
         return []
     probe = plt.figure(figsize=(1.0, 1.0))
     try:
-        renderer = probe.canvas.get_renderer()
+        renderer = cast("Any", probe.canvas).get_renderer()
     except AttributeError:
         plt.close(probe)
         scale = fontsize / 9.0

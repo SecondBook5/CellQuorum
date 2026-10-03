@@ -7,7 +7,7 @@ each cell type actually express its own canonical markers, and only its own.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -67,7 +67,7 @@ def plot_marker_dotplot(
     apply_theme("notebook")
     out_path = Path(out_path)
 
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
     if categories_order is not None:
         kwargs["categories_order"] = [c for c in categories_order if c in present_panel]
     if swap_axes:
@@ -342,7 +342,7 @@ def plot_categorized_dotplot(
 
     # Legends: color scale + size scale, stacked in the third column.
     legend_ax.axis("off")
-    cbar_ax = legend_ax.inset_axes([0.05, 0.55, 0.35, 0.4])
+    cbar_ax = legend_ax.inset_axes((0.05, 0.55, 0.35, 0.4))
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=vmax))
     cbar = fig.colorbar(sm, cax=cbar_ax)
     cbar.set_label(
@@ -350,7 +350,7 @@ def plot_categorized_dotplot(
     )
     cbar.ax.tick_params(labelsize=7)
 
-    size_ax = legend_ax.inset_axes([0.05, 0.05, 0.9, 0.4])
+    size_ax = legend_ax.inset_axes((0.05, 0.05, 0.9, 0.4))
     size_ax.axis("off")
     for i, pct in enumerate([0, 25, 50, 75, 100]):
         yy = 4 - i

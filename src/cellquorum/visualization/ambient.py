@@ -93,8 +93,8 @@ def contamination_figure(
         fig, ax = plt.subplots(figsize=(0.62 * len(donors) + 2.4, 2.65))
         for col, donor in enumerate(donors):
             for row, arm in enumerate(arms):
-                value = grid[donor].get(arm)
-                if value is None:
+                cell_value = grid[donor].get(arm)
+                if cell_value is None:
                     ax.add_patch(
                         plt.Rectangle(
                             (col, row), 1, 1, facecolor="#f4f4f6", edgecolor="white", lw=1.4
@@ -103,17 +103,22 @@ def contamination_figure(
                     continue
                 ax.add_patch(
                     plt.Rectangle(
-                        (col, row), 1, 1, facecolor=cmap(norm(value)), edgecolor="white", lw=1.4
+                        (col, row),
+                        1,
+                        1,
+                        facecolor=cmap(norm(cell_value)),
+                        edgecolor="white",
+                        lw=1.4,
                     )
                 )
                 ax.text(
                     col + 0.5,
                     row + 0.5,
-                    f"{value:.1f}",
+                    f"{cell_value:.1f}",
                     ha="center",
                     va="center",
                     fontsize=8.5,
-                    color=_readable_on(cmap(norm(value))),
+                    color=_readable_on(cmap(norm(cell_value))),
                 )
         ax.set_xlim(0, len(donors))
         ax.set_ylim(0, len(arms))
@@ -162,7 +167,7 @@ def contamination_figure(
         )
     else:
         # Fallback: one ordered row, still compact.
-        order = sorted(clean, key=clean.get, reverse=True)
+        order = sorted(clean, key=lambda library: clean[library], reverse=True)
         fig, ax = plt.subplots(figsize=(0.52 * len(order) + 1.8, 2.0))
         for col, library in enumerate(order):
             value = clean[library]

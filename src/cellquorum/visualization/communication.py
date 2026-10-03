@@ -173,10 +173,18 @@ def ligand_activity_ranking(
 
     highlighted = set(wanted)
     positions = np.arange(len(drawn))[::-1]
-    for y, row in zip(positions, drawn.itertuples(), strict=True):
-        color = _HIGHLIGHT if row.ligand in highlighted else INK
-        ax.plot([0.0, row.score], [y, y], color=color, linewidth=1.1, solid_capstyle="butt")
-        ax.plot([row.score], [y], marker="o", markersize=4.4, color=color, zorder=3)
+    for y, ligand, score in zip(
+        positions, drawn["ligand"], drawn["score"].astype(float), strict=True
+    ):
+        color = _HIGHLIGHT if ligand in highlighted else INK
+        ax.plot(
+            [0.0, float(score)],
+            [float(y)] * 2,
+            color=color,
+            linewidth=1.1,
+            solid_capstyle="butt",
+        )
+        ax.plot([float(score)], [float(y)], marker="o", markersize=4.4, color=color, zorder=3)
 
     for percentile in _POOL_PERCENTILES:
         value = float(np.percentile(pool, percentile))

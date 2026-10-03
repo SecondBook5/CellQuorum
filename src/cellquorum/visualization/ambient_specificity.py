@@ -89,7 +89,8 @@ def off_diagonal_summary(matrix: pd.DataFrame) -> tuple[float, float]:
     shared = [name for name in matrix.index if name in matrix.columns]
     if not shared:
         return float("nan"), float("nan")
-    diagonal, off = [], []
+    diagonal: list[float] = []
+    off: list[float] = []
     for row in shared:
         for column in matrix.columns:
             value = matrix.loc[row, column]

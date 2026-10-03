@@ -18,7 +18,7 @@ import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -1090,7 +1090,7 @@ def add_statistical_annotation_box(
     text = "\n".join(lines)
 
     # Position mapping
-    position_map = {
+    position_map: dict[str, dict[str, Any]] = {
         "lower left": {"x": 0.05, "y": 0.05, "ha": "left", "va": "bottom"},
         "lower right": {"x": 0.95, "y": 0.05, "ha": "right", "va": "bottom"},
         "upper left": {"x": 0.05, "y": 0.95, "ha": "left", "va": "top"},
@@ -1458,10 +1458,10 @@ def categorical_embedding(
         }
 
     own_fig = ax is None
-    if own_fig:
+    if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = cast("Figure", ax.figure)
 
     for category in categories:
         mask = groups == category
@@ -1489,11 +1489,12 @@ def categorical_embedding(
         for category in categories:
             if category not in centers.index:
                 continue
-            row = centers.loc[category]
+            median = centers.loc[category].to_numpy(dtype=float)
+            center = (float(median[0]), float(median[1]))
             ax.annotate(
                 category,
-                xy=(row.x, row.y),
-                xytext=(row.x, row.y),
+                xy=center,
+                xytext=center,
                 fontsize=7.5,
                 color=TEXT_COLOR,
                 ha="center",

@@ -27,7 +27,7 @@ of it, and a concordance panel without it is not interpretable.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -51,7 +51,7 @@ from cellquorum.visualization.measured_layout import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Collection, Iterable, Mapping, Sequence
 
     from matplotlib.axes import Axes
 
@@ -84,7 +84,7 @@ def set_overlap_upset(
     set_labels: Mapping[str, str] | None = None,
     sort_sets: str = "exclusivity",
     title: str | None = None,
-    universe: Iterable[str] | None = None,
+    universe: Collection[str] | None = None,
     element_noun: str = "genes",
     figsize: tuple[float, float] | None = None,
 ) -> Figure:
@@ -286,7 +286,7 @@ def _draw_combination_bars(
     headroom = max(heights.max(), 1.0)
     for position, height in zip(positions, heights, strict=True):
         ax.text(
-            position,
+            float(position),
             height + headroom * 0.03,
             f"{int(height)}",
             ha="center",
@@ -361,7 +361,7 @@ def _draw_size_sidebar(ax: Axes, sizes: pd.DataFrame, element_noun: str) -> None
     for position, total in zip(positions, totals, strict=True):
         ax.text(
             total + widest * 0.03,
-            position,
+            float(position),
             f"{int(total)}",
             # The x-axis is reversed, so a larger data value sits further *left* on
             # screen and "ha=left" would grow the label back over the bar it labels.
@@ -381,7 +381,7 @@ def _draw_size_sidebar(ax: Axes, sizes: pd.DataFrame, element_noun: str) -> None
 def _upset_notes(
     sizes: pd.DataFrame,
     *,
-    universe: Iterable[str] | None,
+    universe: Collection[str] | None,
     element_noun: str,
     dropped_columns: int,
     dropped_elements: int,
@@ -503,9 +503,8 @@ def set_overlap_matrix(
         elif fdr < alpha:
             marks[i, j] = significance_stars(fdr)
 
-    owns_figure = ax is None
     notes = set_overlap_notes(overlaps, alpha=alpha, untested=untested) if footnotes else []
-    if owns_figure:
+    if ax is None:
         fig, ax, cax = square_matrix_canvas(
             n=n,
             label_in=widest_label_in(labels),
@@ -514,7 +513,7 @@ def set_overlap_matrix(
             figsize=figsize,
         )
     else:
-        fig, cax = ax.get_figure(), None
+        fig, cax = cast("Figure", ax.get_figure()), None
 
     masked = np.ma.masked_invalid(values)
     image = ax.imshow(masked, cmap=_SIMILARITY_CMAP, vmin=0.0, aspect="equal")
@@ -570,7 +569,7 @@ def set_overlap_matrix(
         else fig.colorbar(image, ax=ax, fraction=0.042, pad=0.03)
     )
     bar.set_label(_VALUE_LABELS.get(value, value.replace("_", " ")), fontsize=9)
-    bar.outline.set_visible(False)
+    cast("Any", bar.outline).set_visible(False)  # matplotlib's stubs type Spine as not callable
 
     if notes:
         write_notes(fig, notes)

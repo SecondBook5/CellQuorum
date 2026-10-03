@@ -33,7 +33,7 @@ that only holds in the primary fit impossible to present as though it held gener
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from matplotlib.figure import Figure
@@ -197,7 +197,7 @@ def mediation_forest(
     if ax is None:
         height = max(2.4, 0.85 * len(mediators) + 1.5)
         _, ax = plt.subplots(figsize=figsize or (7.2, height))
-    fig = ax.figure
+    fig = cast("Figure", ax.figure)
 
     ax.axvline(0.0, color=_ZERO_LINE, lw=1.0, ls="--", zorder=1)
 
@@ -392,7 +392,7 @@ def mediation_sensitivity(
     if ax is None:
         height = max(2.6, 0.34 * len(mediators) * max(len(labels), 2) + 1.6)
         _, ax = plt.subplots(figsize=figsize or (7.4, height))
-    fig = ax.figure
+    fig = cast("Figure", ax.figure)
 
     ax.axvline(0.0, color=_ZERO_LINE, lw=1.0, ls="--", zorder=1)
 

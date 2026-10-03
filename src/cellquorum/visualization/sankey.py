@@ -10,7 +10,7 @@ reads as "the ribbon matches its destination node's color."
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import PathPatch, Rectangle
@@ -90,12 +90,12 @@ def two_column_sankey(
     left_colors = left_colors or right_colors
 
     if left_order is None:
-        right_pos = {name: i for i, name in enumerate(right_order)}
+        right_rank = {name: i for i, name in enumerate(right_order)}
 
         def _dominant_position(row_name: str) -> tuple[int, float]:
             row = crosstab.loc[row_name]
-            dominant = row.idxmax()
-            return right_pos.get(dominant, len(right_order)), -float(row.sum())
+            dominant = cast("str", row.idxmax())
+            return right_rank.get(dominant, len(right_order)), -float(row.to_numpy().sum())
 
         left_order = sorted(crosstab.index, key=_dominant_position)
     else:
@@ -144,7 +144,11 @@ def two_column_sankey(
     x_mid = (x_left + x_right) / 2
     for left_name in left_order:
         for right_name in right_order:
-            count = crosstab.loc[left_name, right_name] if right_name in crosstab.columns else 0
+            count = (
+                float(cast("Any", crosstab.loc[left_name, right_name]))
+                if right_name in crosstab.columns
+                else 0.0
+            )
             if count <= 0:
                 continue
             y0_top = left_running_top[left_name]

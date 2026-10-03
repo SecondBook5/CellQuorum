@@ -25,7 +25,7 @@ look like a bug — it looks like an empty cell, which is the third visual state
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -223,7 +223,7 @@ def value_grid(
         bar = fig.colorbar(mesh, cax=cax)
         bar.set_label(bar_label, fontsize=8)
         bar.ax.tick_params(labelsize=7)
-        bar.outline.set_visible(False)
+        cast("Any", bar.outline).set_visible(False)  # matplotlib's stubs type Spine as not callable
     write_notes(fig, notes)
     return fig, ax
 

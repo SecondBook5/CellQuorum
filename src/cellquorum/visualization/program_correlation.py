@@ -30,7 +30,7 @@ above. A figure and the CSV beside it therefore cannot disagree.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
@@ -350,21 +350,22 @@ def program_correlation_heatmap(
     adjusted = pd.to_numeric(tests.get("r_adjusted", pd.Series(index=tests.index)), errors="coerce")
     has_adjusted = bool(adjusted.notna().any())
     lost = _lost_its_call(tests, alpha)
+    raw_by_key, adjusted_by_key, lost_by_key = raw.to_dict(), adjusted.to_dict(), lost.to_dict()
 
     values = np.full((n, n), np.nan)
     marks: dict[tuple[int, int], str] = {}
     for key, row in tests.iterrows():
         i, j = position[str(row["program_a"])], position[str(row["program_b"])]
         low, high = (max(i, j), min(i, j)), (min(i, j), max(i, j))
-        values[low] = raw.loc[key]
+        values[low] = raw_by_key[key]
         stars = _cell_mark(row.get("fdr"), row.get("p_value"), alpha)
         if bool(row.get("shares_genes", False)):
             stars += _SHARED_MARK
         marks[low] = stars
         if has_adjusted:
-            values[high] = adjusted.loc[key]
+            values[high] = adjusted_by_key[key]
             adjusted_stars = _cell_mark(row.get("fdr_adjusted"), row.get("p_adjusted"), alpha)
-            marks[high] = adjusted_stars + (_LOST_MARK if lost.loc[key] else "")
+            marks[high] = adjusted_stars + (_LOST_MARK if lost_by_key[key] else "")
 
     notes = (
         program_correlation_notes(tests, alpha=alpha, program_labels=program_labels)
@@ -429,7 +430,7 @@ def program_correlation_heatmap(
     bar = fig.colorbar(image, cax=cax)
     bar.set_label(f"{_coefficient_label(tests)} over {_unit_phrase(tests)}", fontsize=8)
     bar.ax.tick_params(labelsize=7)
-    bar.outline.set_visible(False)
+    cast("Any", bar.outline).set_visible(False)  # matplotlib's stubs type Spine as not callable
 
     if title:
         ax.set_title(title, loc="left", fontsize=10.5, color=INK, pad=8)
@@ -438,7 +439,7 @@ def program_correlation_heatmap(
     return fig
 
 
-def _cell_mark(fdr: object, p_value: object, alpha: float) -> str:
+def _cell_mark(fdr: Any, p_value: Any, alpha: float) -> str:
     """Stars for a tested pair, ``?`` for an untested one, nothing for a null result.
 
     ``ns`` is deliberately not printed. In a matrix of fifty-five cells it is fifty-five

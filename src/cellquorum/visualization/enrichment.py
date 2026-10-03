@@ -799,7 +799,7 @@ def gsea_arm_comparison(
         dropped = 0
     else:
         significant = {
-            name
+            str(name)
             for arm in arms
             for name, fdr in fdrs[arm].items()
             if np.isfinite(fdr) and fdr < alpha
@@ -870,12 +870,12 @@ def gsea_arm_comparison(
             if not np.isfinite(value):
                 continue
             fdr = fdrs[arm].get(name, np.nan)
-            significant = bool(np.isfinite(fdr) and fdr < alpha)
+            is_significant = bool(np.isfinite(fdr) and fdr < alpha)
             ax.scatter(
                 [value],
                 [index],
                 s=_COMPARISON_DOT_AREA,
-                facecolor=colors[arm] if significant else "white",
+                facecolor=colors[arm] if is_significant else "white",
                 edgecolor=colors[arm],
                 linewidth=1.2,
                 zorder=3,
