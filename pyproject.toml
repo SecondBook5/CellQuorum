@@ -211,6 +211,7 @@ files = [
   "src/cellquorum/datasets",
   "src/cellquorum/stages/discovery",
   "src/cellquorum/stages/qc",
+  "src/cellquorum/stages/integration",
   "src/cellquorum/stages/metacells",
   "src/cellquorum/stages/ambient_correction",
   "src/cellquorum/stages/composition",

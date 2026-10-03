@@ -9,6 +9,8 @@ House-style figure saving integrated from save.py for the embeddings stage.
 
 from __future__ import annotations
 
+from typing import Any
+
 import anndata as ad
 import numpy as np
 from matplotlib.axes import Axes
@@ -24,6 +26,17 @@ EMBEDDING_REGISTRY: dict[str, dict] = {
     "umap": {"obsm": "X_umap", "axis": ("UMAP1", "UMAP2")},
     "phate": {"obsm": "X_phate", "axis": ("PHATE1", "PHATE2")},
 }
+
+
+def _lighten_colorbar_outline(cbar: Any) -> None:
+    """Give a colorbar the thin, light frame used beside the frameless scatter.
+
+    The default heavy dark outline reads as a clunky box. ``cbar`` is typed ``Any`` because
+    matplotlib's type stubs describe ``Colorbar.outline`` as a callable ``Spine``, which
+    rejects the ordinary ``set_*`` calls even though they are valid at run time.
+    """
+    cbar.outline.set_linewidth(0.4)
+    cbar.outline.set_edgecolor("#BDBDBD")
 
 
 def _style_axes(ax: Axes, axis_labels: tuple[str, str]) -> None:
@@ -160,7 +173,7 @@ def _repel_labels(ax: Axes, texts: list) -> None:
         fig = ax.get_figure()
         # A bare Figure() has no renderer; adjustText needs one to measure
         # text extents. Attaching an Agg canvas provides it without pyplot.
-        if not hasattr(fig.canvas, "get_renderer"):
+        if isinstance(fig, Figure) and not hasattr(fig.canvas, "get_renderer"):
             FigureCanvasAgg(fig)
         adjust_text(
             texts,
@@ -490,8 +503,7 @@ def continuous_overlay(
     cbar = fig.colorbar(sctr, ax=ax, shrink=0.55, aspect=22, pad=0.02)
     # Thin, light frame: the default heavy dark outline reads as a clunky box beside
     # the frameless scatter.
-    cbar.outline.set_linewidth(0.4)
-    cbar.outline.set_edgecolor("#BDBDBD")
+    _lighten_colorbar_outline(cbar)
     cbar.ax.tick_params(labelsize=8, length=2, width=0.4)
     ax.set_title(title)
     _style_axes(ax, axis_labels)
@@ -638,8 +650,7 @@ def plot_score_by_condition(
     if sctr is not None:
         cbar = fig.colorbar(sctr, ax=[ax_control, ax_case], shrink=0.7, aspect=25, pad=0.02)
         cbar.set_label(score_label, fontsize=8)
-        cbar.outline.set_linewidth(0.4)
-        cbar.outline.set_edgecolor("#BDBDBD")
+        _lighten_colorbar_outline(cbar)
         cbar.ax.tick_params(labelsize=8, length=2, width=0.4)
 
     return fig

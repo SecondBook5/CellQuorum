@@ -191,7 +191,9 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
         )
         return [groupby] if groupby else []
 
-    def _resolve_subsets(self, adata: ad.AnnData, config: dict) -> list[tuple[str, object | None]]:
+    def _resolve_subsets(
+        self, adata: ad.AnnData, config: dict
+    ) -> list[tuple[str, np.ndarray | None]]:
         """Cell subsets to render the atlas over, as ``(suffix, mask_or_None)``.
 
         The QC states granted ``TRANSFORM`` on the manifold (borderline, quarantine) are

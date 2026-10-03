@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import numpy as np
@@ -43,7 +44,9 @@ class ScibBenchmarkMethod(AnalysisMethod):
             required_obs=[batch_key],
         )
 
-    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """Compute scib-metrics for each embedding; return ranking + metrics."""
         # Suppress JAX CPU fallback warning from scib_metrics.
         with warnings.catch_warnings():
@@ -127,7 +130,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
         # embeddings cannot report a half-computed ranking through a channel the run
         # report neither prints nor counts.
         caveats: list[str] = []
-        embedding_metrics = {}
+        embedding_metrics: dict[str, dict[str, Any]] = {}
         for emb_key in embeddings:
             if emb_key not in adata.obsm:
                 caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
@@ -203,8 +206,8 @@ class ScibBenchmarkMethod(AnalysisMethod):
             from scib_metrics.nearest_neighbors import pynndescent
 
         caveats: list[str] = []
-        batch_metrics = {}
-        bio_metrics = {}
+        batch_metrics: dict[str, float] = {}
+        bio_metrics: dict[str, float] = {}
 
         nbrs = pynndescent(X_post, n_neighbors=n_neighbors)
 
@@ -248,19 +251,16 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 isolated_labels, (X_post, labels, batches), {}, caveats, "isolated_labels"
             )
             # nmi_ari_cluster_labels_leiden returns dict {"nmi": ..., "ari": ...}.
-            nmi_ari = self._safe_metric(
+            nmi_ari = self._safe_nmi_ari(
                 nmi_ari_cluster_labels_leiden, (nbrs, labels), {}, caveats, "nmi_ari_leiden"
             )
-            if isinstance(nmi_ari, dict):
-                bio_metrics["nmi"] = nmi_ari.get("nmi", np.nan)
-            else:
-                bio_metrics["nmi"] = np.nan
+            bio_metrics["nmi"] = nmi_ari.get("nmi", np.nan)
 
         return batch_metrics, bio_metrics, caveats
 
     def _safe_metric(
         self,
-        func: object,
+        func: Callable[..., Any],
         args: tuple,
         kwargs: dict,
         caveats: list[str],
@@ -275,17 +275,32 @@ class ScibBenchmarkMethod(AnalysisMethod):
         """
         try:
             result = func(*args, **kwargs)
-            # Handle dict return (nmi_ari_leiden).
-            if isinstance(result, dict):
-                return result
-            # Handle tuple/list return (kbet returns (acceptance_rate, stat,
-            # pval); we use acceptance_rate).
+            # kbet returns (acceptance_rate, stat, pval); we use acceptance_rate.
             if isinstance(result, tuple | list):
                 return float(result[0])
             return float(result)
         except Exception as e:
             caveats.append(f"{metric_name} failed: {e}")
             return float("nan")
+
+    def _safe_nmi_ari(
+        self,
+        func: Callable[..., Any],
+        args: tuple,
+        kwargs: dict,
+        caveats: list[str],
+        metric_name: str,
+    ) -> dict[str, float]:
+        """Call the NMI/ARI function, which returns a dict; on failure return ``{}``.
+
+        Same contract as :meth:`_safe_metric`: a failure is recorded as a caveat, and the
+        caller reads a missing ``nmi`` as nan.
+        """
+        try:
+            return dict(func(*args, **kwargs))
+        except Exception as e:
+            caveats.append(f"{metric_name} failed: {e}")
+            return {}
 
     def _aggregate_score(
         self, batch_metrics: dict, bio_metrics: dict, batch_weight: float, bio_weight: float
@@ -336,7 +351,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
             "Using harmonypy fallback: batch-mixing (iLISI) only; "
             "bio-conservation metrics unavailable."
         ]
-        embedding_metrics = {}
+        embedding_metrics: dict[str, dict[str, Any]] = {}
         for emb_key in embeddings:
             if emb_key not in adata.obsm:
                 caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
@@ -362,7 +377,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
 
             # Aggregate: batch only (no bio metrics in harmonypy fallback).
             batch_metrics = {"ilisi": ilisi}
-            bio_metrics = {}
+            bio_metrics: dict[str, float] = {}
             aggregate = self._aggregate_score(
                 batch_metrics,
                 bio_metrics,
