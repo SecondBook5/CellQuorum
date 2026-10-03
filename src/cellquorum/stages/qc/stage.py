@@ -55,7 +55,11 @@ from cellquorum.stages.qc.selfcheck import run_self_check
 from cellquorum.stages.qc.validation import get_qc_matrix
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from cellquorum.core.context import PipelineContext
+    from cellquorum.stages.qc.metrics import QCMetricsResult
+    from cellquorum.stages.qc.sampleqc import SampleQCResult
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +208,70 @@ def _removed_cells_table(
     )
 
 
+def _require_matching_ambient_correction(adata: ad.AnnData, qc_config: QCConfig) -> dict:
+    """Return the recorded ambient-correction status, refusing a config that asks for more.
+
+    QC does not itself remove ambient RNA. If ``qc.ambient`` expects a correction, the upstream
+    ``ambient_correction`` stage must have recorded the same method, or the run stops here
+    rather than reporting a correction nobody performed.
+    """
+    ambient_status = summarize_ambient_correction(adata)
+    if qc_config.ambient.correction_enabled and (
+        ambient_status["status"] != "upstream_recorded"
+        or ambient_status["method"] != qc_config.ambient.method
+    ):
+        raise QCStageError(
+            "qc.ambient cannot perform ambient correction. Configure the upstream "
+            "ambient_correction stage with its required inputs, or supply corrected data "
+            "with matching correction provenance."
+        )
+    return ambient_status
+
+
+def _fit_sampleqc_if_enabled(
+    context: PipelineContext, qc_config: QCConfig, metrics_result: QCMetricsResult
+) -> SampleQCResult | None:
+    """Fit SampleQC when configured and merge its per-cell columns into the metrics table."""
+    if not qc_config.sampleqc.enabled:
+        return None
+    from cellquorum.backends.rscript import RscriptBackend
+    from cellquorum.stages.qc.sampleqc import fit_sampleqc
+
+    registry = getattr(context, "backend_registry", None)
+    backend = registry.get("rscript") if registry is not None else RscriptBackend()
+    if backend is None:
+        raise QCStageError("SampleQC requires the Rscript backend.")
+    sampleqc = fit_sampleqc(metrics_result.cell_metrics, qc_config.sampleqc, backend)
+    sampleqc.provenance["matrix_source"] = metrics_result.summary.get("matrix_source", "unknown")
+    for column in sampleqc.cells:
+        metrics_result.cell_metrics[column] = sampleqc.cells[column]
+    return sampleqc
+
+
+def _drop_sampleqc_traces(adata: ad.AnnData) -> None:
+    """Remove SampleQC's columns and record from an object that was not scored by it."""
+    adata.obs.drop(
+        columns=[
+            "sampleqc_distance",
+            "sampleqc_pvalue",
+            "sampleqc_component",
+            "sampleqc_outlier",
+            "sampleqc_status",
+        ],
+        errors="ignore",
+        inplace=True,
+    )
+    adata.uns.get("cellquorum", {}).pop("sampleqc", None)
+
+
+def _first_present_column(adata: ad.AnnData, candidates: Sequence[str | None]) -> str | None:
+    """The first candidate that is set and is an ``obs`` column of ``adata``."""
+    for candidate in candidates:
+        if candidate and candidate in adata.obs.columns:
+            return candidate
+    return None
+
+
 @register_stage(name="qc_evidence", order=20, config_flag="qc_evidence", config_field="qc_evidence")
 @dataclass(frozen=True)
 class QCStage:
@@ -248,16 +316,7 @@ class QCStage:
                 qc_config=qc_config,
             )
 
-        ambient_status = summarize_ambient_correction(adata)
-        if qc_config.ambient.correction_enabled and (
-            ambient_status["status"] != "upstream_recorded"
-            or ambient_status["method"] != qc_config.ambient.method
-        ):
-            raise QCStageError(
-                "qc.ambient cannot perform ambient correction. Configure the upstream "
-                "ambient_correction stage with its required inputs, or supply corrected data "
-                "with matching correction provenance."
-            )
+        ambient_status = _require_matching_ambient_correction(adata, qc_config)
 
         output_dir = get_qc_output_dir(context, self.output_subdir)
         # QC figures belong under figures/, not results/ -- output_dir above
@@ -300,21 +359,7 @@ class QCStage:
         if qc_config.mito_mixture.enabled:
             mixture = fit_mito_mixture(metrics_result.cell_metrics, qc_config.mito_mixture)
 
-        sampleqc = None
-        if qc_config.sampleqc.enabled:
-            from cellquorum.backends.rscript import RscriptBackend
-            from cellquorum.stages.qc.sampleqc import fit_sampleqc
-
-            registry = getattr(context, "backend_registry", None)
-            backend = registry.get("rscript") if registry is not None else RscriptBackend()
-            if backend is None:
-                raise QCStageError("SampleQC requires the Rscript backend.")
-            sampleqc = fit_sampleqc(metrics_result.cell_metrics, qc_config.sampleqc, backend)
-            sampleqc.provenance["matrix_source"] = metrics_result.summary.get(
-                "matrix_source", "unknown"
-            )
-            for column in sampleqc.cells:
-                metrics_result.cell_metrics[column] = sampleqc.cells[column]
+        sampleqc = _fit_sampleqc_if_enabled(context, qc_config, metrics_result)
 
         # Apply the absolute floors: barcodes that are not cells and genes that are not
         # measurable. This is the whole of what the fixed-and-MAD threshold path did that graded
@@ -331,18 +376,7 @@ class QCStage:
 
         output_adata = build_qc_output_adata(adata=adata, floors=floors)
         if sampleqc is None:
-            output_adata.obs.drop(
-                columns=[
-                    "sampleqc_distance",
-                    "sampleqc_pvalue",
-                    "sampleqc_component",
-                    "sampleqc_outlier",
-                    "sampleqc_status",
-                ],
-                errors="ignore",
-                inplace=True,
-            )
-            output_adata.uns.get("cellquorum", {}).pop("sampleqc", None)
+            _drop_sampleqc_traces(output_adata)
 
         # Stop here when the floors emptied the object.
         #
@@ -387,34 +421,25 @@ class QCStage:
             addon_metrics["graded"] = graded_metrics
             graded_warnings.extend(graded_block_warnings)
 
-        group_key = None
         context_config = getattr(context, "config", None)
         cohort = getattr(context_config, "cohort", None)
         design = getattr(context_config, "design", None)
-        candidates = [
-            getattr(cohort, "condition_key", None),
-            getattr(cohort, "donor_key", None),
-            getattr(cohort, "sample_key", None),
-            getattr(design, "condition_col", None),
-            getattr(design, "donor_col", None),
-            "sample_id",
-        ]
-        for candidate in candidates:
-            if candidate and candidate in output_adata.obs.columns:
-                group_key = candidate
-                break
-
-        report_groups = None
-        report_group_name = "cell_type"
-        cell_type_candidates = [
-            getattr(design, "cell_type_col", None),
-            "cell_type",
-        ]
-        for candidate in cell_type_candidates:
-            if candidate and candidate in adata.obs.columns:
-                report_groups = adata.obs[candidate]
-                report_group_name = candidate
-                break
+        group_key = _first_present_column(
+            output_adata,
+            [
+                getattr(cohort, "condition_key", None),
+                getattr(cohort, "donor_key", None),
+                getattr(cohort, "sample_key", None),
+                getattr(design, "condition_col", None),
+                getattr(design, "donor_col", None),
+                "sample_id",
+            ],
+        )
+        report_group_name = _first_present_column(
+            adata, [getattr(design, "cell_type_col", None), "cell_type"]
+        )
+        report_groups = adata.obs[report_group_name] if report_group_name is not None else None
+        report_group_name = report_group_name or "cell_type"
 
         # Test whether QC lost cells at the same rate in every arm of the design. This runs on
         # the UNFILTERED obs: output_adata has already lost the sub-floor barcodes, so measured
