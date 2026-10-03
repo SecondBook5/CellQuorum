@@ -48,21 +48,20 @@ class _Backend:
 
 def test_resolves_backend_when_all_available():
     backend = _Backend(ok=True, avail=True)
-    b, skip = _RDummy()._resolve_rscript_backend(_Ctx(backend))
-    assert b is backend and skip is None
+    assert _RDummy()._resolve_rscript_backend(_Ctx(backend)) is backend
 
 
 def test_skips_when_rscript_absent():
     # Rscript not reachable at the configured path -> _rscript_available() False.
-    b, skip = _RDummy()._resolve_rscript_backend(_Ctx(_Backend(ok=True, avail=False)))
-    assert b is None and isinstance(skip, MethodSkip)
+    skip = _RDummy()._resolve_rscript_backend(_Ctx(_Backend(ok=True, avail=False)))
+    assert isinstance(skip, MethodSkip)
     assert "rscript" in skip.reason.lower()
 
 
 def test_skips_when_r_package_absent():
     # Rscript reachable, but the R package is missing.
-    b, skip = _RDummy()._resolve_rscript_backend(_Ctx(_Backend(ok=False, avail=True)))
-    assert b is None and isinstance(skip, MethodSkip)
+    skip = _RDummy()._resolve_rscript_backend(_Ctx(_Backend(ok=False, avail=True)))
+    assert isinstance(skip, MethodSkip)
     assert skip.details.get("r_package") == "edgeR"
 
 
@@ -79,9 +78,9 @@ def test_config_overrides_r_package():
             seen["pkg"] = pkg
             return False
 
-    b, skip = _RDummy()._resolve_rscript_backend(_Ctx(_RecBackend()), {"r_package": "DESeq2"})
+    skip = _RDummy()._resolve_rscript_backend(_Ctx(_RecBackend()), {"r_package": "DESeq2"})
     assert seen["pkg"] == "DESeq2"
-    assert b is None and skip.details.get("r_package") == "DESeq2"
+    assert isinstance(skip, MethodSkip) and skip.details.get("r_package") == "DESeq2"
 
 
 def test_availability_honors_configured_rscript_path(monkeypatch):
@@ -109,7 +108,7 @@ def test_availability_honors_configured_rscript_path(monkeypatch):
     # that the method clears the *availability* gate (no 'Rscript unavailable'
     # skip) and only skips later on the package.
     monkeypatch.setattr(backend, "_r_package_available", lambda pkg: False)
-    b, skip = _RDummy()._resolve_rscript_backend(_Ctx(backend))
-    assert b is None and isinstance(skip, MethodSkip)
+    skip = _RDummy()._resolve_rscript_backend(_Ctx(backend))
+    assert isinstance(skip, MethodSkip)
     assert "rscript unavailable" not in skip.reason.lower()
     assert skip.details.get("r_package") == "edgeR"

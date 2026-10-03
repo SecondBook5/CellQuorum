@@ -8,11 +8,12 @@ scDiagnostics) otherwise copy-pastes. Subclasses set ``r_package`` and call
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 if TYPE_CHECKING:
+    from cellquorum.backends.rscript import RscriptBackend
     from cellquorum.core.context import PipelineContext
 
 
@@ -39,8 +40,11 @@ class RAnalysisMethod(AnalysisMethod):
 
     def _resolve_rscript_backend(
         self, context: PipelineContext, config: dict | None = None
-    ) -> tuple[object | None, MethodSkip | None]:
-        """Return (rscript_backend, None) when R is runnable, else (None, skip).
+    ) -> RscriptBackend | MethodSkip:
+        """Return the runnable Rscript backend, or the skip to return when R is not runnable.
+
+        Callers check ``isinstance(result, MethodSkip)`` and return it; after that check the
+        type checker knows the result is a backend.
 
         Availability is delegated to the resolved backend's own
         ``_rscript_available`` primitive, which checks the backend's *configured*
@@ -63,14 +67,14 @@ class RAnalysisMethod(AnalysisMethod):
             except Exception:
                 backend = None
         if backend is None:
-            return None, self._skip("rscript backend unavailable")
+            return self._skip("rscript backend unavailable")
 
         # Availability honors the backend's configured rscript_path.
         if not backend._rscript_available():
-            return None, self._skip("Rscript unavailable")
+            return self._skip("Rscript unavailable")
         if not backend._r_package_available(pkg):
-            return None, self._skip(f"{pkg} R package unavailable", r_package=pkg)
-        return backend, None
+            return self._skip(f"{pkg} R package unavailable", r_package=pkg)
+        return cast("RscriptBackend", backend)
 
 
 __all__ = ["RAnalysisMethod"]

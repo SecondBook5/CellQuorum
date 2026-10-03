@@ -77,9 +77,9 @@ class MultiNicheNetMethod(RAnalysisMethod):
             return self._skip("prior-model paths missing")
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
-        backend, skip = self._resolve_rscript_backend(context)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         scratch = Path(context.paths.scratch)
         paths = export_sce_inputs(

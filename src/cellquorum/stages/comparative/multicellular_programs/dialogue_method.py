@@ -140,9 +140,9 @@ class MulticellularProgramsMethod(RAnalysisMethod):
             return self._skip(f"quality_col '{quality_col}' absent from obs")
 
         # ---- Rscript + backend + DIALOGUE package guards. ----
-        backend, skip = self._resolve_rscript_backend(context)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         # ---- Export inputs + run DIALOGUE on the full data. ----
         scratch_root = Path(context.paths.scratch) / "multicellular_programs"

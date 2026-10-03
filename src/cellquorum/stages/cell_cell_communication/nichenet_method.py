@@ -97,9 +97,9 @@ class NicheNetMethod(RAnalysisMethod):
             return self._skip("prior-model paths missing")
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
-        backend, skip = self._resolve_rscript_backend(context)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         # Build geneset + background and write them for R. A user-supplied DE CSV
         # is an external surface — a malformed/mis-columned file must skip, not crash.

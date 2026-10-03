@@ -233,9 +233,9 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
             )
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
-        backend, skip = self._resolve_rscript_backend(context, config)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context, config)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         # Optional cross-compartment ambient-gene filter, applied before
         # aggregation so a flagged gene never reaches edgeR at all (not merely

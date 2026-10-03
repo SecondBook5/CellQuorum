@@ -73,9 +73,9 @@ class DeHeatmapMethod(RAnalysisMethod):
     def _run(
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
-        backend, skip = self._resolve_rscript_backend(context, config)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context, config)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         results_dir = Path(context.paths.results)
         de_csv = results_dir / _BY_CLUSTER_CSV

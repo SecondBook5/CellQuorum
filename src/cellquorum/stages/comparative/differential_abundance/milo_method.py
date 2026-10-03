@@ -88,9 +88,9 @@ class MiloMethod(RAnalysisMethod):
                 return self._skip("no reduced-dim rep (use_rep/X_pca) in obsm", use_rep=use_rep)
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
-        backend, skip = self._resolve_rscript_backend(context)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         # Extract reduced-dim rep (densify if sparse).
         embedding = np.asarray(adata.obsm[rep])

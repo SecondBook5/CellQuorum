@@ -208,9 +208,9 @@ class ScdiagnosticsMethod(RAnalysisMethod):
             )
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
-        backend, skip = self._resolve_rscript_backend(context, config)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context, config)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         # Write query h5ad (lognorm layer + X_pca + cell_type), restricted to the reference's
         # gene space. Reading the reference's var_names here costs one h5ad header read and

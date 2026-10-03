@@ -112,9 +112,9 @@ class PropellerMethod(RAnalysisMethod):
             return self._skip("case/control labels not set in config")
 
         # Rscript + backend + package guards (hoisted to RAnalysisMethod).
-        backend, skip = self._resolve_rscript_backend(context)
-        if skip is not None:
-            return skip
+        backend = self._resolve_rscript_backend(context)
+        if isinstance(backend, MethodSkip):
+            return backend
 
         # Aggregate to sample × cell-type counts.
         cc = aggregate_celltype_counts(
