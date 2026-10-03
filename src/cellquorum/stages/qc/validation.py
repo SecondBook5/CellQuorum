@@ -245,7 +245,7 @@ def validate_qc_matrix(
             f"QC matrix source '{matrix_source}' must contain at least one variable."
         )
 
-    if sp.issparse(matrix):
+    if isinstance(matrix, sp.spmatrix | sp.sparray):
         _validate_numeric_dtype(matrix.dtype, matrix_source=matrix_source)
         values = (
             matrix.data

@@ -36,6 +36,8 @@ from cellquorum.methods.context_access import resolve_stage_config
 from cellquorum.stages.qc.config import QueryProjectionConfig
 
 if TYPE_CHECKING:
+    import anndata as ad
+
     from cellquorum.core.context import PipelineContext
 
 
@@ -230,7 +232,7 @@ _STATE_COLUMN = "qc_state_initial"
 class QueryProjectionStage:
     """Project borderline cells onto the frozen core manifold and record the evidence."""
 
-    def _resolve_rep(self, adata: object, config: dict) -> str | None:
+    def _resolve_rep(self, adata: ad.AnnData, config: dict) -> str | None:
         requested = config.get("use_rep")
         if requested and requested not in adata.obsm:
             raise ValueError(f"Requested query-projection representation '{requested}' is missing.")
@@ -240,7 +242,7 @@ class QueryProjectionStage:
                 return key
         return None
 
-    def _resolve_label_column(self, adata: object, config: dict) -> str | None:
+    def _resolve_label_column(self, adata: ad.AnnData, config: dict) -> str | None:
         requested = config.get("label_column")
         if requested and requested not in adata.obs.columns:
             raise ValueError(f"Requested query-projection label column '{requested}' is missing.")

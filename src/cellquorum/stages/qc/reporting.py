@@ -46,7 +46,7 @@ def compute_qc_donor_comparisons(
 
     sample, donor, condition = (keys.get(k) for k in ("sample_key", "patient_key", "condition_key"))
     control, case = keys.get("normal_label"), keys.get("disease_label")
-    if not paired or not all((sample, donor, condition, control, case)):
+    if not paired or not (sample and donor and condition and control and case):
         return {}, []
     metadata = adata.obs[[sample, donor, condition]]
     if (
@@ -63,8 +63,9 @@ def compute_qc_donor_comparisons(
         condition_key=condition,
     )
     table = summarize_by_sample(frame)
-    comparisons = {}
-    for metric in table.select_dtypes(include="number"):
+    comparisons: dict[str, TwoGroupTest] = {}
+    for column in table.select_dtypes(include="number"):
+        metric = str(column)
         if metric in {"cells_in", "cells_kept", "cells_removed"}:
             continue
         test = two_group_test_on_donor_medians(

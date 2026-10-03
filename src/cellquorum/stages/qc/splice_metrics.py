@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 INTRONIC_FRACTION_COLUMN = "qc_splice_intronic_fraction"
 
 
-def _column_sums(matrix: object) -> np.ndarray:
+def _column_sums(matrix: np.ndarray | sp.spmatrix | sp.sparray) -> np.ndarray:
     """Per-cell (row) sum over genes, for a dense array or scipy sparse matrix."""
 
     if sp.issparse(matrix):
