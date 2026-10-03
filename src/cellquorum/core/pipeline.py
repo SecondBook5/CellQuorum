@@ -6,6 +6,7 @@ import importlib.metadata
 import logging
 import platform
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -988,6 +989,98 @@ def _config_disabled_stage_names(
     return sorted(disabled)
 
 
+def _context_from_checkpoint(
+    context: PipelineContext, config: CellQuorumConfig, from_stage: str
+) -> PipelineContext:
+    """Return ``context`` carrying the checkpoint object that ``from_stage`` resumes from.
+
+    Raises if no usable checkpoint exists, or if the one found was written under settings this
+    run is not using.
+    """
+    from cellquorum.core.checkpoint import (
+        load_checkpoint,
+        resolve_start_checkpoint,
+    )
+    from cellquorum.core.fingerprint import compute_upstream_fingerprint
+    from cellquorum.core.stages import stage_order_map
+
+    stage_order = stage_order_map()
+    start_record = resolve_start_checkpoint(
+        context.paths, from_stage=from_stage, stage_order=stage_order
+    )
+    # Refuse a checkpoint written under settings this run is not using. Without
+    # this the run would resume happily and report success while its numbers came
+    # from a config nobody chose, and resolved_config.json would disagree with the
+    # object on disk.
+    return context.with_adata(
+        load_checkpoint(
+            start_record,
+            expected_upstream_fingerprint=compute_upstream_fingerprint(
+                config=config.model_dump(),
+                stage_order=stage_order,
+                through_stage=start_record.stage,
+            ),
+        )
+    )
+
+
+def _runnable_stage_names(
+    plan: PipelinePlan, executor: PipelineExecutor, config_dict: dict[str, Any]
+) -> list[str]:
+    """Names of the stages that will actually run, in plan order.
+
+    A stage runs only if it is in the plan, registered, and its own sub-config ``enabled`` is
+    true (when it has one).
+    """
+    names = []
+    for stage in plan.stages:
+        # Check plan gate and registration.
+        if not stage.enabled or executor.registry.get(stage.name) is None:
+            continue
+        # Check per-stage sub-config .enabled field.
+        stage_config = config_dict.get(stage.name, {})
+        if isinstance(stage_config, dict):
+            per_stage_enabled = stage_config.get("enabled", True)
+        else:
+            per_stage_enabled = True
+        if per_stage_enabled:
+            names.append(stage.name)
+    return names
+
+
+def _bootstrap_record(
+    *,
+    plan: PipelinePlan,
+    execution_result: PipelineExecutionResult,
+    inherited: Sequence[InheritedArtifact],
+    inherited_warning: str | None,
+    started_at: datetime,
+    ended_at: datetime,
+) -> StageExecutionRecord:
+    """The ``bootstrap`` record: setup timing, planner warnings, and a count of the run."""
+    return StageExecutionRecord(
+        stage_name="bootstrap",
+        status="success",
+        started_at_utc=started_at,
+        ended_at_utc=ended_at,
+        duration_seconds=(ended_at - started_at).total_seconds(),
+        backend_used="python",
+        notes=["Initialized CellQuorum execution frame."],
+        warnings=[*plan.warnings, *([inherited_warning] if inherited_warning else [])],
+        metrics={
+            "n_planned_stages": len(plan.stages),
+            "n_enabled_stages": len(plan.enabled_stage_names()),
+            "n_backend_status_rows": len(plan.backend_status_table),
+            "input_loaded": execution_result.context.adata is not None,
+            "n_successful_stages": len(execution_result.succeeded_stage_names()),
+            "n_skipped_stages": len(execution_result.skipped_stage_names()),
+            "n_failed_stages": len(execution_result.failed_stage_names()),
+            "n_inherited_artifacts": len(inherited),
+            "inherited_artifact_bytes": sum(item.size_bytes for item in inherited),
+        },
+    )
+
+
 def execute_pipeline_run(
     config: CellQuorumConfig,
     *,
@@ -1012,6 +1105,8 @@ def execute_pipeline_run(
         backend_registry: Optional backend registry for tests or custom execution.
         executor: Optional PipelineExecutor override.
         load_input: Whether to load config.input.h5ad into context.adata.
+        from_stage: Resume from the newest checkpoint written before this stage.
+        until_stage: Stop after this stage.
 
     Returns:
         PipelineRunResult containing config, plan, final context, provenance
@@ -1072,31 +1167,7 @@ def execute_pipeline_run(
         # loudly rather than silently starting from raw input, which would look like a
         # resume while producing different numbers.
         if from_stage:
-            from cellquorum.core.checkpoint import (
-                load_checkpoint,
-                resolve_start_checkpoint,
-            )
-            from cellquorum.core.fingerprint import compute_upstream_fingerprint
-            from cellquorum.core.stages import stage_order_map
-
-            stage_order = stage_order_map()
-            start_record = resolve_start_checkpoint(
-                context.paths, from_stage=from_stage, stage_order=stage_order
-            )
-            # Refuse a checkpoint written under settings this run is not using. Without
-            # this the run would resume happily and report success while its numbers came
-            # from a config nobody chose, and resolved_config.json would disagree with the
-            # object on disk.
-            context = context.with_adata(
-                load_checkpoint(
-                    start_record,
-                    expected_upstream_fingerprint=compute_upstream_fingerprint(
-                        config=config.model_dump(),
-                        stage_order=stage_order,
-                        through_stage=start_record.stage,
-                    ),
-                )
-            )
+            context = _context_from_checkpoint(context, config, from_stage)
             plan = _restrict_plan_from_stage(plan, from_stage)
 
         # Build the run reporter from config verbosity settings.
@@ -1106,23 +1177,8 @@ def execute_pipeline_run(
         run_id = context.paths.root.name
         reporter.banner(__version__, config.project.name, run_id)
 
-        # Compute which stages will actually run (planned + registered + per-stage
-        # enabled). A stage runs only if: in plan, registered, AND its sub-config
-        # .enabled is True (when present).
-        planned_stage_names = []
         config_dict = config.model_dump()
-        for stage in plan.stages:
-            # Check plan gate and registration.
-            if not stage.enabled or resolved_executor.registry.get(stage.name) is None:
-                continue
-            # Check per-stage sub-config .enabled field.
-            stage_config = config_dict.get(stage.name, {})
-            if isinstance(stage_config, dict):
-                per_stage_enabled = stage_config.get("enabled", True)
-            else:
-                per_stage_enabled = True
-            if per_stage_enabled:
-                planned_stage_names.append(stage.name)
+        planned_stage_names = _runnable_stage_names(plan, resolved_executor, config_dict)
 
         # Echo the resolved configuration showing only runnable stages.
         reporter.config_echo(config, planned_stage_names=planned_stage_names)
@@ -1172,26 +1228,13 @@ def execute_pipeline_run(
             logger.warning(inherited_warning)
             _write_inherited_artifacts_report(context=context, artifacts=inherited)
 
-        bootstrap_record = StageExecutionRecord(
-            stage_name="bootstrap",
-            status="success",
-            started_at_utc=bootstrap_started_at,
-            ended_at_utc=bootstrap_ended_at,
-            duration_seconds=(bootstrap_ended_at - bootstrap_started_at).total_seconds(),
-            backend_used="python",
-            notes=["Initialized CellQuorum execution frame."],
-            warnings=[*plan.warnings, *([inherited_warning] if inherited_warning else [])],
-            metrics={
-                "n_planned_stages": len(plan.stages),
-                "n_enabled_stages": len(plan.enabled_stage_names()),
-                "n_backend_status_rows": len(plan.backend_status_table),
-                "input_loaded": execution_result.context.adata is not None,
-                "n_successful_stages": len(execution_result.succeeded_stage_names()),
-                "n_skipped_stages": len(execution_result.skipped_stage_names()),
-                "n_failed_stages": len(execution_result.failed_stage_names()),
-                "n_inherited_artifacts": len(inherited),
-                "inherited_artifact_bytes": sum(item.size_bytes for item in inherited),
-            },
+        bootstrap_record = _bootstrap_record(
+            plan=plan,
+            execution_result=execution_result,
+            inherited=inherited,
+            inherited_warning=inherited_warning,
+            started_at=bootstrap_started_at,
+            ended_at=bootstrap_ended_at,
         )
 
         # Write provenance with bootstrap and real stage execution records.
