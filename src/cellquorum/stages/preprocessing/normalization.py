@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, TypeGuard
 
 import anndata as ad
 import numpy as np
@@ -17,6 +18,11 @@ from cellquorum.stages.preprocessing.config import NormalizationConfig
 from cellquorum.stages.qc.eligibility import fitting_cells
 
 logger = logging.getLogger(__name__)
+
+
+def _is_sparse(matrix: object) -> TypeGuard[sp.spmatrix | sp.sparray]:
+    """``scipy.sparse.issparse`` that also tells the type checker what it proved."""
+    return sp.issparse(matrix)
 
 
 class PreprocessingNormalizationError(CellQuorumDataError):
@@ -150,7 +156,7 @@ def normalize_adata(
     # densifying. Pop it out of the diagnostics (numpy array, not JSON-friendly)
     # before provenance is written.
     row_center = recipe_diagnostics.pop("scclr_row_center", None)
-    if row_center is not None and len(row_center) == working_adata.n_obs:
+    if row_center is not None and len(np.asarray(row_center)) == working_adata.n_obs:
         working_adata.obs[f"{config.output_layer}_row_center"] = np.asarray(row_center)
 
     # Write provenance to uns.
@@ -242,7 +248,7 @@ def validate_count_matrix(matrix: np.ndarray | sp.spmatrix) -> None:
     # thing standing between the pipeline and any object above roughly 50,000
     # cells. `.data` is a view, so the check now costs one pass over the nonzeros
     # and allocates nothing.
-    values = matrix.data if sp.issparse(matrix) else matrix
+    values = matrix.data if _is_sparse(matrix) else matrix
 
     # Reject matrices with non-finite values.
     if not np.isfinite(values).all():
@@ -366,7 +372,6 @@ def apply_recipe_pf_v1(
     """
 
     # Compute per-cell total counts.
-    is_sparse = sp.issparse(matrix)
     cell_totals = np.asarray(matrix.sum(axis=1)).flatten()
 
     # Detect zero-depth cells.
@@ -385,7 +390,7 @@ def apply_recipe_pf_v1(
     safe_cell_totals = np.where(cell_totals > 0, cell_totals, 1.0)
 
     # Compute proportional fractions.
-    if is_sparse:
+    if _is_sparse(matrix):
         # Sparse division by row.
         output = matrix.multiply(1.0 / safe_cell_totals[:, np.newaxis])
         # Convert back to CSR format for AnnData compatibility.
@@ -394,7 +399,7 @@ def apply_recipe_pf_v1(
         # Dense division.
         output = matrix / safe_cell_totals[:, np.newaxis]
 
-    diagnostics = {
+    diagnostics: dict[str, object] = {
         "n_zero_depth_cells": n_zero_depth,
     }
 
@@ -420,7 +425,6 @@ def apply_recipe_log1p_cp10k_v1(
     """
 
     # Compute per-cell total counts.
-    is_sparse = sp.issparse(matrix)
     cell_totals = np.asarray(matrix.sum(axis=1)).flatten()
 
     # Detect zero-depth cells.
@@ -438,13 +442,13 @@ def apply_recipe_log1p_cp10k_v1(
     safe_cell_totals = np.where(cell_totals > 0, cell_totals, 1.0)
 
     # Compute scaled counts.
-    if is_sparse:
+    if _is_sparse(matrix):
         scaled = matrix.multiply(target_sum / safe_cell_totals[:, np.newaxis])
     else:
         scaled = matrix * (target_sum / safe_cell_totals[:, np.newaxis])
 
     # Apply log1p transformation.
-    if is_sparse:
+    if _is_sparse(matrix):
         output = scaled.copy()
         output.data = np.log1p(output.data)
         # Convert back to CSR format for AnnData compatibility.
@@ -452,7 +456,7 @@ def apply_recipe_log1p_cp10k_v1(
     else:
         output = np.log1p(scaled)
 
-    diagnostics = {
+    diagnostics: dict[str, object] = {
         "n_zero_depth_cells": n_zero_depth,
         "target_sum": target_sum,
     }
@@ -477,7 +481,6 @@ def apply_recipe_log1p_pf_v1(
     """
 
     # Compute per-cell total counts.
-    is_sparse = sp.issparse(matrix)
     cell_totals = np.asarray(matrix.sum(axis=1)).flatten()
 
     # Detect zero-depth cells.
@@ -495,13 +498,13 @@ def apply_recipe_log1p_pf_v1(
     safe_cell_totals = np.where(cell_totals > 0, cell_totals, 1.0)
 
     # Compute proportional fractions.
-    if is_sparse:
+    if _is_sparse(matrix):
         pf = matrix.multiply(1.0 / safe_cell_totals[:, np.newaxis])
     else:
         pf = matrix / safe_cell_totals[:, np.newaxis]
 
     # Apply log1p transformation.
-    if is_sparse:
+    if _is_sparse(matrix):
         output = pf.copy()
         output.data = np.log1p(output.data)
         # Convert back to CSR format for AnnData compatibility.
@@ -509,7 +512,7 @@ def apply_recipe_log1p_pf_v1(
     else:
         output = np.log1p(pf)
 
-    diagnostics = {
+    diagnostics: dict[str, object] = {
         "n_zero_depth_cells": n_zero_depth,
     }
 
@@ -578,7 +581,7 @@ def run_scclr_pflog(
     scratch.mkdir(parents=True, exist_ok=True)
 
     # scclr expects a CSR counts matrix.
-    counts = matrix.tocsr() if sp.issparse(matrix) else sp.csr_matrix(np.asarray(matrix))
+    counts = matrix.tocsr() if _is_sparse(matrix) else sp.csr_matrix(np.asarray(matrix))
 
     requested_target = str(getattr(config, "scclr_target", "auto"))
 
@@ -682,7 +685,7 @@ def _run_scclr_normalize(
     target: str,
     backend: object,
     scratch: Path,
-) -> tuple[sp.spmatrix, dict[str, object]]:
+) -> tuple[sp.spmatrix, dict[str, Any]]:
     """One PFlog1pPF pass through the isolated scclr environment.
 
     Args:

@@ -174,7 +174,7 @@ def write_hvg_figure(
         borderaxespad=0.0,
     )
     legend.get_frame().set_linewidth(0.0)
-    legend.get_title().set_style("italic")
+    legend.get_title().set_fontstyle("italic")
     legend.get_title().set_color(TEXT)
     apply_cellquorum_axis_style(ax)
 

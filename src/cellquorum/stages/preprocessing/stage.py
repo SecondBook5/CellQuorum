@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import anndata as ad
 
@@ -67,6 +67,8 @@ class PreprocessingStage:
         output_subdir: Subdirectory under context.paths.results where
             preprocessing artifacts should be written.
     """
+
+    name: ClassVar[str]
 
     config: PreprocessingConfig | None = None
 
@@ -265,7 +267,7 @@ def resolve_preprocessing_config(
         return coerce_preprocessing_config(context_config["preprocessing"])
 
     # Resolve context.config.preprocessing for object-like configs.
-    if hasattr(context_config, "preprocessing"):
+    if context_config is not None and hasattr(context_config, "preprocessing"):
         return coerce_preprocessing_config(context_config.preprocessing)
 
     # Fall back to default preprocessing configuration.
@@ -292,7 +294,7 @@ def coerce_preprocessing_config(value: object) -> PreprocessingConfig:
 
     # Validate dictionary-like preprocessing configuration.
     if isinstance(value, Mapping):
-        return validate_preprocessing_config_dict(value)
+        return validate_preprocessing_config_dict(dict(value))
 
     # Reject unsupported values.
     raise PreprocessingStageError(
