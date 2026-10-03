@@ -129,7 +129,7 @@ class GeneTrendVizMethod(AnalysisMethod):
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
         apply_theme("notebook")
-        warnings = []
+        warnings: list[str] = []
         try:
             model = cr.models.GAM(fate)
             cr.pl.gene_trends(fate, model=model, genes=present, show=False)

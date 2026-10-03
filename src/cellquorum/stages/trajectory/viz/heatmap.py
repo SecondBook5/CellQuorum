@@ -234,7 +234,7 @@ def condition_split_heatmap(
     )
 
     score_all = np.concatenate([score_tracks[c] for c in condition_order]) if any_score else None
-    if any_score and np.isfinite(score_all).any():
+    if score_all is not None and np.isfinite(score_all).any():
         s_vmin, s_vmax = np.nanpercentile(score_all[np.isfinite(score_all)], [2, 98])
     else:
         s_vmin, s_vmax = 0.0, 1.0
@@ -303,12 +303,12 @@ def condition_split_heatmap(
     _leader_line_labels(last_expr_ax, [gene_labels[i] for i in gene_order])
 
     if im_score is not None:
-        cax_g = fig.add_axes([0.93, 0.74, 0.014, 0.12])
+        cax_g = fig.add_axes((0.93, 0.74, 0.014, 0.12))
         cb_g = fig.colorbar(im_score, cax=cax_g, ticks=[s_vmin, s_vmax])
         cb_g.ax.set_yticklabels(["Min", "Max"], fontsize=7)
         cb_g.set_label("Score", fontsize=7.5)
     if im_expr is not None:
-        cax = fig.add_axes([0.93, 0.40, 0.014, 0.24])
+        cax = fig.add_axes((0.93, 0.40, 0.014, 0.24))
         fig.colorbar(im_expr, cax=cax, label="scaled expr")
 
     # One stacked legend block per categorical track, top to bottom.

@@ -12,7 +12,7 @@ from __future__ import annotations
 import inspect
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import numpy as np
@@ -265,7 +265,7 @@ class MacrostateVizMethod(AnalysisMethod):
         if basis is not None:
             try:
                 sig = inspect.signature(estimator.plot_macrostates)
-                kwargs = {"which": "all", "basis": basis}
+                kwargs: dict[str, Any] = {"which": "all", "basis": basis}
                 if "show" in sig.parameters:
                     kwargs["show"] = False
                 estimator.plot_macrostates(**kwargs)

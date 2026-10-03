@@ -126,9 +126,9 @@ class TrajectoryStage(MethodDispatchStage):
         "cytotrace": ("cytotrace", _CYTOTRACE_KEYS),
     }
 
-    def _flatten_block(self, traj: object, name: str, target: dict) -> None:
+    def _flatten_block(self, traj: object, name: str | None, target: dict) -> None:
         """Overlay config.trajectory.<name>.* onto ``target`` (existing keys win)."""
-        block_info = self._METHOD_BLOCKS.get(name)
+        block_info = self._METHOD_BLOCKS.get(name) if name is not None else None
         if block_info is None or traj is None:
             return
         attr, keys = block_info

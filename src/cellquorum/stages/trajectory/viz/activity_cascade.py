@@ -15,6 +15,8 @@ is a resource-naming convention, not a study assumption).
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -183,7 +185,7 @@ def cascade_heatmap(
     cb = fig.colorbar(im, ax=axr, fraction=0.025, pad=0.10)
     cb.set_label(cbar_label, fontsize=8)
     cb.ax.tick_params(labelsize=7)
-    cb.outline.set_visible(False)
+    cast("Any", cb.outline).set_visible(False)  # matplotlib's stubs type Spine as not callable
     if title:
         ax.set_title(title, fontsize=12, fontweight="bold", loc="left", pad=8)
     fig.tight_layout()

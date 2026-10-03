@@ -246,7 +246,7 @@ def coarse_transition_heatmap(
     fig_h = 1.3 + 0.75 * n + bottom_in
     fig = plt.figure(figsize=(fig_w, fig_h))
     bottom_frac = bottom_in / fig_h
-    ax = fig.add_axes([0.16, bottom_frac, 0.66, 0.88 - bottom_frac])
+    ax = fig.add_axes((0.16, bottom_frac, 0.66, 0.88 - bottom_frac))
     for i in range(n):
         for j in range(n):
             val = mat[i, j]
@@ -295,7 +295,7 @@ def coarse_transition_heatmap(
 
     if stationary is not None:
         vals = np.asarray(stationary, dtype=float)
-        bar_ax = fig.add_axes([0.16, 0.05 / fig_h, 0.66, 0.30 / fig_h])
+        bar_ax = fig.add_axes((0.16, 0.05 / fig_h, 0.66, 0.30 / fig_h))
         bar_ax.imshow(vals[None, :], aspect="auto", cmap="Blues", vmin=0, vmax=vals.max())
         bar_ax.set_xticks([])
         bar_ax.set_yticks([0])

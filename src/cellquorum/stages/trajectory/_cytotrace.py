@@ -87,7 +87,7 @@ def _write_counts_tsv(
     emitted text is identical, value-for-value, to the one-shot
     ``DataFrame(counts.T).to_csv(...)`` this replaces.
     """
-    if sp.issparse(counts):
+    if isinstance(counts, sp.spmatrix | sp.sparray):
         # .T on CSR/CSC is cheap (swaps orientation); tocsr makes gene-row
         # slicing efficient. Held as sparse, so no full dense copy.
         genes_by_cells = counts.T.tocsr()

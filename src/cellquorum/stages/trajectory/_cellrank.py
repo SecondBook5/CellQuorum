@@ -20,6 +20,8 @@ use the deterministic dense ``use_petsc=False, solver="direct"``.
 
 from __future__ import annotations
 
+from typing import Any
+
 import anndata as ad
 import numpy as np
 import pandas as pd
@@ -175,7 +177,8 @@ def _build_realtime_kernel(
         # Cells with a non-numeric/missing time cannot enter the problem.
         tp_adata = tp_adata[~time_numeric.isna().to_numpy()].copy()
 
-        problem = TemporalProblem(tp_adata)
+        # moscot's stubs mark TemporalProblem abstract; it is concrete and instantiable.
+        problem = TemporalProblem(tp_adata)  # type: ignore[abstract]
         problem = problem.prepare(time_key="_cq_time", joint_attr={"attr": "obsm", "key": rep})
         problem = problem.solve(epsilon=float(realtime_epsilon))
         rtk = RealTimeKernel.from_moscot(problem)
@@ -340,7 +343,7 @@ def build_kernel(
 
     # 3. Collect EVERY resolvable directional kernel (not pick-one). Each entry
     # is (name, kernel); order controls only the display list, not the weight.
-    directionals: list[tuple[str, object]] = []
+    directionals: list[tuple[str, Any]] = []
 
     if pseudotime_key and pseudotime_key in adata.obs:
         col = adata.obs[pseudotime_key]
