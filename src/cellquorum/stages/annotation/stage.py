@@ -35,7 +35,7 @@ class AnnotationStage(MethodDispatchStage):
         # The key_added column must be present. Re-resolve it is not available
         # here (no context); read it from metrics recorded by the method, else
         # fall back to the default.
-        key_added = result.metrics.get("key_added", "cell_type")
+        key_added = str(result.metrics.get("key_added", "cell_type"))
         DataContract(required_obs=[key_added]).validate(result.adata)
 
 

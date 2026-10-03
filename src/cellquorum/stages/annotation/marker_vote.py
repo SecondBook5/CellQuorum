@@ -38,7 +38,7 @@ import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
-from cellquorum.methods.base import AnalysisMethod
+from cellquorum.methods.base import AnalysisMethod, MethodSkip
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -125,7 +125,9 @@ class MarkerVoteMethod(AnalysisMethod):
         # Require the cluster column to exist.
         return [cluster_key]
 
-    def _run(self, adata: ad.AnnData, config: dict, context: PipelineContext) -> StageResult:
+    def _run(
+        self, adata: ad.AnnData, config: dict, context: PipelineContext
+    ) -> StageResult | MethodSkip:
         """
         Score each cell-type panel, average per cluster, assign the argmax.
 

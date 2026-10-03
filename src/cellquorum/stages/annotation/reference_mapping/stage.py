@@ -34,7 +34,7 @@ class ReferenceMappingStage(MethodDispatchStage):
 
         # The key_added column must be present in obs. Read it from metrics
         # recorded by the method, else fall back to the default.
-        key_added = result.metrics.get("key_added", "ref_state")
+        key_added = str(result.metrics.get("key_added", "ref_state"))
 
         # scANVI embedding must be present in obsm.
         DataContract(required_obs=[key_added], required_obsm=["X_scANVI"]).validate(result.adata)

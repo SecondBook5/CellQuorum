@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import pandas as pd
 
@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 )
 class AdjudicationStage:
     """Build cluster evidence, adjudicate claims, and write audit artifacts."""
+
+    name: ClassVar[str]
 
     def run(self, context: PipelineContext) -> StageResult:
         """
@@ -209,7 +211,7 @@ def resolve_adjudication_config(context: PipelineContext) -> AdjudicationConfig:
     subconfig = getattr(context_config, "adjudication", None)
     if isinstance(subconfig, AdjudicationConfig):
         return subconfig
-    if hasattr(subconfig, "model_dump"):
+    if subconfig is not None and hasattr(subconfig, "model_dump"):
         return AdjudicationConfig(**subconfig.model_dump())
     if isinstance(subconfig, Mapping):
         return AdjudicationConfig(**dict(subconfig))

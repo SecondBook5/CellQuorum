@@ -217,6 +217,7 @@ files = [
   "src/cellquorum/stages/trajectory",
   "src/cellquorum/stages/gene_regulation",
   "src/cellquorum/stages/comparative",
+  "src/cellquorum/stages/annotation",
   "src/cellquorum/backends",
   "src/cellquorum/visualization",
   "src/cellquorum/stages/metacells",

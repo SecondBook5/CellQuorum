@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import pandas as pd
 
@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 )
 class AnnotationConsensusStage:
     """Reconcile several obs label columns into a consensus label + confidence."""
+
+    name: ClassVar[str]
 
     def run(self, context: PipelineContext) -> StageResult:
         """
@@ -116,7 +118,10 @@ class AnnotationConsensusStage:
             "tier_counts": {str(k): int(v) for k, v in tier_counts.items()},
             "n_needs_review": int(sum(review)),
             "label_counts": {
-                str(r.cell_type): int(r.n_cells) for r in agreement_df.itertuples(index=False)
+                str(cell_type): int(n_cells)
+                for cell_type, n_cells in zip(
+                    agreement_df["cell_type"], agreement_df["n_cells"], strict=True
+                )
             },
         }
         adata.uns.setdefault("cellquorum", {})["annotation_consensus"] = payload
@@ -177,7 +182,7 @@ def _resolve_config(context: PipelineContext) -> AnnotationConsensusConfig:
     subconfig = getattr(context_config, "annotation_consensus", None)
     if isinstance(subconfig, AnnotationConsensusConfig):
         return subconfig
-    if hasattr(subconfig, "model_dump"):
+    if subconfig is not None and hasattr(subconfig, "model_dump"):
         return AnnotationConsensusConfig(**subconfig.model_dump())
     if isinstance(subconfig, Mapping):
         return AnnotationConsensusConfig(**dict(subconfig))

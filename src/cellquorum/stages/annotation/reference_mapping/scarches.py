@@ -610,9 +610,9 @@ class ScArchesMethod(AnalysisMethod):
         )
 
         # Per-seed training.
-        seed_predictions = {}
-        seed_latents = {}
-        seed_loss_history = {}
+        seed_predictions: dict[int, dict[str, Any]] = {}
+        seed_latents: dict[int, dict[str, np.ndarray]] = {}
+        seed_loss_history: dict[int, dict[str, dict[str, list[float]]]] = {}
         resumed_seeds: list[int] = []
         trained_seeds: list[int] = []
         save_warnings: list[str] = []
@@ -800,7 +800,7 @@ class ScArchesMethod(AnalysisMethod):
         # are not rotation/sign-aligned and cannot be averaged; it is labeled as
         # such in uns. Only the probabilities are a true cross-seed consensus.
         seed_mean_agreement = {s: seed_predictions[s]["knn_agreement"].mean() for s in seeds}
-        best_seed = max(seed_mean_agreement, key=seed_mean_agreement.get)
+        best_seed = max(seed_mean_agreement, key=lambda s: seed_mean_agreement[s])
 
         # Write results onto the FULL input query (all genes, not HVG subset).
         # Cells are NOT subset (only genes were), so obs_names order is preserved.
@@ -1102,8 +1102,8 @@ def _save_reference_models(
     objects_path: Path,
     key_added: str,
     seed: int,
-    scvi_model: object,
-    scanvi_model: object,
+    scvi_model: Any,
+    scanvi_model: Any,
 ) -> list[str]:
     """
     Persist the trained reference scVI + scANVI models under ``objects/``.
@@ -1151,7 +1151,7 @@ def _build_seed_checkpoint_meta(
     n_shared: int,
     knn_k: int,
     n_latent: int,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Build metadata used to validate per-seed resume checkpoints."""
 
     return {
@@ -1199,8 +1199,8 @@ def _save_seed_checkpoint(
     objects_path: Path,
     key_added: str,
     seed: int,
-    meta: dict[str, object],
-    prediction: dict[str, object],
+    meta: dict[str, Any],
+    prediction: dict[str, Any],
     latent: dict[str, np.ndarray],
     loss_history: dict[str, dict[str, list[float]]],
 ) -> None:
@@ -1251,8 +1251,8 @@ def _load_seed_checkpoint(
     objects_path: Path,
     key_added: str,
     seed: int,
-    expected_meta: dict[str, object],
-) -> dict[str, object] | None:
+    expected_meta: dict[str, Any],
+) -> dict[str, Any] | None:
     """Load a seed checkpoint when it matches the current run inputs."""
 
     checkpoint_path, metadata_path = _seed_checkpoint_paths(

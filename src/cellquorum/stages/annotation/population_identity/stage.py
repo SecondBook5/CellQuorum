@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import anndata as ad
 import numpy as np
@@ -170,7 +170,7 @@ def resolve_population_identity_config(context: PipelineContext) -> PopulationId
     subconfig = getattr(context_config, "population_identity", None)
     if isinstance(subconfig, PopulationIdentityConfig):
         return subconfig
-    if hasattr(subconfig, "model_dump"):
+    if subconfig is not None and hasattr(subconfig, "model_dump"):
         return PopulationIdentityConfig(**subconfig.model_dump())
     if isinstance(subconfig, Mapping):
         return PopulationIdentityConfig(**dict(subconfig))
@@ -358,7 +358,7 @@ def build_population_summary(
 
 
 def classify_population(
-    row: dict[str, object],
+    row: dict[str, Any],
     resolution: IdentityResolution,
     config: PopulationIdentityConfig,
 ) -> tuple[str, list[str]]:
@@ -859,7 +859,7 @@ def build_population_identity_markdown(summary: pd.DataFrame, audit: dict[str, A
     for row in summary.itertuples(index=False):
         lines.append(
             f"- {row.population_id}: {row.evidence_status}; "
-            f"n={int(row.n_cells)} cells; {row.evidence_reasons}"
+            f"n={int(cast('Any', row.n_cells))} cells; {row.evidence_reasons}"
         )
     return "\n".join(lines) + "\n"
 
