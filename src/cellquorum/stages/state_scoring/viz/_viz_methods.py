@@ -20,9 +20,9 @@ if TYPE_CHECKING:
 
 
 class StateScoreViolinMethod(AnalysisMethod):
-    """Render one violin+p-value figure per scored program: score by
-    cluster, split control vs case, with a Mann-Whitney U p-value per
-    cluster -- the number the state_score_umap spatial view doesn't give.
+    """Render one violin figure per scored program: score by cluster, split control vs case, with
+    a donor-level significance mark per cluster (donors from ``design``, BH across clusters) -- the
+    number the state_score_umap spatial view doesn't give. Cells are never the unit of replication.
     """
 
     name = "state_score_violin"
@@ -63,6 +63,11 @@ class StateScoreViolinMethod(AnalysisMethod):
                 "given directly)"
             )
 
+        donor_col = getattr(design, "donor_col", None)
+        if donor_col is not None and donor_col not in adata.obs.columns:
+            donor_col = None
+        paired = bool(getattr(design, "paired", True))
+
         cluster_labels = config.get("cluster_labels") or {}
         figures_dir = Path(context.paths.figures) / "state_scoring"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
@@ -80,6 +85,8 @@ class StateScoreViolinMethod(AnalysisMethod):
                     "score": adata.obsm[obsm_key][:, idx],
                 }
             )
+            if donor_col is not None:
+                df["donor"] = adata.obs[donor_col].astype(str).to_numpy()
             try:
                 fig = state_score_violin(
                     df,
@@ -92,6 +99,8 @@ class StateScoreViolinMethod(AnalysisMethod):
                     control_color=NORMAL_BLUE,
                     score_label=f"{program} ({score_source})",
                     cluster_labels=cluster_labels,
+                    donor_col="donor" if donor_col is not None else None,
+                    paired=paired,
                 )
             except Exception:  # noqa: BLE001 -- one bad program must not sink the rest
                 continue
@@ -108,7 +117,7 @@ class StateScoreViolinMethod(AnalysisMethod):
                     name="state_score_violin",
                     description=(
                         f"{program} ({score_source}) by cluster, {control} vs {case}, "
-                        "with Mann-Whitney p-value per cluster."
+                        "with a donor-level test per cluster (BH-adjusted)."
                     ),
                 )
             )

@@ -6,8 +6,9 @@ from cellquorum.config.base import StrictBaseModel
 
 
 class StateScoringVizConfig(StrictBaseModel):
-    """Quantitative companion to state_score_umap: violin/box + Mann-Whitney
-    p-value per cluster, for each scored program, control vs case.
+    """Quantitative companion to state_score_umap: violin/box + a donor-level test
+    per cluster (donors and pairing from config.design), for each scored program,
+    control vs case.
 
     All biology comes from state_scoring's obsm output and config.design;
     this config carries only rendering controls and program/method selection.

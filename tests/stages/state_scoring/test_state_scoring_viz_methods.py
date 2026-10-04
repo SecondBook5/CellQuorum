@@ -91,3 +91,41 @@ def test_cluster_labels_rename_output_without_changing_filenames(tmp_path):
     )
     assert len(res.artifacts) == 1
     assert "proliferating" in res.artifacts[0].path.name
+
+
+def test_violin_stars_are_tested_on_the_design_donor_column(tmp_path, monkeypatch):
+    """The significance marks must be computed over donors named by ``design``: the stage used to
+    hand the plot only cells, so its marks were a cell-level test whatever the design said."""
+    from cellquorum.stages.state_scoring.viz import _viz_methods
+
+    seen = {}
+    real = _viz_methods.state_score_violin
+
+    def spy(df, **kwargs):
+        seen["columns"] = set(df.columns)
+        seen.update(donor_col=kwargs.get("donor_col"), paired=kwargs.get("paired"))
+        return real(df, **kwargs)
+
+    monkeypatch.setattr(_viz_methods, "state_score_violin", spy)
+    a = _adata()
+    a.obs["donor_id"] = ["P1", "P2", "P3"] * 20
+    design = SimpleNamespace(
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+        donor_col="donor_id",
+        paired=True,
+    )
+    res = StateScoreViolinMethod()._run(
+        a,
+        {
+            "cluster_key": "fibroblast_subcluster",
+            "figure_formats": ["png"],
+            "programs": ["proliferating"],
+        },
+        _ctx(tmp_path, design=design),
+    )
+    assert not isinstance(res, MethodSkip)
+    assert seen["donor_col"] == "donor"
+    assert "donor" in seen["columns"]
+    assert seen["paired"] is True
