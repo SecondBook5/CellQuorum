@@ -6,6 +6,7 @@ each cell type actually express its own canonical markers, and only its own.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     import anndata as ad
+    from matplotlib.figure import Figure
 
 
 def plot_marker_dotplot(
@@ -369,4 +371,284 @@ def plot_categorized_dotplot(
     return next(p for p in paths if p.suffix == ".png")
 
 
-__all__ = ["plot_marker_dotplot", "plot_marker_feature_grid", "plot_categorized_dotplot"]
+@dataclass(frozen=True)
+class MarkerPanelStatistics:
+    """Per-group summary of a marker panel: what the lineage dotplot draws.
+
+    ``groups`` are the rows (every observed group); ``genes`` the columns, in panel order, and a
+    gene may repeat when it belongs to two panel groups; ``gene_group`` names the panel group each
+    column belongs to. ``mean`` is the mean of the expression layer and ``pct`` the percent of
+    cells with a nonzero value, both shaped (n_groups, n_genes).
+    """
+
+    groups: list[str]
+    genes: list[str]
+    gene_group: list[str]
+    mean: np.ndarray
+    pct: np.ndarray
+
+
+def marker_panel_statistics(
+    adata: ad.AnnData, marker_panel: Mapping[str, list[str]], *, groupby: str, layer: str
+) -> MarkerPanelStatistics:
+    """Mean expression and percent detected per group for the genes of a marker panel.
+
+    A panel group that has no cells in ``groupby`` is dropped, and so is any gene that is absent
+    from the object. Columns are addressed by position, so a gene named in two panel groups
+    yields two columns.
+    """
+    import scipy.sparse as sp
+
+    labels = adata.obs[groupby].astype(str).to_numpy()
+    observed = pd.Series(labels).unique().tolist()
+    column = adata.obs[groupby]
+    groups = (
+        [str(c) for c in column.cat.categories if str(c) in set(observed)]
+        if hasattr(column, "cat")
+        else sorted(observed)
+    )
+    genes: list[str] = []
+    gene_group: list[str] = []
+    positions: list[int] = []
+    for group, panel_genes in marker_panel.items():
+        if str(group) not in set(groups):
+            continue
+        for gene in panel_genes:
+            if gene in adata.var_names:
+                genes.append(gene)
+                gene_group.append(str(group))
+                positions.append(int(adata.var_names.get_loc(gene)))
+    if not genes:
+        empty = np.zeros((len(groups), 0))
+        return MarkerPanelStatistics(groups, [], [], empty, empty)
+    matrix = adata.layers[layer][:, positions]
+    matrix = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
+    mean = np.vstack([matrix[labels == g].mean(axis=0) for g in groups])
+    pct = np.vstack([(matrix[labels == g] > 0).mean(axis=0) * 100.0 for g in groups])
+    return MarkerPanelStatistics(groups, genes, gene_group, mean, pct)
+
+
+def scale_columns_unit(mean: np.ndarray) -> np.ndarray:
+    """Scale each column (gene) to [0, 1] across groups; a constant column becomes 0, never NaN."""
+    lo = mean.min(axis=0)
+    span = mean.max(axis=0) - lo
+    return np.where(span > 0, (mean - lo) / np.where(span > 0, span, 1.0), 0.0)
+
+
+def dendrogram_row_order(scaled: np.ndarray) -> tuple[list[int], np.ndarray]:
+    """Order the rows of ``scaled`` so similar groups sit together, and return the linkage matrix.
+
+    Rows are clustered on Pearson correlation of their expression profiles (complete linkage,
+    optimal leaf ordering), so two groups with the same shape of expression stay together
+    whatever their magnitude. A constant row has no defined correlation; if any distance is not
+    finite the tree falls back to Euclidean distance rather than failing.
+    """
+    from scipy.cluster.hierarchy import leaves_list, linkage
+    from scipy.spatial.distance import pdist
+
+    if scaled.shape[0] < 2:
+        return list(range(scaled.shape[0])), np.zeros((0, 4))
+    distance = pdist(scaled, metric="correlation")
+    if not np.isfinite(distance).all():
+        distance = pdist(scaled, metric="euclidean")
+    z = linkage(distance, method="complete", optimal_ordering=True)
+    return [int(i) for i in leaves_list(z)], z
+
+
+def draw_lineage_marker_dotplot(
+    stats: MarkerPanelStatistics,
+    *,
+    palette: Mapping[str, str] | None = None,
+    panel_labels: Mapping[str, str] | None = None,
+    title: str | None = None,
+    size_legend: tuple[int, ...] = (25, 50, 100),
+) -> Figure:
+    """Draw the lineage marker dotplot: groups as rows ordered by a dendrogram, genes as columns.
+
+    A coloured header bar over each panel group's genes carries its label; dot area is the percent
+    of cells expressing and colour the mean scaled per gene across groups. The dendrogram, the
+    row-label column and the dot grid are separate axes, so labels never sit on the tree.
+    """
+    import matplotlib.pyplot as plt
+    from scipy.cluster.hierarchy import dendrogram
+
+    apply_theme("notebook")
+    palette = dict(palette) if palette is not None else cell_type_palette(stats.groups)
+    panel_labels = dict(panel_labels or {})
+    n_rows, n_cols = len(stats.groups), len(stats.genes)
+    scaled = scale_columns_unit(stats.mean)
+    order, linkage_matrix = dendrogram_row_order(scaled)
+    y_of = {row: i for i, row in enumerate(order)}  # leaf 0 at the bottom, matching the dendrogram
+
+    fig = plt.figure(figsize=(max(6.0, 3.2 + 0.24 * n_cols), 1.9 + 0.42 * n_rows))
+    gs = fig.add_gridspec(
+        2,
+        4,
+        width_ratios=[0.09, 0.13, 1.0, 0.035],
+        height_ratios=[0.06, 1.0],
+        hspace=0.04,
+        wspace=0.02,
+        left=0.03,
+        right=0.97,
+        top=0.9,
+        bottom=0.2,
+    )
+    ax_tree = fig.add_subplot(gs[1, 0], label="dendrogram")
+    ax_lab = fig.add_subplot(gs[1, 1], label="row_labels")
+    ax_dots = fig.add_subplot(gs[1, 2], label="dots")
+    ax_head = fig.add_subplot(gs[0, 2], label="header")
+    ax_bar = fig.add_subplot(gs[1, 3], label="colorbar")
+
+    if n_rows > 1:
+        dendrogram(
+            linkage_matrix,
+            orientation="left",
+            ax=ax_tree,
+            no_labels=True,
+            color_threshold=0,
+            above_threshold_color="#7a97b8",
+        )
+        ax_tree.set_ylim(0, 10 * n_rows)  # leaf i sits at y = 10 * i + 5, i.e. the dot row i
+    ax_tree.axis("off")
+    ax_lab.set_xlim(0, 1)
+    ax_lab.set_ylim(-0.5, n_rows - 0.5)
+    ax_lab.axis("off")
+    for row, group in enumerate(stats.groups):
+        ax_lab.text(
+            1.0,
+            y_of[row],
+            group,
+            ha="right",
+            va="center",
+            fontsize=9,
+            fontweight="bold",
+            color=palette.get(group, "#333333"),
+        )
+
+    rows_idx = np.repeat([y_of[r] for r in range(n_rows)], n_cols)
+    cols_idx = np.tile(np.arange(n_cols), n_rows)
+    ax_dots.scatter(
+        cols_idx,
+        rows_idx,
+        s=8 + 3.0 * stats.pct.ravel(),
+        c=scaled.ravel(),
+        cmap="viridis",
+        vmin=0,
+        vmax=1,
+        edgecolors="none",
+    )
+    ax_dots.set_xticks(range(n_cols))
+    ax_dots.set_xticklabels(stats.genes, rotation=90, fontsize=7)
+    ax_dots.set_yticks([])
+    ax_dots.set_xlim(-0.6, n_cols - 0.4)
+    ax_dots.set_ylim(-0.5, n_rows - 0.5)
+    ax_dots.set_axisbelow(True)
+    ax_dots.grid(axis="y", color="#eeeeee", linewidth=0.6)
+    for spine in ax_dots.spines.values():
+        spine.set_visible(False)
+
+    ax_head.set_xlim(-0.6, n_cols - 0.4)
+    ax_head.set_ylim(0, 1.7)
+    ax_head.axis("off")
+    start = 0
+    while start < n_cols:
+        group = stats.gene_group[start]
+        end = start
+        while end + 1 < n_cols and stats.gene_group[end + 1] == group:
+            end += 1
+        color = palette.get(group, "#333333")
+        ax_head.add_patch(
+            plt.Rectangle(
+                (start - 0.5, 0),
+                end - start + 1,
+                0.6,
+                facecolor=color,
+                edgecolor="white",
+                linewidth=0.5,
+            )
+        )
+        ax_head.text(
+            (start + end) / 2,
+            1.05,
+            panel_labels.get(group, group),
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            fontweight="bold",
+            color=color,
+        )
+        start = end + 1
+
+    colorbar = fig.colorbar(
+        plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(0, 1)), cax=ax_bar
+    )
+    colorbar.set_label("Scaled mean expression", fontsize=8)
+    colorbar.ax.tick_params(labelsize=7)
+    handles = [plt.scatter([], [], s=8 + 3.0 * v, c="0.6", edgecolors="none") for v in size_legend]
+    fig.legend(
+        handles,
+        [f"{v}%" for v in size_legend],
+        title="Cells detected (%)",
+        loc="lower center",
+        ncol=len(size_legend),
+        frameon=False,
+        fontsize=8,
+        title_fontsize=8,
+        bbox_to_anchor=(0.5, 0.0),
+    )
+    if title:
+        fig.suptitle(title, fontsize=12, weight="bold")
+    return fig
+
+
+def plot_lineage_marker_dotplot(
+    adata: ad.AnnData,
+    marker_panel: Mapping[str, list[str]],
+    *,
+    groupby: str,
+    layer: str,
+    out_path: Path,
+    palette: Mapping[str, str] | None = None,
+    panel_labels: Mapping[str, str] | None = None,
+    title: str | None = None,
+) -> Path | None:
+    """Write the lineage marker dotplot (rows ordered by a dendrogram) as PNG plus PDF.
+
+    Args:
+        adata: Object carrying ``layer`` (log-normalized) and the ``groupby`` obs column. For a
+            large atlas pass a small object holding only the panel genes.
+        marker_panel: Group -> ordered marker genes. Groups without cells and genes absent from
+            the object are dropped.
+        groupby: obs column whose categories are the rows.
+        layer: Expression layer to read.
+        out_path: PNG path; a ``.pdf`` is written beside it.
+        palette: Optional {group: colour} for row labels and header bars; defaults to the
+            project palette.
+        panel_labels: Optional {group: short header label}, e.g. {"Keratinocytes": "KC"}.
+        title: Optional figure title.
+
+    Returns:
+        The PNG path, or ``None`` when no panel gene survives the intersection with the object.
+    """
+    stats = marker_panel_statistics(adata, marker_panel, groupby=groupby, layer=layer)
+    if not stats.genes:
+        return None
+    fig = draw_lineage_marker_dotplot(
+        stats, palette=palette, panel_labels=panel_labels, title=title
+    )
+    out_path = Path(out_path)
+    paths = save_figure(fig, out_path.parent, out_path.stem)
+    return next(p for p in paths if p.suffix == ".png")
+
+
+__all__ = [
+    "MarkerPanelStatistics",
+    "dendrogram_row_order",
+    "draw_lineage_marker_dotplot",
+    "marker_panel_statistics",
+    "plot_categorized_dotplot",
+    "plot_lineage_marker_dotplot",
+    "plot_marker_dotplot",
+    "plot_marker_feature_grid",
+    "scale_columns_unit",
+]

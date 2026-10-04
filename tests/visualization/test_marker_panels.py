@@ -196,3 +196,148 @@ def test_plot_categorized_dotplot_returns_none_when_no_gene_present(tmp_path):
     )
 
     assert out is None
+
+
+# ---- lineage marker dotplot with dendrogram ----------------------------------------------
+
+
+from cellquorum.visualization.marker_panels import (  # noqa: E402
+    dendrogram_row_order,
+    draw_lineage_marker_dotplot,
+    marker_panel_statistics,
+    plot_lineage_marker_dotplot,
+    scale_columns_unit,
+)
+
+
+def _panel_adata() -> ad.AnnData:
+    """Three groups, three genes with known means and detection rates."""
+    X = np.zeros((9, 3), dtype=float)
+    X[0:3, 0] = [2.0, 4.0, 0.0]  # group A: gene0 mean 2, detected in 2/3
+    X[3:6, 1] = [1.0, 1.0, 1.0]  # group B: gene1 mean 1, detected in 3/3
+    X[6:9, 2] = [3.0, 0.0, 0.0]  # group C: gene2 mean 1, detected in 1/3
+    a = ad.AnnData(X=X, var=pd.DataFrame(index=["G0", "G1", "G2"]))
+    a.layers["norm"] = X.copy()
+    a.obs["ct"] = pd.Categorical(["A"] * 3 + ["B"] * 3 + ["C"] * 3, categories=["A", "B", "C"])
+    return a
+
+
+def test_marker_panel_statistics_reports_mean_and_percent_detected_per_group():
+    s = marker_panel_statistics(
+        _panel_adata(), {"A": ["G0"], "B": ["G1"], "C": ["G2"]}, groupby="ct", layer="norm"
+    )
+    assert s.groups == ["A", "B", "C"]
+    assert s.genes == ["G0", "G1", "G2"]
+    assert s.gene_group == ["A", "B", "C"]
+    np.testing.assert_allclose(s.mean[0], [2.0, 0.0, 0.0])  # group A over G0, G1, G2
+    np.testing.assert_allclose(s.pct[0], [200 / 3, 0.0, 0.0])
+    np.testing.assert_allclose(s.pct[1], [0.0, 100.0, 0.0])
+    np.testing.assert_allclose(s.pct[2], [0.0, 0.0, 100 / 3])
+
+
+def test_marker_panel_statistics_drops_absent_genes_and_empty_groups():
+    s = marker_panel_statistics(
+        _panel_adata(),
+        {"A": ["G0", "NOT_A_GENE"], "B": ["NOPE"], "D": ["G1"]},  # B: no usable gene; D: no cells
+        groupby="ct",
+        layer="norm",
+    )
+    assert s.genes == ["G0"] and s.gene_group == ["A"]
+    assert s.groups == ["A", "B", "C"]  # rows are every observed group
+
+
+def test_marker_panel_statistics_allows_a_gene_to_repeat_across_groups():
+    s = marker_panel_statistics(
+        _panel_adata(), {"A": ["G0", "G1"], "B": ["G1"]}, groupby="ct", layer="norm"
+    )
+    assert s.genes == ["G0", "G1", "G1"] and s.gene_group == ["A", "A", "B"]
+    assert s.mean.shape == (3, 3)
+
+
+def test_scale_columns_unit_maps_each_gene_to_zero_one_and_survives_a_constant_gene():
+    m = np.array([[1.0, 5.0, 2.0], [3.0, 5.0, 4.0], [2.0, 5.0, 8.0]])
+    out = scale_columns_unit(m)
+    np.testing.assert_allclose(out.min(axis=0), [0, 0, 0])
+    np.testing.assert_allclose(out.max(axis=0), [1, 0, 1])  # constant column -> 0, never NaN
+    assert np.isfinite(out).all()
+
+
+def test_dendrogram_row_order_keeps_similar_groups_next_to_each_other():
+    # rows 0 and 2 are nearly identical, rows 1 and 3 are nearly identical, and the two pairs differ
+    m = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 1.0], [0.95, 0.05, 0.0], [0.0, 0.9, 1.0]])
+    order, linkage_matrix = dendrogram_row_order(m)
+    assert sorted(order) == [0, 1, 2, 3] and linkage_matrix.shape == (3, 4)
+    pos = {row: i for i, row in enumerate(order)}
+    assert abs(pos[0] - pos[2]) == 1 and abs(pos[1] - pos[3]) == 1
+
+
+def _stats():
+    return marker_panel_statistics(
+        _panel_adata(), {"A": ["G0"], "B": ["G1"], "C": ["G2"]}, groupby="ct", layer="norm"
+    )
+
+
+def test_draw_lineage_marker_dotplot_colours_row_labels_from_the_given_palette():
+    palette = {"A": "#ff0000", "B": "#00ff00", "C": "#0000ff"}
+    fig = draw_lineage_marker_dotplot(_stats(), palette=palette)
+    texts = {
+        t.get_text(): t.get_color() for ax in fig.axes for t in ax.texts if t.get_text() in palette
+    }
+    assert texts == palette
+
+
+def test_draw_lineage_marker_dotplot_labels_do_not_sit_on_the_dendrogram():
+    """Real flaw in the first version: row labels were drawn over the dendrogram. The dendrogram,
+    the label column and the dot grid must occupy separate, non-overlapping horizontal bands."""
+    fig = draw_lineage_marker_dotplot(
+        _stats(), palette={"A": "#111111", "B": "#222222", "C": "#333333"}
+    )
+    fig.canvas.draw()
+    by_name = {ax.get_label(): ax.get_position() for ax in fig.axes if ax.get_label()}
+    assert by_name["dendrogram"].x1 <= by_name["row_labels"].x0 + 1e-6
+    assert by_name["row_labels"].x1 <= by_name["dots"].x0 + 1e-6
+
+
+def test_draw_lineage_marker_dotplot_header_uses_panel_labels():
+    fig = draw_lineage_marker_dotplot(
+        _stats(),
+        palette={"A": "#111111", "B": "#222222", "C": "#333333"},
+        panel_labels={"A": "Alpha"},
+    )
+    drawn = {t.get_text() for ax in fig.axes for t in ax.texts}
+    assert "Alpha" in drawn and "B" in drawn  # unlabelled panels fall back to the group name
+
+
+def test_plot_lineage_marker_dotplot_writes_png_and_pdf(tmp_path):
+    out = plot_lineage_marker_dotplot(
+        _panel_adata(),
+        {"A": ["G0"], "B": ["G1"], "C": ["G2"]},
+        groupby="ct",
+        layer="norm",
+        out_path=tmp_path / "lineage_dotplot.png",
+    )
+    assert out == tmp_path / "lineage_dotplot.png" and out.exists()
+    assert out.with_suffix(".pdf").exists()
+
+
+def test_plot_lineage_marker_dotplot_returns_none_when_no_panel_gene_is_present(tmp_path):
+    out = plot_lineage_marker_dotplot(
+        _panel_adata(), {"A": ["ZZZ"]}, groupby="ct", layer="norm", out_path=tmp_path / "x.png"
+    )
+    assert out is None and not (tmp_path / "x.png").exists()
+
+
+def test_dendrogram_row_order_clusters_on_correlation_not_magnitude():
+    """The reference tree clusters on Pearson correlation of group-mean profiles, not on
+    distance: two groups with the same expression shape but different magnitude belong together."""
+    m = np.array([[1.0, 0.0, 0.2], [0.0, 1.0, 0.8], [10.0, 0.0, 2.0], [0.0, 9.0, 8.0]])
+    order, _ = dendrogram_row_order(m)
+    pos = {row: i for i, row in enumerate(order)}
+    assert abs(pos[0] - pos[2]) == 1 and abs(pos[1] - pos[3]) == 1
+
+
+def test_dendrogram_row_order_survives_a_constant_row():
+    """Correlation is undefined for a flat profile; the tree must still be drawn."""
+    m = np.array([[1.0, 1.0, 1.0], [0.0, 1.0, 2.0], [2.0, 1.0, 0.0]])
+    order, z = dendrogram_row_order(m)
+    assert sorted(order) == [0, 1, 2] and np.isfinite(z).all()
