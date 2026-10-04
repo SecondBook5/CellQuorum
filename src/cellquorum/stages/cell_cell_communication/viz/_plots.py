@@ -106,7 +106,7 @@ def _interaction_dotplot_data(
     keep_st = set(st_weight.head(max_pairs).index)
     df = df[df["__st"].isin(keep_st)]
 
-    ys = sorted(keep)  # deterministic
+    ys = keep[::-1]  # y=0 is the bottom row, so reversing puts the highest weight on top
     xs = sorted(df["__st"].unique())
     y_pos = {v: i for i, v in enumerate(ys)}
     x_pos = {v: i for i, v in enumerate(xs)}

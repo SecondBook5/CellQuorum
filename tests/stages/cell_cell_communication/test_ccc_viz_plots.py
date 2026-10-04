@@ -124,6 +124,41 @@ def test_interaction_dotplot_caps_source_target_columns_too():
     assert len(data["ys"]) <= 3
 
 
+def test_interaction_dotplot_orders_lr_pairs_highest_weight_at_the_top():
+    """A collaborator asked for the NicheNet dotplot "from the highest weight to
+    lowest weight". Rows were alphabetical, so the strongest LR pair landed
+    wherever its name happened to sort. The top row (largest y) must be the
+    highest-weight pair, descending to the lowest at the bottom."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import (
+        _interaction_dotplot_data,
+        interaction_dotplot,
+    )
+
+    weights = {"AAA->R1": 0.5, "ZZZ->R2": 0.1, "MMM->R3": 0.9, "BBB->R4": 0.3}
+    rows = []
+    for lr_pair, w in weights.items():
+        lig, rec = lr_pair.split("->")
+        rows.append(
+            {
+                "source": "A",
+                "target": "B",
+                "ligand": lig,
+                "receptor": rec,
+                "weight": w,
+                "sample": "s0",
+            }
+        )
+    lr = pd.DataFrame(rows)
+
+    data = _interaction_dotplot_data(lr, top_k=4)
+    top_to_bottom = list(reversed(data["ys"]))
+    assert top_to_bottom == ["MMM->R3", "AAA->R1", "BBB->R4", "ZZZ->R2"]
+
+    fig = interaction_dotplot(lr, top_k=4)
+    labels_top_to_bottom = [t.get_text() for t in reversed(fig.axes[0].get_yticklabels())]
+    assert labels_top_to_bottom == ["MMM->R3", "AAA->R1", "BBB->R4", "ZZZ->R2"]
+
+
 def test_interaction_dotplot_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import interaction_dotplot
 
