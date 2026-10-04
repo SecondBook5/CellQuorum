@@ -171,6 +171,9 @@ def _leader_line_labels(ax: Axes, gene_labels_ordered: list[str], *, fontsize: f
             clip_on=False,
         )
 
+    # Outside leader lines must not autoscale the image shorter than its tracks.
+    ax.set_xlim(x0, x1)
+
 
 def condition_split_heatmap(
     profiles: dict,

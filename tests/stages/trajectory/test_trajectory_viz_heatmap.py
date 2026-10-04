@@ -217,3 +217,33 @@ def test_condition_split_heatmap_single_panel_when_one_condition():
         condition_order=["all"],
     )
     assert len(fig.axes) >= 2  # pseudotime gradient row + expression row at least
+
+
+def test_condition_split_heatmap_last_panel_is_as_wide_as_the_tracks_above_it():
+    """Real bug reported on the fibroblast figure: in the last condition panel the expression image
+    ended well before the pseudotime/subcluster tracks above it. The gene labels sit outside the
+    axes, and drawing them there widened the x-limits, so the fixed-extent image no longer filled
+    its axes. Every column must span the same bins as the tracks stacked over it."""
+    n_bins, n_genes = 40, 6
+    prof = np.tile(np.linspace(0, 1, n_bins)[:, None], (1, n_genes))
+    profiles = {"Normal": prof, "LE": prof[::-1]}
+    cat = {
+        "label": "Subcluster",
+        "cats": ["a", "b"],
+        "colors": ["#1b4f8a", "#c41e3a"],
+        "tracks": {c: (np.arange(n_bins) >= n_bins // 2).astype(int) for c in profiles},
+        "present_codes": [0, 1],
+    }
+    fig = heatmap.condition_split_heatmap(
+        profiles,
+        {},
+        [cat],
+        [f"G{i}" for i in range(n_genes)],
+        np.arange(n_genes),
+        condition_order=["Normal", "LE"],
+    )
+    fig.canvas.draw()
+    expr_axes = [ax for ax in fig.axes if ax.get_xlabel().startswith("pseudotime")]
+    assert len(expr_axes) == 2
+    for ax in expr_axes:
+        assert ax.get_xlim() == (-0.5, n_bins - 0.5), ax.get_xlim()
