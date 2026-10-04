@@ -151,7 +151,8 @@ def state_score_violin(
             Line2D([0], [0], color=control_color, lw=6, label=control),
             Line2D([0], [0], color=case_color, lw=6, label=case),
         ],
-        loc="upper right",
+        loc="upper left",
+        bbox_to_anchor=(1.01, 1.0),
         frameon=False,
     )
     fig.tight_layout()

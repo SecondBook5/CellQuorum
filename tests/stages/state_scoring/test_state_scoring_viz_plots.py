@@ -172,3 +172,17 @@ def test_state_score_violin_empty_guarded():
         score_label="score",
     )
     assert isinstance(fig, Figure)
+
+
+def test_state_score_violin_legend_sits_outside_the_data_area():
+    """The legend used to sit inside the axes at the top right, where it covered the mark of the
+    last cluster whenever that cluster's distribution reached the top of the panel."""
+    df = _donor_df(effect=0.3, donor_noise=0.01)
+    fig = _violin(df, donor_col="donor", paired=True)
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    legend = ax.get_legend()
+    assert legend is not None
+    legend_box = legend.get_window_extent()
+    axes_box = ax.get_window_extent()
+    assert legend_box.x0 >= axes_box.x1 - 1  # starts at or beyond the right edge of the axes
