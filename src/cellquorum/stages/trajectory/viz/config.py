@@ -37,6 +37,10 @@ class TrajectoryVizConfig(StrictBaseModel):
 
     # Condition-split pseudotime heatmap controls (all optional; biology via config).
     heatmap_genes: list[str] | None = None
+    # {group name -> genes}, in the order the groups should read down the figure. This IS the gene
+    # list when set (so it cannot be combined with heatmap_genes); genes run by peak pseudotime
+    # within a group. Groups are user-declared biology, never defaulted.
+    heatmap_gene_groups: dict[str, list[str]] | None = None
     heatmap_score_key: str | None = None
     # Single legacy categorical track; still honored when heatmap_categorical_keys
     # is unset. heatmap_categorical_keys is the real, generalized control -- a

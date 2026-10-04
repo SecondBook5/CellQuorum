@@ -134,6 +134,75 @@ def peak_bin_order(combined_profile: np.ndarray) -> np.ndarray:
     return np.argsort(np.argmax(np.asarray(combined_profile), axis=0))
 
 
+def grouped_peak_order(
+    combined_profile: np.ndarray, gene_labels: list[str], groups: dict[str, list[str]]
+) -> tuple[np.ndarray, list[str]]:
+    """Gene order that keeps each declared group together, in the declared group order.
+
+    Within a group genes run by peak bin (earliest first), so the groups carry the biology and the
+    peak order still shows progression along pseudotime. Group members that are not columns of the
+    profile are ignored. Returns (column indices to display, group name per displayed row).
+    """
+    peak = np.argmax(np.asarray(combined_profile), axis=0)
+    column_of = {g: i for i, g in enumerate(gene_labels)}
+    order: list[int] = []
+    row_groups: list[str] = []
+    seen: set[int] = set()
+    for name, members in groups.items():
+        cols = [column_of[g] for g in members if g in column_of and column_of[g] not in seen]
+        cols.sort(key=lambda j: (peak[j], j))
+        seen.update(cols)
+        order.extend(cols)
+        row_groups.extend([name] * len(cols))
+    return np.asarray(order, dtype=int), row_groups
+
+
+def _draw_gene_groups(
+    expr_axes: list[Axes], row_groups: list[str], n_bins: int, *, fontsize: float = 7.5
+) -> None:
+    """Divide the gene rows into their groups: a white divider across every panel at each group
+    boundary, and a bracket plus the group name in the left margin of the first panel."""
+    runs: list[tuple[str, int, int]] = []
+    for i, name in enumerate(row_groups):
+        if runs and runs[-1][0] == name:
+            runs[-1] = (name, runs[-1][1], i)
+        else:
+            runs.append((name, i, i))
+    for ax in expr_axes:
+        for _, start, _ in runs[1:]:
+            ax.plot(
+                [-0.5, n_bins - 0.5],
+                [start - 0.5, start - 0.5],
+                color="white",
+                lw=2.2,
+                scalex=False,
+                scaley=False,
+                zorder=3,
+            )
+    first = expr_axes[0]
+    span = n_bins
+    for name, start, end in runs:
+        first.plot(
+            [-0.5 - 0.02 * span] * 2,
+            [start - 0.4, end + 0.4],
+            color="#444444",
+            lw=1.2,
+            clip_on=False,
+            scalex=False,
+            scaley=False,
+        )
+        first.text(
+            -0.5 - 0.035 * span,
+            (start + end) / 2,
+            name,
+            ha="right",
+            va="center",
+            fontsize=fontsize,
+            fontweight="bold",
+            clip_on=False,
+        )
+
+
 def _leader_line_labels(ax: Axes, gene_labels_ordered: list[str], *, fontsize: float = 6.5) -> None:
     """Evenly-spaced right-margin gene labels, each on a thin leader line back
     to its real row, instead of a plain y-tick list.
@@ -185,6 +254,7 @@ def condition_split_heatmap(
     condition_order: list,
     expr_cmap: str = SEQUENTIAL_CMAP,
     title: str = "",
+    gene_group_labels: list[str] | None = None,
 ) -> Figure:
     """Build the stacked-annotation, condition-split expression heatmap.
 
@@ -203,10 +273,18 @@ def condition_split_heatmap(
         condition_order: which conditions to render, left to right.
         expr_cmap: colormap for the expression heatmap.
         title: figure suptitle.
+        gene_group_labels: optional group name per displayed row (same length as
+            ``gene_order``, each group a contiguous run). Draws dividers between groups and
+            a bracketed group name in the left margin.
 
     Returns:
         The assembled Figure.
     """
+    if gene_group_labels is not None and len(gene_group_labels) != len(gene_order):
+        raise ValueError(
+            f"gene_group_labels has {len(gene_group_labels)} entries for "
+            f"{len(gene_order)} displayed genes."
+        )
     n_cols = len(condition_order)
     n_bins = next(iter(profiles.values())).shape[0]
 
@@ -230,7 +308,7 @@ def condition_split_heatmap(
         height_ratios=height_ratios,
         hspace=0.08,
         wspace=0.06,
-        left=0.14,
+        left=0.21 if gene_group_labels else 0.14,
         right=0.82,
         top=0.90,
         bottom=0.08,
@@ -304,6 +382,9 @@ def condition_split_heatmap(
     # modeled on), rather than a plain y-tick list on the first panel -- past
     # a few dozen genes a tick list reads as a cramped, illegible block.
     _leader_line_labels(last_expr_ax, [gene_labels[i] for i in gene_order])
+    if gene_group_labels:
+        expr_axes = [a for a in fig.axes if a.get_xlabel().startswith("pseudotime")]
+        _draw_gene_groups(expr_axes, gene_group_labels, n_bins)
 
     if im_score is not None:
         cax_g = fig.add_axes((0.93, 0.74, 0.014, 0.12))
@@ -356,5 +437,6 @@ __all__ = [
     "binned_tracks",
     "normalize_profiles_pooled",
     "peak_bin_order",
+    "grouped_peak_order",
     "condition_split_heatmap",
 ]

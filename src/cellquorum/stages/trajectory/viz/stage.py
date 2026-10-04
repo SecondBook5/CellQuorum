@@ -25,6 +25,7 @@ _VIZ_CONFIG_KEYS = (
     "cluster_key",
     "fate_labels",
     "heatmap_genes",
+    "heatmap_gene_groups",
     "heatmap_score_key",
     "heatmap_state_key",
     "heatmap_categorical_keys",

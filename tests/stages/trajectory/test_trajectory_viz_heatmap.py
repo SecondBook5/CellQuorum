@@ -247,3 +247,78 @@ def test_condition_split_heatmap_last_panel_is_as_wide_as_the_tracks_above_it():
     assert len(expr_axes) == 2
     for ax in expr_axes:
         assert ax.get_xlim() == (-0.5, n_bins - 0.5), ax.get_xlim()
+
+
+def _profile_peaking_at(peaks, n_bins=20):
+    """One column per gene, each peaking at the given bin."""
+    prof = np.zeros((n_bins, len(peaks)))
+    for j, p in enumerate(peaks):
+        prof[p, j] = 1.0
+    return prof
+
+
+def test_grouped_peak_order_keeps_groups_together_and_in_declared_order():
+    """Genes are grouped by what they are, in the order the figure's story needs; within a group
+    they run by where they peak along pseudotime. Peak order alone interleaves the biology."""
+    labels = ["A1", "A2", "B1", "B2", "C1"]
+    combined = _profile_peaking_at([15, 3, 10, 1, 7])
+    groups = {"Late": ["A1", "B1"], "Early": ["A2", "B2"], "Mid": ["C1"]}
+    order, row_groups = heatmap.grouped_peak_order(combined, labels, groups)
+    assert [labels[i] for i in order] == ["B1", "A1", "B2", "A2", "C1"]
+    assert row_groups == ["Late", "Late", "Early", "Early", "Mid"]
+
+
+def test_grouped_peak_order_ignores_group_members_that_are_not_columns():
+    labels = ["A", "B"]
+    combined = _profile_peaking_at([4, 2])
+    order, row_groups = heatmap.grouped_peak_order(combined, labels, {"G": ["B", "MISSING", "A"]})
+    assert [labels[i] for i in order] == ["B", "A"]
+    assert row_groups == ["G", "G"]
+
+
+def test_condition_split_heatmap_labels_each_gene_group_once_and_separates_them():
+    n_bins, n_genes = 30, 6
+    prof = np.tile(np.linspace(0, 1, n_bins)[:, None], (1, n_genes))
+    profiles = {"Normal": prof, "LE": prof[::-1]}
+    groups = ["Identity", "Identity", "TGF-beta", "TGF-beta", "TGF-beta", "Matrix"]
+    fig = heatmap.condition_split_heatmap(
+        profiles,
+        {},
+        [],
+        [f"G{i}" for i in range(n_genes)],
+        np.arange(n_genes),
+        condition_order=["Normal", "LE"],
+        gene_group_labels=groups,
+    )
+    fig.canvas.draw()
+    expr_axes = [ax for ax in fig.axes if ax.get_xlabel().startswith("pseudotime")]
+    drawn = [t.get_text() for t in expr_axes[0].texts]
+    for name in ("Identity", "TGF-beta", "Matrix"):
+        assert drawn.count(name) == 1, (name, drawn)
+    # Grouping must not undo the width alignment with the tracks above.
+    for ax in expr_axes:
+        assert ax.get_xlim() == (-0.5, n_bins - 0.5)
+    # A divider between consecutive groups, drawn on every panel: 2 boundaries x 2 panels.
+    dividers = [
+        ln
+        for ax in expr_axes
+        for ln in ax.lines
+        if len(set(ln.get_ydata())) == 1 and ln.get_xdata()[0] <= -0.5 + 1e-9
+    ]
+    assert len(dividers) == 4
+
+
+def test_condition_split_heatmap_rejects_group_labels_of_the_wrong_length():
+    import pytest
+
+    prof = np.tile(np.linspace(0, 1, 10)[:, None], (1, 3))
+    with pytest.raises(ValueError, match="gene_group_labels"):
+        heatmap.condition_split_heatmap(
+            {"Normal": prof},
+            {},
+            [],
+            ["a", "b", "c"],
+            np.arange(3),
+            condition_order=["Normal"],
+            gene_group_labels=["only", "two"],
+        )

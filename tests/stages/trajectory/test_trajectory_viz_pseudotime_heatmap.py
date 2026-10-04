@@ -240,3 +240,49 @@ def test_does_not_densify_the_full_matrix_for_gene_selection_or_extraction(tmp_p
     assert not isinstance(out, MethodSkip)
     pngs = list((figures / "trajectory").glob("pseudotime_heatmap*.png"))
     assert pngs
+
+
+def test_gene_groups_drive_row_order_and_labels(tmp_path, monkeypatch):
+    """heatmap_gene_groups is the gene list AND the grouping: the figure must receive rows grouped
+    in the declared order, each row tagged with its group."""
+    from cellquorum.stages.trajectory.viz import _pseudotime_plots
+
+    seen = {}
+    real = _pseudotime_plots.heatmap.condition_split_heatmap
+
+    def spy(profiles, score_tracks, categorical_tracks, gene_labels, gene_order, **kwargs):
+        seen["rows"] = [gene_labels[i] for i in gene_order]
+        seen["groups"] = kwargs.get("gene_group_labels")
+        return real(profiles, score_tracks, categorical_tracks, gene_labels, gene_order, **kwargs)
+
+    monkeypatch.setattr(_pseudotime_plots.heatmap, "condition_split_heatmap", spy)
+    ctx, _ = _context(tmp_path)
+    cfg = {
+        "case": "LE",
+        "control": "Normal",
+        "condition_col": "condition",
+        "heatmap_gene_groups": {"First": ["G3", "G1"], "Second": ["G5", "G0", "NOT_A_GENE"]},
+    }
+    out = PseudotimeHeatmapVizMethod()._run(_adata(), cfg, ctx)
+    assert not isinstance(out, MethodSkip)
+    assert seen["groups"] == ["First", "First", "Second", "Second"]
+    assert set(seen["rows"][:2]) == {"G3", "G1"}
+    assert set(seen["rows"][2:]) == {"G5", "G0"}
+
+
+def test_gene_groups_and_a_flat_gene_list_together_are_a_config_error(tmp_path):
+    """One switch per decision: two settings that both name the genes would silently disagree."""
+    import pytest
+
+    from cellquorum.core.exceptions import CellQuorumConfigError
+
+    ctx, _ = _context(tmp_path)
+    cfg = {
+        "case": "LE",
+        "control": "Normal",
+        "condition_col": "condition",
+        "heatmap_genes": ["G0", "G1"],
+        "heatmap_gene_groups": {"A": ["G2"]},
+    }
+    with pytest.raises(CellQuorumConfigError, match="heatmap_gene_groups"):
+        PseudotimeHeatmapVizMethod()._run(_adata(), cfg, ctx)

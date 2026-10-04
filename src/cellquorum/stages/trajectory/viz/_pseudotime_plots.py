@@ -15,6 +15,7 @@ import anndata as ad
 import numpy as np
 
 from cellquorum.core.contracts import DataContract
+from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.trajectory.viz import _helpers, heatmap
@@ -245,7 +246,22 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             )
         return specs
 
+    @staticmethod
+    def _gene_groups(adata: ad.AnnData, config: dict) -> dict[str, list[str]]:
+        """Declared groups restricted to genes the object has, in declared order; a gene named in
+        two groups stays in the first."""
+        groups: dict[str, list[str]] = {}
+        taken: set[str] = set()
+        for name, members in (config.get("heatmap_gene_groups") or {}).items():
+            kept = [g for g in members if g in adata.var_names and g not in taken]
+            taken.update(kept)
+            if kept:
+                groups[str(name)] = kept
+        return groups
+
     def _select_genes(self, adata: ad.AnnData, pt: np.ndarray, config: dict) -> list[str]:
+        if config.get("heatmap_gene_groups"):
+            return [g for members in self._gene_groups(adata, config).values() for g in members]
         genes = config.get("heatmap_genes") or config.get("genes")
         present = [g for g in (genes or []) if g in adata.var_names]
         if present:
@@ -278,6 +294,13 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
         if not pts:
             return self._skip("no *_pseudotime obs column")
         pt_key = pts[0]
+        flat_genes = config.get("heatmap_genes") or config.get("genes")
+        if config.get("heatmap_gene_groups") and flat_genes:
+            # Checked outside the render guard below, which would turn this into a quiet skip.
+            raise CellQuorumConfigError(
+                "trajectory_viz sets both heatmap_gene_groups and a flat gene list "
+                "(heatmap_genes/genes). heatmap_gene_groups is the gene list; set only one."
+            )
 
         try:
             pt = _helpers.numeric_obs(adata, pt_key)
@@ -340,7 +363,13 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             profiles = heatmap.normalize_profiles_pooled(profiles)
 
             combined = np.mean([profiles[c] for c in condition_order], axis=0)
-            gene_order = heatmap.peak_bin_order(combined)
+            gene_group_labels = None
+            if config.get("heatmap_gene_groups"):
+                gene_order, gene_group_labels = heatmap.grouped_peak_order(
+                    combined, genes, self._gene_groups(adata, config)
+                )
+            else:
+                gene_order = heatmap.peak_bin_order(combined)
 
             for track in categorical_tracks:
                 track["present_codes"] = sorted(
@@ -360,6 +389,7 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 condition_order=condition_order,
                 expr_cmap=config.get("heatmap_expr_cmap", figstyle.SEQUENTIAL_CMAP),
                 title=f"Expression along {pt_key}",
+                gene_group_labels=gene_group_labels,
             )
         except Exception as exc:  # noqa: BLE001
             return self._skip(f"input/render failed ({str(exc)[:200]})")
