@@ -85,7 +85,7 @@ class CellCellCommunicationConfig(StrictBaseModel):
     mnn_top_n_target: int = 250
     mnn_scenario: str = "regular"
     # NicheNet-specific
-    nichenet_sender: str | None = None
+    nichenet_sender: str | list[str] | None = None
     nichenet_receiver: str | None = None
     nichenet_de_csv: str | None = None
     # Filters nichenet_de_csv to one subcluster's rows before building the

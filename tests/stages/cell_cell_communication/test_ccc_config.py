@@ -56,3 +56,12 @@ def test_nichenet_config_defaults():
     # None, not 4: unset inherits compute.n_jobs (resolved in the method).
     assert cfg.nichenet_n_cores is None
     assert cfg.nichenet_timeout_seconds == 7200
+
+
+def test_nichenet_sender_accepts_a_list_of_cell_types():
+    """The method documents a list of senders (one ranking over a shared candidate pool), so the
+    config model has to accept one instead of rejecting it as 'not a valid string'."""
+    from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
+
+    cfg = CellCellCommunicationConfig(nichenet_sender=["Reticular", "Papillary"])
+    assert cfg.nichenet_sender == ["Reticular", "Papillary"]
