@@ -298,6 +298,28 @@ def test_draw_lineage_marker_dotplot_labels_do_not_sit_on_the_dendrogram():
     assert by_name["row_labels"].x1 <= by_name["dots"].x0 + 1e-6
 
 
+def test_draw_lineage_marker_dotplot_size_legend_clears_the_gene_labels():
+    """Real flaw: the bottom margin was a fixed 20% of the figure, so on a figure with few rows the
+    size legend landed on top of the rotated gene labels."""
+    rng = np.random.default_rng(1)
+    genes = [f"LONGGENENAME{i}" for i in range(6)]
+    a = ad.AnnData(X=rng.poisson(2.0, size=(30, 6)).astype(float), var=pd.DataFrame(index=genes))
+    a.layers["norm"] = a.X.copy()
+    a.obs["ct"] = pd.Categorical(["A"] * 10 + ["B"] * 10 + ["C"] * 10)
+    stats = marker_panel_statistics(
+        a, {"A": genes[:2], "B": genes[2:4], "C": genes[4:]}, groupby="ct", layer="norm"
+    )
+    fig = draw_lineage_marker_dotplot(
+        stats, palette={"A": "#111111", "B": "#222222", "C": "#333333"}
+    )
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    dots = next(ax for ax in fig.axes if ax.get_label() == "dots")
+    labels_bottom = min(t.get_window_extent(renderer).y0 for t in dots.get_xticklabels())
+    legend_top = fig.legends[0].get_window_extent(renderer).y1
+    assert legend_top <= labels_bottom
+
+
 def test_draw_lineage_marker_dotplot_header_uses_panel_labels():
     fig = draw_lineage_marker_dotplot(
         _stats(),

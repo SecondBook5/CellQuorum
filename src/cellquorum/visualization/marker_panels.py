@@ -480,7 +480,11 @@ def draw_lineage_marker_dotplot(
     order, linkage_matrix = dendrogram_row_order(scaled)
     y_of = {row: i for i, row in enumerate(order)}  # leaf 0 at the bottom, matching the dendrogram
 
-    fig = plt.figure(figsize=(max(6.0, 3.2 + 0.24 * n_cols), 1.9 + 0.42 * n_rows))
+    # Rotated gene labels plus the size legend need room that scales with the longest name, so
+    # the margin is set in inches and the figure grows to hold it (a fixed fraction overlapped).
+    bottom_in = 0.35 + 0.085 * max((len(g) for g in stats.genes), default=0) + 0.6
+    fig_h = 1.0 + 0.42 * n_rows + bottom_in
+    fig = plt.figure(figsize=(max(6.0, 3.2 + 0.24 * n_cols), fig_h))
     gs = fig.add_gridspec(
         2,
         4,
@@ -491,7 +495,7 @@ def draw_lineage_marker_dotplot(
         left=0.03,
         right=0.97,
         top=0.9,
-        bottom=0.2,
+        bottom=bottom_in / fig_h,
     )
     ax_tree = fig.add_subplot(gs[1, 0], label="dendrogram")
     ax_lab = fig.add_subplot(gs[1, 1], label="row_labels")
