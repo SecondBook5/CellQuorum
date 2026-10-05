@@ -480,20 +480,29 @@ def draw_lineage_marker_dotplot(
     order, linkage_matrix = dendrogram_row_order(scaled)
     y_of = {row: i for i, row in enumerate(order)}  # leaf 0 at the bottom, matching the dendrogram
 
-    # Rotated gene labels plus the size legend need room that scales with the longest name, so
-    # the margin is set in inches and the figure grows to hold it (a fixed fraction overlapped).
-    bottom_in = 0.35 + 0.085 * max((len(g) for g in stats.genes), default=0) + 0.6
+    # Laid out in inches so each piece is the size it needs: a label column just wide enough for
+    # the longest group name (the tree sits against it), a slim colorbar, and room for every gene
+    # column. Rotated gene labels plus the size legend need height that scales with the longest
+    # name, so the figure grows to hold it (a fixed fraction overlapped).
+    gene_fontsize = 9
+    tree_in, bar_in, gap_in = 0.9, 0.2, 0.08
+    label_in = 0.085 * max((len(g) for g in stats.groups), default=1) + 0.05
+    dots_in = 0.30 * n_cols
+    axes_in = tree_in + label_in + dots_in + bar_in
+    left_in, right_in = 0.15, 0.95  # the right margin holds the colorbar ticks and its label
+    fig_w = max(8.0, axes_in + 3 * gap_in + left_in + right_in)
+    bottom_in = 0.35 + 0.0085 * gene_fontsize * max((len(g) for g in stats.genes), default=0) + 0.6
     fig_h = 1.0 + 0.42 * n_rows + bottom_in
-    fig = plt.figure(figsize=(max(6.0, 3.2 + 0.24 * n_cols), fig_h))
+    fig = plt.figure(figsize=(fig_w, fig_h))
     gs = fig.add_gridspec(
         2,
         4,
-        width_ratios=[0.09, 0.13, 1.0, 0.035],
+        width_ratios=[tree_in, label_in, dots_in, bar_in],
         height_ratios=[0.06, 1.0],
         hspace=0.04,
-        wspace=0.02,
-        left=0.03,
-        right=0.97,
+        wspace=gap_in / (axes_in / 4),
+        left=left_in / fig_w,
+        right=1 - right_in / fig_w,
         top=0.9,
         bottom=bottom_in / fig_h,
     )
@@ -542,7 +551,7 @@ def draw_lineage_marker_dotplot(
         edgecolors="none",
     )
     ax_dots.set_xticks(range(n_cols))
-    ax_dots.set_xticklabels(stats.genes, rotation=90, fontsize=7)
+    ax_dots.set_xticklabels(stats.genes, rotation=90, fontsize=gene_fontsize)
     ax_dots.set_yticks([])
     ax_dots.set_xlim(-0.6, n_cols - 0.4)
     ax_dots.set_ylim(-0.5, n_rows - 0.5)

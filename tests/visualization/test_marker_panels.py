@@ -320,6 +320,56 @@ def test_draw_lineage_marker_dotplot_size_legend_clears_the_gene_labels():
     assert legend_top <= labels_bottom
 
 
+def _wide_stats(n_genes=48):
+    """Three groups, many genes: the shape of a real atlas panel (a dozen genes per lineage)."""
+    rng = np.random.default_rng(2)
+    genes = [f"GENE{i:02d}" for i in range(n_genes)]
+    a = ad.AnnData(
+        X=rng.poisson(2.0, size=(60, n_genes)).astype(float), var=pd.DataFrame(index=genes)
+    )
+    a.layers["norm"] = a.X.copy()
+    a.obs["ct"] = pd.Categorical(["A"] * 20 + ["B"] * 20 + ["C"] * 20)
+    per = n_genes // 3
+    panel = {"A": genes[:per], "B": genes[per : 2 * per], "C": genes[2 * per :]}
+    return marker_panel_statistics(a, panel, groupby="ct", layer="norm")
+
+
+def _inches(fig, axes_name):
+    ax = next(a for a in fig.axes if a.get_label() == axes_name)
+    box = ax.get_position()
+    return box.width * fig.get_figwidth(), box
+
+
+def test_draw_lineage_marker_dotplot_gene_names_are_readable_size():
+    fig = draw_lineage_marker_dotplot(_wide_stats())
+    dots = next(ax for ax in fig.axes if ax.get_label() == "dots")
+    assert min(t.get_fontsize() for t in dots.get_xticklabels()) >= 9
+
+
+def test_draw_lineage_marker_dotplot_colorbar_is_slim():
+    fig = draw_lineage_marker_dotplot(_wide_stats())
+    width_in, _ = _inches(fig, "colorbar")
+    assert width_in <= 0.26
+
+
+def test_draw_lineage_marker_dotplot_gives_each_gene_column_room():
+    fig = draw_lineage_marker_dotplot(_wide_stats(48))
+    width_in, _ = _inches(fig, "dots")
+    assert width_in / 48 >= 0.27
+
+
+def test_draw_lineage_marker_dotplot_tree_sits_close_to_the_row_labels():
+    """The label column used to be much wider than the longest label, leaving the tree floating."""
+    stats = _wide_stats()
+    fig = draw_lineage_marker_dotplot(stats, palette={g: "#333333" for g in stats.groups})
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    labels = [t for ax in fig.axes if ax.get_label() == "row_labels" for t in ax.texts]
+    leftmost = min(t.get_window_extent(renderer).x0 for t in labels) / fig.dpi
+    tree_right = _inches(fig, "dendrogram")[1].x1 * fig.get_figwidth()
+    assert leftmost - tree_right <= 0.2
+
+
 def test_draw_lineage_marker_dotplot_header_uses_panel_labels():
     fig = draw_lineage_marker_dotplot(
         _stats(),
