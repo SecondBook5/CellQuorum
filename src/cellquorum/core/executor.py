@@ -402,6 +402,7 @@ class PipelineExecutor:
         """
         from cellquorum.core.checkpoint import (
             CheckpointError,
+            prune_checkpoints,
             should_checkpoint,
             write_checkpoint,
         )
@@ -447,6 +448,16 @@ class PipelineExecutor:
                 stage_name,
                 f"checkpoint written ({record.n_obs} x {record.n_vars})",
             )
+        if record is not None:
+            # Only after the write above succeeded: until then the previous checkpoint is the
+            # one a resume would use.
+            pruned = prune_checkpoints(
+                getattr(context, "paths", None),
+                keep_stage=stage_name,
+                retention=getattr(run_config, "checkpoint_retention", "all"),
+            )
+            if pruned and hasattr(reporter, "stage_note"):
+                reporter.stage_note(stage_name, f"checkpoints pruned: {', '.join(pruned)}")
 
     def execute_planned_stage(
         self,

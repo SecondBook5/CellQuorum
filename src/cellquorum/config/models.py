@@ -398,6 +398,14 @@ class RunConfig(StrictBaseModel):
     # to be able to stop anywhere. Narrow it to bound disk on large cohorts.
     checkpoint_after: list[str] = Field(default_factory=list)
 
+    # How many checkpoints to keep. "all" keeps one per checkpointed stage (the
+    # historical behaviour). "latest" keeps only the newest: once a stage's checkpoint is
+    # written and re-read successfully, the older ones are removed and the removal is recorded
+    # in checkpoints/pruned.json. A resume then only reaches the stage after the newest
+    # checkpoint; starting earlier fails with a message saying the checkpoint was pruned.
+    # A failed write never prunes.
+    checkpoint_retention: Literal["all", "latest"] = "all"
+
     verbose: bool = True
 
     log_level: Literal["quiet", "normal", "verbose"] = "normal"

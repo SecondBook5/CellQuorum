@@ -40,7 +40,9 @@ from __future__ import annotations
 
 import contextlib
 import json
+import shutil
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -56,6 +58,8 @@ if TYPE_CHECKING:
 CHECKPOINT_SCHEMA_VERSION = 2
 _SIDECAR_NAME = "checkpoint.json"
 _OBJECT_NAME = "adata.h5ad"
+# What retention pruning has removed, written beside the checkpoints it describes.
+_PRUNED_RECORD_NAME = "pruned.json"
 
 # What a sidecar that predates the recorded fingerprint schema was written under.
 #
@@ -249,12 +253,73 @@ def resolve_start_checkpoint(
     candidates = [r for r in available_checkpoints(paths) if r.order < target_order]
     if not candidates:
         existing = [r.stage for r in available_checkpoints(paths)]
+        pruned = [entry["stage"] for entry in _read_pruned_record(paths).get("pruned", [])]
+        pruned_note = (
+            f" Checkpoints for {pruned} were pruned by run.checkpoint_retention, which keeps "
+            "only the newest; set it to 'all' to keep every stage."
+            if pruned
+            else ""
+        )
         raise CheckpointError(
             f"cannot start at '{from_stage}': no checkpoint exists before it "
-            f"(available: {existing or 'none'}). Re-run with run.checkpoint enabled "
-            "to create one."
+            f"(available: {existing or 'none'}).{pruned_note} Re-run with run.checkpoint "
+            "enabled to create one."
         )
     return candidates[-1]
+
+
+def _read_pruned_record(paths: object) -> dict:
+    """The pruning record for a run, or an empty one when nothing was ever pruned."""
+    record = checkpoint_root(paths) / _PRUNED_RECORD_NAME
+    if not record.is_file():
+        return {}
+    try:
+        payload = json.loads(record.read_text())
+    except Exception:  # noqa: BLE001 — an unreadable record must not block a resume's error message
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _directory_bytes(directory: Path) -> int:
+    return sum(f.stat().st_size for f in directory.rglob("*") if f.is_file())
+
+
+def prune_checkpoints(paths: object, *, keep_stage: str, retention: str) -> list[str]:
+    """Remove checkpoints older than ``keep_stage`` when ``retention`` is ``"latest"``.
+
+    Called after ``keep_stage``'s checkpoint was written, never before: the older
+    checkpoint is the only resume point until its replacement exists. It is also
+    re-read here, because "the write returned" is weaker than "a resume could load it".
+    Returns the stages removed, oldest first. Nothing is removed (an empty list) when
+    retention keeps everything, when ``keep_stage`` has no readable checkpoint, or for
+    checkpoints at or after ``keep_stage``'s order, which a previous, longer run may have left.
+
+    What was removed is recorded in ``pruned.json`` beside the checkpoints, so a later
+    ``--from-stage`` failure can say the checkpoint was pruned instead of never written.
+    """
+    if retention != "latest":
+        return []
+    kept = read_checkpoint_record(paths, keep_stage)
+    if kept is None or not kept.object_path.is_file() or kept.object_path.stat().st_size == 0:
+        return []
+    stale = [r for r in available_checkpoints(paths) if r.order < kept.order]
+    removed: list[dict] = []
+    for record in stale:
+        size = _directory_bytes(record.path)
+        shutil.rmtree(record.path)
+        removed.append({"stage": record.stage, "order": record.order, "bytes": size})
+    if removed:
+        previous = _read_pruned_record(paths)
+        payload = {
+            "retention": retention,
+            "kept": keep_stage,
+            "pruned_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+            "pruned": [*previous.get("pruned", []), *removed],
+        }
+        (checkpoint_root(paths) / _PRUNED_RECORD_NAME).write_text(
+            json.dumps(payload, indent=2) + "\n"
+        )
+    return [entry["stage"] for entry in removed]
 
 
 def load_checkpoint(
@@ -335,6 +400,7 @@ __all__ = [
     "checkpoint_dir",
     "checkpoint_root",
     "load_checkpoint",
+    "prune_checkpoints",
     "read_checkpoint_record",
     "resolve_start_checkpoint",
     "should_checkpoint",
