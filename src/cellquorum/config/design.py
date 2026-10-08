@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 import pandas as pd
+from pydantic import Field, model_validator
 
 from cellquorum.config.base import StrictBaseModel
 from cellquorum.core.exceptions import CellQuorumConfigError
@@ -33,6 +35,113 @@ class DesignConfig(StrictBaseModel):
 
     # Whether the design is donor-paired (drives paired statistics).
     paired: bool = False
+
+    # Optional specimen-level factorial / repeated-measures design. ``None`` (default)
+    # leaves every legacy case/control workflow exactly as it was.
+    factorial: FactorialDesignConfig | None = None
+
+
+# Where a factor sits relative to the biological subject (donor, mouse, patient).
+FactorScope = Literal["between_subject", "within_subject", "sample_level"]
+
+
+class FactorSpec(StrictBaseModel):
+    """One categorical model factor of a factorial design.
+
+    The factor's name is the key it is declared under in
+    :attr:`FactorialDesignConfig.factors`, and is the name of the specimen-metadata
+    column holding its levels.
+
+    ``scope`` states how the factor relates to the subject structure:
+
+    * ``between_subject`` -- constant within every subject (e.g. genotype). A subject
+      that shows two levels is a declared-vs-observed mismatch, not a rank problem.
+    * ``within_subject`` -- intended to vary within subjects (e.g. tissue sampled
+      from each animal). At least one subject must actually show more than one level;
+      incomplete subjects are reported, not rejected.
+    * ``sample_level`` -- no claim about subject structure; the factor is validated at
+      the specimen level only (e.g. a processing batch). Default, so a factor is never
+      silently treated as repeated-measures.
+
+    Attributes:
+        reference: Level every other level is compared against; must be an observed
+            level (checked against the data at run time).
+        scope: Relationship to the subject structure.
+    """
+
+    reference: str = Field(min_length=1)
+    scope: FactorScope = "sample_level"
+
+
+class FactorialDesignConfig(StrictBaseModel):
+    """Specimen-level factorial / repeated-measures design.
+
+    Describes the objects of a repeated-measures experiment explicitly::
+
+        cell -> specimen (sample_col) -> subject (subject_col)
+
+    Specimens carry factor values; a subject induces dependence among its repeated
+    specimens. This model only *represents* the design; it fits nothing. The fixed-effect
+    part is the main effects of ``factors`` plus ``interactions``; ``random_effects``
+    names the grouping variables of the eventual random intercepts and is kept distinct
+    from ``subject_col`` (they coincide for a simple repeated-measures study but need
+    not: litter, site and visit are all legitimate grouping variables).
+
+    Attributes:
+        sample_col: Column identifying the specimen. ``None`` falls back to
+            ``cohort.sample_key`` (see ``resolve_factorial_columns``).
+        subject_col: Column identifying the biological subject. ``None`` falls back to
+            ``cohort.donor_key``; may stay unresolved for a design with no subject
+            structure (then no factor may claim a between/within scope).
+        factors: Model factors keyed by specimen-metadata column name.
+        interactions: Two-way interaction terms among declared factors.
+        random_effects: Random-intercept grouping variables (a specimen-metadata column,
+            or the sample column itself).
+    """
+
+    sample_col: str | None = Field(default=None, min_length=1)
+    subject_col: str | None = Field(default=None, min_length=1)
+    factors: dict[str, FactorSpec]
+    interactions: list[tuple[str, str]] = []
+    random_effects: list[str] = []
+
+    @model_validator(mode="after")
+    def _validate_structure(self) -> FactorialDesignConfig:
+        """Reject structurally impossible declarations before any data is read."""
+
+        if not self.factors:
+            raise ValueError("a factorial design needs at least one factor.")
+        if any(not name for name in self.factors):
+            raise ValueError("factor names must be non-empty column names.")
+        if self.sample_col is not None and self.sample_col == self.subject_col:
+            raise ValueError(
+                f"sample_col and subject_col are both '{self.sample_col}': a repeated-"
+                "measures design needs distinct specimen and subject identifiers."
+            )
+
+        seen: set[frozenset[str]] = set()
+        for a, b in self.interactions:
+            for member in (a, b):
+                if member not in self.factors:
+                    raise ValueError(
+                        f"interaction ({a}, {b}) references '{member}', which is not a "
+                        f"declared factor ({sorted(self.factors)})."
+                    )
+            if a == b:
+                raise ValueError(f"interaction ({a}, {b}) crosses a factor with itself.")
+            key = frozenset((a, b))
+            if key in seen:
+                raise ValueError(f"interaction ({a}, {b}) is declared twice (order is irrelevant).")
+            seen.add(key)
+
+        if len(set(self.random_effects)) != len(self.random_effects):
+            raise ValueError(f"random_effects contains duplicates: {self.random_effects}.")
+        if any(not name for name in self.random_effects):
+            raise ValueError("random_effects entries must be non-empty column names.")
+        return self
+
+
+DesignConfig.model_rebuild()
 
 
 class Contrast(StrictBaseModel):
@@ -346,10 +455,14 @@ class DesignMatrixReport:
     # Non-empty when a problem was found.
     warnings: list[str] = field(default_factory=list)
 
+    # Model-matrix column names, in order (Intercept first).
+    columns: list[str] = field(default_factory=list)
+
     def to_dict(self) -> dict[str, object]:
         """Convert the report to a JSON-friendly dictionary."""
 
         return {
+            "columns": list(self.columns),
             "factors": list(self.factors),
             "interactions": [list(pair) for pair in self.interactions],
             "n_samples": self.n_samples,
@@ -366,6 +479,7 @@ def build_design_matrix(
     sample_meta: pd.DataFrame,
     factors: list[str],
     interactions: list[tuple[str, str]] | None = None,
+    references: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Build a treatment-coded model matrix from categorical factor columns.
@@ -381,13 +495,16 @@ def build_design_matrix(
         factors: Main-effect factor columns to include, in order.
         interactions: Optional two-way interaction terms as ``(a, b)`` pairs; each
             member is coded even if it is not also listed in ``factors``.
+        references: Optional ``{factor: level}`` reference levels to drop instead of
+            the alphabetically first one, so the coded columns are contrasts against
+            the declared reference. Rank is unaffected; the column names are.
 
     Returns:
         A DataFrame of model-matrix columns aligned to ``sample_meta.index``.
 
     Raises:
         CellQuorumConfigError: If any referenced column is absent from
-            ``sample_meta``.
+            ``sample_meta``, or a declared reference is not an observed level.
     """
 
     interactions = list(interactions or [])
@@ -406,10 +523,20 @@ def build_design_matrix(
 
     # Treatment-coded dummies per referenced factor (first level dropped).
     dummies: dict[str, pd.DataFrame] = {}
+    references = references or {}
     for column in referenced:
-        coded = pd.get_dummies(
-            sample_meta[column].astype(str), prefix=column, drop_first=True
-        ).astype(float)
+        levels = sample_meta[column].astype(str)
+        reference = references.get(column)
+        if reference is None:
+            coded = pd.get_dummies(levels, prefix=column, drop_first=True).astype(float)
+        else:
+            if reference not in set(levels):
+                raise CellQuorumConfigError(
+                    f"Reference level '{reference}' of factor '{column}' is not observed; "
+                    f"observed levels: {sorted(set(levels))}."
+                )
+            coded = pd.get_dummies(levels, prefix=column).astype(float)
+            coded = coded.drop(columns=f"{column}_{reference}")
         coded.index = index
         dummies[column] = coded
 
@@ -477,6 +604,7 @@ def analyze_design(
     factors: list[str],
     interactions: list[tuple[str, str]] | None = None,
     min_per_cell: int = 1,
+    references: dict[str, str] | None = None,
 ) -> DesignMatrixReport:
     """
     Diagnose the estimability of a multi-factor design without raising.
@@ -491,6 +619,8 @@ def analyze_design(
         factors: Main-effect factor columns.
         interactions: Optional two-way interaction terms.
         min_per_cell: Minimum samples required per factorial-grid cell.
+        references: Optional ``{factor: level}`` reference levels (see
+            :func:`build_design_matrix`).
 
     Returns:
         A :class:`DesignMatrixReport` describing the design.
@@ -501,7 +631,7 @@ def analyze_design(
     """
 
     interactions = list(interactions or [])
-    design_matrix = build_design_matrix(sample_meta, factors, interactions)
+    design_matrix = build_design_matrix(sample_meta, factors, interactions, references)
 
     matrix = design_matrix.to_numpy(dtype=float)
     n_columns = int(design_matrix.shape[1])
@@ -541,6 +671,7 @@ def analyze_design(
         confounded_pairs=confounded,
         empty_cells=empty_cells,
         warnings=warnings,
+        columns=[str(c) for c in design_matrix.columns],
     )
 
 
@@ -550,6 +681,7 @@ def validate_design_matrix(
     factors: list[str],
     interactions: list[tuple[str, str]] | None = None,
     min_per_cell: int = 1,
+    references: dict[str, str] | None = None,
 ) -> DesignMatrixReport:
     """
     Validate that a multi-factor design is estimable, halting loudly if not.
@@ -559,6 +691,8 @@ def validate_design_matrix(
         factors: Main-effect factor columns.
         interactions: Optional two-way interaction terms.
         min_per_cell: Minimum samples required per factorial-grid cell.
+        references: Optional ``{factor: level}`` reference levels (see
+            :func:`build_design_matrix`).
 
     Returns:
         The :class:`DesignMatrixReport` when the design has full column rank.
@@ -573,6 +707,7 @@ def validate_design_matrix(
         factors=factors,
         interactions=interactions,
         min_per_cell=min_per_cell,
+        references=references,
     )
     if not report.full_rank:
         detail = ""
@@ -593,6 +728,9 @@ __all__ = [
     "Contrast",
     "ContrastsConfig",
     "DesignConfig",
+    "FactorScope",
+    "FactorSpec",
+    "FactorialDesignConfig",
     "DesignMatrixReport",
     "DesignValidationResult",
     "analyze_design",
