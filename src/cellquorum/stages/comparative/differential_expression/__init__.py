@@ -6,6 +6,9 @@ from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.comparative.differential_expression.config import (
     DifferentialExpressionConfig,
 )
+from cellquorum.stages.comparative.differential_expression.pseudobulk_dream_method import (
+    PseudobulkDreamMethod,
+)
 from cellquorum.stages.comparative.differential_expression.pseudobulk_edger_method import (
     PseudobulkEdgeRMethod,
 )
@@ -14,4 +17,8 @@ from cellquorum.stages.comparative.differential_expression.pseudobulk_edger_meth
 if not METHOD_REGISTRY.has("differential_expression", "pseudobulk_edger"):
     METHOD_REGISTRY.register(PseudobulkEdgeRMethod)
 
-__all__ = ["DifferentialExpressionConfig", "PseudobulkEdgeRMethod"]
+# Specimen-level mixed-model DE: opt-in only (never selected automatically).
+if not METHOD_REGISTRY.has("differential_expression", "pseudobulk_dream"):
+    METHOD_REGISTRY.register(PseudobulkDreamMethod)
+
+__all__ = ["DifferentialExpressionConfig", "PseudobulkDreamMethod", "PseudobulkEdgeRMethod"]

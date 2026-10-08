@@ -63,8 +63,14 @@ class DifferentialExpressionStage(MethodDispatchStage):
                 warnings=[f"{self.name} disabled by config"],
             )
 
+        # A method that stratifies internally (pseudobulk_dream) needs the FULL object --
+        # its specimen universe is built before any cell-type subsetting -- so the stage
+        # must not pre-slice the AnnData per group.
+        method_cls = self._registry.get(self.stage_category, self._select_method_name(stage_config))
+        internal = bool(getattr(method_cls, "stratifies_internally", False))
+
         cell_type_col = stage_config.get("cell_type_col")
-        if not cell_type_col or cell_type_col not in adata.obs.columns:
+        if internal or not cell_type_col or cell_type_col not in adata.obs.columns:
             outcome = self._run_single_method(adata, stage_config, context)
             if isinstance(outcome, MethodSkip):
                 return StageResult.skipped(
@@ -180,6 +186,27 @@ class DifferentialExpressionStage(MethodDispatchStage):
             return stage_config
 
         augmented = dict(stage_config)
+
+        # Specimen-level factorial design and its structured contrasts (only consumed by
+        # pseudobulk_dream). The specimen/subject columns are resolved HERE, once:
+        # explicit design.factorial value, else the cohort key. This deliberately differs
+        # from resolve_cohort_key below (where the cohort value wins): the more specific
+        # model declaration beats the dataset-wide default.
+        factorial = getattr(design, "factorial", None)
+        if factorial is not None:
+            from cellquorum.config.factorial_design import resolve_factorial_columns
+
+            augmented["factorial"] = factorial.model_dump()
+            augmented["factorial_contrasts"] = [
+                c.model_dump() for c in getattr(getattr(config, "contrasts", None), "factorial", [])
+            ]
+            try:
+                cols = resolve_factorial_columns(config, factorial)
+            except CellQuorumConfigError:
+                cols = None  # surfaced with context by the method's own validation
+            if cols is not None:
+                augmented["sample_col"] = cols.sample_col
+                augmented["subject_col"] = cols.subject_col
 
         # Structural obs columns: stage value → cohort key → design → default.
         if not augmented.get("donor_col"):

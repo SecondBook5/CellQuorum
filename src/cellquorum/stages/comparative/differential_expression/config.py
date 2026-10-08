@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import Field
+
 from cellquorum.config.base import StrictBaseModel
 
 
@@ -38,6 +42,41 @@ class AmbientSpecificityFilterConfig(StrictBaseModel):
     group_map: dict[str, str] = {}
 
 
+class PseudobulkSupportConfig(StrictBaseModel):
+    """Inferential support gates for specimen-level (``pseudobulk_dream``) DE.
+
+    These are method support requirements, NOT structural design validity (that is
+    ``design.factorial``). A cell type that fails a gate is skipped with the exact
+    reason; the model is never silently simplified to pass it. Ignored by
+    ``pseudobulk_edger``.
+
+    Attributes:
+        min_cells_per_sample: A specimen with fewer cells of the analysed population
+            is excluded from that population's expression analysis.
+        min_samples_per_factorial_cell: Minimum included specimens in every
+            interaction cell (every level of each factor when no interaction is
+            modelled).
+        min_subjects_per_between_level: Minimum independent subjects in every level of
+            each between-subject factor.
+    """
+
+    min_cells_per_sample: int = Field(default=20, ge=1)
+    min_samples_per_factorial_cell: int = Field(default=2, ge=1)
+    min_subjects_per_between_level: int = Field(default=2, ge=1)
+
+
+class DreamConfig(StrictBaseModel):
+    """Options for the ``variancePartition::dream`` mixed-model fit.
+
+    Attributes:
+        ddf: Denominator degrees-of-freedom method passed to ``dream``. ``adaptive``
+            is the package default (Kenward-Roger for small samples, Satterthwaite for
+            larger ones); the method actually used is recorded in provenance.
+    """
+
+    ddf: Literal["adaptive", "Satterthwaite", "Kenward-Roger"] = "adaptive"
+
+
 class DifferentialExpressionConfig(StrictBaseModel):
     """Pseudobulk differential-expression analysis via edgeR.
 
@@ -47,7 +86,8 @@ class DifferentialExpressionConfig(StrictBaseModel):
 
     Attributes:
         enabled: Whether the stage runs (enabled by default).
-        method: DE method registry key (pseudobulk_edger).
+        method: DE method registry key (pseudobulk_edger, or pseudobulk_dream for
+            specimen-level mixed-model designs; never auto-selected).
         layer: Layer holding raw counts for pseudobulk aggregation.
         covariates: Optional covariates added to the design matrix.
         interactions: Optional two-way interaction terms. Each is a ``[a, b]``
@@ -111,5 +151,16 @@ class DifferentialExpressionConfig(StrictBaseModel):
     # Optional cross-compartment ambient-gene filter (off by default).
     ambient_filter: AmbientSpecificityFilterConfig = AmbientSpecificityFilterConfig()
 
+    # Specimen support gates (pseudobulk_dream only).
+    pseudobulk: PseudobulkSupportConfig = PseudobulkSupportConfig()
 
-__all__ = ["AmbientSpecificityFilterConfig", "DifferentialExpressionConfig"]
+    # Mixed-model options (pseudobulk_dream only).
+    dream: DreamConfig = DreamConfig()
+
+
+__all__ = [
+    "AmbientSpecificityFilterConfig",
+    "DifferentialExpressionConfig",
+    "DreamConfig",
+    "PseudobulkSupportConfig",
+]

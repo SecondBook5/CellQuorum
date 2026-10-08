@@ -76,6 +76,7 @@ submit a paper.
 |---|---|---|---|
 | [edgeR](https://bioconductor.org/packages/edgeR) (R) | Pseudobulk differential expression | GPL (>= 2) | Robinson, McCarthy & Smyth, *Bioinformatics* 2010, [10.1093/bioinformatics/btp616](https://doi.org/10.1093/bioinformatics/btp616) |
 | [limma](https://bioconductor.org/packages/limma) (R) | Linear models | GPL (>= 2) | Ritchie et al., *Nucleic Acids Res* 2015, [10.1093/nar/gkv007](https://doi.org/10.1093/nar/gkv007) |
+| [variancePartition](https://bioconductor.org/packages/variancePartition) (R) | `dream` mixed-model pseudobulk differential expression for repeated measures (`pseudobulk_dream`) | GPL (>= 2) | Hoffman & Roussos, *Bioinformatics* 2021, [10.1093/bioinformatics/btaa687](https://doi.org/10.1093/bioinformatics/btaa687) |
 | [miloR](https://github.com/MarioniLab/miloR) (R) | Differential abundance on neighbourhoods | GPL-3 + file LICENSE | Dann et al., *Nat Biotechnol* 2022, [10.1038/s41587-021-01033-z](https://doi.org/10.1038/s41587-021-01033-z) |
 | [scCODA](https://github.com/theislab/scCODA) | Compositional differential abundance | BSD | Büttner et al., *Nat Commun* 2021, [10.1038/s41467-021-27150-6](https://doi.org/10.1038/s41467-021-27150-6) |
 | [speckle](https://github.com/phipsonlab/speckle) (R) | propeller, differences in proportions | GPL-3 | Phipson et al., *Bioinformatics* 2022, [10.1093/bioinformatics/btac582](https://doi.org/10.1093/bioinformatics/btac582) |
@@ -110,6 +111,7 @@ submit a paper.
 | [Seurat](https://satijalab.org/seurat) (Hao et al., *Nat Biotechnol* 2024, [10.1038/s41587-023-01767-y](https://doi.org/10.1038/s41587-023-01767-y)) | Object conversion and R-side analysis | MIT + file LICENSE |
 | [SingleCellExperiment](https://bioconductor.org/packages/SingleCellExperiment), [scater](https://bioconductor.org/packages/scater), [scuttle](https://bioconductor.org/packages/scuttle) | Bioconductor single-cell containers and utilities | GPL-3 |
 | [zellkonverter](https://bioconductor.org/packages/zellkonverter) | `.h5ad` to `SingleCellExperiment` | MIT + file LICENSE |
+| [BiocParallel](https://bioconductor.org/packages/BiocParallel) | Serial back end for `variancePartition::dream` | GPL-2 \| GPL-3 |
 | [ComplexHeatmap](https://github.com/jokergoo/ComplexHeatmap) (Gu et al., *Bioinformatics* 2016, [10.1093/bioinformatics/btw313](https://doi.org/10.1093/bioinformatics/btw313)), [circlize](https://github.com/jokergoo/circlize) (Gu et al., *Bioinformatics* 2014, [10.1093/bioinformatics/btu393](https://doi.org/10.1093/bioinformatics/btu393)) | R-side figures | MIT + file LICENSE |
 | [Matrix](https://cran.r-project.org/package=Matrix), [data.tree](https://cran.r-project.org/package=data.tree) | Sparse matrices, trees | GPL (>= 2) |
 | [dplyr](https://dplyr.tidyverse.org), [ggplot2](https://ggplot2.tidyverse.org), [jsonlite](https://github.com/jeroen/jsonlite) | Data handling and plotting | MIT + file LICENSE |
@@ -147,7 +149,7 @@ license applies to its own code. In particular:
 - **Copyleft (GPL) software is called by CellQuorum.** `leidenalg` (GPL-3.0-or-later) is a
   required dependency and is imported by the clustering stage. `harmonypy` ships a GPL-3 license
   file (its package metadata says MIT, so treat it as GPL-3). `rpy2`, PHATE and MAGIC are GPL-2.
-  Most of the R packages above (edgeR, limma, SoupX, miloR, NicheNet, MultiNicheNet, scDblFinder,
+  Most of the R packages above (edgeR, limma, variancePartition, SoupX, miloR, NicheNet, MultiNicheNet, scDblFinder,
   speckle, hdWGCNA and the Bioconductor containers) are GPL, as is pySCENIC. CellQuorum runs the
   R packages and pySCENIC as separate processes and imports the Python ones; it contains none of
   their code.

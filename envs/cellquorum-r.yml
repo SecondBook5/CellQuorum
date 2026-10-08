@@ -51,6 +51,7 @@ dependencies:
   - bioconductor-singleR
   - bioconductor-edger
   - bioconductor-limma
+  - bioconductor-variancepartition  # pseudobulk_dream: dream() mixed-model DE
   - bioconductor-deseq2
   - bioconductor-complexheatmap
 
