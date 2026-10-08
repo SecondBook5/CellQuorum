@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
@@ -169,11 +169,125 @@ class Contrast(StrictBaseModel):
     min_donors: int = 0
 
 
+class SimpleEffectContrast(StrictBaseModel):
+    """A level-vs-level effect of one factor, optionally at fixed levels of others.
+
+    Declared in biological level terms; no backend coefficient name ever appears.
+    The estimand is ``E[numerator | at] - E[denominator | at]``.
+
+    Attributes:
+        kind: Discriminator, always ``"simple_effect"``.
+        name: Stable contrast name (output files and result columns carry it).
+        factor: The factor whose two levels are compared.
+        numerator: Level on the positive side.
+        denominator: Level on the negative side.
+        at: Levels of other factors the effect is evaluated at. A factor that
+            interacts with ``factor`` MUST be given here; the effect differs by its
+            level, so it is never silently read at the reference.
+    """
+
+    kind: Literal["simple_effect"]
+    name: str = Field(min_length=1)
+    factor: str = Field(min_length=1)
+    numerator: str = Field(min_length=1)
+    denominator: str = Field(min_length=1)
+    at: dict[str, str] = {}
+
+    @model_validator(mode="after")
+    def _validate_structure(self) -> SimpleEffectContrast:
+        """Reject a contrast that compares a level with itself or fixes its own factor."""
+
+        if self.numerator == self.denominator:
+            raise ValueError(
+                f"contrast '{self.name}': numerator and denominator are both "
+                f"'{self.numerator}'; the effect is identically zero."
+            )
+        if self.factor in self.at:
+            raise ValueError(
+                f"contrast '{self.name}': 'at' fixes '{self.factor}', the factor being compared."
+            )
+        return self
+
+
+class DifferenceOfDifferencesContrast(StrictBaseModel):
+    """The interaction estimand: how the effect of factor A differs across factor B.
+
+    ``(A=na,B=nb) - (A=na,B=db) - (A=da,B=nb) + (A=da,B=db)``, i.e. the effect of
+    ``factor_a`` (numerator_a vs denominator_a) at ``numerator_b`` minus the same
+    effect at ``denominator_b``. Reversing either pair flips the sign.
+
+    Attributes:
+        kind: Discriminator, always ``"difference_of_differences"``.
+        name: Stable contrast name.
+        factor_a: First factor.
+        numerator_a: Positive level of ``factor_a``.
+        denominator_a: Negative level of ``factor_a``.
+        factor_b: Second factor.
+        numerator_b: Positive level of ``factor_b``.
+        denominator_b: Negative level of ``factor_b``.
+        at: Levels of any further factors the contrast is evaluated at.
+    """
+
+    kind: Literal["difference_of_differences"]
+    name: str = Field(min_length=1)
+    factor_a: str = Field(min_length=1)
+    numerator_a: str = Field(min_length=1)
+    denominator_a: str = Field(min_length=1)
+    factor_b: str = Field(min_length=1)
+    numerator_b: str = Field(min_length=1)
+    denominator_b: str = Field(min_length=1)
+    at: dict[str, str] = {}
+
+    @model_validator(mode="after")
+    def _validate_structure(self) -> DifferenceOfDifferencesContrast:
+        """Reject a degenerate difference of differences."""
+
+        if self.factor_a == self.factor_b:
+            raise ValueError(
+                f"contrast '{self.name}': factor_a and factor_b are both '{self.factor_a}'; "
+                "a difference of differences needs two distinct factors."
+            )
+        if self.numerator_a == self.denominator_a or self.numerator_b == self.denominator_b:
+            raise ValueError(
+                f"contrast '{self.name}': a numerator equals its denominator; the contrast "
+                "is identically zero."
+            )
+        clash = {self.factor_a, self.factor_b}.intersection(self.at)
+        if clash:
+            raise ValueError(
+                f"contrast '{self.name}': 'at' fixes compared factor(s) {sorted(clash)}."
+            )
+        return self
+
+
+# Discriminated union of the structured factorial estimands.
+FactorialContrast = Annotated[
+    SimpleEffectContrast | DifferenceOfDifferencesContrast, Field(discriminator="kind")
+]
+
+
 class ContrastsConfig(StrictBaseModel):
     """A list of named comparisons."""
 
-    # The registered contrasts.
+    # The registered legacy case/control contrasts (untouched by factorial designs).
     contrasts: list[Contrast] = []
+
+    # Structured factorial estimands, declared in factor-level terms. Kept separate from
+    # the legacy pairwise list: an old `Contrast` never means a factorial one.
+    factorial: list[FactorialContrast] = []
+
+    @model_validator(mode="after")
+    def _validate_unique_names(self) -> ContrastsConfig:
+        """Contrast names address outputs, so a repeat (in either list) is a config error."""
+
+        # Duplicates among the legacy contrasts alone keep their existing, separate check
+        # (CellQuorumConfig); only repeats that involve a factorial contrast are caught here.
+        legacy = [c.name for c in self.contrasts]
+        factorial = [c.name for c in self.factorial]
+        duplicates = sorted({n for n in factorial if factorial.count(n) > 1 or n in legacy})
+        if duplicates:
+            raise ValueError(f"contrast name(s) {duplicates} are declared more than once.")
+        return self
 
     def get(self, name: str) -> Contrast:
         """
@@ -733,6 +847,9 @@ __all__ = [
     "FactorialDesignConfig",
     "DesignMatrixReport",
     "DesignValidationResult",
+    "DifferenceOfDifferencesContrast",
+    "FactorialContrast",
+    "SimpleEffectContrast",
     "analyze_design",
     "build_design_matrix",
     "validate_design_against_obs",
