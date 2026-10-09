@@ -162,6 +162,7 @@ def sanitize_for_h5ad(adata: ad.AnnData) -> list[str]:
     notes += _sanitize_mapping_keys(adata.varm, name="varm")
     notes += _coerce_unwritable_columns(adata.obs, axis="obs")
     notes += _coerce_unwritable_columns(adata.var, axis="var")
+    notes += _coerce_cellrank_lineage_arrays(adata)
     notes += _jsonify_unwritable_uns(adata.uns)
     return notes
 
@@ -447,3 +448,28 @@ def _first_few(renames: dict[str, str]) -> str:
     """Compact ``old -> new`` preview for a note."""
     items = sorted(renames.items())[:3]
     return ", ".join(f"{old} -> {new}" for old, new in items)
+
+
+def _coerce_cellrank_lineage_arrays(adata: ad.AnnData) -> list[str]:
+    """Serialize Lineage matrices without its version-dependent writer adapter.
+
+    Preserve matrix values and column names/colors explicitly in uns. No
+    probabilities or other numerical results are recomputed.
+    """
+    notes = []
+    for axis in ("obsm", "varm"):
+        mapping = getattr(adata, axis)
+        for key in list(mapping):
+            value = mapping[key]
+            if type(value).__module__.startswith("cellrank.") and hasattr(value, "names"):
+                metadata = {"names": np.asarray(value.names, dtype=str)}
+                if hasattr(value, "colors"):
+                    metadata["colors"] = np.asarray(value.colors, dtype=str)
+                store = adata.uns.setdefault("cellrank_lineage_array_metadata", {})
+                store[f"{axis}:{key}"] = metadata
+                mapping[key] = np.asarray(value).copy()
+                notes.append(
+                    f"{axis}[{key!r}]: preserved CellRank Lineage values as ndarray "
+                    "with names/colors in uns"
+                )
+    return notes

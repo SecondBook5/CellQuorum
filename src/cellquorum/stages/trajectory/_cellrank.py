@@ -27,6 +27,25 @@ import numpy as np
 import pandas as pd
 
 
+def _pseudotime_kernel(adata: ad.AnnData, time_key: str, notes: list[str]) -> Any:
+    """Use native hard bias, falling back to soft bias for stranded rows only."""
+    from cellrank.kernels import PseudotimeKernel
+
+    try:
+        return PseudotimeKernel(adata, time_key=time_key).compute_transition_matrix()
+    except ValueError as exc:
+        if "Transition matrix is not row stochastic" not in str(exc):
+            raise
+        kernel = PseudotimeKernel(adata, time_key=time_key).compute_transition_matrix(
+            threshold_scheme="soft"
+        )
+        notes.append(
+            f"pseudotime kernel '{time_key}': hard threshold stranded rows; "
+            "used CellRank soft threshold on the existing neighbor edges"
+        )
+        return kernel
+
+
 def _restore_python_sigpipe() -> None:
     """Take SIGPIPE back from PETSc.
 
@@ -214,8 +233,6 @@ def _build_cytotrace_kernel(
     Falls back to CellRank's own computation when no score is present but an
     imputed layer is, and returns None otherwise. Never raises.
     """
-    from cellrank.kernels import PseudotimeKernel
-
     if cytotrace_key in adata.obs:
         score = pd.to_numeric(adata.obs[cytotrace_key], errors="coerce").to_numpy(dtype="float64")
         n_missing = int(np.isnan(score).sum())
@@ -237,7 +254,7 @@ def _build_cytotrace_kernel(
         # names it the way CellRank's plots expect.
         adata.obs["ct_pseudotime"] = 1.0 - (score - float(np.nanmin(score))) / spread
         try:
-            kernel = PseudotimeKernel(adata, time_key="ct_pseudotime").compute_transition_matrix()
+            kernel = _pseudotime_kernel(adata, "ct_pseudotime", notes)
         except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
             warnings.append(f"cytotrace kernel failed on '{cytotrace_key}': {exc}")
             return None
@@ -298,7 +315,7 @@ def build_kernel(
     """
     try:
         import scanpy as sc
-        from cellrank.kernels import ConnectivityKernel, PseudotimeKernel
+        from cellrank.kernels import ConnectivityKernel
     except ImportError as exc:
         raise CellRankUnavailable("cellrank/scanpy not installed") from exc
 
@@ -352,9 +369,7 @@ def build_kernel(
                 directionals.append(
                     (
                         "pseudotime",
-                        PseudotimeKernel(
-                            adata, time_key=pseudotime_key
-                        ).compute_transition_matrix(),
+                        _pseudotime_kernel(adata, pseudotime_key, notes),
                     )
                 )
             except Exception as exc:  # noqa: BLE001 — drop this kernel, keep going
@@ -522,7 +537,23 @@ def run_gpcca(
         raise SchurFailed(f"compute_schur ({schur_method}) failed: {exc}") from exc
 
     try:
-        g.compute_macrostates(n_states=int(n_states), cluster_key=cluster_key)
+        for representative_cells in (30, 20, 10, 5):
+            try:
+                g.compute_macrostates(
+                    n_states=int(n_states),
+                    cluster_key=cluster_key,
+                    n_cells=representative_cells,
+                )
+                if representative_cells != 30:
+                    warnings.append(
+                        f"macrostate discretization required n_cells={representative_cells} "
+                        "representatives; native confidence checks retained; "
+                        "interpret representative labels with caution"
+                    )
+                break
+            except ValueError as exc:
+                if "Discretizing leads to a cluster" not in str(exc) or representative_cells == 5:
+                    raise
         macro_names = [str(x) for x in g.macrostates.cat.categories]
     except Exception as exc:  # noqa: BLE001 — retype as recoverable skip
         raise MacrostatesFailed(f"compute_macrostates failed: {exc}") from exc
