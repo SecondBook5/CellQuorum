@@ -5,6 +5,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+from optional_deps import requires_parquet
 
 from cellquorum.stages.comparative.differential_expression.ambient_filter import (
     filter_ambient_genes,
@@ -38,6 +39,7 @@ def test_load_expression_profile_reads_csv(tmp_path):
     assert list(loaded.index) == ["KRT10", "ACTA2"]
 
 
+@requires_parquet()
 def test_load_expression_profile_reads_parquet(tmp_path):
     parquet_path = tmp_path / "profile.parquet"
     _profile().to_parquet(parquet_path)

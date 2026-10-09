@@ -2,6 +2,7 @@ import anndata as ad
 import numpy as np
 import pytest
 import scanpy as sc
+from optional_deps import requires
 
 from cellquorum.stages.integration.embeddings import compute
 
@@ -46,12 +47,14 @@ def test_compute_umap_tiny_graph_raises_typed_skip():
         compute.compute_umap(a, min_dist=0.3, random_state=0)
 
 
+@requires("phate")
 def test_compute_phate_writes_obsm():
     a = _adata_with_neighbors()
     compute.compute_phate(a, use_rep="X_pca_harmony", knn=15, decay=40, random_state=0)
     assert a.obsm["X_phate"].shape == (60, 2)
 
 
+@requires("phate")
 def test_compute_phate_missing_rep_raises():
     a = _adata_with_neighbors()
     with pytest.raises(compute.RepMissing):

@@ -3,11 +3,13 @@
 import anndata as ad
 import numpy as np
 import scipy.sparse as sp
+from optional_deps import requires
 
 from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.stages.trajectory._cellrank import _pseudotime_kernel
 
 
+@requires("cellrank")
 def test_stranded_terminal_row_uses_native_soft_scheme():
     a = ad.AnnData(np.ones((4, 2)))
     a.obs["pt"] = [0.0, 0.3, 0.6, 1.0]
@@ -22,6 +24,7 @@ def test_stranded_terminal_row_uses_native_soft_scheme():
     assert ((k.transition_matrix != 0).multiply(graph == 0)).nnz == 0
 
 
+@requires("cellrank")
 def test_lineage_roundtrip_preserves_values_and_metadata(tmp_path):
     from cellrank._utils._lineage import Lineage
 

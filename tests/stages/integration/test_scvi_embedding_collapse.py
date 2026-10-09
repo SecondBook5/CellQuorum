@@ -15,6 +15,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pytest
+from optional_deps import requires
 
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.stages.integration.scvi_methods import ScVIMethod
@@ -72,6 +73,7 @@ def _run_scvi_with_stub_latent(monkeypatch, latent: np.ndarray):
     )
 
 
+@requires("scvi")
 def test_fatal_collapse_raises(monkeypatch):
     n, n_latent = 60, 10
     latent = np.zeros((n, n_latent), dtype=np.float32)  # every dimension constant
@@ -80,6 +82,7 @@ def test_fatal_collapse_raises(monkeypatch):
         _run_scvi_with_stub_latent(monkeypatch, latent)
 
 
+@requires("scvi")
 def test_partial_collapse_is_a_stage_result_warning_not_a_python_warning(monkeypatch):
     n, n_latent = 60, 10
     rng = np.random.default_rng(0)
@@ -93,6 +96,7 @@ def test_partial_collapse_is_a_stage_result_warning_not_a_python_warning(monkeyp
     ), f"partial collapse must surface in StageResult.warnings, got: {result.warnings}"
 
 
+@requires("scvi")
 def test_a_healthy_embedding_produces_no_collapse_warning(monkeypatch):
     n, n_latent = 60, 10
     rng = np.random.default_rng(0)

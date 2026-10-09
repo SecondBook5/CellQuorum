@@ -12,6 +12,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
+from optional_deps import requires
 
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
@@ -86,6 +87,7 @@ def _run_scanvi(monkeypatch, adata, config: dict | None = None):
     return result, _CapturingSCVI.captured_n_vars
 
 
+@requires("scvi")
 def test_scanvi_restricts_training_to_highly_variable_genes(monkeypatch):
     adata = _cohort(n_genes=600, n_hvg=520)
 
@@ -96,6 +98,7 @@ def test_scanvi_restricts_training_to_highly_variable_genes(monkeypatch):
     assert any("520" in note for note in result.notes)
 
 
+@requires("scvi")
 def test_scanvi_falls_back_to_all_genes_when_too_few_hvg_flagged(monkeypatch):
     adata = _cohort(n_genes=600, n_hvg=10)
 
@@ -104,6 +107,7 @@ def test_scanvi_falls_back_to_all_genes_when_too_few_hvg_flagged(monkeypatch):
     assert all(n == 600 for n in captured), captured
 
 
+@requires("scvi")
 def test_scanvi_raises_when_use_highly_variable_requested_but_flag_absent(monkeypatch):
     adata = _cohort(n_genes=50, n_hvg=None)
 

@@ -9,6 +9,7 @@ object in one category.
 from __future__ import annotations
 
 import matplotlib
+from optional_deps import requires
 
 matplotlib.use("Agg")
 
@@ -120,6 +121,7 @@ def _velocity_adata(seed: int = 0, n: int = 1500) -> ad.AnnData:
     return adata
 
 
+@requires("scvelo")
 def test_velocity_stream_figure_hands_streamplot_a_finite_linewidth(monkeypatch):
     """The linewidth passed to streamplot must be finite everywhere.
 
@@ -148,6 +150,7 @@ def test_velocity_stream_figure_hands_streamplot_a_finite_linewidth(monkeypatch)
     assert linewidth.min() < linewidth.max()
 
 
+@requires("scvelo")
 def test_velocity_stream_figure_saves_to_pdf_with_a_mostly_masked_grid(tmp_path):
     """End-to-end guard: the real failure was invisible until PDF export.
 
@@ -197,6 +200,7 @@ def test_velocity_stream_figure_raises_when_the_group_key_is_absent():
         velocity_stream_figure(adata, group_key="nope")
 
 
+@requires("scvelo")
 def test_velocity_stream_figure_applies_group_labels_to_legend_and_text():
     """group_labels must relabel the legend and on-plot text, not the grouping.
 

@@ -9,6 +9,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
+from optional_deps import requires
 
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.gene_regulation.coexpression.hdwgcna_method import HdwgcnaMethod
@@ -196,6 +197,7 @@ def test_metrics_exclude_grey_module(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert res.metrics["n_genes_assigned"] == 3
 
 
+@requires("GraphRicciCurvature")
 def test_success_path_renders_module_curvature_figure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

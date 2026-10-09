@@ -13,6 +13,7 @@ import networkx as nx
 import pandas as pd
 import pytest
 from matplotlib.figure import Figure
+from optional_deps import requires
 
 from cellquorum.stages.gene_regulation.grn.radial_figures import (
     _bezier,
@@ -54,6 +55,7 @@ def _tiny_net() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
+@requires("decoupler")
 def test_tf_activity_from_de_returns_one_row_per_tf_in_the_net():
     tf = tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
 
@@ -61,6 +63,7 @@ def test_tf_activity_from_de_returns_one_row_per_tf_in_the_net():
     assert {"score", "pvalue", "padj", "significant"}.issubset(tf.columns)
 
 
+@requires("decoupler")
 def test_tf_activity_from_de_scores_the_tf_driving_the_strongest_up_genes_highest():
     """TF1 regulates G0-G5, the most strongly up-regulated genes in the DE
     table; TF3 regulates G10-G13, near the bottom of the ranking. A real
@@ -70,6 +73,7 @@ def test_tf_activity_from_de_scores_the_tf_driving_the_strongest_up_genes_highes
     assert tf.loc["TF1", "score"] > tf.loc["TF3", "score"]
 
 
+@requires("decoupler")
 def test_tf_activity_from_de_empty_de_returns_empty_frame():
     empty = pd.DataFrame(columns=["gene", "logFC", "PValue"])
 
@@ -83,6 +87,7 @@ def test_tf_activity_from_de_empty_de_returns_empty_frame():
 # ---------------------------------------------------------------------------
 
 
+@requires("decoupler")
 def test_select_tf_targets_picks_top_n_tfs_by_significance_then_activity():
     tf = tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
     de = _tiny_de().set_index("gene")
@@ -93,6 +98,7 @@ def test_select_tf_targets_picks_top_n_tfs_by_significance_then_activity():
     assert tfs[0] == "TF1"  # strongest real signal, must sort first
 
 
+@requires("decoupler")
 def test_select_tf_targets_caps_targets_per_tf():
     tf = tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
     de = _tiny_de().set_index("gene")
@@ -105,6 +111,7 @@ def test_select_tf_targets_caps_targets_per_tf():
     assert all(c <= 2 for c in per_tf_counts.values())
 
 
+@requires("decoupler")
 def test_select_tf_targets_drops_targets_absent_from_de_table():
     tf = tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
     de = _tiny_de().set_index("gene")
@@ -117,6 +124,7 @@ def test_select_tf_targets_drops_targets_absent_from_de_table():
     assert all(g != "GHOST" for _t, g, _s, _l in edges)
 
 
+@requires("decoupler")
 def test_select_tf_targets_empty_inputs_return_empty():
     empty_tf = pd.DataFrame(columns=["score", "pvalue", "padj", "significant"])
     tfs, edges, targets = select_tf_targets(
@@ -132,6 +140,7 @@ def test_select_tf_targets_empty_inputs_return_empty():
 # ---------------------------------------------------------------------------
 
 
+@requires("decoupler")
 def test_cluster_by_shared_children_groups_members_with_overlapping_children():
     """TF1 and TF2 share 2/10 targets (weak overlap); TF3 shares none with
     either -- with n_sectors=2, TF3 must land in its own sector."""
@@ -146,6 +155,7 @@ def test_cluster_by_shared_children_groups_members_with_overlapping_children():
     assert k <= 2
 
 
+@requires("decoupler")
 def test_cluster_by_shared_children_falls_back_when_target_sets_are_fully_disjoint():
     """Real bug found on the real fibroblast pySCENIC regulon graph: TFs
     pulled from a data-driven regulon graph often share NO targets at all
@@ -164,6 +174,7 @@ def test_cluster_by_shared_children_falls_back_when_target_sets_are_fully_disjoi
     assert k > 1
 
 
+@requires("decoupler")
 def test_cluster_by_shared_children_never_exceeds_member_count():
     children_of = {"TF1": {"G0"}}
     sec_of, k = _cluster_by_shared_children(["TF1"], children_of, n_sectors=4)
@@ -172,6 +183,7 @@ def test_cluster_by_shared_children_never_exceeds_member_count():
     assert sec_of == {"TF1": 0} or sec_of == {"TF1": 1}
 
 
+@requires("decoupler")
 def test_layout_sectors_places_every_member_and_child_at_a_finite_angle():
     sec_ids = [0, 1]
     sec_members = {0: ["TF1", "TF2"], 1: ["TF3"]}
@@ -186,6 +198,7 @@ def test_layout_sectors_places_every_member_and_child_at_a_finite_angle():
     assert set(sec_span) == {0, 1}
 
 
+@requires("decoupler")
 def test_bezier_returns_a_path_from_p0_to_p1():
     path = _bezier((0.0, 0.0), (1.0, 1.0))
 
@@ -198,6 +211,7 @@ def test_bezier_returns_a_path_from_p0_to_p1():
 # ---------------------------------------------------------------------------
 
 
+@requires("decoupler")
 def test_radial_grn_renders_a_figure_for_real_synthetic_data():
     tf = tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
     de = _tiny_de().set_index("gene")
@@ -208,6 +222,7 @@ def test_radial_grn_renders_a_figure_for_real_synthetic_data():
     assert len(fig.axes) >= 1
 
 
+@requires("decoupler")
 def test_radial_grn_labels_case_and_control_generically_not_hardcoded():
     """A prior version of this figure (the reference lab script) hardcoded
     'up in LE' / 'up in Normal' -- CellQuorum must read case/control from
@@ -226,6 +241,7 @@ def test_radial_grn_labels_case_and_control_generically_not_hardcoded():
     assert "LE" not in all_text.replace("legend", "")  # no leaked study-specific text
 
 
+@requires("decoupler")
 def test_radial_grn_returns_empty_fig_when_no_edges_survive():
     empty_tf = pd.DataFrame(columns=["score", "pvalue", "padj", "significant"])
     fig = radial_grn(
@@ -267,6 +283,7 @@ def _tiny_curvature_tables() -> tuple[pd.DataFrame, pd.DataFrame]:
     return edge_df, node_df
 
 
+@requires("decoupler")
 def test_select_curvature_targets_orients_edges_tf_first_even_if_edge_df_swapped():
     """compute_ricci_curvature runs on an UNDIRECTED graph internally, so its
     edge_df's source/target order is not guaranteed to match the original
@@ -286,6 +303,7 @@ def test_select_curvature_targets_orients_edges_tf_first_even_if_edge_df_swapped
     assert all(g not in {"TF1", "TF2"} for _t, g, _c, _w in edges)
 
 
+@requires("decoupler")
 def test_select_curvature_targets_caps_targets_per_tf():
     G = _tiny_regulon_graph()
     edge_df, node_df = _tiny_curvature_tables()
@@ -300,6 +318,7 @@ def test_select_curvature_targets_caps_targets_per_tf():
     assert all(c <= 1 for c in per_tf_counts.values())
 
 
+@requires("decoupler")
 def test_radial_regulon_curvature_renders_a_figure():
     G = _tiny_regulon_graph()
     edge_df, node_df = _tiny_curvature_tables()
@@ -310,6 +329,7 @@ def test_radial_regulon_curvature_renders_a_figure():
     assert len(fig.axes) >= 1
 
 
+@requires("decoupler")
 def test_radial_regulon_curvature_empty_edges_returns_empty_fig():
     fig = radial_regulon_curvature(
         pd.DataFrame(columns=["source", "target", "ricci_curvature", "weight"]),
@@ -320,6 +340,7 @@ def test_radial_regulon_curvature_empty_edges_returns_empty_fig():
     assert isinstance(fig, Figure)
 
 
+@requires("decoupler")
 def test_a_failure_scoring_tf_activity_is_not_disguised_as_no_tfs(monkeypatch):
     """An empty result means "nothing to score"; an error must stay an error.
 
@@ -337,6 +358,7 @@ def test_a_failure_scoring_tf_activity_is_not_disguised_as_no_tfs(monkeypatch):
         tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
 
 
+@requires("decoupler")
 def test_a_failure_ranking_the_de_table_is_not_disguised_as_no_tfs(monkeypatch):
     import pytest
 
@@ -350,6 +372,7 @@ def test_a_failure_ranking_the_de_table_is_not_disguised_as_no_tfs(monkeypatch):
         tf_activity_from_de(_tiny_de(), _tiny_net(), tmin=2)
 
 
+@requires("decoupler")
 def test_scoring_tf_activity_never_changes_the_figure_theme():
     """decoupler rewrites matplotlib's legend settings the first time it is imported.
 

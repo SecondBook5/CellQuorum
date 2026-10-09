@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import anndata as ad
 import numpy as np
 import pandas as pd
+from optional_deps import requires
 
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.gene_regulation.grn.pyscenic_method import PyscenicMethod
@@ -97,6 +98,7 @@ def test_input_contract_does_not_require_group_by() -> None:
     assert m.requires_obs({}) == []
 
 
+@requires("GraphRicciCurvature")
 def test_success_path_builds_artifacts_and_metrics(tmp_path: Path) -> None:
     class FakeBackend:
         def _py_module_available(self, _m):  # noqa: ANN001
@@ -180,6 +182,7 @@ def test_success_path_builds_artifacts_and_metrics(tmp_path: Path) -> None:
     assert "auc_mtx" in artifact_names
 
 
+@requires("GraphRicciCurvature")
 def test_success_path_renders_regulon_curvature_figure(tmp_path: Path) -> None:
     """The regulon curvature network must render from the regulon table alone
     -- it needs no AUCell output, so it must appear even though this test's

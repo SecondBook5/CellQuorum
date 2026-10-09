@@ -1,6 +1,7 @@
 import anndata as ad
 import numpy as np
 import pytest
+from optional_deps import requires
 
 from cellquorum.core.contracts.exceptions import CellQuorumContractError
 from cellquorum.core.contracts.magic_guard import assert_not_imputed
@@ -152,6 +153,7 @@ def test_the_magic_layer_wins_over_the_declared_one():
     assert not feats[0].values.any()
 
 
+@requires("magic")
 def test_magic_scoped_tags_imputed_and_guard_blocks():
     a = _adata()
     imputed = overlay.impute_magic_scoped(
@@ -164,6 +166,7 @@ def test_magic_scoped_tags_imputed_and_guard_blocks():
         assert_not_imputed(a, "magic")
 
 
+@requires("magic")
 def test_magic_scoped_layer_is_sparse_and_scoped():
     """The imputed layer stays sparse and only the requested genes carry values.
 

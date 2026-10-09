@@ -4,6 +4,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
+from optional_deps import requires
 
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.cell_cell_communication.network.ricci_method import RicciMethod
@@ -136,6 +137,7 @@ def _break_the_solver(monkeypatch):
     monkeypatch.setattr(orm.OllivierRicci, "compute_ricci_curvature", broken)
 
 
+@requires("GraphRicciCurvature")
 def test_a_solver_failure_is_an_error_not_an_empty_table(monkeypatch):
     """An empty curvature table means "no edges"; a solver failure must not look like that."""
     import networkx as nx
@@ -152,6 +154,7 @@ def test_a_solver_failure_is_an_error_not_an_empty_table(monkeypatch):
         compute_ricci_curvature(graph)
 
 
+@requires("GraphRicciCurvature")
 def test_a_solver_failure_is_reported_as_a_warning_by_the_stage(tmp_path, monkeypatch):
     _break_the_solver(monkeypatch)
     res = RicciMethod().run(_adata(), _config(), _Ctx(tmp_path))

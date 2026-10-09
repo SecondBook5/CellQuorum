@@ -1,4 +1,5 @@
 import matplotlib
+from optional_deps import requires
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -311,6 +312,7 @@ def test_chord_and_sankey_return_figure():
     assert isinstance(sankey_flow(df, palette=pal, top_k=3), Figure)
 
 
+@requires("pycirclize")
 def test_chord_diagram_invokes_link_kws_handler_when_given():
     from cellquorum.stages.cell_cell_communication.viz._plots import celltype_palette, chord_diagram
 

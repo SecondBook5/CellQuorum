@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from optional_deps import requires
 
 from cellquorum.stages.gene_regulation.grn.regulon_curvature import (
     build_regulon_graph,
@@ -24,6 +25,7 @@ _REAL_SHAPE_CSV = (
 )
 
 
+@requires("GraphRicciCurvature")
 def test_load_regulons_csv_flattens_pyscenics_real_multiindex_shape(tmp_path: Path) -> None:
     """pySCENIC's regulons.csv has a 2-row MultiIndex header (Enrichment/<metric>)
     and a 2-column MultiIndex row index (TF, MotifID) -- a bare pd.read_csv
@@ -41,6 +43,7 @@ def test_load_regulons_csv_flattens_pyscenics_real_multiindex_shape(tmp_path: Pa
     assert df["TF"].nunique() == 2
 
 
+@requires("GraphRicciCurvature")
 def test_load_regulons_csv_output_feeds_build_regulon_graph(tmp_path: Path) -> None:
     """The loader's output must be exactly what build_regulon_graph expects --
     no separate second parse of the same file with different column names."""
@@ -72,6 +75,7 @@ def _regulons_df():
     )
 
 
+@requires("GraphRicciCurvature")
 def test_builds_a_directed_tf_to_target_graph():
     """Real, biological directionality: a regulatory edge flows TF -> target,
     never the reverse -- this is the whole point of a GRN over an undirected
@@ -82,6 +86,7 @@ def test_builds_a_directed_tf_to_target_graph():
     assert not G.has_edge("G1", "TF1")
 
 
+@requires("GraphRicciCurvature")
 def test_a_tfs_targets_are_unioned_across_its_motif_rows():
     """TF1 has two motif rows (m1, m2); its real regulon is their union, not
     just the first row encountered."""
@@ -90,6 +95,7 @@ def test_a_tfs_targets_are_unioned_across_its_motif_rows():
     assert set(G.successors("TF1")) == {"G1", "G2", "G3"}
 
 
+@requires("GraphRicciCurvature")
 def test_a_target_seen_in_multiple_motif_rows_keeps_its_strongest_importance():
     """G2 appears under TF1 with importance 0.5 (motif m1) and 0.7 (motif
     m2) -- the edge weight should be the max seen, not the first or the sum
@@ -99,6 +105,7 @@ def test_a_target_seen_in_multiple_motif_rows_keeps_its_strongest_importance():
     assert G["TF1"]["G2"]["weight"] == 0.7
 
 
+@requires("GraphRicciCurvature")
 def test_caps_to_the_top_k_targets_per_tf_by_importance():
     """A real regulon can have hundreds of targets; Ollivier-Ricci curvature
     is not tractable on that many edges per TF, so only the top_k_targets
@@ -115,6 +122,7 @@ def test_caps_to_the_top_k_targets_per_tf_by_importance():
     assert set(G.successors("TF1")) == {"G0", "G1", "G2"}
 
 
+@requires("GraphRicciCurvature")
 def test_a_malformed_target_genes_cell_is_skipped_not_fatal():
     """TargetGenes is a free-text string column from an external tool
     (pySCENIC) -- a single malformed row must not crash the whole build."""
@@ -131,6 +139,7 @@ def test_a_malformed_target_genes_cell_is_skipped_not_fatal():
     assert "TF1" not in G.nodes() or list(G.successors("TF1")) == []
 
 
+@requires("GraphRicciCurvature")
 def test_returns_empty_graph_for_empty_input():
     G = build_regulon_graph(
         pd.DataFrame(columns=["TF", "MotifID", "TargetGenes"]), top_k_targets=10
@@ -139,6 +148,7 @@ def test_returns_empty_graph_for_empty_input():
     assert G.number_of_nodes() == 0
 
 
+@requires("GraphRicciCurvature")
 def test_compute_regulon_curvature_tables_returns_graph_and_both_curvature_frames():
     """Both the existing force-directed figure and the new radial-curvature
     figure need the SAME expensive Ricci computation -- this is the single
@@ -151,6 +161,7 @@ def test_compute_regulon_curvature_tables_returns_graph_and_both_curvature_frame
     assert {"source", "target", "ricci_curvature", "weight"}.issubset(edge_df.columns)
 
 
+@requires("GraphRicciCurvature")
 def test_compute_regulon_curvature_tables_empty_input_returns_empty_graph_and_frames():
     G, edge_df, node_df = compute_regulon_curvature_tables(
         pd.DataFrame(columns=["TF", "MotifID", "TargetGenes"]), top_k_targets=10
@@ -161,6 +172,7 @@ def test_compute_regulon_curvature_tables_empty_input_returns_empty_graph_and_fr
     assert node_df.empty
 
 
+@requires("GraphRicciCurvature")
 def test_plot_regulon_curvature_from_tables_renders_without_recomputing(
     tmp_path: Path,
 ) -> None:
@@ -176,6 +188,7 @@ def test_plot_regulon_curvature_from_tables_renders_without_recomputing(
     assert all(p.exists() for p in figs)
 
 
+@requires("GraphRicciCurvature")
 def test_plot_regulon_curvature_from_tables_empty_edges_writes_nothing(tmp_path: Path) -> None:
     import networkx as nx
 
@@ -187,6 +200,7 @@ def test_plot_regulon_curvature_from_tables_empty_edges_writes_nothing(tmp_path:
     assert list(tmp_path.iterdir()) == []
 
 
+@requires("GraphRicciCurvature")
 def test_plot_regulon_curvature_writes_no_figure_when_graph_is_empty(tmp_path: Path) -> None:
     """No parseable TargetGenes -> empty graph -> nothing to curve; must not raise."""
     regulons = pd.DataFrame(columns=["TF", "MotifID", "TargetGenes"])
@@ -197,6 +211,7 @@ def test_plot_regulon_curvature_writes_no_figure_when_graph_is_empty(tmp_path: P
     assert list(tmp_path.iterdir()) == []
 
 
+@requires("GraphRicciCurvature")
 def test_plot_regulon_curvature_renders_real_ollivier_ricci_curvature(tmp_path: Path) -> None:
     """A real TF->target regulon graph must produce a saved figure whose edges
     carry genuine Ollivier-Ricci curvature (computed, not stubbed)."""
@@ -206,6 +221,7 @@ def test_plot_regulon_curvature_renders_real_ollivier_ricci_curvature(tmp_path: 
     assert all(p.exists() for p in figs)
 
 
+@requires("GraphRicciCurvature")
 def test_plot_regulon_curvature_caps_edges_drawn_to_stay_legible(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -241,6 +257,7 @@ def test_plot_regulon_curvature_caps_edges_drawn_to_stay_legible(
     assert seen_top_k["top_k"] <= 40
 
 
+@requires("GraphRicciCurvature")
 def test_plot_regulon_curvature_actually_caps_labeled_nodes_not_just_the_kwarg(
     tmp_path: Path, monkeypatch
 ) -> None:

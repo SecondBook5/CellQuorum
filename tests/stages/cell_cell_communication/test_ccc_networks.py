@@ -3,6 +3,7 @@ from __future__ import annotations
 import networkx as nx
 import numpy as np
 import pandas as pd
+from optional_deps import requires
 
 from cellquorum.stages.cell_cell_communication.network._networks import (
     _comparative_pagerank,
@@ -297,6 +298,7 @@ def test_sparsify_keeps_each_nodes_own_strongest_edges():
     assert H.has_edge("weak_hub", "strong_partner")
 
 
+@requires("GraphRicciCurvature")
 def test_sparsify_produces_meaningfully_varied_curvature_on_a_near_complete_graph():
     """The actual point of sparsifying: curvature computed on the sparsified
     graph must show real variation, unlike the degenerate complete-graph case."""

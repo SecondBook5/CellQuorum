@@ -12,6 +12,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+from optional_deps import requires
 
 from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
 
@@ -69,6 +70,7 @@ class _StubSCANVI:
         return rng.normal(size=(n, 10)).astype(np.float32)
 
 
+@requires("scvi")
 def test_missing_labels_become_the_configured_unlabeled_category_not_the_string_nan(
     monkeypatch,
 ):
@@ -94,6 +96,7 @@ def test_missing_labels_become_the_configured_unlabeled_category_not_the_string_
     assert labels[20:40] == ["t2"] * 20
 
 
+@requires("scvi")
 def test_missing_labels_work_when_the_column_is_a_pandas_categorical(monkeypatch):
     """Cell-type obs columns are routinely Categorical after an h5ad round-trip.
 

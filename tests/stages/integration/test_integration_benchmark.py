@@ -5,6 +5,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pytest
+from optional_deps import requires
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.stages.integration.benchmark.scib_benchmark import ScibBenchmarkMethod
@@ -21,6 +22,7 @@ def _adata(n=300, seed=0):
     return a
 
 
+@requires("scib_metrics")
 def test_benchmark_records_batch_and_bio_metrics():
     a = _adata()
     cfg = {

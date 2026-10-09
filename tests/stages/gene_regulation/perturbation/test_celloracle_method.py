@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import anndata as ad
 import numpy as np
 import pandas as pd
+from optional_deps import requires_parquet
 
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.gene_regulation.perturbation.celloracle_method import (
@@ -136,6 +137,7 @@ def _fake_success_backend(direction: str):
     return FakeBackend()
 
 
+@requires_parquet()
 def test_success_directional_builds_artifacts_and_metrics(tmp_path: Path) -> None:
     res = CellOracleMethod()._run(
         _adata(condition=True),
@@ -185,6 +187,7 @@ def test_max_cells_sampled_fraction_filter_p_reach_the_subprocess(tmp_path: Path
     assert args[args.index("--filter-p") + 1] == "0.05"
 
 
+@requires_parquet()
 def test_success_magnitude_when_no_condition(tmp_path: Path) -> None:
     res = CellOracleMethod()._run(
         _adata(),
@@ -335,6 +338,7 @@ def test_scratch_h5ad_untouched_when_gene_count_already_under_the_cap(tmp_path: 
     assert written.n_vars == 40
 
 
+@requires_parquet()
 def test_cluster_labels_reach_the_shift_figures(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
     """cluster_labels is a real config field, not a name that only exists in
     PerturbationConfig -- it must actually reach plot_ko_shift_field/_grid's
@@ -366,6 +370,7 @@ def test_cluster_labels_reach_the_shift_figures(tmp_path: Path, monkeypatch) -> 
     assert captured["group_labels"] == {"A": "Alpha", "B": "Beta"}
 
 
+@requires_parquet()
 def test_fate_summary_figure_produced(tmp_path: Path) -> None:
     """The in-process fate summary (FIX 4) is computed and wired into artifacts."""
     res = CellOracleMethod()._run(

@@ -9,9 +9,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from optional_deps import requires
 from repo_paths import REPO_ROOT
 
 
+@requires("decoupler", "GraphRicciCurvature", "pycirclize")
 def test_gallery_exports_and_source_contracts(tmp_path):
     script = REPO_ROOT / "scripts" / "build_figure_gallery.py"
     spec = importlib.util.spec_from_file_location("build_figure_gallery", script)

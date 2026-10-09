@@ -6,6 +6,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
+from optional_deps import requires
 
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.contracts.layer_tags import set_layer_tag
@@ -26,6 +27,7 @@ def _counts_adata(n=120, g=40, seed=0):
     return a
 
 
+@requires("celltypist")
 def test_missing_model_skips_gracefully():
     a = _counts_adata()
     cfg = {
@@ -39,6 +41,7 @@ def test_missing_model_skips_gracefully():
     assert isinstance(out, MethodSkip)
 
 
+@requires("celltypist")
 def test_contract_rejects_centered_layer_as_counts():
     a = _counts_adata()
     cfg = {
@@ -51,6 +54,7 @@ def test_contract_rejects_centered_layer_as_counts():
         CellTypistMethod().run(a, cfg, context=None)
 
 
+@requires("celltypist")
 def test_labels_are_assigned_by_cell_identity_not_row_position(monkeypatch):
     """CellTypist's output must be realigned by obs_name, not trusted-by-position.
 
@@ -100,6 +104,7 @@ def test_labels_are_assigned_by_cell_identity_not_row_position(monkeypatch):
         )
 
 
+@requires("celltypist")
 def test_a_missing_confidence_column_is_reported_not_swallowed(monkeypatch):
     """Labels without their confidence must not look like a complete run."""
     import celltypist

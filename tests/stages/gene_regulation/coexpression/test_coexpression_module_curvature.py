@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from optional_deps import requires
 
 from cellquorum.stages.gene_regulation.coexpression.module_curvature import (
     build_module_coexpression_graph,
@@ -95,6 +96,7 @@ def test_plot_module_curvature_writes_no_figure_when_graph_is_empty(tmp_path: Pa
     assert list(tmp_path.iterdir()) == []
 
 
+@requires("GraphRicciCurvature")
 def test_plot_module_curvature_renders_real_ollivier_ricci_curvature(tmp_path: Path) -> None:
     """A real module graph must produce a saved figure whose edges carry
     genuine Ollivier-Ricci curvature (computed, not stubbed) -- the whole
@@ -107,6 +109,7 @@ def test_plot_module_curvature_renders_real_ollivier_ricci_curvature(tmp_path: P
     assert all(p.exists() for p in figs)
 
 
+@requires("GraphRicciCurvature")
 def test_plot_module_curvature_writes_one_figure_per_module_not_one_combined_figure(
     tmp_path: Path,
 ) -> None:

@@ -1,6 +1,7 @@
 import anndata as ad
 import numpy as np
 import scanpy as sc
+from optional_deps import requires
 
 from cellquorum.stages.integration.embeddings.methods import PhateMethod, UmapMethod
 
@@ -34,6 +35,7 @@ def test_umap_seed_reproducible():
     np.testing.assert_allclose(a1.obsm["X_umap"], a2.obsm["X_umap"])
 
 
+@requires("phate")
 def test_phate_seed_reproducible():
     a1, a2 = _adata(), _adata()
     PhateMethod().run(a1, _cfg(), _Ctx())

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import anndata as ad
 import numpy as np
 import scanpy as sc
+from optional_deps import requires
 
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.integration.embeddings.config import MagicConfig, OverlayConfig
@@ -59,6 +60,7 @@ def test_umap_method_skips_without_neighbors():
     assert isinstance(res, MethodSkip)
 
 
+@requires("phate")
 def test_phate_method_writes_obsm():
     a = _adata()
     res = PhateMethod().run(a, _cfg(), _Ctx())

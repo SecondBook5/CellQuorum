@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from _external_data import r_package_available
+from optional_deps import requires
 
 from cellquorum.stages.qc import doublets as dbl
 from cellquorum.stages.qc.config import QCDoubletConfig
@@ -71,6 +72,7 @@ class _RecordingBackend:
         return subprocess.CompletedProcess(args=["Rscript"], returncode=0)
 
 
+@requires("scrublet")
 def test_scrublet_consensus_writes_calls():
     a = _counts_adata()
     cfg = QCDoubletConfig(
@@ -88,6 +90,7 @@ def test_scrublet_consensus_writes_calls():
     assert a.n_obs == 200
 
 
+@requires("scrublet")
 def test_per_sample_detection_runs_per_library():
     """With per_sample + a sample_key, detection runs per library, not pooled."""
     import pandas as pd

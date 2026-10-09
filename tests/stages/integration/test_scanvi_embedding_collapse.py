@@ -11,6 +11,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pytest
+from optional_deps import requires
 
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.stages.integration.scanvi_methods import ScANVIMethod
@@ -83,6 +84,7 @@ def _run_scanvi_with_stub_latent(monkeypatch, latent: np.ndarray):
     )
 
 
+@requires("scvi")
 def test_scanvi_fatal_collapse_raises(monkeypatch):
     n, n_latent = 60, 10
     latent = np.zeros((n, n_latent), dtype=np.float32)
@@ -91,6 +93,7 @@ def test_scanvi_fatal_collapse_raises(monkeypatch):
         _run_scanvi_with_stub_latent(monkeypatch, latent)
 
 
+@requires("scvi")
 def test_scanvi_partial_collapse_is_a_stage_result_warning(monkeypatch):
     n, n_latent = 60, 10
     rng = np.random.default_rng(0)
@@ -104,6 +107,7 @@ def test_scanvi_partial_collapse_is_a_stage_result_warning(monkeypatch):
     ), f"got: {result.warnings}"
 
 
+@requires("scvi")
 def test_scanvi_healthy_embedding_produces_no_collapse_warning(monkeypatch):
     n, n_latent = 60, 10
     rng = np.random.default_rng(0)

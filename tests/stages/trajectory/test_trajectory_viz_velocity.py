@@ -1,4 +1,5 @@
 import matplotlib
+from optional_deps import requires
 
 matplotlib.use("Agg")
 import anndata as ad
@@ -24,6 +25,7 @@ def test_skips_without_velocity_h5ads(tmp_path):
     assert isinstance(res, MethodSkip)
 
 
+@requires("scvelo")
 def test_resolves_group_key_from_cluster_key_not_the_generic_fallback(tmp_path, monkeypatch):
     """Real bug: velocity_viz read a config['group_key'] that no config schema
     field or stage whitelist ever set, so it always fell through to its own

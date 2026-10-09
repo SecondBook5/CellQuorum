@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from optional_deps import requires
+
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.planner import PipelinePlanner
 
@@ -76,6 +78,7 @@ def test_annotation_diagnostics_ordered_after_reference_mapping():
     assert names.index("reference_mapping") < names.index("annotation_diagnostics")
 
 
+@requires("scvi")
 def test_scarches_method_is_registered():
     """Test that ScArchesMethod is auto-registered in METHOD_REGISTRY."""
     # Import triggers auto-registration.
