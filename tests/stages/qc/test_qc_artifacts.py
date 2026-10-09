@@ -607,7 +607,13 @@ def test_write_qc_artifacts_writes_default_tables_summary_and_h5ad(tmp_path: Pat
     # nothing to write for either.
     # The writer cannot invent the audit, and this fixture uses plain floors
     # rather than the mitochondrial mixture, so there is no fitted model to write.
-    assert manifest.skipped == ["mito_mixture", "attrition", "removed_cells", "cell_labels"]
+    assert manifest.skipped == [
+        "mito_mixture",
+        "attrition",
+        "physically_removed_cells",
+        "inference_excluded_cells",
+        "cell_labels",
+    ]
 
     # Confirm all written artifact paths exist.
     for artifact_name, artifact_value in manifest.artifacts.items():
@@ -671,10 +677,11 @@ def test_write_qc_artifacts_writes_removed_cells_table_when_provided(tmp_path: P
         removed_cells=removed_cells,
     )
 
-    assert "removed_cells" in manifest.artifacts
-    assert "removed_cells" not in manifest.skipped
+    assert "physically_removed_cells" in manifest.artifacts
+    assert "physically_removed_cells" not in manifest.skipped
+    assert manifest.get_path("physically_removed_cells").name == "physically_removed_cells.csv"
 
-    written = pd.read_csv(manifest.get_path("removed_cells"), index_col=0)
+    written = pd.read_csv(manifest.get_path("physically_removed_cells"), index_col=0)
     pdt.assert_frame_equal(written, removed_cells, check_dtype=False)
 
 
@@ -690,8 +697,9 @@ def test_write_qc_artifacts_skips_removed_cells_when_not_provided(tmp_path: Path
         adata=make_test_adata(),
     )
 
-    assert "removed_cells" not in manifest.artifacts
-    assert "removed_cells" in manifest.skipped
+    assert "physically_removed_cells" not in manifest.artifacts
+    assert "physically_removed_cells" in manifest.skipped
+    assert "inference_excluded_cells" in manifest.skipped
 
 
 def test_write_qc_artifacts_skips_h5ad_when_no_anndata_provided(tmp_path: Path) -> None:
@@ -808,7 +816,8 @@ def test_write_qc_artifacts_respects_output_flags(tmp_path: Path) -> None:
         "cell_floors",
         "gene_floors",
         "attrition",
-        "removed_cells",
+        "physically_removed_cells",
+        "inference_excluded_cells",
         "cell_labels",
         "report",
         "qc_h5ad",
@@ -1201,3 +1210,24 @@ def test_failed_json_replacement_preserves_previous_result(tmp_path, monkeypatch
         write_json_artifact({"complete": False}, path)
     assert json.loads(path.read_text(encoding="utf-8")) == {"complete": True}
     assert not list(tmp_path.glob(".summary.json.*.tmp"))
+
+
+def test_write_qc_artifacts_writes_the_inference_excluded_table_separately(tmp_path: Path) -> None:
+    """Retained-but-excluded cells are a different fact from deleted cells: own file, own key."""
+
+    excluded = pd.DataFrame(
+        {"exclusion_category": ["probable_multiplet_only"], "n_permissions_denied": [4]},
+        index=pd.Index(["cell_1"], name="cell"),
+    )
+    manifest = write_qc_artifacts(
+        output_dir=tmp_path / "qc",
+        metrics_result=make_metrics_result(),
+        floors=make_floor_result(),
+        config=QCConfig(outputs={"write_figures": False}),
+        adata=make_test_adata(),
+        inference_excluded_cells=excluded,
+    )
+    assert manifest.get_path("inference_excluded_cells").name == "inference_excluded_cells.csv"
+    assert "physically_removed_cells" in manifest.skipped  # nothing was physically removed
+    written = pd.read_csv(manifest.get_path("inference_excluded_cells"), index_col=0)
+    pdt.assert_frame_equal(written, excluded, check_dtype=False)

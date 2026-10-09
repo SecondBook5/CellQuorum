@@ -141,6 +141,7 @@ class _ArtifactWrite:
     attrition_audit: AttritionAudit | None
     donor_comparisons: dict[str, TwoGroupTest] | None
     removed_cells: pd.DataFrame | None
+    inference_excluded_cells: pd.DataFrame | None
     summary_extra: dict[str, object] | None
     output_path: Path
     figures_path: Path
@@ -167,6 +168,7 @@ def write_qc_artifacts(
     attrition_audit: AttritionAudit | None = None,
     donor_comparisons: dict[str, TwoGroupTest] | None = None,
     removed_cells: pd.DataFrame | None = None,
+    inference_excluded_cells: pd.DataFrame | None = None,
 ) -> QCArtifactManifest:
     """Write QC module artifacts to disk.
 
@@ -208,10 +210,14 @@ def write_qc_artifacts(
             ``qc_attrition.csv``. None writes nothing and records the skip, so a
             run predating the audit is distinguishable from one where it found
             nothing to test.
-        removed_cells: Optional per-barcode record of every cell QC actually
-            dropped, written as ``removed_cells.csv`` -- stage, reason, and
-            provisional lineage for each. None writes nothing and records the
-            skip; an empty (but present) table means QC ran and kept everyone.
+        removed_cells: Optional per-barcode record of every cell QC PHYSICALLY
+            removed from the object, written as ``physically_removed_cells.csv`` --
+            stage, reason, and provisional lineage for each. None writes nothing and
+            records the skip; an empty (but present) table means QC kept every barcode.
+        inference_excluded_cells: Optional per-barcode record of cells RETAINED in the
+            object but barred from one or more analyses (multiplet, borderline,
+            quarantine), written as ``inference_excluded_cells.csv``. These are not
+            removed. None writes nothing and records the skip.
 
     Returns:
         QCArtifactManifest describing written, skipped, and warned artifacts.
@@ -246,6 +252,7 @@ def write_qc_artifacts(
         attrition_audit=attrition_audit,
         donor_comparisons=donor_comparisons,
         removed_cells=removed_cells,
+        inference_excluded_cells=inference_excluded_cells,
         summary_extra=summary_extra,
         output_path=output_path,
         figures_path=figures_path,
@@ -349,14 +356,24 @@ def _write_tables(w: _ArtifactWrite) -> None:
         w.skipped.append("attrition")
 
     if w.qc_config.outputs.removed_cells and w.removed_cells is not None:
-        w.artifacts["removed_cells"] = write_dataframe_artifact(
+        w.artifacts["physically_removed_cells"] = write_dataframe_artifact(
             w.removed_cells,
-            w.output_path / "removed_cells.csv",
+            w.output_path / "physically_removed_cells.csv",
             index=True,
         )
 
     else:
-        w.skipped.append("removed_cells")
+        w.skipped.append("physically_removed_cells")
+
+    if w.qc_config.outputs.inference_excluded_cells and w.inference_excluded_cells is not None:
+        w.artifacts["inference_excluded_cells"] = write_dataframe_artifact(
+            w.inference_excluded_cells,
+            w.output_path / "inference_excluded_cells.csv",
+            index=True,
+        )
+
+    else:
+        w.skipped.append("inference_excluded_cells")
 
 
 def _write_cell_labels(w: _ArtifactWrite) -> None:

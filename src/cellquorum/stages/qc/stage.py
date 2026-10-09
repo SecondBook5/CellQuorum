@@ -25,6 +25,7 @@ from cellquorum.stages.qc._errors import QCStageError
 from cellquorum.stages.qc.artifacts import write_qc_artifacts
 from cellquorum.stages.qc.attrition import audit_qc_design_leaks, audit_qc_stage_attrition
 from cellquorum.stages.qc.config import QCConfig
+from cellquorum.stages.qc.exclusion_audit import inference_excluded_table, physically_removed_table
 from cellquorum.stages.qc.floors import floors_from_metrics, require_non_empty_qc_result
 from cellquorum.stages.qc.lineage import (
     LINEAGE_COLUMN,
@@ -461,9 +462,14 @@ class QCStage:
             design=design,
         )
 
-        removed_cells = _removed_cells_table(
+        # Two different facts, two tables: a barcode absent from the returned object was
+        # physically removed; a barcode kept but barred from some analysis (multiplet,
+        # borderline, quarantine) is retained and merely inference-excluded.
+        accounting = _removed_cells_table(
             adata, output_adata, floors.cell_keep, floors.reason, metrics_result.cell_metrics
         )
+        removed_cells = physically_removed_table(accounting, output_adata)
+        inference_excluded_cells = inference_excluded_table(output_adata)
 
         design_leak_warnings = audit_qc_design_leaks(
             config=qc_config,
@@ -520,6 +526,7 @@ class QCStage:
             attrition_audit=attrition_audit,
             donor_comparisons=donor_comparisons,
             removed_cells=removed_cells,
+            inference_excluded_cells=inference_excluded_cells,
         )
 
         stage_artifacts = build_stage_artifacts_from_manifest(artifact_manifest)
