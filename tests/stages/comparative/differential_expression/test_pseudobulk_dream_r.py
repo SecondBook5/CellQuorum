@@ -260,3 +260,44 @@ def test_serial_and_parallel_execution_agree(tmp_path_factory):
     assert a[keys].equals(b[keys])
     for col in ("logFC", "t", "PValue", "FDR", "df_residual", "standard_error", "AveExpr"):
         np.testing.assert_allclose(a[col], b[col], rtol=1e-8, atol=1e-10, err_msg=col)
+
+
+def test_fixed_effect_single_site_fit_recovers_the_arm_effect_and_matches_a_hand_ols(tmp_path):
+    """No random effect (one specimen per subject): an ordinary 3 v 3 voom-limma fit."""
+
+    adata = make_adata(effect="arm", magnitude=MAG)
+    adata = adata[adata.obs["site"] == "colon"].copy()
+    cfg = make_config(
+        factorial={
+            "subject_col": "subject",
+            "sample_col": "specimen",
+            "factors": {"arm": {"reference": "ctl", "scope": "between_subject"}},
+            "interactions": [],
+            "random_effects": [],
+        },
+        contrasts=[
+            {"kind": "simple_effect", "name": "trt_vs_ctl", "factor": "arm", "numerator": "trt",
+             "denominator": "ctl"}
+        ],
+    )  # fmt: skip
+    paths = PipelinePaths.from_output_dir(tmp_path)
+    paths.ensure_directories()
+    ctx = PipelineContext(
+        config=cfg, paths=paths, adata=adata, backend_registry=build_default_backend_registry()
+    )
+    res = DifferentialExpressionStage().run(ctx)
+    table = _table(res)
+    assert _median_lfc(table, "trt_vs_ctl") == pytest.approx(LOG2_MAG, abs=0.4)
+    assert abs(_median_lfc(table, "trt_vs_ctl", genes="null")) < 0.15
+    # 6 specimens, one intercept + one arm coefficient: 4 residual degrees of freedom.
+    t = table[(table["contrast"] == "trt_vs_ctl") & (table["cell_type"] == "A")]
+    assert (t["df_residual"].round(6) == 4).all()
+    # Independent oracle: difference of arm means of the voom-free logCPM on the same pseudobulk.
+    counts = pd.read_csv(paths.results / ROOT / "a/pseudobulk_counts.csv", index_col=0)
+    logcpm = np.log2((counts + 0.5).div(counts.sum(axis=1) + 1, axis=0) * 1e6)
+    trt = [s for s in logcpm.index if SUBJECTS[s[:2]] == "trt"]
+    ctl = [s for s in logcpm.index if SUBJECTS[s[:2]] == "ctl"]
+    oracle = logcpm.loc[trt].mean() - logcpm.loc[ctl].mean()
+    t = t.set_index("gene")
+    genes = [f"g{i}" for i in range(N_GENES)[EFFECT_GENES]]
+    assert np.corrcoef(t.loc[genes, "logFC"], oracle[genes])[0, 1] > 0.8

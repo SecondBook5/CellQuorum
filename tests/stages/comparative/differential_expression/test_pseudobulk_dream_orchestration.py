@@ -294,6 +294,37 @@ def test_subject_must_be_a_random_effect_when_a_within_subject_factor_is_declare
         _run(tmp_path, make_adata(), config=cfg)
 
 
+ARM_ONLY = {
+    "subject_col": "subject",
+    "sample_col": "specimen",
+    "factors": {"arm": {"reference": "ctl", "scope": "between_subject"}},
+    "interactions": [],
+    "random_effects": [],
+}
+ARM_CONTRAST = [
+    {"kind": "simple_effect", "name": "trt_vs_ctl", "factor": "arm",
+     "numerator": "trt", "denominator": "ctl"}
+]  # fmt: skip
+
+
+def test_fixed_effect_design_runs_when_every_subject_has_one_specimen(tmp_path):
+    adata = make_adata()
+    adata = adata[adata.obs["site"] == "colon"].copy()
+    cfg = make_config(factorial=ARM_ONLY, contrasts=ARM_CONTRAST)
+    result, backend, _ = _run(tmp_path, adata, config=cfg)
+    call = backend.calls[0]
+    assert "(1 |" not in call["formula"]
+    assert call["formula"].replace(" ", "") == "~cq_fx1"
+    assert len(call["specimens"]) == 6
+    assert result.metrics["human_formula"] == "~ arm"
+
+
+def test_fixed_effect_design_refuses_repeated_specimens_per_subject(tmp_path):
+    cfg = make_config(factorial=ARM_ONLY, contrasts=ARM_CONTRAST)
+    with pytest.raises(CellQuorumConfigError, match="contribute several specimens"):
+        _run(tmp_path, make_adata(), config=cfg)
+
+
 def test_covariates_and_legacy_interactions_are_rejected_not_ignored(tmp_path):
     with pytest.raises(CellQuorumConfigError, match="covariates"):
         _run(tmp_path, make_adata(), config=make_config(de={"covariates": ["batch"]}))

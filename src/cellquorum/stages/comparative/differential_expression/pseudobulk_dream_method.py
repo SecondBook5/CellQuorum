@@ -90,7 +90,10 @@ class PseudobulkDreamMethod(RAnalysisMethod):
     """Specimen-level mixed-model pseudobulk DE via ``variancePartition::dream``.
 
     Opt-in only (``differential_expression.method: pseudobulk_dream``); never selected
-    automatically. Requires ``design.factorial`` and ``contrasts.factorial``.
+    automatically. Requires ``design.factorial`` and ``contrasts.factorial``. With no
+    random effect (a single-tissue between-subject comparison, one specimen per subject)
+    the fit is an ordinary fixed-effect voom-limma model; repeated specimens per subject
+    without a random effect are refused.
     """
 
     name = "pseudobulk_dream"
@@ -350,15 +353,32 @@ class PseudobulkDreamMethod(RAnalysisMethod):
                 f"('{subject_col}') is not a random effect, so repeated specimens would be "
                 "treated as independent. Add the subject to design.factorial.random_effects."
             )
-        if not design.random_effects:
-            raise CellQuorumConfigError(
-                "pseudobulk_dream fits a mixed model and needs at least one random effect "
-                "(design.factorial.random_effects); use pseudobulk_edger for fixed-effect designs."
-            )
 
         columns = required_specimen_columns(design, sample_col=sample_col, subject_col=subject_col)
         universe = build_specimen_universe(adata.obs, sample_col=sample_col, metadata_cols=columns)
         specimens = universe.drop(columns="n_cells_total")
+
+        # A design with no random effect is an ordinary fixed-effect fit (dream reduces to
+        # limma-voom with residual degrees of freedom). It is valid only when specimens are
+        # independent, i.e. every subject contributes exactly one specimen to the universe
+        # being analysed (e.g. one tissue of a between-subject comparison). A subject with
+        # several specimens and no random intercept would be pseudoreplication.
+        if not design.random_effects:
+            if subject_col is None or subject_col not in specimens.columns:
+                raise CellQuorumConfigError(
+                    "pseudobulk_dream without a random effect needs the subject column "
+                    "(design.factorial.subject_col or cohort.donor_key) to verify that every "
+                    "subject contributes a single specimen."
+                )
+            repeated = specimens.groupby(subject_col, observed=True).size()
+            repeated = repeated[repeated > 1]
+            if len(repeated):
+                raise CellQuorumConfigError(
+                    "pseudobulk_dream without a random effect treats specimens as independent, "
+                    f"but subject(s) {sorted(map(str, repeated.index))} contribute several "
+                    f"specimens. Add '{subject_col}' to design.factorial.random_effects, or "
+                    "restrict the object to one specimen per subject."
+                )
         report = validate_factorial_design(
             specimens, design=design, sample_col=sample_col, subject_col=subject_col
         )

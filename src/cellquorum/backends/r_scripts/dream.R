@@ -91,20 +91,28 @@ if (nrow(fit$coefficients) == 0L) { info$status <- "all_genes_failed"; finish(in
 
 fit <- eBayes(fit)
 info$dream_fit_method <- fit$method
+info$random_effect_terms <- length(grep("\\|", formula_str))
 info$df_prior <- fit$df.prior
 
 # One row per gene x contrast. standard_error is the model-based SE sqrt(L' Cov L)
 # (= stdev.unscaled * sigma); moderated_standard_error is the SE the moderated t uses
 # (= stdev.unscaled * sqrt(s2.post) = logFC / t). df_residual is the per-gene, per-
 # contrast denominator df from the chosen ddf method; df_total adds the EB prior df.
+# The mixed-model path returns per-gene x per-contrast matrices for df.residual / df.total;
+# a formula with no random term takes the fixed-effect (limma) path, which returns per-gene
+# vectors. pergene() reads either shape in the order of the requested genes.
+pergene <- function(x, genes, cn) {
+  if (is.matrix(x)) return(x[genes, cn])
+  unname(x[match(genes, rownames(fit$coefficients))])
+}
 rows <- lapply(colnames(L), function(cn) {
   tt <- topTable(fit, coef = cn, number = Inf, sort.by = "none", adjust.method = "BH")
   genes <- rownames(tt)
   data.frame(
     gene = genes, contrast = cn, logFC = tt$logFC, AveExpr = tt$AveExpr,
-    standard_error = fit$stdev.unscaled[genes, cn] * fit$sigma[genes],
-    moderated_standard_error = fit$stdev.unscaled[genes, cn] * sqrt(fit$s2.post[genes]),
-    t = tt$t, df_residual = fit$df.residual[genes, cn], df_total = fit$df.total[genes, cn],
+    standard_error = fit$stdev.unscaled[genes, cn] * pergene(fit$sigma, genes, cn),
+    moderated_standard_error = fit$stdev.unscaled[genes, cn] * sqrt(pergene(fit$s2.post, genes, cn)),
+    t = tt$t, df_residual = pergene(fit$df.residual, genes, cn), df_total = pergene(fit$df.total, genes, cn),
     PValue = tt$P.Value, FDR = tt$adj.P.Val, row.names = NULL
   )
 })
