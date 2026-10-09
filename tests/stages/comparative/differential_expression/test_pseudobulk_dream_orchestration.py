@@ -29,8 +29,15 @@ ALL_SPECIMENS = [f"{s}{c}" for s in SUBJECTS for c in SITES.values()]
 class FakeRscript:
     """Stands in for the Rscript backend; records calls and fabricates outputs."""
 
-    def __init__(self, *, has_variance_partition: bool = True, returncode: int = 0):
+    def __init__(
+        self,
+        *,
+        has_variance_partition: bool = True,
+        returncode: int = 0,
+        failed_genes: tuple[str, ...] = (),
+    ):
         self.calls: list[dict] = []
+        self.failed_genes = failed_genes
         self.has_vp = has_variance_partition
         self.returncode = returncode
 
@@ -52,6 +59,7 @@ class FakeRscript:
                 "L": L.set_index("coef"),
                 "formula": formula,
                 "ddf": ddf,
+                "n_workers": args[8],
             }
         )
         if self.returncode:
@@ -68,8 +76,24 @@ class FakeRscript:
             for g in ("g0", "g1")
         ]  # fmt: skip
         pd.DataFrame(rows).to_csv(out / "results_long.csv", index=False)
+        if self.failed_genes:
+            pd.DataFrame(
+                {
+                    "gene": list(self.failed_genes),
+                    "error": ["response variance < 1e-05"] * len(self.failed_genes),
+                }
+            ).to_csv(out / "failed_genes.csv", index=False)
         (out / "fit_info.json").write_text(
-            json.dumps({"status": "ok", "variancePartition": "9.9.9", "n_genes_after_filter": 2})
+            json.dumps(
+                {
+                    "status": "ok",
+                    "variancePartition": "9.9.9",
+                    "n_genes_after_filter": 2,
+                    "n_genes_failed": len(self.failed_genes),
+                    "bpparam": {"class": "SerialParam", "workers": 1},
+                    "filter_design_columns": ["(Intercept)", "cq_fx1", "cq_fx2", "cq_fx3"],
+                }
+            )
         )
         return type("P", (), {"returncode": 0, "stderr": ""})()
 
@@ -410,3 +434,166 @@ def test_human_formula():
         )
     )  # fmt: skip
     assert human_formula(three) == "~ arm + site + batch + arm:site + (1 | subject) + (1 | litter)"
+
+
+# --- Stage 4C: parallel workers, stale outputs, subject-level gates, failed genes ---------------
+
+
+def test_worker_count_inherits_compute_n_jobs_and_defaults_to_serial(tmp_path):
+    _, backend, _ = _run(tmp_path, make_adata())
+    assert backend.calls[0]["n_workers"] == "1"  # no compute block -> conservative serial
+    _, backend, paths = _run(tmp_path / "p", make_adata(), config=make_config(n_jobs=4))
+    assert backend.calls[0]["n_workers"] == "4"
+    prov = json.loads(
+        (
+            paths.results / "differential_expression/pseudobulk_dream/a/model_provenance.json"
+        ).read_text()
+    )
+    assert (
+        prov["parallel"]["n_jobs"] == 4 and prov["parallel"]["class"] == "SerialParam"
+    )  # echoed from R
+    assert prov["filter_design_columns"][0] == "(Intercept)"
+
+
+def _seed_stale(paths):
+    root = paths.results / "differential_expression/pseudobulk_dream"
+    (root / "old_cell_type").mkdir(parents=True)
+    (root / "old_cell_type" / "arm_x_site.csv").write_text("stale")
+    (root / "de_pseudobulk_dream_all.csv").write_text("stale")
+    (paths.results / "differential_expression" / "de_pseudobulk_edger.csv").write_text("edger")
+    (paths.results / "unrelated.csv").write_text("keep")
+    return root
+
+
+def test_rerun_discards_only_the_method_owned_directory(tmp_path):
+    paths = PipelinePaths.from_output_dir(tmp_path)
+    paths.ensure_directories()
+    root = _seed_stale(paths)
+    ctx = PipelineContext(
+        config=make_config(),
+        paths=paths,
+        adata=make_adata(),
+        backend_registry=Registry(FakeRscript()),
+    )
+    res = DifferentialExpressionStage().run(ctx)
+    assert res.status == "success"
+    assert not (root / "old_cell_type").exists()
+    assert "stale" not in (root / "de_pseudobulk_dream_all.csv").read_text()
+    # Siblings outside the method directory are untouched.
+    assert (
+        paths.results / "differential_expression" / "de_pseudobulk_edger.csv"
+    ).read_text() == "edger"
+    assert (paths.results / "unrelated.csv").read_text() == "keep"
+    # Everything under the method directory was written by this invocation.
+    registered = {Path(a.path).resolve() for a in res.artifacts}
+    on_disk = {p.resolve() for p in root.rglob("*") if p.is_file() and "r_output" not in p.parts}
+    assert on_disk <= registered
+    assert (root / "invocation.json").exists()
+
+
+def test_fewer_cell_types_on_rerun_leave_no_stale_folder(tmp_path):
+    adata_two = make_adata(cells=_b_cells())
+    _run(tmp_path, adata_two)
+    root = tmp_path / "results/differential_expression/pseudobulk_dream"
+    assert (root / "b").exists()
+    _run(tmp_path, make_adata())  # only cell type A this time
+    assert not (root / "b").exists() and (root / "a").exists()
+    assert set(pd.read_csv(root / "de_pseudobulk_dream_all.csv")["cell_type"]) == {"A"}
+
+
+def test_symlinked_method_directory_is_refused_not_followed(tmp_path):
+    paths = PipelinePaths.from_output_dir(tmp_path)
+    paths.ensure_directories()
+    outside = tmp_path / "precious"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("x")
+    (paths.results / "differential_expression").mkdir()
+    (paths.results / "differential_expression" / "pseudobulk_dream").symlink_to(outside)
+    ctx = PipelineContext(
+        config=make_config(),
+        paths=paths,
+        adata=make_adata(),
+        backend_registry=Registry(FakeRscript()),
+    )
+    with pytest.raises(CellQuorumConfigError, match="symbolic link"):
+        DifferentialExpressionStage().run(ctx)
+    assert (outside / "keep.txt").exists()
+
+
+def test_invalid_config_does_not_wipe_previous_results(tmp_path):
+    _run(tmp_path, make_adata())
+    root = tmp_path / "results/differential_expression/pseudobulk_dream"
+    with pytest.raises(CellQuorumConfigError):
+        _run(tmp_path, make_adata(), config=make_config(de={"covariates": ["x"]}))
+    assert (root / "a" / "model_provenance.json").exists()
+
+
+def _two_specimens_per_subject_report(n_trt_subjects: int):
+    """Cells with plenty of specimens but few DISTINCT subjects (two specimens per subject/site)."""
+    from cellquorum.config.design import FactorialDesignConfig
+    from cellquorum.config.factorial_design import analyze_factorial_design
+
+    rows = []
+    subjects = {
+        "C1": "ctl",
+        "C2": "ctl",
+        "C3": "ctl",
+        **{f"P{i}": "trt" for i in range(n_trt_subjects)},
+    }
+    for subj, arm in subjects.items():
+        for site in ("colon", "jej"):
+            for rep in (1, 2):
+                rows.append(
+                    {"specimen": f"{subj}{site}{rep}", "subject": subj, "arm": arm, "site": site}
+                )
+    table = pd.DataFrame(rows).set_index("specimen")
+    design = FactorialDesignConfig.model_validate(design_dict())
+    report = analyze_factorial_design(
+        table, design=design, sample_col="specimen", subject_col="subject"
+    )
+    return design, report
+
+
+def test_factorial_cell_needs_distinct_subjects_not_just_specimens():
+    from cellquorum.stages.comparative.differential_expression.config import PseudobulkSupportConfig
+    from cellquorum.stages.comparative.differential_expression.dream_design import (
+        support_gate_failures,
+    )
+
+    design, report = _two_specimens_per_subject_report(n_trt_subjects=1)
+    # Every trt cell has 2 specimens (so the specimen gate passes) but only ONE subject.
+    gates = PseudobulkSupportConfig(min_subjects_per_between_level=1)
+    failures = support_gate_failures(report, design, gates)
+    assert not any("specimens in" in f for f in failures)
+    assert any("distinct subjects in arm x site cell" in f for f in failures)
+    assert any("'trt', 'site': 'colon'" in f or "trt" in f for f in failures)
+
+
+def test_distinct_subject_gate_passes_with_enough_subjects_and_is_configurable():
+    from cellquorum.stages.comparative.differential_expression.config import PseudobulkSupportConfig
+    from cellquorum.stages.comparative.differential_expression.dream_design import (
+        support_gate_failures,
+    )
+
+    design, report = _two_specimens_per_subject_report(n_trt_subjects=2)
+    assert support_gate_failures(report, design, PseudobulkSupportConfig()) == []
+    strict = PseudobulkSupportConfig(
+        min_subjects_per_factorial_cell=3, min_subjects_per_between_level=1
+    )
+    assert any(
+        "fewer than 3 distinct subjects" in f for f in support_gate_failures(report, design, strict)
+    )
+    assert PseudobulkSupportConfig().min_subjects_per_factorial_cell == 2
+
+
+def test_failed_genes_file_is_registered_and_counted(tmp_path):
+    res, _, paths = _run(tmp_path, make_adata(), backend=FakeRscript(failed_genes=("g7", "g9")))
+    assert any(a.name == "dream_failed_genes:a" for a in res.artifacts)
+    failed = pd.read_csv(
+        paths.results / "differential_expression/pseudobulk_dream/a/r_output/failed_genes.csv"
+    )
+    assert list(failed["gene"]) == ["g7", "g9"]
+    summary = pd.read_csv(
+        paths.results / "differential_expression/pseudobulk_dream/cell_type_summary.csv"
+    )
+    assert summary.loc[0, "n_genes_failed"] == 2

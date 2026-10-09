@@ -56,12 +56,16 @@ class PseudobulkSupportConfig(StrictBaseModel):
         min_samples_per_factorial_cell: Minimum included specimens in every
             interaction cell (every level of each factor when no interaction is
             modelled).
+        min_subjects_per_factorial_cell: Minimum DISTINCT subjects in every factorial
+            cell (interaction cell, or factor level when no interaction is modelled);
+            several specimens from one subject are not biological replication.
         min_subjects_per_between_level: Minimum independent subjects in every level of
             each between-subject factor.
     """
 
     min_cells_per_sample: int = Field(default=20, ge=1)
     min_samples_per_factorial_cell: int = Field(default=2, ge=1)
+    min_subjects_per_factorial_cell: int = Field(default=2, ge=1)
     min_subjects_per_between_level: int = Field(default=2, ge=1)
 
 

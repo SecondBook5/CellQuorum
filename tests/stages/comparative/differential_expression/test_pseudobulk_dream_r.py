@@ -208,3 +208,55 @@ def test_no_genes_surviving_filter_is_a_recorded_skip(tmp_path):
     assert res.status == "skipped"
     summary = pd.read_csv(paths.results / ROOT / "cell_type_summary.csv")
     assert "no_genes_after_filter" in summary.loc[0, "reason"]
+
+
+def test_filter_design_is_the_complete_fixed_model_matrix_including_the_intercept(scenarios):
+    _, paths, _ = scenarios["interaction"]
+    cell = paths.results / ROOT / "a"
+    filt = pd.read_csv(cell / "r_output/filter_design.csv", index_col=0)
+    meta = pd.read_csv(cell / "pseudobulk_meta.csv", index_col=0)
+    fixed = [c for c in meta.columns if c.startswith("cq_fx")]
+    assert list(filt.columns) == ["(Intercept)", *fixed]
+    assert (filt["(Intercept)"] == 1).all()
+    # Same rows as the model's fixed part, in the same order.
+    np.testing.assert_array_equal(filt[fixed].to_numpy(), meta.loc[filt.index, fixed].to_numpy())
+    assert np.linalg.matrix_rank(filt.to_numpy()) == filt.shape[1] == 4
+    prov = json.loads((cell / "model_provenance.json").read_text())
+    assert prov["filter_design_columns"] == ["(Intercept)", *fixed]
+    assert prov["r"]["filter_design_rank"] == 4
+
+
+def test_serial_and_parallel_execution_agree(tmp_path_factory):
+    import time
+
+    adata = make_adata(effect="interaction", magnitude=MAG)
+    out = {}
+    for n_jobs in (1, 4):
+        paths = PipelinePaths.from_output_dir(tmp_path_factory.mktemp(f"j{n_jobs}"))
+        paths.ensure_directories()
+        ctx = PipelineContext(
+            config=make_config(n_jobs=n_jobs),
+            paths=paths,
+            adata=adata,
+            backend_registry=build_default_backend_registry(),
+        )
+        t0 = time.perf_counter()
+        res = DifferentialExpressionStage().run(ctx)
+        wall = time.perf_counter() - t0
+        prov = json.loads((paths.results / ROOT / "a/model_provenance.json").read_text())
+        out[n_jobs] = (_table(res), prov, wall)
+    print(
+        {
+            k: (v[1]["parallel"], round(v[1]["r"]["fit_seconds"], 1), round(v[2], 1))
+            for k, v in out.items()
+        }
+    )
+    (ser, ps, _), (par, pp, _) = out[1], out[4]
+    assert ps["parallel"]["class"] == "SerialParam" and ps["parallel"]["workers"] == 1
+    assert pp["parallel"]["class"] == "MulticoreParam" and pp["parallel"]["workers"] == 4
+    keys = ["gene", "contrast"]
+    a = ser.sort_values(keys).reset_index(drop=True)
+    b = par.sort_values(keys).reset_index(drop=True)
+    assert a[keys].equals(b[keys])
+    for col in ("logFC", "t", "PValue", "FDR", "df_residual", "standard_error", "AveExpr"):
+        np.testing.assert_allclose(a[col], b[col], rtol=1e-8, atol=1e-10, err_msg=col)

@@ -52,7 +52,9 @@ def design_dict(**overrides) -> dict:
     return base
 
 
-def make_config(de: dict | None = None, factorial: dict | None = None, contrasts=None):
+def make_config(
+    de: dict | None = None, factorial: dict | None = None, contrasts=None, n_jobs: int | None = None
+):
     """A minimal config object as the DE stage reads it (design + contrasts + DE block)."""
     de_block = {
         "enabled": True,
@@ -71,6 +73,7 @@ def make_config(de: dict | None = None, factorial: dict | None = None, contrasts
             {"factorial": FIVE_CONTRASTS if contrasts is None else contrasts}
         ),
         cohort=None,
+        compute=None if n_jobs is None else SimpleNamespace(n_jobs=n_jobs),
     )
 
 

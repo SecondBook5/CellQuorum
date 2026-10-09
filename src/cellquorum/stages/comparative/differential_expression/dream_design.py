@@ -211,6 +211,34 @@ def support_gate_failures(
                     f"'{factor.name}' level(s): {', '.join(thin)}"
                 )
 
+    # DISTINCT subjects per factorial cell: specimens from one subject are not replicates.
+    if report.subject_col is not None:
+        if report.interactions:
+            for inter in report.interactions:
+                thin = [
+                    f"{c['levels']}={c['n_subjects']}"
+                    for c in inter.cells
+                    if c["n_subjects"] is not None
+                    and int(c["n_subjects"]) < gates.min_subjects_per_factorial_cell  # type: ignore[call-overload]
+                ]
+                if thin:
+                    failures.append(
+                        f"fewer than {gates.min_subjects_per_factorial_cell} distinct subjects in "
+                        f"{inter.factors[0]} x {inter.factors[1]} cell(s): {', '.join(thin)}"
+                    )
+        else:
+            for factor in report.factors:
+                thin = [
+                    f"{lv}={n}"
+                    for lv, n in (factor.n_subjects_by_level or {}).items()
+                    if n < gates.min_subjects_per_factorial_cell
+                ]
+                if thin:
+                    failures.append(
+                        f"fewer than {gates.min_subjects_per_factorial_cell} distinct subjects in "
+                        f"'{factor.name}' level(s): {', '.join(thin)}"
+                    )
+
     # Independent subjects per level of every between-subject factor.
     for factor in report.factors:
         if design.factors[factor.name].scope != "between_subject":

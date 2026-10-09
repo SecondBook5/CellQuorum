@@ -24,6 +24,8 @@ type whose remaining biological support cannot estimate the requested model is a
 from __future__ import annotations
 
 import json
+import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +47,7 @@ from cellquorum.config.factorial_design import (
     resolve_factorial_columns,
     validate_factorial_design,
 )
+from cellquorum.core.context import resolve_n_jobs
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -152,8 +155,22 @@ class PseudobulkDreamMethod(RAnalysisMethod):
 
         writer = StageArtifactWriter.from_context(context)
         artifacts: list[StageArtifact] = []
-        results_dir = Path(context.paths.results) / _OUTPUT_SUBDIR
-        results_dir.mkdir(parents=True, exist_ok=True)
+        self._reset_output_dir(context)
+        artifacts.append(
+            writer.json(
+                {
+                    "started_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+                    "cellquorum_version": cellquorum.__version__,
+                    "populations": [str(p) for p in plan["populations"]],
+                    "n_jobs": plan["n_jobs"],
+                },
+                "invocation.json",
+                name="dream_invocation",
+                description="This invocation's start time and populations; every file beside "
+                "it was written by this run.",
+                subdir=_OUTPUT_SUBDIR,
+            )
+        )
 
         artifacts.append(
             writer.json(
@@ -239,6 +256,39 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             },
             backend="rscript",
         )
+
+    # ------------------------------------------------------------ output hygiene
+
+    @staticmethod
+    def _reset_output_dir(context: PipelineContext) -> Path:
+        """Create this method's output directory empty, discarding a previous invocation's.
+
+        A rerun may analyse different cell types than the last one; without this, an old
+        cell type's folder would sit beside the new results looking current. Only the
+        method-owned directory ``results/differential_expression/pseudobulk_dream`` is
+        removed, and only after confirming it is a real directory (not a symlink) that
+        resolves inside the run's results directory. Nothing else is touched.
+
+        Raises:
+            CellQuorumConfigError: If the directory is a symlink or resolves outside the
+                run's results directory.
+        """
+
+        results_root = Path(context.paths.results).resolve()
+        target = results_root / _OUTPUT_SUBDIR
+        if target.is_symlink():
+            raise CellQuorumConfigError(
+                f"Refusing to clear '{target}': a symbolic link is not a method-owned directory."
+            )
+        resolved = target.resolve()
+        if resolved.name != "pseudobulk_dream" or results_root not in resolved.parents:
+            raise CellQuorumConfigError(
+                f"Refusing to clear '{resolved}': not inside the run's results directory."
+            )
+        if resolved.exists():
+            shutil.rmtree(resolved)
+        resolved.mkdir(parents=True)
+        return resolved
 
     # ------------------------------------------------------------------ plan
 
@@ -334,6 +384,7 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             "cell_type_col": cell_type_col,
             "populations": populations,
             "layer": config.get("layer", "counts"),
+            "n_jobs": resolve_n_jobs(context),
             "human_formula": human_formula(design),
             "contrast_names": global_contrasts.names,
             "global_provenance": {
@@ -500,7 +551,7 @@ class PseudobulkDreamMethod(RAnalysisMethod):
         args = [
             str(counts_csv), str(meta_csv), str(l_csv), machine.formula, str(out_dir),
             str(plan["ddf"]), str(int(config.get("min_count", 10))),
-            str(int(config.get("min_total_count", 15))),
+            str(int(config.get("min_total_count", 15))), str(plan["n_jobs"]),
         ]  # fmt: skip
         try:
             proc = backend.run_script(
@@ -600,6 +651,8 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             "interactions": [list(i) for i in design.interactions],
             "random_effects": list(design.random_effects),
             "ddf_requested": plan["ddf"],
+            "parallel": {"n_jobs": plan["n_jobs"], **(info.get("bpparam") or {})},
+            "filter_design_columns": info.get("filter_design_columns"),
             "contrast_ids": machine.contrast_ids,
             "contrasts": contrast_set.to_dict(),
             "contrast_support": contrast_support,

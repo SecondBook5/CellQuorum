@@ -1,7 +1,9 @@
 # Specimen-level pseudobulk mixed-model DE: edgeR prefilter/normalisation ->
 # variancePartition::voomWithDreamWeights -> dream (explicit contrast matrix L) -> eBayes.
 # Usage: Rscript dream.R <counts.csv> <meta.csv> <L.csv> <formula> <out_dir> <ddf> \
-#                        <min_count> <min_total_count>
+#                        <min_count> <min_total_count> <n_workers>
+# n_workers: 1 = deterministic SerialParam; >1 = BiocParallel workers for the gene fits
+# (MulticoreParam on Unix, SnowParam on Windows). Estimates do not depend on it.
 # counts.csv: first column 'sample', remaining columns genes (specimens x genes).
 # meta.csv:   first column sample id; numeric fixed-effect columns named cq_fx*, random-
 #             effect grouping columns named cq_re*. CellQuorum's Python encoder owns the
@@ -19,6 +21,7 @@ args <- commandArgs(trailingOnly = TRUE)
 counts_csv <- args[1]; meta_csv <- args[2]; l_csv <- args[3]
 formula_str <- args[4]; out_dir <- args[5]; ddf <- args[6]
 min_count <- as.integer(args[7]); min_total_count <- as.integer(args[8])
+n_workers <- max(1L, as.integer(args[9]))
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
 counts <- read.csv(counts_csv, check.names = FALSE, stringsAsFactors = FALSE)
@@ -30,6 +33,14 @@ for (col in grep("^cq_re", colnames(meta), value = TRUE)) meta[[col]] <- factor(
 L <- as.matrix(read.csv(l_csv, row.names = 1, check.names = FALSE))
 form <- as.formula(formula_str)
 
+if (n_workers <= 1L) {
+  bpp <- SerialParam()
+} else if (.Platform$OS.type == "windows") {
+  bpp <- SnowParam(workers = n_workers, progressbar = FALSE)
+} else {
+  bpp <- MulticoreParam(workers = n_workers, progressbar = FALSE)
+}
+
 info <- list(
   status = "ok",
   variancePartition = as.character(packageVersion("variancePartition")),
@@ -39,13 +50,18 @@ info <- list(
   formula = formula_str, ddf_requested = ddf,
   normalization = "TMM (edgeR::calcNormFactors)",
   filterByExpr = list(min.count = min_count, min.total.count = min_total_count),
-  n_specimens = ncol(counts), n_genes_before_filter = nrow(counts)
+  n_specimens = ncol(counts), n_genes_before_filter = nrow(counts),
+  bpparam = list(class = class(bpp)[1], workers = bpnworkers(bpp))
 )
 
-# Fixed-effect design for filterByExpr: the numeric cq_fx columns only (the random
-# intercept is deliberately not part of this matrix).
+# Fixed-effect design for filterByExpr: the COMPLETE fixed part of the fitted model --
+# explicit intercept plus every cq_fx column (the random intercept is deliberately not in
+# this matrix). It is written out and its columns/rank recorded so this is auditable.
 fx <- grep("^cq_fx", colnames(meta), value = TRUE)
 design <- model.matrix(as.formula(paste("~", paste(c("1", fx), collapse = " + "))), meta)
+write.csv(design, file.path(out_dir, "filter_design.csv"))
+info$filter_design_columns <- colnames(design)
+info$filter_design_rank <- qr(design)$rank
 dge <- DGEList(counts = counts)
 keep <- filterByExpr(dge, design = design, min.count = min_count, min.total.count = min_total_count)
 info$n_genes_after_filter <- sum(keep)
@@ -60,9 +76,11 @@ caught <- character()
 collect <- function(expr) withCallingHandlers(expr, warning = function(w) {
   caught <<- c(caught, conditionMessage(w)); invokeRestart("muffleWarning")
 })
-v <- collect(voomWithDreamWeights(dge, form, meta, BPPARAM = SerialParam(), plot = FALSE,
+fit_start <- Sys.time()
+v <- collect(voomWithDreamWeights(dge, form, meta, BPPARAM = bpp, plot = FALSE,
                                   normalize.method = "none"))
-fit <- collect(dream(v, form, meta, L, ddf = ddf, BPPARAM = SerialParam()))
+fit <- collect(dream(v, form, meta, L, ddf = ddf, BPPARAM = bpp))
+info$fit_seconds <- as.numeric(difftime(Sys.time(), fit_start, units = "secs"))
 errs <- attr(fit, "errors")        # named character vector: gene -> error text
 if (!is.null(errs) && length(errs)) {
   write.csv(data.frame(gene = names(errs), error = trimws(unname(errs))),
