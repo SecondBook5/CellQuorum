@@ -122,8 +122,12 @@ jobs:
       # -n auto shards across the runner's cores. The suite spends most of its time
       # importing the single-cell stack per worker, so sharding trades some memory
       # for a large wall-clock win.
+      # pyproject's fail_under (84) was measured with every optional package installed. This job
+      # installs only `.[dev]`, so the tests that need scvi-tools, scvelo, cellrank and the rest skip
+      # and their code is uncovered: measured 82.3% here. The floor follows the same rule as
+      # pyproject's, two points under what this environment measures.
       - name: Full suite with coverage
-        run: pytest -n auto --cov --cov-report=xml --cov-report=term
+        run: pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=80
 
       - name: Upload coverage report
         if: always()
