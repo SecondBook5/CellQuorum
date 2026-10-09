@@ -148,7 +148,13 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install reference renderer
-        run: pip install -e '.[dev]' -c envs/figure-constraints.txt
+        run: |
+          pip install -e '.[dev]' -c envs/figure-constraints.txt
+          # Optional packages the gallery draws with; pinned in the constraints file.
+          pip install -c envs/figure-constraints.txt decoupler pyCirclize POT networkit python-louvain
+          # GraphRicciCurvature pins scipy<=1.13.1, which has no wheel for this Python, so it is
+          # installed without its dependency pins; its real dependencies are the line above.
+          pip install --no-deps GraphRicciCurvature==0.5.3.2
       - name: Compare rendered figures with reviewed references
         run: pytest tests/visualization/test_figure_gallery.py --basetemp=/tmp/figure-comparisons -q
       - name: Upload comparison artifacts

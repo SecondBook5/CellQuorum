@@ -2,3 +2,10 @@
 matplotlib==3.10.8
 numpy==2.3.5
 pillow==11.0.0
+# Optional packages the gallery draws with (chord/circos, TF-activity radial, Ricci curvature).
+# Without them the figures fall back or fail, and the pixel references no longer match.
+decoupler==2.1.6
+pyCirclize==1.10.1
+POT==0.9.6.post1
+networkit==11.2.1
+python-louvain==0.16
