@@ -85,7 +85,7 @@ jobs:
           cache: pip
 
       - name: Install package (dev)
-        run: pip install -e .[dev]
+        run: pip install -e .[dev] -c envs/typecheck-constraints.txt
 
       # What is checked is the `files` list in [tool.mypy] in pyproject.toml. Widen that list
       # one subpackage at a time; see the ratchet note there.

@@ -197,7 +197,7 @@ def _build_realtime_kernel(
         tp_adata = tp_adata[~time_numeric.isna().to_numpy()].copy()
 
         # moscot's stubs mark TemporalProblem abstract; it is concrete and instantiable.
-        problem = TemporalProblem(tp_adata)  # type: ignore[abstract]
+        problem = TemporalProblem(tp_adata)  # type: ignore[abstract, unused-ignore]
         problem = problem.prepare(time_key="_cq_time", joint_attr={"attr": "obsm", "key": rep})
         problem = problem.solve(epsilon=float(realtime_epsilon))
         rtk = RealTimeKernel.from_moscot(problem)

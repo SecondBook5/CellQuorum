@@ -1,0 +1,10 @@
+# The library versions the mypy gate is clean against. Unpinned, `pip install -e .[dev]` takes
+# whatever is newest (anndata 0.13 retyped X and obs, numpy 2.5 changed nditer, matplotlib 3.11
+# dropped ignores), and the gate reports hundreds of errors that are not in this code. Move these
+# together, in their own commit, when the gate is rechecked against newer releases.
+anndata==0.12.10
+pandas==2.3.3
+numpy==2.4.6
+scipy==1.16.3
+matplotlib==3.10.8
+scanpy==1.12.1

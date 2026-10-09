@@ -95,6 +95,9 @@ dev = [
   # Type checking, plus stubs for the untyped third-party libraries we import.
   "mypy==1.18.2",
   "types-PyYAML==6.0.12.20250915",
+  # pandas has no inline stubs good enough for the gate; several `type: ignore[call-overload]`
+  # comments exist only because of these stubs, so the checker must have them to agree.
+  "pandas-stubs==3.0.5.260730",
   # Perceptual colour maths for the categorical-palette audit. A dev tool, not runtime:
   # `visualization/palette_audit.py` measures CAM02-UCS distances between the palette hues
   # under simulated colour-vision deficiency, and `tests/visualization/test_palette_audit.py` pins the
