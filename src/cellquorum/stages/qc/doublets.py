@@ -69,6 +69,7 @@ def run_scdblfinder(
     *,
     random_state: int,
     expected_rate: float | None = None,
+    dbr_per_1k: float | None = None,
     sample_key: str | None = None,
     n_jobs: int = 1,
     timeout: int | None = None,
@@ -109,7 +110,13 @@ def run_scdblfinder(
             # the session.
             threads = max(1, min(int(n_jobs), int(pd.unique(labels).size)))
             argv.append(str(threads))
-        if expected_rate is not None:
+        if dbr_per_1k is not None:
+            # Per-1k mode: scDblFinder scales each sample's expected rate with its own cell
+            # count, so a fixed rate is NOT sent (it would override the scaling).
+            while len(argv) < 6:
+                argv.append("")
+            argv.append(str(dbr_per_1k))
+        elif expected_rate is not None:
             while len(argv) < 5:
                 argv.append("")
             argv.append(str(expected_rate))
@@ -161,6 +168,7 @@ def _score_method(
     backend: RscriptBackend | None,
     *,
     expected_rate: float,
+    dbr_per_1k: float | None = None,
     random_state: int = 0,
     sample_key: str | None = None,
     n_jobs: int = 1,
@@ -184,6 +192,7 @@ def _score_method(
             backend,
             random_state=random_state,
             expected_rate=expected_rate,
+            dbr_per_1k=dbr_per_1k,
             sample_key=sample_key,
             n_jobs=n_jobs,
             timeout=timeout,
@@ -307,6 +316,7 @@ def detect_doublets(
                 method,
                 backend,
                 expected_rate=config.expected_doublet_rate,
+                dbr_per_1k=config.scdblfinder_dbr_per_1k,
                 random_state=random_state,
                 sample_key=sample_key if per_sample else None,
                 n_jobs=n_jobs,
@@ -377,6 +387,7 @@ def detect_doublets(
         "methods_run": methods_run,
         "random_state": random_state,
         "expected_doublet_rate": config.expected_doublet_rate,
+        "scdblfinder_dbr_per_1k": config.scdblfinder_dbr_per_1k,
         "consensus": config.consensus,
         "scored_scope": scored_scope,
         "sample_key": sample_key if per_sample else None,

@@ -551,3 +551,42 @@ def test_each_detectors_own_call_is_persisted_beside_the_consensus(monkeypatch):
     assert adata.obs["doublet_call_scrublet"].tolist() == [True, False, False, True]
     assert adata.obs["doublet_call_scdblfinder"].tolist() == [False, True, False, True]
     assert adata.obs["predicted_doublet"].tolist() == [True, True, False, True]  # the union
+
+
+def test_dbr_per_1k_is_sent_to_scdblfinder_instead_of_a_fixed_rate():
+    # A fixed rate gives every sample the same call rate; per-1k scales it with sample size.
+    seen = {}
+
+    class Backend:
+        def run_script(self, script, argv, *, timeout=None):
+            seen["argv"] = list(argv)
+            import pandas as pd
+
+            out = argv[1]
+            n = 4
+            pd.DataFrame(
+                {
+                    "cell_id": [str(i) for i in range(1, n + 1)],
+                    "score": [0.1] * n,
+                    "class": ["singlet"] * n,
+                }
+            ).to_csv(out, index=False)
+            return type("P", (), {"returncode": 0, "stderr": ""})()
+
+    adata = _counts_adata(n=4, g=10)
+    adata.obs["sample_id"] = ["a", "a", "b", "b"]
+    cfg = QCDoubletConfig(
+        methods=["scdblfinder"], expected_doublet_rate=0.06, scdblfinder_dbr_per_1k=0.004
+    )
+    metrics = detect_doublets(adata, cfg, backend=Backend(), sample_key="sample_id")
+    assert seen["argv"][-1] == "0.004" and "0.06" not in seen["argv"]
+    assert metrics["scdblfinder_dbr_per_1k"] == 0.004
+
+    seen.clear()
+    detect_doublets(
+        adata,
+        QCDoubletConfig(methods=["scdblfinder"], expected_doublet_rate=0.06),
+        backend=Backend(),
+        sample_key="sample_id",
+    )
+    assert seen["argv"][-1] == "0.06"  # unchanged default behaviour

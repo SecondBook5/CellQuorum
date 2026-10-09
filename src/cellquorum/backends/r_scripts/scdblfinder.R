@@ -1,6 +1,8 @@
 # Read a genes-x-cells Matrix Market file, run scDblFinder, write per-cell
 # score AND scDblFinder's own singlet/doublet class call.
-# Usage: Rscript scdblfinder.R <counts.mtx> <out.csv> <seed> [samples.csv] [threads] [expected_rate]
+# Usage: Rscript scdblfinder.R <counts.mtx> <out.csv> <seed> [samples.csv] [threads] [expected_rate] [dbr_per1k]
+# dbr_per1k (7th): expected doublet fraction PER 1,000 cells; scDblFinder then derives each sample's own rate
+# (dbr = per1k * n_cells / 1000). It replaces expected_rate, which is ignored when this is given.
 #
 # The optional 4th argument is a one-column CSV (header `sample`) with one row
 # per cell, in the same order as the matrix columns. When given it is passed to
@@ -21,6 +23,13 @@ expected_rate <- if (length(args) >= 6 && nzchar(args[6])) as.numeric(args[6]) e
 if (!is.null(expected_rate) &&
     (!is.finite(expected_rate) || expected_rate < 0 || expected_rate > 1)) {
   stop("expected_rate must be a finite fraction between zero and one")
+}
+dbr_per1k <- if (length(args) >= 7 && nzchar(args[7])) as.numeric(args[7]) else NULL
+if (!is.null(dbr_per1k)) {
+  if (!is.finite(dbr_per1k) || dbr_per1k < 0 || dbr_per1k > 1) {
+    stop("dbr_per1k must be a finite fraction between zero and one")
+  }
+  expected_rate <- NULL  # a fixed dbr would override the per-sample size-scaled rate
 }
 set.seed(seed)
 counts <- as(Matrix::readMM(mtx_path), "CsparseMatrix")   # genes x cells
@@ -58,7 +67,11 @@ bpparam <- if (threads > 1L) {
 } else {
   BiocParallel::SerialParam(RNGseed = seed)
 }
-sce <- scDblFinder(sce, samples = samples, dbr = expected_rate, BPPARAM = bpparam)
+sce <- if (is.null(dbr_per1k)) {
+  scDblFinder(sce, samples = samples, dbr = expected_rate, BPPARAM = bpparam)
+} else {
+  scDblFinder(sce, samples = samples, dbr.per1k = dbr_per1k, BPPARAM = bpparam)
+}
 
 # Restore input order. Export IDs so Python can independently verify alignment.
 if (ncol(sce) != n_cells_in) {

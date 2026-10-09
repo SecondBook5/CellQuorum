@@ -572,6 +572,13 @@ class QCDoubletConfig(StrictBaseModel):
         consensus: How to combine per-method calls: any | all | majority.
         remove: Whether predicted doublets should be removed automatically.
         expected_doublet_rate: Expected doublet fraction for both detectors (scDblFinder dbr).
+        scdblfinder_dbr_per_1k: Expected doublet fraction PER 1,000 cells for scDblFinder
+            (``dbr.per1k``). When set, scDblFinder derives each sample's own expected rate as
+            ``per1k * n_cells / 1000`` and ``expected_doublet_rate`` is not sent to it (Scrublet
+            still uses ``expected_doublet_rate``). Use it when the assay's multiplet rate scales
+            with recovery, e.g. 10x GEM-X Flex v2 with one probe barcode per sample (about
+            0.004 per 1,000 recovered cells for undetectable same-sample multiplets). A single
+            fixed rate gives every sample the same call rate regardless of size.
         score_threshold: Optional manual doublet score threshold.
         per_sample: Whether doublets should be evaluated per sample.
         timeout_seconds: Rscript timeout override for scDblFinder, one native call
@@ -592,11 +599,14 @@ class QCDoubletConfig(StrictBaseModel):
     consensus: str = "any"
     remove: bool = False
     expected_doublet_rate: float = 0.06
+    scdblfinder_dbr_per_1k: float | None = None
     score_threshold: float | None = None
     per_sample: bool = True
     timeout_seconds: int | None = None
 
-    @field_validator("expected_doublet_rate", "score_threshold", mode="before")
+    @field_validator(
+        "expected_doublet_rate", "scdblfinder_dbr_per_1k", "score_threshold", mode="before"
+    )
     @classmethod
     def validate_optional_probability(cls, value: object) -> float | None:
         """Validate optional probability fields."""
