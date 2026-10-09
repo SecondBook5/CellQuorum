@@ -93,6 +93,10 @@ class FormalTestConfig(StrictBaseModel):
 
     method: str = "scshc"
     alpha: float = 0.05
+    # Prefer original counts independently of the partitioning layer.
+    counts_layer: str | None = None
+    random_state: int = 1337
+    timeout_seconds: int = 1800
 
 
 class DonorGateConfig(StrictBaseModel):

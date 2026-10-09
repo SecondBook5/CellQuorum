@@ -215,11 +215,29 @@ def run_scshc_test(
         )
 
     # Validate counts layer exists.
-    counts_layer = config.counts_layer
+    explicit_layer = getattr(config.formal_test, "counts_layer", None)
+    counts_layer = (explicit_layer if isinstance(explicit_layer, str) else None) or (
+        "counts_raw" if "counts_raw" in adata.layers else config.counts_layer
+    )
     if counts_layer not in adata.layers:
         raise CellQuorumBackendError(
             f"sc-SHC requires counts layer '{counts_layer}'; not found in adata.layers"
         )
+
+    # Never round or repair a transformed matrix into a count-model input.
+    from scipy import sparse
+
+    matrix = adata.layers[counts_layer]
+    values = matrix.data if sparse.issparse(matrix) else np.asarray(matrix).ravel()
+    if not np.isfinite(values).all() or (values < 0).any():
+        raise CellQuorumBackendError("sc-SHC requires finite, non-negative original counts")
+    if not np.equal(values, np.floor(values)).all():
+        raise CellQuorumBackendError(
+            f"sc-SHC layer '{counts_layer}' contains fractional values; use original "
+            "integer counts (counts_raw), not SoupX, normalized, or MAGIC expression"
+        )
+    if (np.asarray(matrix.sum(axis=1)).ravel() <= 0).any():
+        raise CellQuorumBackendError("sc-SHC input contains cells with zero total counts")
 
     # Validate cluster_key exists.
     if cluster_key not in adata.obs.columns:
@@ -259,15 +277,22 @@ def run_scshc_test(
     cluster_df.to_csv(clusters_csv, index=False)
 
     # Build R script args.
-    args = [str(in_h5ad), str(clusters_csv), str(out_csv), str(alpha), batch_arg]
+    seed = getattr(formal_test_config, "random_state", 1337)
+    seed = seed if isinstance(seed, int) else 1337
+    args = [str(in_h5ad), str(clusters_csv), str(out_csv), str(alpha), batch_arg, str(seed)]
 
-    timeout = 1800
+    timeout = getattr(formal_test_config, "timeout_seconds", 1800)
+    timeout = timeout if isinstance(timeout, int) else 1800
     result = backend.run_script(_SCSHC_TEST_R, args, timeout=timeout)
 
+    stdout = result.stdout if isinstance(result.stdout, str) else ""
+    (scratch_dir / "scshc_stdout.log").write_text(stdout)
+    stderr = result.stderr if isinstance(result.stderr, str) else ""
+    (scratch_dir / "scshc_stderr.log").write_text(stderr)
     if result.returncode != 0:
-        return MethodSkip(
-            reason="sc-SHC test skipped: scshc_test.R script failed",
-            details={"method": "scshc", "stderr": result.stderr.strip()[:500]},
+        raise CellQuorumBackendError(
+            f"sc-SHC formal test failed (exit {result.returncode}); candidate clusters "
+            f"are not validated. See {scratch_dir / 'scshc_stderr.log'}. " + stderr.strip()[-1500:]
         )
 
     # Read per-split significance CSV.
