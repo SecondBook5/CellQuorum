@@ -357,6 +357,10 @@ def detect_doublets(
             warnings.append(msg)
 
         call_cols[method] = pd.Series(calls, index=adata.obs_names)
+        # Persist each detector's own call, not only the consensus: with consensus "any" the
+        # union hides whether a cell has one caller's support or both, and that is exactly the
+        # evidence needed to judge whether the consensus rule is too aggressive.
+        adata.obs[f"doublet_call_{method}"] = calls
         methods_run.append(method)
 
     if call_cols:

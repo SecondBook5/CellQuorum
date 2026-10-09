@@ -521,3 +521,33 @@ def test_invalid_library_ids_fail_before_detector(monkeypatch, labels, method):
 def test_explicit_missing_library_column_is_not_pooled():
     with pytest.raises(ValueError, match="sample column 'library' is missing"):
         detect_doublets(_counts_adata(n=2, g=10), QCDoubletConfig(), None, sample_key="library")
+
+
+def test_each_detectors_own_call_is_persisted_beside_the_consensus(monkeypatch):
+    # With consensus 'any' the union hides which caller supports a cell; the per-detector calls
+    # must stay recoverable from obs so the rule can be audited.
+    import cellquorum.stages.qc.doublets as module
+
+    monkeypatch.setattr(
+        module,
+        "run_scrublet",
+        lambda *args, **kwargs: (
+            np.array([0.9, 0.1, 0.1, 0.8]),
+            np.array([True, False, False, True]),
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "run_scdblfinder",
+        lambda *args, **kwargs: (
+            np.array([0.1, 0.9, 0.1, 0.9]),
+            np.array([False, True, False, True]),
+        ),
+    )
+    adata = _counts_adata(n=4, g=10)
+    detect_doublets(
+        adata, QCDoubletConfig(methods=["scrublet", "scdblfinder"], consensus="any"), None
+    )
+    assert adata.obs["doublet_call_scrublet"].tolist() == [True, False, False, True]
+    assert adata.obs["doublet_call_scdblfinder"].tolist() == [False, True, False, True]
+    assert adata.obs["predicted_doublet"].tolist() == [True, True, False, True]  # the union
