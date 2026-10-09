@@ -75,10 +75,8 @@ resources/
 docs/superpowers/
 .superpowers/
 
-# Claude Code worktrees
-.claude/worktrees/
+# Local git worktrees
 .worktrees/
-.claude/
 
 # Study-specific run scripts and configs (le_global lymphedema project)
 scripts/le_*.py
