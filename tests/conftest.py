@@ -35,7 +35,16 @@ def _restore_matplotlib_style() -> Iterator[None]:
     function directly does not, and the figure-gallery pixel comparisons then fail depending on
     which test happened to run before them.
     """
-    from cellquorum.core.executor import _contained_matplotlib_style
+    try:
+        from cellquorum.core.executor import _contained_matplotlib_style
+    except ModuleNotFoundError as exc:
+        # The lightweight CI jobs (environment locks) install no cellquorum, so there is no
+        # figure code to restyle matplotlib. Only the package itself being absent is excused: a
+        # missing dependency inside an installed cellquorum still fails the test.
+        if exc.name != "cellquorum":
+            raise
+        yield
+        return
 
     with _contained_matplotlib_style():
         yield
