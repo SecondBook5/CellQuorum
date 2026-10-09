@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import anndata as ad
+import numpy as np
 import pandas as pd
 from pydantic import TypeAdapter
 
@@ -62,11 +63,13 @@ from cellquorum.stages.comparative.differential_expression.dream_design import (
     unique_slugs,
 )
 from cellquorum.stages.comparative.differential_expression.pseudobulk import (
+    PseudobulkResult,
     aggregate_pseudobulk,
     build_specimen_universe,
     evaluate_pseudobulk_support,
     restrict_to_included,
 )
+from cellquorum.stages.qc.eligibility import de_eligible_cells
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -363,6 +366,24 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             contrasts, design=design, sample_meta=specimens
         )
 
+        # DE-eligible cells: the QC fit AND inference permissions for DE. The specimen
+        # universe above was built from EVERY cell, so a specimen whose cells are all
+        # QC-excluded stays visible; eligibility only decides whose counts enter a profile.
+        # QC state present but its DE masks missing is fatal (never a silent fall-back).
+        eligible = de_eligible_cells(adata.obs)
+        n_total = int(adata.n_obs)
+        n_eligible = n_total if eligible is None else int(eligible.sum())
+        eligibility: dict[str, Any] = {
+            "rule": (
+                "qc_fit_de AND qc_inference_de"
+                if eligible is not None
+                else "none: no QC columns present, every cell eligible"
+            ),
+            "n_cells_total": n_total,
+            "n_cells_eligible": n_eligible,
+            "n_cells_excluded": n_total - n_eligible,
+        }
+
         cell_type_col = config.get("cell_type_col")
         if cell_type_col and cell_type_col in adata.obs.columns:
             populations: list[Any] = sorted(
@@ -385,11 +406,14 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             "populations": populations,
             "layer": config.get("layer", "counts"),
             "n_jobs": resolve_n_jobs(context),
+            "eligible": None if eligible is None else eligible.to_numpy(),
+            "eligibility": eligibility,
             "human_formula": human_formula(design),
             "contrast_names": global_contrasts.names,
             "global_provenance": {
                 "scope": "full specimen universe (before cell-type support filtering)",
                 "human_formula": human_formula(design),
+                "de_eligibility": eligibility,
                 "design_report": report.to_dict(),
             },
             "contrast_definitions": global_contrasts.to_dict(),
@@ -422,16 +446,23 @@ class PseudobulkDreamMethod(RAnalysisMethod):
         artifacts: list[StageArtifact] = []
 
         if plan["cell_type_col"]:
-            mask = (adata.obs[plan["cell_type_col"]].astype(str) == label).to_numpy()
-            subset = adata[mask]
+            in_population = (adata.obs[plan["cell_type_col"]].astype(str) == label).to_numpy()
         else:
-            subset = adata
+            in_population = np.ones(adata.n_obs, dtype=bool)
+        eligible_mask = plan["eligible"]
+        contributing = in_population if eligible_mask is None else in_population & eligible_mask
+        subset = adata[contributing]
+        observed_n_cells = (
+            adata.obs.loc[in_population, sample_col].astype(str).value_counts().astype(np.int64)
+        )
         row: dict[str, Any] = {
             "cell_type": label,
             "slug": slug,
             "status": "skipped",
             "reason": "",
+            "n_cells_observed": int(in_population.sum()),
             "n_cells": int(subset.n_obs),
+            "n_cells_qc_excluded": int(in_population.sum() - subset.n_obs),
             "n_specimens_universe": int(len(universe)),
         }
 
@@ -439,13 +470,22 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             row["reason"] = reason
             return {"summary": row, "artifacts": artifacts, "table": None}
 
-        # Observed pseudobulk of THIS population (declared metadata must be constant).
-        pb = aggregate_pseudobulk(
-            subset,
-            layer=plan["layer"],
-            sample_col=sample_col,
-            metadata_cols=plan["metadata_cols"],
-        )
+        # Observed pseudobulk of THIS population's DE-eligible cells (declared metadata must
+        # be constant). A population with no eligible cell at all yields an empty profile set;
+        # the support audit below still reports every specimen and why it is out.
+        if subset.n_obs:
+            pb = aggregate_pseudobulk(
+                subset,
+                layer=plan["layer"],
+                sample_col=sample_col,
+                metadata_cols=plan["metadata_cols"],
+            )
+        else:
+            pb = PseudobulkResult(
+                counts=pd.DataFrame(columns=list(adata.var_names), dtype=np.int64),
+                sample_meta=pd.DataFrame(columns=plan["metadata_cols"]),
+                n_cells=pd.Series(dtype=np.int64),
+            )
         row["n_specimens_observed"] = int(pb.counts.shape[0])
 
         # Support audit against the FULL universe: absent specimens stay visible.
@@ -456,6 +496,7 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             subject_col=subject_col,
             factor_cols=[c for c in plan["metadata_cols"] if c != subject_col],
             min_cells_per_sample=gates.min_cells_per_sample,
+            observed_n_cells=observed_n_cells,
         )
         artifacts.append(
             writer.table(
@@ -625,7 +666,10 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             "counts_layer": plan["layer"],
             "sample_col": sample_col,
             "subject_col": subject_col,
+            "n_cells_observed": row["n_cells_observed"],
             "n_cells": int(subset.n_obs),
+            "n_cells_qc_excluded": row["n_cells_qc_excluded"],
+            "de_eligibility": plan["eligibility"],
             "n_specimens_universe": int(len(universe)),
             "n_specimens_observed": int(pb.counts.shape[0]),
             "n_specimens_included": support.n_included,

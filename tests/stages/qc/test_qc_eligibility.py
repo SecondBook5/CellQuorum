@@ -217,3 +217,28 @@ def test_states_with_no_cells_do_not_break_the_masks() -> None:
 
     assert masks.mask(Analysis.MANIFOLD, Permission.FIT).all()
     assert masks.summary()["qc_fit_manifold"] == 3
+
+
+def test_de_eligibility_requires_both_fit_and_inference_and_none_without_qc():
+    from cellquorum.core.exceptions import CellQuorumDataError
+    from cellquorum.stages.qc.eligibility import de_eligible_cells
+
+    assert de_eligible_cells(pd.DataFrame({"x": [1, 2]})) is None  # QC never ran
+
+    obs = pd.DataFrame(
+        {
+            "qc_state_initial": ["core", "core", "borderline"],
+            "qc_fit_de": [True, True, False],
+            "qc_inference_de": [True, False, False],
+        },
+        index=["a", "b", "c"],
+    )
+    assert de_eligible_cells(obs).tolist() == [True, False, False]  # conjunction, not union
+
+    with pytest.raises(CellQuorumDataError, match="inference mask.*missing"):
+        de_eligible_cells(obs.drop(columns="qc_inference_de"))
+    with pytest.raises(CellQuorumDataError, match="fitting mask.*missing"):
+        de_eligible_cells(obs.drop(columns="qc_fit_de"))
+    none_eligible = obs.assign(qc_fit_de=False)
+    with pytest.raises(CellQuorumDataError, match="permits no cells"):
+        de_eligible_cells(none_eligible)

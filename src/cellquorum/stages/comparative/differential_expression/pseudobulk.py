@@ -35,6 +35,8 @@ from cellquorum.core.exceptions import CellQuorumDataError
 # Exclusion reasons written to the support table (stable, machine-readable).
 REASON_POPULATION_ABSENT = "population_absent"
 REASON_BELOW_MIN_CELLS = "below_min_cells"
+REASON_NO_ELIGIBLE_CELLS = "population_present_but_no_de_eligible_cells"
+REASON_BELOW_MIN_CELLS_AFTER_QC = "below_min_cells_after_qc"
 REASON_ZERO_LIBRARY = "zero_library_size"
 
 # Column names the support table owns; a factor/subject column may not shadow them.
@@ -43,6 +45,9 @@ _SUPPORT_RESERVED = frozenset(
         "sample_id",
         "subject_id",
         "n_cells",
+        "n_cells_observed",
+        "n_cells_de_eligible",
+        "n_cells_qc_excluded",
         "library_size",
         "observed_population",
         "included_for_expression",
@@ -380,6 +385,7 @@ def evaluate_pseudobulk_support(
     subject_col: str | None = None,
     factor_cols: list[str] | None = None,
     min_cells_per_sample: int | None = None,
+    observed_n_cells: pd.Series | None = None,
 ) -> PseudobulkSupport:
     """
     Audit pseudobulk specimens against the complete specimen universe.
@@ -391,8 +397,17 @@ def evaluate_pseudobulk_support(
 
     * ``population_absent``: no cells of this population in the specimen. This is
       abundance information, not an expression measurement.
+    * ``population_present_but_no_de_eligible_cells`` (only with ``observed_n_cells``):
+      the population exists in the specimen but QC leaves none of its cells eligible.
+    * ``below_min_cells_after_qc`` (only with ``observed_n_cells``): fewer than
+      ``min_cells_per_sample`` eligible cells, with some cells excluded by QC.
     * ``below_min_cells``: fewer than ``min_cells_per_sample`` cells.
     * ``zero_library_size``: cells exist but their counts sum to zero.
+
+    ``pb`` holds the cells that may enter the model (QC-eligible). ``observed_n_cells``
+    carries the population's cell count per specimen BEFORE eligibility, so a specimen
+    whose population is present but QC-excluded is never confused with one where the
+    population was never observed.
 
     No specimen is ever given a zero-filled expression profile. This function only
     decides; use :func:`restrict_to_included` to apply the decision to ``pb``.
@@ -407,6 +422,10 @@ def evaluate_pseudobulk_support(
             column other than the subject and the universe cell total.
         min_cells_per_sample: Minimum cells for a specimen to be usable; ``None`` means
             no cell floor beyond having any cells.
+        observed_n_cells: Optional per-specimen cell count of this population before QC
+            eligibility (indexed by specimen id; missing specimens count as 0). When
+            given, the table also reports ``n_cells_observed``, ``n_cells_de_eligible``
+            and ``n_cells_qc_excluded``.
 
     Returns:
         A :class:`PseudobulkSupport` whose table covers the whole universe.
@@ -455,12 +474,27 @@ def evaluate_pseudobulk_support(
 
     n_cells = pb.n_cells.reindex(universe.index).fillna(0).astype(np.int64)
     library = pb.library_size.reindex(universe.index).fillna(0).astype(np.int64)
-    observed_pop = n_cells > 0
+    if observed_n_cells is None:
+        n_observed = n_cells
+    else:
+        n_observed = observed_n_cells.reindex(universe.index).fillna(0).astype(np.int64)
+        if bool((n_observed < n_cells).any()):
+            bad = list(n_observed.index[(n_observed < n_cells).to_numpy()])[:_MAX_REPORTED]
+            raise CellQuorumDataError(
+                f"observed_n_cells is below the eligible cell count for specimen(s) {bad}."
+            )
+    observed_pop = n_observed > 0
+    qc_excluded = n_observed - n_cells
 
     reason = pd.Series([None] * len(universe), index=universe.index, dtype=object)
     reason[library == 0] = REASON_ZERO_LIBRARY
     if min_cells_per_sample is not None:
-        reason[n_cells < min_cells_per_sample] = REASON_BELOW_MIN_CELLS
+        below = n_cells < min_cells_per_sample
+        reason[below] = REASON_BELOW_MIN_CELLS
+        if observed_n_cells is not None:
+            reason[below & (qc_excluded > 0)] = REASON_BELOW_MIN_CELLS_AFTER_QC
+    if observed_n_cells is not None:
+        reason[observed_pop & (n_cells == 0)] = REASON_NO_ELIGIBLE_CELLS
     reason[~observed_pop] = REASON_POPULATION_ABSENT
 
     table = pd.DataFrame({"sample_id": [str(s) for s in universe.index]})
@@ -469,6 +503,10 @@ def evaluate_pseudobulk_support(
     for column in factor_cols:
         table[column] = universe[column].to_numpy()
     table["n_cells"] = n_cells.to_numpy()
+    if observed_n_cells is not None:
+        table["n_cells_observed"] = n_observed.to_numpy()
+        table["n_cells_de_eligible"] = n_cells.to_numpy()
+        table["n_cells_qc_excluded"] = qc_excluded.to_numpy()
     table["library_size"] = library.to_numpy()
     table["observed_population"] = observed_pop.to_numpy()
     table["included_for_expression"] = reason.isna().to_numpy()
@@ -614,6 +652,8 @@ def resolve_donor_pairing(
 
 __all__ = [
     "REASON_BELOW_MIN_CELLS",
+    "REASON_BELOW_MIN_CELLS_AFTER_QC",
+    "REASON_NO_ELIGIBLE_CELLS",
     "REASON_POPULATION_ABSENT",
     "REASON_ZERO_LIBRARY",
     "PairingDecision",

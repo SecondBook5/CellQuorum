@@ -215,6 +215,34 @@ def fit_mask(state: pd.Series, analysis: Analysis) -> pd.Series:
     return build_eligibility_masks(state).mask(analysis, Permission.FIT)
 
 
+def _read_permission_mask(
+    obs: pd.DataFrame, analysis: Analysis, permission: Permission
+) -> pd.Series | None:
+    """Read one stored (analysis, permission) mask from ``obs``, validating it.
+
+    Returns:
+        The boolean mask, or ``None`` when QC never ran (neither the mask nor
+        ``qc_state_initial`` is present).
+
+    Raises:
+        CellQuorumDataError: QC state is present but this mask is missing (QC ran, so
+            silently falling back to every cell would defeat it), or the mask is not a
+            complete boolean column.
+    """
+    column = EligibilityMasks.column_name(analysis, permission)
+    label = "fitting" if permission == Permission.FIT else str(permission)
+    if column not in obs.columns:
+        if "qc_state_initial" in obs.columns:
+            raise CellQuorumDataError(
+                f"QC state is present but its {label} mask '{column}' is missing."
+            )
+        return None
+
+    if not pd.api.types.is_bool_dtype(obs[column].dtype) or obs[column].isna().any():
+        raise CellQuorumDataError(f"QC {label} mask '{column}' must contain non-missing booleans.")
+    return obs[column].astype(bool)
+
+
 def fitting_cells(
     obs: pd.DataFrame,
     analysis: Analysis = Analysis.MANIFOLD,
@@ -229,18 +257,11 @@ def fitting_cells(
     Returns:
         A boolean per-cell mask, or ``None`` when the stage should fit on every cell.
     """
-    column = EligibilityMasks.column_name(analysis, Permission.FIT)
-    if column not in obs.columns:
-        if "qc_state_initial" in obs.columns:
-            raise CellQuorumDataError(
-                f"QC state is present but its fitting mask '{column}' is missing."
-            )
+    mask = _read_permission_mask(obs, analysis, Permission.FIT)
+    if mask is None:
         return None
-
-    if not pd.api.types.is_bool_dtype(obs[column].dtype) or obs[column].isna().any():
-        raise CellQuorumDataError(f"QC fitting mask '{column}' must contain non-missing booleans.")
-    mask = obs[column].astype(bool)
     if not bool(mask.any()):
+        column = EligibilityMasks.column_name(analysis, Permission.FIT)
         raise CellQuorumDataError(
             f"QC fitting mask '{column}' permits no cells. Review QC decisions before fitting; "
             "excluded cells cannot be used as a fallback."
@@ -248,11 +269,58 @@ def fitting_cells(
     return mask
 
 
+def inference_cells(obs: pd.DataFrame, analysis: Analysis) -> pd.Series | None:
+    """The cells whose data may contribute to a scientific conclusion of ``analysis``.
+
+    Returns:
+        A boolean per-cell mask, or ``None`` when QC never ran.
+
+    Raises:
+        CellQuorumDataError: QC state is present but the inference mask is missing or
+            malformed.
+    """
+    return _read_permission_mask(obs, analysis, Permission.INFERENCE)
+
+
+def de_eligible_cells(obs: pd.DataFrame) -> pd.Series | None:
+    """The cells that may contribute counts to a primary differential-expression fit.
+
+    A cell contributing to a pseudobulk profile participates in the model fit AND in the
+    conclusion drawn from it, so it must hold BOTH the DE ``fit`` and ``inference``
+    permissions. They coincide today; keeping the conjunction preserves the FIT versus
+    INFERENCE distinction the QC architecture was designed around.
+
+    Args:
+        obs: The full ``adata.obs`` (before any cell-type subsetting).
+
+    Returns:
+        A boolean per-cell mask, or ``None`` when QC never ran (every cell is eligible).
+
+    Raises:
+        CellQuorumDataError: QC state is present but a required mask is missing/malformed,
+            or no cell is eligible.
+    """
+    fit = fitting_cells(obs, Analysis.DIFFERENTIAL_EXPRESSION)
+    if fit is None:
+        return None
+    inference = inference_cells(obs, Analysis.DIFFERENTIAL_EXPRESSION)
+    assert inference is not None  # same presence rule as the fit mask
+    both = fit & inference
+    if not bool(both.any()):
+        raise CellQuorumDataError(
+            "No cell holds both the DE fit and inference permissions. Review QC decisions "
+            "before differential expression."
+        )
+    return both
+
+
 __all__ = [
     "Analysis",
     "EligibilityMasks",
     "Permission",
     "build_eligibility_masks",
+    "de_eligible_cells",
     "fit_mask",
     "fitting_cells",
+    "inference_cells",
 ]

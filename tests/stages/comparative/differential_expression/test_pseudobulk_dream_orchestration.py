@@ -597,3 +597,90 @@ def test_failed_genes_file_is_registered_and_counted(tmp_path):
         paths.results / "differential_expression/pseudobulk_dream/cell_type_summary.csv"
     )
     assert summary.loc[0, "n_genes_failed"] == 2
+
+
+# --- DE eligibility (QC fit AND inference masks) -------------------------------------------------
+
+
+def _with_qc(adata, ineligible_cells):
+    """Add QC columns; ``ineligible_cells`` is a boolean array of cells QC excludes from DE."""
+    ok = ~np.asarray(ineligible_cells, dtype=bool)
+    adata.obs["qc_state_initial"] = np.where(ok, "core", "borderline")
+    adata.obs["qc_fit_de"] = ok
+    adata.obs["qc_inference_de"] = ok
+    return adata
+
+
+def test_ineligible_cells_never_enter_a_pseudobulk_but_the_specimen_stays_in_the_universe(tmp_path):
+    adata = make_adata(cells=_b_cells())
+    spec = adata.obs["specimen"].to_numpy()
+    pop = (adata.obs["cell_type"] == "B").to_numpy()
+    rng = np.random.default_rng(0)
+    bad = np.zeros(adata.n_obs, dtype=bool)
+    bad |= (spec == "C1C") & pop  # every B cell of C1C is QC-excluded
+    idx = np.flatnonzero((spec == "C2J") & pop)
+    bad[idx[:20]] = True  # 30 -> 10 eligible in C2J (below the 20-cell floor)
+    bad |= rng.random(adata.n_obs) < 0.0
+    _with_qc(adata, bad)
+    res, backend, paths = _run(tmp_path, adata)
+    assert res.status == "success"
+    support = pd.read_csv(
+        paths.results / "differential_expression/pseudobulk_dream/b/support.csv"
+    ).set_index("sample_id")
+    assert len(support) == 12
+    c1c = support.loc["C1C"]
+    assert (c1c["n_cells_observed"], c1c["n_cells_de_eligible"], c1c["n_cells_qc_excluded"]) == (
+        30,
+        0,
+        30,
+    )
+    assert c1c["exclusion_reason"] == "population_present_but_no_de_eligible_cells"
+    c2j = support.loc["C2J"]
+    assert (c2j["n_cells_observed"], c2j["n_cells_de_eligible"]) == (30, 10)
+    assert c2j["exclusion_reason"] == "below_min_cells_after_qc"
+    counts_used = backend.calls[-1]["specimens"]  # cell type B was fitted last
+    assert "C1C" not in counts_used and "C2J" not in counts_used
+    prov = json.loads(
+        (
+            paths.results / "differential_expression/pseudobulk_dream/b/model_provenance.json"
+        ).read_text()
+    )
+    assert prov["de_eligibility"]["rule"] == "qc_fit_de AND qc_inference_de"
+    assert prov["n_cells_qc_excluded"] == 50
+
+
+def test_pseudobulk_counts_exclude_the_ineligible_cells_exactly(tmp_path):
+    adata = make_adata()
+    spec = adata.obs["specimen"].to_numpy()
+    bad = np.zeros(adata.n_obs, dtype=bool)
+    idx = np.flatnonzero(spec == "P2J")
+    bad[idx[:15]] = True
+    _with_qc(adata, bad)
+    _run(tmp_path, adata)
+    got = pd.read_csv(
+        tmp_path / "results/differential_expression/pseudobulk_dream/a/pseudobulk_counts.csv",
+        index_col=0,
+    )
+    dense = adata.layers["counts"].toarray()
+    keep = (spec == "P2J") & ~bad
+    np.testing.assert_array_equal(got.loc["P2J"].to_numpy(), dense[keep].sum(axis=0))
+
+
+def test_qc_state_without_its_de_masks_is_fatal_not_a_silent_fallback(tmp_path):
+    from cellquorum.core.exceptions import CellQuorumDataError
+
+    adata = make_adata()
+    adata.obs["qc_state_initial"] = "core"  # QC ran, but the DE masks are absent
+    with pytest.raises(CellQuorumDataError, match="mask.*missing"):
+        _run(tmp_path, adata)
+
+
+def test_no_qc_columns_means_every_cell_is_eligible_and_it_is_recorded(tmp_path):
+    _, _, paths = _run(tmp_path, make_adata())
+    prov = json.loads(
+        (
+            paths.results / "differential_expression/pseudobulk_dream/a/model_provenance.json"
+        ).read_text()
+    )
+    assert prov["de_eligibility"]["rule"].startswith("none")
+    assert prov["de_eligibility"]["n_cells_excluded"] == 0

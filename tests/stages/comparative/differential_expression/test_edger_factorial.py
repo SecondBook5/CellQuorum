@@ -212,3 +212,20 @@ def test_interaction_member_must_be_condition_or_covariate(tmp_path):
     )
     with pytest.raises(CellQuorumConfigError, match="interaction|covariate|condition"):
         DifferentialExpressionStage().run(ctx)
+
+
+def test_edger_respects_qc_de_eligibility_and_fails_loudly_on_missing_masks(tmp_path):
+    from cellquorum.core.exceptions import CellQuorumDataError
+
+    paths = PipelinePaths.from_output_dir(tmp_path)
+    paths.ensure_directories()
+    adata = _factorial_adata()
+    adata.obs["qc_state_initial"] = "core"  # QC ran but wrote no DE masks
+    ctx = PipelineContext(
+        config=_CfgInteraction(),
+        paths=paths,
+        adata=adata,
+        backend_registry=build_default_backend_registry(),
+    )
+    with pytest.raises(CellQuorumDataError, match="mask.*missing"):
+        DifferentialExpressionStage().run(ctx)

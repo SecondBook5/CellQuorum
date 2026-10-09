@@ -27,6 +27,7 @@ from cellquorum.stages.comparative.differential_expression.pseudobulk import (
     aggregate_pseudobulk,
     resolve_donor_pairing,
 )
+from cellquorum.stages.qc.eligibility import de_eligible_cells
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -152,6 +153,14 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
         if not case or not control:
             return self._skip("case/control labels not set in config")
 
+        # Only QC-eligible cells (DE fit AND inference permissions) may inform this fit,
+        # including its replicate counts and estimability checks. ``None`` means QC never
+        # ran, so every cell is eligible; QC state without its DE masks raises. The returned
+        # object is never subset: eligibility scopes what is analysed, not what is kept.
+        eligible = de_eligible_cells(adata.obs)
+        de_obs = adata.obs if eligible is None else adata.obs.loc[eligible.to_numpy()]
+        n_qc_ineligible = 0 if eligible is None else int((~eligible).sum())
+
         # Validate interaction terms up front. Each member must be the condition
         # column or a declared covariate (otherwise the column is never carried
         # into the pseudobulk meta), and must be categorical (the model matrix
@@ -167,7 +176,7 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
                         f"the condition column ('{condition_col}') nor a declared "
                         f"covariate ({covariates}). Add it to covariates first."
                     )
-                if pd.api.types.is_numeric_dtype(adata.obs[member]):
+                if pd.api.types.is_numeric_dtype(de_obs[member]):
                     raise CellQuorumConfigError(
                         f"DE interaction member '{member}' is numeric; interactions "
                         "require categorical factors. Keep numeric terms as additive "
@@ -186,7 +195,7 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
         # documented pilot design can lower it rather than tripping a silent cap.
         min_donors_per_arm = int(config.get("min_donors_per_arm", 2))
         validate_design_against_obs(
-            adata.obs,
+            de_obs,
             design=DesignConfig(
                 donor_col=donor_col,
                 condition_col=condition_col,
@@ -215,15 +224,15 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
         # that survives here still fails loudly as an edgeR error -> recorded skip,
         # never a silent-wrong result.)
         categorical_covariates = [
-            c for c in covariates if not pd.api.types.is_numeric_dtype(adata.obs[c])
+            c for c in covariates if not pd.api.types.is_numeric_dtype(de_obs[c])
         ]
         interaction_factors = [m for pair in interactions for m in pair]
         design_factors = list(
             dict.fromkeys([*categorical_covariates, condition_col, *interaction_factors])
         )
         if categorical_covariates or interactions:
-            comparison_obs = adata.obs.loc[
-                adata.obs[condition_col].isin([case, control]),
+            comparison_obs = de_obs.loc[
+                de_obs[condition_col].isin([case, control]),
                 design_factors,
             ].drop_duplicates()
             validate_design_matrix(
@@ -267,7 +276,7 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
 
         # Aggregate to donor x condition pseudobulk counts.
         pb = aggregate_pseudobulk(
-            adata,
+            adata if eligible is None else adata[eligible.to_numpy()],
             layer=layer,
             donor_col=donor_col,
             condition_col=condition_col,
@@ -352,6 +361,11 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
 
         # Return the DE table as an artifact plus provenance metrics.
         notes = [f"Pseudobulk edgeR DE: {tested_effect}, design ~ {design_rhs}.", *design_notes]
+        if n_qc_ineligible:
+            notes.append(
+                f"{n_qc_ineligible} QC-ineligible cell(s) (DE fit/inference masks) excluded "
+                "from the pseudobulk."
+            )
         metrics = {
             "case": case,
             "control": control,
@@ -362,6 +376,7 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
             "tested_effect": tested_effect,
             "n_complete_donor_pairs": decision.n_complete_pairs,
             "design_notes": design_notes,
+            "n_cells_qc_ineligible": n_qc_ineligible,
             "n_pseudosamples": int(counts_df.shape[0]),
             "n_genes_input": int(counts_df.shape[1]),
         }
