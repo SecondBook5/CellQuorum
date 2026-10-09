@@ -2,7 +2,61 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import Field, model_validator
+
 from cellquorum.config.base import StrictBaseModel
+
+_FigureFormat = Literal["pdf", "png", "svg"]
+
+
+def _default_figure_formats() -> list[_FigureFormat]:
+    """All three figure formats, typed so the Literal list survives the default factory."""
+    return ["pdf", "png", "svg"]
+
+
+class ScTenifoldKnkConfig(StrictBaseModel):
+    """Non-TF gene knockouts with the native scTenifoldpy implementation."""
+
+    python_executable: str | None = None
+    ko_genes: list[str] = Field(default_factory=list)
+    condition_label: str | None = None
+    groups: list[str] | None = None
+    by_cluster: bool = True
+    pooled: bool = True
+    donor_key: str | None = None
+    min_cells: int = Field(default=100, ge=10)
+    min_detected_cells: int = Field(default=3, ge=1)
+    max_cells: int = Field(default=2000, ge=0)
+    max_genes: int = Field(default=2000, ge=10)
+    n_nets: int = Field(default=10, ge=2)
+    n_samp_cells: int = Field(default=500, ge=10)
+    n_comp: int = Field(default=3, ge=1)
+    network_quantile: float = Field(default=0.95, ge=0, lt=1)
+    tensor_rank: int = Field(default=3, ge=1)
+    tensor_max_iter: int = Field(default=1000, ge=1)
+    manifold_dim: int = Field(default=30, ge=1)
+    ko_method: Literal["default", "propagation"] = "default"
+    propagation_degree: int = Field(default=1, ge=1)
+    gene_fdr: float = Field(default=0.05, gt=0, lt=1)
+    pathway_gmt: str | None = None
+    min_pathway_genes: int = Field(default=5, ge=1)
+    max_pathway_genes: int = Field(default=500, ge=1)
+    figure_formats: list[_FigureFormat] = Field(default_factory=_default_figure_formats)
+
+    @model_validator(mode="after")
+    def validate_options(self) -> ScTenifoldKnkConfig:
+        """Reject settings that could silently yield a no-op or wrong cohort."""
+        if not self.by_cluster and not self.pooled:
+            raise ValueError("Enable by_cluster or pooled for scTenifoldKnk")
+        if self.min_pathway_genes > self.max_pathway_genes:
+            raise ValueError("min_pathway_genes exceeds max_pathway_genes")
+        if len(self.ko_genes) != len(set(self.ko_genes)) or any(
+            not g.strip() for g in self.ko_genes
+        ):
+            raise ValueError("ko_genes must be unique nonempty gene symbols")
+        return self
 
 
 class PerturbationConfig(StrictBaseModel):
@@ -69,6 +123,23 @@ class PerturbationConfig(StrictBaseModel):
 
     # Selected perturbation method (registry key under stage_category 'perturbation').
     method: str = "celloracle"
+
+    # Separate gene-KO method; existing CellOracle defaults are unchanged.
+    sctenifoldknk: ScTenifoldKnkConfig = Field(default_factory=ScTenifoldKnkConfig)
+
+    @model_validator(mode="after")
+    def validate_sctenifoldknk(self) -> PerturbationConfig:
+        """Require an explicit gene intervention and explicit condition selection."""
+        if self.method == "sctenifoldknk":
+            if not self.sctenifoldknk.ko_genes:
+                raise ValueError("sctenifoldknk requires ko_genes")
+            if bool(self.condition_key) != bool(self.sctenifoldknk.condition_label):
+                raise ValueError(
+                    "Set both condition_key and sctenifoldknk.condition_label, or neither"
+                )
+            if self.sctenifoldknk.by_cluster and not self.cluster_key:
+                raise ValueError("sctenifoldknk.by_cluster requires cluster_key")
+        return self
 
     # Layer holding raw counts for CellOracle.
     layer: str = "counts"
@@ -141,4 +212,4 @@ class PerturbationConfig(StrictBaseModel):
     timeout_seconds: int = 10800
 
 
-__all__ = ["PerturbationConfig"]
+__all__ = ["PerturbationConfig", "ScTenifoldKnkConfig"]

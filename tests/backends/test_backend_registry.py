@@ -492,6 +492,7 @@ def test_build_default_backend_registry_registers_expected_backends() -> None:
         "rscript",
         "scclr",
         "sccoda",
+        "sctenifoldknk",
     ]
 
 
@@ -528,6 +529,7 @@ def test_build_default_backend_registry_status_table_contains_expected_backends(
         "rscript",
         "scclr",
         "sccoda",
+        "sctenifoldknk",
     }
 
     # Confirm every row includes the standard status fields.

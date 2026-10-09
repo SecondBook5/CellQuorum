@@ -17,7 +17,7 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     category="perturbation",
 )
 class PerturbationStage(MethodDispatchStage):
-    """Run the configured in-silico perturbation (CellOracle) method."""
+    """Run the configured CellOracle or scTenifoldKnk perturbation method."""
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "celloracle")

@@ -97,3 +97,6 @@ lymphedema/
 # Local benchmark datasets are not tracked. GSE140819 input coverage and label
 # provenance are documented in docs/benchmarks/gse140819.md.
 data/
+
+# Local optional-backend Python environments.
+.venvs/

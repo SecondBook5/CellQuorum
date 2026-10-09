@@ -211,7 +211,9 @@ def build_pipeline_context(
     # Thread the configured Rscript path so R availability reflects where R
     # actually lives (e.g. a non-default container/HPC path).
     resolved_backend_registry = backend_registry or build_default_backend_registry(
-        rscript_path=config.r.rscript_path, max_memory_gb=config.r.max_memory_gb
+        rscript_path=config.r.rscript_path,
+        max_memory_gb=config.r.max_memory_gb,
+        sctenifoldknk_python=config.perturbation.sctenifoldknk.python_executable,
     )
 
     # Choose the run identifier from config or project name.

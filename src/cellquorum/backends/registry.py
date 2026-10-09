@@ -18,6 +18,7 @@ from cellquorum.backends.rapids import build_rapids_backend
 from cellquorum.backends.rscript import build_rscript_backend
 from cellquorum.backends.scclr_backend import build_scclr_backend
 from cellquorum.backends.sccoda_backend import build_sccoda_backend
+from cellquorum.backends.sctenifoldknk_backend import build_sctenifoldknk_backend
 
 
 class BackendRequirementRow(TypedDict):
@@ -290,7 +291,10 @@ class BackendRegistry:
 
 
 def build_default_backend_registry(
-    *, rscript_path: str = "Rscript", max_memory_gb: float | None = 32.0
+    *,
+    rscript_path: str = "Rscript",
+    max_memory_gb: float | None = 32.0,
+    sctenifoldknk_python: str | None = None,
 ) -> BackendRegistry:
     """
     Build the default CellQuorum backend registry.
@@ -350,6 +354,7 @@ def build_default_backend_registry(
 
     # Register the isolated-env CellOracle backend (in-silico perturbations).
     registry.register(build_celloracle_backend())
+    registry.register(build_sctenifoldknk_backend(python_executable=sctenifoldknk_python))
 
     # Register the isolated-env pyucell backend (small-signature cell scoring,
     # deliberately reuses celloracle_env -- see pyucell_backend module docstring).
