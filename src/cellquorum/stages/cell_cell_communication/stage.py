@@ -77,6 +77,12 @@ class CellCellCommunicationStage(MethodDispatchStage):
             if not augmented.get("control"):
                 augmented["control"] = getattr(design, "control", None)
 
+        if design is not None:
+            augmented.setdefault("paired", bool(getattr(design, "paired", False)))
+            if not augmented.get("donor_col"):
+                augmented["donor_col"] = resolve_cohort_key(
+                    config, attr="donor_key", stage_value=getattr(design, "donor_col", "donor_id")
+                )
         return augmented
 
     def _validate_output(self, result: StageResult) -> None:

@@ -82,9 +82,51 @@ class MultiNicheNetMethod(RAnalysisMethod):
             return backend
 
         scratch = Path(context.paths.scratch)
-        paths = export_sce_inputs(
-            adata, [cell_type_col, sample_col, condition_col], scratch, subdir="multinichenet"
-        )
+        covariates: list[str] = []
+        n_pairs = None
+        export_columns = [cell_type_col, sample_col, condition_col]
+        analysis_adata = adata
+        if config.get("paired", False):
+            donor_col = config.get("donor_col")
+            if not donor_col or donor_col not in adata.obs:
+                raise ValueError("Paired MultiNicheNet requires an existing donor_col")
+            obs = adata.obs
+            if obs[[sample_col, donor_col, condition_col]].isna().any().any():
+                raise ValueError("Missing sample, donor or condition in paired MultiNicheNet")
+            sample_meta = obs[[sample_col, donor_col, condition_col]].drop_duplicates()
+            if sample_meta[sample_col].duplicated().any():
+                raise ValueError("Each sample must map to exactly one donor and condition")
+            cell_counts = (
+                obs.groupby([sample_col, cell_type_col], observed=True).size().unstack(fill_value=0)
+            )
+            minimum = int(config.get("nichenet_min_cells", 10))
+            eligible_samples = cell_counts.index[cell_counts.ge(minimum).all(axis=1)]
+            eligible_meta = sample_meta[sample_meta[sample_col].isin(eligible_samples)]
+            pair_counts = pd.crosstab(eligible_meta[donor_col], eligible_meta[condition_col])
+            pair_counts = pair_counts.reindex(columns=[control, case], fill_value=0)
+            donors = pair_counts.index[pair_counts.eq(1).all(axis=1)]
+            audit = sample_meta.copy()
+            audit["all_celltypes_min_cells"] = audit[sample_col].isin(eligible_samples)
+            audit["included_paired_analysis"] = audit[donor_col].isin(donors) & audit[
+                condition_col
+            ].isin([control, case])
+            scratch.mkdir(parents=True, exist_ok=True)
+            audit.to_csv(scratch / "mnn_pairing_audit.csv", index=False)
+            if len(donors) < 3:
+                raise ValueError("Paired MultiNicheNet requires >=3 complete eligible donor pairs")
+            keep = obs[donor_col].isin(donors) & obs[condition_col].isin([control, case])
+            analysis_adata = adata[keep].copy()
+            n_pairs = len(donors)
+            covariates = [donor_col]
+            export_columns.append(donor_col)
+        counts_layer = config.get("nichenet_counts_layer")
+        if counts_layer:
+            if counts_layer not in analysis_adata.layers:
+                raise ValueError(f"MultiNicheNet counts layer missing: {counts_layer}")
+            if analysis_adata is adata:
+                analysis_adata = analysis_adata.copy()
+            analysis_adata.X = analysis_adata.layers[counts_layer].copy()
+        paths = export_sce_inputs(analysis_adata, export_columns, scratch, subdir="multinichenet")
 
         results_dir = Path(context.paths.results)
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -120,6 +162,8 @@ class MultiNicheNetMethod(RAnalysisMethod):
             str(seed),
             str(sample_csv),
             str(source_csv),
+            ",".join(covariates),
+            str(config.get("nichenet_min_cells", 10)),
         ]
 
         try:
@@ -129,6 +173,8 @@ class MultiNicheNetMethod(RAnalysisMethod):
         except subprocess.TimeoutExpired as exc:
             return self._skip(f"R timed out after {timeout}s", error=str(exc)[:500])
         if proc.returncode != 0:
+            if config.get("paired", False):
+                raise RuntimeError(f"Paired MultiNicheNet failed: {proc.stderr.strip()[-3000:]}")
             return self._skip("multinichenet.R failed", stderr=proc.stderr.strip()[:500])
 
         artifacts = [
@@ -154,6 +200,22 @@ class MultiNicheNetMethod(RAnalysisMethod):
             ),
         ):
             if path.is_file():
+                artifacts.append(
+                    StageArtifact(name=name, path=path, kind="csv", description=description)
+                )
+        for path, name, description in (
+            (
+                scratch / "mnn_pairing_audit.csv",
+                "mnn_pairing_audit",
+                "Donor/sample eligibility and exclusions for the paired fit.",
+            ),
+            (
+                Path(str(native_csv) + ".design.csv"),
+                "mnn_design",
+                "Validated donor-adjusted pseudobulk design matrix.",
+            ),
+        ):
+            if config.get("paired", False) and path.is_file():
                 artifacts.append(
                     StageArtifact(name=name, path=path, kind="csv", description=description)
                 )
@@ -187,7 +249,14 @@ class MultiNicheNetMethod(RAnalysisMethod):
                 f"MultiNicheNet: {case} vs {control}, top_n_target="
                 f"{config.get('mnn_top_n_target', 250)}."
             ],
-            metrics={"case": case, "control": control, "n_prioritized": n_prioritized},
+            metrics={
+                "case": case,
+                "control": control,
+                "n_prioritized": n_prioritized,
+                "paired": bool(config.get("paired", False)),
+                "n_pairs": n_pairs,
+                "covariates": covariates,
+            },
             backend="rscript",
         )
 

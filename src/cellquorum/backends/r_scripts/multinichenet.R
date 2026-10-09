@@ -29,6 +29,8 @@ scenario <- args[[19]]; n_cores <- as.numeric(args[[20]]); seed <- as.integer(ar
 out_sample_csv <- if (length(args) >= 22) args[[22]] else NA_character_
 out_source_csv <- if (length(args) >= 23) args[[23]] else NA_character_
 
+covariates <- if (length(args) >= 24 && nzchar(args[[24]])) strsplit(args[[24]], ",", fixed = TRUE)[[1]] else NA_character_
+min_cells <- if (length(args) >= 25) as.numeric(args[[25]]) else 10
 set.seed(seed)
 
 # Fail fast (non-zero exit) when priors are absent -> Python turns this into MethodSkip.
@@ -64,6 +66,16 @@ sanitized_celltypes <- make.names(original_celltypes)
 celltype_lookup <- setNames(original_celltypes, sanitized_celltypes)
 obs[[celltype_col]] <- setNames(sanitized_celltypes, original_celltypes)[obs[[celltype_col]]]
 
+if (!all(is.na(covariates))) {
+  stopifnot(all(covariates %in% names(obs)))
+  for (col in covariates) obs[[col]] <- factor(obs[[col]])
+  sample_meta <- unique(obs[, c(sample_col, group_col, covariates), drop = FALSE])
+  stopifnot(!anyDuplicated(sample_meta[[sample_col]]), !anyNA(sample_meta))
+  design_check <- model.matrix(reformulate(c(group_col, covariates), intercept = FALSE), sample_meta)
+  stopifnot(qr(design_check)$rank == ncol(design_check), nrow(design_check) > ncol(design_check))
+  write.csv(cbind(sample = sample_meta[[sample_col]], design_check), paste0(out_csv, ".design.csv"), row.names = FALSE)
+  message("MultiNicheNet paired design: ~0 + ", group_col, " + ", paste(covariates, collapse = " + "))
+}
 sce <- SingleCellExperiment(assays = list(counts = counts), colData = obs)
 # multinichenetr expects a normalized "logcounts" assay.
 logcounts(sce) <- log1p(counts)
@@ -80,14 +92,12 @@ contrast_tbl <- data.frame(
 output <- multi_nichenet_analysis(
   sce = sce,
   celltype_id = celltype_col, sample_id = sample_col, group_id = group_col,
-  # No batch or covariate column in this design; NA is multinichenetr's own
-  # documented value for "correct for nothing" (required, no default as of
-  # multinichenetr 2.1.0 -- an older/different version this script was
-  # originally written against apparently didn't require them).
-  batches = NA, covariates = NA,
+  # Categorical donor covariate blocks matched samples in muscat pseudobulk DE.
+  batches = NA, covariates = covariates,
   lr_network = lr_network, ligand_target_matrix = ligand_target_matrix,
   contrasts_oi = contrasts_oi, contrast_tbl = contrast_tbl,
   fraction_cutoff = fraction_cutoff, min_sample_prop = min_sample_prop,
+  min_cells = min_cells,
   logFC_threshold = logfc_threshold, p_val_threshold = p_val_threshold,
   p_val_adj = p_val_adj, empirical_pval = FALSE,
   top_n_target = top_n_target, scenario = scenario, n.cores = n_cores,

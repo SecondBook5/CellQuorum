@@ -71,6 +71,7 @@ class CellCellCommunicationConfig(StrictBaseModel):
     nichenet_lr_network: str | None = None
     nichenet_weighted_networks: str | None = None
     # Shared knobs
+    nichenet_counts_layer: str | None = None
     nichenet_min_cells: int = 10
     nichenet_expr_prop: float = 0.10
     # BiocParallel workers inside multinichenet.R; None inherits compute.n_jobs.

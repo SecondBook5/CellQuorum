@@ -185,7 +185,8 @@ def test_sample_and_source_output_paths_are_passed_and_registered(tmp_path, mock
     ctx = _CapturingContext(tmp_path, mock_context, sample_tbl=sample_tbl, source_tbl=source_tbl)
     res = MultiNicheNetMethod()._run(_toy_adata(), _mnn_config(tmp_path), ctx)
     assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
-    assert len(ctx.args) == 23
+    assert len(ctx.args) == 25
+    assert ctx.args[23] == ""
     assert ctx.args[21].endswith("mnn_sample_prioritization.csv")
     assert ctx.args[22].endswith("mnn_group_prioritization_source.csv")
     names = {a.name for a in res.artifacts}
@@ -247,3 +248,38 @@ def test_failed_canonical_conversion_is_reported_not_swallowed(tmp_path, mock_co
         "could not be converted" in w and "unexpected column layout" in w for w in res.warnings
     )
     assert "mnn_canonical_lr" not in {a.name for a in res.artifacts}
+
+
+def test_paired_mnn_exports_donor_and_excludes_incomplete_pair(tmp_path, mock_context):
+    rows = []
+    for donor in ["p1", "p2", "p3", "p4"]:
+        for condition in ["ctrl", "case"]:
+            for cell_type in ["A", "B"]:
+                n = 1 if donor == "p4" and condition == "case" and cell_type == "A" else 10
+                for _ in range(n):
+                    rows.append((donor, condition, cell_type, f"{donor}_{condition}"))
+    obs = pd.DataFrame(rows, columns=["donor", "condition", "cell_type", "sample_id"])
+    obs.index = obs.index.astype(str)
+    a = ad.AnnData(sp.csr_matrix(np.ones((len(obs), 2))), obs=obs)
+    a.layers["raw"] = sp.csr_matrix(np.full((len(obs), 2), 3.0))
+    cfg = _mnn_config(tmp_path)
+    cfg.update(paired=True, donor_col="donor", nichenet_counts_layer="raw")
+    ctx = _CapturingContext(tmp_path, mock_context)
+    MultiNicheNetMethod()._run(a, cfg, ctx)
+    meta = pd.read_csv(ctx.args[3])
+    assert set(meta.donor) == {"p1", "p2", "p3"}
+    assert meta.groupby("donor").condition.nunique().eq(2).all()
+    assert ctx.args[23] == "donor"
+    assert ctx.args[24] == "10"
+    import scipy.io
+
+    assert np.all(scipy.io.mmread(ctx.args[0]).data == 3)
+    audit = pd.read_csv(ctx.paths.scratch / "mnn_pairing_audit.csv")
+    assert not audit.loc[audit.donor.eq("p4"), "included_paired_analysis"].any()
+
+
+def test_paired_mnn_rejects_missing_donor(tmp_path, mock_context):
+    cfg = _mnn_config(tmp_path)
+    cfg.update(paired=True, donor_col="missing")
+    with pytest.raises(ValueError, match="donor_col"):
+        MultiNicheNetMethod()._run(_toy_adata(), cfg, mock_context(tmp_path))
