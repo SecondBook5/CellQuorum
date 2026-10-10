@@ -351,3 +351,45 @@ def test_label_boxes_are_near_white_with_an_edge_in_the_cluster_colour():
         assert edge[3] > 0 and box.get_linewidth() > 0
         edges.add(tuple(round(c, 3) for c in edge[:3]))
     assert len(edges) == 2  # each group's edge is its own colour
+
+
+def _coloured_adata():
+    rng = np.random.default_rng(1)
+    centres = {"Fibro": (0, 0), "TNK": (6, 1), "Mast": (3, 6), "DC": (-4, 5)}
+    labels, points = [], []
+    for name, (cx, cy) in centres.items():
+        labels += [name] * 40
+        points.append(rng.normal(loc=(cx, cy), scale=0.5, size=(40, 2)))
+    a = ad.AnnData(X=np.zeros((160, 2), dtype="float32"))
+    a.obsm["X_umap"] = np.vstack(points).astype("float32")
+    a.obs["cell_type"] = labels
+    return a
+
+
+def test_column_palette_is_exactly_the_colours_the_umap_figure_draws():
+    from matplotlib.colors import to_hex
+
+    a = _coloured_adata()
+    fig = plots.categorical_embedding(a, "cell_type", basis="X_umap", axis_labels=("U1", "U2"))
+    drawn = {
+        c.get_label(): to_hex(c.get_facecolor()[0], keep_alpha=False)
+        for c in fig.axes[0].collections
+        if c.get_label() in set(a.obs["cell_type"])
+    }
+
+    palette = plots.column_palette(a.obsm["X_umap"], a.obs["cell_type"])
+
+    assert drawn == {k: palette[k].lower() for k in drawn}
+    assert len(drawn) == 4
+
+
+def test_column_palette_agrees_for_a_categorical_column_with_an_unused_category():
+    a = _coloured_adata()
+    plain = plots.column_palette(a.obsm["X_umap"], a.obs["cell_type"])
+    a.obs["cell_type"] = pd.Categorical(
+        a.obs["cell_type"], categories=sorted(set(a.obs["cell_type"]))
+    )
+
+    categorical = plots.column_palette(a.obsm["X_umap"], a.obs["cell_type"])
+
+    assert categorical == plain

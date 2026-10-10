@@ -13,6 +13,7 @@ from typing import Any
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 from matplotlib import patheffects
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -156,6 +157,22 @@ def compute_categorical_palette(
         if mask.any():
             centroids[cat] = np.array([np.median(xy[mask, 0]), np.median(xy[mask, 1])])
     return _palette_from_centroids(centroids, cats)
+
+
+def column_palette(xy: np.ndarray, column: pd.Series) -> dict[str, str]:
+    """The category -> colour mapping ``categorical_embedding`` draws for ``column``.
+
+    Categories are taken the way the figure takes them (the declared order of a categorical
+    column, else the sorted unique values), so a figure that colours the same labels --
+    composition bars, a dotplot's headers -- gets the same colour for the same cell type as
+    the UMAP does, whatever the dtype of the label column. ``xy`` must be the coordinates the
+    UMAP figure uses: the palette is dealt in angular order of the group centroids.
+    """
+    if hasattr(column, "cat") and hasattr(column.cat, "categories"):
+        cats = [str(c) for c in column.cat.categories]
+    else:
+        cats = sorted(column.dropna().astype(str).unique())
+    return compute_categorical_palette(np.asarray(xy)[:, :2], column.astype(str).to_numpy(), cats)
 
 
 def _label_anchor(points: np.ndarray) -> np.ndarray:

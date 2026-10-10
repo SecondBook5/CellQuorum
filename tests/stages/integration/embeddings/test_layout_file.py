@@ -123,3 +123,14 @@ def test_the_config_field_defaults_to_computing():
     from cellquorum.stages.integration.embeddings.config import EmbeddingsConfig
 
     assert EmbeddingsConfig().layout_file is None
+
+
+def test_read_layout_returns_coordinates_without_touching_the_object(tmp_path):
+    a = _adata()
+    path = _layout(tmp_path, ["cell5", "cell4", "cell3", "cell2", "cell1", "cell0"])
+
+    xy = compute.read_layout(a.obs_names, path)
+
+    assert xy.shape == (6, 2)
+    assert xy[5].tolist() == [0.0, 10.0]  # cell5 is row 0 of the file
+    assert "X_umap" not in a.obsm

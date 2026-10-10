@@ -71,17 +71,14 @@ def _is_usable_grouping(adata: ad.AnnData, column: str) -> bool:
     return int(values.nunique(dropna=True)) >= 2
 
 
-def load_layout(adata: ad.AnnData, path: str | Path) -> int:
-    """Write ``obsm['X_umap']`` from a frozen display-layout file instead of computing one.
+def read_layout(obs_names: pd.Index, path: str | Path) -> np.ndarray:
+    """Display coordinates for ``obs_names`` from a frozen layout file, as a (n, 2) array.
 
     The file is a CSV (optionally gzipped) with columns ``cell``, ``umap1`` and ``umap2``.
-    Coordinates are matched to cells by ID, never by row order. Every cell of ``adata`` must
-    be in the file; cells the file has beyond ``adata`` are ignored. A layout that does not
-    cover the object raises rather than being padded, and nothing is written, because a
-    partial layout drawn as the atlas would be a plausible wrong picture.
-
-    Returns:
-        The number of cells placed.
+    Coordinates are matched to cells by ID, never by row order. Every cell in ``obs_names``
+    must be in the file; cells the file has beyond them are ignored. A layout that does not
+    cover the cells raises rather than being padded, because a partial layout drawn as the
+    atlas would be a plausible wrong picture.
     """
     path = Path(path)
     try:
@@ -96,13 +93,25 @@ def load_layout(adata: ad.AnnData, path: str | Path) -> int:
             f"layout file {path.name} has duplicate cells "
             f"({int(table['cell'].duplicated().sum())} repeated ids)"
         )
-    placed = table.set_index("cell").reindex(adata.obs_names)[["umap1", "umap2"]]
+    placed = table.set_index("cell").reindex(obs_names)[["umap1", "umap2"]]
     absent = int(placed["umap1"].isna().sum())
     if absent:
         raise LayoutMismatch(
-            f"layout file {path.name} does not cover {absent} of {adata.n_obs} cells"
+            f"layout file {path.name} does not cover {absent} of {len(obs_names)} cells"
         )
-    adata.obsm["X_umap"] = placed.to_numpy(dtype="float32")
+    return placed.to_numpy(dtype="float32")
+
+
+def load_layout(adata: ad.AnnData, path: str | Path) -> int:
+    """Write ``obsm['X_umap']`` from a frozen display-layout file instead of computing one.
+
+    See :func:`read_layout` for the file format and matching rules. Nothing is written when
+    the file does not fit the object.
+
+    Returns:
+        The number of cells placed.
+    """
+    adata.obsm["X_umap"] = read_layout(adata.obs_names, path)
     return int(adata.n_obs)
 
 
