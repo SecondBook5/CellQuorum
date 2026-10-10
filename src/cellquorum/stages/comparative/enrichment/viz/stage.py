@@ -52,6 +52,7 @@ class EnrichmentVizStage(MethodDispatchStage):
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [
                 {"method": "gsea_viz"},
+                {"method": "gsea_nes_heatmap"},
                 {"method": "ora_viz"},
                 {"method": "gsva_viz"},
                 {"method": "activity_viz"},

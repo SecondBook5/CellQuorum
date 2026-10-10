@@ -68,12 +68,12 @@ def _write_all_csvs(paths):
     pd.DataFrame(rows).to_csv(paths.results / "enrichment_activity_collectri.csv", index=False)
 
 
-def test_stage_runs_four_methods_and_produces_figures(tmp_path):
+def test_stage_runs_its_default_methods_and_produces_figures(tmp_path):
     ctx = _ctx(tmp_path)
     _write_all_csvs(ctx.paths)
     result = EnrichmentVizStage().run(ctx)
-    assert result.metrics["n_methods"] == 4
-    assert len(result.metrics["per_method"]) == 4
+    assert result.metrics["n_methods"] == 5
+    assert len(result.metrics["per_method"]) == 5
     figs = list((ctx.paths.figures / "enrichment").glob("*"))
     assert len(figs) > 0
 
@@ -82,7 +82,7 @@ def test_stage_always_on_skips_cleanly_when_no_inputs(tmp_path):
     ctx = _ctx(tmp_path)  # no CSVs written
     result = EnrichmentVizStage().run(ctx)
     # Every method records a skip; stage completes without crashing.
-    assert result.metrics["n_methods"] == 4
+    assert result.metrics["n_methods"] == 5
     assert all(m.get("skipped") for m in result.metrics["per_method"])
 
 
@@ -90,5 +90,5 @@ def test_methods_registered():
     import cellquorum.stages.comparative.enrichment.viz  # noqa: F401  (triggers registration)
     from cellquorum.methods.registry import METHOD_REGISTRY
 
-    for name in ["gsea_viz", "ora_viz", "gsva_viz", "activity_viz"]:
+    for name in ["gsea_viz", "gsea_nes_heatmap", "ora_viz", "gsva_viz", "activity_viz"]:
         assert METHOD_REGISTRY.has("enrichment_viz", name)
