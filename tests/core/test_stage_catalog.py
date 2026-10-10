@@ -166,8 +166,10 @@ GOLDEN_STAGE_ORDER = [
     "state_scoring",
     "state_scoring_viz",
     "discovery",
-    "composition",
     "embeddings",
+    # order=205, after embeddings (200): the bars take their cell-type colours from the
+    # coordinates embeddings just produced, so the two figures draw one palette.
+    "composition",
     "differential_expression",
     "differential_state",
     "differential_abundance",

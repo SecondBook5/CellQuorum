@@ -34,8 +34,8 @@ that have no module yet.
 | 170 | `state_scoring` | implemented |
 | 175 | `state_scoring_viz` | implemented |
 | 180 | `discovery` | implemented |
-| 190 | `composition` | implemented |
 | 200 | `embeddings` | implemented |
+| 205 | `composition` | implemented |
 | 210 | `differential_expression` | implemented |
 | 215 | `differential_state` | implemented |
 | 220 | `differential_abundance` | implemented |

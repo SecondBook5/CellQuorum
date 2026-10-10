@@ -1,4 +1,4 @@
-"""Tests for the cell-type composition summary stage (order=190)."""
+"""Tests for the cell-type composition summary stage (order=205)."""
 
 from __future__ import annotations
 

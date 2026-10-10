@@ -1,4 +1,4 @@
-# Pipeline step (order=190): composition — descriptive cell-type composition summary.
+# Pipeline step (order=205): composition — descriptive cell-type composition summary.
 """Cell-type composition summary stage."""
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 @register_stage(
     name="composition",
-    order=190,
+    order=205,
     config_flag="composition",
     config_field="composition",
     category="composition",
