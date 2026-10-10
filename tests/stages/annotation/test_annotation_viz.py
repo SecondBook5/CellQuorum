@@ -174,3 +174,20 @@ def test_the_executor_registry_includes_it():
 
     registry = build_default_stage_registry()
     assert isinstance(registry.get("annotation_viz"), AnnotationVizStage)
+
+
+def test_labels_that_are_plain_strings_follow_the_order_of_the_panel(tmp_path):
+    a = _adata()
+    a.obs["cell_type"] = a.obs["cell_type"].astype(str)
+    panel = {"Beta": ["G2", "G3"], "Alpha": ["G0", "G1"]}
+    MarkerDotplotMethod()._run(a, _config(marker_panels=panel), _ctx(tmp_path))
+    mean = pd.read_csv(tmp_path / "results" / "annotation" / "marker_dotplot_mean.csv", index_col=0)
+    assert list(mean.columns) == ["Beta", "Alpha", "Gamma"]
+
+
+def test_an_ordered_categorical_keeps_its_own_order(tmp_path):
+    a = _adata()
+    a.obs["cell_type"] = a.obs["cell_type"].cat.reorder_categories(["Gamma", "Beta", "Alpha"])
+    MarkerDotplotMethod()._run(a, _config(), _ctx(tmp_path))
+    mean = pd.read_csv(tmp_path / "results" / "annotation" / "marker_dotplot_mean.csv", index_col=0)
+    assert list(mean.columns) == ["Gamma", "Beta", "Alpha"]
