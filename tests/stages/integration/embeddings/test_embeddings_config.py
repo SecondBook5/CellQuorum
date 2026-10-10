@@ -59,3 +59,9 @@ def test_stage_selection_has_embeddings_toggle():
 def test_cellquorum_config_has_embeddings_subconfig():
     cfg = CellQuorumConfig(project={"name": "t"}, input={"h5ad": "x.h5ad"})
     assert isinstance(cfg.embeddings, EmbeddingsConfig)
+
+
+def test_gene_expression_overlays_default_to_the_orange_ramp():
+    from cellquorum.stages.integration.embeddings.config import OverlayConfig
+
+    assert OverlayConfig().expression_cmap == "cq_orange"

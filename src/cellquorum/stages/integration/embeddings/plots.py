@@ -19,7 +19,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from cellquorum.visualization.figio import figure_artifacts, save_figure
-from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP as _SEQUENTIAL_CMAP
+from cellquorum.visualization.figstyle import ORANGE_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
 from cellquorum.visualization.figstyle import muted_palette_colors
 

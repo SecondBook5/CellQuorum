@@ -393,3 +393,13 @@ def test_column_palette_agrees_for_a_categorical_column_with_an_unused_category(
     categorical = plots.column_palette(a.obsm["X_umap"], a.obs["cell_type"])
 
     assert categorical == plain
+
+
+def test_an_unsigned_overlay_uses_the_orange_ramp_unless_told_otherwise():
+    coords = np.random.default_rng(0).random((40, 2))
+
+    fig = plots.continuous_overlay(
+        coords, np.linspace(0, 1, 40), title="t", axis_labels=("U1", "U2")
+    )
+
+    assert fig.axes[0].collections[0].get_cmap().name == "cq_orange"

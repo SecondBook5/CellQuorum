@@ -61,6 +61,26 @@ DOUBLET_COLOR = "#D1495B"
 # heatmap/scatter colormaps default to this constant.
 SEQUENTIAL_CMAP: str = "viridis"
 
+#: The orange ramp used for unsigned per-cell values on an embedding (gene expression, UCell
+#: scores), from a light warm grey to a deep orange-brown. The low end is not white, so
+#: near-zero cells stay visible on a white page; it darkens strictly with the value.
+ORANGE_CMAP: str = "cq_orange"
+_ORANGE_STOPS = ("#E9E2D8", "#F4C690", "#EE9448", "#CF5B1D", "#7F3410")
+
+
+def _register_orange_cmap() -> None:
+    """Make ``ORANGE_CMAP`` available to matplotlib by name (idempotent)."""
+    import matplotlib
+    from matplotlib.colors import LinearSegmentedColormap
+
+    if ORANGE_CMAP not in matplotlib.colormaps:
+        matplotlib.colormaps.register(
+            LinearSegmentedColormap.from_list(ORANGE_CMAP, list(_ORANGE_STOPS), N=256)
+        )
+
+
+_register_orange_cmap()
+
 # Background panel colors (very subtle, used in volcano plot regions).
 BACKGROUND_BLUE = "#E8F0F8"  # Light blue for downregulated region
 BACKGROUND_GRAY = "#F5F5F5"  # Light gray for neutral region
@@ -1611,6 +1631,7 @@ __all__ = [
     "QC_FAIL_COLOR",
     "DOUBLET_COLOR",
     # Continuous colormap knob.
+    "ORANGE_CMAP",
     "SEQUENTIAL_CMAP",
     # Figure sizing and background panels.
     "CELLQUORUM_FIGSIZE_SMALL",
