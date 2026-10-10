@@ -43,7 +43,6 @@ def plot_marker_dotplot(
         groupby: obs column to group cells by (rows of the dotplot, unless
             ``swap_axes``).
         layer: Expression layer to read (log-normalized).
-        out_path: Path to write the figure PNG. A ``.pdf`` is written beside it.
         categories_order: Row order for ``groupby``'s categories. None keeps
             the column's own category order.
         swap_axes: When True, genes run down the rows (grouped by panel) and
@@ -177,17 +176,16 @@ def plot_marker_feature_grid(
     return next(p for p in paths if p.suffix == ".png")
 
 
-def plot_categorized_dotplot(
+def draw_categorized_dotplot(
     adata: ad.AnnData,
     gene_categories: Mapping[str, list[str]],
     *,
     groupby: str,
     layer: str,
-    out_path: Path,
     categories_order: list[str] | None = None,
     vmax_percentile: float = 95.0,
     title: str | None = None,
-) -> Path | None:
+) -> Figure | None:
     """
     A fully custom, densely categorized marker dotplot: genes as rows grouped
     into named panels with a boxed label to their left, groupby categories as
@@ -219,8 +217,9 @@ def plot_categorized_dotplot(
         title: Optional figure title.
 
     Returns:
-        The PNG path written, or ``None`` when no gene in any category
-        survives the intersection with ``adata.var_names``.
+        The figure, or ``None`` when no gene in any category survives the
+        intersection with ``adata.var_names``. :func:`plot_categorized_dotplot`
+        writes it to disk.
     """
     import matplotlib.pyplot as plt
     import scipy.sparse as sp
@@ -234,7 +233,6 @@ def plot_categorized_dotplot(
         return None
 
     apply_theme("notebook")
-    out_path = Path(out_path)
 
     groups = (
         [c for c in categories_order if c in adata.obs[groupby].astype(str).unique()]
@@ -367,6 +365,36 @@ def plot_categorized_dotplot(
     if title:
         fig.suptitle(title, fontsize=12, weight="bold", y=1.0)
 
+    return fig
+
+
+def plot_categorized_dotplot(
+    adata: ad.AnnData,
+    gene_categories: Mapping[str, list[str]],
+    *,
+    groupby: str,
+    layer: str,
+    out_path: Path,
+    categories_order: list[str] | None = None,
+    vmax_percentile: float = 95.0,
+    title: str | None = None,
+) -> Path | None:
+    """Draw :func:`draw_categorized_dotplot` and write it as PNG plus a PDF twin.
+
+    Returns the PNG path, or ``None`` when no gene in any category is present.
+    """
+    fig = draw_categorized_dotplot(
+        adata,
+        gene_categories,
+        groupby=groupby,
+        layer=layer,
+        categories_order=categories_order,
+        vmax_percentile=vmax_percentile,
+        title=title,
+    )
+    if fig is None:
+        return None
+    out_path = Path(out_path)
     paths = save_figure(fig, out_path.parent, out_path.stem)
     return next(p for p in paths if p.suffix == ".png")
 

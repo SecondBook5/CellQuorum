@@ -413,3 +413,30 @@ def test_dendrogram_row_order_survives_a_constant_row():
     m = np.array([[1.0, 1.0, 1.0], [0.0, 1.0, 2.0], [2.0, 1.0, 0.0]])
     order, z = dendrogram_row_order(m)
     assert sorted(order) == [0, 1, 2] and np.isfinite(z).all()
+
+
+def test_draw_categorized_dotplot_returns_the_figure_with_one_dot_per_gene_and_group():
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    a = _categorized_adata()
+    fig = draw_categorized_dotplot(
+        a,
+        {"Category A": ["G0", "G1", "G2"], "Category B": ["G3", "G4"]},
+        groupby="state",
+        layer="norm",
+    )
+
+    assert fig is not None
+    dot_ax = max(fig.axes, key=lambda ax: len(ax.collections))
+    assert len(dot_ax.collections) == 5 * 3  # five genes x three groups
+
+
+def test_draw_categorized_dotplot_returns_none_when_no_gene_is_present():
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    assert (
+        draw_categorized_dotplot(
+            _categorized_adata(), {"Ghost": ["NOPE"]}, groupby="state", layer="norm"
+        )
+        is None
+    )
