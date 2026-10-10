@@ -289,15 +289,26 @@ def draw_categorized_dotplot(
     n_cols = len(groups)
     row_h = 0.34
     fig_h = max(3.0, n_rows * row_h + 1.6)
-    fig_w = max(4.5, 1.9 + n_cols * 0.62 + 1.6)
+    # Widths are in inches. The gene names are the dot axes' tick labels, drawn to the left of
+    # the dots, so they need a column of their own between the category boxes and the dots,
+    # sized from the longest name; otherwise they run into the boxes.
+    box_in, legend_in_w = 1.5, 1.1
+    label_in = 0.085 * max(len(g) for g in all_genes) + 0.25
+    dots_in = n_cols * 0.62
+    fig_w = max(4.5, box_in + label_in + dots_in + legend_in_w + 0.4)
 
     fig = plt.figure(figsize=(fig_w, fig_h))
     gs = fig.add_gridspec(
-        1, 3, width_ratios=[1.7, n_cols * 0.62, 1.1], wspace=0.06, left=0.02, right=0.98
+        1,
+        4,
+        width_ratios=[box_in, label_in, dots_in, legend_in_w],
+        wspace=0.0,
+        left=0.02,
+        right=0.98,
     )
     box_ax = fig.add_subplot(gs[0, 0])
-    dot_ax = fig.add_subplot(gs[0, 1])
-    legend_ax = fig.add_subplot(gs[0, 2])
+    dot_ax = fig.add_subplot(gs[0, 2])
+    legend_ax = fig.add_subplot(gs[0, 3])
 
     # Row position by index, not gene name: a name can repeat across
     # categories, so a name-keyed dict would silently collapse duplicates

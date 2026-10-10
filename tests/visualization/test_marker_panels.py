@@ -540,3 +540,41 @@ def test_the_legends_keep_a_fixed_physical_size_however_tall_the_panel_is():
     bar = next(ax for ax in insets if "avg. expression" in ax.get_ylabel())
     inches = bar.get_window_extent().height / fig.dpi
     assert 1.0 <= inches <= 2.6
+
+
+def test_gene_labels_never_run_into_the_category_boxes():
+    from matplotlib.patches import FancyBboxPatch
+
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    rng = np.random.default_rng(0)
+    genes = ["COL17A1", "SERPINE1", "LONGERGENENAME2", "KRT14", "PMEL", "MLANA"]
+    a = ad.AnnData(
+        X=rng.poisson(2.0, size=(60, len(genes))).astype(float), var=pd.DataFrame(index=genes)
+    )
+    a.layers["norm"] = a.X.copy()
+    a.obs["state"] = pd.Categorical(["S1", "S2", "S3"] * 20)
+    fig = draw_categorized_dotplot(
+        a,
+        {"Keratinocytes": genes[:3], "Melanocytes": genes[3:]},
+        groupby="state",
+        layer="norm",
+    )
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    boxes = [
+        patch.get_window_extent(renderer)
+        for ax in fig.axes
+        for patch in ax.patches
+        if isinstance(patch, FancyBboxPatch)
+    ]
+    labels = [
+        label.get_window_extent(renderer)
+        for ax in fig.axes
+        for label in ax.get_yticklabels()
+        if label.get_text() in genes
+    ]
+    assert boxes
+    assert len(labels) == len(genes)
+    assert not [(b, g) for g in labels for b in boxes if b.overlaps(g)]
