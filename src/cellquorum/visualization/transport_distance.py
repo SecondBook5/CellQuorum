@@ -32,6 +32,7 @@ def transport_distance(
     *,
     state_order: Sequence[str] | None = None,
     alpha: float = 0.05,
+    measure_label: str = "Wasserstein-2 distance, Normal vs LE",
 ) -> Figure:
     """One row per donor, grouped by state.
 
@@ -42,6 +43,8 @@ def transport_distance(
             condition) are written beside each donor when present.
         state_order: Order of the state blocks; defaults to first appearance in ``table``.
         alpha: p-value below which a donor's marker is filled; above it the marker is open.
+        measure_label: What ``w2`` measures; the default is the transport distance. Any
+            per-donor statistic with a within-donor shuffled-label null can be drawn the same way.
     """
     import matplotlib.pyplot as plt
 
@@ -123,8 +126,7 @@ def transport_distance(
     ax.tick_params(axis="y", length=0)
     suffix = "\nright: cells Normal | LE" if has_counts else ""
     ax.set_xlabel(
-        f"Wasserstein-2 distance, Normal vs LE\n"
-        f"(filled: p < {alpha:g}; grey: shuffled-label null){suffix}",
+        f"{measure_label}\n" f"(filled: p < {alpha:g}; grey: shuffled-label null){suffix}",
         fontsize=8,
     )
     ax.spines["top"].set_visible(False)

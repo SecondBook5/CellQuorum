@@ -83,3 +83,9 @@ def test_cell_counts_per_condition_are_written_beside_each_donor() -> None:
 def test_a_missing_column_is_named() -> None:
     with pytest.raises(ValueError, match="null_p95"):
         transport_distance(_table().drop(columns="null_p95"))
+
+
+def test_the_axis_names_the_measure_it_is_given() -> None:
+    fig = transport_distance(_table(), measure_label="EndoMT score change")
+    assert "EndoMT score change" in _axis(fig).get_xlabel()
+    assert "Wasserstein" not in _axis(fig).get_xlabel()
