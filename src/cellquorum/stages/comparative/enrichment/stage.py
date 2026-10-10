@@ -66,6 +66,10 @@ class EnrichmentStage(MethodDispatchStage):
                 {"method": "gsva"},
                 {"method": "activity"},
             ]
+            # One switch: DE split by cell type (differential_expression.cell_type_col) is what
+            # writes the per-cell-type table, so it is also what asks for its enrichment.
+            if getattr(getattr(config, "differential_expression", None), "cell_type_col", None):
+                augmented["methods"].insert(1, {"method": "gsea_by_cell_type"})
 
         return augmented
 
