@@ -1119,10 +1119,219 @@ def ligand_receiver_composite(
     return fig
 
 
+#: Signed-chord ribbon colours: red where the weight is higher in the case arm, blue lower.
+_CHORD_UP, _CHORD_DOWN, _CHORD_GREY = "#C1121F", "#2A78D2", "#B9BEC4"
+
+
+def ligand_receptor_chord(
+    edges: pd.DataFrame,
+    *,
+    sender_palette: Mapping[str, str],
+    receiver_palette: Mapping[str, str],
+    weight_col: str = "weight",
+    significant_col: str | None = None,
+    signed: bool = False,
+    scale: float | None = None,
+    top_n: int | None = None,
+    highlight: Mapping[str, str] | None = None,
+    sender_col: str = "sender",
+    ligand_col: str = "ligand",
+    receiver_col: str = "receiver",
+    receptor_col: str = "receptor",
+) -> Figure:
+    """Ligands on the left, grouped by sender; receptors on the right, grouped by receiver.
+
+    One ribbon per ligand-receptor pair, its width on both ends proportional to ``|weight|``.
+    Three things keep it honest:
+
+    * ``scale`` is the total weight the half-circle represents. Two chords meant to be compared
+      (Normal and lymphedema) must be drawn with the same ``scale``, or the same ribbon is a
+      different width in each and the comparison is made by the eye on the wrong quantity.
+    * With ``signed=True`` the ribbon is red where the weight is positive and blue where negative;
+      its width is the magnitude of the change.
+    * With ``significant_col`` given, ribbons whose flag is false are faded, so a change that did
+      not clear its test is not drawn as strongly as one that did.
+
+    ``highlight`` maps ligand names to a colour: those ligands' labels (and, when unsigned, their
+    ribbons) take it, so a ligand the figure is about can be found without reading every label.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import PathPatch, Wedge
+    from matplotlib.path import Path as MplPath
+
+    apply_theme("compact")
+    d = edges.copy()
+    d[weight_col] = d[weight_col].astype(float)
+    d = d[np.isfinite(d[weight_col]) & (d[weight_col].abs() > 0)]
+    if top_n is not None:
+        d = d.reindex(d[weight_col].abs().sort_values(ascending=False).index).head(top_n)
+    if d.empty:
+        fig = plt.figure(figsize=(6, 5.5))
+        fig.add_subplot(111).axis("off")
+        return fig
+    for col in (sender_col, ligand_col, receiver_col, receptor_col):
+        d[col] = d[col].astype(str)
+    d["w_abs"] = d[weight_col].abs()
+    flags = d[significant_col].astype(bool) if significant_col else pd.Series(True, index=d.index)
+    marks = dict(highlight or {})
+
+    def _order(group_col: str, mol_col: str, palette: Mapping[str, str]) -> list[tuple[str, str]]:
+        sums = d.groupby([group_col, mol_col])["w_abs"].sum()
+        groups = sorted(
+            {g for g, _ in sums.index},
+            key=lambda g: (list(palette).index(g) if g in palette else len(palette), g),
+        )
+        return [(g, m) for g in groups for m in sums[g].sort_values(ascending=False).index]
+
+    lig_keys = _order(sender_col, ligand_col, sender_palette)
+    rec_keys = _order(receiver_col, receptor_col, receiver_palette)
+    total = float(scale) if scale is not None else float(d["w_abs"].sum())
+    gap, margin = 0.045, 0.18
+    unit = (np.pi - 2 * margin - gap * max(len(lig_keys), len(rec_keys))) / total
+
+    def _angles(
+        keys: list[tuple[str, str]], col_g: str, col_m: str, start: float, direction: int
+    ) -> dict[tuple[str, str], tuple[float, float]]:
+        out, cursor = {}, start
+        for g, m in keys:
+            w = float(d.loc[(d[col_g] == g) & (d[col_m] == m), "w_abs"].sum()) * unit
+            out[(g, m)] = (cursor, cursor + direction * w)
+            cursor += direction * (w + gap)
+        return out
+
+    lig_ang = _angles(lig_keys, sender_col, ligand_col, np.pi / 2 + margin, 1)
+    rec_ang = _angles(rec_keys, receiver_col, receptor_col, np.pi / 2 - margin, -1)
+    fig, ax = plt.subplots(figsize=(7.2, 5.6))
+    ax.set_xlim(-2.1, 2.3)
+    ax.set_ylim(-1.42, 1.3)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    def _pt(r: float, t: float) -> tuple[float, float]:
+        return (r * np.cos(t), r * np.sin(t))
+
+    cursor_l = {k: min(v) for k, v in lig_ang.items()}
+    cursor_r = {k: max(v) for k, v in rec_ang.items()}
+    ordered = d.assign(strong=flags).sort_values("strong")
+    for row in ordered.to_dict("records"):
+        w = row["w_abs"] * unit
+        a0 = cursor_l[(row[sender_col], row[ligand_col])]
+        cursor_l[(row[sender_col], row[ligand_col])] = a0 + w
+        b1 = cursor_r[(row[receiver_col], row[receptor_col])]
+        cursor_r[(row[receiver_col], row[receptor_col])] = b1 - w
+        b0 = b1 - w
+        verts = [_pt(0.98, a0)]
+        codes = [MplPath.MOVETO]
+        for t in np.linspace(a0, a0 + w, 8)[1:]:
+            verts.append(_pt(0.98, t))
+            codes.append(MplPath.LINETO)
+        verts += [(0.0, 0.0), _pt(0.98, b0)]
+        codes += [MplPath.CURVE3, MplPath.CURVE3]
+        for t in np.linspace(b0, b1, 8)[1:]:
+            verts.append(_pt(0.98, t))
+            codes.append(MplPath.LINETO)
+        verts += [(0.0, 0.0), _pt(0.98, a0)]
+        codes += [MplPath.CURVE3, MplPath.CURVE3]
+        if signed:
+            colour = _CHORD_UP if row[weight_col] > 0 else _CHORD_DOWN
+        else:
+            colour = marks.get(row[ligand_col], _CHORD_GREY)
+        strong = bool(row["strong"])
+        ax.add_patch(
+            PathPatch(
+                MplPath(verts, codes),
+                fc=colour,
+                ec="none",
+                alpha=0.85 if strong else 0.3,
+                zorder=3 if strong else 2,
+                gid=f"ribbon|{row[ligand_col]}>{row[receptor_col]}|{row[receiver_col]}",
+            )
+        )
+
+    def _spread(mid: list[float], min_gap: float = 0.075) -> list[float]:
+        idx = np.argsort(mid)
+        out = np.array(mid, dtype=float)
+        for _ in range(60):
+            ordered_angles = out[idx]
+            for i in range(1, len(ordered_angles)):
+                short = min_gap - (ordered_angles[i] - ordered_angles[i - 1])
+                if short > 0:
+                    ordered_angles[i] += short / 2
+                    ordered_angles[i - 1] -= short / 2
+            out[idx] = ordered_angles
+        return list(out)
+
+    lig_mid = _spread([sum(lig_ang[k]) / 2 for k in lig_keys])
+    rec_mid = _spread([sum(rec_ang[k]) / 2 for k in rec_keys])
+    for (_, name), t in zip(lig_keys, lig_mid, strict=True):
+        colour = marks.get(name, INK)
+        lab = ax.text(
+            *_pt(1.06, t),
+            name,
+            ha="right",
+            va="center",
+            fontsize=7.6,
+            color=colour,
+            fontweight="bold" if name in marks else "normal",
+            rotation=np.rad2deg(t) - 180,
+            rotation_mode="anchor",
+        )
+        lab.set_gid("ligand_label")
+    for (_, name), t in zip(rec_keys, rec_mid, strict=True):
+        lab = ax.text(
+            *_pt(1.06, t),
+            name,
+            ha="left",
+            va="center",
+            fontsize=7.6,
+            color=INK,
+            rotation=np.rad2deg(t),
+            rotation_mode="anchor",
+        )
+        lab.set_gid("receptor_label")
+
+    def _group_arc(
+        keys: list[tuple[str, str]],
+        ang: dict[tuple[str, str], tuple[float, float]],
+        palette: Mapping[str, str],
+        side: str,
+    ) -> None:
+        for g in dict.fromkeys(k[0] for k in keys):
+            spans = [ang[k] for k in keys if k[0] == g]
+            lo = min(min(s) for s in spans)
+            hi = max(max(s) for s in spans)
+            ax.add_patch(
+                Wedge(
+                    (0, 0),
+                    1.0,
+                    np.rad2deg(lo),
+                    np.rad2deg(hi),
+                    width=0.03,
+                    fc=palette.get(g, "#6B7280"),
+                    ec="none",
+                )
+            )
+            lab = ax.text(
+                *_pt(1.36, (lo + hi) / 2),
+                g,
+                ha="right" if side == "L" else "left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color=palette.get(g, INK),
+            )
+            lab.set_gid("group_label")
+
+    _group_arc(lig_keys, lig_ang, sender_palette, "L")
+    _group_arc(rec_keys, rec_ang, receiver_palette, "R")
+    return fig
+
+
 __all__ = [
     "ligand_activity_arm_comparison",
     "ligand_activity_ranking",
     "ligand_receiver_composite",
+    "ligand_receptor_chord",
     "ligand_target_grid",
     "sender_attribution_grid",
 ]
