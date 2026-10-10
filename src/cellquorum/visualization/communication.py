@@ -874,6 +874,8 @@ def ligand_receiver_composite(
     ligands += [g for g in highlight if g in a_rank and g in present and g not in ligands]
     ligands = sorted(ligands, key=lambda g: a_rank[g])
 
+    if expression["sender"].isna().any():
+        raise ValueError("the sender-expression frame has rows with no sender name")
     senders = list(dict.fromkeys(expression["sender"].astype(str)))
     expr_frame = expression.pivot(index="ligand", columns="sender", values="mean_expression")
     expr = expr_frame.reindex(index=ligands, columns=senders).fillna(0.0).to_numpy(dtype=float)

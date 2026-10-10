@@ -154,3 +154,10 @@ def test_targets_are_the_strongest_for_the_drawn_ligands() -> None:
     fig = _compose(max_targets=4)
     cols = {p.get_gid().split("|")[1] for p in _axis(fig, "targets").patches}
     assert len(cols) == 4
+
+
+def test_a_sender_with_no_name_is_an_error_not_a_column_called_nan() -> None:
+    expression = _expression()
+    expression.loc[expression.index[0], "sender"] = np.nan
+    with pytest.raises(ValueError, match="sender"):
+        _compose(expression=expression)
