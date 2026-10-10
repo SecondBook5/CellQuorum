@@ -11,7 +11,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.core.contracts.layer_tags import set_layer_tag
+from cellquorum.core.contracts.layer_tags import get_layer_tag, set_layer_tag
 from cellquorum.core.exceptions import CellQuorumDataError
 
 if TYPE_CHECKING:
@@ -368,6 +368,30 @@ def _load_adata_subset(
     }
 
     return subset_adata
+
+
+def declare_layer_kinds(adata: ad.AnnData, kinds: Mapping[str, str]) -> None:
+    """Tag layers of an external object with the kind the config declares for them.
+
+    A layer that is not in the object, or a declared kind that contradicts a tag the object
+    already carries, raises: a declaration that quietly lost to (or overwrote) the file's own
+    provenance would defeat the point of having tags. Repeating an existing tag is allowed.
+    """
+    for layer, kind in kinds.items():
+        if layer not in adata.layers:
+            raise AnnDataLoadError(
+                f"input.layer_kinds names layer '{layer}', which is not in the file "
+                f"(layers: {sorted(adata.layers)})"
+            )
+        existing = get_layer_tag(adata, layer)
+        if existing is not None and existing["kind"] != kind:
+            raise AnnDataLoadError(
+                f"input.layer_kinds declares layer '{layer}' as '{kind}', but the file "
+                f"already tags it '{existing['kind']}'"
+            )
+        set_layer_tag(
+            adata, layer, kind=kind, recipe=None if existing is None else existing["recipe"]
+        )
 
 
 def load_adata(

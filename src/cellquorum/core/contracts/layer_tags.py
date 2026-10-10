@@ -16,6 +16,9 @@ import anndata as ad
 # expression; 'scaled' = z-scored/scaled; 'imputed' = denoised (e.g. MAGIC).
 _ALLOWED_KINDS = {"counts", "lognorm", "scaled", "imputed"}
 
+#: The same set, public, for config validation.
+ALLOWED_LAYER_KINDS = frozenset(_ALLOWED_KINDS)
+
 
 def set_layer_tag(
     adata: ad.AnnData,
@@ -91,4 +94,4 @@ def get_normalization_recipe(adata: ad.AnnData) -> str | None:
     return recipe if isinstance(recipe, str) else None
 
 
-__all__ = ["get_layer_tag", "get_normalization_recipe", "set_layer_tag"]
+__all__ = ["ALLOWED_LAYER_KINDS", "get_layer_tag", "get_normalization_recipe", "set_layer_tag"]

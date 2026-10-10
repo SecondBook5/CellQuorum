@@ -12,6 +12,7 @@ from cellquorum.config.base import StrictBaseModel
 from cellquorum.config.cohort import CohortConfig
 from cellquorum.config.design import ContrastsConfig, DesignConfig
 from cellquorum.config.markers import MarkersConfig
+from cellquorum.core.contracts.layer_tags import ALLOWED_LAYER_KINDS
 from cellquorum.stages.ambient_correction.config import AmbientCorrectionConfig
 from cellquorum.stages.annotation.adjudication.config import AdjudicationConfig
 from cellquorum.stages.annotation.config import AnnotationConfig
@@ -284,15 +285,35 @@ class InputConfig(StrictBaseModel):
         exclude: Optional row exclusion applied at load time, composable with
             ``subset`` (a lineage slice that also drops an artifact cluster needs
             both).
+        layer_kinds: Layer name -> kind (counts, lognorm, scaled, imputed), declared for an
+            object that was built outside CellQuorum and carries no provenance tags. Stages
+            check a layer's tag before trusting it as counts or log-normalized values, so an
+            external atlas that a run reads without recomputing has to say what its layers
+            are. Applied at load; a layer that is not in the file, or a kind that contradicts
+            a tag the file already has, is an error.
     """
 
     h5ad: Path | None = None
 
     counts_layer: str | None = None
 
+    layer_kinds: dict[str, str] = {}
+
     subset: InputSubsetConfig | None = None
 
     exclude: InputExcludeConfig | None = None
+
+    @field_validator("layer_kinds")
+    @classmethod
+    def validate_layer_kinds(cls, value: dict[str, str]) -> dict[str, str]:
+        """Reject a layer kind the provenance tags do not know."""
+        unknown = {layer: kind for layer, kind in value.items() if kind not in ALLOWED_LAYER_KINDS}
+        if unknown:
+            raise ValueError(
+                f"input.layer_kinds has unknown kinds {unknown}; allowed: "
+                f"{sorted(ALLOWED_LAYER_KINDS)}"
+            )
+        return value
 
     @field_validator("h5ad")
     @classmethod

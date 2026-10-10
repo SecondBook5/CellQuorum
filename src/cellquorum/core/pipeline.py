@@ -31,6 +31,7 @@ from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 from cellquorum.core.run_reporter import RunReporter
 from cellquorum.core.stage import StageExecutionRecord
 from cellquorum.io import load_adata
+from cellquorum.io.anndata import declare_layer_kinds
 from cellquorum.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -150,16 +151,19 @@ def load_input_adata_from_config(config: CellQuorumConfig) -> ad.AnnData | None:
     subset = config.input.subset
     exclude = config.input.exclude
     if subset is None and exclude is None:
-        return load_adata(config.input.h5ad)
-    return load_adata(
-        config.input.h5ad,
-        subset_column=subset.column if subset else None,
-        subset_values=subset.values if subset else None,
-        agreement_column=subset.require_agreement if subset else None,
-        exclude_column=exclude.column if exclude else None,
-        exclude_values=exclude.values if exclude else None,
-        preserve_population_fits=subset.preserve_population_fits if subset else False,
-    )
+        adata = load_adata(config.input.h5ad)
+    else:
+        adata = load_adata(
+            config.input.h5ad,
+            subset_column=subset.column if subset else None,
+            subset_values=subset.values if subset else None,
+            agreement_column=subset.require_agreement if subset else None,
+            exclude_column=exclude.column if exclude else None,
+            exclude_values=exclude.values if exclude else None,
+            preserve_population_fits=subset.preserve_population_fits if subset else False,
+        )
+    declare_layer_kinds(adata, config.input.layer_kinds)
+    return adata
 
 
 def build_pipeline_context(
