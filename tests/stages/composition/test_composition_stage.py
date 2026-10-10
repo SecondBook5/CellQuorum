@@ -165,3 +165,19 @@ def test_cluster_labels_rename_the_stacked_bar_legend_only(tmp_path):
     assert legend_labels == ["Papillary", "Reticular"]
     # The data itself is untouched -- x-axis groups still read the real index.
     assert [t.get_text() for t in ax.get_xticklabels()] == ["Normal", "Case"]
+
+
+def test_conditions_are_written_control_first_whatever_the_alphabet(tmp_path):
+    from cellquorum.config.models import CellQuorumConfig
+
+    config = CellQuorumConfig(
+        compute={"prefer_gpu": False},
+        r={"enabled": False},
+        design={"condition_col": "condition", "case": "Case", "control": "Normal"},
+    )
+    context = build_pipeline_context(config, output_dir=tmp_path / "run").with_adata(_adata())
+
+    result = CompositionStage().run(context)
+
+    path = next(a.path for a in result.artifacts if a.name == "composition_by_condition")
+    assert list(pd.read_csv(path)["condition"]) == ["Normal", "Case"]

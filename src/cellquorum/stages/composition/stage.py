@@ -93,7 +93,9 @@ class CompositionStage:
         condition_present = bool(condition_key) and condition_key in obs.columns
         if condition_present:
             assert condition_key is not None  # narrows for the type checker
-            by_condition = grouped_composition(cell_type, obs[condition_key])
+            by_condition = grouped_composition(
+                cell_type, obs[condition_key], group_order=_condition_order(top_config)
+            )
             artifacts.append(
                 manager.write_dataframe(
                     by_condition.reset_index(names=condition_key),
@@ -181,6 +183,16 @@ def _resolve_key(stage_value: str | None, config: object, attr: str, default: st
     if stage_value:
         return stage_value
     return resolve_cohort_key(config, attr=attr, stage_value=default)
+
+
+def _condition_order(config: object) -> list[str]:
+    """Control first, then case, from the design block; empty when the design names neither.
+
+    The control is always the left bar and the case the right, whatever the alphabet says.
+    """
+    design = getattr(config, "design", None)
+    named = [getattr(design, "control", None), getattr(design, "case", None)]
+    return [str(name) for name in named if name]
 
 
 def _qc_mask(adata: ad.AnnData, config: CompositionConfig) -> np.ndarray | None:

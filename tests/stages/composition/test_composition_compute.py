@@ -61,3 +61,35 @@ def test_grouped_composition_column_order_matches_overall_abundance():
     group = pd.Series(["g1"] * 6)
     table = grouped_composition(cell_type, group)
     assert list(table.columns) == ["common", "mid", "rare"]
+
+
+def test_groups_follow_the_requested_order_not_the_alphabet():
+    from cellquorum.stages.composition.compute import grouped_composition
+
+    cell_type = pd.Series(["A", "B", "A", "B"])
+    group = pd.Series(["Lymphedema", "Lymphedema", "Normal", "Normal"])
+
+    table = grouped_composition(cell_type, group, group_order=["Normal", "Lymphedema"])
+
+    assert list(table.index) == ["Normal", "Lymphedema"]
+
+
+def test_groups_the_order_does_not_name_follow_it_in_sorted_order():
+    from cellquorum.stages.composition.compute import grouped_composition
+
+    cell_type = pd.Series(["A"] * 6)
+    group = pd.Series(["Zed", "Normal", "Alpha", "Normal", "Zed", "Alpha"])
+
+    table = grouped_composition(cell_type, group, group_order=["Normal"])
+
+    assert list(table.index) == ["Normal", "Alpha", "Zed"]
+
+
+def test_a_group_in_the_order_that_has_no_cells_is_left_out_not_invented():
+    from cellquorum.stages.composition.compute import grouped_composition
+
+    table = grouped_composition(
+        pd.Series(["A", "A"]), pd.Series(["Normal", "Normal"]), group_order=["Normal", "Ghost"]
+    )
+
+    assert list(table.index) == ["Normal"]

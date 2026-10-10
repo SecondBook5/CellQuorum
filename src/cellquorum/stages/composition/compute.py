@@ -9,7 +9,12 @@ unit-testable and reusable outside a pipeline run (e.g. from a notebook).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pandas as pd
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def overall_composition(cell_type: pd.Series) -> pd.DataFrame:
@@ -34,13 +39,21 @@ def overall_composition(cell_type: pd.Series) -> pd.DataFrame:
     )
 
 
-def grouped_composition(cell_type: pd.Series, group: pd.Series) -> pd.DataFrame:
+def grouped_composition(
+    cell_type: pd.Series,
+    group: pd.Series,
+    *,
+    group_order: Sequence[str] | None = None,
+) -> pd.DataFrame:
     """
     Per-group cell-type composition, in percent, rows summing to 100.
 
     Args:
         cell_type: Per-cell cell-type labels.
         group: Per-cell group labels (condition, sample, donor, ...), same length.
+        group_order: Row order. Groups it names come first, in that order (a name with no
+            cells is left out, never invented); the rest follow in sorted order. Without it
+            the rows are alphabetical, which puts "Lymphedema" before "Normal".
 
     Returns:
         DataFrame indexed by group, one column per cell type (ordered by descending
@@ -52,7 +65,11 @@ def grouped_composition(cell_type: pd.Series, group: pd.Series) -> pd.DataFrame:
     group = group.astype(str)
     order = list(overall_composition(cell_type)["cell_type"])
     table = pd.crosstab(group, cell_type, normalize="index") * 100.0
-    return table.reindex(columns=order, fill_value=0.0)
+    table = table.reindex(columns=order, fill_value=0.0)
+    if group_order is not None:
+        named = [g for g in group_order if g in table.index]
+        table = table.loc[[*named, *[g for g in table.index if g not in named]]]
+    return table
 
 
 __all__ = ["overall_composition", "grouped_composition"]
