@@ -782,9 +782,338 @@ def ligand_target_grid(
     return fig
 
 
+#: Panel geometry of :func:`ligand_receiver_composite`, in inches. Fixed, so two composites
+#: (one per receiver) put the same quantity the same distance from the same edge.
+_COMP_ROW_IN = 0.30
+_COMP_TARGET_IN = 0.26
+_COMP_SENDER_IN = 0.31
+_COMP_RANK_IN = 0.36
+_COMP_GAP_IN = 0.22
+_COMP_LABEL_IN = 1.35
+
+
+def ligand_receiver_composite(
+    *,
+    activity: pd.DataFrame,
+    expression: pd.DataFrame,
+    targets: pd.DataFrame,
+    receiver_label: str,
+    change: pd.DataFrame | None = None,
+    comparison: pd.DataFrame | None = None,
+    comparison_label: str = "comparison",
+    highlight: Sequence[str] = (),
+    top_n: int = 15,
+    max_targets: int = 32,
+    sender_labels: Mapping[str, str] | None = None,
+    change_cap: float = 0.4,
+    alpha: float = 0.05,
+    ligand_col: str = "test_ligand",
+    score_col: str = "aupr_corrected",
+) -> Figure:
+    """One row per ligand: how active, how specific, who sends it, who changed it, its targets.
+
+    The five panels are the chain of reasoning a NicheNet result is read through, and drawing them
+    on one set of rows is what keeps a reader from stopping at the first.
+
+    * **Activity** (orange, rank printed in the cell) -- how well the ligand's predicted
+    targets explain
+      the receiver's response. A property of the receiver.
+    * **Activity in the comparison receiver** (same scale, same orange, its own rank) -- is
+    the ligand
+      a property of this receiver or of the tissue. A ligand the comparison never ranked
+      prints ``–``
+      and is drawn empty: it was never a candidate there (no cognate receptor expressed), which is a
+      stronger dissociation than a low rank and must not be read as rank zero.
+    * **Expressed by sender** (blue, scaled per ligand) -- who could have supplied it.
+    * **Change in sender, LE - Normal** (diverging) -- who supplies *more* of it in disease.
+    Cells whose
+      FDR clears ``alpha`` are outlined and carry the number of donors moving the same way;
+      the rest are
+      faded, because an effect that did not clear its test must not be as saturated as one that did.
+      A measurement that does not exist is blank grey, never "no change".
+    * **Predicted targets** (purple) -- the receiver's response genes each ligand is predicted to
+      regulate, strongest first, grouped under the ligand that regulates each most.
+
+    Args:
+        activity: ``nichenet_activities.csv`` of the receiver (ligand, score, ``rank``).
+        expression: ``nichenet_sender_expression.csv`` (sender, ligand, ``mean_expression``).
+        targets: ligand-target weights restricted to the receiver's response genes
+            (ligand, target, weight).
+        receiver_label: Name printed on the activity column and the targets title.
+        change: Optional per-sender condition effects (sender, ligand, effect, fdr,
+            n_donors_concordant).
+        comparison: Optional activities of a second receiver, same columns as ``activity``.
+        comparison_label: Name of that receiver.
+        highlight: Ligands drawn whatever their rank, in bold.
+        top_n: Rows taken from the top of the ranking.
+        max_targets: Target columns drawn.
+        sender_labels: Short names for the sender columns.
+        change_cap: Effect at which the diverging colour saturates.
+        alpha: FDR below which a change is outlined.
+
+    Raises:
+        ValueError: If none of the ranked ligands appear in ``expression``.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Rectangle
+
+    apply_theme("compact")
+    act = activity.copy()
+    if "rank" not in act.columns:
+        act["rank"] = act[score_col].rank(ascending=False, method="first")
+    act = act.sort_values("rank")
+    names_ = [str(g) for g in act[ligand_col]]
+    a_score = dict(zip(names_, (float(v) for v in act[score_col]), strict=True))
+    a_rank = dict(zip(names_, (int(v) for v in act["rank"]), strict=True))
+    present = set(expression["ligand"].astype(str))
+    ranked = [g for g in names_ if g in present]
+    if not ranked:
+        raise ValueError("none of the ranked ligands appear in the sender-expression frame")
+    ligands = ranked[:top_n]
+    ligands += [g for g in highlight if g in a_rank and g in present and g not in ligands]
+    ligands = sorted(ligands, key=lambda g: a_rank[g])
+
+    senders = list(dict.fromkeys(expression["sender"].astype(str)))
+    expr_frame = expression.pivot(index="ligand", columns="sender", values="mean_expression")
+    expr = expr_frame.reindex(index=ligands, columns=senders).fillna(0.0).to_numpy(dtype=float)
+    peak = expr.max(axis=1, keepdims=True)
+    expr_scaled = np.divide(expr, peak, out=np.zeros_like(expr), where=peak > 0)
+    short = dict(sender_labels or {})
+
+    weight = targets[targets["ligand"].isin(ligands)].pivot_table(
+        index="ligand", columns="target", values="weight", aggfunc="max"
+    )
+    grid = weight.reindex(ligands).fillna(0.0)
+    grid = grid[grid.max(axis=0).sort_values(ascending=False).head(max_targets).index]
+    tw = grid.to_numpy(dtype=float)
+    best = tw.argmax(axis=0)
+    order = sorted(range(tw.shape[1]), key=lambda j: (best[j], -tw[best[j], j]))
+    tw = tw[:, order]
+    target_names = [str(grid.columns[j]) for j in order]
+
+    n, n_s, n_t = len(ligands), len(senders), tw.shape[1]
+    panels: list[tuple[str, float]] = [("activity", _COMP_RANK_IN)]
+    if comparison is not None:
+        panels.append(("comparison", _COMP_RANK_IN))
+    panels.append(("expression", n_s * _COMP_SENDER_IN))
+    if change is not None:
+        panels.append(("change", n_s * _COMP_SENDER_IN))
+    panels.append(("targets", n_t * _COMP_TARGET_IN))
+    x: dict[str, float] = {}
+    cur = _COMP_LABEL_IN
+    for key, width in panels:
+        x[key] = cur
+        cur += width + _COMP_GAP_IN
+    fig_w, fig_h = cur + 1.7, n * _COMP_ROW_IN + 2.4
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    base = 1.25
+    n_cols = {"activity": 1, "comparison": 1, "expression": n_s, "change": n_s, "targets": n_t}
+    axes = {}
+    for key, width in panels:
+        rect = (x[key] / fig_w, base / fig_h, width / fig_w, n * _COMP_ROW_IN / fig_h)
+        ax = fig.add_axes(rect, label=key)
+        ax.set_xlim(0, n_cols[key])
+        ax.set_ylim(n, 0)
+        ax.axis("off")
+        axes[key] = ax
+
+    c_score: dict[str, float] = {}
+    c_rank: dict[str, int] = {}
+    if comparison is not None:
+        c_names = [str(g) for g in comparison[ligand_col]]
+        c_score = dict(zip(c_names, (float(v) for v in comparison[score_col]), strict=True))
+        if "rank" in comparison.columns:
+            c_rank = dict(zip(c_names, (int(v) for v in comparison["rank"]), strict=True))
+    top_score = max([a_score[g] for g in ligands] + list(c_score.values()))
+    orange, blues = plt.get_cmap("Oranges"), plt.get_cmap("Blues")
+    purples, diverging = plt.get_cmap("Purples"), plt.get_cmap("RdBu_r")
+
+    effect: dict[tuple[str, str], tuple[float, float, int]] = {}
+    if change is not None:
+        for sender, lig, eff, fdr, donors in zip(
+            change["sender"].astype(str),
+            change["ligand"].astype(str),
+            change["effect"].astype(float),
+            change["fdr"].astype(float),
+            change["n_donors_concordant"].astype(float),
+            strict=True,
+        ):
+            if np.isfinite(eff):
+                effect[(sender, lig)] = (float(eff), float(fdr), int(donors))
+
+    for i, g in enumerate(ligands):
+        frac = a_score[g] / top_score
+        activity_fill = orange(0.06 + 0.94 * frac)
+        axes["activity"].add_patch(
+            Rectangle((0, i), 1, 1, fc=activity_fill, ec="white", lw=1, gid=f"{g}|activity")
+        )
+        axes["activity"].text(
+            0.5,
+            i + 0.5,
+            str(a_rank[g]),
+            ha="center",
+            va="center",
+            fontsize=6.8,
+            color="white" if frac > 0.6 else INK,
+        )
+        if comparison is not None:
+            has = g in c_score
+            cfrac = c_score[g] / top_score if has else 0.0
+            fill = orange(0.06 + 0.94 * cfrac) if has else "#f1f1f1"
+            axes["comparison"].add_patch(
+                Rectangle((0, i), 1, 1, fc=fill, ec="white", lw=1, gid=f"{g}|comparison")
+            )
+            label = str(c_rank[g]) if has and g in c_rank else ("" if has else "\u2013")
+            txt = axes["comparison"].text(
+                0.5,
+                i + 0.5,
+                label,
+                ha="center",
+                va="center",
+                fontsize=6.8,
+                color=("white" if cfrac > 0.6 else INK) if has else MUTED,
+            )
+            txt.set_gid(f"comparison_rank|{g}")
+        for j, s in enumerate(senders):
+            axes["expression"].add_patch(
+                Rectangle(
+                    (j, i),
+                    1,
+                    1,
+                    fc=blues(0.04 + 0.96 * expr_scaled[i, j]),
+                    ec="white",
+                    lw=1,
+                    gid=f"{g}|{s}",
+                )
+            )
+            if change is None:
+                continue
+            row = effect.get((s, g))
+            if row is None:
+                axes["change"].add_patch(
+                    Rectangle((j, i), 1, 1, fc="#f4f4f4", ec="white", lw=1, gid=f"{g}|{s}")
+                )
+                continue
+            eff, fdr, donors = row
+            sig = fdr < alpha
+            axes["change"].add_patch(
+                Rectangle(
+                    (j, i),
+                    1,
+                    1,
+                    fc=diverging(0.5 + 0.5 * float(np.clip(eff / change_cap, -1, 1))),
+                    ec="#111111" if sig else "white",
+                    lw=1.6 if sig else 1.0,
+                    alpha=0.95 if sig else 0.45,
+                    zorder=3 if sig else 1,
+                    gid=f"{g}|{s}",
+                )
+            )
+            if sig:
+                axes["change"].text(
+                    j + 0.5, i + 0.5, str(donors), ha="center", va="center", fontsize=6.5, zorder=4
+                )
+        for j in range(n_t):
+            v = float(tw[i, j])
+            fill = purples(0.05 + 0.95 * min(v, 0.3) / 0.3) if v > 0.004 else "#F4F4F4"
+            axes["targets"].add_patch(
+                Rectangle((j, i), 1, 1, fc=fill, ec="white", lw=0.7, gid=f"{g}|{target_names[j]}")
+            )
+        label_text = fig.text(
+            (_COMP_LABEL_IN - 0.1) / fig_w,
+            (base + (n - i - 0.5) * _COMP_ROW_IN) / fig_h,
+            g,
+            ha="right",
+            va="center",
+            fontsize=9.5,
+            fontweight="bold" if g in highlight else "normal",
+            color=INK,
+        )
+        label_text.set_gid("row_label")
+
+    top = base + n * _COMP_ROW_IN
+
+    def _head(x0: float, text: str) -> None:
+        fig.text(
+            x0 / fig_w,
+            (top + 0.06) / fig_h,
+            text,
+            rotation=55,
+            rotation_mode="anchor",
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            color=MUTED,
+        )
+
+    def _title(key: str, text: str) -> None:
+        fig.text(
+            x[key] / fig_w,
+            (top + 0.95) / fig_h,
+            text,
+            fontsize=9,
+            fontweight="bold",
+            ha="left",
+            color=INK,
+        )
+
+    _head(x["activity"] + _COMP_RANK_IN / 2, receiver_label)
+    _title("activity", "Ligand activity (rank)")
+    if comparison is not None:
+        _head(x["comparison"] + _COMP_RANK_IN / 2, comparison_label)
+    for key in [k for k in ("expression", "change") if k in x]:
+        for j, s in enumerate(senders):
+            _head(x[key] + (j + 0.5) * _COMP_SENDER_IN, short.get(s, s))
+    _title("expression", "Expressed by sender")
+    if "change" in x:
+        _title("change", "Change in sender, LE \u2212 Normal")
+    for j, name in enumerate(target_names):
+        fig.text(
+            (x["targets"] + (j + 0.5) * _COMP_TARGET_IN) / fig_w,
+            (base - 0.05) / fig_h,
+            name,
+            rotation=90,
+            ha="center",
+            va="top",
+            fontsize=7.4,
+            color=INK,
+        )
+    _title("targets", f"Predicted targets in {receiver_label} (LE-up genes)")
+
+    lx, ly = cur + 0.05, top - 0.35
+    legends = [
+        ("Oranges", Normalize(0, 1), "Activity\n(relative)"),
+        ("Blues", Normalize(0, 1), "Expression\n(scaled per ligand)"),
+    ]
+    if change is not None:
+        legends.append(
+            (
+                "RdBu_r",
+                Normalize(-change_cap, change_cap),
+                f"\u0394 expression (LE \u2212 Normal)\noutline: FDR < {alpha}; number = donors",
+            )
+        )
+    legends.append(("Purples", Normalize(0, 0.3), "Regulatory\npotential"))
+    for cmap_name, norm, label in legends:
+        cax = fig.add_axes((lx / fig_w, ly / fig_h, 1.2 / fig_w, 0.1 / fig_h))
+        cbar = fig.colorbar(
+            plt.cm.ScalarMappable(norm=norm, cmap=cmap_name), cax=cax, orientation="horizontal"
+        )
+        cbar.ax.tick_params(labelsize=6.5, length=2)
+        for spine in cbar.ax.spines.values():
+            spine.set_visible(False)
+        fig.text(
+            lx / fig_w, (ly + 0.17) / fig_h, label, fontsize=7.2, fontweight="bold", va="bottom"
+        )
+        ly -= 0.85
+    return fig
+
+
 __all__ = [
     "ligand_activity_arm_comparison",
     "ligand_activity_ranking",
+    "ligand_receiver_composite",
     "ligand_target_grid",
     "sender_attribution_grid",
 ]
