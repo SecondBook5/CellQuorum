@@ -183,6 +183,82 @@ def _add_leading_edge(
     return out
 
 
+def filter_net_by_size(net: pd.DataFrame, universe: set[str], max_size: int) -> pd.DataFrame:
+    """Drop gene sets larger than ``max_size`` once restricted to the ranked ``universe``.
+
+    ``min_size`` maps to decoupler's ``tmin`` inside :func:`gsea_table`; the maximum has no
+    decoupler equivalent, so it is enforced here, against the genes actually ranked.
+    """
+    present = net[net["target"].isin(universe)]
+    sizes = present.groupby("source")["target"].nunique()
+    keep_sources = set(sizes[sizes <= max_size].index)
+    return net[net["source"].isin(keep_sources)]
+
+
+def gsea_table(
+    metric: pd.Series,
+    net: pd.DataFrame,
+    *,
+    min_size: int,
+    permutations: int,
+    seed: int,
+    fdr_method: str,
+    fdr: float,
+    skipped: list[dict],
+    collection: str,
+) -> pd.DataFrame:
+    """Preranked GSEA of one ranked ``metric`` (gene -> signed score) over the sets in ``net``.
+
+    Called through decoupler's low-level building blocks rather than ``dc.mt.gsea(...)``
+    because the high-level Method has test=True and applies its OWN across-source BH before
+    returning, so its "p-value" is already an across-source q-value, and BH-ing that again
+    would double-correct (decoupler's BH is not idempotent). Reconstructing ``gsea.func``
+    gives the GENUINE raw permutation p, which is floored at the test's resolution and
+    BH-adjusted exactly once.
+
+    Returns:
+        One row per gene set: ``score`` (decoupler's normalized ES, the NES), ``es`` (the raw
+        ES), ``pvalue``, ``padj``, ``significant``, the resolution-limit flags, the set size
+        and the leading edge. Raises if decoupler cannot score the sets.
+    """
+    import decoupler as dc
+
+    ranking = pd.DataFrame([metric], index=["contrast"])
+    mat, obs, var = dc.pp.extract(ranking, empty=True, shuffle=True, verbose=False)
+    pruned = dc.pp.prune(features=var, net=net, tmin=min_size, verbose=False)
+    sources, cnct, starts, offsets = dc.pp.idxmat(features=var, net=pruned, verbose=False)
+    es_arr, pv_arr = dc.mt.gsea.func(
+        mat, cnct, starts, offsets, times=permutations, seed=seed, verbose=False
+    )
+    score = pd.Series(es_arr[0], index=sources)
+    pvalue = pd.Series(pv_arr[0], index=sources)
+
+    # A permutation p-value cannot be smaller than one permutation. When no shuffle beats
+    # the observed score the estimator returns 0, and reporting 0 claims a certainty the test
+    # cannot deliver. The floor is the resolution of the test that was actually run, and the
+    # frame records both the floor and which rows sit on it, so "p is at the limit" stays
+    # distinguishable from "p was measured this small".
+    resolution = 1.0 / (permutations + 1)
+    raw = pvalue.to_numpy(dtype=float)
+    at_limit = np.isfinite(raw) & (raw < resolution)
+    floored = np.where(at_limit, resolution, raw)
+    padj = bh_fdr(floored, fdr_method)
+    out = pd.DataFrame(
+        {
+            "source": score.index,
+            "score": score.values,
+            "pvalue": floored,
+            "padj": padj,
+            "significant": padj < fdr,
+            "p_at_resolution_limit": at_limit,
+            "p_resolution_limit": resolution,
+            "permutations": permutations,
+            "collection": collection,
+        }
+    )
+    return _add_leading_edge(out, metric, net, skipped, collection)
+
+
 class GseaMethod(AnalysisMethod):
     """Preranked GSEA over the upstream DE table (the enrichment anchor)."""
 
@@ -235,61 +311,23 @@ class GseaMethod(AnalysisMethod):
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
 
-            # Enforce the max_size gene-set filter against the ranked universe
-            # (min_size maps to decoupler's tmin below); drop oversized sources.
-            present = net[net["target"].isin(ranking.columns)]
-            sizes = present.groupby("source")["target"].nunique()
-            keep_sources = set(sizes[sizes <= max_size].index)
-            net = net[net["source"].isin(keep_sources)]
-
+            net = filter_net_by_size(net, set(ranking.columns), max_size)
             try:
-                # We call gsea through decoupler's low-level building blocks rather
-                # than dc.mt.gsea(...) because the high-level Method has test=True
-                # and applies its OWN across-source BH before returning — so its
-                # "p-value" is already an across-source q-value. BH-ing that again
-                # here would double-correct (decoupler's BH is not idempotent).
-                # Reconstructing gsea.func gives the GENUINE raw permutation p, so
-                # we label it `pvalue` and apply BH exactly once for `padj`.
-                mat, obs, var = dc.pp.extract(ranking, empty=True, shuffle=True, verbose=False)
-                pruned = dc.pp.prune(features=var, net=net, tmin=min_size, verbose=False)
-                sources, cnct, starts, offsets = dc.pp.idxmat(
-                    features=var, net=pruned, verbose=False
+                out = gsea_table(
+                    ranking.iloc[0],
+                    net,
+                    min_size=min_size,
+                    permutations=permutations,
+                    seed=seed,
+                    fdr_method=fdr_method,
+                    fdr=fdr,
+                    skipped=skipped,
+                    collection=collection,
                 )
-                es_arr, pv_arr = dc.mt.gsea.func(
-                    mat, cnct, starts, offsets, times=permutations, seed=seed, verbose=False
-                )
-                # Single-contrast ranking → single row of scores and raw p-values.
-                score = pd.Series(es_arr[0], index=sources)
-                pvalue = pd.Series(pv_arr[0], index=sources)
             except Exception as exc:
                 skipped.append({"collection": collection, "reason": str(exc)[:300]})
                 continue
 
-            # A permutation p-value cannot be smaller than one permutation. When no shuffle
-            # beats the observed score the estimator returns 0, and reporting 0 claims a
-            # certainty the test cannot deliver — it is also the first thing a reviewer
-            # circles. The floor is the resolution of the test that was actually run, and the
-            # frame records both the floor and which rows are sitting on it, so "p is at the
-            # limit" stays distinguishable from "p was measured this small".
-            resolution = 1.0 / (permutations + 1)
-            raw = pvalue.to_numpy(dtype=float)
-            at_limit = np.isfinite(raw) & (raw < resolution)
-            floored = np.where(at_limit, resolution, raw)
-            padj = bh_fdr(floored, fdr_method)
-            out = pd.DataFrame(
-                {
-                    "source": score.index,
-                    "score": score.values,
-                    "pvalue": floored,
-                    "padj": padj,
-                    "significant": padj < fdr,
-                    "p_at_resolution_limit": at_limit,
-                    "p_resolution_limit": resolution,
-                    "permutations": permutations,
-                    "collection": collection,
-                }
-            )
-            out = _add_leading_edge(out, ranking.iloc[0], net, skipped, collection)
             artifacts.append(
                 writer.table(
                     out,
