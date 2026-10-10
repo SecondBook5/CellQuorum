@@ -237,3 +237,111 @@ def test_the_pooled_figure_carries_no_title_of_its_own():
     from cellquorum.stages.composition.stage import _stacked_bar
 
     assert _stacked_bar(_bars_table(), x_label="condition").axes[0].get_title() == ""
+
+
+# ---- composition by patient -------------------------------------------------------------
+
+
+def _patient_tables():
+    types = ["Big", "Mid", "Small"]
+    normal = pd.DataFrame(
+        [[50.0, 30.0, 20.0], [40.0, 40.0, 20.0], [60.0, 30.0, 10.0]],
+        index=["P1", "P2", "P10"],
+        columns=types,
+    )
+    case = pd.DataFrame([[45.0, 35.0, 20.0], [30.0, 50.0, 20.0]], index=["P1", "P2"], columns=types)
+    return {"Normal": normal, "Lymphedema": case}
+
+
+def _panels(fig):
+    return [ax for ax in fig.axes if ax.get_title()]
+
+
+def test_the_panels_follow_the_order_given_with_normal_on_the_left():
+    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
+
+    fig = _stacked_bar_by_patient(_patient_tables())
+
+    panels = _panels(fig)
+    assert [ax.get_title() for ax in panels] == ["Normal", "Lymphedema"]
+    assert panels[0].get_position().x0 < panels[1].get_position().x0
+
+
+def test_patients_sit_in_natural_order_at_the_same_place_in_every_panel():
+    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
+
+    panels = _panels(_stacked_bar_by_patient(_patient_tables()))
+
+    for ax in panels:
+        assert [t.get_text() for t in ax.get_xticklabels()] == ["P1", "P2", "P10"]
+
+
+def test_a_patient_with_no_cells_in_a_condition_has_no_bar_there_not_an_empty_one():
+    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
+
+    normal, case = _panels(_stacked_bar_by_patient(_patient_tables()))
+
+    assert len(normal.patches) == 3 * 3  # three patients, three cell types
+    assert len(case.patches) == 2 * 3  # P10 has no lymphedema cells
+
+
+def test_every_bar_fills_the_axis_and_the_panels_share_it():
+    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
+
+    normal, case = _panels(_stacked_bar_by_patient(_patient_tables()))
+
+    for ax in (normal, case):
+        assert ax.get_ylim() == (0.0, 1.0)
+    p1 = [p for p in normal.patches if abs(p.get_x() + p.get_width() / 2 - 0) < 1e-6]
+    assert round(sum(p.get_height() for p in p1), 6) == 1.0
+    assert normal.get_ylabel() == "Proportion of cells"
+    assert case.get_ylabel() == ""
+
+
+def test_there_is_one_legend_for_the_figure_in_stack_order():
+    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
+
+    fig = _stacked_bar_by_patient(_patient_tables())
+
+    assert len(fig.legends) == 1
+    assert [t.get_text() for t in fig.legends[0].get_texts()] == ["Small", "Mid", "Big"]
+
+
+def test_the_figure_has_the_title_it_is_given():
+    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
+
+    fig = _stacked_bar_by_patient(_patient_tables(), title="Cell type composition by patient")
+
+    assert fig._suptitle is not None
+    assert fig._suptitle.get_text() == "Cell type composition by patient"
+
+
+def _design_context(tmp_path, adata):
+    config = CellQuorumConfig(
+        compute={"prefer_gpu": False},
+        r={"enabled": False},
+        design={"condition_col": "condition", "case": "Case", "control": "Normal"},
+    )
+    return build_pipeline_context(config, output_dir=tmp_path / "run").with_adata(adata)
+
+
+def test_the_stage_writes_a_per_patient_table_and_figure_control_first(tmp_path):
+    result = CompositionStage().run(_design_context(tmp_path, _adata()))
+
+    names = {a.name for a in result.artifacts}
+    assert "composition_by_patient" in names
+    assert "composition_figure_patient" in names
+    table = pd.read_csv(
+        next(a.path for a in result.artifacts if a.name == "composition_by_patient")
+    )
+    assert list(table.columns[:2]) == ["condition", "donor_id"]
+    assert list(table["condition"].unique()) == ["Normal", "Case"]
+
+
+def test_no_patient_figure_without_a_donor_column(tmp_path):
+    adata = _adata()
+    del adata.obs["donor_id"]
+
+    result = CompositionStage().run(_design_context(tmp_path, adata))
+
+    assert "composition_by_patient" not in {a.name for a in result.artifacts}

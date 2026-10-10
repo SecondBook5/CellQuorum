@@ -22,6 +22,7 @@ from cellquorum.visualization.qc.summarise import natural_sort_key
 
 if TYPE_CHECKING:
     import anndata as ad
+    from matplotlib.axes import Axes
 
     from cellquorum.core.context import PipelineContext
 
@@ -157,6 +158,42 @@ class CompositionStage:
                 for p in paths
             )
 
+        donor_present = bool(donor_key) and donor_key in obs.columns
+        if condition_present and donor_present:
+            assert condition_key is not None and donor_key is not None
+            by_patient = _composition_by_patient(
+                cell_type,
+                obs[condition_key],
+                obs[donor_key],
+                condition_order=_condition_order(top_config),
+            )
+            table = pd.concat(by_patient, names=[condition_key, donor_key]).reset_index()
+            artifacts.append(
+                manager.write_dataframe(
+                    table,
+                    name="composition_by_patient",
+                    relative_path=f"results/{config.output_prefix}_by_patient.csv",
+                    description="Per-patient cell-type composition in each condition (percent).",
+                )
+            )
+            fig = _stacked_bar_by_patient(
+                by_patient,
+                cluster_labels=config.cluster_labels,
+                title="Cell type composition by patient",
+            )
+            paths = figstyle.save_figure(
+                fig, figures_dir, "composition_by_patient", formats=formats, dpi=config.dpi
+            )
+            artifacts.extend(
+                StageArtifact(
+                    name="composition_figure_patient",
+                    path=p,
+                    kind="figure",
+                    description="Composition stacked bars per patient, a panel per condition.",
+                )
+                for p in paths
+            )
+
         return StageResult(
             adata=adata,
             artifacts=artifacts,
@@ -181,6 +218,32 @@ def _resolve_key(stage_value: str | None, config: object, attr: str, default: st
     if stage_value:
         return stage_value
     return resolve_cohort_key(config, attr=attr, stage_value=default)
+
+
+def _composition_by_patient(
+    cell_type: pd.Series,
+    condition: pd.Series,
+    donor: pd.Series,
+    *,
+    condition_order: list[str],
+) -> dict[str, pd.DataFrame]:
+    """Per-patient composition within each condition, conditions in the given order.
+
+    One table per condition, patients as rows, every table with the same cell-type columns
+    (ordered by overall abundance) so the panels stack identically.
+    """
+    joint = condition.astype(str) + "\t" + donor.astype(str)
+    table = grouped_composition(cell_type, joint)
+    index = pd.MultiIndex.from_tuples([tuple(i.split("\t")) for i in table.index])
+    table.index = index
+    conditions = [c for c in condition_order if c in set(index.get_level_values(0))]
+    conditions += sorted(set(index.get_level_values(0)) - set(conditions))
+    out: dict[str, pd.DataFrame] = {}
+    for c in conditions:
+        sub = pd.DataFrame(table.loc[c])
+        sub.index = sub.index.astype(str)
+        out[c] = sub
+    return out
 
 
 def _condition_order(config: object) -> list[str]:
@@ -232,6 +295,32 @@ def _stack_palette(n: int) -> list[str]:
     return [mpl.colors.to_hex(ramp(float(m))) for m in mapped]
 
 
+def _stack_bars(
+    ax: Axes,
+    table: pd.DataFrame,
+    x: np.ndarray,
+    colours: dict[str, str],
+    cluster_labels: dict[str, str],
+    *,
+    width: float,
+) -> None:
+    """Draw ``table`` (rows in percent) as stacked bars at ``x``, first column at the bottom."""
+    bottom = np.zeros(len(table))
+    for ct in table.columns:
+        values = table[ct].to_numpy() / 100.0
+        ax.bar(
+            x,
+            values,
+            bottom=bottom,
+            width=width,
+            color=colours[ct],
+            edgecolor="white",
+            linewidth=0.4,
+            label=cluster_labels.get(str(ct), ct),
+        )
+        bottom += values
+
+
 def _stacked_bar(
     table: pd.DataFrame, *, x_label: str | None, cluster_labels: dict[str, str] | None = None
 ) -> Figure:
@@ -251,20 +340,7 @@ def _stacked_bar(
     colours = dict(zip(cell_types, _stack_palette(len(cell_types)), strict=True))
     fig, ax = plt.subplots(figsize=(max(3.0, 0.6 * len(groups) + 2.0), 4.4))
     x = np.arange(len(groups))
-    bottom = np.zeros(len(groups))
-    for ct in cell_types:
-        values = table[ct].to_numpy() / 100.0
-        ax.bar(
-            x,
-            values,
-            bottom=bottom,
-            width=0.7,
-            color=colours[ct],
-            edgecolor="white",
-            linewidth=0.4,
-            label=cluster_labels.get(str(ct), ct),
-        )
-        bottom += values
+    _stack_bars(ax, table, x, colours, cluster_labels, width=0.7)
     ax.set_ylim(0, 1)
     ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
     ax.set_yticklabels(["0.00", "0.25", "0.50", "0.75", "1.00"])
@@ -290,6 +366,72 @@ def _stacked_bar(
         fontsize=8,
         frameon=False,
     )
+    return fig
+
+
+def _stacked_bar_by_patient(
+    tables: dict[str, pd.DataFrame],
+    *,
+    cluster_labels: dict[str, str] | None = None,
+    title: str | None = None,
+) -> Figure:
+    """One panel per condition, in the order given, each with a stacked bar per patient.
+
+    ``tables`` maps condition -> patients (rows, in percent) by cell type (columns). Patients
+    sit in natural order (P1, P2, P10) at the same place in every panel, so a patient reads
+    straight across; one with no cells in a condition has no bar there. The panels share the
+    proportion axis and one legend, in stack order.
+    """
+    import matplotlib.pyplot as plt
+
+    cluster_labels = cluster_labels or {}
+    conditions = list(tables)
+    cell_types = list(next(iter(tables.values())).columns)
+    donors = sorted(
+        {d for t in tables.values() for d in t.index},
+        key=lambda d: natural_sort_key(pd.Series([str(d)])).iloc[0],
+    )
+    position = {d: i for i, d in enumerate(donors)}
+    colours = dict(zip(cell_types, _stack_palette(len(cell_types)), strict=True))
+    fig, axes = plt.subplots(
+        1,
+        len(conditions),
+        sharey=True,
+        figsize=(1.0 + len(conditions) * (0.45 * len(donors) + 0.5), 4.6),
+        squeeze=False,
+    )
+    for ax, condition in zip(axes[0], conditions, strict=True):
+        table = tables[condition]
+        x = np.array([position[d] for d in table.index], dtype=float)
+        _stack_bars(ax, table, x, colours, cluster_labels, width=0.85)
+        ax.set_xlim(-0.6, len(donors) - 0.4)
+        ax.set_xticks(range(len(donors)))
+        ax.set_xticklabels(donors, rotation=45, ha="right", fontsize=8.5)
+        ax.set_title(
+            condition,
+            fontsize=9.5,
+            fontweight="bold",
+            bbox={"boxstyle": "square,pad=0.4", "fc": "white", "ec": "black", "lw": 0.8},
+        )
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+    axes[0][0].set_ylim(0, 1)
+    axes[0][0].set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
+    axes[0][0].set_yticklabels(["0.00", "0.25", "0.50", "0.75", "1.00"])
+    axes[0][0].set_ylabel("Proportion of cells")
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(
+        handles[::-1],
+        labels[::-1],
+        loc="center left",
+        bbox_to_anchor=(0.99, 0.5),
+        title="Cell type",
+        fontsize=8,
+        frameon=False,
+    )
+    if title:
+        fig.suptitle(title, x=0.02, ha="left", fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.96 if title else 1))
     return fig
 
 
