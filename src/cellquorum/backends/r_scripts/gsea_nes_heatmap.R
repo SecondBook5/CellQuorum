@@ -81,7 +81,7 @@ tryCatch(
       cluster_rows = nrow(nes) > 1, cluster_columns = ncol(nes) > 1,
       clustering_method_rows = "average", clustering_method_columns = "average",
       row_dend_width = unit(1.2, "cm"), column_dend_height = unit(1.0, "cm"),
-      row_names_side = "left", row_dend_side = "right",
+      row_names_side = "left", row_dend_side = "left",
       row_names_gp = gpar(fontsize = 7, fontface = "bold"),
       column_names_gp = gpar(fontsize = 8, fontface = "bold"), column_names_rot = 45,
       column_title = title, column_title_gp = gpar(fontsize = 12),
@@ -91,13 +91,17 @@ tryCatch(
 
     # One hand-built legend stack, so the colour scale, significance key and bar key sit in a
     # single column (ComplexHeatmap otherwise places heatmap and annotation legends side by side).
+    # The key lists only what the figure can show: a "**" entry is dropped when no cell reaches it.
+    has_strong <- any(!is.na(padj[tested]) & padj[tested] < strong)
+    sig_labels <- c(sprintf("* padj < %g", alpha),
+                    if (has_strong) sprintf("** padj < %g", strong),
+                    "not significant (grey)", "not testable (n.t.)")
+    sig_fill <- c("white", if (has_strong) "white", ns_fill, "white")
     legends <- list(
       Legend(col_fun = col_fun, title = "NES", at = c(-lim, -lim / 2, 0, lim / 2, lim),
              labels = sprintf("%g", c(-lim, -lim / 2, 0, lim / 2, lim))),
-      Legend(labels = c(sprintf("* padj < %g", alpha), sprintf("** padj < %g", strong),
-                        "not significant (grey)", "not testable (n.t.)"),
-             title = "Significance", type = "grid",
-             legend_gp = gpar(fill = c("white", "white", ns_fill, "white"), col = "#BBBBBB")),
+      Legend(labels = sig_labels, title = "Significance", type = "grid",
+             legend_gp = gpar(fill = sig_fill, col = "#BBBBBB")),
       Legend(labels = c("Up", "Down"), title = "Significant\nenrichment", type = "grid",
              legend_gp = gpar(fill = c(up_col, down_col)))
     )
