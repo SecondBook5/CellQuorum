@@ -21,6 +21,9 @@ if TYPE_CHECKING:
     import anndata as ad
     from matplotlib.figure import Figure
 
+#: Cream behind the cell of a group's own marker block (see ``draw_categorized_dotplot``).
+_EXPECTED_BAND = "#FFF1CC"
+
 
 def plot_marker_dotplot(
     adata: ad.AnnData,
@@ -185,6 +188,7 @@ def draw_categorized_dotplot(
     categories_order: list[str] | None = None,
     vmax_percentile: float = 95.0,
     title: str | None = None,
+    expected: Mapping[str, str] | None = None,
 ) -> Figure | None:
     """
     A fully custom, densely categorized marker dotplot: genes as rows grouped
@@ -220,10 +224,18 @@ def draw_categorized_dotplot(
         The figure, or ``None`` when no gene in any category survives the
         intersection with ``adata.var_names``. :func:`plot_categorized_dotplot`
         writes it to disk.
+
+    ``expected`` maps a column group to the category it should light up (for
+    a lineage atlas, each lineage to its own marker block). Those cells get a
+    cream band behind the dots, so a reader sees at a glance whether the red
+    sits where the annotation says it should. A group that is not a column, or
+    a category that is not in ``gene_categories``, raises: a typo would
+    otherwise just leave a quietly missing highlight. A category dropped for
+    having no gene in the data is skipped, as it is everywhere else.
     """
     import matplotlib.pyplot as plt
     import scipy.sparse as sp
-    from matplotlib.patches import FancyBboxPatch
+    from matplotlib.patches import FancyBboxPatch, Rectangle
 
     present_categories = {
         cat: [g for g in genes if g in adata.var_names] for cat, genes in gene_categories.items()
@@ -248,6 +260,15 @@ def draw_categorized_dotplot(
     # names, so everything below is indexed by ROW POSITION, never by gene
     # name via .loc -- a duplicated label there returns a Series, not a
     # scalar, and silently breaks the color/size lookup per cell.
+    expected = dict(expected or {})
+    unknown_groups = sorted(set(expected) - set(groups))
+    if unknown_groups:
+        raise ValueError(f"expected names groups that are not columns: {unknown_groups}")
+    unknown_categories = sorted(set(expected.values()) - set(gene_categories))
+    if unknown_categories:
+        raise ValueError(
+            f"expected names categories that are not in the panel: {unknown_categories}"
+        )
     all_genes = [g for genes in present_categories.values() for g in genes]
     var_positions = adata.var_names.get_indexer(all_genes)
     matrix = adata.layers[layer][:, var_positions]
@@ -285,9 +306,11 @@ def draw_categorized_dotplot(
 
     # Alternating row-band shading per category, and the boxed category label.
     row_cursor = 0
+    block_rows: dict[str, tuple[float, int]] = {}
     for band_index, (category, genes) in enumerate(present_categories.items()):
         y_top = n_rows - 1 - row_cursor + 0.5
         y_bottom = n_rows - 1 - (row_cursor + len(genes) - 1) - 0.5
+        block_rows[category] = (y_bottom, len(genes))
         if band_index % 2 == 0:
             dot_ax.axhspan(y_bottom, y_top, color="#F2F2F2", zorder=0)
         box_ax.add_patch(
@@ -316,6 +339,22 @@ def draw_categorized_dotplot(
     box_ax.set_xlim(0, 1)
     box_ax.set_ylim(-0.5, n_rows - 0.5)
     box_ax.axis("off")
+
+    # Expected-block highlight: the cell of each group's own marker block.
+    for group, category in expected.items():
+        if category not in block_rows:
+            continue
+        y_bottom, height = block_rows[category]
+        band = Rectangle(
+            (groups.index(group) - 0.5, y_bottom),
+            1.0,
+            height,
+            facecolor=_EXPECTED_BAND,
+            edgecolor="none",
+            zorder=1,
+        )
+        band.set_gid(f"expected|{group}|{category}")
+        dot_ax.add_patch(band)
 
     # Dots.
     cmap = plt.get_cmap("Reds")
@@ -378,6 +417,7 @@ def plot_categorized_dotplot(
     categories_order: list[str] | None = None,
     vmax_percentile: float = 95.0,
     title: str | None = None,
+    expected: Mapping[str, str] | None = None,
 ) -> Path | None:
     """Draw :func:`draw_categorized_dotplot` and write it as PNG plus a PDF twin.
 
@@ -391,6 +431,7 @@ def plot_categorized_dotplot(
         categories_order=categories_order,
         vmax_percentile=vmax_percentile,
         title=title,
+        expected=expected,
     )
     if fig is None:
         return None

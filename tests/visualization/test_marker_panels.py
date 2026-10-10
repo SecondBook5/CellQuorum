@@ -440,3 +440,85 @@ def test_draw_categorized_dotplot_returns_none_when_no_gene_is_present():
         )
         is None
     )
+
+
+_CATS = {"Category A": ["G0", "G1", "G2"], "Category B": ["G3", "G4"]}
+
+
+def _dot_axes(fig):
+    return max(fig.axes, key=lambda ax: len(ax.collections))
+
+
+def _bands(fig):
+    return {
+        p.get_gid(): p for p in _dot_axes(fig).patches if str(p.get_gid()).startswith("expected|")
+    }
+
+
+def test_each_expected_group_gets_a_highlight_over_its_own_block_only():
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    fig = draw_categorized_dotplot(
+        _categorized_adata(),
+        _CATS,
+        groupby="state",
+        layer="norm",
+        expected={"S1": "Category A", "S2": "Category B"},
+    )
+
+    assert set(_bands(fig)) == {"expected|S1|Category A", "expected|S2|Category B"}
+
+
+def test_the_highlight_covers_the_group_column_and_every_row_of_the_block():
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    fig = draw_categorized_dotplot(
+        _categorized_adata(),
+        _CATS,
+        groupby="state",
+        layer="norm",
+        expected={"S2": "Category B"},
+    )
+
+    band = _bands(fig)["expected|S2|Category B"]
+    x0, y0 = band.get_xy()
+    assert (x0, band.get_width()) == (0.5, 1.0)  # column index 1, one column wide
+    assert (y0, band.get_height()) == (-0.5, 2.0)  # the two rows of Category B, drawn last
+
+
+def test_no_expected_mapping_draws_no_highlight():
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    fig = draw_categorized_dotplot(_categorized_adata(), _CATS, groupby="state", layer="norm")
+
+    assert _bands(fig) == {}
+
+
+def test_an_expected_group_that_is_not_a_column_is_an_error_not_a_missing_highlight():
+    import pytest
+
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    with pytest.raises(ValueError, match="S9"):
+        draw_categorized_dotplot(
+            _categorized_adata(),
+            _CATS,
+            groupby="state",
+            layer="norm",
+            expected={"S9": "Category A"},
+        )
+
+
+def test_an_expected_category_that_is_not_in_the_panel_is_an_error():
+    import pytest
+
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    with pytest.raises(ValueError, match="Categroy A"):
+        draw_categorized_dotplot(
+            _categorized_adata(),
+            _CATS,
+            groupby="state",
+            layer="norm",
+            expected={"S1": "Categroy A"},
+        )
