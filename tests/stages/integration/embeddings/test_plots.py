@@ -488,3 +488,32 @@ def test_the_view_percentile_is_validated_in_the_config():
         EmbeddingsConfig(view_percentile=[99.0, 1.0])
     with pytest.raises(ValueError):
         EmbeddingsConfig(view_percentile=[0.0, 101.0])
+
+
+def test_the_state_panel_of_a_score_figure_names_clusters_in_white_boxes_too():
+    rng = np.random.default_rng(2)
+    a = ad.AnnData(X=np.zeros((120, 2), dtype="float32"))
+    a.obsm["X_umap"] = np.vstack(
+        [rng.normal((0, 0), 0.4, (60, 2)), rng.normal((5, 5), 0.4, (60, 2))]
+    ).astype("float32")
+    a.obs["state"] = pd.Categorical(["Venous"] * 60 + ["Inflamed"] * 60)
+    a.obs["condition"] = ["Normal", "Lymphedema"] * 60
+
+    fig = plots.plot_score_by_condition(
+        a,
+        score=rng.random(120),
+        score_label="Inflamed (ucell)",
+        cluster_key="state",
+        basis="X_umap",
+        axis_labels=("U1", "U2"),
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+    )
+
+    labels = [t for t in fig.axes[0].texts if t.get_text() in {"Venous", "Inflamed"}]
+    assert len(labels) == 2
+    for label in labels:
+        face = label.get_bbox_patch().get_facecolor()
+        assert min(face[:3]) > 0.95 and face[3] > 0.8
+        assert label.get_path_effects()  # the halo

@@ -208,6 +208,28 @@ def _apply_view(ax: Axes, xy: np.ndarray, view_percentile: tuple[float, float] |
         )
 
 
+def _name_label(ax: Axes, x: float, y: float, text: str, colour: str) -> Any:
+    """A cluster's name on an embedding: bold text in a near-white box edged in the cluster colour.
+
+    A faint tint of the cluster colour behind black text went unreadable over dark clusters and
+    muddy over pastel ones; white reads over any cluster and the coloured edge still ties the
+    name to its cloud. The thin white halo keeps the text legible where it overhangs points.
+    """
+    return ax.text(
+        x,
+        y,
+        text,
+        fontsize=9,
+        fontweight="bold",
+        ha="center",
+        va="center",
+        zorder=10,
+        clip_on=False,
+        bbox={"boxstyle": "round,pad=0.22", "fc": "white", "ec": colour, "lw": 1.1, "alpha": 0.92},
+        path_effects=[patheffects.withStroke(linewidth=2.6, foreground="white")],
+    )
+
+
 def column_palette(xy: np.ndarray, column: pd.Series) -> dict[str, str]:
     """The category -> colour mapping ``categorical_embedding`` draws for ``column``.
 
@@ -464,30 +486,8 @@ def categorical_embedding(
         if anchor is None or int(counts.get(cat, 0)) < label_floor:
             continue
         texts.append(
-            ax.text(
-                anchor[0],
-                anchor[1],
-                cluster_labels.get(cat, cat),
-                fontsize=9,
-                fontweight="bold",
-                ha="center",
-                va="center",
-                zorder=10,
-                clip_on=False,
-                # Near-white box with an edge in the cluster's own colour. A faint tint of the
-                # cluster colour behind black text went unreadable over dark clusters (navy,
-                # maroon) and muddy over pastel ones; white reads over any cluster and the
-                # coloured edge still ties the name to its cloud.
-                bbox={
-                    "boxstyle": "round,pad=0.22",
-                    "fc": "white",
-                    "ec": palette.get(cat, "#888888"),
-                    "lw": 1.1,
-                    "alpha": 0.92,
-                },
-                # A thin white halo: the tint is faint, so black text over a dark cluster
-                # (navy, maroon) would otherwise vanish into it.
-                path_effects=[patheffects.withStroke(linewidth=2.6, foreground="white")],
+            _name_label(
+                ax, anchor[0], anchor[1], cluster_labels.get(cat, cat), palette.get(cat, "#888888")
             )
         )
     _repel_labels(ax, texts)
@@ -693,22 +693,12 @@ def plot_score_by_condition(
         if centroid is None:
             continue
         texts.append(
-            ax_state.text(
+            _name_label(
+                ax_state,
                 centroid[0],
                 centroid[1],
                 cluster_labels.get(cat, cat),
-                fontsize=9,
-                fontweight="bold",
-                ha="center",
-                va="center",
-                zorder=10,
-                clip_on=False,
-                bbox={
-                    "boxstyle": "round,pad=0.25",
-                    "fc": palette.get(cat, "#FFFFFF"),
-                    "ec": "none",
-                    "alpha": 0.28,
-                },
+                palette.get(cat, "#888888"),
             )
         )
     ax_state.margins(0.10)
