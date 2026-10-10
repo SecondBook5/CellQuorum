@@ -539,6 +539,10 @@ class ContinuousOverlayMethod(AnalysisMethod):
                         cmap=cmap,
                         vmin=vmin,
                         vmax=vmax,
+                        cbar_label=overlay.colour_label(
+                            feat.kind, layer=gene_layer or overlay_cfg.layer
+                        )
+                        or None,
                     )
                     safe = re.sub(r"[^0-9A-Za-z_.-]", "_", feat.label)
                     # De-duplicate stem collisions: append counter if already used.

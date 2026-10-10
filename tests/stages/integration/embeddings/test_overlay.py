@@ -204,3 +204,48 @@ def test_magic_unavailable_raises(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(overlay.MagicUnavailable):
         overlay.impute_magic_scoped(a, ["GENE_A"], knn=5, solver="approximate", random_state=0)
+
+
+def test_colour_bar_labels_say_what_the_colour_measures():
+    from cellquorum.stages.integration.embeddings.overlay import colour_label
+
+    assert colour_label("gene", layer="cellquorum_normalized") == "Expression (log-normalised)"
+    assert colour_label("gene", layer="magic") == "Expression (MAGIC-imputed)"
+    assert colour_label("program", layer="cellquorum_normalized") == "Program score (signed)"
+    assert colour_label("cell_cycle", layer=None) == "Cell-cycle score (signed)"
+    assert colour_label("obs", layer=None) == ""
+
+
+def test_the_overlay_figures_are_drawn_with_a_labelled_colour_bar(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import anndata as ad
+    import numpy as np
+
+    from cellquorum.stages.integration.embeddings import plots
+    from cellquorum.stages.integration.embeddings.methods import ContinuousOverlayMethod
+
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(X=rng.random((30, 3)).astype("float32"))
+    a.var_names = ["G0", "G1", "G2"]
+    a.obsm["X_umap"] = rng.normal(size=(30, 2)).astype("float32")
+    a.layers["cellquorum_normalized"] = a.X.copy()
+    seen: list[str | None] = []
+    real = plots.continuous_overlay
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("cbar_label"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(plots, "continuous_overlay", spy)
+    ctx = SimpleNamespace(
+        paths=SimpleNamespace(figures=tmp_path / "figs"), config=None, random_seed=1
+    )
+
+    ContinuousOverlayMethod()._run(
+        a,
+        {"embeddings": ["umap"], "overlay": {"genes": ["G0", "G1"]}, "figure_formats": ["png"]},
+        ctx,
+    )
+
+    assert seen == ["Expression (log-normalised)", "Expression (log-normalised)"]

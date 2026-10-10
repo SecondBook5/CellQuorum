@@ -142,6 +142,22 @@ class MagicUnavailable(Exception):
     """The optional 'magic' package is not importable."""
 
 
+def colour_label(kind: str, *, layer: str | None) -> str:
+    """What an overlay's colour measures, for the colour bar.
+
+    A bare gradient says nothing about whether it is expression, a signed module score or a
+    count, so every overlay names its scale. An ``obs`` column is self-describing by its own
+    title and gets no extra label.
+    """
+    if kind == "gene":
+        return "Expression (MAGIC-imputed)" if layer == "magic" else "Expression (log-normalised)"
+    if kind == "program":
+        return "Program score (signed)"
+    if kind == "cell_cycle":
+        return "Cell-cycle score (signed)"
+    return ""
+
+
 @dataclass(frozen=True)
 class FeatureValues:
     """One resolved overlay feature.
