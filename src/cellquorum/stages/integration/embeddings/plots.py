@@ -454,6 +454,7 @@ def continuous_overlay(
     vmin: float | None = None,
     vmax: float | None = None,
     point_size: float | None = None,
+    cbar_label: str | None = None,
 ) -> Figure:
     """Color a 2-D embedding scatter by a per-cell value vector.
 
@@ -468,6 +469,9 @@ def continuous_overlay(
     ``point_size=None`` scales the marker with cell count, matching the categorical
     panel: a size tuned for ~20k cells renders a 167k-cell cohort as fat overlapping
     discs (the "cartooney" look) rather than a smooth density.
+
+    ``cbar_label`` names the colour scale; without it the colour bar carries only numbers,
+    so a caller drawing anything other than a self-explanatory score should pass one.
     """
     coords = np.asarray(coords)[:, :2]
     values = np.asarray(values, dtype=float)
@@ -505,6 +509,8 @@ def continuous_overlay(
     # the frameless scatter.
     _lighten_colorbar_outline(cbar)
     cbar.ax.tick_params(labelsize=8, length=2, width=0.4)
+    if cbar_label:
+        cbar.set_label(cbar_label, fontsize=9)
     ax.set_title(title)
     _style_axes(ax, axis_labels)
     return fig

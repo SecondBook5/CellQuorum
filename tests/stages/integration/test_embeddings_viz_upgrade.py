@@ -97,3 +97,15 @@ def test_atlas_subset_excludes_probable_multiplets():
     # Opt-out restores the full core+rescued set.
     off = method._resolve_subsets(adata, {**cfg, "exclude_multiplets": False})
     assert int(off[0][1].sum()) == 900
+
+
+def test_continuous_overlay_names_its_colour_scale_when_given_a_label():
+    coords = np.random.default_rng(0).random((30, 2))
+    fig = plots.continuous_overlay(
+        coords,
+        np.linspace(0, 1, 30),
+        title="t",
+        axis_labels=("U1", "U2"),
+        cbar_label="EndoMT difference to partners",
+    )
+    assert fig.axes[1].get_ylabel() == "EndoMT difference to partners"
