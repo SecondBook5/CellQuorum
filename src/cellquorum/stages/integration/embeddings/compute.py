@@ -8,8 +8,11 @@ stochastic call.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scanpy as sc
 
 
@@ -31,6 +34,10 @@ class PhateUnavailable(EmbeddingsComputeError):
 
 class GroupMissing(EmbeddingsComputeError):
     """The requested grouping obs column is absent."""
+
+
+class LayoutMismatch(EmbeddingsComputeError):
+    """A display-layout file does not describe this object's cells."""
 
 
 class ComputeFailed(EmbeddingsComputeError):
@@ -62,6 +69,41 @@ def _is_usable_grouping(adata: ad.AnnData, column: str) -> bool:
     # nunique(dropna=True) counts only observed, non-null groups regardless of
     # dtype (categorical unused categories and NaN codes are both excluded).
     return int(values.nunique(dropna=True)) >= 2
+
+
+def load_layout(adata: ad.AnnData, path: str | Path) -> int:
+    """Write ``obsm['X_umap']`` from a frozen display-layout file instead of computing one.
+
+    The file is a CSV (optionally gzipped) with columns ``cell``, ``umap1`` and ``umap2``.
+    Coordinates are matched to cells by ID, never by row order. Every cell of ``adata`` must
+    be in the file; cells the file has beyond ``adata`` are ignored. A layout that does not
+    cover the object raises rather than being padded, and nothing is written, because a
+    partial layout drawn as the atlas would be a plausible wrong picture.
+
+    Returns:
+        The number of cells placed.
+    """
+    path = Path(path)
+    try:
+        table = pd.read_csv(path)
+    except FileNotFoundError as exc:
+        raise LayoutMismatch(f"layout file {path} does not exist") from exc
+    missing_columns = [c for c in ("cell", "umap1", "umap2") if c not in table.columns]
+    if missing_columns:
+        raise LayoutMismatch(f"layout file {path.name} lacks columns {missing_columns}")
+    if table["cell"].duplicated().any():
+        raise LayoutMismatch(
+            f"layout file {path.name} has duplicate cells "
+            f"({int(table['cell'].duplicated().sum())} repeated ids)"
+        )
+    placed = table.set_index("cell").reindex(adata.obs_names)[["umap1", "umap2"]]
+    absent = int(placed["umap1"].isna().sum())
+    if absent:
+        raise LayoutMismatch(
+            f"layout file {path.name} does not cover {absent} of {adata.n_obs} cells"
+        )
+    adata.obsm["X_umap"] = placed.to_numpy(dtype="float32")
+    return int(adata.n_obs)
 
 
 def compute_umap(

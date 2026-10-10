@@ -65,6 +65,18 @@ class UmapMethod(AnalysisMethod):
     ) -> StageResult | MethodSkip:
         if not _basis_requested(config, "umap"):
             return self._skip("umap not in config.embeddings")
+        layout_file = config.get("layout_file")
+        if layout_file:
+            try:
+                n_placed = compute.load_layout(adata, layout_file)
+            except compute.EmbeddingsComputeError as exc:
+                return self._skip(f"{exc}")
+            return StageResult(
+                adata=adata,
+                notes=[f"umap: wrote obsm['X_umap'] for {n_placed} cells from {layout_file}"],
+                metrics={"method": self.name, "compute": "layout_file", "layout_file": layout_file},
+                backend="python",
+            )
         use_rep = config.get("use_rep")
         n_neighbors = config.get("n_neighbors")
         try:

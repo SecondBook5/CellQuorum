@@ -69,6 +69,11 @@ class EmbeddingsConfig(StrictBaseModel):
     Attributes:
         enabled: Whether the stage runs.
         use_rep: Representation for PHATE and neighbors fallback.
+        layout_file: Frozen display coordinates (CSV, optionally gzipped, columns ``cell``,
+            ``umap1``, ``umap2``) to use as ``obsm['X_umap']`` instead of computing a UMAP.
+            Matched to cells by ID; every cell must be covered. A frozen atlas ships one so
+            every figure draws the same picture. When set, a file that does not fit the
+            object skips the UMAP with the reason; it never falls back to computing one.
         umap_min_dist: UMAP min_dist.
         phate_knn: PHATE knn.
         phate_decay: PHATE decay (alpha).
@@ -124,6 +129,7 @@ class EmbeddingsConfig(StrictBaseModel):
     enabled: bool = True
     methods: list[dict] = []
     use_rep: str = "X_pca_harmony"
+    layout_file: str | None = None
     umap_min_dist: float = 0.3
     phate_knn: int = 15
     phate_decay: int = 40
