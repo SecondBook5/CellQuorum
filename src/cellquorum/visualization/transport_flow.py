@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
 _INK, _MUTED, _NEUTRAL = "#202428", "#7A7A7A", "#B9BEC4"
+_EDGE = "#8A9097"
 _GAP = 0.04
 
 
@@ -142,7 +143,11 @@ def transport_flow(
             )
             called = True if sig_of is None else bool(sig_of[ri[s], ci[t]])
             patch = PathPatch(
-                path, facecolor=colour, edgecolor="none", alpha=0.85 if called else 0.28
+                path,
+                facecolor=colour,
+                edgecolor=_EDGE,
+                linewidth=0.5,
+                alpha=0.85 if called else 0.4,
             )
             patch.set_gid(f"flow|{s}|{t}")
             ax.add_patch(patch)
