@@ -187,7 +187,9 @@ def test_labels_that_are_plain_strings_follow_the_order_of_the_panel(tmp_path):
 
 def test_an_ordered_categorical_keeps_its_own_order(tmp_path):
     a = _adata()
-    a.obs["cell_type"] = a.obs["cell_type"].cat.reorder_categories(["Gamma", "Beta", "Alpha"])
+    a.obs["cell_type"] = a.obs["cell_type"].cat.reorder_categories(
+        ["Gamma", "Beta", "Alpha"], ordered=True
+    )
     MarkerDotplotMethod()._run(a, _config(), _ctx(tmp_path))
     mean = pd.read_csv(tmp_path / "results" / "annotation" / "marker_dotplot_mean.csv", index_col=0)
     assert list(mean.columns) == ["Gamma", "Beta", "Alpha"]
@@ -251,3 +253,17 @@ def test_the_stage_draws_both_dotplots_by_default():
     )
     aug = AnnotationVizStage()._augment_config(ctx, {})
     assert [m["method"] for m in aug["methods"]] == ["marker_dotplot", "lineage_dotplot"]
+
+
+def test_an_unordered_categorical_follows_the_panel_because_its_order_is_only_alphabetical(
+    tmp_path,
+):
+    """h5ad stores string labels as an unordered categorical, sorted alphabetically."""
+    a = _adata()
+    a.obs["cell_type"] = pd.Categorical(
+        a.obs["cell_type"].astype(str), categories=["Alpha", "Beta", "Gamma"], ordered=False
+    )
+    panel = {"Beta": ["G2", "G3"], "Alpha": ["G0", "G1"]}
+    MarkerDotplotMethod()._run(a, _config(marker_panels=panel), _ctx(tmp_path))
+    mean = pd.read_csv(tmp_path / "results" / "annotation" / "marker_dotplot_mean.csv", index_col=0)
+    assert list(mean.columns) == ["Beta", "Alpha", "Gamma"]

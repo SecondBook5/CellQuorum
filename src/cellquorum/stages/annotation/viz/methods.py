@@ -65,12 +65,13 @@ def _resolve(
         return skip(f"layer '{layer}' not found")
     column = adata.obs[group_by]
     observed = set(column.astype(str))
-    # An ordered categorical keeps its own order. Plain strings follow the panel, so a panel
-    # written lineage by lineage puts each group under its own block and the highlighted cells
-    # form a diagonal; labels the panel does not name come last.
+    # Only a categorical marked ordered keeps its own order. Anything else, including the
+    # unordered categorical an h5ad stores string labels as (alphabetical by accident), follows
+    # the panel, so a panel written lineage by lineage puts each group under its own block and
+    # the highlighted cells form a diagonal; labels the panel does not name come last.
     groups = (
         [str(c) for c in column.cat.categories if str(c) in observed]
-        if hasattr(column, "cat")
+        if hasattr(column, "cat") and column.cat.ordered
         else [g for g in panel if g in observed] + sorted(observed - set(panel))
     )
     return _Resolved(panel, group_by, layer, groups)
