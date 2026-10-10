@@ -81,3 +81,14 @@ def test_the_two_sets_of_cells_are_drawn_beneath_the_arrows() -> None:
     fig = transport_displacement(source, target, plan)
     gids = {c.get_gid() for c in _axis(fig).collections}
     assert {"normal", "lymphedema"} <= gids
+
+
+def test_a_background_of_all_cells_is_drawn_first_and_does_not_move_the_arrows() -> None:
+    source, target, plan = _inputs()
+    background = np.array([[0.0, 0.0], [3.0, 3.0], [9.0, 9.0]])
+    fig = transport_displacement(source, target, plan, background_xy=background)
+    collections = _axis(fig).collections
+    gids = [c.get_gid() for c in collections]
+    assert gids.index("background") < gids.index("normal")
+    arrows = next(c for c in collections if c.get_gid() == "arrows")
+    np.testing.assert_allclose(np.asarray(arrows.get_segments())[:, 0, :], source)

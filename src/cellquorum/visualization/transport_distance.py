@@ -140,6 +140,7 @@ def transport_displacement(
     source_value: np.ndarray | None = None,
     target_value: np.ndarray | None = None,
     value_label: str = "Change along the arrow",
+    background_xy: np.ndarray | None = None,
 ) -> Figure:
     """One donor's transport plan drawn as where each Normal cell is carried to.
 
@@ -156,6 +157,8 @@ def transport_displacement(
         source_value: Optional per-source-cell value for colouring.
         target_value: Optional per-target-cell value; both or neither value must be given.
         value_label: Colourbar label.
+        background_xy: Optional (n, 2) embedding of every cell, drawn faint beneath for
+            orientation; it plays no part in the plan.
     """
     import matplotlib.pyplot as plt
     import numpy as np
@@ -176,6 +179,9 @@ def transport_displacement(
     ends = weights @ target_xy
     fig, ax = plt.subplots(figsize=(5.2, 4.6))
     ax.set_label("displacement")
+    if background_xy is not None:
+        back = ax.scatter(background_xy[:, 0], background_xy[:, 1], s=4, color="#D9DCE0", zorder=1)
+        back.set_gid("background")
     normal = ax.scatter(source_xy[:, 0], source_xy[:, 1], s=9, color=_NORMAL, zorder=2)
     normal.set_gid("normal")
     le = ax.scatter(target_xy[:, 0], target_xy[:, 1], s=9, color=_ACCENT, alpha=0.55, zorder=2)
