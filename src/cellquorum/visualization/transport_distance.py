@@ -18,10 +18,12 @@ from cellquorum.visualization.figstyle import apply_theme
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    import numpy as np
     import pandas as pd
     from matplotlib.figure import Figure
 
 _INK, _MUTED, _ACCENT, _NULL = "#202428", "#7A7A7A", "#C1121F", "#B9BEC4"
+_NORMAL = "#3B6FA0"
 _REQUIRED = ("state", "donor", "w2", "null_mean", "null_p95", "p_perm")
 
 
@@ -130,4 +132,74 @@ def transport_distance(
     return fig
 
 
-__all__ = ["transport_distance"]
+def transport_displacement(
+    source_xy: np.ndarray,
+    target_xy: np.ndarray,
+    plan: np.ndarray,
+    *,
+    source_value: np.ndarray | None = None,
+    target_value: np.ndarray | None = None,
+    value_label: str = "Change along the arrow",
+) -> Figure:
+    """One donor's transport plan drawn as where each Normal cell is carried to.
+
+    Each Normal cell is joined to the plan-weighted mean position of the LE cells it sends its
+    mass to (the barycentric projection of the plan). The arrow is a summary of a soft
+    assignment, not a claim that the cell becomes one particular LE cell. When values are given
+    (a module score, say) each arrow is coloured by the plan-weighted target value minus the
+    source value, so the colour reads as the change the transport implies.
+
+    Args:
+        source_xy: (n_source, 2) embedding of the Normal cells.
+        target_xy: (n_target, 2) embedding of the LE cells.
+        plan: (n_source, n_target) transport plan; rows are the mass each Normal cell sends.
+        source_value: Optional per-source-cell value for colouring.
+        target_value: Optional per-target-cell value; both or neither value must be given.
+        value_label: Colourbar label.
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib.collections import LineCollection
+
+    apply_theme("compact")
+    if plan.shape != (len(source_xy), len(target_xy)):
+        raise ValueError(
+            f"plan is {plan.shape} but there are {len(source_xy)} Normal and "
+            f"{len(target_xy)} LE cells"
+        )
+    if (source_value is None) != (target_value is None):
+        raise ValueError("give both source_value and target_value, or neither")
+    mass = plan.sum(axis=1)
+    if np.any(mass <= 0):
+        raise ValueError(f"{int((mass <= 0).sum())} Normal cells send no mass in the plan")
+    weights = plan / mass[:, None]
+    ends = weights @ target_xy
+    fig, ax = plt.subplots(figsize=(5.2, 4.6))
+    ax.set_label("displacement")
+    normal = ax.scatter(source_xy[:, 0], source_xy[:, 1], s=9, color=_NORMAL, zorder=2)
+    normal.set_gid("normal")
+    le = ax.scatter(target_xy[:, 0], target_xy[:, 1], s=9, color=_ACCENT, alpha=0.55, zorder=2)
+    le.set_gid("lymphedema")
+    segments = list(np.stack([source_xy, ends], axis=1))
+    arrows = LineCollection(segments, linewidths=0.8, zorder=3)
+    arrows.set_gid("arrows")
+    if source_value is not None and target_value is not None:
+        change = weights @ target_value - source_value
+        lim = float(np.abs(change).max()) or 1.0
+        arrows.set_array(change)
+        arrows.set_cmap("RdBu_r")
+        arrows.set_clim(-lim, lim)
+        fig.colorbar(arrows, ax=ax, shrink=0.6, pad=0.02).set_label(value_label, fontsize=8.5)
+    else:
+        arrows.set_color(_INK)
+        arrows.set_alpha(0.5)
+    ax.add_collection(arrows)
+    ax.autoscale_view()
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    return fig
+
+
+__all__ = ["transport_displacement", "transport_distance"]
