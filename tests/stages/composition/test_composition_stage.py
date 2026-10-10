@@ -5,6 +5,7 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.pipeline import build_pipeline_context
@@ -491,3 +492,68 @@ def test_the_stage_figures_use_those_colours_and_report_a_bad_layout(tmp_path):
     assert result.status == "success"
     assert "composition_figure_condition" in {x.name for x in result.artifacts}
     assert not result.warnings
+
+
+# ---- percentages written inside the segments ---------------------------------------------
+
+
+def _pct_texts(fig):
+    return {t.get_text(): t for t in fig.axes[0].texts}
+
+
+def test_segments_big_enough_to_hold_it_carry_their_percentage():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    table = pd.DataFrame(
+        {"Big": [59.0, 62.0], "Mid": [36.0, 31.0], "Small": [5.0, 7.0]},
+        index=["Normal", "Case"],
+    )
+
+    texts = [t.get_text() for t in _stacked_bar(table, x_label=None, label_min=0.04).axes[0].texts]
+
+    assert sorted(texts) == ["31%", "36%", "5%", "59%", "62%", "7%"]
+
+
+def test_a_segment_too_thin_for_text_is_left_unlabelled():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    table = pd.DataFrame({"Big": [96.0, 97.0], "Thin": [4.0, 3.0]}, index=["Normal", "Case"])
+
+    texts = [t.get_text() for t in _stacked_bar(table, x_label=None, label_min=0.05).axes[0].texts]
+
+    assert sorted(texts) == ["96%", "97%"]
+
+
+def test_a_label_sits_in_the_middle_of_its_segment():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    table = pd.DataFrame({"Big": [60.0], "Mid": [40.0]}, index=["Normal"])
+
+    texts = _pct_texts(_stacked_bar(table, x_label=None, label_min=0.04))
+
+    assert texts["60%"].get_position() == pytest.approx((0.0, 0.30))
+    assert texts["40%"].get_position() == pytest.approx((0.0, 0.80))
+
+
+def test_label_text_is_white_on_a_dark_segment_and_black_on_a_light_one():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    table = pd.DataFrame({"Dark": [60.0], "Light": [40.0]}, index=["Normal"])
+
+    texts = _pct_texts(
+        _stacked_bar(
+            table,
+            x_label=None,
+            colours={"Dark": "#10233A", "Light": "#F3DFA2"},
+            label_min=0.04,
+        )
+    )
+
+    assert texts["60%"].get_color() == "white"
+    assert texts["40%"].get_color() == "black"
+
+
+def test_labels_can_be_switched_off():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    assert len(_stacked_bar(_bars_table(), x_label=None, label_min=None).axes[0].texts) == 0

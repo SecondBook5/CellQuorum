@@ -340,8 +340,16 @@ def _stack_bars(
     cluster_labels: dict[str, str],
     *,
     width: float,
+    label_min: float | None = None,
 ) -> None:
-    """Draw ``table`` (rows in percent) as stacked bars at ``x``, first column at the bottom."""
+    """Draw ``table`` (rows in percent) as stacked bars at ``x``, first column at the bottom.
+
+    With ``label_min`` set, each segment of at least that proportion carries its percentage in
+    its middle (white on a dark fill, black on a light one); thinner segments stay unlabelled
+    rather than crowd the text.
+    """
+    from matplotlib.colors import to_rgb
+
     bottom = np.zeros(len(table))
     for ct in table.columns:
         values = table[ct].to_numpy() / 100.0
@@ -355,6 +363,20 @@ def _stack_bars(
             linewidth=0.4,
             label=cluster_labels.get(str(ct), ct),
         )
+        if label_min is not None:
+            red, green, blue = to_rgb(colours[ct])
+            ink = "white" if 0.2126 * red + 0.7152 * green + 0.0722 * blue < 0.5 else "black"
+            for xi, value, base in zip(x, values, bottom, strict=True):
+                if value >= label_min:
+                    ax.text(
+                        float(xi),
+                        float(base + value / 2),
+                        f"{value * 100:.0f}%",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                        color=ink,
+                    )
         bottom += values
 
 
@@ -364,6 +386,7 @@ def _stacked_bar(
     x_label: str | None,
     cluster_labels: dict[str, str] | None = None,
     colours: dict[str, str] | None = None,
+    label_min: float | None = 0.04,
 ) -> Figure:
     """Stacked bars of cell-type proportion, one bar per row of `table` (rows in percent).
 
@@ -381,7 +404,7 @@ def _stacked_bar(
     colours = _colours_for(cell_types, colours)
     fig, ax = plt.subplots(figsize=(max(3.0, 0.6 * len(groups) + 2.0), 4.4))
     x = np.arange(len(groups))
-    _stack_bars(ax, table, x, colours, cluster_labels, width=0.7)
+    _stack_bars(ax, table, x, colours, cluster_labels, width=0.7, label_min=label_min)
     ax.set_ylim(0, 1)
     ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
     ax.set_yticklabels(["0.00", "0.25", "0.50", "0.75", "1.00"])
