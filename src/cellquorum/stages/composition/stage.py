@@ -411,6 +411,7 @@ def _stacked_bar_by_patient(
             condition,
             fontsize=9.5,
             fontweight="bold",
+            pad=14,
             bbox={"boxstyle": "square,pad=0.4", "fc": "white", "ec": "black", "lw": 0.8},
         )
         for side in ("top", "right"):

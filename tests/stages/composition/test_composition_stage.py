@@ -345,3 +345,16 @@ def test_no_patient_figure_without_a_donor_column(tmp_path):
     result = CompositionStage().run(_design_context(tmp_path, adata))
 
     assert "composition_by_patient" not in {a.name for a in result.artifacts}
+
+
+def test_the_panel_title_boxes_sit_above_the_bars_not_on_them():
+    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
+
+    fig = _stacked_bar_by_patient(_patient_tables())
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    six_points = 6 / 72 * fig.dpi
+    for ax in _panels(fig):
+        box = ax.title.get_bbox_patch().get_window_extent(renderer)
+        assert box.y0 - ax.get_window_extent(renderer).y1 >= six_points
