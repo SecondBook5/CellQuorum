@@ -159,6 +159,55 @@ def compute_categorical_palette(
     return _palette_from_centroids(centroids, cats)
 
 
+def view_limits(
+    xy: np.ndarray, view_percentile: tuple[float, float] | None
+) -> tuple[tuple[float, float], tuple[float, float], int] | None:
+    """The plotted range of an embedding, trimmed to a percentile window.
+
+    Returns the x range, the y range and how many cells fall outside them.
+
+    One isolated cell (a cell the neighbour graph barely connects) can sit far from everything
+    else and shrink the whole cloud into a corner. ``view_percentile = (low, high)`` sets each
+    axis range to those percentiles of the coordinates plus 6 percent padding. The cells outside
+    are not hidden silently: the count is returned so the figure can say so. ``None`` means the
+    range covers every cell.
+    """
+    if view_percentile is None:
+        return None
+    low, high = view_percentile
+    xs, ys = xy[:, 0], xy[:, 1]
+    ranges = []
+    for values in (xs, ys):
+        lo, hi = np.percentile(values, [low, high])
+        pad = 0.06 * (hi - lo if hi > lo else 1.0)
+        ranges.append((float(lo - pad), float(hi + pad)))
+    (x0, x1), (y0, y1) = ranges
+    outside = int(((xs < x0) | (xs > x1) | (ys < y0) | (ys > y1)).sum())
+    return (x0, x1), (y0, y1), outside
+
+
+def _apply_view(ax: Axes, xy: np.ndarray, view_percentile: tuple[float, float] | None) -> None:
+    """Trim an axes to :func:`view_limits` and note how many cells fall outside it."""
+    limits = view_limits(xy, view_percentile)
+    if limits is None:
+        return
+    (x0, x1), (y0, y1), outside = limits
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y0, y1)
+    if outside:
+        noun = "cell" if outside == 1 else "cells"
+        ax.text(
+            0.99,
+            0.01,
+            f"{outside} {noun} outside the plotted range",
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=7,
+            color="#7A7A7A",
+        )
+
+
 def column_palette(xy: np.ndarray, column: pd.Series) -> dict[str, str]:
     """The category -> colour mapping ``categorical_embedding`` draws for ``column``.
 
@@ -228,6 +277,7 @@ def categorical_embedding(
     title: str = "",
     cell_mask: np.ndarray | None = None,
     cluster_labels: dict[str, str] | None = None,
+    view_percentile: tuple[float, float] | None = None,
 ) -> Figure:
     """Per-group scatter on `basis`, with PAGA graph overlaid when present.
 
@@ -404,6 +454,7 @@ def categorical_embedding(
     # Pad the view so repelled labels have somewhere to go, then finalize the
     # axis frame before placing labels (adjustText measures against final lims).
     ax.margins(0.10)
+    _apply_view(ax, xy, view_percentile)
     _style_axes(ax, axis_labels)
 
     # Per-group NAMED labels on top, then de-collided with leader lines.
@@ -493,6 +544,7 @@ def continuous_overlay(
     vmax: float | None = None,
     point_size: float | None = None,
     cbar_label: str | None = None,
+    view_percentile: tuple[float, float] | None = None,
 ) -> Figure:
     """Color a 2-D embedding scatter by a per-cell value vector.
 
@@ -507,6 +559,9 @@ def continuous_overlay(
     ``point_size=None`` scales the marker with cell count, matching the categorical
     panel: a size tuned for ~20k cells renders a 167k-cell cohort as fat overlapping
     discs (the "cartooney" look) rather than a smooth density.
+
+    ``view_percentile`` trims the plotted range to that percentile window and writes how many
+    cells fall outside it (see :func:`view_limits`).
 
     ``cbar_label`` names the colour scale; without it the colour bar carries only numbers,
     so a caller drawing anything other than a self-explanatory score should pass one.
@@ -550,6 +605,7 @@ def continuous_overlay(
     if cbar_label:
         cbar.set_label(cbar_label, fontsize=9)
     ax.set_title(title)
+    _apply_view(ax, coords, view_percentile)
     _style_axes(ax, axis_labels)
     return fig
 
@@ -571,6 +627,7 @@ def plot_score_by_condition(
     cmap: str = _SEQUENTIAL_CMAP,
     clip_pct: float = 2.0,
     point_size: float | None = None,
+    view_percentile: tuple[float, float] | None = None,
 ) -> Figure:
     """3-panel figure: cluster-state UMAP, then a per-cell score split by condition.
 
@@ -654,8 +711,9 @@ def plot_score_by_condition(
                 },
             )
         )
-    _repel_labels(ax_state, texts)
     ax_state.margins(0.10)
+    _apply_view(ax_state, coords, view_percentile)
+    _repel_labels(ax_state, texts)
     _style_axes(ax_state, axis_labels)
     ax_state.set_title(f"{n_obs:,} cells", fontsize=9, color=_TEXT)
 
@@ -688,6 +746,7 @@ def plot_score_by_condition(
             vmin=vmin,
             vmax=vmax,
         )
+        _apply_view(ax, coords, view_percentile)
         _style_axes(ax, axis_labels)
         ax.set_title(f"{label}\n{int(mask.sum()):,} cells", fontsize=9, color=_TEXT)
 

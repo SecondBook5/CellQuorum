@@ -403,3 +403,88 @@ def test_an_unsigned_overlay_uses_the_orange_ramp_unless_told_otherwise():
     )
 
     assert fig.axes[0].collections[0].get_cmap().name == "cq_orange"
+
+
+# ---- plotted range ------------------------------------------------------------------------
+
+
+def _cloud_with_one_far_cell():
+    rng = np.random.default_rng(0)
+    xy = rng.normal(loc=(8.0, 12.0), scale=1.0, size=(400, 2))
+    xy[0] = (0.0, 5.0)  # one isolated cell far from everything else
+    return xy
+
+
+def _note(ax):
+    return [t.get_text() for t in ax.texts if "outside" in t.get_text()]
+
+
+def test_view_limits_leave_out_a_far_cell_and_count_it():
+    xy = _cloud_with_one_far_cell()
+
+    (x0, x1), (y0, y1), outside = plots.view_limits(xy, (0.5, 99.5))
+
+    assert x0 > 2.0 and y0 > 6.0  # the isolated cell no longer sets the range
+    assert outside >= 1
+
+
+def test_without_a_view_percentile_the_range_covers_every_cell():
+    assert plots.view_limits(_cloud_with_one_far_cell(), None) is None
+
+
+def test_a_categorical_umap_trims_to_the_view_and_says_how_many_cells_are_outside():
+    xy = _cloud_with_one_far_cell()
+    a = ad.AnnData(X=np.zeros((len(xy), 2), dtype="float32"))
+    a.obsm["X_umap"] = xy.astype("float32")
+    a.obs["cell_type"] = pd.Categorical(["A", "B"] * (len(xy) // 2))
+
+    fig = plots.categorical_embedding(
+        a, "cell_type", basis="X_umap", axis_labels=("U1", "U2"), view_percentile=(0.5, 99.5)
+    )
+
+    ax = fig.axes[0]
+    assert ax.get_xlim()[0] > 2.0
+    assert any("outside" in s and "cell" in s for s in _note(ax))
+
+
+def test_a_continuous_overlay_trims_to_the_view_and_says_so():
+    xy = _cloud_with_one_far_cell()
+
+    fig = plots.continuous_overlay(
+        xy,
+        np.linspace(0, 1, len(xy)),
+        title="t",
+        axis_labels=("U1", "U2"),
+        view_percentile=(0.5, 99.5),
+    )
+
+    assert fig.axes[0].get_xlim()[0] > 2.0
+    assert _note(fig.axes[0])
+
+
+def test_no_note_is_written_when_every_cell_is_inside_the_view():
+    rng = np.random.default_rng(1)
+    xy = rng.uniform(0, 1, size=(300, 2))
+
+    fig = plots.continuous_overlay(
+        xy,
+        np.linspace(0, 1, 300),
+        title="t",
+        axis_labels=("U1", "U2"),
+        view_percentile=(0.0, 100.0),
+    )
+
+    assert _note(fig.axes[0]) == []
+
+
+def test_the_view_percentile_is_validated_in_the_config():
+    import pytest
+
+    from cellquorum.stages.integration.embeddings.config import EmbeddingsConfig
+
+    assert EmbeddingsConfig().view_percentile is None
+    assert EmbeddingsConfig(view_percentile=[0.1, 99.9]).view_percentile == [0.1, 99.9]
+    with pytest.raises(ValueError):
+        EmbeddingsConfig(view_percentile=[99.0, 1.0])
+    with pytest.raises(ValueError):
+        EmbeddingsConfig(view_percentile=[0.0, 101.0])

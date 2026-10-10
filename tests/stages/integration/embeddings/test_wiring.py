@@ -16,4 +16,9 @@ def test_planner_schedules_embeddings_before_de():
     names = [p.name for p in plan]
     assert "embeddings" in names
     assert names.index("embeddings") < names.index("differential_expression")
-    assert names.index("composition") < names.index("embeddings")
+    # composition draws in the UMAP's colours, so it runs once the embedding exists
+    assert (
+        names.index("embeddings")
+        < names.index("composition")
+        < names.index("differential_expression")
+    )

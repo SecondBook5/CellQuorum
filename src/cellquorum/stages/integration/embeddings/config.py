@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from cellquorum.config.base import StrictBaseModel
 
@@ -74,6 +74,10 @@ class EmbeddingsConfig(StrictBaseModel):
             Matched to cells by ID; every cell must be covered. A frozen atlas ships one so
             every figure draws the same picture. When set, a file that does not fit the
             object skips the UMAP with the reason; it never falls back to computing one.
+        view_percentile: ``[low, high]`` percentiles that set the plotted range of every UMAP
+            figure, with padding, so one isolated far-away cell cannot shrink the cloud into a
+            corner. Cells outside are not hidden silently: each figure notes how many there
+            are. None plots the full range.
         umap_min_dist: UMAP min_dist.
         phate_knn: PHATE knn.
         phate_decay: PHATE decay (alpha).
@@ -130,6 +134,7 @@ class EmbeddingsConfig(StrictBaseModel):
     methods: list[dict] = []
     use_rep: str = "X_pca_harmony"
     layout_file: str | None = None
+    view_percentile: list[float] | None = None
     umap_min_dist: float = 0.3
     phate_knn: int = 15
     phate_decay: int = 40
@@ -161,6 +166,16 @@ class EmbeddingsConfig(StrictBaseModel):
     mixing_rep: str | None = None
     overlay: OverlayConfig = Field(default_factory=OverlayConfig)
     magic: MagicConfig = Field(default_factory=MagicConfig)
+
+    @field_validator("view_percentile")
+    @classmethod
+    def _view_percentile_is_a_window(cls, value: list[float] | None) -> list[float] | None:
+        """Two percentiles in [0, 100], low strictly below high."""
+        if value is None:
+            return None
+        if len(value) != 2 or not (0.0 <= value[0] < value[1] <= 100.0):
+            raise ValueError("view_percentile must be [low, high] with 0 <= low < high <= 100")
+        return value
 
 
 __all__ = ["EmbeddingsConfig", "OverlayConfig", "MagicConfig"]

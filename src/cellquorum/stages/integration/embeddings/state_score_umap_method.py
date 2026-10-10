@@ -23,6 +23,7 @@ import anndata as ad
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.integration.embeddings.methods import _view_percentile
 from cellquorum.stages.integration.embeddings.plots import (
     EMBEDDING_REGISTRY,
     plot_score_by_condition,
@@ -102,6 +103,7 @@ class StateScoreUmapMethod(AnalysisMethod):
                     case=case,
                     control=control,
                     cluster_labels=cluster_labels,
+                    view_percentile=_view_percentile(config),
                 )
             except Exception:  # noqa: BLE001 -- one bad program must not sink the rest
                 continue

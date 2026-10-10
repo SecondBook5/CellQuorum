@@ -50,6 +50,12 @@ def _basis_requested(config: dict, tag: str) -> bool:
     return tag in {str(t) for t in requested}
 
 
+def _view_percentile(config: dict) -> tuple[float, float] | None:
+    """The configured plotted-range window as a tuple, or None for the full range."""
+    window = config.get("view_percentile")
+    return (float(window[0]), float(window[1])) if window else None
+
+
 class UmapMethod(AnalysisMethod):
     """Compute UMAP coordinates from the neighbors graph."""
 
@@ -359,6 +365,7 @@ class CategoricalEmbeddingMethod(AnalysisMethod):
                                 title=title,
                                 cell_mask=mask,
                                 cluster_labels=config.get("cluster_labels") or {},
+                                view_percentile=_view_percentile(config),
                             )
                             paths = save_figure(fig, figures_dir, stem, formats=formats, dpi=dpi)
                             artifacts += figure_artifacts(
@@ -539,6 +546,7 @@ class ContinuousOverlayMethod(AnalysisMethod):
                         cmap=cmap,
                         vmin=vmin,
                         vmax=vmax,
+                        view_percentile=_view_percentile(config),
                         cbar_label=overlay.colour_label(
                             feat.kind, layer=gene_layer or overlay_cfg.layer
                         )
