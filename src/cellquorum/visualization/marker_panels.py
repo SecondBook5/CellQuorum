@@ -398,7 +398,7 @@ def draw_categorized_dotplot(
     gap_in = min(0.9, 0.12 * fig_h)
     top_pad_in = 0.2
     cbar_ax = legend_ax.inset_axes(
-        (0.05, 1 - (top_pad_in + legend_in) / fig_h, 0.35, legend_in / fig_h)
+        (0.25, 1 - (top_pad_in + legend_in) / fig_h, 0.3, legend_in / fig_h)
     )
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=vmax))
     cbar = fig.colorbar(sm, cax=cbar_ax)
@@ -409,9 +409,9 @@ def draw_categorized_dotplot(
 
     size_ax = legend_ax.inset_axes(
         (
-            0.05,
+            0.2,
             1 - (top_pad_in + legend_in + gap_in + legend_in) / fig_h,
-            0.9,
+            0.75,
             legend_in / fig_h,
         )
     )

@@ -578,3 +578,20 @@ def test_gene_labels_never_run_into_the_category_boxes():
     assert boxes
     assert len(labels) == len(genes)
     assert not [(b, g) for g in labels for b in boxes if b.overlaps(g)]
+
+
+def test_the_legends_do_not_touch_the_dot_grid():
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    fig = draw_categorized_dotplot(
+        _categorized_adata(), {"Category A": ["G0", "G1"]}, groupby="state", layer="norm"
+    )
+
+    fig.canvas.draw()
+    dot_ax = max(fig.axes, key=lambda ax: len(ax.collections))
+    insets = [child for ax in fig.axes for child in ax.child_axes]
+    gap_in = (
+        min(c.get_window_extent().x0 for c in insets) / fig.dpi
+        - dot_ax.get_window_extent().x1 / fig.dpi
+    )
+    assert gap_in >= 0.2
