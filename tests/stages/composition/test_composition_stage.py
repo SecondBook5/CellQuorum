@@ -201,17 +201,31 @@ def test_the_axis_is_a_proportion_of_cells_from_zero_to_one():
     assert max(tops) == 1.0  # a 100-percent bar is a proportion of 1
 
 
-def test_stack_colours_run_from_dark_red_at_the_bottom_to_dark_blue_at_the_top():
+def test_bars_use_the_colours_they_are_given_by_cell_type():
+    from matplotlib.colors import to_hex
+
     from cellquorum.stages.composition.stage import _stacked_bar
 
-    fig = _stacked_bar(_bars_table(), x_label="condition")
+    given = {"Big": "#112233", "Mid": "#445566", "Small": "#778899"}
+    fig = _stacked_bar(_bars_table(), x_label=None, colours=given)
+    fig.canvas.draw()
+    first_bar = sorted(
+        (p for p in fig.axes[0].patches if abs(p.get_x() - (-0.35)) < 1e-6), key=lambda p: p.get_y()
+    )
+
+    assert [to_hex(p.get_facecolor()) for p in first_bar] == ["#112233", "#445566", "#778899"]
+
+
+def test_without_colours_every_cell_type_still_gets_its_own():
+    from matplotlib.colors import to_hex
+
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    fig = _stacked_bar(_bars_table(), x_label=None)
     fig.canvas.draw()
     first_bar = [p for p in fig.axes[0].patches if abs(p.get_x() - (-0.35)) < 1e-6]
-    by_bottom = sorted(first_bar, key=lambda p: p.get_y())
-    bottom, top = by_bottom[0].get_facecolor(), by_bottom[-1].get_facecolor()
 
-    assert bottom[0] > bottom[2]  # red
-    assert top[2] > top[0]  # blue
+    assert len({to_hex(p.get_facecolor()) for p in first_bar}) == 3
 
 
 def test_no_segment_is_white_on_a_white_page():
@@ -358,3 +372,122 @@ def test_the_panel_title_boxes_sit_above_the_bars_not_on_them():
     for ax in _panels(fig):
         box = ax.title.get_bbox_patch().get_window_extent(renderer)
         assert box.y0 - ax.get_window_extent(renderer).y1 >= six_points
+
+
+# ---- the UMAP's colours ------------------------------------------------------------------
+
+
+def _four_type_adata(layout_swapped=False):
+    rng = np.random.default_rng(3)
+    names = ["Fibro", "TNK", "Mast", "DC"]
+    corners = {"Fibro": (0, 0), "TNK": (8, 1), "Mast": (4, 9), "DC": (-5, 6)}
+    if layout_swapped:
+        corners = {"Fibro": (8, 1), "TNK": (-5, 6), "Mast": (0, 0), "DC": (4, 9)}
+    labels, points = [], []
+    for name in names:
+        labels += [name] * 15
+        points.append(rng.normal(loc=corners[name], scale=0.4, size=(15, 2)))
+    n = len(labels)
+    obs = pd.DataFrame(
+        {
+            "cell_type": labels,
+            "condition": (["Normal"] * 8 + ["Case"] * 7) * 4,
+            "donor_id": ["d1", "d2", "d1", "d2", "d1", "d2", "d1"] * 8 + ["d1"] * 4,
+            "sample_id": ["s0"] * n,
+        },
+        index=[f"cell_{i}" for i in range(n)],
+    )
+    a = ad.AnnData(X=np.ones((n, 2)), obs=obs)
+    a.obsm["X_umap"] = np.vstack(points).astype("float32")
+    return a
+
+
+def _first_bar_colours(path_fig) -> dict[str, str]:
+    from matplotlib.colors import to_hex
+
+    ax = path_fig.axes[0]
+    handles, labels = ax.get_legend_handles_labels()
+    return {lab: to_hex(h.get_facecolor()) for h, lab in zip(handles, labels, strict=True)}
+
+
+def test_the_composition_bars_carry_the_colours_the_umap_gives_each_cell_type(tmp_path):
+    from matplotlib.colors import to_hex
+
+    from cellquorum.stages.composition.stage import _umap_colours
+    from cellquorum.stages.integration.embeddings.plots import column_palette
+
+    a = _four_type_adata()
+    config = CellQuorumConfig(compute={"prefer_gpu": False}, r={"enabled": False})
+
+    colours, note = _umap_colours(a, "cell_type", config)
+
+    expected = column_palette(a.obsm["X_umap"], a.obs["cell_type"])
+    assert {k: to_hex(v) for k, v in colours.items()} == {k: to_hex(v) for k, v in expected.items()}
+    assert note is None
+
+
+def test_a_configured_layout_file_decides_the_colours_as_it_does_for_the_umap(tmp_path):
+    from matplotlib.colors import to_hex
+
+    from cellquorum.stages.composition.stage import _umap_colours
+    from cellquorum.stages.integration.embeddings.plots import column_palette
+
+    a = _four_type_adata()
+    swapped = _four_type_adata(layout_swapped=True)
+    layout = tmp_path / "layout.csv"
+    pd.DataFrame(
+        {
+            "cell": a.obs_names,
+            "umap1": swapped.obsm["X_umap"][:, 0],
+            "umap2": swapped.obsm["X_umap"][:, 1],
+        }
+    ).to_csv(layout, index=False)
+    config = CellQuorumConfig(
+        compute={"prefer_gpu": False}, r={"enabled": False}, embeddings={"layout_file": str(layout)}
+    )
+    from_x = column_palette(a.obsm["X_umap"], a.obs["cell_type"])
+    from_file = column_palette(swapped.obsm["X_umap"], a.obs["cell_type"])
+    assert from_x != from_file  # the test means something only if the layouts colour differently
+
+    colours, _ = _umap_colours(a, "cell_type", config)
+
+    assert {k: to_hex(v) for k, v in colours.items()} == {
+        k: to_hex(v) for k, v in from_file.items()
+    }
+
+
+def test_a_layout_file_that_does_not_fit_falls_back_and_says_so(tmp_path):
+    from cellquorum.stages.composition.stage import _umap_colours
+
+    a = _four_type_adata()
+    layout = tmp_path / "layout.csv"
+    pd.DataFrame({"cell": ["nope"], "umap1": [0.0], "umap2": [0.0]}).to_csv(layout, index=False)
+    config = CellQuorumConfig(
+        compute={"prefer_gpu": False}, r={"enabled": False}, embeddings={"layout_file": str(layout)}
+    )
+
+    colours, note = _umap_colours(a, "cell_type", config)
+
+    assert colours is None
+    assert note is not None and "layout" in note
+
+
+def test_with_no_coordinates_at_all_there_are_no_shared_colours_and_nothing_to_report():
+    from cellquorum.stages.composition.stage import _umap_colours
+
+    a = _four_type_adata()
+    del a.obsm["X_umap"]
+    config = CellQuorumConfig(compute={"prefer_gpu": False}, r={"enabled": False})
+
+    assert _umap_colours(a, "cell_type", config) == (None, None)
+
+
+def test_the_stage_figures_use_those_colours_and_report_a_bad_layout(tmp_path):
+    a = _four_type_adata()
+    context = _design_context(tmp_path, a)
+
+    result = CompositionStage().run(context)
+
+    assert result.status == "success"
+    assert "composition_figure_condition" in {x.name for x in result.artifacts}
+    assert not result.warnings

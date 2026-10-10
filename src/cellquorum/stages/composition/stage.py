@@ -76,6 +76,7 @@ class CompositionStage:
 
         cell_type = obs[config.cell_type_key]
         overall = overall_composition(cell_type)
+        colours, colour_note = _umap_colours(adata, config.cell_type_key, top_config)
 
         manager = ArtifactManager.from_root(context.paths.root)
         artifacts = [
@@ -105,7 +106,12 @@ class CompositionStage:
                     description="Cell-type composition per condition (percent).",
                 )
             )
-            fig = _stacked_bar(by_condition, x_label=None, cluster_labels=config.cluster_labels)
+            fig = _stacked_bar(
+                by_condition,
+                x_label=None,
+                cluster_labels=config.cluster_labels,
+                colours=colours,
+            )
             paths = figstyle.save_figure(
                 fig, figures_dir, "composition_by_condition", formats=formats, dpi=config.dpi
             )
@@ -144,7 +150,12 @@ class CompositionStage:
                     description="Cell-type composition per sample (percent).",
                 )
             )
-            fig = _stacked_bar(by_sample, x_label=sample_key, cluster_labels=config.cluster_labels)
+            fig = _stacked_bar(
+                by_sample,
+                x_label=sample_key,
+                cluster_labels=config.cluster_labels,
+                colours=colours,
+            )
             paths = figstyle.save_figure(
                 fig, figures_dir, "composition_by_sample", formats=formats, dpi=config.dpi
             )
@@ -180,6 +191,7 @@ class CompositionStage:
                 by_patient,
                 cluster_labels=config.cluster_labels,
                 title="Cell type composition by patient",
+                colours=colours,
             )
             paths = figstyle.save_figure(
                 fig, figures_dir, "composition_by_patient", formats=formats, dpi=config.dpi
@@ -201,7 +213,7 @@ class CompositionStage:
                 f"composition summarized {n_cells_used} cells across "
                 f"{overall.shape[0]} cell types."
             ],
-            warnings=[],
+            warnings=[colour_note] if colour_note else [],
             metrics={
                 "n_cells_used": n_cells_used,
                 "n_cell_types": int(overall.shape[0]),
@@ -284,15 +296,40 @@ def _qc_mask(adata: ad.AnnData, config: CompositionConfig) -> np.ndarray | None:
     return mask
 
 
-def _stack_palette(n: int) -> list[str]:
-    """Dark red at the bottom of the stack to dark blue at the top, skipping the near-white
-    middle of the ramp so no segment disappears against the page."""
-    import matplotlib as mpl
+def _colours_for(cell_types: list[str], given: dict[str, str] | None) -> dict[str, str]:
+    """Colour per cell type: the given (UMAP) colour where there is one, else a distinct slot
+    of the categorical palette, so a type the shared palette lacks is still drawn."""
+    palette = figstyle.CATEGORICAL_PALETTE
+    return {
+        ct: (given or {}).get(str(ct), palette[i % len(palette)]) for i, ct in enumerate(cell_types)
+    }
 
-    ramp = mpl.colormaps["RdBu"]
-    positions = np.linspace(0.0, 1.0, n) if n > 1 else np.array([0.0])
-    mapped = np.where(positions <= 0.5, positions * 0.8, 0.6 + (positions - 0.5) * 0.8)
-    return [mpl.colors.to_hex(ramp(float(m))) for m in mapped]
+
+def _umap_colours(
+    adata: ad.AnnData, cell_type_key: str, config: object
+) -> tuple[dict[str, str] | None, str | None]:
+    """The colour the UMAP figure gives each cell type, so the composition bars match it.
+
+    Coordinates are the ones the UMAP figure uses: ``embeddings.layout_file`` when configured,
+    else ``obsm['X_umap']``. The palette is the embeddings package's own (``column_palette``),
+    never a second palette that happens to look similar. Returns ``(colours, note)``; with no
+    coordinates there is nothing to share and ``(None, None)`` comes back, and a layout file
+    that does not fit returns ``(None, reason)`` so the run reports the fallback.
+    """
+    from cellquorum.stages.integration.embeddings import compute
+    from cellquorum.stages.integration.embeddings.plots import column_palette
+
+    layout_file = getattr(getattr(config, "embeddings", None), "layout_file", None)
+    if layout_file:
+        try:
+            xy = compute.read_layout(adata.obs_names, layout_file)
+        except compute.EmbeddingsComputeError as exc:
+            return None, f"cell-type colours not shared with the UMAP, layout unusable: {exc}"
+    elif "X_umap" in adata.obsm:
+        xy = np.asarray(adata.obsm["X_umap"])
+    else:
+        return None, None
+    return column_palette(xy, adata.obs[cell_type_key]), None
 
 
 def _stack_bars(
@@ -322,7 +359,11 @@ def _stack_bars(
 
 
 def _stacked_bar(
-    table: pd.DataFrame, *, x_label: str | None, cluster_labels: dict[str, str] | None = None
+    table: pd.DataFrame,
+    *,
+    x_label: str | None,
+    cluster_labels: dict[str, str] | None = None,
+    colours: dict[str, str] | None = None,
 ) -> Figure:
     """Stacked bars of cell-type proportion, one bar per row of `table` (rows in percent).
 
@@ -337,7 +378,7 @@ def _stacked_bar(
     cluster_labels = cluster_labels or {}
     groups = list(table.index)
     cell_types = list(table.columns)
-    colours = dict(zip(cell_types, _stack_palette(len(cell_types)), strict=True))
+    colours = _colours_for(cell_types, colours)
     fig, ax = plt.subplots(figsize=(max(3.0, 0.6 * len(groups) + 2.0), 4.4))
     x = np.arange(len(groups))
     _stack_bars(ax, table, x, colours, cluster_labels, width=0.7)
@@ -374,6 +415,7 @@ def _stacked_bar_by_patient(
     *,
     cluster_labels: dict[str, str] | None = None,
     title: str | None = None,
+    colours: dict[str, str] | None = None,
 ) -> Figure:
     """One panel per condition, in the order given, each with a stacked bar per patient.
 
@@ -392,7 +434,7 @@ def _stacked_bar_by_patient(
         key=lambda d: natural_sort_key(pd.Series([str(d)])).iloc[0],
     )
     position = {d: i for i, d in enumerate(donors)}
-    colours = dict(zip(cell_types, _stack_palette(len(cell_types)), strict=True))
+    colours = _colours_for(cell_types, colours)
     fig, axes = plt.subplots(
         1,
         len(conditions),
