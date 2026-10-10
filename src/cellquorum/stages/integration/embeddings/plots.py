@@ -13,6 +13,7 @@ from typing import Any
 
 import anndata as ad
 import numpy as np
+from matplotlib import patheffects
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
@@ -399,6 +400,9 @@ def categorical_embedding(
                     "ec": "none",
                     "alpha": 0.28,
                 },
+                # A thin white halo: the tint is faint, so black text over a dark cluster
+                # (navy, maroon) would otherwise vanish into it.
+                path_effects=[patheffects.withStroke(linewidth=2.6, foreground="white")],
             )
         )
     _repel_labels(ax, texts)

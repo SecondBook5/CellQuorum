@@ -1,5 +1,6 @@
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scanpy as sc
 from matplotlib.figure import Figure
 
@@ -293,3 +294,24 @@ def test_unassigned_display_keeps_paga_indices_and_source_labels():
     edges = [line for line in fig.axes[0].lines if len(line.get_xdata()) == 2]
     assert any(set(line.get_xdata()) == {0, 1} for line in edges)
     assert all(5 not in line.get_xdata() for line in edges)
+
+
+def _two_group_adata():
+    rng = np.random.default_rng(0)
+    a = ad.AnnData(X=rng.random((60, 8)).astype("float32"))
+    a.obsm["X_umap"] = rng.normal(size=(60, 2)).astype("float32")
+    a.obs["leiden"] = pd.Categorical(["0"] * 30 + ["1"] * 30)
+    return a
+
+
+def test_in_plot_labels_carry_a_halo_so_they_read_over_a_dark_cluster():
+    from matplotlib import patheffects
+
+    fig = plots.categorical_embedding(
+        _two_group_adata(), "leiden", basis="X_umap", axis_labels=("UMAP1", "UMAP2")
+    )
+
+    labels = [t for t in fig.axes[0].texts if t.get_text() in {"0", "1"}]
+    assert len(labels) == 2
+    for label in labels:
+        assert any(isinstance(e, patheffects.withStroke) for e in label.get_path_effects())
