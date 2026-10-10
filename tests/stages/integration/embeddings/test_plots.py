@@ -315,3 +315,21 @@ def test_in_plot_labels_carry_a_halo_so_they_read_over_a_dark_cluster():
     assert len(labels) == 2
     for label in labels:
         assert any(isinstance(e, patheffects.withStroke) for e in label.get_path_effects())
+
+
+def test_a_label_anchors_on_a_cell_of_its_own_group_even_when_the_median_is_a_hole():
+    angle = np.linspace(0, 2 * np.pi, 40, endpoint=False)
+    ring = np.column_stack([5 * np.cos(angle), 5 * np.sin(angle)])
+
+    anchor = plots._label_anchor(ring)
+
+    assert any(np.allclose(anchor, point) for point in ring)
+    assert np.linalg.norm(anchor) == np.float64(5.0) or abs(np.linalg.norm(anchor) - 5.0) < 1e-9
+
+
+def test_a_compact_group_is_labelled_at_its_middle():
+    blob = np.random.default_rng(0).normal(loc=(3.0, -2.0), scale=0.2, size=(200, 2))
+
+    anchor = plots._label_anchor(blob)
+
+    assert np.linalg.norm(anchor - np.median(blob, axis=0)) < 0.15

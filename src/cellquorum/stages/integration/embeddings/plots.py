@@ -158,6 +158,18 @@ def compute_categorical_palette(
     return _palette_from_centroids(centroids, cats)
 
 
+def _label_anchor(points: np.ndarray) -> np.ndarray:
+    """The cell of a group nearest the group's median, where its name is placed.
+
+    The median of a lobed, ringed or crescent-shaped group can fall in empty space or on a
+    neighbouring group, which then carries the wrong name. A cell of the group itself cannot.
+    For a compact group this is the middle, as before.
+    """
+    points = np.asarray(points, dtype=float)
+    middle = np.median(points, axis=0)
+    return points[int(np.argmin(((points - middle) ** 2).sum(axis=1)))]
+
+
 def _repel_labels(ax: Axes, texts: list) -> None:
     """De-collide per-group text labels with leader lines (best-effort).
 
@@ -262,11 +274,13 @@ def categorical_embedding(
     # always sits inside the point cloud). Computed once and reused for the text
     # label, the PAGA node, and the palette sweep below, so every node sits exactly
     # under its label.
+    anchors: dict[str, np.ndarray] = {}  # where names go; centroids stay for PAGA nodes + colours
     centroids: dict[str, np.ndarray] = {}
     for _cat in cats:
         _m = (groups == _cat).to_numpy()
         if _m.any():
             centroids[_cat] = np.array([np.median(xy[_m, 0]), np.median(xy[_m, 1])])
+            anchors[_cat] = _label_anchor(xy[_m])
 
     # Colors come from the MUTED atlas palette, not the bright CATEGORICAL_PALETTE. A
     # 200,000-cell UMAP in saturated primaries reads as clip-art; the desaturated jewel
@@ -378,13 +392,13 @@ def categorical_embedding(
     # Per-group NAMED labels on top, then de-collided with leader lines.
     texts = []
     for cat in cats:
-        centroid = centroids.get(cat)
-        if centroid is None or int(counts.get(cat, 0)) < label_floor:
+        anchor = anchors.get(cat)
+        if anchor is None or int(counts.get(cat, 0)) < label_floor:
             continue
         texts.append(
             ax.text(
-                centroid[0],
-                centroid[1],
+                anchor[0],
+                anchor[1],
                 cluster_labels.get(cat, cat),
                 fontsize=9,
                 fontweight="bold",
