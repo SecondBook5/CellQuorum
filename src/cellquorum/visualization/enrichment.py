@@ -1010,4 +1010,110 @@ def _comparison_notes(
     return notes
 
 
-__all__ = ["gsea_arm_comparison", "gsea_dotplot", "gsea_notes", "gsea_running_es"]
+def enrichment_map(
+    table: pd.DataFrame,
+    *,
+    leading_edge_col: str = "leading_edge",
+    score_col: str = "score",
+    fdr_col: str = "padj",
+    source_col: str = "source",
+    min_jaccard: float = 0.12,
+    alpha: float = 0.05,
+    set_labels: Mapping[str, str] | None = None,
+    seed: int = 1337,
+    sep: str = ";",
+) -> Figure:
+    """Pathways as nodes, joined when their leading edges share genes.
+
+    Two pathways whose leading edges are largely the same genes are one finding reported twice,
+    which a ranked list of pathways cannot show; this puts them next to each other. Node colour
+    is the score (red up, blue down), node area is ``-log10`` FDR, and only the pathways that
+    clear ``alpha`` are outlined and named, so a map of fifty pathways is readable. An edge is
+    drawn when the Jaccard index of the two leading edges exceeds ``min_jaccard``; its width is
+    that index. The layout is a seeded spring layout, so the same table always draws the same map.
+
+    Args:
+        table: A frame from ``enrichment_gsea_*.csv`` with a leading-edge column of delimited genes.
+        leading_edge_col, score_col, fdr_col, source_col: Column names.
+        min_jaccard: Overlap above which two pathways are joined.
+        alpha: FDR at which a node is outlined and labelled.
+        set_labels: Display names keyed by ``source``.
+        seed: Layout seed.
+        sep: Delimiter inside the leading-edge column.
+    """
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from matplotlib.colors import Normalize
+
+    apply_theme("compact")
+    names = [str(v) for v in table[source_col]]
+    scores = [float(v) for v in table[score_col]]
+    fdrs = [float(v) for v in table[fdr_col]]
+    edges_of = {
+        n: {g for g in str(le).split(sep) if g and g != "nan"}
+        for n, le in zip(names, table[leading_edge_col], strict=True)
+    }
+    graph = nx.Graph()
+    graph.add_nodes_from(names)
+    pairs: list[tuple[str, str, float]] = []
+    for i, a in enumerate(names):
+        for b in names[i + 1 :]:
+            union = edges_of[a] | edges_of[b]
+            jaccard = len(edges_of[a] & edges_of[b]) / len(union) if union else 0.0
+            if jaccard > min_jaccard:
+                graph.add_edge(a, b, weight=jaccard)
+                pairs.append((a, b, jaccard))
+    pos = nx.spring_layout(graph, weight="weight", seed=seed, k=1.6, iterations=500)
+    fig, ax = plt.subplots(figsize=(6.6, 6.0))
+    for a, b, jaccard in pairs:
+        (line,) = ax.plot(
+            [pos[a][0], pos[b][0]],
+            [pos[a][1], pos[b][1]],
+            color="#b9c0ca",
+            lw=0.6 + 5 * jaccard,
+            zorder=1,
+        )
+        line.set_gid(f"edge|{a}|{b}")
+    cap = max(1.0, max(abs(v) for v in scores))
+    norm = Normalize(-cap, cap)
+    labels = dict(set_labels or {})
+    for name, score, fdr in zip(names, scores, fdrs, strict=True):
+        called = fdr < alpha
+        node = ax.scatter(
+            [pos[name][0]],
+            [pos[name][1]],
+            s=25 + 90 * -np.log10(max(fdr, 1e-6)),
+            c=[score],
+            cmap="RdBu_r",
+            norm=norm,
+            edgecolors="#111111" if called else "white",
+            linewidths=1.4 if called else 0.4,
+            zorder=3,
+        )
+        node.set_gid(f"node|{name}")
+        if called:
+            text = ax.text(
+                pos[name][0],
+                pos[name][1] - 0.06,
+                labels.get(name, name.replace("_", " ").title()),
+                ha="center",
+                va="top",
+                fontsize=6.8,
+            )
+            text.set_gid("node_label")
+    ax.axis("off")
+    bar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap="RdBu_r"), ax=ax, fraction=0.03, pad=0.01, shrink=0.4
+    )
+    bar.set_label("NES", fontsize=8)
+    bar.ax.tick_params(labelsize=7)
+    return fig
+
+
+__all__ = [
+    "enrichment_map",
+    "gsea_arm_comparison",
+    "gsea_dotplot",
+    "gsea_notes",
+    "gsea_running_es",
+]
