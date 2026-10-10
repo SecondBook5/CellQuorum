@@ -27,7 +27,7 @@ _VIZ_CONFIG_KEYS = (
     "figure_formats",
     "dpi",
 )
-_DEFAULT_METHODS = ["marker_dotplot"]
+_DEFAULT_METHODS = ["marker_dotplot", "lineage_dotplot"]
 
 
 @register_stage(
@@ -38,7 +38,7 @@ _DEFAULT_METHODS = ["marker_dotplot"]
     category="annotation_viz",
 )
 class AnnotationVizStage(MethodDispatchStage):
-    """Render the marker dotplot from the annotation stage's own panel."""
+    """Render the marker dotplots from the annotation stage's own panel."""
 
     def _select_method_name(self, config: dict) -> str:
         return config.get("method", "marker_dotplot")

@@ -142,7 +142,7 @@ def test_the_panel_the_label_column_and_the_layer_come_from_the_annotation_block
     assert aug["marker_panels"] == _PANEL
     assert aug["group_by"] == "lineage"
     assert aug["layer"] == "norm"
-    assert [m["method"] for m in aug["methods"]] == ["marker_dotplot"]
+    assert [m["method"] for m in aug["methods"]] == ["marker_dotplot", "lineage_dotplot"]
 
 
 def test_an_explicit_label_column_beats_the_annotation_block():
@@ -191,3 +191,63 @@ def test_an_ordered_categorical_keeps_its_own_order(tmp_path):
     MarkerDotplotMethod()._run(a, _config(), _ctx(tmp_path))
     mean = pd.read_csv(tmp_path / "results" / "annotation" / "marker_dotplot_mean.csv", index_col=0)
     assert list(mean.columns) == ["Gamma", "Beta", "Alpha"]
+
+
+# ---- the hierarchically clustered dotplot ------------------------------------------------
+
+
+def _lineage(tmp_path, config=None, adata=None):
+    from cellquorum.stages.annotation.viz.methods import LineageDotplotMethod
+
+    return LineageDotplotMethod()._run(adata or _adata(), config or _config(), _ctx(tmp_path))
+
+
+def test_the_clustered_dotplot_skips_when_there_is_no_marker_panel(tmp_path):
+    res = _lineage(tmp_path, _config(marker_panels={}))
+    assert isinstance(res, MethodSkip)
+    assert "marker_panels" in res.reason
+
+
+def test_the_clustered_dotplot_skips_when_the_label_column_is_missing(tmp_path):
+    res = _lineage(tmp_path, _config(group_by="nope"))
+    assert isinstance(res, MethodSkip)
+    assert "nope" in res.reason
+
+
+def test_the_clustered_dotplot_skips_with_one_group_because_there_is_no_tree_to_draw(tmp_path):
+    a = _adata()
+    a.obs["cell_type"] = pd.Categorical(["Alpha"] * a.n_obs)
+    res = _lineage(tmp_path, adata=a)
+    assert isinstance(res, MethodSkip)
+    assert "two groups" in res.reason
+
+
+def test_the_clustered_dotplot_writes_the_figure_and_the_numbers_behind_it(tmp_path):
+    res = _lineage(tmp_path)
+    assert not isinstance(res, MethodSkip)
+    assert (tmp_path / "figs" / "annotation" / "lineage_marker_dotplot.png").exists()
+    mean = pd.read_csv(
+        tmp_path / "results" / "annotation" / "lineage_marker_dotplot_mean.csv", index_col=0
+    )
+    assert set(mean.index) == {"Alpha", "Beta", "Gamma"}
+    assert res.artifacts
+
+
+def test_the_clustered_dotplot_reports_the_row_order_the_tree_chose(tmp_path):
+    res = _lineage(tmp_path)
+    assert sorted(res.metrics["row_order"]) == ["Alpha", "Beta", "Gamma"]
+
+
+def test_the_stage_draws_both_dotplots_by_default():
+    from cellquorum.stages.annotation.viz.stage import AnnotationVizStage
+
+    ctx = SimpleNamespace(
+        config=SimpleNamespace(
+            annotation=SimpleNamespace(
+                marker_panels=_PANEL, key_added="cell_type", score_layer="norm"
+            ),
+            annotation_viz=None,
+        )
+    )
+    aug = AnnotationVizStage()._augment_config(ctx, {})
+    assert [m["method"] for m in aug["methods"]] == ["marker_dotplot", "lineage_dotplot"]
