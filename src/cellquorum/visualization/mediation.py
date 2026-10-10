@@ -613,4 +613,143 @@ def mediation_footnotes(
     return notes
 
 
-__all__ = ["mediation_footnotes", "mediation_forest", "mediation_sensitivity"]
+def mediation_path_diagram(
+    table: pd.DataFrame,
+    *,
+    mediator: str,
+    groups: Sequence[str],
+    mediator_label: str | None = None,
+    outcome_label: str = "Outcome",
+    treatment_label: str = "Condition",
+    alpha: float = 0.05,
+    group_colors: Mapping[str, str] | None = None,
+) -> Figure:
+    """Treatment -> mediator -> outcome, one panel per group, the estimates written on the arrows.
+
+    The diagram answers "which path carries it" the way the forest answers "how much", and it
+    keeps the forest's rules: the proportion mediated is never drawn (it is a ratio whose
+    denominator is a quantity already on the page), an indirect effect is bold and starred only
+    when it clears ``alpha``, a mediator whose score shares genes with the outcome is marked, a
+    call that holds only when the donor pairing is ignored is flagged, and a group the fit did
+    not estimate says so instead of showing zeros.
+
+    Args:
+        table: ``mediation_grid`` output (group, mediator, term, estimate, ci_low, ci_high, p_value;
+            ``circularity`` and ``clustering_changes_the_call`` if present).
+        mediator: Which mediator's rows to draw.
+        groups: Panels, in order.
+        mediator_label, outcome_label, treatment_label: Box texts.
+        alpha: Level at which the indirect effect is called.
+        group_colors: Optional colour of each group's title.
+
+    Raises:
+        ValueError: If ``mediator`` has no rows.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+
+    rows = table[table["mediator"].astype(str) == str(mediator)]
+    if rows.empty:
+        raise ValueError(f"no rows for mediator {mediator!r} in the mediation table")
+    colours = dict(group_colors or {})
+
+    def box(ax: Axes, x: float, y: float, w: float, h: float, text: str, fc: str) -> None:
+        patch = FancyBboxPatch(
+            (x, y), w, h, boxstyle="round,pad=0.05,rounding_size=0.25", fc=fc, ec="#333333", lw=1.1
+        )
+        ax.add_patch(patch)
+        ax.text(
+            x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=7.6, fontweight="bold"
+        )
+
+    fig, axes = plt.subplots(1, len(groups), figsize=(2.9 * len(groups), 3.3), squeeze=False)
+    for ax, group in zip(axes[0], groups, strict=True):
+        ax.set_xlim(0, 10)
+        ax.set_ylim(-0.9, 8.9)
+        ax.axis("off")
+        sub = rows[rows["group"].astype(str) == str(group)].set_index("term").to_dict("index")
+        title = fig.text(
+            0, 0, group, fontsize=9.5, fontweight="bold", color=colours.get(group, "#202428")
+        )
+        title.set_gid("group_title")
+        pos = ax.get_position()
+        title.set_position((pos.x0, pos.y1 + 0.02))
+        if "acme" not in sub:
+            ax.text(5, 4, "not estimated", ha="center", va="center", fontsize=8.5, color="#7A7A7A")
+            continue
+
+        box(ax, 0.2, 0.9, 2.9, 1.5, treatment_label, "#dbe7f7")
+        box(ax, 6.9, 0.9, 2.9, 1.5, outcome_label, "#dff1ea")
+        box(ax, 3.6, 5.1, 2.8, 1.7, mediator_label or mediator.replace("_", " "), "#fbe9e4")
+        for x0, y0, x1, y1 in ((1.65, 2.5, 4.3, 5.0), (5.7, 5.0, 8.3, 2.5)):
+            ax.add_patch(
+                FancyArrowPatch(
+                    (x0, y0), (x1, y1), arrowstyle="-|>", mutation_scale=12, lw=1.6, color="#222222"
+                )
+            )
+        ax.add_patch(
+            FancyArrowPatch(
+                (3.25, 1.65),
+                (6.75, 1.65),
+                arrowstyle="-|>",
+                mutation_scale=12,
+                lw=2.0,
+                color="#C1121F",
+            )
+        )
+        ax.text(1.5, 3.9, f"{sub['path_a']['estimate']:.3f}", fontsize=8, ha="right")
+        ax.text(8.5, 3.9, f"{sub['path_b']['estimate']:.2f}", fontsize=8, ha="left")
+        ax.text(
+            5.0,
+            0.2,
+            f"direct {sub['direct']['estimate']:.3f}",
+            fontsize=8,
+            ha="center",
+            color="#b00020",
+        )
+        acme = sub["acme"]
+        p = float(acme["p_value"])
+        called = p < alpha
+        stars = "**" if p < 0.01 else ("*" if called else "")
+        label = ax.text(
+            5.0,
+            8.45,
+            f"ACME {float(acme['estimate']):+.3f}{stars}",
+            ha="center",
+            fontsize=9,
+            fontweight="bold" if called else "normal",
+            color="#202428" if called else "#7A7A7A",
+        )
+        label.set_gid(f"acme|{group}")
+        ax.text(
+            5.0,
+            7.75,
+            f"95% CI [{float(acme['ci_low']):.3f}, {float(acme['ci_high']):.3f}]  p = {p:.3g}",
+            ha="center",
+            fontsize=7.4,
+            color="#5F6B7A",
+        )
+        notes = []
+        if str(acme.get("circularity", "")) == "overlapping":
+            notes.append("shares genes with the outcome")
+        if bool(acme.get("clustering_changes_the_call", False)):
+            notes.append("call depends on ignoring the donor pairing")
+        for i, note in enumerate(notes):
+            ax.text(
+                5.0,
+                -0.45 - 0.5 * i,
+                note,
+                ha="center",
+                fontsize=6.8,
+                color="#B00020",
+                style="italic",
+            )
+    return fig
+
+
+__all__ = [
+    "mediation_footnotes",
+    "mediation_forest",
+    "mediation_path_diagram",
+    "mediation_sensitivity",
+]
