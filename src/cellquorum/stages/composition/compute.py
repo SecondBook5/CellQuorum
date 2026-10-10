@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 
 def overall_composition(cell_type: pd.Series) -> pd.DataFrame:
@@ -72,4 +73,61 @@ def grouped_composition(
     return table
 
 
-__all__ = ["overall_composition", "grouped_composition"]
+def donor_paired_tests(
+    by_patient: Mapping[str, pd.DataFrame],
+    *,
+    control: str,
+    case: str,
+    min_pairs: int = 4,
+    fdr_method: str = "fdr_bh",
+    fdr: float = 0.05,
+) -> pd.DataFrame:
+    """Is each cell type's share different between conditions, with the donor as the replicate?
+
+    Cells are not independent replicates, so a test over cells (or a chi-square on pooled
+    counts) would call almost any shift significant. Here each cell type's share is compared
+    within donors: the case minus control difference per donor present in both conditions,
+    tested by a two-sided Wilcoxon signed-rank test, BH-adjusted across cell types.
+
+    Args:
+        by_patient: Condition -> table (donors as rows, cell types as columns, in percent).
+        control: The control condition's key in ``by_patient``.
+        case: The case condition's key.
+        min_pairs: Fewer paired donors than this gives no p-value (NaN), because a signed-rank
+            test on three pairs cannot reach significance and would only look like a result.
+
+    Returns:
+        One row per cell type: ``n_pairs``, ``mean_diff_pct`` (case minus control, percentage
+        points), ``p``, ``padj`` and ``significant``.
+    """
+    from scipy.stats import wilcoxon
+    from statsmodels.stats.multitest import multipletests
+
+    control_table, case_table = by_patient[control], by_patient[case]
+    donors = [d for d in control_table.index if d in set(case_table.index)]
+    rows = []
+    for cell_type in control_table.columns:
+        diff = (case_table.loc[donors, cell_type] - control_table.loc[donors, cell_type]).to_numpy(
+            dtype=float
+        )
+        p = float("nan")
+        if len(donors) >= min_pairs and np.any(diff != 0):
+            p = float(wilcoxon(diff, zero_method="wilcox").pvalue)
+        rows.append(
+            {
+                "cell_type": cell_type,
+                "n_pairs": len(donors),
+                "mean_diff_pct": float(diff.mean()) if len(donors) else float("nan"),
+                "p": p,
+            }
+        )
+    table = pd.DataFrame(rows)
+    tested = table["p"].notna()
+    table["padj"] = float("nan")
+    if tested.any():
+        table.loc[tested, "padj"] = multipletests(table.loc[tested, "p"], method=fdr_method)[1]
+    table["significant"] = table["padj"].lt(fdr).fillna(False)
+    return table
+
+
+__all__ = ["overall_composition", "grouped_composition", "donor_paired_tests"]

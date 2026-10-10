@@ -93,3 +93,69 @@ def test_a_group_in_the_order_that_has_no_cells_is_left_out_not_invented():
     )
 
     assert list(table.index) == ["Normal"]
+
+
+# ---- donor-paired test of each cell type's share ------------------------------------------
+
+
+def _by_patient(shift_a: float, n: int = 8):
+    """Control and case tables (patients x cell types, percent) with cell type A shifted."""
+    donors = [f"P{i}" for i in range(1, n + 1)]
+    rng = pd.Series(range(n))
+    noise = (rng % 3 - 1).to_numpy() * 1.5  # small, mixed-sign, never zero for every donor
+    control = pd.DataFrame({"A": 40.0 + noise, "B": 60.0 - noise}, index=donors)
+    case = pd.DataFrame(
+        {"A": 40.0 + shift_a + noise[::-1], "B": 60.0 - shift_a - noise[::-1]}, index=donors
+    )
+    return {"Normal": control, "Lymphedema": case}
+
+
+def test_a_share_that_rises_in_every_donor_is_significant_in_the_paired_test():
+    from cellquorum.stages.composition.compute import donor_paired_tests
+
+    table = donor_paired_tests(_by_patient(shift_a=12.0), control="Normal", case="Lymphedema")
+
+    row = table.set_index("cell_type").loc["A"]
+    assert row["n_pairs"] == 8
+    assert row["mean_diff_pct"] == pytest.approx(12.0, abs=0.5)
+    assert row["p"] < 0.05 and row["padj"] < 0.05 and bool(row["significant"])
+
+
+def test_a_share_with_no_consistent_direction_is_not_significant():
+    from cellquorum.stages.composition.compute import donor_paired_tests
+
+    table = donor_paired_tests(_by_patient(shift_a=0.0), control="Normal", case="Lymphedema")
+
+    assert not table["significant"].any()
+
+
+def test_only_donors_present_in_both_conditions_are_paired():
+    from cellquorum.stages.composition.compute import donor_paired_tests
+
+    tables = _by_patient(shift_a=12.0, n=8)
+    tables["Lymphedema"] = tables["Lymphedema"].drop(index=["P1", "P2"])
+
+    table = donor_paired_tests(tables, control="Normal", case="Lymphedema")
+
+    assert set(table["n_pairs"]) == {6}
+
+
+def test_too_few_pairs_gives_no_p_value_rather_than_a_misleading_one():
+    from cellquorum.stages.composition.compute import donor_paired_tests
+
+    tables = {k: v.iloc[:3] for k, v in _by_patient(shift_a=12.0).items()}
+
+    table = donor_paired_tests(tables, control="Normal", case="Lymphedema", min_pairs=4)
+
+    assert table["p"].isna().all() and table["padj"].isna().all()
+    assert not table["significant"].any()
+    assert set(table["n_pairs"]) == {3}
+
+
+def test_the_difference_is_case_minus_control():
+    from cellquorum.stages.composition.compute import donor_paired_tests
+
+    table = donor_paired_tests(_by_patient(shift_a=12.0), control="Normal", case="Lymphedema")
+
+    diffs = table.set_index("cell_type")["mean_diff_pct"]
+    assert diffs["A"] > 0 > diffs["B"]
