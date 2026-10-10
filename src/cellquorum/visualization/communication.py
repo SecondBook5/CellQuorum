@@ -1059,7 +1059,7 @@ def ligand_receiver_composite(
         )
 
     _head(x["activity"] + _COMP_RANK_IN / 2, receiver_label)
-    _title("activity", "Ligand activity (rank)")
+    _title("activity", "Activity (rank)")
     if comparison is not None:
         _head(x["comparison"] + _COMP_RANK_IN / 2, comparison_label)
     for key in [k for k in ("expression", "change") if k in x]:
