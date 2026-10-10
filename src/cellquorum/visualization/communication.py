@@ -1014,7 +1014,14 @@ def ligand_receiver_composite(
             )
             if sig:
                 axes["change"].text(
-                    j + 0.5, i + 0.5, str(donors), ha="center", va="center", fontsize=6.5, zorder=4
+                    j + 0.5,
+                    i + 0.5,
+                    str(donors),
+                    ha="center",
+                    va="center",
+                    fontsize=6.5,
+                    zorder=4,
+                    color="white" if abs(eff) / change_cap > 0.6 else INK,
                 )
         for j in range(n_t):
             v = float(tw[i, j])

@@ -161,3 +161,14 @@ def test_a_sender_with_no_name_is_an_error_not_a_column_called_nan() -> None:
     expression.loc[expression.index[0], "sender"] = np.nan
     with pytest.raises(ValueError, match="sender"):
         _compose(expression=expression)
+
+
+def test_the_donor_count_is_legible_on_a_saturated_cell() -> None:
+    change = _change()
+    change.loc[(change.sender == "Fibroblasts") & (change.ligand == "TGFB1"), "effect"] = 0.4
+    fig = _compose(change=change)
+    (count,) = _axis(fig, "change").texts
+    assert count.get_color() == "white"
+    faint = change.assign(effect=lambda d: d.effect.where(~d.fdr.lt(0.05), 0.02))
+    (count,) = _axis(_compose(change=faint), "change").texts
+    assert count.get_color() != "white"
