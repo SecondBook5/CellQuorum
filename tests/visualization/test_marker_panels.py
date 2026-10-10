@@ -522,3 +522,21 @@ def test_an_expected_category_that_is_not_in_the_panel_is_an_error():
             layer="norm",
             expected={"S1": "Categroy A"},
         )
+
+
+def test_the_legends_keep_a_fixed_physical_size_however_tall_the_panel_is():
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    rng = np.random.default_rng(0)
+    genes = [f"G{i}" for i in range(40)]
+    a = ad.AnnData(X=rng.poisson(2.0, size=(60, 40)).astype(float), var=pd.DataFrame(index=genes))
+    a.layers["norm"] = a.X.copy()
+    a.obs["state"] = pd.Categorical(["S1", "S2", "S3"] * 20)
+    tall = {f"Block {i}": [f"G{i}"] for i in range(40)}
+    fig = draw_categorized_dotplot(a, tall, groupby="state", layer="norm")
+
+    fig.canvas.draw()
+    insets = [child for ax in fig.axes for child in ax.child_axes]
+    bar = next(ax for ax in insets if "avg. expression" in ax.get_ylabel())
+    inches = bar.get_window_extent().height / fig.dpi
+    assert 1.0 <= inches <= 2.6
