@@ -333,3 +333,21 @@ def test_a_compact_group_is_labelled_at_its_middle():
     anchor = plots._label_anchor(blob)
 
     assert np.linalg.norm(anchor - np.median(blob, axis=0)) < 0.15
+
+
+def test_label_boxes_are_near_white_with_an_edge_in_the_cluster_colour():
+    fig = plots.categorical_embedding(
+        _two_group_adata(), "leiden", basis="X_umap", axis_labels=("UMAP1", "UMAP2")
+    )
+
+    labels = [t for t in fig.axes[0].texts if t.get_text() in {"0", "1"}]
+    assert len(labels) == 2
+    edges = set()
+    for label in labels:
+        box = label.get_bbox_patch()
+        face = box.get_facecolor()
+        assert min(face[:3]) > 0.95 and face[3] > 0.8  # reads over any cluster
+        edge = box.get_edgecolor()
+        assert edge[3] > 0 and box.get_linewidth() > 0
+        edges.add(tuple(round(c, 3) for c in edge[:3]))
+    assert len(edges) == 2  # each group's edge is its own colour

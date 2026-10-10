@@ -406,13 +406,16 @@ def categorical_embedding(
                 va="center",
                 zorder=10,
                 clip_on=False,
-                # Faint tint of the cluster's own colour behind bold black text, as in the
-                # published atlas — a plain white box reads flatter and more clip-art.
+                # Near-white box with an edge in the cluster's own colour. A faint tint of the
+                # cluster colour behind black text went unreadable over dark clusters (navy,
+                # maroon) and muddy over pastel ones; white reads over any cluster and the
+                # coloured edge still ties the name to its cloud.
                 bbox={
-                    "boxstyle": "round,pad=0.25",
-                    "fc": palette.get(cat, "#FFFFFF"),
-                    "ec": "none",
-                    "alpha": 0.28,
+                    "boxstyle": "round,pad=0.22",
+                    "fc": "white",
+                    "ec": palette.get(cat, "#888888"),
+                    "lw": 1.1,
+                    "alpha": 0.92,
                 },
                 # A thin white halo: the tint is faint, so black text over a dark cluster
                 # (navy, maroon) would otherwise vanish into it.
