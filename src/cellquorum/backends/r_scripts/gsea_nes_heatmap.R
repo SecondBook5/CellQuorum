@@ -1,10 +1,13 @@
 # NES-by-cell-type heatmap (GSEA): gene sets x cell types, drawn with ComplexHeatmap.
-# Cells show the normalized enrichment score; a cell is coloured only where padj < alpha and is
-# neutral grey otherwise ("grey = not significant"); stars mark padj < alpha (*) and < strong (**).
-# A gene set a cell type could not test is left white and marked "n.t.", never drawn as zero.
-# Rows and columns are clustered on NES (hierarchical, average linkage); count bars on the top and
-# right show how many gene sets / cell types are significant up and down.
-# Usage: Rscript gsea_nes_heatmap.R <nes.csv> <padj.csv> <out.png> <alpha> <strong> <title> <footnote>
+# Every tested cell carries its NES colour. Significance (padj < alpha) is shown by full
+# saturation, a dark outline, bold text and stars (* < alpha, ** < strong); a cell that is not
+# significant keeps its colour, washed toward white, so a near-miss is not mistaken for no effect.
+# A gene set a cell type could not test is white and marked "n.t.", never drawn as zero.
+# Rows and columns are clustered on NES (average linkage) and the rows are cut into blocks; count
+# bars show cells per cell type and how many gene sets are significant up and down, and how many
+# cell types per gene set.
+# Usage: Rscript gsea_nes_heatmap.R <nes.csv> <padj.csv> <out.png> <alpha> <strong> <title>
+#          <footnote> [palette] [n_cells.csv]
 # Writes <out.png> and a vector twin <out.pdf>.
 suppressPackageStartupMessages({
   library(ComplexHeatmap)
@@ -19,9 +22,26 @@ alpha <- as.numeric(args[4])
 strong <- as.numeric(args[5])
 title <- if (length(args) >= 6) args[6] else "GSEA: NES by cell type"
 footnote <- if (length(args) >= 7) args[7] else ""
+palette_name <- if (length(args) >= 8 && nzchar(args[8])) args[8] else "teal_orange"
+n_cells_csv <- if (length(args) >= 9) args[9] else ""
+
+PALETTES <- list(
+  teal_orange = c(low = "#12768A", mid = "#FAF6EE", high = "#E4571C"),
+  coolwarm = c(low = "#3B4CC0", mid = "#F2F2F2", high = "#B40426"),
+  rdbu = c(low = "#2166AC", mid = "#F7F7F7", high = "#B2182B")
+)
+
+# Blend a colour toward white (share = how much of the colour is kept).
+fade <- function(col, share) {
+  rgb_vals <- col2rgb(col)
+  mixed <- rgb_vals * share + 255 * (1 - share)
+  rgb(mixed[1, ], mixed[2, ], mixed[3, ], maxColorValue = 255)
+}
 
 tryCatch(
   {
+    pal <- PALETTES[[palette_name]]
+    if (is.null(pal)) stop("unknown palette: ", palette_name)
     nes <- as.matrix(read.csv(nes_csv, row.names = 1, check.names = FALSE))
     padj <- as.matrix(read.csv(padj_csv, row.names = 1, check.names = FALSE))
     tested <- !is.na(nes)
@@ -29,18 +49,16 @@ tryCatch(
     up <- sig & nes > 0
     down <- sig & nes < 0
 
-    # NES colours are symmetric about 0 so red and blue are comparable; a missing cell is 0 only
-    # for clustering, and is drawn as "n.t." below.
-    lim <- ceiling(max(abs(nes[sig]), na.rm = TRUE) * 2) / 2
+    # Symmetric about 0 so the two colours are comparable; a missing cell is 0 only for
+    # clustering and is drawn as "n.t." below.
+    lim <- ceiling(max(abs(nes[tested]), na.rm = TRUE) * 2) / 2
     if (!is.finite(lim) || lim < 2) lim <- 2
-    col_fun <- colorRamp2(c(-lim, 0, lim), c("#2166AC", "#F7F7F7", "#B2182B"))
-    ns_fill <- "#E6E6E6"
-    up_col <- "#B2182B"
-    down_col <- "#2166AC"
+    col_fun <- colorRamp2(c(-lim, 0, lim), c(pal[["low"]], pal[["mid"]], pal[["high"]]))
     nes0 <- nes
     nes0[!tested] <- 0
 
-    stars <- matrix(ifelse(!tested | is.na(padj), "", ifelse(padj < strong, "**", ifelse(padj < alpha, "*", ""))),
+    stars <- matrix(ifelse(!tested | is.na(padj), "",
+                           ifelse(padj < strong, "**", ifelse(padj < alpha, "*", ""))),
                     nrow = nrow(nes))
     labels <- matrix(ifelse(tested, sprintf("%.1f%s", nes, stars), "n.t."), nrow = nrow(nes))
 
@@ -50,36 +68,54 @@ tryCatch(
         grid.text("n.t.", x, y, gp = gpar(fontsize = 5.5, col = "#9A9A9A"))
         return(invisible())
       }
-      grid.rect(x, y, width, height,
-                gp = gpar(fill = if (sig[i, j]) col_fun(nes[i, j]) else ns_fill, col = "white", lwd = 1))
-      dark <- sig[i, j] && abs(nes[i, j]) > 0.7 * lim
-      grid.text(labels[i, j], x, y,
-                gp = gpar(fontsize = 6.5, fontface = if (sig[i, j]) "bold" else "plain",
-                          col = if (dark) "white" else "black"))
+      base <- col_fun(nes[i, j])
+      if (sig[i, j]) {
+        grid.rect(x, y, width, height, gp = gpar(fill = base, col = "#2B2B2B", lwd = 0.9))
+        dark <- abs(nes[i, j]) > 0.62 * lim
+        grid.text(labels[i, j], x, y,
+                  gp = gpar(fontsize = 6.5, fontface = "bold", col = if (dark) "white" else "black"))
+      } else {
+        grid.rect(x, y, width, height, gp = gpar(fill = fade(base, 0.55), col = "white", lwd = 1))
+        grid.text(labels[i, j], x, y, gp = gpar(fontsize = 6.2, col = "#5F5F5F"))
+      }
     }
 
-    top_anno <- HeatmapAnnotation(
-      "Significant\ngene sets" = anno_barplot(
-        cbind(Up = colSums(up), Down = colSums(down)),
-        gp = gpar(fill = c(up_col, down_col), col = NA), bar_width = 0.72,
-        height = unit(1.7, "cm"), border = FALSE, axis_param = list(gp = gpar(fontsize = 6))
-      ),
-      annotation_name_gp = gpar(fontsize = 7), annotation_name_side = "left"
+    bar_cols <- c(up = pal[["high"]], down = pal[["low"]])
+    sig_bars <- anno_barplot(
+      cbind(Up = colSums(up), Down = colSums(down)),
+      gp = gpar(fill = unname(bar_cols), col = NA), bar_width = 0.72,
+      height = unit(1.6, "cm"), border = FALSE, axis_param = list(gp = gpar(fontsize = 6))
     )
+    anno_list <- list("Significant\ngene sets" = sig_bars)
+    if (nzchar(n_cells_csv) && file.exists(n_cells_csv)) {
+      n_cells <- read.csv(n_cells_csv, row.names = 1, check.names = FALSE)[colnames(nes), "n_cells"]
+      anno_list <- c(list("Cells" = anno_barplot(
+        log10(pmax(n_cells, 1)), ylim = c(0, 5.3), baseline = 0,
+        gp = gpar(fill = "#6C7A89", col = NA), bar_width = 0.72, height = unit(1.1, "cm"),
+        border = FALSE,
+        axis_param = list(at = log10(c(100, 1000, 10000, 100000)),
+                          labels = c("100", "1k", "10k", "100k"), gp = gpar(fontsize = 6))
+      )), anno_list)
+    }
+    top_anno <- do.call(HeatmapAnnotation, c(
+      anno_list, list(annotation_name_gp = gpar(fontsize = 7), annotation_name_side = "left")
+    ))
     right_anno <- rowAnnotation(
       "Cell types" = anno_barplot(
         cbind(Up = rowSums(up), Down = rowSums(down)),
-        gp = gpar(fill = c(up_col, down_col), col = NA), bar_width = 0.72,
+        gp = gpar(fill = unname(bar_cols), col = NA), bar_width = 0.72,
         width = unit(1.5, "cm"), border = FALSE, axis_param = list(gp = gpar(fontsize = 6))
       ),
       annotation_name_gp = gpar(fontsize = 7), annotation_name_rot = 0
     )
 
+    n_blocks <- if (nrow(nes) >= 12) 4 else NULL
     ht <- Heatmap(
       nes0, name = "NES", col = col_fun, rect_gp = gpar(type = "none"), cell_fun = cell_fun,
       width = ncol(nes) * unit(10, "mm"), height = nrow(nes) * unit(5.2, "mm"),
       cluster_rows = nrow(nes) > 1, cluster_columns = ncol(nes) > 1,
       clustering_method_rows = "average", clustering_method_columns = "average",
+      row_split = n_blocks, row_gap = unit(2.2, "mm"), row_title = NULL,
       row_dend_width = unit(1.2, "cm"), column_dend_height = unit(1.0, "cm"),
       row_names_side = "left", row_dend_side = "left",
       row_names_gp = gpar(fontsize = 7, fontface = "bold"),
@@ -91,25 +127,26 @@ tryCatch(
 
     # One hand-built legend stack, so the colour scale, significance key and bar key sit in a
     # single column (ComplexHeatmap otherwise places heatmap and annotation legends side by side).
-    # The key lists only what the figure can show: a "**" entry is dropped when no cell reaches it.
     has_strong <- any(!is.na(padj[tested]) & padj[tested] < strong)
-    sig_labels <- c(sprintf("* padj < %g", alpha),
+    sample_col <- col_fun(0.75 * lim)
+    sig_labels <- c(sprintf("* padj < %g (bold, outlined)", alpha),
                     if (has_strong) sprintf("** padj < %g", strong),
-                    "not significant (grey)", "not testable (n.t.)")
-    sig_fill <- c("white", if (has_strong) "white", ns_fill, "white")
+                    "not significant (faded)", "not testable (n.t.)")
+    sig_fill <- c(sample_col, if (has_strong) sample_col, fade(sample_col, 0.55), "white")
+    sig_border <- c("#2B2B2B", if (has_strong) "#2B2B2B", "#BBBBBB", "#BBBBBB")
     legends <- list(
       Legend(col_fun = col_fun, title = "NES", at = c(-lim, -lim / 2, 0, lim / 2, lim),
              labels = sprintf("%g", c(-lim, -lim / 2, 0, lim / 2, lim))),
       Legend(labels = sig_labels, title = "Significance", type = "grid",
-             legend_gp = gpar(fill = sig_fill, col = "#BBBBBB")),
+             legend_gp = gpar(fill = sig_fill, col = sig_border)),
       Legend(labels = c("Up", "Down"), title = "Significant\nenrichment", type = "grid",
-             legend_gp = gpar(fill = c(up_col, down_col)))
+             legend_gp = gpar(fill = unname(bar_cols)))
     )
 
     n_col <- ncol(nes)
     n_row <- nrow(nes)
-    width_in <- 3.4 + 0.39 * n_col + 2.6
-    height_in <- 2.6 + 0.205 * n_row + 0.8
+    width_in <- 3.4 + 0.39 * n_col + 2.9
+    height_in <- 2.7 + 0.205 * n_row + 0.8 + (if (is.null(n_blocks)) 0 else 0.35)
 
     render <- function() {
       draw(ht, annotation_legend_list = legends, annotation_legend_side = "right",

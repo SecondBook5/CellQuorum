@@ -159,7 +159,7 @@ def test_a_cell_type_that_had_too_few_genes_is_named_in_the_figure_footnote(tmp_
 
     GseaNesHeatmapMethod()._run(_adata(), {}, ctx)
 
-    footnote = backend.calls[0][1][-1]
+    footnote = backend.calls[0][1][6]
     assert "Tiny" in footnote
     assert "not tested" in footnote
 
@@ -173,6 +173,64 @@ def test_the_scratch_matrices_the_r_script_reads_are_written(tmp_path):
     nes_csv, padj_csv = (Path(a) for a in backend.calls[0][1][:2])
     assert nes_csv.exists() and padj_csv.exists()
     assert list(pd.read_csv(nes_csv, index_col=0).columns) == ["A", "B", "C"]
+
+
+def _adata_with_cells() -> ad.AnnData:
+    a = ad.AnnData(X=np.zeros((9, 2)))
+    a.obs["cell_type"] = ["A"] * 5 + ["B"] * 3 + ["C"]
+    return a
+
+
+def test_the_number_of_cells_behind_each_column_is_handed_to_the_figure(tmp_path):
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, enrichment=_table())
+
+    GseaNesHeatmapMethod()._run(_adata_with_cells(), {}, ctx)
+
+    counts = pd.read_csv(Path(backend.calls[0][1][8]), index_col=0)["n_cells"]
+    assert counts.to_dict() == {"A": 5, "B": 3, "C": 1}
+
+
+def test_the_counts_follow_the_display_labels_of_the_columns(tmp_path):
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, enrichment=_table())
+
+    GseaNesHeatmapMethod()._run(_adata_with_cells(), {"cluster_labels": {"A": "Alpha cells"}}, ctx)
+
+    counts = pd.read_csv(Path(backend.calls[0][1][8]), index_col=0)["n_cells"]
+    assert counts["Alpha cells"] == 5 and "A" not in counts.index
+
+
+def test_without_a_cell_type_column_the_figure_is_still_drawn_without_counts(tmp_path):
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, enrichment=_table())
+
+    res = GseaNesHeatmapMethod()._run(_adata(), {}, ctx)
+
+    assert not isinstance(res, MethodSkip)
+    assert backend.calls[0][1][8] == ""
+
+
+def test_the_palette_is_a_named_option_with_a_default(tmp_path):
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, enrichment=_table())
+
+    GseaNesHeatmapMethod()._run(_adata(), {}, ctx)
+    GseaNesHeatmapMethod()._run(_adata(), {"palette": "coolwarm"}, ctx)
+
+    assert backend.calls[0][1][7] == "teal_orange"
+    assert backend.calls[1][1][7] == "coolwarm"
+
+
+def test_an_unknown_palette_is_refused_before_anything_is_drawn(tmp_path):
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, enrichment=_table())
+
+    res = GseaNesHeatmapMethod()._run(_adata(), {"palette": "rainbow"}, ctx)
+
+    assert isinstance(res, MethodSkip)
+    assert "rainbow" in res.reason
+    assert backend.calls == []
 
 
 # ---- the real render (needs R + ComplexHeatmap) ---------------------------------------------

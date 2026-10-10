@@ -32,6 +32,9 @@ _SUFFIX = "_by_cell_type.csv"
 _PREFIX = "enrichment_gsea_"
 _DE_BY_GROUP_CSV = "de_pseudobulk_edger_by_subcluster.csv"
 
+#: Diverging palettes ``gsea_nes_heatmap.R`` knows by name.
+PALETTES = ("teal_orange", "coolwarm", "rdbu")
+
 
 def nes_matrices(
     table: pd.DataFrame,
@@ -108,6 +111,9 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
                 "gsea_by_cell_type (set differential_expression.cell_type_col)"
             )
 
+        palette = str(config.get("palette", "teal_orange"))
+        if palette not in PALETTES:
+            return self._skip(f"unknown palette '{palette}'; choose one of {list(PALETTES)}")
         alpha = float(config.get("alpha", config.get("fdr", 0.05)))
         strong = float(config.get("alpha_strong", 0.001))
         labels = config.get("cluster_labels") or {}
@@ -135,6 +141,14 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
             footnote = self._footnote(results_dir, table, labels)
             nes.to_csv(scratch / f"nes_{collection}.csv")
             padj.to_csv(scratch / f"nes_padj_{collection}.csv")
+            n_cells_csv = self._write_cell_counts(
+                adata,
+                config.get("cell_type_col", "cell_type"),
+                labels,
+                nes.columns,
+                scratch,
+                collection,
+            )
             out_png = figures_dir / f"gsea_nes_heatmap_{collection}.png"
             title = config.get("title") or f"GSEA {collection.title()}: NES by cell type"
             try:
@@ -148,6 +162,8 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
                         str(strong),
                         title,
                         footnote,
+                        palette,
+                        n_cells_csv,
                     ],
                     timeout=timeout,
                 )
@@ -192,6 +208,29 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
         )
 
     @staticmethod
+    def _write_cell_counts(
+        adata: ad.AnnData,
+        cell_type_col: str,
+        labels: Mapping[str, str],
+        columns: pd.Index,
+        scratch: Path,
+        collection: str,
+    ) -> str:
+        """Cells behind each heatmap column, so a column's reliability is visible on the figure.
+
+        Returns the CSV path, or "" when the object has no such column (the figure is then drawn
+        without the bar rather than with invented counts).
+        """
+        if cell_type_col not in adata.obs.columns:
+            return ""
+        counts = adata.obs[cell_type_col].astype(str).value_counts()
+        shown = {labels.get(str(k), str(k)): int(v) for k, v in counts.items()}
+        frame = pd.DataFrame({"n_cells": [shown.get(str(c), 0) for c in columns]}, index=columns)
+        path = scratch / f"nes_ncells_{collection}.csv"
+        frame.to_csv(path)
+        return str(path)
+
+    @staticmethod
     def _footnote(results_dir: Path, table: pd.DataFrame, labels: Mapping[str, str]) -> str:
         """Name the cell types the DE ran on but GSEA could not score, so no column vanishes."""
         de_path = results_dir / _DE_BY_GROUP_CSV
@@ -205,4 +244,4 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
         return f"Cell types not tested (too few ranked genes): {names}."
 
 
-__all__ = ["GseaNesHeatmapMethod", "nes_matrices"]
+__all__ = ["PALETTES", "GseaNesHeatmapMethod", "nes_matrices"]
