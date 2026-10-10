@@ -104,9 +104,7 @@ class CompositionStage:
                     description="Cell-type composition per condition (percent).",
                 )
             )
-            fig = _stacked_bar(
-                by_condition, x_label=condition_key, cluster_labels=config.cluster_labels
-            )
+            fig = _stacked_bar(by_condition, x_label=None, cluster_labels=config.cluster_labels)
             paths = figstyle.save_figure(
                 fig, figures_dir, "composition_by_condition", formats=formats, dpi=config.dpi
             )
@@ -223,14 +221,26 @@ def _qc_mask(adata: ad.AnnData, config: CompositionConfig) -> np.ndarray | None:
     return mask
 
 
-def _stacked_bar(
-    table: pd.DataFrame, *, x_label: str, cluster_labels: dict[str, str] | None = None
-) -> Figure:
-    """Percent-stacked bar of cell-type composition, one bar per row of `table`.
+def _stack_palette(n: int) -> list[str]:
+    """Dark red at the bottom of the stack to dark blue at the top, skipping the near-white
+    middle of the ramp so no segment disappears against the page."""
+    import matplotlib as mpl
 
-    ``cluster_labels`` renames the legend only -- ``table``'s columns (the
-    actual grouping the bars are computed from) are never touched, same
-    display-only convention as de_heatmap's cluster_labels.
+    ramp = mpl.colormaps["RdBu"]
+    positions = np.linspace(0.0, 1.0, n) if n > 1 else np.array([0.0])
+    mapped = np.where(positions <= 0.5, positions * 0.8, 0.6 + (positions - 0.5) * 0.8)
+    return [mpl.colors.to_hex(ramp(float(m))) for m in mapped]
+
+
+def _stacked_bar(
+    table: pd.DataFrame, *, x_label: str | None, cluster_labels: dict[str, str] | None = None
+) -> Figure:
+    """Stacked bars of cell-type proportion, one bar per row of `table` (rows in percent).
+
+    The first column is the bottom of the stack and the legend lists the cell types in the
+    order they are stacked, top to bottom. ``cluster_labels`` renames the legend only --
+    ``table``'s columns (the actual grouping the bars are computed from) are never touched,
+    same display-only convention as de_heatmap's cluster_labels.
     """
 
     import matplotlib.pyplot as plt
@@ -238,33 +248,48 @@ def _stacked_bar(
     cluster_labels = cluster_labels or {}
     groups = list(table.index)
     cell_types = list(table.columns)
-    palette = {
-        ct: figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
-        for i, ct in enumerate(cell_types)
-    }
+    colours = dict(zip(cell_types, _stack_palette(len(cell_types)), strict=True))
     fig, ax = plt.subplots(figsize=(max(3.0, 0.6 * len(groups) + 2.0), 4.4))
     x = np.arange(len(groups))
     bottom = np.zeros(len(groups))
     for ct in cell_types:
-        values = table[ct].to_numpy()
+        values = table[ct].to_numpy() / 100.0
         ax.bar(
             x,
             values,
             bottom=bottom,
             width=0.7,
-            color=palette[ct],
+            color=colours[ct],
             edgecolor="white",
             linewidth=0.4,
             label=cluster_labels.get(str(ct), ct),
         )
         bottom += values
-    ax.set_ylim(0, 100)
+    ax.set_ylim(0, 1)
+    ax.set_yticks([0.0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_yticklabels(["0.00", "0.25", "0.50", "0.75", "1.00"])
     ax.set_xticks(x)
-    ax.set_xticklabels(groups, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Composition (% of cells)")
-    ax.set_xlabel(x_label)
-    ax.set_title("Cell-type composition")
-    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), title="Cell type", fontsize=8)
+    ax.set_xticklabels(
+        groups,
+        rotation=45 if len(groups) > 4 else 0,
+        ha="right" if len(groups) > 4 else "center",
+        fontsize=9,
+    )
+    ax.set_ylabel("Proportion of cells")
+    if x_label:
+        ax.set_xlabel(x_label)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(
+        handles[::-1],
+        labels[::-1],
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        title="Cell type",
+        fontsize=8,
+        frameon=False,
+    )
     return fig
 
 

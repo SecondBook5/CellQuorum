@@ -162,7 +162,7 @@ def test_cluster_labels_rename_the_stacked_bar_legend_only(tmp_path):
     )
     ax = fig.axes[0]
     legend_labels = [t.get_text() for t in ax.get_legend().get_texts()]
-    assert legend_labels == ["Papillary", "Reticular"]
+    assert sorted(legend_labels) == ["Papillary", "Reticular"]
     # The data itself is untouched -- x-axis groups still read the real index.
     assert [t.get_text() for t in ax.get_xticklabels()] == ["Normal", "Case"]
 
@@ -181,3 +181,59 @@ def test_conditions_are_written_control_first_whatever_the_alphabet(tmp_path):
 
     path = next(a.path for a in result.artifacts if a.name == "composition_by_condition")
     assert list(pd.read_csv(path)["condition"]) == ["Normal", "Case"]
+
+
+def _bars_table():
+    return pd.DataFrame(
+        {"Big": [50.0, 40.0], "Mid": [30.0, 35.0], "Small": [20.0, 25.0]},
+        index=["Normal", "Case"],
+    )
+
+
+def test_the_axis_is_a_proportion_of_cells_from_zero_to_one():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    ax = _stacked_bar(_bars_table(), x_label="condition").axes[0]
+
+    assert ax.get_ylim() == (0.0, 1.0)
+    assert ax.get_ylabel() == "Proportion of cells"
+    tops = [round(p.get_y() + p.get_height(), 6) for p in ax.patches]
+    assert max(tops) == 1.0  # a 100-percent bar is a proportion of 1
+
+
+def test_stack_colours_run_from_dark_red_at_the_bottom_to_dark_blue_at_the_top():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    fig = _stacked_bar(_bars_table(), x_label="condition")
+    fig.canvas.draw()
+    first_bar = [p for p in fig.axes[0].patches if abs(p.get_x() - (-0.35)) < 1e-6]
+    by_bottom = sorted(first_bar, key=lambda p: p.get_y())
+    bottom, top = by_bottom[0].get_facecolor(), by_bottom[-1].get_facecolor()
+
+    assert bottom[0] > bottom[2]  # red
+    assert top[2] > top[0]  # blue
+
+
+def test_no_segment_is_white_on_a_white_page():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    table = pd.DataFrame({f"T{i}": [100.0 / 13] * 2 for i in range(13)}, index=["Normal", "Case"])
+    fig = _stacked_bar(table, x_label="condition")
+    fig.canvas.draw()
+
+    assert all(min(p.get_facecolor()[:3]) < 0.85 for p in fig.axes[0].patches)
+
+
+def test_the_legend_lists_cell_types_in_the_order_they_are_stacked_top_to_bottom():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    ax = _stacked_bar(_bars_table(), x_label="condition").axes[0]
+
+    assert [t.get_text() for t in ax.get_legend().get_texts()] == ["Small", "Mid", "Big"]
+    assert ax.get_legend().get_title().get_text() == "Cell type"
+
+
+def test_the_pooled_figure_carries_no_title_of_its_own():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    assert _stacked_bar(_bars_table(), x_label="condition").axes[0].get_title() == ""
