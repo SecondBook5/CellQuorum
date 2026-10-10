@@ -4,7 +4,7 @@
 # significant keeps its colour, washed toward white, so a near-miss is not mistaken for no effect.
 # A gene set a cell type could not test is white and marked "n.t.", never drawn as zero.
 # Rows and columns are clustered on NES (average linkage) and the rows are cut into blocks; count
-# bars show cells per cell type and how many gene sets are significant up and down, and how many
+# bars show cells per cell type (log scale from 100) and how many gene sets are significant up and down, and how many
 # cell types per gene set.
 # Usage: Rscript gsea_nes_heatmap.R <nes.csv> <padj.csv> <out.png> <alpha> <strong> <title>
 #          <footnote> [palette] [n_cells.csv]
@@ -90,8 +90,8 @@ tryCatch(
     if (nzchar(n_cells_csv) && file.exists(n_cells_csv)) {
       n_cells <- read.csv(n_cells_csv, row.names = 1, check.names = FALSE)[colnames(nes), "n_cells"]
       anno_list <- c(list("Cells" = anno_barplot(
-        log10(pmax(n_cells, 1)), ylim = c(0, 5.3), baseline = 0,
-        gp = gpar(fill = "#6C7A89", col = NA), bar_width = 0.72, height = unit(1.1, "cm"),
+        log10(pmax(n_cells, 100)), ylim = c(2, 5), baseline = 2,
+        gp = gpar(fill = "#B8A07E", col = NA), bar_width = 0.72, height = unit(1.2, "cm"),
         border = FALSE,
         axis_param = list(at = log10(c(100, 1000, 10000, 100000)),
                           labels = c("100", "1k", "10k", "100k"), gp = gpar(fontsize = 6))
