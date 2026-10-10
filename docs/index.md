@@ -52,7 +52,7 @@ Build this site locally with `make docs-serve` (live reload) or `make docs`
 
 ## Key facts
 
-- **40 registered stages** and more than 70 config-selectable methods, organized into a
+- **41 registered stages** and more than 70 config-selectable methods, organized into a
   best-practices pipeline (see the workflow diagram in the README).
 - **Two front doors:** the `cellquorum` / `cq` CLI and the `cellquorum.run_pipeline`
   Python API.

@@ -76,6 +76,7 @@ import cellquorum.stages.metacells.stage  # noqa: F401
 
 # Population identity is evidence-driven (reference > annotation > clusters).
 import cellquorum.stages.annotation.population_identity.stage  # noqa: F401
+import cellquorum.stages.annotation.viz.stage  # noqa: F401
 import cellquorum.stages.integration.benchmark.stage  # noqa: F401
 
 # State scoring and de-novo discovery run on the annotated object, before embeddings.

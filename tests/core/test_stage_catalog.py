@@ -155,6 +155,9 @@ GOLDEN_STAGE_ORDER = [
     # operates at whole-object granularity.
     "metacells",
     "population_identity",
+    # order=152: audits the final labels, so after every stage that writes or revises them
+    # (annotation 90 .. population_identity 150) and before subclustering narrows in.
+    "annotation_viz",
     # order=155, deliberately AFTER reference_mapping (120) and population_identity
     # (150): the atlas labels it focuses on have to exist, and the populations it
     # subdivides have to have been audited for donor support, before it splits them.
@@ -228,7 +231,7 @@ def test_catalog_order_matches_golden():
 def test_catalog_implemented_set_matches_golden():
     impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
     assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 40
+    assert len(GOLDEN_IMPLEMENTED_SORTED) == 41
 
 
 def test_orders_are_unique_and_ascending():

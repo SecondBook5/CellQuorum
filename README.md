@@ -97,7 +97,7 @@ through every stage and recording exactly what it did.
 
 The engine pairs an **execution spine** (strict configuration validation, backend
 detection, planning, provenance) with a **config-driven analysis backbone** of
-**40 stages** and **70+ selectable methods**, spanning quality control through
+**41 stages** and **70+ selectable methods**, spanning quality control through
 gene-regulatory networks, cell-cell communication, and trajectory inference. Stages
 dispatch to Python, R/Bioconductor, or GPU backends transparently, and every stage
 boundary is guarded by **fail-loud data contracts** — a method whose inputs are
@@ -112,7 +112,7 @@ wrong results.
 ## Highlights
 
 - **Config over code.** Every method is chosen in YAML (`integration.method: harmony | scvi`), so a dataset is expressed as configuration, not a script.
-- **40 stages, 70+ methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
+- **41 stages, 70+ methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
 - **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto [`rapids-singlecell`](https://github.com/scverse/rapids_singlecell)/[`cupy`](https://cupy.dev) when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
 - **Python + R, transparently.** R/Bioconductor methods ([edgeR](https://bioconductor.org/packages/edgeR), [Milo](https://github.com/MarioniLab/miloR), [propeller](https://github.com/phipsonlab/speckle), [NicheNet](https://github.com/saeyslab/nichenetr), [DIALOGUE](https://github.com/livnatje/DIALOGUE), [SoupX](https://github.com/constantAmateur/SoupX), [hdWGCNA](https://github.com/smorabit/hdWGCNA)) and isolated heavyweight backends ([pySCENIC](https://github.com/aertslab/pySCENIC), [scCODA](https://github.com/theislab/scCODA), [CellOracle](https://github.com/morris-lab/CellOracle)) are dispatched behind one interface.
 - **Fail-loud data contracts.** Structural, layer-provenance, and statistical checks reject, for example, raw counts mislabeled as log-normalized.

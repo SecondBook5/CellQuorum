@@ -346,6 +346,7 @@ def test_default_stage_registry_contains_qc() -> None:
         "annotation",
         "annotation_consensus",
         "annotation_diagnostics",
+        "annotation_viz",
         "ccc_network",
         "ccc_viz",
         "cell_cell_communication",

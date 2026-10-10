@@ -19,6 +19,7 @@ from cellquorum.stages.annotation.consensus.config import AnnotationConsensusCon
 from cellquorum.stages.annotation.diagnostics.config import AnnotationDiagnosticsConfig
 from cellquorum.stages.annotation.population_identity.config import PopulationIdentityConfig
 from cellquorum.stages.annotation.reference_mapping.config import ReferenceMappingConfig
+from cellquorum.stages.annotation.viz.config import AnnotationVizConfig
 from cellquorum.stages.cell_cell_communication.config import CellCellCommunicationConfig
 from cellquorum.stages.cell_cell_communication.network.config import CCCNetworkConfig
 from cellquorum.stages.cell_cell_communication.viz.config import CccVizConfig
@@ -786,6 +787,10 @@ class StageSelectionConfig(StrictBaseModel):
 
     population_identity: bool = True
 
+    # Marker dotplot that audits the annotation labels; skips with a stated reason when
+    # annotation.marker_panels is empty.
+    annotation_viz: bool = True
+
     state_scoring: bool = True
 
     state_scoring_viz: bool = True
@@ -956,6 +961,8 @@ class CellQuorumConfig(StrictBaseModel):
     de_viz: DeVizConfig = Field(default_factory=DeVizConfig)
 
     ccc_viz: CccVizConfig = Field(default_factory=CccVizConfig)
+
+    annotation_viz: AnnotationVizConfig = Field(default_factory=AnnotationVizConfig)
 
     state_scoring: StateScoringConfig = Field(default_factory=StateScoringConfig)
 

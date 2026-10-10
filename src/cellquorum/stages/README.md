@@ -28,6 +28,7 @@ that have no module yet.
 | 145 | `adjudication` | implemented |
 | 148 | `metacells` | implemented |
 | 150 | `population_identity` | implemented |
+| 152 | `annotation_viz` | implemented |
 | 155 | `subclustering` | implemented |
 | 160 | `integration_benchmark` | implemented |
 | 170 | `state_scoring` | implemented |
