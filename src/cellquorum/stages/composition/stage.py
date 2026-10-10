@@ -15,7 +15,11 @@ from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.context_access import resolve_stage_config
-from cellquorum.stages.composition.compute import grouped_composition, overall_composition
+from cellquorum.stages.composition.compute import (
+    donor_paired_tests,
+    grouped_composition,
+    overall_composition,
+)
 from cellquorum.stages.composition.config import CompositionConfig
 from cellquorum.visualization import figstyle
 from cellquorum.visualization.qc.summarise import natural_sort_key
@@ -93,6 +97,32 @@ class CompositionStage:
         figstyle.apply_theme("compact")
 
         condition_present = bool(condition_key) and condition_key in obs.columns
+        donor_present = bool(donor_key) and donor_key in obs.columns
+        by_patient: dict[str, pd.DataFrame] | None = None
+        paired_test: pd.DataFrame | None = None
+        if condition_present and donor_present:
+            assert condition_key is not None and donor_key is not None
+            by_patient = _composition_by_patient(
+                cell_type,
+                obs[condition_key],
+                obs[donor_key],
+                condition_order=_condition_order(top_config),
+            )
+            order = _condition_order(top_config)
+            if len(order) == 2 and all(name in by_patient for name in order):
+                paired_test = donor_paired_tests(by_patient, control=order[0], case=order[1])
+                artifacts.append(
+                    manager.write_dataframe(
+                        paired_test,
+                        name="composition_test",
+                        relative_path=f"results/{config.output_prefix}_test.csv",
+                        description=(
+                            "Donor-paired Wilcoxon test of each cell type's share, case minus "
+                            "control, BH-adjusted across cell types."
+                        ),
+                    )
+                )
+
         if condition_present:
             assert condition_key is not None  # narrows for the type checker
             by_condition = grouped_composition(
@@ -111,6 +141,7 @@ class CompositionStage:
                 x_label=None,
                 cluster_labels=config.cluster_labels,
                 colours=colours,
+                note=_test_note(paired_test) if paired_test is not None else None,
             )
             paths = figstyle.save_figure(
                 fig, figures_dir, "composition_by_condition", formats=formats, dpi=config.dpi
@@ -169,15 +200,8 @@ class CompositionStage:
                 for p in paths
             )
 
-        donor_present = bool(donor_key) and donor_key in obs.columns
-        if condition_present and donor_present:
+        if by_patient is not None:
             assert condition_key is not None and donor_key is not None
-            by_patient = _composition_by_patient(
-                cell_type,
-                obs[condition_key],
-                obs[donor_key],
-                condition_order=_condition_order(top_config),
-            )
             table = pd.concat(by_patient, names=[condition_key, donor_key]).reset_index()
             artifacts.append(
                 manager.write_dataframe(
@@ -332,6 +356,20 @@ def _umap_colours(
     return column_palette(xy, adata.obs[cell_type_key]), None
 
 
+def _test_note(table: pd.DataFrame) -> str:
+    """One line reporting the donor-paired test: BH-adjusted p per cell type, smallest first."""
+    n_donors = int(table["n_pairs"].max())
+    tested = table[table["p"].notna()].sort_values("padj")
+    if tested.empty:
+        return (
+            f"Donor-paired Wilcoxon: not tested (only {n_donors} donors with both conditions, "
+            "too few for the test)."
+        )
+    shown = ", ".join(f"{row.cell_type} {row.padj:.2g}" for row in tested.head(6).itertuples())
+    more = " ..." if len(tested) > 6 else ""
+    return f"Donor-paired Wilcoxon, n = {n_donors} donors, BH-adjusted p: {shown}{more}"
+
+
 def _stack_bars(
     ax: Axes,
     table: pd.DataFrame,
@@ -387,6 +425,7 @@ def _stacked_bar(
     cluster_labels: dict[str, str] | None = None,
     colours: dict[str, str] | None = None,
     label_min: float | None = 0.04,
+    note: str | None = None,
 ) -> Figure:
     """Stacked bars of cell-type proportion, one bar per row of `table` (rows in percent).
 
@@ -430,6 +469,13 @@ def _stacked_bar(
         fontsize=8,
         frameon=False,
     )
+    if note:
+        import textwrap
+
+        wrapped = textwrap.fill(note, width=max(30, int(fig.get_figwidth() * 15)))
+        lines = wrapped.count("\n") + 1
+        fig.text(0.01, 0.01, wrapped, fontsize=7, color="#555555", ha="left", va="bottom")
+        fig.tight_layout(rect=(0, 0.03 + 0.03 * lines, 1, 1))
     return fig
 
 

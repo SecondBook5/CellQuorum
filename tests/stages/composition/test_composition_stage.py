@@ -557,3 +557,97 @@ def test_labels_can_be_switched_off():
     from cellquorum.stages.composition.stage import _stacked_bar
 
     assert len(_stacked_bar(_bars_table(), x_label=None, label_min=None).axes[0].texts) == 0
+
+
+# ---- the donor-level test beside the bars ---------------------------------------------------
+
+
+def _paired_adata(shift: bool):
+    """Eight donors with Normal and Case cells; type A is more common in Case when ``shift``."""
+    rng = np.random.default_rng(5)
+    rows = []
+    for d in range(1, 9):
+        for cond in ("Normal", "Case"):
+            share_a = 0.4 + (0.2 if (shift and cond == "Case") else 0.0) + rng.normal(0, 0.03)
+            n = 60
+            rows += [
+                {
+                    "cell_type": "A" if rng.random() < share_a else "B",
+                    "condition": cond,
+                    "donor_id": f"P{d}",
+                    "sample_id": f"P{d}_{cond}",
+                }
+                for _ in range(n)
+            ]
+    obs = pd.DataFrame(rows, index=[f"c{i}" for i in range(len(rows))])
+    return ad.AnnData(X=np.ones((len(obs), 2)), obs=obs)
+
+
+def test_the_stage_writes_the_donor_paired_test_beside_the_figure(tmp_path):
+    result = CompositionStage().run(_design_context(tmp_path, _paired_adata(shift=True)))
+
+    table = pd.read_csv(next(a.path for a in result.artifacts if a.name == "composition_test"))
+    assert list(table.columns) == [
+        "cell_type",
+        "n_pairs",
+        "mean_diff_pct",
+        "p",
+        "padj",
+        "significant",
+    ]
+    a_row = table.set_index("cell_type").loc["A"]
+    assert a_row["n_pairs"] == 8 and a_row["mean_diff_pct"] > 10 and bool(a_row["significant"])
+
+
+def test_no_test_is_written_without_a_donor_column(tmp_path):
+    adata = _paired_adata(shift=True)
+    del adata.obs["donor_id"]
+
+    result = CompositionStage().run(_design_context(tmp_path, adata))
+
+    assert "composition_test" not in {a.name for a in result.artifacts}
+
+
+def test_the_note_under_the_bars_reports_each_type_and_how_many_donors():
+    from cellquorum.stages.composition.stage import _test_note
+
+    table = pd.DataFrame(
+        {
+            "cell_type": ["A", "B"],
+            "n_pairs": [8, 8],
+            "mean_diff_pct": [12.0, -12.0],
+            "p": [0.0078, 0.0078],
+            "padj": [0.0156, 0.0156],
+            "significant": [True, True],
+        }
+    )
+
+    note = _test_note(table)
+
+    assert "n = 8 donors" in note and "Wilcoxon" in note
+    assert "A 0.016" in note and "B 0.016" in note
+
+
+def test_the_note_says_when_there_were_too_few_pairs_to_test():
+    from cellquorum.stages.composition.stage import _test_note
+
+    table = pd.DataFrame(
+        {
+            "cell_type": ["A"],
+            "n_pairs": [3],
+            "mean_diff_pct": [5.0],
+            "p": [float("nan")],
+            "padj": [float("nan")],
+            "significant": [False],
+        }
+    )
+
+    assert "not tested" in _test_note(table)
+
+
+def test_a_note_is_written_under_the_bars():
+    from cellquorum.stages.composition.stage import _stacked_bar
+
+    fig = _stacked_bar(_bars_table(), x_label=None, note="Donor-paired test: A 0.02")
+
+    assert any("Donor-paired test: A 0.02" in t.get_text() for t in fig.texts)
