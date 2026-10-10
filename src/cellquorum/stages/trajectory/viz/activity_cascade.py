@@ -15,7 +15,7 @@ is a resource-naming convention, not a study assumption).
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,6 +24,9 @@ from matplotlib.figure import Figure
 from scipy.stats import spearmanr
 
 from cellquorum.stages.trajectory.viz.heatmap import bin_masks
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # Row z-scores are clipped to this symmetric range before drawing, so a single
 # extreme bin cannot wash out the diverging colormap.
@@ -120,6 +123,7 @@ def cascade_heatmap(
     title: str = "",
     xlab: str = "",
     cbar_label: str = "activity  (row z-score)",
+    pin: Sequence[str] = (),
 ) -> Figure | None:
     """Draw the activity-along-pseudotime cascade heatmap.
 
@@ -128,16 +132,25 @@ def cascade_heatmap(
     source across bins, orders rows by center-of-mass (early → late), and draws
     an ``RdBu_r`` heatmap with signed-rho direction ticks in the right margin.
 
+    ``pin`` names sources the figure is about, which are drawn (in bold) whatever their
+    rank and even if they never move; a ranking by association shows the strongest movers,
+    and a hypothesis is about particular sources. A pinned name that was not scored (absent
+    from the net, or from the data) is written under the figure instead of vanishing.
+
     Returns the figure, or ``None`` when no source is associated with
     pseudotime (nothing to draw).
     """
-    ranked = rank_by_pseudotime(activity, pseudotime)
-    ranked = ranked[ranked["abs"] > 0]
+    ranked_all = rank_by_pseudotime(activity, pseudotime)
+    ranked = ranked_all[ranked_all["abs"] > 0]
     if top is not None:
         ranked = ranked.head(top)
     names = ranked["name"].tolist()
+    pinned = [p for p in dict.fromkeys(pin) if p in set(activity.columns)]
+    missing = [p for p in dict.fromkeys(pin) if p not in set(activity.columns)]
+    names += [p for p in pinned if p not in names]
     if not names:
         return None
+    ranked = ranked_all[ranked_all["name"].isin(names)]
 
     mat = binned_matrix(activity, pseudotime, names, n_bins)
     order = center_of_mass_order(mat)
@@ -164,6 +177,8 @@ def cascade_heatmap(
     )
     ax.set_yticks(np.arange(n) + 0.5)
     ax.set_yticklabels([clean_label(m) for m in order[::-1]], fontsize=7.5)
+    for label, m in zip(ax.get_yticklabels(), order[::-1], strict=True):
+        label.set_fontweight("bold" if m in set(pin) else "normal")
     # signed-rho direction tick on the right (↑ rises, ↓ falls along pseudotime)
     axr = ax.twinx()
     axr.set_ylim(0, n)
@@ -189,6 +204,15 @@ def cascade_heatmap(
     if title:
         ax.set_title(title, fontsize=12, fontweight="bold", loc="left", pad=8)
     fig.tight_layout()
+    if missing:
+        fig.text(
+            0.01,
+            0.005,
+            "Pinned, not scored: " + ", ".join(missing),
+            fontsize=6.8,
+            color=_MUTED,
+            va="bottom",
+        )
     return fig
 
 

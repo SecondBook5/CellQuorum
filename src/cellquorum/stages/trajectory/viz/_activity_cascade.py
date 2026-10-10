@@ -94,6 +94,7 @@ class ActivityCascadeVizMethod(AnalysisMethod):
         resources = config.get("activity_resources") or ["progeny", "collectri"]
         method_by_res = {**_DEFAULT_METHOD_BY_RESOURCE, **(config.get("activity_methods") or {})}
         top_by_res = {**_DEFAULT_TOP_BY_RESOURCE, **(config.get("cascade_top") or {})}
+        pin_by_res = {str(k).lower(): list(v) for k, v in (config.get("cascade_pin") or {}).items()}
         layer = config.get("layer") or "cellquorum_normalized"
         organism = config.get("organism") or "human"
         license = config.get("license") or "academic"
@@ -149,6 +150,7 @@ class ActivityCascadeVizMethod(AnalysisMethod):
                     n_bins=n_bins,
                     title=_cascade_title(resource, pt_key),
                     xlab=xlab,
+                    pin=pin_by_res.get(str(resource).lower(), []),
                 )
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"activity_cascade: {resource} failed: {str(exc)[:200]}")

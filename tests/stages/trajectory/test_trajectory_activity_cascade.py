@@ -269,3 +269,99 @@ def test_activity_cascade_works_from_a_sparse_layer_without_manual_densification
 
     assert not isinstance(result, MethodSkip)
     assert result.metrics["resources"] == ["myset"]
+
+
+# ── pinned sources ───────────────────────────────────────────────────────────
+
+
+def _three_sources(n: int = 300):
+    """'late' rises, 'early' falls, 'flat' never moves."""
+    df, pt = _monotone_activity(n)
+    df["flat"] = np.full(n, 2.0)
+    return df, pt
+
+
+def _row_labels(fig) -> list[str]:
+    return [t.get_text() for t in fig.axes[0].get_yticklabels()]
+
+
+def test_a_pinned_source_outside_the_top_is_still_drawn():
+    df, pt = _three_sources()
+    (shown,) = _row_labels(cascade.cascade_heatmap(df, pt, top=1))
+    left_out = "early" if shown == "late" else "late"  # the two movers tie on |rho|
+    fig = cascade.cascade_heatmap(df, pt, top=1, pin=[left_out])
+    assert sorted(_row_labels(fig)) == sorted([shown, left_out])
+
+
+def test_a_pinned_source_that_never_moves_is_drawn_with_a_zero_not_dropped():
+    df, pt = _three_sources()
+    fig = cascade.cascade_heatmap(df, pt, top=1, pin=["flat"])
+    assert "flat" in _row_labels(fig)
+    ticks = [t.get_text() for t in fig.axes[1].get_yticklabels()]
+    assert any("0.00" in t for t in ticks)
+
+
+def test_pinned_rows_are_bold_and_the_rest_are_not():
+    df, pt = _three_sources()
+    fig = cascade.cascade_heatmap(df, pt, top=2, pin=["early"])
+    weights = {t.get_text(): t.get_fontweight() for t in fig.axes[0].get_yticklabels()}
+    assert weights["early"] == "bold"
+    assert weights["late"] != "bold"
+
+
+def test_a_pinned_name_that_was_not_scored_is_written_on_the_figure_not_dropped_silently():
+    df, pt = _three_sources()
+    fig = cascade.cascade_heatmap(df, pt, top=2, pin=["TEAD4"])
+    assert any("TEAD4" in t.get_text() and "not scored" in t.get_text() for t in fig.texts)
+
+
+def test_pinning_nothing_changes_nothing():
+    df, pt = _three_sources()
+    plain = _row_labels(cascade.cascade_heatmap(df, pt, top=2))
+    assert plain == _row_labels(cascade.cascade_heatmap(df, pt, top=2, pin=[]))
+
+
+def test_cascade_pin_from_config_reaches_the_drawing(tmp_path, monkeypatch):
+    pytest.importorskip("decoupler")
+    n, n_genes = 200, 20
+    rng = np.random.default_rng(1)
+    pt = np.linspace(0, 1, n)
+    genes = [f"G{i}" for i in range(n_genes)]
+    X = rng.normal(0.0, 0.05, (n, n_genes))
+    for j in range(5):
+        X[:, j] += pt
+    for j in range(5, 10):
+        X[:, j] += 1 - pt
+    adata = ad.AnnData(
+        X=X.copy(),
+        obs=pd.DataFrame({"palantir_pseudotime": pt}, index=[f"c{i}" for i in range(n)]),
+        var=pd.DataFrame(index=genes),
+    )
+    adata.layers["cellquorum_normalized"] = X.copy()
+    net = pd.DataFrame(
+        {
+            "source": ["S_up"] * 5 + ["S_down"] * 5,
+            "target": genes[:5] + genes[5:10],
+            "weight": [1.0] * 10,
+        }
+    )
+    monkeypatch.setattr(
+        "cellquorum.stages.trajectory.viz._activity_cascade.get_net", lambda *a, **k: net
+    )
+    seen = {}
+    original = cascade.cascade_heatmap
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(cascade, "cascade_heatmap", spy)
+    config = {
+        "activity_resources": ["myset"],
+        "min_size": 5,
+        "cascade_n_bins": 8,
+        "cascade_pin": {"myset": ["S_down"]},
+    }
+    result = ActivityCascadeVizMethod()._run(adata, config, _Ctx(tmp_path))
+    assert not isinstance(result, MethodSkip)
+    assert list(seen["pin"]) == ["S_down"]

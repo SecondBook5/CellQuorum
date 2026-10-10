@@ -74,6 +74,9 @@ class TrajectoryVizConfig(StrictBaseModel):
     activity_methods: dict[str, str] | None = None
     # Per-net cap on top-|rho| sources shown, e.g. {"hallmark": 10}; None → method default.
     cascade_top: dict[str, int | None] | None = None
+    # Per-net sources always drawn (bold) whatever their rank, e.g. {"collectri": ["TEAD1"]}:
+    # the cascade ranks by association with pseudotime, and a hypothesis is about named sources.
+    cascade_pin: dict[str, list[str]] | None = None
     cascade_n_bins: int = 20
     # Optional pseudotime-axis annotation, e.g. "basal → terminal".
     cascade_xlab: str | None = None
