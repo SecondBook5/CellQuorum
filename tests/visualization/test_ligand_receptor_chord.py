@@ -110,3 +110,14 @@ def test_top_n_keeps_the_largest_weights() -> None:
 def test_an_empty_frame_gives_an_empty_figure_not_an_error() -> None:
     fig = ligand_receptor_chord(_edges().iloc[0:0], sender_palette={}, receiver_palette={})
     assert not _ribbons(fig)
+
+
+def test_group_names_of_neighbouring_small_sectors_do_not_sit_on_each_other() -> None:
+    rows = [(f"S{i}", f"L{i}", "LEC", f"R{i}", 0.02 if i else 5.0, True) for i in range(8)]
+    edges = pd.DataFrame(
+        rows, columns=["sender", "ligand", "receiver", "receptor", "weight", "significant"]
+    )
+    fig = ligand_receptor_chord(edges, sender_palette={}, receiver_palette={})
+    pts = np.array([t.get_position() for t in fig.axes[0].texts if t.get_gid() == "group_label"])
+    gaps = [float(np.hypot(*(pts[i] - pts[j]))) for i in range(len(pts)) for j in range(i)]
+    assert min(gaps) > 0.12

@@ -1296,23 +1296,28 @@ def ligand_receptor_chord(
         palette: Mapping[str, str],
         side: str,
     ) -> None:
-        for g in dict.fromkeys(k[0] for k in keys):
-            spans = [ang[k] for k in keys if k[0] == g]
-            lo = min(min(s) for s in spans)
-            hi = max(max(s) for s in spans)
+        groups = list(dict.fromkeys(k[0] for k in keys))
+        spans = {g: [ang[k] for k in keys if k[0] == g] for g in groups}
+        lows = {g: min(min(s) for s in spans[g]) for g in groups}
+        highs = {g: max(max(s) for s in spans[g]) for g in groups}
+        for g in groups:
             ax.add_patch(
                 Wedge(
                     (0, 0),
                     1.0,
-                    np.rad2deg(lo),
-                    np.rad2deg(hi),
+                    np.rad2deg(lows[g]),
+                    np.rad2deg(highs[g]),
                     width=0.03,
                     fc=palette.get(g, "#6B7280"),
                     ec="none",
                 )
             )
+        # Small neighbouring sectors would print their names on top of each other, so the names
+        # are spread along the arc (a leader line would be the next step if it ever matters).
+        mids = _spread([(lows[g] + highs[g]) / 2 for g in groups], min_gap=0.24)
+        for g, t in zip(groups, mids, strict=True):
             lab = ax.text(
-                *_pt(1.36, (lo + hi) / 2),
+                *_pt(1.36, t),
                 g,
                 ha="right" if side == "L" else "left",
                 va="center",
