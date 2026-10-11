@@ -683,7 +683,7 @@ def plot_score_by_condition(
         ax_control = fig.add_subplot(132)
         ax_case = fig.add_subplot(133)
     else:
-        fig = Figure(figsize=(10.5, 5.0))
+        fig = Figure(figsize=(10.5, 3.9))
         ax_state = None
         ax_control = fig.add_subplot(121)
         ax_case = fig.add_subplot(122)

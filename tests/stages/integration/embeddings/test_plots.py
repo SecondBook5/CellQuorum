@@ -171,6 +171,25 @@ def test_plot_score_by_condition_without_the_state_panel_puts_control_left_case_
     assert left < right
 
 
+def test_the_two_panel_figure_is_wider_than_it_is_tall_with_no_blank_bands():
+    a = _score_by_condition_adata()
+    fig = plots.plot_score_by_condition(
+        a,
+        score=np.random.default_rng(2).random(a.n_obs),
+        score_label="UCell score",
+        cluster_key="fibroblast_subcluster",
+        basis="X_umap",
+        axis_labels=("UMAP1", "UMAP2"),
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+        show_state_panel=False,
+    )
+
+    width, height = fig.get_size_inches()
+    assert height / width < 0.4
+
+
 def test_the_axis_arrows_and_names_sit_outside_the_cloud_of_cells():
     a = _score_by_condition_adata()
     # Cells fill the whole square, corners included, so any arrow drawn inside the
