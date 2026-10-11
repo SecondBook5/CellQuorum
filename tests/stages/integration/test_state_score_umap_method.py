@@ -101,3 +101,64 @@ def test_cluster_labels_rename_output_filenames_stay_stable(tmp_path):
     )
     assert len(res.artifacts) == 1
     assert "proliferating" in res.artifacts[0].path.name
+
+
+def test_the_state_panel_can_be_left_out_of_every_figure(tmp_path):
+    from matplotlib.figure import Figure
+
+    seen: list[Figure] = []
+    import cellquorum.stages.integration.embeddings.state_score_umap_method as m
+
+    real = m.save_figure
+
+    def spy(fig, *a, **k):
+        seen.append(fig)
+        return real(fig, *a, **k)
+
+    m.save_figure = spy
+    try:
+        res = StateScoreUmapMethod()._run(
+            _adata(),
+            {
+                "cluster_key": "fibroblast_subcluster",
+                "figure_formats": ["png"],
+                "show_state_panel": False,
+                "programs": ["proliferating"],
+            },
+            _ctx(tmp_path, design=_design()),
+        )
+    finally:
+        m.save_figure = real
+
+    assert not isinstance(res, MethodSkip)
+    assert len(seen[0].axes) == 3  # control, case, colourbar
+
+
+def test_a_program_is_named_by_its_display_label_on_the_colourbar(tmp_path):
+    seen = []
+    import cellquorum.stages.integration.embeddings.state_score_umap_method as m
+
+    real = m.save_figure
+
+    def spy(fig, *a, **k):
+        seen.append(fig)
+        return real(fig, *a, **k)
+
+    m.save_figure = spy
+    try:
+        res = StateScoreUmapMethod()._run(
+            _adata(),
+            {
+                "cluster_key": "fibroblast_subcluster",
+                "figure_formats": ["png"],
+                "programs": ["proliferating"],
+                "program_labels": {"proliferating": "Cell cycle"},
+            },
+            _ctx(tmp_path, design=_design()),
+        )
+    finally:
+        m.save_figure = real
+
+    cbar_axes = seen[0].axes[-1]
+    assert cbar_axes.get_ylabel() == "Cell cycle (aucell)"
+    assert "proliferating" in res.artifacts[0].path.name  # the file name stays the key

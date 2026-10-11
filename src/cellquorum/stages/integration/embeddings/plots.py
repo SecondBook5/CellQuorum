@@ -628,8 +628,12 @@ def plot_score_by_condition(
     clip_pct: float = 2.0,
     point_size: float | None = None,
     view_percentile: tuple[float, float] | None = None,
+    show_state_panel: bool = True,
 ) -> Figure:
     """3-panel figure: cluster-state UMAP, then a per-cell score split by condition.
+
+    ``show_state_panel=False`` drops the state map and keeps only the control and
+    case panels (control on the left) with their shared colourbar.
 
     Panel 1 is a plain categorical scatter (no PAGA, no side legend -- just
     in-plot cluster labels, matching the reference "state map" layout this
@@ -668,44 +672,51 @@ def plot_score_by_condition(
     n_obs = int(len(score))
     size = _adaptive_point_size(n_obs) if point_size is None else point_size
 
-    fig = Figure(figsize=(15.5, 5.0))
-    ax_state = fig.add_subplot(131)
-    ax_control = fig.add_subplot(132)
-    ax_case = fig.add_subplot(133)
+    if show_state_panel:
+        fig = Figure(figsize=(15.5, 5.0))
+        ax_state = fig.add_subplot(131)
+        ax_control = fig.add_subplot(132)
+        ax_case = fig.add_subplot(133)
+    else:
+        fig = Figure(figsize=(10.5, 5.0))
+        ax_state = None
+        ax_control = fig.add_subplot(121)
+        ax_case = fig.add_subplot(122)
 
     # --- Panel 1: cluster state map --------------------------------------
-    for cat in cats:
-        mask = (cluster_col == cat).to_numpy()
-        if not mask.any():
-            continue
-        ax_state.scatter(
-            coords[mask, 0],
-            coords[mask, 1],
-            s=size,
-            c=palette[cat],
-            alpha=0.6,
-            linewidths=0,
-            rasterized=True,
-        )
-    texts = []
-    for cat in cats:
-        centroid = centroids.get(cat)
-        if centroid is None:
-            continue
-        texts.append(
-            _name_label(
-                ax_state,
-                centroid[0],
-                centroid[1],
-                cluster_labels.get(cat, cat),
-                palette.get(cat, "#888888"),
+    if ax_state is not None:
+        for cat in cats:
+            mask = (cluster_col == cat).to_numpy()
+            if not mask.any():
+                continue
+            ax_state.scatter(
+                coords[mask, 0],
+                coords[mask, 1],
+                s=size,
+                c=palette[cat],
+                alpha=0.6,
+                linewidths=0,
+                rasterized=True,
             )
-        )
-    ax_state.margins(0.10)
-    _apply_view(ax_state, coords, view_percentile)
-    _repel_labels(ax_state, texts)
-    _style_axes(ax_state, axis_labels)
-    ax_state.set_title(f"{n_obs:,} cells", fontsize=9, color=_TEXT)
+        texts = []
+        for cat in cats:
+            centroid = centroids.get(cat)
+            if centroid is None:
+                continue
+            texts.append(
+                _name_label(
+                    ax_state,
+                    centroid[0],
+                    centroid[1],
+                    cluster_labels.get(cat, cat),
+                    palette.get(cat, "#888888"),
+                )
+            )
+        ax_state.margins(0.10)
+        _apply_view(ax_state, coords, view_percentile)
+        _repel_labels(ax_state, texts)
+        _style_axes(ax_state, axis_labels)
+        ax_state.set_title(f"{n_obs:,} cells", fontsize=9, color=_TEXT)
 
     # --- Shared color scale, computed ONCE across all cells --------------
     finite = score[np.isfinite(score)]

@@ -148,6 +148,29 @@ def test_plot_score_by_condition_shares_color_scale_across_condition_panels():
     assert control_scatter.get_clim() == case_scatter.get_clim()
 
 
+def test_plot_score_by_condition_without_the_state_panel_puts_control_left_case_right():
+    a = _score_by_condition_adata()
+    fig = plots.plot_score_by_condition(
+        a,
+        score=np.random.default_rng(2).random(a.n_obs),
+        score_label="UCell score",
+        cluster_key="fibroblast_subcluster",
+        basis="X_umap",
+        axis_labels=("UMAP1", "UMAP2"),
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+        show_state_panel=False,
+    )
+
+    # Two condition panels + the shared colourbar; no state map.
+    assert len(fig.axes) == 3
+    assert fig.axes[0].get_title().startswith("Normal")
+    assert fig.axes[1].get_title().startswith("Lymphedema")
+    left, right = fig.axes[0].get_position().x0, fig.axes[1].get_position().x0
+    assert left < right
+
+
 def test_plot_score_by_condition_cluster_labels_rename_state_panel_text():
     a = _score_by_condition_adata()
     score = np.random.default_rng(2).random(a.n_obs)
