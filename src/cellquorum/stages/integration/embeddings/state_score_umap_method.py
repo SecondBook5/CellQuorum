@@ -84,6 +84,7 @@ class StateScoreUmapMethod(AnalysisMethod):
         cluster_labels = config.get("cluster_labels") or {}
         program_labels = config.get("program_labels") or {}
         show_state_panel = bool(config.get("show_state_panel", True))
+        cmap_kwargs = {"cmap": config["cmap"]} if config.get("cmap") else {}
         figures_dir = Path(context.paths.figures) / "embeddings"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
@@ -107,6 +108,7 @@ class StateScoreUmapMethod(AnalysisMethod):
                     cluster_labels=cluster_labels,
                     view_percentile=_view_percentile(config),
                     show_state_panel=show_state_panel,
+                    **cmap_kwargs,
                 )
             except Exception:  # noqa: BLE001 -- one bad program must not sink the rest
                 continue
