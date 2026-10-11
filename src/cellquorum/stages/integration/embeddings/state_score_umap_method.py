@@ -36,6 +36,10 @@ if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
 
 
+# How each scoring method's authors spell its name.
+_METHOD_NAMES = {"ucell": "UCell", "aucell": "AUCell"}
+
+
 class StateScoreUmapMethod(AnalysisMethod):
     """Render one cluster-state + per-condition score figure per program."""
 
@@ -105,7 +109,7 @@ class StateScoreUmapMethod(AnalysisMethod):
                     fig = plot_score_pooled(
                         adata,
                         score=score,
-                        score_label=f"{score_source.upper()} score",
+                        score_label=f"{_METHOD_NAMES.get(score_source, score_source)} score",
                         title=program_labels.get(program, program),
                         basis=spec["obsm"],
                         axis_labels=spec["axis"],

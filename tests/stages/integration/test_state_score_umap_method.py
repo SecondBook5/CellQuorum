@@ -244,3 +244,34 @@ def test_an_unknown_layout_is_refused(tmp_path):
 
     assert isinstance(res, MethodSkip)
     assert "triptych" in res.reason
+
+
+def test_the_pooled_colourbar_names_the_scoring_method_as_its_authors_spell_it(tmp_path):
+    seen = []
+    import cellquorum.stages.integration.embeddings.state_score_umap_method as m
+
+    real = m.save_figure
+
+    def spy(fig, *a, **k):
+        seen.append(fig)
+        return real(fig, *a, **k)
+
+    a = _adata()
+    a.obsm["X_state_ucell"] = a.obsm["X_state_aucell"]
+    a.uns["state_ucell"] = a.uns["state_aucell"]
+    m.save_figure = spy
+    try:
+        StateScoreUmapMethod()._run(
+            a,
+            {
+                "layout": "pooled",
+                "score_source": "ucell",
+                "figure_formats": ["png"],
+                "programs": ["proliferating"],
+            },
+            _ctx(tmp_path, design=None),
+        )
+    finally:
+        m.save_figure = real
+
+    assert seen[0].axes[1].get_ylabel() == "UCell score"
