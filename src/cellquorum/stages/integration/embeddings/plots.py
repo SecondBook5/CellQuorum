@@ -765,6 +765,63 @@ def plot_score_by_condition(
     return fig
 
 
+def plot_score_pooled(
+    adata: ad.AnnData,
+    *,
+    score: np.ndarray,
+    score_label: str,
+    title: str,
+    basis: str,
+    axis_labels: tuple[str, str],
+    cmap: str = _SEQUENTIAL_CMAP,
+    clip_pct: float = 0.0,
+    point_size: float | None = None,
+    view_percentile: tuple[float, float] | None = None,
+) -> Figure:
+    """One UMAP of every cell coloured by ``score``, titled, with a labelled colourbar.
+
+    The colour scale runs over the full range of the score unless ``clip_pct`` trims its
+    tails, so the colourbar's ends are the real minimum and maximum. Cells are drawn in
+    ascending score order so the highest-scoring ones are never buried.
+    """
+    coords = np.asarray(adata.obsm[basis])[:, :2]
+    score = np.asarray(score, dtype=float)
+    size = _adaptive_point_size(len(score)) if point_size is None else point_size
+
+    finite = score[np.isfinite(score)]
+    vmin = vmax = None
+    if finite.size:
+        vmin, vmax = np.percentile(finite, [clip_pct, 100 - clip_pct])
+        if vmin == vmax:
+            vmin = vmax = None
+
+    fig = Figure(figsize=(5.6, 4.2))
+    ax = fig.add_subplot(111)
+    order = np.argsort(score, kind="mergesort")
+    cells = ax.scatter(
+        coords[order, 0],
+        coords[order, 1],
+        c=score[order],
+        cmap=cmap,
+        s=size,
+        alpha=0.9,
+        linewidths=0,
+        rasterized=True,
+        vmin=vmin,
+        vmax=vmax,
+    )
+    ax.margins(0.05)
+    _apply_view(ax, coords, view_percentile)
+    _style_axes(ax, axis_labels)
+    ax.set_title(title, fontsize=10, color=_TEXT)
+
+    cbar = fig.colorbar(cells, ax=ax, shrink=0.7, aspect=25, pad=0.02)
+    cbar.set_label(score_label, fontsize=8)
+    _lighten_colorbar_outline(cbar)
+    cbar.ax.tick_params(labelsize=8, length=2, width=0.4)
+    return fig
+
+
 def magic_zscore_layer(
     adata: ad.AnnData, *, source_layer: str = "magic", out_layer: str = "magic_z"
 ) -> bool:
@@ -794,6 +851,7 @@ __all__ = [
     "continuous_overlay",
     "figure_artifacts",
     "magic_zscore_layer",
+    "plot_score_pooled",
     "plot_score_by_condition",
     "save_figure",
 ]

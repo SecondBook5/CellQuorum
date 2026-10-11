@@ -191,3 +191,56 @@ def test_the_colour_map_is_a_named_option_that_reaches_the_cells(tmp_path):
 
     cells = next(c for c in seen[0].axes[1].collections if hasattr(c, "get_cmap"))
     assert cells.get_cmap().name == "plasma"
+
+
+def test_a_pooled_layout_draws_one_panel_per_program_without_splitting_by_condition(tmp_path):
+    seen = []
+    import cellquorum.stages.integration.embeddings.state_score_umap_method as m
+
+    real = m.save_figure
+
+    def spy(fig, *a, **k):
+        seen.append(fig)
+        return real(fig, *a, **k)
+
+    m.save_figure = spy
+    try:
+        res = StateScoreUmapMethod()._run(
+            _adata(),
+            {
+                "figure_formats": ["png"],
+                "layout": "pooled",
+                "programs": ["proliferating"],
+                "program_labels": {"proliferating": "Cell cycle"},
+                "cmap": "plasma",
+            },
+            _ctx(tmp_path, design=_design()),
+        )
+    finally:
+        m.save_figure = real
+
+    assert not isinstance(res, MethodSkip)
+    fig = seen[0]
+    assert len(fig.axes) == 2
+    assert fig.axes[0].get_title() == "Cell cycle"
+    cells = next(c for c in fig.axes[0].collections if hasattr(c, "get_cmap"))
+    assert cells.get_cmap().name == "plasma"
+
+
+def test_a_pooled_layout_needs_no_condition_design(tmp_path):
+    res = StateScoreUmapMethod()._run(
+        _adata(),
+        {"layout": "pooled", "figure_formats": ["png"], "programs": ["proliferating"]},
+        _ctx(tmp_path, design=None),
+    )
+
+    assert not isinstance(res, MethodSkip)
+
+
+def test_an_unknown_layout_is_refused(tmp_path):
+    res = StateScoreUmapMethod()._run(
+        _adata(), {"layout": "triptych"}, _ctx(tmp_path, design=_design())
+    )
+
+    assert isinstance(res, MethodSkip)
+    assert "triptych" in res.reason

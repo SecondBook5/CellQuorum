@@ -27,6 +27,7 @@ from cellquorum.stages.integration.embeddings.methods import _view_percentile
 from cellquorum.stages.integration.embeddings.plots import (
     EMBEDDING_REGISTRY,
     plot_score_by_condition,
+    plot_score_pooled,
 )
 from cellquorum.visualization.figio import figure_artifacts
 from cellquorum.visualization.figstyle import save_figure
@@ -60,8 +61,13 @@ class StateScoreUmapMethod(AnalysisMethod):
         if not requested:
             return self._skip("no requested programs available in scored output")
 
+        layout = config.get("layout", "by_condition")
+        if layout not in ("by_condition", "pooled"):
+            return self._skip(f"unknown layout '{layout}' (use 'by_condition' or 'pooled')")
+        pooled = layout == "pooled"
+
         cluster_key = config.get("cluster_key") or config.get("cell_type_col", "cell_type")
-        if cluster_key not in adata.obs.columns:
+        if not pooled and cluster_key not in adata.obs.columns:
             return self._skip(f"obs column '{cluster_key}' not found")
 
         basis_tag = config.get("basis", "umap")
@@ -75,7 +81,7 @@ class StateScoreUmapMethod(AnalysisMethod):
         )
         case = config.get("case") or getattr(design, "case", None)
         control = config.get("control") or getattr(design, "control", None)
-        if condition_col not in adata.obs.columns or not case or not control:
+        if not pooled and (condition_col not in adata.obs.columns or not case or not control):
             return self._skip(
                 "condition_col/case/control not resolvable (no design block and none "
                 "given directly)"
@@ -95,21 +101,36 @@ class StateScoreUmapMethod(AnalysisMethod):
             idx = programs_arr.index(program)
             score = adata.obsm[obsm_key][:, idx]
             try:
-                fig = plot_score_by_condition(
-                    adata,
-                    score=score,
-                    score_label=f"{program_labels.get(program, program)} ({score_source})",
-                    cluster_key=cluster_key,
-                    basis=spec["obsm"],
-                    axis_labels=spec["axis"],
-                    condition_col=condition_col,
-                    case=case,
-                    control=control,
-                    cluster_labels=cluster_labels,
-                    view_percentile=_view_percentile(config),
-                    show_state_panel=show_state_panel,
-                    **cmap_kwargs,
-                )
+                if pooled:
+                    fig = plot_score_pooled(
+                        adata,
+                        score=score,
+                        score_label=f"{score_source.upper()} score",
+                        title=program_labels.get(program, program),
+                        basis=spec["obsm"],
+                        axis_labels=spec["axis"],
+                        view_percentile=_view_percentile(config),
+                        **cmap_kwargs,
+                    )
+                else:
+                    assert (
+                        case and control
+                    )  # resolved above whenever the layout splits by condition
+                    fig = plot_score_by_condition(
+                        adata,
+                        score=score,
+                        score_label=f"{program_labels.get(program, program)} ({score_source})",
+                        cluster_key=cluster_key,
+                        basis=spec["obsm"],
+                        axis_labels=spec["axis"],
+                        condition_col=condition_col,
+                        case=case,
+                        control=control,
+                        cluster_labels=cluster_labels,
+                        view_percentile=_view_percentile(config),
+                        show_state_panel=show_state_panel,
+                        **cmap_kwargs,
+                    )
             except Exception:  # noqa: BLE001 -- one bad program must not sink the rest
                 continue
             paths = save_figure(
