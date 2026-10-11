@@ -171,6 +171,36 @@ def test_plot_score_by_condition_without_the_state_panel_puts_control_left_case_
     assert left < right
 
 
+def test_the_axis_arrows_and_names_sit_outside_the_cloud_of_cells():
+    a = _score_by_condition_adata()
+    # Cells fill the whole square, corners included, so any arrow drawn inside the
+    # data's extent lands on cells.
+    grid = np.linspace(0.0, 1.0, a.n_obs)
+    a.obsm["X_umap"] = np.column_stack([grid, grid[::-1]]).astype("float32")
+    fig = plots.plot_score_by_condition(
+        a,
+        score=np.random.default_rng(2).random(a.n_obs),
+        score_label="UCell score",
+        cluster_key="fibroblast_subcluster",
+        basis="X_umap",
+        axis_labels=("UMAP1", "UMAP2"),
+        condition_col="condition",
+        case="Lymphedema",
+        control="Normal",
+        show_state_panel=False,
+    )
+    ax = fig.axes[0]
+    xy = np.asarray(a.obsm["X_umap"])[(a.obs["condition"] == "Normal").to_numpy()]
+    names = {t.get_text(): t.get_position() for t in ax.texts}
+    assert names["UMAP1"][1] < xy[:, 1].min()  # its row is below every cell
+    assert names["UMAP2"][0] < xy[:, 0].min()  # its column is left of every cell
+    arrows = [c for c in ax.get_children() if hasattr(c, "xyann")]
+    assert len(arrows) == 2
+    for note in arrows:
+        tail_x, tail_y = note.xyann
+        assert tail_x < xy[:, 0].min() and tail_y < xy[:, 1].min()
+
+
 def test_plot_score_by_condition_cluster_labels_rename_state_panel_text():
     a = _score_by_condition_adata()
     score = np.random.default_rng(2).random(a.n_obs)

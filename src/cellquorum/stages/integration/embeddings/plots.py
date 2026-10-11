@@ -47,12 +47,17 @@ def _style_axes(ax: Axes, axis_labels: tuple[str, str]) -> None:
     ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.set_aspect("equal", adjustable="datalim")
     xlim, ylim = ax.get_xlim(), ax.get_ylim()
-    x0 = xlim[0] + (xlim[1] - xlim[0]) * 0.05
-    y0 = ylim[0] + (ylim[1] - ylim[0]) * 0.05
-    dx = (xlim[1] - xlim[0]) * 0.16
-    dy = (ylim[1] - ylim[0]) * 0.16
+    span_x, span_y = xlim[1] - xlim[0], ylim[1] - ylim[0]
+    # The arrows live in a margin opened below and left of the cells, so a cloud that reaches
+    # the corner of its view never has an arrow or an axis name drawn across it.
+    ax.set_xlim(xlim[0] - 0.14 * span_x, xlim[1])
+    ax.set_ylim(ylim[0] - 0.14 * span_y, ylim[1])
+    ax.set_aspect("equal", adjustable="datalim")
+    x0 = xlim[0] - 0.11 * span_x
+    y0 = ylim[0] - 0.11 * span_y
+    dx = span_x * 0.12
+    dy = span_y * 0.12
     arrow = {"arrowstyle": "-|>", "color": _TEXT, "lw": 1.0}
     ax.annotate("", xy=(x0 + dx, y0), xytext=(x0, y0), arrowprops=arrow)
     ax.annotate("", xy=(x0, y0 + dy), xytext=(x0, y0), arrowprops=arrow)
