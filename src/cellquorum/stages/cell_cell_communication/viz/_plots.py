@@ -8,7 +8,7 @@ with a matplotlib fallback so a missing dep never raises.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import matplotlib as mpl
 import matplotlib.patheffects as pe
@@ -223,6 +223,7 @@ def plot_mnn_sample_activity(
     *,
     top_n: int = 20,
     cluster_labels: dict[str, str] | None = None,
+    group_order: Sequence[str] | None = None,
 ) -> Figure:
     """MultiNicheNet's own headline figure: per-sample expression, scaled and
     raw ligand activity in the receiver, and ligand/receptor celltype
@@ -309,14 +310,18 @@ def plot_mnn_sample_activity(
         i + 0.5 for i in range(len(rows) - 1) if route_of_row[rows[i]] != route_of_row[rows[i + 1]]
     ]
 
-    groups = sorted(source_d["group"].unique())
+    present = sorted(source_d["group"].unique())
+    # An explicit order (control first) wins; groups it does not name follow alphabetically.
+    groups = [g for g in (group_order or ()) if g in present] + [
+        g for g in present if g not in (group_order or ())
+    ]
     # Sorted by (group, sample), not bare sample name: a plain alphabetical
     # sort interleaves the two conditions by patient (P10_LE, P10_Normal,
     # P12_LE, ...), confirmed on a real render -- samples for the same group
     # need to render as one contiguous block, matching the reference
     # figure's per-group facet columns.
     sample_group = sample_d.drop_duplicates("sample").set_index("sample")["group"]
-    samples = sorted(sample_d["sample"].unique(), key=lambda s: (sample_group[s], s))
+    samples = sorted(sample_d["sample"].unique(), key=lambda s: (groups.index(sample_group[s]), s))
     sample_x_range: dict[str, tuple[float, float]] = {}
     for g in groups:
         xs = [i for i, s in enumerate(samples) if sample_group[s] == g]

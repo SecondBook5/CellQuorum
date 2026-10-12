@@ -622,6 +622,19 @@ def test_plot_mnn_sample_activity_rows_name_sender_receiver_and_lr_pair():
     assert "3 -> 6" in route_text
 
 
+def test_plot_mnn_sample_activity_group_order_puts_the_control_first():
+    """Real ask: every figure puts Normal first and lymphedema second; the groups were sorted
+    alphabetically, which put Lymphedema on the left."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(
+        sample_df, source_df, top_n=20, group_order=("Normal", "Lymphedema")
+    )
+    samples = [t.get_text() for t in fig.axes[0].get_xticklabels()]
+    assert samples == ["P1_N", "P2_N", "P1_LE", "P2_LE"]
+
+
 def test_plot_mnn_sample_activity_relabels_clusters_in_row_names():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
 
