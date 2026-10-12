@@ -282,7 +282,7 @@ def plot_milo_beeswarm(
     ax.set_yticks(range(n_rows))
     ax.set_yticklabels([cluster_labels.get(ct, ct) for ct in order], fontsize=8)
     ax.set_ylim(-0.6, n_rows - 0.4)
-    ax.set_xlabel(f"Neighborhood log fold-change  ({case} vs {control})")
+    ax.set_xlabel(f"Neighborhood log fold-change  ({case} vs {control})", labelpad=16)
     ax.set_ylabel("")
     ax.set_title("Differential abundance (Milo) — neighborhood-level", fontsize=10, pad=8)
     ax.margins(x=0.04)
@@ -290,7 +290,7 @@ def plot_milo_beeswarm(
     ax.tick_params(axis="y", length=0)
 
     ax.annotate(
-        f"↑ enriched in {case}",
+        f"enriched in {case} →",
         xy=(0.995, -0.14),
         xycoords="axes fraction",
         ha="right",
@@ -300,7 +300,7 @@ def plot_milo_beeswarm(
         fontweight="bold",
     )
     ax.annotate(
-        f"enriched in {control} ↓",
+        f"← enriched in {control}",
         xy=(0.005, -0.14),
         xycoords="axes fraction",
         ha="left",

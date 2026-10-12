@@ -321,3 +321,25 @@ def test_render_da_figure_reports_a_failed_save(tmp_path):
     artifacts, warnings = render_da_figure(_tiny_figure, blocker, "da_demo", "x")
     assert artifacts == []
     assert len(warnings) == 1 and "da_demo" in warnings[0]
+
+
+def _direction_notes(ax):
+    return {t.get_text(): t for t in ax.texts if "enriched in" in t.get_text()}
+
+
+def test_milo_direction_labels_point_along_the_axis_they_describe():
+    """Real defect: the labels read '↑ enriched in Lymphedema' and 'enriched in Normal ↓' under a
+    horizontal axis, where up and down mean nothing."""
+    fig = plot_milo_beeswarm(_milo_results(), case="Lymphedema", control="Normal", spatial_fdr=0.1)
+    notes = _direction_notes(fig.axes[0])
+    assert set(notes) == {"enriched in Lymphedema →", "← enriched in Normal"}
+
+
+def test_milo_direction_labels_do_not_touch_the_axis_label():
+    fig = plot_milo_beeswarm(_milo_results(), case="Lymphedema", control="Normal", spatial_fdr=0.1)
+    ax = fig.axes[0]
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    label = ax.xaxis.label.get_window_extent(renderer)
+    for note in _direction_notes(ax).values():
+        assert not note.get_window_extent(renderer).overlaps(label)
