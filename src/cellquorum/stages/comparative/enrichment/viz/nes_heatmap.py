@@ -117,6 +117,12 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
         alpha = float(config.get("alpha", config.get("fdr", 0.05)))
         strong = float(config.get("alpha_strong", 0.001))
         labels = config.get("cluster_labels") or {}
+        # The columns are whatever the differential expression was split by (cell types, or the
+        # states of one lineage); the counts and the wording must follow that, not a fixed name.
+        design_de = getattr(getattr(context, "config", None), "differential_expression", None)
+        group_col = config.get("cell_type_col") or getattr(design_de, "cell_type_col", None)
+        group_col = str(group_col or "cell_type")
+        group_label = str(config.get("group_label", "cell type"))
         scratch = Path(context.paths.scratch)
         scratch.mkdir(parents=True, exist_ok=True)
         figures_dir = Path(context.paths.figures) / "enrichment"
@@ -143,14 +149,14 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
             padj.to_csv(scratch / f"nes_padj_{collection}.csv")
             n_cells_csv = self._write_cell_counts(
                 adata,
-                config.get("cell_type_col", "cell_type"),
+                group_col,
                 labels,
                 nes.columns,
                 scratch,
                 collection,
             )
             out_png = figures_dir / f"gsea_nes_heatmap_{collection}.png"
-            title = config.get("title") or f"GSEA {collection.title()}: NES by cell type"
+            title = config.get("title") or f"GSEA {collection.title()}: NES by {group_label}"
             try:
                 proc = backend.run_script(
                     _NES_HEATMAP_R,
@@ -164,6 +170,7 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
                         footnote,
                         palette,
                         n_cells_csv,
+                        f"{group_label}s",
                     ],
                     timeout=timeout,
                 )

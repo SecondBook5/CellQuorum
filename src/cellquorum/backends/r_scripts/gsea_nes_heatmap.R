@@ -24,6 +24,8 @@ title <- if (length(args) >= 6) args[6] else "GSEA: NES by cell type"
 footnote <- if (length(args) >= 7) args[7] else ""
 palette_name <- if (length(args) >= 8 && nzchar(args[8])) args[8] else "teal_orange"
 n_cells_csv <- if (length(args) >= 9) args[9] else ""
+group_plural <- if (length(args) >= 10 && nzchar(args[10])) args[10] else "Cell types"
+group_plural <- paste0(toupper(substring(group_plural, 1, 1)), substring(group_plural, 2))
 
 PALETTES <- list(
   teal_orange = c(low = "#12768A", mid = "#FAF6EE", high = "#E4571C"),
@@ -100,14 +102,16 @@ tryCatch(
     top_anno <- do.call(HeatmapAnnotation, c(
       anno_list, list(annotation_name_gp = gpar(fontsize = 7), annotation_name_side = "left")
     ))
-    right_anno <- rowAnnotation(
-      "Cell types" = anno_barplot(
-        cbind(Up = rowSums(up), Down = rowSums(down)),
-        gp = gpar(fill = unname(bar_cols), col = NA), bar_width = 0.72,
-        width = unit(1.5, "cm"), border = FALSE, axis_param = list(gp = gpar(fontsize = 6))
-      ),
-      annotation_name_gp = gpar(fontsize = 7), annotation_name_rot = 0
+    right_bar <- anno_barplot(
+      cbind(Up = rowSums(up), Down = rowSums(down)),
+      gp = gpar(fill = unname(bar_cols), col = NA), bar_width = 0.72,
+      width = unit(1.5, "cm"), border = FALSE, axis_param = list(gp = gpar(fontsize = 6)),
+      which = "row"
     )
+    right_anno <- do.call(rowAnnotation, c(
+      setNames(list(right_bar), group_plural),
+      list(annotation_name_gp = gpar(fontsize = 7), annotation_name_rot = 0)
+    ))
 
     n_blocks <- if (nrow(nes) >= 12) 4 else NULL
     ht <- Heatmap(
@@ -162,7 +166,7 @@ tryCatch(
     pdf(sub("\\.png$", ".pdf", out_png), width = width_in, height = height_in)
     render()
     dev.off()
-    cat("gsea_nes_heatmap.R: wrote", out_png, "(", n_row, "gene sets x", n_col, "cell types )\n")
+    cat("gsea_nes_heatmap.R: wrote", out_png, "(", n_row, "gene sets x", n_col, tolower(group_plural), ")\n")
   },
   error = function(e) {
     message("gsea_nes_heatmap.R error: ", conditionMessage(e))

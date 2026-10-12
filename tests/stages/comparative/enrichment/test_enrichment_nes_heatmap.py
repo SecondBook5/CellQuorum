@@ -276,3 +276,39 @@ def test_the_r_script_really_draws_png_and_pdf(tmp_path):
     assert proc.returncode == 0, proc.stderr[-800:]
     assert out.stat().st_size > 5000
     assert out.with_suffix(".pdf").stat().st_size > 1000
+
+
+def _lineage_ctx(tmp_path, backend, group_col):
+    from types import SimpleNamespace as NS
+
+    ctx = _ctx(tmp_path, backend, enrichment=_table())
+    ctx.config = NS(differential_expression=NS(cell_type_col=group_col))
+    return ctx
+
+
+def _adata_with_states() -> ad.AnnData:
+    a = ad.AnnData(X=np.zeros((9, 2)))
+    a.obs["cell_type"] = "LEC"  # the same for every cell: not the grouping the table uses
+    a.obs["state"] = ["A"] * 5 + ["B"] * 3 + ["C"]
+    return a
+
+
+def test_the_cell_counts_follow_the_grouping_the_differential_expression_used(tmp_path):
+    backend = _FakeBackend()
+    ctx = _lineage_ctx(tmp_path, backend, "state")
+
+    GseaNesHeatmapMethod()._run(_adata_with_states(), {}, ctx)
+
+    counts = pd.read_csv(Path(backend.calls[0][1][8]), index_col=0)["n_cells"]
+    assert counts.to_dict() == {"A": 5, "B": 3, "C": 1}
+
+
+def test_the_figure_says_what_its_columns_are(tmp_path):
+    backend = _FakeBackend()
+    ctx = _lineage_ctx(tmp_path, backend, "state")
+
+    GseaNesHeatmapMethod()._run(_adata_with_states(), {"group_label": "LEC state"}, ctx)
+
+    args = backend.calls[0][1]
+    assert args[5] == "GSEA Hallmark: NES by LEC state"
+    assert args[9] == "LEC states"
