@@ -699,7 +699,7 @@ def plot_mnn_sample_activity(
         fig.text(
             0.5,
             0.995,
-            "* p < 0.05 (ligand or receptor, unadjusted -- see docstring)",
+            "* p < 0.05 for the ligand or the receptor, not adjusted for multiple testing",
             ha="center",
             va="top",
             fontsize=7,
@@ -1624,14 +1624,18 @@ def plot_tensor_factors(
     if context_legend:
         from matplotlib.patches import Patch
 
-        axes[0][0].legend(
+        key_axes = axes[0][0]
+        key_axes.legend(
             handles=[
                 Patch(facecolor=colour, label=label) for label, colour in context_legend.items()
             ],
             fontsize=7,
             frameon=False,
             loc="upper right",
+            ncol=len(context_legend),
         )
+        # Headroom, so the key sits above the bars and not on them.
+        key_axes.set_ylim(0, key_axes.get_ylim()[1] * 1.3)
     fig.tight_layout()
     return fig
 

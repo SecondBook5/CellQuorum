@@ -534,6 +534,29 @@ def test_plot_tensor_factors_context_legend_names_the_bar_colours():
     assert [t.get_text() for t in legend.get_texts()] == ["Normal", "Lymphedema"]
 
 
+def test_plot_tensor_factors_context_legend_covers_none_of_the_bars():
+    """The key sat on the right-hand bars of the first panel; the panel keeps headroom for it."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
+
+    contexts, senders, receivers, lr_pairs = _tensor_factor_frames()
+    # Make the last context the tallest bar, directly under the key's usual corner.
+    contexts.iloc[-1] = contexts.max()
+    fig = plot_tensor_factors(
+        contexts,
+        senders,
+        receivers,
+        lr_pairs,
+        context_legend={"Normal": "#24608F", "Lymphedema": "#C41E3A"},
+    )
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ax = fig.axes[0]
+    key = ax.get_legend().get_window_extent(renderer)
+    bars = [p for p in ax.patches if p.get_height() > 0]
+    assert bars
+    assert not [p for p in bars if key.overlaps(p.get_window_extent(renderer))]
+
+
 def test_plot_tensor_factors_has_no_legend_unless_asked():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
 
@@ -645,6 +668,19 @@ def test_plot_mnn_sample_activity_rows_name_sender_receiver_and_lr_pair():
     route_text = " ".join(t.get_text() for t in fig.axes[0].texts if "->" in t.get_text())
     assert "0 -> 3" in route_text
     assert "3 -> 6" in route_text
+
+
+def test_plot_mnn_sample_activity_footnote_explains_the_star_without_pointing_at_code():
+    """The star's footnote read 'see docstring', which means nothing on a printed figure."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    source_df = source_df.assign(p_val_ligand=0.01, p_val_receptor=0.2)
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+    notes = " ".join(t.get_text() for t in fig.texts)
+    assert "p < 0.05" in notes
+    assert "docstring" not in notes
+    assert "not adjusted for multiple testing" in notes
 
 
 def test_plot_mnn_sample_activity_group_order_puts_the_control_first():
