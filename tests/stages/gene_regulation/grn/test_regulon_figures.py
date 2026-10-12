@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from matplotlib.text import Text
 from repo_paths import REPO_ROOT
 
 from cellquorum.stages.gene_regulation.grn import regulon_figures as rf
@@ -184,3 +185,35 @@ def test_a_failure_in_the_specificity_scores_is_not_swallowed(tmp_path: Path, mo
         rf.plot_regulon_clustermap(auc, groups, tmp_path, top_n=3)
     with pytest.raises(RuntimeError, match="scores unavailable"):
         rf.plot_regulon_cell_clustermap(auc, groups.to_frame("g"), tmp_path, top_n=3)
+
+
+def test_rss_labels_of_tied_top_regulons_do_not_print_over_each_other(
+    tmp_path, monkeypatch
+) -> None:
+    """Real defect on the SCENIC panels for Structural LECs: the five most specific regulons had
+    almost the same score, so their labels ran together into unreadable text."""
+    captured = []
+    monkeypatch.setattr(rf.figstyle, "save_figure", lambda fig, *a, **k: captured.append(fig) or [])
+    n_reg = 261
+    names = [f"TF{j}_(+)" for j in range(n_reg)]
+    # a slowly falling tail whose five largest scores sit within a label height of each other
+    profile = np.linspace(0.565, 0.01, n_reg) ** 1.0
+    profile[:5] = 0.565 - 0.0006 * np.arange(5)
+    rss = pd.DataFrame([profile, profile[::-1]], index=["A", "B"], columns=names)
+    monkeypatch.setattr(rf, "regulon_specificity_scores", lambda auc, groups: rss)
+    auc = pd.DataFrame(np.ones((4, n_reg)), index=list("wxyz"), columns=names)
+    rf.plot_rss_panels(auc, pd.Series(["A", "A", "B", "B"], index=auc.index), tmp_path, top_n=5)
+    fig = captured[0]
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for ax in fig.axes:
+        labels = [t for t in ax.texts if t.get_text()]
+        # the text itself, not an annotation's leader line
+        boxes = [Text.get_window_extent(t, renderer) for t in labels]
+        clashes = [
+            (labels[i].get_text(), labels[j].get_text())
+            for i in range(len(boxes))
+            for j in range(i)
+            if boxes[i].overlaps(boxes[j])
+        ]
+        assert clashes == []

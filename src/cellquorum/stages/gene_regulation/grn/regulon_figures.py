@@ -342,25 +342,28 @@ def plot_rss_panels(
     fig, axes = plt.subplots(
         nrow, ncol, figsize=(4.2 * ncol, 3.6 * nrow), squeeze=False, constrained_layout=True
     )
-    try:
-        from adjustText import adjust_text
-
-        _have_at = True
-    except Exception:
-        _have_at = False
-
     for k, c in enumerate(cats):
         ax = axes[k // ncol][k % ncol]
         s = rss.loc[c].sort_values(ascending=False)
         ranks = np.arange(1, len(s) + 1)
         ax.scatter(ranks, s.values, s=8, c="#4C72B0", alpha=0.6, edgecolors="none")
         top = s.head(top_n)
-        texts = []
-        for r, (reg, val) in enumerate(top.items(), start=1):
+        for r, val in enumerate(top.to_numpy(), start=1):
             ax.scatter([r], [val], s=22, c="#C44E52", zorder=5)
-            texts.append(ax.text(r, val, reg.replace("_(+)", ""), fontsize=8, fontweight="bold"))
-        if _have_at and texts:
-            adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="-", color="#bbb", lw=0.5))
+        # Labels in a column to the right of the top points, one line each, joined by leader lines.
+        # The top few regulons often score almost the same, so labels placed at their own points (or
+        # nudged by a repel routine) run together; a column cannot.
+        for k, (reg, val) in enumerate(top.items()):
+            ax.annotate(
+                reg.replace("_(+)", ""),
+                xy=(k + 1, val),
+                xytext=(26, -k * 13),
+                textcoords="offset points",
+                fontsize=8,
+                fontweight="bold",
+                va="center",
+                arrowprops={"arrowstyle": "-", "color": "#bbb", "lw": 0.5},
+            )
         c_label = (cluster_labels or {}).get(str(c), str(c))
         ax.set_title(f"{group_label} = {c_label}", fontsize=11, fontweight="bold")
         ax.set_xlabel("regulon rank", fontsize=9)
