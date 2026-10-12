@@ -433,12 +433,19 @@ def plot_regulon_clustermap(
             figsize=(max(8, 0.35 * len(topreg)), 5),
             linewidths=0.3,
             linecolor="#eee",
-            cbar_kws={"label": "mean Z-scored regulon activity"},
+            cbar_kws={"orientation": "horizontal"},
             xticklabels=[r.replace("_(+)", "") for r in cat_mean.columns],
             yticklabels=True,
             col_cluster=True,
             row_cluster=len(cat_mean) > 2,
         )
+        # A long rotated label on seaborn's corner colourbar ran off the figure edge. A horizontal
+        # bar in the same empty corner, with its name as a two-line title, fits.
+        row_dend, col_dend = g.ax_row_dendrogram.get_position(), g.ax_col_dendrogram.get_position()
+        g.cax.set_position(
+            [row_dend.x0 + 0.01, col_dend.y0 + 0.45 * col_dend.height, 0.8 * row_dend.width, 0.03]
+        )
+        g.cax.set_title("mean Z-scored\nregulon activity", fontsize=8, pad=4)
         g.ax_heatmap.set_xlabel("regulon")
         g.ax_heatmap.set_ylabel(group_label)
         g.ax_heatmap.tick_params(axis="x", labelsize=7, rotation=90)

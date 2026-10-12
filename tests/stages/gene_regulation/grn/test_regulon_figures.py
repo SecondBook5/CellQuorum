@@ -217,3 +217,29 @@ def test_rss_labels_of_tied_top_regulons_do_not_print_over_each_other(
             if boxes[i].overlaps(boxes[j])
         ]
         assert clashes == []
+
+
+def test_regulon_clustermap_colourbar_label_is_not_cut_off_by_the_figure_edge(
+    tmp_path, monkeypatch
+) -> None:
+    """Real defect on the LEC SCENIC clustermap: the colourbar sat in the figure's top-left corner
+    with a long rotated label that ran off the edge ('mean Z-scored regulon activit')."""
+    captured = []
+    monkeypatch.setattr(rf.figstyle, "save_figure", lambda fig, *a, **k: captured.append(fig) or [])
+    auc = _auc()
+    rf.plot_regulon_clustermap(auc, _groups(auc), tmp_path, top_n=3)
+    fig = captured[0]
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    frame = fig.bbox
+    labels = [
+        artist
+        for ax in fig.axes
+        for artist in (ax.xaxis.label, ax.yaxis.label, ax.title)
+        if "Z-scored" in artist.get_text()
+    ]
+    assert labels, "the colourbar is not named"
+    for artist in labels:
+        box = artist.get_window_extent(renderer)
+        assert box.x0 >= frame.x0 and box.x1 <= frame.x1 and box.y0 >= frame.y0
+        assert box.y1 <= frame.y1
