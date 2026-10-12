@@ -105,3 +105,29 @@ def test_a_condition_with_too_few_cells_is_named_not_silently_dropped() -> None:
             score_label="s",
             min_cells=10,
         )
+
+
+def test_a_curve_stops_where_its_condition_has_no_cells() -> None:
+    # Normal cells sit in the first half of the axis apart from three stragglers; the Normal
+    # curve must not run on to the far end as a flat line the data do not support.
+    rng = np.random.default_rng(1)
+    n = 150
+    axis = np.concatenate([rng.random(n) * 0.5, [0.8, 0.9, 1.0], rng.random(n)])
+    condition = np.array(["Normal"] * (n + 3) + ["Lymphedema"] * n)
+    score = axis + rng.normal(0, 0.2, len(axis))
+    fig = score_along_axis(
+        pd.Series(axis),
+        pd.Series(score),
+        pd.Series(condition),
+        case="Lymphedema",
+        control="Normal",
+        axis_label="a",
+        score_label="s",
+    )
+    curves = _curves(fig)
+    assert float(np.max(curves["curve|Normal"].get_xdata())) < 0.6
+    assert float(np.max(curves["curve|Lymphedema"].get_xdata())) > 0.95
+    bands = {
+        c.get_gid(): c for c in fig.axes[0].collections if (c.get_gid() or "").startswith("band|")
+    }
+    assert bands["band|Normal"].get_paths()[0].vertices[:, 0].max() < 0.6

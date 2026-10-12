@@ -49,6 +49,8 @@ def score_along_axis(
 ) -> Figure:
     """One score against one axis for one set of cells, a smoothed curve per condition.
 
+    A condition's curve and band span only the positions its own cells cover.
+
     Args:
         axis: Position of each cell along the ordering (any scale; drawn as given).
         score: Value of the score in each cell (for example z-normalised within the cells shown).
@@ -81,7 +83,6 @@ def score_along_axis(
                 f"{level!r} has {n} cells, fewer than the {min_cells} needed to smooth"
             )
 
-    grid = np.linspace(float(x_all[finite].min()), float(x_all[finite].max()), n_grid)
     rng = np.random.default_rng(seed)
     fig, ax = plt.subplots(figsize=(5.2, 3.8))
     cells = ax.scatter(
@@ -98,6 +99,10 @@ def score_along_axis(
     for level in (control, case):
         m = finite & (cond == level)
         x, y = x_all[m], y_all[m]
+        # Each condition is drawn only over the span its own cells cover (2.5th to 97.5th
+        # percentile of position); beyond it the smoother would extrapolate a flat line.
+        lo, hi = np.percentile(x, [2.5, 97.5])
+        grid = np.linspace(float(lo), float(hi), n_grid)
         curve = _lowess(x, y, grid, frac)
         draws = np.empty((n_boot, n_grid))
         for b in range(n_boot):
