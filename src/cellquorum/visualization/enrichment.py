@@ -1041,6 +1041,7 @@ def enrichment_map(
         seed: Layout seed.
         sep: Delimiter inside the leading-edge column.
     """
+    import matplotlib.patheffects as pe
     import matplotlib.pyplot as plt
     import networkx as nx
     from matplotlib.colors import Normalize
@@ -1100,7 +1101,9 @@ def enrichment_map(
                 ha="center",
                 va="top",
                 fontsize=6.8,
+                zorder=5,
             )
+            text.set_path_effects([pe.withStroke(linewidth=2.2, foreground="white")])
             text.set_gid("node_label")
             drawn_labels.append(text)
     if len(drawn_labels) > 1:

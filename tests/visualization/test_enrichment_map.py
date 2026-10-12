@@ -156,3 +156,15 @@ def test_node_names_in_a_tight_cluster_do_not_print_over_each_other() -> None:
         if boxes[i].overlaps(boxes[j])
     ]
     assert clashes == []
+
+
+def test_node_names_are_drawn_above_every_node() -> None:
+    """After the names were pushed apart some sat under a neighbouring node and were cut off."""
+    fig = enrichment_map(_table())
+    ax = fig.axes[0]
+    top_node = max(
+        p.get_zorder() for p in ax.collections if (p.get_gid() or "").startswith("node|")
+    )
+    labels = [t for t in ax.texts if t.get_gid() == "node_label"]
+    assert labels
+    assert all(t.get_zorder() > top_node for t in labels)
