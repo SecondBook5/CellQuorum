@@ -113,6 +113,20 @@ def test_cascade_heatmap_says_what_the_arrow_numbers_are():
     assert "Spearman" in texts
 
 
+def test_cascade_key_sits_below_the_arrow_column_where_no_title_can_reach():
+    """Real defect on the lymphedema LEC run: with the house fonts the key above the arrow column
+    ran into the end of a long title. A title can extend over the space above the column but never
+    below it, so the key belongs under the last row."""
+    df, pt = _monotone_activity()
+    fig = cascade.cascade_heatmap(df, pt, title="PROGENy pathway activity along dpt pseudotime")
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    keys = [t for a in fig.axes for t in a.texts if "Spearman" in t.get_text()]
+    assert keys
+    axes_box = fig.axes[0].get_window_extent(renderer)
+    assert keys[0].get_window_extent(renderer).y1 <= axes_box.y0 + 1
+
+
 def test_cascade_heatmap_diagonal_row_order():
     df, pt = _monotone_activity()
     fig = cascade.cascade_heatmap(df, pt, top=None, n_bins=12)
