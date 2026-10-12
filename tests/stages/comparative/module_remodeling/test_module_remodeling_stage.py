@@ -1036,3 +1036,51 @@ def test_module_remodeling_hardcodes_no_study_biology():
                     offenders.append(f"{module.name}:{node.lineno}: {term!r} in {node.value!r}")
 
     assert not offenders, "study biology hardcoded in the generic stage:\n" + "\n".join(offenders)
+
+
+def _dotgrid_with(effects, tmp_path, monkeypatch):
+    from cellquorum.stages.comparative.module_remodeling import mr_figures
+
+    seen = {}
+
+    def capture(fig, out_dir, stem):
+        seen["fig"] = fig
+        return []
+
+    monkeypatch.setattr(mr_figures.figstyle, "save_figure", capture)
+    mr_figures.plot_module_dotgrid(effects, out_dir=tmp_path, group_label="state")
+    return seen["fig"]
+
+
+def test_a_result_the_donors_do_not_support_is_not_drawn_as_a_strong_finding(tmp_path, monkeypatch):
+    import pandas as pd
+
+    from cellquorum.stages.comparative.module_remodeling import mr_figures
+
+    effects = pd.DataFrame(
+        {
+            "program": ["backed", "cells_only"],
+            "group": ["G", "G"],
+            "effect": [0.05, 0.05],
+            "fdr": [1e-9, 1e-9],  # both look overwhelming in the mixed model
+            "donor_p": [0.004, 0.43],  # but only one holds across the donors
+            "method": ["lmm", "lmm"],
+        }
+    )
+
+    fig = _dotgrid_with(effects, tmp_path, monkeypatch)
+
+    ax = fig.axes[0]
+    dots = next(c for c in ax.collections if len(c.get_sizes()) == 2)
+    rows = {
+        t.get_text(): float(y) for t, y in zip(ax.get_yticklabels(), ax.get_yticks(), strict=True)
+    }
+    area = {
+        name: float(dots.get_sizes()[int(np.argmin(np.abs(dots.get_offsets()[:, 1] - y)))])
+        for name, y in rows.items()
+    }
+    capped = float(mr_figures._dot_areas(np.array([0.05]), max_exponent=6.0)[0])
+    assert area["cells only"] == capped  # no larger than a result that just clears 0.05
+    assert area["backed"] > capped
+    legend = " ".join(t.get_text() for t in ax.get_legend().get_texts())
+    assert "across donors" in legend

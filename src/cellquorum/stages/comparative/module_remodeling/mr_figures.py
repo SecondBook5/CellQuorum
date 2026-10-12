@@ -169,12 +169,21 @@ def plot_module_dotgrid(
     grid = effects.set_index(["program", "group"])
     effect = np.full((len(programs), len(groups)), np.nan)
     fdr = np.ones((len(programs), len(groups)))
+    unsupported = np.zeros((len(programs), len(groups)), dtype=bool)
     for i, program in enumerate(programs):
         for j, group in enumerate(groups):
             if (program, group) in grid.index:
                 row = cast("pd.Series", grid.loc[(program, group)])
                 effect[i, j] = float(row["effect"])
                 fdr[i, j] = float(row["fdr"]) if np.isfinite(row["fdr"]) else 1.0
+                # The mixed model counts cells, so with a handful of donors it can return a p
+                # no donor-level test could reach. A result it calls significant that the donors
+                # themselves do not support is drawn no larger than one that just clears 0.05,
+                # with a dashed ring, rather than as the strongest finding on the panel.
+                donor_p = float(row["donor_p"]) if "donor_p" in grid.columns else np.nan
+                if fdr[i, j] < 0.05 and np.isfinite(donor_p) and donor_p >= 0.05:
+                    unsupported[i, j] = True
+                    fdr[i, j] = 0.05
 
     finite = effect[np.isfinite(effect)]
     if effect_cap is None:
@@ -208,8 +217,9 @@ def plot_module_dotgrid(
         c=effect[tested],
         cmap="RdBu_r",
         norm=norm,
-        edgecolors=cast("Any", np.where(fdr[tested] < 0.05, _SIG_RING, _NULL_RING)),
-        linewidths=cast("Any", np.where(fdr[tested] < 0.05, 1.1, 0.5)),
+        edgecolors=cast("Any", np.where(fdr[tested] <= 0.05, _SIG_RING, _NULL_RING)),
+        linewidths=cast("Any", np.where(fdr[tested] <= 0.05, 1.1, 0.5)),
+        linestyles=cast("Any", np.where(unsupported[tested], "--", "-")),
         zorder=3,
     )
     if (~tested).any():
@@ -301,6 +311,22 @@ def plot_module_dotgrid(
             (10.0**-max_dot_fdr_exponent, f"FDR ≤ 1e−{max_dot_fdr_exponent:g}"),
         )
     ]
+    if unsupported.any():
+        handles.append(
+            Line2D(
+                [],
+                [],
+                marker="o",
+                linestyle="none",
+                markerfacecolor="none",
+                markeredgecolor=_SIG_RING,
+                markeredgewidth=1.1,
+                markersize=np.sqrt(
+                    _dot_areas(np.array([0.05]), max_exponent=max_dot_fdr_exponent)[0]
+                ),
+                label="mixed model only, not across donors",
+            )
+        )
     if (~tested).any():
         # Only key the cross when a cross is on the panel. Advertising a marker
         # that is not drawn sends a reader hunting for untestable cells in a grid
