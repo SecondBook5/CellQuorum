@@ -890,7 +890,9 @@ def plot_population_values(
     hi = per_cell.max() if vmax is None else vmax
     size = _adaptive_point_size(len(per_cell)) if point_size is None else point_size
 
-    fig = Figure(figsize=(7.4, 5.0))
+    fig = Figure(
+        figsize=(10.5, 7.0)
+    )  # roomy: neighbouring small populations need space for their names
     ax = fig.add_subplot(111)
     order = np.argsort(per_cell, kind="mergesort")
     cells = ax.scatter(
