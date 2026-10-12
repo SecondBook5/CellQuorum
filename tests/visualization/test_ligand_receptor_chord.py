@@ -152,3 +152,30 @@ def test_a_group_name_is_not_drawn_on_top_of_the_ligand_names_around_it() -> Non
     fig = ligand_receptor_chord(edges, sender_palette={}, receiver_palette={})
     clashes = _overlaps(fig, "group_label", {"ligand_label", "receptor_label", "group_label"})
     assert clashes == []
+
+
+def _fill(patch) -> str:
+    from matplotlib.colors import to_hex
+
+    return to_hex(patch.get_facecolor()[:3])
+
+
+def test_unsigned_ribbons_take_the_sender_colour_when_asked_and_grey_otherwise() -> None:
+    """Real ask: the unsigned chord was mostly grey ribbons, which do not say who is sending."""
+    plain = _ribbons(_chord())
+    by_sender = _ribbons(_chord(ribbon_color="sender"))
+    assert _fill(by_sender["ribbon|CXCL12>ACKR3|LEC"]) == "#4b83c4"
+    assert _fill(by_sender["ribbon|VEGFC>FLT4|LEC"]) == "#d2a91a"
+    assert _fill(plain["ribbon|CXCL12>ACKR3|LEC"]) != "#4b83c4"
+
+
+def test_highlighted_ligands_keep_their_colour_over_the_sender_colour() -> None:
+    fig = _chord(ribbon_color="sender", highlight={"TGFB1": "#4B3FA8"})
+    assert _fill(_ribbons(fig)["ribbon|TGFB1>TGFBR2|LEC"]) == "#4b3fa8"
+
+
+def test_signed_ribbons_stay_red_and_blue_whatever_the_ribbon_colour_setting() -> None:
+    fig = _chord(signed=True, ribbon_color="sender")
+    ribbons = _ribbons(fig)
+    assert _fill(ribbons["ribbon|CXCL12>ACKR3|LEC"]) != "#4b83c4"
+    assert _fill(ribbons["ribbon|VEGFC>FLT4|LEC"]) != "#d2a91a"

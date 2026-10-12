@@ -1134,6 +1134,7 @@ def ligand_receptor_chord(
     scale: float | None = None,
     top_n: int | None = None,
     highlight: Mapping[str, str] | None = None,
+    ribbon_color: str = "neutral",
     sender_col: str = "sender",
     ligand_col: str = "ligand",
     receiver_col: str = "receiver",
@@ -1154,7 +1155,13 @@ def ligand_receptor_chord(
 
     ``highlight`` maps ligand names to a colour: those ligands' labels (and, when unsigned, their
     ribbons) take it, so a ligand the figure is about can be found without reading every label.
+    ``ribbon_color`` is ``"neutral"`` (grey, the default) or ``"sender"``: with ``"sender"`` the
+    unsigned ribbons that are not highlighted take their sender's colour from ``sender_palette``,
+    so the figure says who is signalling and not only that something is. Signed ribbons are always
+    red and blue.
     """
+    if ribbon_color not in ("neutral", "sender"):
+        raise ValueError(f"ribbon_color must be 'neutral' or 'sender', got {ribbon_color!r}")
     import matplotlib.pyplot as plt
     from matplotlib.patches import PathPatch, Wedge
     from matplotlib.path import Path as MplPath
@@ -1234,8 +1241,12 @@ def ligand_receptor_chord(
         codes += [MplPath.CURVE3, MplPath.CURVE3]
         if signed:
             colour = _CHORD_UP if row[weight_col] > 0 else _CHORD_DOWN
+        elif row[ligand_col] in marks:
+            colour = marks[row[ligand_col]]
+        elif ribbon_color == "sender":
+            colour = sender_palette.get(row[sender_col], _CHORD_GREY)
         else:
-            colour = marks.get(row[ligand_col], _CHORD_GREY)
+            colour = _CHORD_GREY
         strong = bool(row["strong"])
         ax.add_patch(
             PathPatch(
