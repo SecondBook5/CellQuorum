@@ -195,3 +195,76 @@ def test_no_title_or_note_is_drawn_unless_given() -> None:
     ax = _chord().axes[0]
     assert ax.get_title(loc="left") == ""
     assert not [t for t in ax.texts if t.get_gid() == "note"]
+
+
+_LYMPHEDEMA_INTO_LEC = [
+    ("Fibroblast", "VCAN", "ITGB1", 0.99),
+    ("DC", "COL3A1", "ITGA2_ITGB1", 0.749),
+    ("T cells", "TGFB1", "CAV1", 0.965),
+    ("Macrophages", "TGFB1", "CAV1", 0.936),
+    ("Fibroblast", "COL3A1", "ITGA1_ITGB1", 0.936),
+    ("LEC", "VEGFA", "EPHB2", 0.726),
+    ("Fibroblast", "COL6A3", "ITGA9_ITGB1", 0.93),
+    ("DC", "TGFB1", "CAV1", 0.926),
+    ("T cells", "TGFB1", "ITGB1", 0.908),
+    ("Melanocytes", "HMGB1", "THBD", 0.645),
+    ("Fibroblast", "ADM", "CALCRL", 0.899),
+    ("Macrophages", "COL3A1", "DDR2", 0.894),
+    ("LEC", "HMGB1", "THBD", 0.596),
+    ("LEC", "TGFB1", "CAV1", 0.895),
+    ("Macrophages", "COL3A1", "ITGA1_ITGB1", 0.853),
+    ("BEC", "HMGB1", "THBD", 0.582),
+    ("SMC", "HMGB1", "THBD", 0.591),
+    ("DC", "VEGFA", "ITGB1", 0.881),
+    ("Fibroblast", "HMGB1", "THBD", 0.549),
+    ("Mast cells", "TGFB1", "CAV1", 0.87),
+    ("Macrophages", "VEGFA", "ITGB1", 0.865),
+    ("DC", "VEGFA", "NRP2", 0.705),
+]
+
+
+def _into_lec() -> pd.DataFrame:
+    return pd.DataFrame(
+        [(s, lig, "LEC", rec, w) for s, lig, rec, w in _LYMPHEDEMA_INTO_LEC],
+        columns=["sender", "ligand", "receiver", "receptor", "weight"],
+    )
+
+
+def test_no_name_overlaps_another_on_a_chord_with_many_small_neighbouring_senders() -> None:
+    """Real defect on the lymphedema chord into LEC: three adjacent small senders (Mast cells, T
+    cells, BEC) printed their names over each other and over the TGFB1 labels at the top."""
+    fig = ligand_receptor_chord(_into_lec(), sender_palette={}, receiver_palette={})
+    names = {"group_label", "ligand_label", "receptor_label"}
+    assert _overlaps(fig, "group_label", names) == []
+
+
+def test_every_name_lies_inside_the_frame_so_the_title_cannot_sit_on_one() -> None:
+    """Real defect: the frame was widened for the names before the widening itself shrank the
+    drawing, so a long receptor name stuck out of the top and the title was drawn across it."""
+    note = "Red: higher in lymphedema; blue: lower. Width: size of the mean change over the donors."
+    fig = ligand_receptor_chord(
+        _into_lec(), sender_palette={}, receiver_palette={}, title="Signals into LEC", note=note
+    )
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ax = fig.axes[0]
+    frame = ax.get_window_extent(renderer)
+    names = [
+        t for t in ax.texts if t.get_gid() in {"group_label", "ligand_label", "receptor_label"}
+    ]
+    outside = [
+        t.get_text()
+        for t in names
+        if t.get_window_extent(renderer).y1 > frame.y1 + 1
+        or t.get_window_extent(renderer).x1 > frame.x1 + 1
+        or t.get_window_extent(renderer).x0 < frame.x0 - 1
+        or t.get_window_extent(renderer).y0 < frame.y0 - 1
+    ]
+    assert outside == []
+
+
+def test_a_long_note_is_wrapped_so_it_does_not_widen_the_figure() -> None:
+    note = "Red: higher in lymphedema; blue: lower. " * 6
+    fig = ligand_receptor_chord(_into_lec(), sender_palette={}, receiver_palette={}, note=note)
+    drawn = [t.get_text() for t in fig.axes[0].texts if t.get_gid() == "note"][0]
+    assert max(len(line) for line in drawn.splitlines()) <= 95

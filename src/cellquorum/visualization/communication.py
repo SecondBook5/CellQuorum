@@ -1327,6 +1327,8 @@ def ligand_receptor_chord(
                     radius = max(radius, float(np.hypot(x, y)))
         return radius
 
+    group_items: list[dict] = []
+
     def _group_arc(
         keys: list[tuple[str, str]],
         ang: dict[tuple[str, str], tuple[float, float]],
@@ -1367,26 +1369,69 @@ def ligand_receptor_chord(
                 color=palette.get(g, INK),
             )
             lab.set_gid("group_label")
+            group_items.append({"lab": lab, "angle": t, "reach": reach})
 
     _group_arc(lig_keys, lig_ang, sender_palette, "L")
     _group_arc(rec_keys, rec_ang, receiver_palette, "R")
     if title:
         ax.set_title(title, loc="left", fontsize=11, fontweight="bold", color=INK)
     if note:
+        import textwrap
+
         key = ax.text(
-            0.0, -0.02, note, transform=ax.transAxes, ha="left", va="top", fontsize=7.5, color=INK
+            0.0,
+            -0.02,
+            textwrap.fill(note, width=90),
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7.5,
+            color=INK,
         )
         key.set_gid("note")
-    # Widen the frame to whatever the names now reach, so none is cut off.
-    ax.apply_aspect()
-    x_lo, x_hi = ax.get_xlim()
-    y_lo, y_hi = ax.get_ylim()
-    for lab in ax.texts:
-        box = lab.get_window_extent(renderer).transformed(ax.transData.inverted())
-        x_lo, x_hi = min(x_lo, box.x0 - 0.05), max(x_hi, box.x1 + 0.05)
-        y_lo, y_hi = min(y_lo, box.y0 - 0.05), max(y_hi, box.y1 + 0.05)
-    ax.set_xlim(x_lo, x_hi)
-    ax.set_ylim(y_lo, y_hi)
+
+    names = ("ligand_label", "receptor_label", "group_label")
+
+    def _clear_overlaps() -> None:
+        """Push each group name outward until it sits on no other name."""
+        ax.apply_aspect()
+        for item in group_items:
+            lab, angle = item["lab"], item["angle"]
+            others = [t for t in ax.texts if t.get_gid() in names and t is not lab]
+            for _ in range(80):
+                box = lab.get_window_extent(renderer)
+                if not any(box.overlaps(o.get_window_extent(renderer)) for o in others):
+                    break
+                item["reach"] += 0.05
+                lab.set_position(_pt(item["reach"], angle))
+
+    def _fit_frame() -> None:
+        """Widen the frame to whatever the names reach. Widening zooms the drawing out, which
+        makes the names larger in data units, so it is repeated until it stops changing."""
+        for _ in range(5):
+            ax.apply_aspect()
+            x_lo, x_hi = ax.get_xlim()
+            y_lo, y_hi = ax.get_ylim()
+            new = [x_lo, x_hi, y_lo, y_hi]
+            for lab in ax.texts:
+                if lab.get_gid() not in names:
+                    continue
+                box = lab.get_window_extent(renderer).transformed(ax.transData.inverted())
+                new = [
+                    min(new[0], box.x0 - 0.05),
+                    max(new[1], box.x1 + 0.05),
+                    min(new[2], box.y0 - 0.05),
+                    max(new[3], box.y1 + 0.05),
+                ]
+            if np.allclose(new, [x_lo, x_hi, y_lo, y_hi], atol=1e-6):
+                return
+            ax.set_xlim(new[0], new[1])
+            ax.set_ylim(new[2], new[3])
+
+    _clear_overlaps()
+    _fit_frame()
+    _clear_overlaps()
+    _fit_frame()
     return fig
 
 
