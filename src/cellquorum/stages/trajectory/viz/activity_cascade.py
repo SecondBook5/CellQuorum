@@ -192,6 +192,16 @@ def cascade_heatmap(
         color=_MUTED,
     )
     axr.tick_params(length=0)
+    axr.text(
+        1.01,
+        1.0,
+        "Spearman\ncorrelation\nwith time",
+        transform=axr.transAxes,
+        fontsize=6.6,
+        color=_MUTED,
+        ha="left",
+        va="bottom",
+    )
     ax.set_xlabel(f"pseudotime  ({xlab})" if xlab else "pseudotime →", fontsize=9)
     ax.set_xticks([0, 0.5, 1.0])
     ax.tick_params(axis="y", length=0)

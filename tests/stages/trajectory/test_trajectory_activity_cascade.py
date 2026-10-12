@@ -104,6 +104,15 @@ def test_cascade_heatmap_returns_figure_and_saves(tmp_path):
         assert Path(p).exists()
 
 
+def test_cascade_heatmap_says_what_the_arrow_numbers_are():
+    """The right-hand ``up 0.31`` / ``down 0.30`` ticks were a bare number: a reader could not
+    tell they are rank correlations with pseudotime."""
+    df, pt = _monotone_activity()
+    fig = cascade.cascade_heatmap(df, pt)
+    texts = " ".join(t.get_text() for ax in fig.axes for t in ax.texts)
+    assert "Spearman" in texts
+
+
 def test_cascade_heatmap_diagonal_row_order():
     df, pt = _monotone_activity()
     fig = cascade.cascade_heatmap(df, pt, top=None, n_bins=12)
