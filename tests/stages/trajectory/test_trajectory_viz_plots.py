@@ -77,6 +77,20 @@ def test_coarse_transition_heatmap_returns_figure():
     assert isinstance(fig, Figure)
 
 
+def test_coarse_transition_stationary_text_reads_on_its_own_cell_colour():
+    """Real defect on the lymphedema LEC trajectory: the largest stationary
+    probability sits on the darkest blue of the strip and its fixed dark text
+    was unreadable. Text must flip to white on a dark cell and stay dark on a
+    light one.
+    """
+    mat, stationary = _coarse_T()
+    fig = plots.coarse_transition_heatmap(mat, stationary)
+    strip = fig.axes[-1]
+    colour = {t.get_text(): t.get_color() for t in strip.texts}
+    assert colour["0.46"] == "white"
+    assert colour["0.15"] != "white"
+
+
 def test_off_diagonal_vmax_ignores_the_diagonal():
     """Real complaint: a shared 0-1 color scale across BOTH the near-1.0
     diagonal (expected, uninformative -- well-separated macrostates mostly

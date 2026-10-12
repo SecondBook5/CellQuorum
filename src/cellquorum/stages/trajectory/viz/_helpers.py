@@ -296,12 +296,17 @@ def coarse_transition_heatmap(
     if stationary is not None:
         vals = np.asarray(stationary, dtype=float)
         bar_ax = fig.add_axes((0.16, 0.05 / fig_h, 0.66, 0.30 / fig_h))
-        bar_ax.imshow(vals[None, :], aspect="auto", cmap="Blues", vmin=0, vmax=vals.max())
+        strip_norm = mpl.colors.Normalize(vmin=0, vmax=vals.max())
+        bar_ax.imshow(vals[None, :], aspect="auto", cmap="Blues", norm=strip_norm)
         bar_ax.set_xticks([])
         bar_ax.set_yticks([0])
         bar_ax.set_yticklabels(["stationary dist"], fontsize=7.5)
+        blues = plt.get_cmap("Blues")
         for k, v in enumerate(vals):
-            bar_ax.text(k, 0, f"{v:.2f}", ha="center", va="center", fontsize=7.5)
+            # Perceived brightness of the cell's own colour decides the ink.
+            r, g, b, _ = blues(strip_norm(v))
+            ink = "white" if 0.299 * r + 0.587 * g + 0.114 * b < 0.5 else "#222222"
+            bar_ax.text(k, 0, f"{v:.2f}", ha="center", va="center", fontsize=7.5, color=ink)
 
     return fig
 
