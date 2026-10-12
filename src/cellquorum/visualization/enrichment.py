@@ -1077,6 +1077,7 @@ def enrichment_map(
     cap = max(1.0, max(abs(v) for v in scores))
     norm = Normalize(-cap, cap)
     labels = dict(set_labels or {})
+    drawn_labels: list = []
     for name, score, fdr in zip(names, scores, fdrs, strict=True):
         called = fdr < alpha
         node = ax.scatter(
@@ -1101,6 +1102,23 @@ def enrichment_map(
                 fontsize=6.8,
             )
             text.set_gid("node_label")
+            drawn_labels.append(text)
+    if len(drawn_labels) > 1:
+        # Pathways with shared leading edges sit on top of each other and so do their names; push
+        # the names apart (best effort: without the package they stay where they were put).
+        try:
+            from adjustText import adjust_text
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+            if not hasattr(fig.canvas, "get_renderer"):
+                FigureCanvasAgg(fig)
+            adjust_text(
+                drawn_labels,
+                ax=ax,
+                arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
+            )
+        except Exception:  # noqa: BLE001 -- cosmetic; keep the unrepelled labels
+            pass
     ax.axis("off")
     bar = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap="RdBu_r"), ax=ax, fraction=0.03, pad=0.01, shrink=0.4
