@@ -7,6 +7,7 @@ so a single failed figure never sinks the stage.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import matplotlib
@@ -143,6 +144,7 @@ def plot_ko_shift_field(
     tf: str,
     groups: pd.Series | None = None,
     group_labels: dict[str, str] | None = None,
+    palette: Mapping[str, str] | None = None,
     name: str | None = None,
 ) -> list[Path]:
     """Quiver of per-cell shift vectors on the 2-D embedding, aligned by index intersection.
@@ -154,6 +156,7 @@ def plot_ko_shift_field(
         out_dir: output directory.
         tf: TF name for the title.
         groups: optional per-cell grouping for background coloring.
+        palette: optional {group -> colour}; a group keeps the colour it has on the UMAP.
         group_labels: optional {raw group value -> display name}; drawn at
             each group's median position when both this and groups are set.
         name: output basename (default: f"perturbation_ko_shift_{tf}").
@@ -197,7 +200,11 @@ def plot_ko_shift_field(
             ax.scatter(
                 x[mask],
                 y[mask],
-                c=[figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]],
+                c=[
+                    (palette or {}).get(
+                        cat, figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
+                    )
+                ],
                 s=8,
                 alpha=0.35,
                 edgecolors="none",
@@ -260,6 +267,7 @@ def plot_ko_shift_grid(
     tf: str,
     groups: pd.Series | None = None,
     group_labels: dict[str, str] | None = None,
+    palette: Mapping[str, str] | None = None,
     n_grid: int = 40,
     smooth: float = 0.5,
     n_neighbors: int = 100,
@@ -281,6 +289,7 @@ def plot_ko_shift_grid(
         out_dir: output directory.
         tf: TF name for the title.
         groups: optional per-cell grouping for faint background coloring.
+        palette: optional {group -> colour}; a group keeps the colour it has on the UMAP.
         group_labels: optional {raw group value -> display name}; drawn at
             each group's median position when both this and groups are set.
         n_grid: grid steps per axis.
@@ -364,7 +373,11 @@ def plot_ko_shift_grid(
             ax.scatter(
                 emb[mask, 0],
                 emb[mask, 1],
-                c=[figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]],
+                c=[
+                    (palette or {}).get(
+                        cat, figstyle.CATEGORICAL_PALETTE[i % len(figstyle.CATEGORICAL_PALETTE)]
+                    )
+                ],
                 s=6,
                 alpha=0.3,
                 edgecolors="none",

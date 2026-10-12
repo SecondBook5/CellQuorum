@@ -402,3 +402,27 @@ def test_stale_skip_and_failed_markers_from_an_earlier_attempt_do_not_make_a_goo
     )
     assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
     assert res.metrics["n_tfs_screened"] == 2
+
+
+@requires_parquet()
+def test_the_shift_figures_get_the_umap_palette_for_each_state(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """A state keeps the colour the UMAP figures gave it, so the figures read together."""
+    from cellquorum.stages.gene_regulation.perturbation import celloracle_method as m
+
+    captured = {}
+    real_field = m.pfig.plot_ko_shift_field
+
+    def spy_field(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        captured["palette"] = kwargs.get("palette")
+        return real_field(*args, **kwargs)
+
+    monkeypatch.setattr(m.pfig, "plot_ko_shift_field", spy_field)
+    adata = _adata(condition=True)
+    res = CellOracleMethod()._run(
+        adata,
+        {"launcher": "python", "condition_key": "condition", "healthy_label": "healthy"},
+        _ctx(tmp_path, _fake_success_backend("directional")),
+    )
+    assert not isinstance(res, MethodSkip)
+    assert captured["palette"] is not None
+    assert set(captured["palette"]) == set(adata.obs["cell_type"].astype(str))

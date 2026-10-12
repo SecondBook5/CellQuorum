@@ -161,3 +161,41 @@ def test_grn_connectivity_accepts_degree_schema(tmp_path: Path) -> None:
     paths = pf.plot_grn_connectivity(grn, tmp_path, n_top=15)
     assert sorted(p.suffix for p in paths) == [".pdf", ".png"]
     assert all(p.exists() for p in paths)
+
+
+def _group_inputs(n: int = 60):
+    rng = np.random.default_rng(0)
+    idx = [f"c{i}" for i in range(n)]
+    shift = pd.DataFrame({"d0": rng.random(n), "d1": rng.random(n)}, index=idx)
+    emb = pd.DataFrame({"DIM1": rng.random(n), "DIM2": rng.random(n)}, index=idx)
+    groups = pd.Series(["A", "B", "C"] * (n // 3), index=idx)
+    return shift, emb, groups
+
+
+def _drawn_colours(monkeypatch, tmp_path, function, **kwargs):
+    """Face colour of each group's scatter, read off the figure the function was about to save."""
+    from matplotlib.colors import to_hex
+
+    captured = []
+    monkeypatch.setattr(pf.figstyle, "save_figure", lambda fig, *a, **k: captured.append(fig) or [])
+    shift, emb, groups = _group_inputs()
+    function(shift, emb, tmp_path, tf="PROX1", groups=groups, **kwargs)
+    ax = captured[0].axes[0]
+    return {
+        c.get_label(): to_hex(c.get_facecolor()[0][:3])
+        for c in ax.collections
+        if c.get_label() in "ABC"
+    }
+
+
+def test_shift_field_colours_each_group_as_asked(tmp_path, monkeypatch) -> None:
+    """Real ask: the knock-out figures coloured states differently from every other figure."""
+    palette = {"A": "#112233", "B": "#445566", "C": "#778899"}
+    got = _drawn_colours(monkeypatch, tmp_path, pf.plot_ko_shift_field, palette=palette)
+    assert got == {"A": "#112233", "B": "#445566", "C": "#778899"}
+
+
+def test_shift_grid_colours_each_group_as_asked(tmp_path, monkeypatch) -> None:
+    palette = {"A": "#112233", "B": "#445566", "C": "#778899"}
+    got = _drawn_colours(monkeypatch, tmp_path, pf.plot_ko_shift_grid, palette=palette, n_grid=12)
+    assert got == {"A": "#112233", "B": "#445566", "C": "#778899"}

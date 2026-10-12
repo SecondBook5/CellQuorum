@@ -271,6 +271,16 @@ class CellOracleMethod(AnalysisMethod):
                     except Exception as exc:  # noqa: BLE001 — skip-not-crash
                         warnings.append(f"could not read {shift_pq.name}: {str(exc)[:150]}")
 
+                    def _umap_palette() -> dict[str, str] | None:
+                        """A state keeps the colour the UMAP figures gave it."""
+                        if cluster_key not in adata.obs.columns:
+                            return None
+                        from cellquorum.stages.integration.embeddings.plots import column_palette
+
+                        return column_palette(
+                            np.asarray(adata.obsm[embedding_key])[:, :2], adata.obs[cluster_key]
+                        )
+
                     def _shift_field() -> list[Path] | None:
                         assert shift_df is not None  # only drawn under `if shift_df is not None`
                         emb = pd.DataFrame(
@@ -290,6 +300,7 @@ class CellOracleMethod(AnalysisMethod):
                             tf=top_tf,
                             groups=groups,
                             group_labels=cluster_labels,
+                            palette=_umap_palette(),
                         )
 
                     if shift_df is not None:
@@ -315,6 +326,7 @@ class CellOracleMethod(AnalysisMethod):
                             tf=top_tf,
                             groups=groups_grid,
                             group_labels=cluster_labels,
+                            palette=_umap_palette(),
                         )
 
                     if shift_df is not None:
