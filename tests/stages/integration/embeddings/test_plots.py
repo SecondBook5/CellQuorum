@@ -659,3 +659,73 @@ def test_axis_arrows_stay_in_view_and_clear_of_cells_whatever_the_shape_of_the_b
         corners = np.array([[extent.x0, extent.y0], [extent.x1, extent.y1]])
         assert inside(corners, area).all()  # in view
         assert not inside(cells, extent).any()  # and over no cell
+
+
+def _population_cloud():
+    rng = np.random.default_rng(3)
+    coords = np.vstack(
+        [rng.normal(loc, 0.3, size=(40, 2)) for loc in ([0.0, 0.0], [4.0, 0.0], [0.0, 4.0])]
+    )
+    labels = ["A"] * 40 + ["B"] * 40 + ["C"] * 40
+    return coords, labels, {"A": 0.55, "B": 0.78, "C": 0.64}
+
+
+def test_population_values_draw_one_panel_with_a_labelled_colourbar():
+    coords, labels, values = _population_cloud()
+
+    fig = plots.plot_population_values(
+        coords, labels, values, value_label="Augur AUC", axis_labels=("UMAP1", "UMAP2")
+    )
+
+    assert len(fig.axes) == 2
+    assert fig.axes[1].get_ylabel() == "Augur AUC"
+
+
+def test_every_cell_takes_its_populations_value_and_the_highest_are_drawn_last():
+    coords, labels, values = _population_cloud()
+
+    fig = plots.plot_population_values(
+        coords, labels, values, value_label="Augur AUC", axis_labels=("UMAP1", "UMAP2")
+    )
+
+    cells = next(c for c in fig.axes[0].collections if hasattr(c, "get_clim"))
+    drawn = np.asarray(cells.get_array())
+    assert sorted(drawn.tolist()) == sorted(values[lab] for lab in labels)
+    assert (np.diff(drawn) >= 0).all()
+
+
+def test_the_colour_scale_can_start_at_chance():
+    coords, labels, values = _population_cloud()
+
+    fig = plots.plot_population_values(
+        coords, labels, values, value_label="Augur AUC", axis_labels=("UMAP1", "UMAP2"), vmin=0.5
+    )
+
+    cells = next(c for c in fig.axes[0].collections if hasattr(c, "get_clim"))
+    assert cells.get_clim()[0] == 0.5
+
+
+def test_a_population_without_a_value_is_refused_by_name():
+    coords, labels, values = _population_cloud()
+    del values["C"]
+
+    with pytest.raises(ValueError, match="C"):
+        plots.plot_population_values(
+            coords, labels, values, value_label="Augur AUC", axis_labels=("UMAP1", "UMAP2")
+        )
+
+
+def test_each_population_is_named_with_its_value_and_its_reference():
+    coords, labels, values = _population_cloud()
+
+    fig = plots.plot_population_values(
+        coords,
+        labels,
+        values,
+        value_label="Augur AUC",
+        axis_labels=("UMAP1", "UMAP2"),
+        reference={"A": 0.50, "B": 0.51, "C": 0.49},
+    )
+
+    names = " | ".join(t.get_text() for t in fig.axes[0].texts)
+    assert "B" in names and "0.78" in names and "0.51" in names

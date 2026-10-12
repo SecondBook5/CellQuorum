@@ -9,13 +9,16 @@ House-style figure saving integrated from save.py for the embeddings stage.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import anndata as ad
+import matplotlib
 import numpy as np
 import pandas as pd
 from matplotlib import patheffects
 from matplotlib.axes import Axes
+from matplotlib.colors import Normalize, to_hex
 from matplotlib.figure import Figure
 
 from cellquorum.visualization.figio import figure_artifacts, save_figure
@@ -852,6 +855,82 @@ def plot_score_pooled(
     return fig
 
 
+def plot_population_values(
+    coords: np.ndarray,
+    labels: Sequence[str],
+    values: Mapping[str, float],
+    *,
+    value_label: str,
+    axis_labels: tuple[str, str],
+    reference: Mapping[str, float] | None = None,
+    cmap: str = _SEQUENTIAL_CMAP,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    title: str = "",
+    point_size: float | None = None,
+    view_percentile: tuple[float, float] | None = None,
+) -> Figure:
+    """A UMAP in which every cell takes the value of the population it belongs to.
+
+    For a per-population statistic such as an Augur AUC: the figure shows which populations
+    carry the signal and where they sit. Each population is named with its value and, when
+    ``reference`` is given (for example the permutation null), the reference beside it, so a
+    colour is never read without the number it stands for. A population with no value is an
+    error rather than a quietly different colour. Cells are drawn in ascending value so the
+    strongest populations are never buried.
+    """
+    coords = np.asarray(coords, dtype=float)[:, :2]
+    names = np.asarray([str(x) for x in labels])
+    groups = list(dict.fromkeys(names.tolist()))
+    missing = [g for g in groups if g not in values or not np.isfinite(values[g])]
+    if missing:
+        raise ValueError("no value for population(s): " + ", ".join(missing))
+    per_cell = np.array([values[g] for g in names], dtype=float)
+    lo = per_cell.min() if vmin is None else vmin
+    hi = per_cell.max() if vmax is None else vmax
+    size = _adaptive_point_size(len(per_cell)) if point_size is None else point_size
+
+    fig = Figure(figsize=(7.4, 5.0))
+    ax = fig.add_subplot(111)
+    order = np.argsort(per_cell, kind="mergesort")
+    cells = ax.scatter(
+        coords[order, 0],
+        coords[order, 1],
+        c=per_cell[order],
+        cmap=cmap,
+        s=size,
+        alpha=0.9,
+        linewidths=0,
+        rasterized=True,
+        vmin=lo,
+        vmax=hi,
+    )
+    ax.margins(0.10)
+    _apply_view(ax, coords, view_percentile)
+    _style_axes(ax, axis_labels)
+
+    scale = Normalize(lo, hi)
+    colours = matplotlib.colormaps[cmap]
+    texts = []
+    for group in groups:
+        anchor = _label_anchor(coords[names == group])
+        text = f"{group}\n{values[group]:.2f}"
+        if reference is not None and group in reference:
+            text += f" (null {reference[group]:.2f})"
+        texts.append(
+            _name_label(ax, anchor[0], anchor[1], text, to_hex(colours(scale(values[group]))))
+        )
+    _repel_labels(ax, texts)
+    if title:
+        ax.set_title(title, fontsize=10, color=_TEXT)
+
+    cbar = fig.colorbar(cells, ax=ax, shrink=0.7, aspect=25, pad=0.02)
+    cbar.set_label(value_label, fontsize=8)
+    _lighten_colorbar_outline(cbar)
+    cbar.ax.tick_params(labelsize=8, length=2, width=0.4)
+    return fig
+
+
 def magic_zscore_layer(
     adata: ad.AnnData, *, source_layer: str = "magic", out_layer: str = "magic_z"
 ) -> bool:
@@ -881,6 +960,7 @@ __all__ = [
     "continuous_overlay",
     "figure_artifacts",
     "magic_zscore_layer",
+    "plot_population_values",
     "plot_score_pooled",
     "plot_score_by_condition",
     "save_figure",
