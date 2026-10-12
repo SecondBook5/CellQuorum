@@ -51,18 +51,48 @@ def _style_axes(ax: Axes, axis_labels: tuple[str, str]) -> None:
     span_x, span_y = xlim[1] - xlim[0], ylim[1] - ylim[0]
     # The arrows live in a margin opened below and left of the cells, so a cloud that reaches
     # the corner of its view never has an arrow or an axis name drawn across it.
-    ax.set_xlim(xlim[0] - 0.14 * span_x, xlim[1])
-    ax.set_ylim(ylim[0] - 0.14 * span_y, ylim[1])
-    ax.set_aspect("equal", adjustable="datalim")
-    x0 = xlim[0] - 0.11 * span_x
-    y0 = ylim[0] - 0.11 * span_y
-    dx = span_x * 0.12
-    dy = span_y * 0.12
+    lo_x, hi_x = xlim[0] - 0.14 * span_x, xlim[1]
+    lo_y, hi_y = ylim[0] - 0.14 * span_y, ylim[1]
+    # Fit the limits to the shape of the box ourselves. Leaving that to matplotlib (equal aspect on
+    # fixed limits) makes it throw one of the limits away whenever the box and the cloud differ in
+    # shape, which moves the margin and clips the arrows.
+    box = ax.get_position()
+    fig_w, fig_h = ax.figure.bbox.width, ax.figure.bbox.height
+    box_aspect = (box.height * fig_h) / (box.width * fig_w)
+    need_h = (hi_x - lo_x) * box_aspect
+    if need_h >= hi_y - lo_y:
+        extra = need_h - (hi_y - lo_y)
+        lo_y, hi_y = lo_y - extra / 2, hi_y + extra / 2
+    else:
+        extra = (hi_y - lo_y) / box_aspect - (hi_x - lo_x)
+        lo_x, hi_x = lo_x - extra / 2, hi_x + extra / 2
+    ax.set_xlim(lo_x, hi_x)
+    ax.set_ylim(lo_y, hi_y)
+    ax.set_aspect("equal", adjustable="box")
+    # Positions are fractions of the axes, so the arrows stay in view if the layout changes later.
+    width, height = hi_x - lo_x, hi_y - lo_y
+    x0, y0 = 0.03 * span_x / width, 0.03 * span_y / height
+    dx, dy = 0.12 * span_x / width, 0.12 * span_y / height
     arrow = {"arrowstyle": "-|>", "color": _TEXT, "lw": 1.0}
-    ax.annotate("", xy=(x0 + dx, y0), xytext=(x0, y0), arrowprops=arrow)
-    ax.annotate("", xy=(x0, y0 + dy), xytext=(x0, y0), arrowprops=arrow)
-    ax.text(x0 + dx * 1.1, y0, axis_labels[0], fontsize=7, va="center")
-    ax.text(x0, y0 + dy * 1.1, axis_labels[1], fontsize=7, ha="center", rotation=90)
+    for tip in ((x0 + dx, y0), (x0, y0 + dy)):
+        ax.annotate(
+            "",
+            xy=tip,
+            xytext=(x0, y0),
+            xycoords="axes fraction",
+            arrowprops=arrow,
+            annotation_clip=False,
+        )
+    ax.text(x0 + dx * 1.1, y0, axis_labels[0], fontsize=7, va="center", transform=ax.transAxes)
+    ax.text(
+        x0,
+        y0 + dy * 1.1,
+        axis_labels[1],
+        fontsize=7,
+        ha="center",
+        rotation=90,
+        transform=ax.transAxes,
+    )
 
 
 # PAGA edge color: a mid grey so the connectivity graph reads as a recessive

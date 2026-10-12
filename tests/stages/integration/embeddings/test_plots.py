@@ -1,8 +1,11 @@
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 import scanpy as sc
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+from matplotlib.transforms import Bbox
 
 from cellquorum.stages.integration.embeddings import plots
 from cellquorum.stages.integration.embeddings.plots import figure_artifacts, save_figure
@@ -190,36 +193,6 @@ def test_the_two_panel_figure_is_wider_than_it_is_tall_with_no_blank_bands():
     assert height / width < 0.4
 
 
-def test_the_axis_arrows_and_names_sit_outside_the_cloud_of_cells():
-    a = _score_by_condition_adata()
-    # Cells fill the whole square, corners included, so any arrow drawn inside the
-    # data's extent lands on cells.
-    grid = np.linspace(0.0, 1.0, a.n_obs)
-    a.obsm["X_umap"] = np.column_stack([grid, grid[::-1]]).astype("float32")
-    fig = plots.plot_score_by_condition(
-        a,
-        score=np.random.default_rng(2).random(a.n_obs),
-        score_label="UCell score",
-        cluster_key="fibroblast_subcluster",
-        basis="X_umap",
-        axis_labels=("UMAP1", "UMAP2"),
-        condition_col="condition",
-        case="Lymphedema",
-        control="Normal",
-        show_state_panel=False,
-    )
-    ax = fig.axes[0]
-    xy = np.asarray(a.obsm["X_umap"])[(a.obs["condition"] == "Normal").to_numpy()]
-    names = {t.get_text(): t.get_position() for t in ax.texts}
-    assert names["UMAP1"][1] < xy[:, 1].min()  # its row is below every cell
-    assert names["UMAP2"][0] < xy[:, 0].min()  # its column is left of every cell
-    arrows = [c for c in ax.get_children() if hasattr(c, "xyann")]
-    assert len(arrows) == 2
-    for note in arrows:
-        tail_x, tail_y = note.xyann
-        assert tail_x < xy[:, 0].min() and tail_y < xy[:, 1].min()
-
-
 def _pooled(a, **kw):
     return plots.plot_score_pooled(
         a,
@@ -262,19 +235,6 @@ def test_a_pooled_score_figure_puts_the_highest_scoring_cells_on_top():
     cells = next(c for c in fig.axes[0].collections if hasattr(c, "get_clim"))
     drawn = np.asarray(cells.get_array())
     assert (np.diff(drawn) >= 0).all()
-
-
-def test_pooled_axis_arrows_sit_outside_the_cells():
-    a = _score_by_condition_adata()
-    grid = np.linspace(0.0, 1.0, a.n_obs)
-    a.obsm["X_umap"] = np.column_stack([grid, grid[::-1]]).astype("float32")
-
-    fig = _pooled(a)
-
-    xy = np.asarray(a.obsm["X_umap"])
-    names = {t.get_text(): t.get_position() for t in fig.axes[0].texts}
-    assert names["UMAP1"][1] < xy[:, 1].min()
-    assert names["UMAP2"][0] < xy[:, 0].min()
 
 
 def test_plot_score_by_condition_cluster_labels_rename_state_panel_text():
@@ -646,3 +606,56 @@ def test_the_state_panel_of_a_score_figure_names_clusters_in_white_boxes_too():
         face = label.get_bbox_patch().get_facecolor()
         assert min(face[:3]) > 0.95 and face[3] > 0.8
         assert label.get_path_effects()  # the halo
+
+
+@pytest.mark.parametrize(
+    ("figsize", "axes_box"),
+    [
+        ((9, 4), [0.1, 0.1, 0.8, 0.8]),
+        ((4, 9), [0.1, 0.1, 0.8, 0.8]),
+        ((10, 6.5), [0.05, 0.05, 0.62, 0.85]),
+    ],
+)
+def test_axis_arrows_stay_in_view_and_clear_of_cells_whatever_the_shape_of_the_box(
+    figsize, axes_box
+):
+    """A box shaped unlike the cloud used to make matplotlib clip the arrows."""
+    rng = np.random.default_rng(0)
+    xy = rng.uniform(0.0, 1.0, size=(300, 2))
+    xy[0] = [0.0, 0.0]  # a cell right in the lower-left corner of the cloud
+    fig = Figure(figsize=figsize)
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_axes(axes_box)
+    ax.scatter(xy[:, 0], xy[:, 1])
+    ax.margins(0.10)
+
+    plots._style_axes(ax, ("UMAP1", "UMAP2"))
+    canvas.draw()
+
+    renderer = canvas.get_renderer()
+    area = ax.get_window_extent(renderer)
+    cells = ax.transData.transform(xy)
+
+    def inside(points, region):
+        return (
+            (points[:, 0] >= region.x0 - 1)
+            & (points[:, 0] <= region.x1 + 1)
+            & (points[:, 1] >= region.y0 - 1)
+            & (points[:, 1] <= region.y1 + 1)
+        )
+
+    assert inside(cells, area).all()  # no cell is cropped
+    boxes: list[Bbox] = []
+    for text in ax.texts:
+        arrow = getattr(text, "arrow_patch", None)
+        boxes.append(
+            arrow.get_window_extent(renderer)
+            if arrow is not None
+            else text.get_window_extent(renderer)
+        )
+    assert len(boxes) == 4  # two arrows and two axis names
+    for extent in boxes:
+        assert extent.width + extent.height > 0  # a clipped annotation has no extent at all
+        corners = np.array([[extent.x0, extent.y0], [extent.x1, extent.y1]])
+        assert inside(corners, area).all()  # in view
+        assert not inside(cells, extent).any()  # and over no cell
