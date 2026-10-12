@@ -74,3 +74,16 @@ def test_missing_columns_are_named():
 def test_a_group_without_rows_is_refused_by_name():
     with pytest.raises(ValueError, match="Missing"):
         plot_activity_change(_table(), groups=["Structural", "Missing"], value_label=LABEL)
+
+
+def test_pinned_sources_are_always_shown_even_when_their_change_is_small():
+    fig = plot_activity_change(
+        _table(),
+        groups=["Structural", "CV", "Inflamed"],
+        value_label=LABEL,
+        max_rows=2,
+        pin=["TF3"],
+    )
+
+    rows = {t.get_text() for t in fig.axes[0].get_yticklabels()}
+    assert "TF3" in rows  # weakest source of all, shown because it was asked for

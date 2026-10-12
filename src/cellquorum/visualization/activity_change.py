@@ -36,6 +36,7 @@ def plot_activity_change(
     alpha: float = 0.05,
     min_pairs: int = 3,
     max_rows: int = 28,
+    pin: Sequence[str] = (),
     title: str = "",
 ) -> Figure:
     """Sources x groups heatmap of the change in activity, significant cells outlined.
@@ -44,7 +45,8 @@ def plot_activity_change(
     number of donor pairs behind it. A group with fewer than ``min_pairs`` donor pairs is
     marked ``n<3`` and not coloured: a change measured on two donors is not a result. Every
     source that is significant in some group is kept whatever ``max_rows`` says; the rest of
-    the rows are the largest changes. Columns follow ``groups`` as given.
+    the rows are the largest changes. Sources in ``pin`` are always shown, so the ones a
+    hypothesis names cannot be crowded out. Columns follow ``groups`` as given.
     """
     needed = {source_col, group_col, delta_col, fdr_col, n_col}
     absent = sorted(needed - set(table.columns))
@@ -70,7 +72,8 @@ def plot_activity_change(
     delta_ok = delta.where(enough)
     significant = (fdr < alpha) & enough
 
-    keep_sig = list(significant.index[significant.any(axis=1)])
+    pinned = [s for s in pin if s in set(delta_ok.index)]
+    keep_sig = list(dict.fromkeys(pinned + list(significant.index[significant.any(axis=1)])))
     strongest = delta_ok.abs().max(axis=1).sort_values(ascending=False, kind="mergesort")
     rest = [s for s in strongest.index if s not in set(keep_sig) and np.isfinite(strongest[s])]
     keep = keep_sig + rest[: max(0, max_rows - len(keep_sig))]
