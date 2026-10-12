@@ -87,7 +87,8 @@ def plot_activity_change(
     norm = TwoSlopeNorm(vcenter=0.0, vmin=-vmax, vmax=vmax)
 
     fig, ax = plt.subplots(figsize=(max(3.6, 1.15 * len(groups) + 3.0), 0.3 * len(order) + 1.6))
-    image = ax.imshow(np.ma.masked_invalid(values), cmap="RdBu_r", norm=norm, aspect="auto")
+    cmap = plt.get_cmap("RdBu_r")
+    image = ax.imshow(np.ma.masked_invalid(values), cmap=cmap, norm=norm, aspect="auto")
     sig_shown = significant.loc[order].to_numpy()
     for i in range(len(order)):
         for j in range(len(groups)):
@@ -95,7 +96,8 @@ def plot_activity_change(
             if not np.isfinite(value):
                 ax.text(j, i, f"n<{min_pairs}", ha="center", va="center", fontsize=7, color=_MUTED)
                 continue
-            strong = abs(value) > 0.65 * vmax
+            red, green, blue = cmap(norm(value))[:3]
+            dark_cell = 0.2126 * red + 0.7152 * green + 0.0722 * blue < 0.5
             ax.text(
                 j,
                 i,
@@ -104,7 +106,7 @@ def plot_activity_change(
                 va="center",
                 fontsize=8,
                 fontweight="bold" if sig_shown[i, j] else "normal",
-                color="white" if strong else (_DARK if sig_shown[i, j] else "0.45"),
+                color="white" if dark_cell else _DARK,
             )
             if sig_shown[i, j]:
                 ax.add_patch(

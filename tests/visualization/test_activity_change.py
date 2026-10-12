@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import matplotlib
+import numpy as np
 import pandas as pd
 import pytest
 from matplotlib.patches import Rectangle
@@ -87,3 +88,25 @@ def test_pinned_sources_are_always_shown_even_when_their_change_is_small():
 
     rows = {t.get_text() for t in fig.axes[0].get_yticklabels()}
     assert "TF3" in rows  # weakest source of all, shown because it was asked for
+
+
+def test_every_value_is_legible_against_its_own_cell():
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import to_rgb
+
+    fig = plot_activity_change(_table(), groups=["Structural", "CV", "Inflamed"], value_label=LABEL)
+
+    ax = fig.axes[0]
+    image = ax.images[0]
+    cmap, norm = image.get_cmap(), image.norm
+    data = np.ma.getdata(image.get_array())
+    labels = [t for t in ax.texts if t.get_text() != "n<3"]
+    assert labels
+    for text in labels:
+        column, row = int(round(text.get_position()[0])), int(round(text.get_position()[1]))
+        r, g, b = cmap(norm(data[row, column]))[:3]
+        background = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        r2, g2, b2 = to_rgb(text.get_color())
+        foreground = 0.2126 * r2 + 0.7152 * g2 + 0.0722 * b2
+        assert abs(foreground - background) > 0.45, (text.get_text(), foreground, background)
+    plt.close("all")
