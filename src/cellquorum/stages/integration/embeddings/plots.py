@@ -873,11 +873,11 @@ def plot_population_values(
     """A UMAP in which every cell takes the value of the population it belongs to.
 
     For a per-population statistic such as an Augur AUC: the figure shows which populations
-    carry the signal and where they sit. Each population is named with its value and, when
-    ``reference`` is given (for example the permutation null), the reference beside it, so a
-    colour is never read without the number it stands for. A population with no value is an
-    error rather than a quietly different colour. Cells are drawn in ascending value so the
-    strongest populations are never buried.
+    carry the signal and where they sit. Each population is named with its value, and when
+    ``reference`` is given (for example the permutation null) the title states the range of
+    the reference, so a colour is never read without the numbers it stands for. A population
+    with no value is an error rather than a quietly different colour. Cells are drawn in
+    ascending value so the strongest populations are never buried.
     """
     coords = np.asarray(coords, dtype=float)[:, :2]
     names = np.asarray([str(x) for x in labels])
@@ -914,15 +914,17 @@ def plot_population_values(
     texts = []
     for group in groups:
         anchor = _label_anchor(coords[names == group])
-        text = f"{group}\n{values[group]:.2f}"
-        if reference is not None and group in reference:
-            text += f" (null {reference[group]:.2f})"
+        text = f"{group} {values[group]:.2f}"
         texts.append(
             _name_label(ax, anchor[0], anchor[1], text, to_hex(colours(scale(values[group]))))
         )
     _repel_labels(ax, texts)
-    if title:
-        ax.set_title(title, fontsize=10, color=_TEXT)
+    heading = title
+    if reference:
+        low, high = min(reference.values()), max(reference.values())
+        heading += ("\n" if heading else "") + f"reference {low:.2f} to {high:.2f}"
+    if heading:
+        ax.set_title(heading, fontsize=10, color=_TEXT)
 
     cbar = fig.colorbar(cells, ax=ax, shrink=0.7, aspect=25, pad=0.02)
     cbar.set_label(value_label, fontsize=8)

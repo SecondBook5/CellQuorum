@@ -715,7 +715,7 @@ def test_a_population_without_a_value_is_refused_by_name():
         )
 
 
-def test_each_population_is_named_with_its_value_and_its_reference():
+def test_each_population_is_named_with_its_value_and_the_reference_range_is_in_the_title():
     coords, labels, values = _population_cloud()
 
     fig = plots.plot_population_values(
@@ -724,8 +724,11 @@ def test_each_population_is_named_with_its_value_and_its_reference():
         values,
         value_label="Augur AUC",
         axis_labels=("UMAP1", "UMAP2"),
+        title="Augur by cell type",
         reference={"A": 0.50, "B": 0.51, "C": 0.49},
     )
 
-    names = " | ".join(t.get_text() for t in fig.axes[0].texts)
-    assert "B" in names and "0.78" in names and "0.51" in names
+    names = [t.get_text() for t in fig.axes[0].texts]
+    assert "B 0.78" in names  # one short line per population, so the names do not collide
+    title = fig.axes[0].get_title()
+    assert "Augur by cell type" in title and "0.49" in title and "0.51" in title
