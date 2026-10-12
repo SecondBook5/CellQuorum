@@ -31,6 +31,7 @@ def pseudobulk_pca(
     pair_col: str | None = None,
     n_top: int = 2000,
     condition_colors: dict[str, str] | None = None,
+    group_order: list[str] | None = None,
 ) -> Figure:
     """PCA of samples on the ``n_top`` most variable genes.
 
@@ -42,7 +43,9 @@ def pseudobulk_pca(
         pair_col: Samples sharing a value in the same group are joined when both conditions are
             present (the donor). ``None`` draws no joins.
         n_top: Most variable genes the components are computed on.
-        condition_colors: Optional colour per condition level.
+        condition_colors: Optional colour per condition level; its key order is the order of the
+            conditions in the legend (levels it does not name follow, in the order they appear).
+        group_order: Optional order of the groups (marker shapes) in the legend.
 
     Raises:
         ValueError: With fewer than three samples.
@@ -59,12 +62,18 @@ def pseudobulk_pca(
     scores = u * s
     explained = 100 * s**2 / (s**2).sum()
     meta = meta.loc[expression.index]
-    conditions = list(dict.fromkeys(meta[condition_col].astype(str)))
+    present = list(dict.fromkeys(meta[condition_col].astype(str)))
+    conditions = [c for c in (condition_colors or {}) if c in present] + [
+        c for c in present if c not in (condition_colors or {})
+    ]
     palette = {
         c: (condition_colors or {}).get(c, plt.get_cmap("tab10")(i))
         for i, c in enumerate(conditions)
     }
-    groups = list(dict.fromkeys(meta[group_col].astype(str))) if group_col else [""]
+    seen = list(dict.fromkeys(meta[group_col].astype(str))) if group_col else [""]
+    groups = [g for g in (group_order or []) if g in seen] + [
+        g for g in seen if g not in (group_order or [])
+    ]
     shapes = {g: _MARKERS[i % len(_MARKERS)] for i, g in enumerate(groups)}
     fig, ax = plt.subplots(figsize=(5.0, 4.0))
     cond = meta[condition_col].astype(str).to_numpy()

@@ -90,3 +90,25 @@ def test_fewer_than_three_samples_is_an_error() -> None:
     expression, meta = _data(n_donors=1)
     with pytest.raises(ValueError, match="at least three"):
         _draw(expression, meta)
+
+
+def _legend_labels(fig):
+    return [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+
+
+def test_legend_follows_the_order_of_the_colours_and_states_asked_for() -> None:
+    """Real ask: every figure puts Normal first and lymphedema second; the legend listed the levels
+    in the order the samples happened to appear (Lymphedema first on the LEC pseudobulk)."""
+    expression, meta = _data()
+    meta = meta.iloc[::-1]  # lymphedema samples first, as in a table sorted by sample name
+    meta["state"] = ["B", "A"] * (len(meta) // 2)
+    expression = expression.loc[meta.index]
+    fig = _draw(
+        expression,
+        meta,
+        condition_colors={"Normal": "#24608F", "Lymphedema": "#C41E3A"},
+        group_order=["A", "B"],
+    )
+    labels = _legend_labels(fig)
+    assert labels.index("A") < labels.index("B")
+    assert labels.index("Normal") < labels.index("Lymphedema")
