@@ -179,3 +179,19 @@ def test_signed_ribbons_stay_red_and_blue_whatever_the_ribbon_colour_setting() -
     ribbons = _ribbons(fig)
     assert _fill(ribbons["ribbon|CXCL12>ACKR3|LEC"]) != "#4b83c4"
     assert _fill(ribbons["ribbon|VEGFC>FLT4|LEC"]) != "#d2a91a"
+
+
+def test_a_title_and_a_key_note_can_be_drawn_on_the_chord() -> None:
+    """Real defect: a chord of the change in signalling said nothing of what red, blue and ribbon
+    width meant or which condition it showed; the function cannot know, so the caller says."""
+    fig = _chord(title="Lymphedema minus Normal", note="Red: higher in lymphedema")
+    ax = fig.axes[0]
+    assert ax.get_title(loc="left") == "Lymphedema minus Normal"
+    notes = [t.get_text() for t in ax.texts if t.get_gid() == "note"]
+    assert notes == ["Red: higher in lymphedema"]
+
+
+def test_no_title_or_note_is_drawn_unless_given() -> None:
+    ax = _chord().axes[0]
+    assert ax.get_title(loc="left") == ""
+    assert not [t for t in ax.texts if t.get_gid() == "note"]
