@@ -121,3 +121,34 @@ def test_group_names_of_neighbouring_small_sectors_do_not_sit_on_each_other() ->
     pts = np.array([t.get_position() for t in fig.axes[0].texts if t.get_gid() == "group_label"])
     gaps = [float(np.hypot(*(pts[i] - pts[j]))) for i in range(len(pts)) for j in range(i)]
     assert min(gaps) > 0.12
+
+
+def _overlaps(fig, first_gid, other_gids):
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    texts = fig.axes[0].texts
+    firsts = [t for t in texts if t.get_gid() == first_gid]
+    others = [t for t in texts if t.get_gid() in other_gids]
+    return [
+        (a.get_text(), b.get_text())
+        for a in firsts
+        for b in others
+        if a is not b and a.get_window_extent(renderer).overlaps(b.get_window_extent(renderer))
+    ]
+
+
+def test_a_group_name_is_not_drawn_on_top_of_the_ligand_names_around_it() -> None:
+    """Real defect on the lymphedema LEC chord: with several senders each carrying one short
+    ligand, the sender names (a fixed distance out) ran into the radial ligand names."""
+    senders = ["Fibroblast", "T cells", "Macrophages", "DC", "Mast cells", "Melanocytes", "BEC"]
+    ligands = ["COL6A3", "TGFB1", "COL3A1", "TGFB1", "HMGB1", "HMGB1", "HMGB1"]
+    rows = [
+        (s, lig, "LEC", f"R{i}", 1.0 if i < 2 else 0.15, True)
+        for i, (s, lig) in enumerate(zip(senders, ligands, strict=True))
+    ]
+    edges = pd.DataFrame(
+        rows, columns=["sender", "ligand", "receiver", "receptor", "weight", "significant"]
+    )
+    fig = ligand_receptor_chord(edges, sender_palette={}, receiver_palette={})
+    clashes = _overlaps(fig, "group_label", {"ligand_label", "receptor_label", "group_label"})
+    assert clashes == []

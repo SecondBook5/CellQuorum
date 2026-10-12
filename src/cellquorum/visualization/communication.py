@@ -1263,7 +1263,8 @@ def ligand_receptor_chord(
 
     lig_mid = _spread([sum(lig_ang[k]) / 2 for k in lig_keys])
     rec_mid = _spread([sum(rec_ang[k]) / 2 for k in rec_keys])
-    for (_, name), t in zip(lig_keys, lig_mid, strict=True):
+    label_texts: dict[tuple[str, str], list[tuple[float, object]]] = {}
+    for (group, name), t in zip(lig_keys, lig_mid, strict=True):
         colour = marks.get(name, INK)
         lab = ax.text(
             *_pt(1.06, t),
@@ -1277,7 +1278,8 @@ def ligand_receptor_chord(
             rotation_mode="anchor",
         )
         lab.set_gid("ligand_label")
-    for (_, name), t in zip(rec_keys, rec_mid, strict=True):
+        label_texts.setdefault(("L", group), []).append((t, lab))
+    for (group, name), t in zip(rec_keys, rec_mid, strict=True):
         lab = ax.text(
             *_pt(1.06, t),
             name,
@@ -1289,6 +1291,26 @@ def ligand_receptor_chord(
             rotation_mode="anchor",
         )
         lab.set_gid("receptor_label")
+        label_texts.setdefault(("R", group), []).append((t, lab))
+
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    renderer = (
+        fig.canvas.get_renderer()
+        if hasattr(fig.canvas, "get_renderer")
+        else FigureCanvasAgg(fig).get_renderer()
+    )
+
+    def _outer_radius(texts: list) -> float:
+        """How far from the centre a group's own molecule names reach, measured on the page."""
+        ax.apply_aspect()
+        radius = 0.0
+        for lab in texts:
+            box = lab.get_window_extent(renderer).transformed(ax.transData.inverted())
+            for x in (box.x0, box.x1):
+                for y in (box.y0, box.y1):
+                    radius = max(radius, float(np.hypot(x, y)))
+        return radius
 
     def _group_arc(
         keys: list[tuple[str, str]],
@@ -1316,8 +1338,12 @@ def ligand_receptor_chord(
         # are spread along the arc (a leader line would be the next step if it ever matters).
         mids = _spread([(lows[g] + highs[g]) / 2 for g in groups], min_gap=0.24)
         for g, t in zip(groups, mids, strict=True):
+            # Beyond the molecule names of its own sector that lie near it on the circle, so the
+            # two never overlap; a long name far away along the arc does not push it out.
+            near = [lab for a, lab in label_texts.get((side, g), []) if abs(a - t) < 0.3]
+            reach = max(1.36, _outer_radius(near) + 0.07)
             lab = ax.text(
-                *_pt(1.36, t),
+                *_pt(reach, t),
                 g,
                 ha="right" if side == "L" else "left",
                 va="center",
@@ -1329,6 +1355,16 @@ def ligand_receptor_chord(
 
     _group_arc(lig_keys, lig_ang, sender_palette, "L")
     _group_arc(rec_keys, rec_ang, receiver_palette, "R")
+    # Widen the frame to whatever the names now reach, so none is cut off.
+    ax.apply_aspect()
+    x_lo, x_hi = ax.get_xlim()
+    y_lo, y_hi = ax.get_ylim()
+    for lab in ax.texts:
+        box = lab.get_window_extent(renderer).transformed(ax.transData.inverted())
+        x_lo, x_hi = min(x_lo, box.x0 - 0.05), max(x_hi, box.x1 + 0.05)
+        y_lo, y_hi = min(y_lo, box.y0 - 0.05), max(y_hi, box.y1 + 0.05)
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(y_lo, y_hi)
     return fig
 
 
