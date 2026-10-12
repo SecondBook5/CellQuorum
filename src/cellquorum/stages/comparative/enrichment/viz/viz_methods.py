@@ -141,6 +141,12 @@ class GseaVizMethod(AnalysisMethod):
         dpi = int(config.get("dpi", 300))
         top_k = int(config.get("top_k", 12))
         wanted = config.get("collections")
+        design = getattr(getattr(context, "config", None), "design", None)
+        case = config.get("case") or getattr(design, "case", None)
+        control = config.get("control") or getattr(design, "control", None)
+        score_label = "Normalised enrichment score"
+        if case and control:
+            score_label += f" (> {case}, < {control})"
 
         # Discover summary CSVs, excluding the runningES companion files.
         all_cols = collections_from_glob(results_dir, "enrichment_gsea_")
@@ -165,7 +171,12 @@ class GseaVizMethod(AnalysisMethod):
             # Figure 1: diverging NES bar.
             try:
                 ax = plots.diverging_bar(
-                    df, value_col="score", label_col="source", pvalue_col="padj", top_k=top_k
+                    df,
+                    value_col="score",
+                    label_col="source",
+                    pvalue_col="padj",
+                    top_k=top_k,
+                    value_label=score_label,
                 )
                 paths = save_figure(
                     cast("Figure", ax.figure),
@@ -186,7 +197,12 @@ class GseaVizMethod(AnalysisMethod):
             # Figure 2: activity dotplot.
             try:
                 ax = plots.activity_dotplot(
-                    df, value_col="score", label_col="source", pvalue_col="padj", top_k=top_k
+                    df,
+                    value_col="score",
+                    label_col="source",
+                    pvalue_col="padj",
+                    top_k=top_k,
+                    value_label=score_label,
                 )
                 paths = save_figure(
                     cast("Figure", ax.figure),

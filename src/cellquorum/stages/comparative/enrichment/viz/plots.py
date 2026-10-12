@@ -108,8 +108,13 @@ def diverging_bar(
     pvalue_col: str | None = None,
     top_k: int = 12,
     ax: Axes | None = None,
+    value_label: str | None = None,
 ) -> Axes:
-    """Horizontal diverging bars colored by signed value (RdBu_r, center 0)."""
+    """Horizontal diverging bars colored by signed value (RdBu_r, center 0).
+
+    ``value_label`` names the quantity and the direction of its sign on the axis and the
+    colourbar; without it the column name is all a reader gets.
+    """
     sel = select_top_bottom(df, value_col, top_k)
     if ax is None:
         _, ax = plt.subplots(figsize=(6, max(3, 0.35 * len(sel))))
@@ -122,8 +127,16 @@ def diverging_bar(
     ax.set_yticks(y)
     ax.set_yticklabels([_wrap_label(s) for s in sel[label_col].astype(str)])
     ax.axvline(0, color="0.4", linestyle="--", linewidth=0.8)
-    ax.set_xlabel(value_col)
+    ax.set_xlabel(value_label or value_col)
     if pvalue_col is not None and pvalue_col in sel.columns:
+        ax.figure.text(
+            0.01,
+            0.005,
+            "* padj < 0.05   ** padj < 0.01   *** padj < 0.001   **** padj < 0.0001",
+            fontsize=7,
+            color="0.35",
+            va="bottom",
+        )
         for yi, (val, p) in enumerate(
             zip(values, sel[pvalue_col].to_numpy(dtype=float), strict=False)
         ):
@@ -140,7 +153,7 @@ def diverging_bar(
                     fontsize=8,
                 )
     ScalarMappable(norm=norm, cmap=cmap).set_array([])
-    ax.figure.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=value_col)
+    ax.figure.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=value_label or value_col)
     return ax
 
 
@@ -152,6 +165,7 @@ def activity_dotplot(
     pvalue_col: str,
     top_k: int = 12,
     ax: Axes | None = None,
+    value_label: str | None = None,
 ) -> Axes:
     """One source per row: x=value, color=signed value, dot area=-log10(padj)."""
     sel = select_top_bottom(df, value_col, top_k)
@@ -166,8 +180,8 @@ def activity_dotplot(
     ax.set_yticks(y)
     ax.set_yticklabels([_wrap_label(s) for s in sel[label_col].astype(str)])
     ax.axvline(0, color="0.4", linestyle="--", linewidth=0.8)
-    ax.set_xlabel(value_col)
-    ax.figure.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=value_col)
+    ax.set_xlabel(value_label or value_col)
+    ax.figure.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=value_label or value_col)
     _add_size_legend(ax)
     return ax
 

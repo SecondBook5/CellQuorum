@@ -78,3 +78,32 @@ def test_gsea_viz_malformed_csv_skips_instead_of_crash(tmp_path):
     out = GseaVizMethod()._run(ctx.adata, {}, ctx)
     assert isinstance(out, MethodSkip)
     assert any("failed to read" in str(w) for w in out.details.get("warnings", []))
+
+
+def test_gsea_figures_name_the_score_and_the_direction_of_its_sign(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from cellquorum.stages.comparative.enrichment.viz import plots
+
+    paths = PipelinePaths.from_output_dir(tmp_path)
+    paths.ensure_directories()
+    ctx = PipelineContext(
+        config=SimpleNamespace(design=SimpleNamespace(case="Lymphedema", control="Normal")),
+        paths=paths,
+        manifest=None,
+        adata=ad.AnnData(np.ones((3, 2))),
+    )
+    _write_gsea_csv(ctx.paths, "hallmark")
+    seen = {}
+    real = plots.diverging_bar
+
+    def spy(*args, **kwargs):
+        seen["label"] = kwargs.get("value_label")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(plots, "diverging_bar", spy)
+
+    GseaVizMethod()._run(ctx.adata, {"figure_formats": ["png"]}, ctx)
+
+    assert "Normalised enrichment score" in seen["label"]
+    assert "Lymphedema" in seen["label"] and "Normal" in seen["label"]

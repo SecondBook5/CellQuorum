@@ -671,3 +671,57 @@ def test_annotated_clustermap_figsize_is_capped_for_a_large_matrix():
     height_in = grid.fig.get_size_inches()[1]
     assert height_in <= 20.0
     plt.close("all")
+
+
+def _scored():
+    return pd.DataFrame(
+        {
+            "source": [f"S{i}" for i in range(6)],
+            "score": [3, -2, 1, -4, 5, -0.5],
+            "padj": [1e-5, 0.2, 0.03, 1e-3, 1e-6, 0.5],
+        }
+    )
+
+
+def test_diverging_bar_names_the_quantity_on_its_axis_and_its_colourbar():
+    label = "Normalised enrichment score (> Lymphedema, < Normal)"
+
+    ax = plots.diverging_bar(
+        _scored(),
+        value_col="score",
+        label_col="source",
+        pvalue_col="padj",
+        top_k=3,
+        value_label=label,
+    )
+
+    assert ax.get_xlabel() == label
+    assert any(a.get_ylabel() == label for a in ax.figure.axes)
+    plt.close("all")
+
+
+def test_diverging_bar_says_what_the_asterisks_mean():
+    ax = plots.diverging_bar(
+        _scored(), value_col="score", label_col="source", pvalue_col="padj", top_k=3
+    )
+
+    words = " ".join(t.get_text() for t in ax.figure.texts)
+    assert "padj" in words and "***" in words
+    plt.close("all")
+
+
+def test_activity_dotplot_names_the_quantity_on_its_axis_and_its_colourbar():
+    label = "Normalised enrichment score (> Lymphedema, < Normal)"
+
+    ax = plots.activity_dotplot(
+        _scored(),
+        value_col="score",
+        label_col="source",
+        pvalue_col="padj",
+        top_k=3,
+        value_label=label,
+    )
+
+    assert ax.get_xlabel() == label
+    assert any(a.get_ylabel() == label for a in ax.figure.axes)
+    plt.close("all")
