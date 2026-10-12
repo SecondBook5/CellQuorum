@@ -157,6 +157,12 @@ class VelocityVizMethod(AnalysisMethod):
             return self._skip("no categorical obs column with 2+ levels to colour velocity by")
 
         basis = str(config.get("basis", "umap"))
+        # A state keeps the colour the UMAP gave it, so one run reads as one set of figures.
+        palette = None
+        if f"X_{basis}" in sub.obsm:
+            from cellquorum.stages.integration.embeddings.plots import column_palette
+
+            palette = column_palette(np.asarray(sub.obsm[f"X_{basis}"])[:, :2], sub.obs[group_key])
         artifacts, warnings, n = [], [], 0
         try:
             fig = velocity_viz.velocity_stream_figure(
@@ -165,6 +171,7 @@ class VelocityVizMethod(AnalysisMethod):
                 basis=basis,
                 title=config.get("title") or f"RNA velocity ({sub.n_obs:,} cells)",
                 group_labels=config.get("fate_labels"),
+                palette=palette,
             )
             paths = _helpers.save_figure(
                 fig, figures_dir, "velocity_stream", formats=formats, dpi=dpi
@@ -186,6 +193,7 @@ class VelocityVizMethod(AnalysisMethod):
                 group_key=group_key,
                 basis=basis,
                 title="velocity diagnostics (read before trusting arrow directions)",
+                palette=palette,
             )
             if diagnostics is not None:
                 paths = _helpers.save_figure(

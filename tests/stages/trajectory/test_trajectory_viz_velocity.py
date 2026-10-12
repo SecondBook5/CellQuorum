@@ -72,3 +72,36 @@ def test_resolves_group_key_from_cluster_key_not_the_generic_fallback(tmp_path, 
     assert isinstance(out, StageResult)
     assert captured["group_key"] == "fibroblast_subcluster"
     assert captured["group_labels"] == {"0": "Papillary", "1": "Mechanosensory"}
+
+
+@requires("scvelo")
+def test_velocity_states_take_the_colours_the_umap_gives_them(tmp_path, monkeypatch):
+    """One run colours a state one way: the velocity stream follows the UMAP palette."""
+    from cellquorum.stages.integration.embeddings.plots import column_palette
+
+    n = 200
+    rng = np.random.default_rng(0)
+    theta = rng.uniform(0.0, 2.0 * np.pi, n)
+    xy = np.c_[6 * np.cos(theta), 6 * np.sin(theta)].astype(np.float32)
+    adata = ad.AnnData(X=np.zeros((n, 2), dtype=np.float32))
+    adata.obsm["X_umap"] = xy
+    adata.obsm["velocity_umap"] = np.c_[-np.sin(theta), np.cos(theta)].astype(np.float32)
+    adata.obs["state"] = pd.Categorical([str(i % 3) for i in range(n)])
+    vel_dir = tmp_path / "trajectory" / "velocity"
+    vel_dir.mkdir(parents=True)
+    adata.write_h5ad(vel_dir / "whole_object.h5ad")
+
+    import cellquorum.visualization.velocity as velocity_viz
+
+    real_figure = velocity_viz.velocity_stream_figure
+    seen = {}
+
+    def _spy(sub, **kwargs):
+        seen["palette"] = kwargs.get("palette")
+        return real_figure(sub, **kwargs)
+
+    monkeypatch.setattr(velocity_viz, "velocity_stream_figure", _spy)
+
+    VelocityVizMethod()._run(ad.AnnData(np.zeros((2, 2))), {"cluster_key": "state"}, _Ctx(tmp_path))
+
+    assert seen["palette"] == column_palette(xy, adata.obs["state"])
