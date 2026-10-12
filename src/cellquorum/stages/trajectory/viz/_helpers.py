@@ -277,11 +277,19 @@ def coarse_transition_heatmap(
     # Caption and stationary strip sit BELOW the rotated x-tick labels, at
     # fixed inch offsets from the figure's bottom edge (not the ax's), so
     # they never collide with those labels regardless of n.
+    caption = (
+        "grey diagonal = probability of staying in the same macrostate; near 1.0 means the\n"
+        "macrostates are stable and well-separated. Color covers only cross-state flow."
+    )
+    if (mat < 0).any():
+        caption += (
+            "\nSmall negative entries come from the coarse-graining projection;\n"
+            "they are not probabilities and read as zero."
+        )
     fig.text(
         0.5,
         0.62 / fig_h,
-        "grey diagonal = probability of staying in the same macrostate; near 1.0 means the\n"
-        "macrostates are stable and well-separated. Color covers only cross-state flow.",
+        caption,
         transform=fig.transFigure,
         ha="center",
         va="center",

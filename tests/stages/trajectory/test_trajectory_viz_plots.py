@@ -91,6 +91,24 @@ def test_coarse_transition_stationary_text_reads_on_its_own_cell_colour():
     assert colour["0.15"] != "white"
 
 
+def _caption(fig):
+    return " ".join(t.get_text() for t in fig.texts)
+
+
+def test_coarse_transition_caption_explains_negative_entries_only_when_present():
+    """Real defect: the coarse-graining projection can leave small negative
+    entries (-0.02 on the lymphedema LEC run), printed as if they were
+    probabilities and clipped to zero by the colour scale. The figure must say
+    what they are; a matrix without any must not carry the note.
+    """
+    mat, stationary = _coarse_T()
+    assert "negative" not in _caption(plots.coarse_transition_heatmap(mat, stationary))
+    mat.iloc[0, 2] = -0.02
+    caption = _caption(plots.coarse_transition_heatmap(mat, stationary))
+    assert "negative" in caption
+    assert "not probabilities" in caption
+
+
 def test_off_diagonal_vmax_ignores_the_diagonal():
     """Real complaint: a shared 0-1 color scale across BOTH the near-1.0
     diagonal (expected, uninformative -- well-separated macrostates mostly
