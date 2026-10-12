@@ -165,6 +165,7 @@ def transport_displacement(
     import matplotlib.pyplot as plt
     import numpy as np
     from matplotlib.collections import LineCollection
+    from matplotlib.lines import Line2D
 
     apply_theme("compact")
     if plan.shape != (len(source_xy), len(target_xy)):
@@ -202,6 +203,15 @@ def transport_displacement(
         arrows.set_color(_INK)
         arrows.set_alpha(0.5)
     ax.add_collection(arrows)
+    ax.legend(
+        handles=[
+            Line2D([0], [0], marker="o", linestyle="", color=_NORMAL, label="Normal cells"),
+            Line2D([0], [0], marker="o", linestyle="", color=_ACCENT, label="Lymphedema cells"),
+        ],
+        loc="upper left",
+        fontsize=8,
+        frameon=False,
+    )
     ax.autoscale_view()
     ax.set_xticks([])
     ax.set_yticks([])
