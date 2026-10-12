@@ -247,12 +247,21 @@ class TensorCell2CellMethod(AnalysisMethod):
         elbow_selected = False
         try:
             if rank is None:
-                tensor.elbow_rank_selection(
-                    upper_rank=min(10, max(2, n_samples)),
-                    random_state=seed,
-                    automatic_elbow=True,
-                    output_fig=False,
-                )
+                try:
+                    tensor.elbow_rank_selection(
+                        upper_rank=min(10, max(2, n_samples)),
+                        random_state=seed,
+                        automatic_elbow=True,
+                        output_fig=False,
+                    )
+                except TypeError as exc:
+                    # cell2cell returns no elbow for a loss curve without a knee and then calls
+                    # int(None); naming the cause beats a bare "factorization failed".
+                    return self._skip(
+                        "the automatic elbow found no knee in the rank-selection loss curve; "
+                        "set `rank` explicitly in the communication config",
+                        error=str(exc)[:300],
+                    )
                 rank = tensor.rank or 2
                 elbow_selected = True
             tensor.compute_tensor_factorization(
@@ -262,7 +271,7 @@ class TensorCell2CellMethod(AnalysisMethod):
                 tf_type="non_negative_cp",
             )
         except Exception as exc:
-            return self._skip("factorization failed", error=str(exc)[:300])
+            return self._skip(f"factorization failed: {str(exc)[:200]}", error=str(exc)[:300])
 
         factors = tensor.factors  # OrderedDict keyed by dimension label
         loadings: OrderedDict = OrderedDict()

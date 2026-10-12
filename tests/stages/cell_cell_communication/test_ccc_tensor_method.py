@@ -110,3 +110,36 @@ def test_tensor_skips_below_min_samples(tmp_path):
     result = TensorCell2CellMethod().run(a, _config(), _Ctx(tmp_path))
     assert isinstance(result, MethodSkip)
     assert "sample" in result.reason.lower()
+
+
+def _patch_tensor(monkeypatch, name, exc):
+    from cell2cell.tensor import tensor as c2c_tensor
+
+    def _raise(self, *args, **kwargs):
+        raise exc
+
+    monkeypatch.setattr(c2c_tensor.BaseTensor, name, _raise)
+
+
+def test_tensor_skip_says_so_when_the_elbow_finds_no_knee(tmp_path, monkeypatch):
+    """Real failure on Dr. Mehrara's lymphedema atlas: cell2cell's automatic elbow returned None for
+    a loss curve with no knee and the method reported only 'factorization failed', with the cause
+    dropped. The reason must name the missing elbow and say what to set."""
+    _patch_tensor(
+        monkeypatch,
+        "elbow_rank_selection",
+        TypeError("int() argument must be a real number, not 'NoneType'"),
+    )
+    result = TensorCell2CellMethod().run(
+        _adata_with_liana_res(), _config(rank=None), _Ctx(tmp_path)
+    )
+    assert isinstance(result, MethodSkip)
+    assert "elbow" in result.reason
+    assert "rank" in result.reason
+
+
+def test_tensor_skip_carries_the_factorization_error_text(tmp_path, monkeypatch):
+    _patch_tensor(monkeypatch, "compute_tensor_factorization", RuntimeError("CUDA out of memory"))
+    result = TensorCell2CellMethod().run(_adata_with_liana_res(), _config(rank=2), _Ctx(tmp_path))
+    assert isinstance(result, MethodSkip)
+    assert "CUDA out of memory" in result.reason
