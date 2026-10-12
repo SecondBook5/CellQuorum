@@ -144,7 +144,7 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
             if nes.empty:
                 reasons.append(f"{collection}: no gene set is significant at padj < {alpha:g}")
                 continue
-            footnote = self._footnote(results_dir, table, labels)
+            footnote = self._footnote(results_dir, table, labels, group_label)
             nes.to_csv(scratch / f"nes_{collection}.csv")
             padj.to_csv(scratch / f"nes_padj_{collection}.csv")
             n_cells_csv = self._write_cell_counts(
@@ -238,8 +238,13 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
         return str(path)
 
     @staticmethod
-    def _footnote(results_dir: Path, table: pd.DataFrame, labels: Mapping[str, str]) -> str:
-        """Name the cell types the DE ran on but GSEA could not score, so no column vanishes."""
+    def _footnote(
+        results_dir: Path,
+        table: pd.DataFrame,
+        labels: Mapping[str, str],
+        group_label: str = "cell type",
+    ) -> str:
+        """Name the columns the DE ran on but GSEA could not score, so none vanishes."""
         de_path = results_dir / _DE_BY_GROUP_CSV
         if not de_path.exists():
             return ""
@@ -248,7 +253,8 @@ class GseaNesHeatmapMethod(RAnalysisMethod):
         if not missing:
             return ""
         names = ", ".join(labels.get(m, m) for m in missing)
-        return f"Cell types not tested (too few ranked genes): {names}."
+        noun = f"{group_label}s"
+        return f"{noun[0].upper()}{noun[1:]} not tested (too few ranked genes): {names}."
 
 
 __all__ = ["PALETTES", "GseaNesHeatmapMethod", "nes_matrices"]

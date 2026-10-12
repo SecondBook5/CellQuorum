@@ -312,3 +312,15 @@ def test_the_figure_says_what_its_columns_are(tmp_path):
     args = backend.calls[0][1]
     assert args[5] == "GSEA Hallmark: NES by LEC state"
     assert args[9] == "LEC states"
+
+
+def test_the_footnote_names_the_columns_by_what_they_are(tmp_path):
+    de = pd.DataFrame({"cell_type": ["A", "B", "C", "Tiny"], "gene": ["g"] * 4})
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, enrichment=_table(), de=de)
+
+    GseaNesHeatmapMethod()._run(_adata(), {"group_label": "LEC state"}, ctx)
+
+    footnote = backend.calls[0][1][6]
+    assert footnote.startswith("LEC states not tested")
+    assert "Tiny" in footnote
