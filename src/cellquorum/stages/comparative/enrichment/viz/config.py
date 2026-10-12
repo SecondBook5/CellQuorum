@@ -21,6 +21,8 @@ class EnrichmentVizConfig(StrictBaseModel):
         resources: If set, only render these activity resources; None → all present.
         cluster_labels: optional cluster id -> display name map for the activity
             dotplot's cell-type axis, display only (source CSVs are never rewritten).
+        group_label: What the columns of the NES heatmap are ("cell type", or for the states of
+            one lineage e.g. "LEC state"); worded into the title and the side bar.
     """
 
     enabled: bool = True
@@ -30,6 +32,7 @@ class EnrichmentVizConfig(StrictBaseModel):
     collections: list[str] | None = None
     resources: list[str] | None = None
     cluster_labels: dict[str, str] = {}
+    group_label: str = "cell type"
 
 
 __all__ = ["EnrichmentVizConfig"]

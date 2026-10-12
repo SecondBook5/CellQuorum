@@ -29,3 +29,10 @@ def test_cellquorum_config_has_enrichment_viz():
     cfg = CellQuorumConfig()
     assert isinstance(cfg.enrichment_viz, EnrichmentVizConfig)
     assert cfg.enrichment_viz.enabled is True
+
+
+def test_group_label_names_what_the_heatmap_columns_are():
+    from cellquorum.stages.comparative.enrichment.viz.config import EnrichmentVizConfig
+
+    assert EnrichmentVizConfig().group_label == "cell type"
+    assert EnrichmentVizConfig(group_label="LEC state").group_label == "LEC state"
