@@ -381,3 +381,24 @@ def test_fate_summary_figure_produced(tmp_path: Path) -> None:
     assert not isinstance(res, MethodSkip)
     fate_figs = list((tmp_path / "figs" / "perturbation").glob("perturbation_ko_fate_*"))
     assert fate_figs, "expected a perturbation_ko_fate_* figure on disk"
+
+
+@requires_parquet()
+def test_stale_skip_and_failed_markers_from_an_earlier_attempt_do_not_make_a_good_run_skip(
+    tmp_path: Path,
+) -> None:
+    """Real defect on a resumed BEC run: the first attempt left a SKIPPED marker (no embedding), the
+    second ran for 13 minutes and wrote a ranking, and the stage still reported 'skipped' because
+    it read the old marker."""
+    ctx = _ctx(tmp_path, _fake_success_backend("directional"))
+    out_dir = Path(ctx.paths.results) / "perturbation"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "perturbation_SKIPPED_perturbation.txt").write_text("old: no embedding\n")
+    (out_dir / "perturbation_FAILED_perturbation.txt").write_text("old: failed\n")
+    res = CellOracleMethod()._run(
+        _adata(condition=True),
+        {"launcher": "python", "condition_key": "condition", "healthy_label": "healthy"},
+        ctx,
+    )
+    assert not isinstance(res, MethodSkip), getattr(res, "reason", "")
+    assert res.metrics["n_tfs_screened"] == 2

@@ -154,6 +154,14 @@ class CellOracleMethod(AnalysisMethod):
         figures_dir.mkdir(parents=True, exist_ok=True)
         tag = "perturbation"
 
+        # A marker left in this directory by an earlier attempt (a resumed run reuses it) says
+        # nothing about this one; the script writes a fresh marker if it skips or fails.
+        for stale in (
+            out_dir / f"perturbation_SKIPPED_{tag}.txt",
+            out_dir / f"perturbation_FAILED_{tag}.txt",
+        ):
+            stale.unlink(missing_ok=True)
+
         # 5. Run the in-env KO script
         ko_args = [
             "--h5ad",
