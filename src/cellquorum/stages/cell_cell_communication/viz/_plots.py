@@ -8,7 +8,7 @@ with a matplotlib fallback so a missing dep never raises.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import matplotlib as mpl
 import matplotlib.patheffects as pe
@@ -1536,6 +1536,7 @@ def plot_tensor_factors(
     context_palette: dict[str, str] | None = None,
     node_palette: dict[str, str] | None = None,
     top_k_lr: int = 200,
+    context_legend: Mapping[str, str] | None = None,
 ) -> Figure:
     """Standard tensor-cell2cell factor-loading plot: one row per factor,
     four columns (contexts, ligand-receptor pairs, senders, receivers).
@@ -1554,6 +1555,10 @@ def plot_tensor_factors(
     (magnitude only), capped at top_k_lr by max loading across factors,
     while contexts/senders/receivers (a handful to a few dozen entities)
     render as normal labeled bars.
+
+    ``context_legend`` maps a label to the colour it has in ``context_palette`` (for example
+    {"Normal": blue, "Lymphedema": red}) and is drawn as a key on the first contexts panel, so
+    the colour of the sample bars is stated and not left to be guessed.
     """
     frames = {
         "contexts": contexts,
@@ -1616,6 +1621,17 @@ def plot_tensor_factors(
                     else str(factor),
                     fontsize=10,
                 )
+    if context_legend:
+        from matplotlib.patches import Patch
+
+        axes[0][0].legend(
+            handles=[
+                Patch(facecolor=colour, label=label) for label, colour in context_legend.items()
+            ],
+            fontsize=7,
+            frameon=False,
+            loc="upper right",
+        )
     fig.tight_layout()
     return fig
 

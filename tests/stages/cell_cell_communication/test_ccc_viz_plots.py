@@ -516,6 +516,31 @@ def test_plot_tensor_factors_returns_a_figure_with_one_row_per_factor():
     assert len(fig.axes) == 8
 
 
+def test_plot_tensor_factors_context_legend_names_the_bar_colours():
+    """Real defect: the sample bars were red and blue with no key saying which was which."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
+
+    contexts, senders, receivers, lr_pairs = _tensor_factor_frames()
+    fig = plot_tensor_factors(
+        contexts,
+        senders,
+        receivers,
+        lr_pairs,
+        context_palette={"P1_LE": "#C41E3A", "P1_Normal": "#24608F", "P2_LE": "#C41E3A"},
+        context_legend={"Normal": "#24608F", "Lymphedema": "#C41E3A"},
+    )
+    legend = fig.axes[0].get_legend()
+    assert legend is not None
+    assert [t.get_text() for t in legend.get_texts()] == ["Normal", "Lymphedema"]
+
+
+def test_plot_tensor_factors_has_no_legend_unless_asked():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
+
+    fig = plot_tensor_factors(*_tensor_factor_frames())
+    assert fig.axes[0].get_legend() is None
+
+
 def test_plot_tensor_factors_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
 
