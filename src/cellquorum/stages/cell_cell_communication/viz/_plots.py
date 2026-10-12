@@ -885,7 +885,9 @@ def mnn_top_lr_lollipop(
     ax.scatter(d[score_col], y, c=colors, s=60, zorder=2, edgecolor="0.3", linewidth=0.4)
     ax.set_yticks(y)
     ax.set_yticklabels(d["__pair"])
-    ax.set_xlabel(score_col)
+    ax.set_xlabel("MultiNicheNet prioritisation score")
+    if group_col in d.columns and d[group_col].nunique() == 1:
+        ax.set_title(f"{d[group_col].iloc[0]}: top {len(d)} prioritised interactions", loc="left")
 
     handles = [
         Line2D([0], [0], marker="o", linestyle="", color=palette[r], label=r) for r in routes

@@ -941,6 +941,24 @@ def test_mnn_top_lr_lollipop_names_the_actual_lr_pair_not_just_cell_types():
     assert "CCN2 - FGFR2" in labels
 
 
+def test_mnn_top_lr_lollipop_names_its_group_when_the_data_is_one_group():
+    """Real defect: the Normal and Lymphedema figures drawn from one table were untitled and
+    could only be told apart by file name; the axis read the raw column name."""
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    df = _mnn_prioritization_df()
+    ax = mnn_top_lr_lollipop(df[df.group == "Lymphedema"], top_n=10).axes[0]
+    assert "Lymphedema" in ax.get_title(loc="left")
+    assert ax.get_xlabel() == "MultiNicheNet prioritisation score"
+
+
+def test_mnn_top_lr_lollipop_has_no_single_group_title_for_several_groups():
+    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
+
+    ax = mnn_top_lr_lollipop(_mnn_prioritization_df(), top_n=10).axes[0]
+    assert ax.get_title(loc="left") == ""
+
+
 def test_mnn_top_lr_lollipop_empty_guarded():
     from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
 
