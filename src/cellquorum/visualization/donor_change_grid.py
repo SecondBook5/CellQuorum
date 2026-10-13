@@ -20,7 +20,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from cellquorum.stats.paired_concordance import paired_value_concordance
+from cellquorum.stats.multiple_testing import bh_fdr
+from cellquorum.stats.paired_concordance import MIN_PAIRED_BLOCKS, paired_value_concordance
 from cellquorum.visualization.grids import value_grid
 
 if TYPE_CHECKING:
@@ -131,4 +132,111 @@ def donor_change_grid(
     )
 
 
-__all__ = ["donor_change_grid"]
+def state_change_grid(
+    values: pd.DataFrame,
+    donors: pd.Series,
+    conditions: pd.Series,
+    groups: pd.Series,
+    *,
+    case: str,
+    control: str,
+    colorbar_label: str,
+    notes: Sequence[str] = (),
+    group_order: Sequence[str] | None = None,
+    vmax: float | None = None,
+    min_pairs: int = MIN_PAIRED_BLOCKS,
+    cell_in: float = 0.5,
+) -> tuple[Figure, Axes]:
+    """Draw the change of each score within each group (a state, a cell type), with donor agreement.
+
+    One cell per score and group: the mean over donors of the case-minus-control change within
+    that group, with the number of donors that move the way the mean does out of the donors that
+    have both arms *in that group*. A star marks agreement that survives correction over every
+    cell drawn (the exact donor sign test, doubled, Benjamini-Hochberg). A cell with fewer than
+    ``min_pairs`` donors is outlined: with that few donors the exact test cannot reach 0.05 however
+    unanimous they are, which is a statement about the design and not about the biology.
+
+    Args:
+        values: Units (rows) by scores (columns): the mean score of one donor's one arm in one
+            group. ``NaN`` means not measured.
+        donors, conditions, groups: Donor, condition and group of each unit (indexed as ``values``).
+        case, control: The two condition levels; the change is case minus control.
+        colorbar_label: What the colour means.
+        notes: Footnotes written above the figure's own explanation of the marks.
+        group_order: Column order; by default natural order of the group labels.
+        vmax: Half-range of the colour scale; by default the next round number above the largest
+            absolute change.
+        min_pairs: Donors with both arms below which a cell is outlined.
+        cell_in: Side of one cell, in inches.
+
+    Returns:
+        ``(figure, axes)`` as :func:`~cellquorum.visualization.grids.value_grid` does.
+    """
+    group_of = groups.reindex(values.index).astype(str)
+    order = (
+        [str(g) for g in group_order]
+        if group_order is not None
+        else sorted(group_of.unique(), key=_natural_key)
+    )
+    items = [str(c) for c in values.columns]
+    tables: dict[str, pd.DataFrame] = {}
+    for group in order:
+        unit = values[group_of == group]
+        tables[group] = (
+            paired_value_concordance(
+                unit,
+                donors.reindex(unit.index).astype(str),
+                conditions.reindex(unit.index).astype(str),
+                case=case,
+                control=control,
+                min_pairs=min_pairs,
+            )
+            .set_index("item")
+            .reindex(items)
+        )
+    pooled = bh_fdr(
+        np.concatenate([tables[g]["sign_test_p_conservative"].to_numpy(float) for g in order])
+    ).reshape(len(order), len(items))
+    grid = pd.DataFrame(
+        {g: tables[g]["mean_delta"].to_numpy(float) for g in order}, index=items, dtype=float
+    )
+    text = np.full((len(items), len(order)), "", dtype=object)
+    few = np.zeros((len(items), len(order)), dtype=bool)
+    for j, group in enumerate(order):
+        delta = tables[group]["mean_delta"].to_numpy(float)
+        n_agree = tables[group]["n_agree"].to_numpy(float)
+        n_pairs = tables[group]["n_pairs"].to_numpy(float)
+        for i in range(len(items)):
+            if not np.isfinite(delta[i]):
+                continue
+            star = "*" if np.isfinite(pooled[j, i]) and pooled[j, i] < _STAR_BELOW else ""
+            text[i, j] = f"{delta[i]:+.2f}\n{int(n_agree[i])}/{int(n_pairs[i])}{star}"
+            few[i, j] = n_pairs[i] < min_pairs
+    label = pd.DataFrame(text, index=items, columns=order)
+    few_frame = pd.DataFrame(few, index=items, columns=order)
+    limit = (
+        float(vmax) if vmax is not None else _round_up(float(np.nanmax(np.abs(grid.to_numpy()))))
+    )
+    explain = (
+        "Each cell: the mean over donors of the change, then the donors changing the way the mean "
+        "does, of the donors with both arms in that group; * FDR < 0.05 on the exact donor sign "
+        "test (doubled, Benjamini-Hochberg across every cell shown). "
+        f"Dashed outline: fewer than {min_pairs} donors with both arms, so the test cannot reach "
+        "0.05 whatever the donors do."
+    )
+    return value_grid(
+        grid,
+        cmap="RdBu_r",
+        vmin=-limit,
+        vmax=limit,
+        colorbar_label=colorbar_label,
+        notes=[*notes, explain],
+        row_label="",
+        col_label="",
+        below=few_frame,
+        annotate=label,
+        cell_in=cell_in,
+    )
+
+
+__all__ = ["donor_change_grid", "state_change_grid"]
