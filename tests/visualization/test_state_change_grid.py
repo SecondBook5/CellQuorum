@@ -113,3 +113,53 @@ def test_the_figure_says_what_the_marks_mean() -> None:
     words = " ".join(t.get_text() for t in fig.findobj(plt.Text)).lower()
     assert "dashed outline" in words
     assert "fdr" in words
+
+
+def _small_changes():
+    """Changes an order of magnitude smaller, plus a program that does not move at all."""
+    rows, donor, cond, state = {}, [], [], []
+    for d in DONORS:
+        for arm, sign in (("Normal", 0.0), ("Lymphedema", 1.0)):
+            rows[f"{d}|{arm}|A"] = [0.2 + sign * 0.012, 0.3 + sign * 0.00004, 0.4 - sign * 0.00004]
+            donor.append(d)
+            cond.append(arm)
+            state.append("A")
+    values = pd.DataFrame.from_dict(rows, orient="index", columns=["Up", "Flat", "Flat down"])
+    idx = values.index
+    return (
+        values,
+        pd.Series(donor, index=idx),
+        pd.Series(cond, index=idx),
+        pd.Series(state, index=idx),
+    )
+
+
+def test_labels_carry_enough_decimals_for_the_scale_they_sit_on() -> None:
+    values, donors, conditions, states = _small_changes()
+    _, ax = state_change_grid(
+        values,
+        donors,
+        conditions,
+        states,
+        case="Lymphedema",
+        control="Normal",
+        colorbar_label="Change in score",
+    )
+    texts = [t.get_text() for t in ax.texts]
+    assert any(t.startswith("+0.012\n") for t in texts)
+
+
+def test_a_change_that_rounds_to_zero_is_not_given_a_sign() -> None:
+    values, donors, conditions, states = _small_changes()
+    _, ax = state_change_grid(
+        values,
+        donors,
+        conditions,
+        states,
+        case="Lymphedema",
+        control="Normal",
+        colorbar_label="Change in score",
+    )
+    texts = [t.get_text() for t in ax.texts]
+    assert sum(t.startswith("0.000\n") for t in texts) == 2
+    assert not any(t.startswith(("-0.000", "+0.000")) for t in texts)

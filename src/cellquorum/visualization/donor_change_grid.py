@@ -49,6 +49,12 @@ def _round_up(x: float) -> float:
     return float(10.0 * scale)  # pragma: no cover - 10.0 covers every mantissa
 
 
+def _signed(x: float, decimals: int) -> str:
+    """``x`` with a sign and ``decimals`` places, or an unsigned zero where it rounds to none."""
+    shown = f"{x:+.{decimals}f}"
+    return f"{0.0:.{decimals}f}" if float(shown) == 0.0 else shown
+
+
 def donor_change_grid(
     values: pd.DataFrame,
     donors: pd.Series,
@@ -200,6 +206,10 @@ def state_change_grid(
     grid = pd.DataFrame(
         {g: tables[g]["mean_delta"].to_numpy(float) for g in order}, index=items, dtype=float
     )
+    limit = (
+        float(vmax) if vmax is not None else _round_up(float(np.nanmax(np.abs(grid.to_numpy()))))
+    )
+    decimals = 3 if limit < 0.1 else 2
     text = np.full((len(items), len(order)), "", dtype=object)
     few = np.zeros((len(items), len(order)), dtype=bool)
     for j, group in enumerate(order):
@@ -210,13 +220,10 @@ def state_change_grid(
             if not np.isfinite(delta[i]):
                 continue
             star = "*" if np.isfinite(pooled[j, i]) and pooled[j, i] < _STAR_BELOW else ""
-            text[i, j] = f"{delta[i]:+.2f}\n{int(n_agree[i])}/{int(n_pairs[i])}{star}"
+            text[i, j] = f"{_signed(delta[i], decimals)}\n{int(n_agree[i])}/{int(n_pairs[i])}{star}"
             few[i, j] = n_pairs[i] < min_pairs
     label = pd.DataFrame(text, index=items, columns=order)
     few_frame = pd.DataFrame(few, index=items, columns=order)
-    limit = (
-        float(vmax) if vmax is not None else _round_up(float(np.nanmax(np.abs(grid.to_numpy()))))
-    )
     explain = (
         "Each cell: the mean over donors of the change, then the donors changing the way the mean "
         "does, of the donors with both arms in that group; * FDR < 0.05 on the exact donor sign "
