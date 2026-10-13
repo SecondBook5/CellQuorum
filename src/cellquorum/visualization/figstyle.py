@@ -17,6 +17,7 @@ import contextlib
 import math
 import re
 from collections.abc import Callable, Mapping, Sequence
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -271,6 +272,30 @@ def distinct_palette(n: int) -> list[str]:
     return hexes
 
 
+#: Sans-serif stack for every preset: Arial where it is installed, then fonts with Arial's metrics
+#: (Liberation Sans, Arimo), and DejaVu Sans only as a last resort. DejaVu is always present, so
+#: anything listed after it is never reached.
+SANS_STACK: tuple[str, ...] = ("Arial", "Liberation Sans", "Arimo", "Helvetica", "DejaVu Sans")
+_ARIAL_LIKE_FAMILIES = frozenset({"Arial", "Liberation Sans", "Arimo"})
+
+
+@cache
+def _register_arial_compatible_fonts() -> None:
+    """Make matplotlib see Arial-compatible fonts the system has but its font cache does not.
+
+    The cache is built once and goes stale when fonts are installed afterwards, which left
+    figures in DejaVu Sans on a machine that had Liberation Sans. Runs at most once per process.
+    """
+    from matplotlib import font_manager
+
+    if any(f.name in _ARIAL_LIKE_FAMILIES for f in font_manager.fontManager.ttflist):
+        return
+    for path in font_manager.findSystemFonts(fontext="ttf"):
+        name = Path(path).name.lower()
+        if name.startswith(("liberationsans-", "arimo")):
+            font_manager.fontManager.addfont(path)
+
+
 Theme = Literal["compact", "notebook", "publication"]
 
 
@@ -291,6 +316,7 @@ def apply_theme(style: Theme, *, dpi: int | None = None, small: bool = False) ->
     Raises:
         ValueError: For an unknown style, or ``dpi``/``small`` with another style.
     """
+    _register_arial_compatible_fonts()
     if style == "publication":
         _apply_publication(dpi=300 if dpi is None else dpi, small=small)
         return
@@ -314,7 +340,7 @@ def _apply_compact() -> None:
             "ps.fonttype": 42,
             "svg.fonttype": "none",
             "font.family": "sans-serif",
-            "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans", "Liberation Sans"],
+            "font.sans-serif": list(SANS_STACK),
             "font.size": 8,
             "axes.labelsize": 8,
             "axes.titlesize": 11,
@@ -768,7 +794,7 @@ def _apply_notebook() -> None:
             "savefig.bbox": "tight",
             "savefig.pad_inches": 0.1,
             "font.family": "sans-serif",
-            "font.sans-serif": ["Arial", "DejaVu Sans", "Liberation Sans"],
+            "font.sans-serif": list(SANS_STACK),
             "font.size": 10,
             "axes.labelsize": 10,
             "axes.titlesize": 11,
@@ -1166,7 +1192,7 @@ def _apply_publication(*, dpi: int, small: bool) -> None:
             "figure.dpi": 150,
             "savefig.dpi": dpi,
             "font.family": "sans-serif",
-            "font.sans-serif": ["Arial", "Helvetica Neue", "Helvetica", "DejaVu Sans"],
+            "font.sans-serif": list(SANS_STACK),
             "font.size": base_font,
             "axes.labelsize": axis_font,
             "axes.titlesize": title_font,
