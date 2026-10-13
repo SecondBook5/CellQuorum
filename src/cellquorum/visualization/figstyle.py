@@ -82,6 +82,41 @@ def _register_orange_cmap() -> None:
 
 _register_orange_cmap()
 
+#: The grant look, sampled from the three figures Dr. Mehrara chose: navy for Normal, plum for
+#: lymphedema, deep navy titles, near-black ink, slate for subtitles and statistics, pale grey for
+#: paired lines and reference lines.
+GRANT_NORMAL = "#14304A"
+GRANT_CASE = "#9C3F71"
+GRANT_TITLE = "#132B44"
+GRANT_INK = "#1C262E"
+GRANT_SLATE = "#424F5D"
+GRANT_PALE = "#CCD4DC"
+GRANT_SEQUENTIAL_CMAP = "grant_sequential"  # pale lilac to plum, one direction
+GRANT_DIVERGING_CMAP = "grant_diverging"  # navy to white to plum, about zero
+_GRANT_SEQUENTIAL_STOPS = ("#DADFE6", "#B3A6BC", "#9E4976")
+
+
+def _register_grant_cmaps() -> None:
+    """Make the grant colour scales available to matplotlib by name (idempotent)."""
+    import matplotlib
+    from matplotlib.colors import LinearSegmentedColormap
+
+    if GRANT_SEQUENTIAL_CMAP not in matplotlib.colormaps:
+        matplotlib.colormaps.register(
+            LinearSegmentedColormap.from_list(
+                GRANT_SEQUENTIAL_CMAP, list(_GRANT_SEQUENTIAL_STOPS), N=256
+            )
+        )
+    if GRANT_DIVERGING_CMAP not in matplotlib.colormaps:
+        matplotlib.colormaps.register(
+            LinearSegmentedColormap.from_list(
+                GRANT_DIVERGING_CMAP, [GRANT_NORMAL, "#FFFFFF", GRANT_CASE], N=257
+            )
+        )
+
+
+_register_grant_cmaps()
+
 # Background panel colors (very subtle, used in volcano plot regions).
 BACKGROUND_BLUE = "#E8F0F8"  # Light blue for downregulated region
 BACKGROUND_GRAY = "#F5F5F5"  # Light gray for neutral region
@@ -296,7 +331,7 @@ def _register_arial_compatible_fonts() -> None:
             font_manager.fontManager.addfont(path)
 
 
-Theme = Literal["compact", "notebook", "publication"]
+Theme = Literal["compact", "notebook", "publication", "grant"]
 
 
 def apply_theme(style: Theme, *, dpi: int | None = None, small: bool = False) -> None:
@@ -306,10 +341,12 @@ def apply_theme(style: Theme, *, dpi: int | None = None, small: bool = False) ->
     picks up a style by accident.
 
     Args:
-        style: ``"compact"`` is the journal-panel look (8 pt type, bold titles, no legend
-            frame). ``"notebook"`` is the larger look (seaborn notebook scale, 10 pt type,
-            300 dpi saves, normal-weight titles). ``"publication"`` is the compact paper-scale
-            look (7 pt type, 300 dpi saves, the shared categorical colour cycle).
+        style: ``"grant"`` is the compact look in the navy-and-plum colours and open-axis layout
+            of the figures chosen for the grant compilation. ``"compact"`` is the journal-panel
+            look (8 pt type, bold titles, no legend frame). ``"notebook"`` is the larger look
+            (seaborn notebook scale, 10 pt type, 300 dpi saves, normal-weight titles).
+            ``"publication"`` is the compact paper-scale look (7 pt type, 300 dpi saves, the
+            shared categorical colour cycle).
         dpi: Save resolution; ``"publication"`` only (default 300).
         small: Smaller type for dense panels; ``"publication"`` only.
 
@@ -326,10 +363,33 @@ def apply_theme(style: Theme, *, dpi: int | None = None, small: bool = False) ->
         _apply_compact()
     elif style == "notebook":
         _apply_notebook()
+    elif style == "grant":
+        _apply_grant()
     else:
         raise ValueError(
-            f"unknown figure style {style!r}; use 'compact', 'notebook' or 'publication'"
+            f"unknown figure style {style!r}; use 'compact', 'notebook', 'publication' or 'grant'"
         )
+
+
+def _apply_grant() -> None:
+    """The grant look: the compact preset with navy and plum, open axes, bold navy left titles."""
+    _apply_compact()
+    mpl.rcParams.update(
+        {
+            "text.color": GRANT_INK,
+            "axes.edgecolor": GRANT_INK,
+            "axes.labelcolor": GRANT_INK,
+            "axes.labelweight": "bold",
+            "axes.titlelocation": "left",
+            "axes.titleweight": "bold",
+            "axes.titlecolor": GRANT_TITLE,
+            "axes.grid": False,
+            "axes.linewidth": 1.0,
+            "xtick.color": GRANT_INK,
+            "ytick.color": GRANT_INK,
+            "image.cmap": GRANT_SEQUENTIAL_CMAP,
+        }
+    )
 
 
 def _apply_compact() -> None:
