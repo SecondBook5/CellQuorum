@@ -316,19 +316,25 @@ _ARIAL_LIKE_FAMILIES = frozenset({"Arial", "Liberation Sans", "Arimo"})
 
 @cache
 def _register_arial_compatible_fonts() -> None:
-    """Make matplotlib see Arial-compatible fonts the system has but its font cache does not.
+    """Make matplotlib see Arial (or an Arial-metric font) that its stale font cache misses.
 
     The cache is built once and goes stale when fonts are installed afterwards, which left
-    figures in DejaVu Sans on a machine that had Liberation Sans. Runs at most once per process.
+    figures in DejaVu Sans on a machine that had Arial or Liberation Sans. Arial itself is
+    registered whenever it is installed, even if a metric twin is already known, because the twin
+    is a fallback and not what was asked for. Runs at most once per process.
     """
     from matplotlib import font_manager
 
-    if any(f.name in _ARIAL_LIKE_FAMILIES for f in font_manager.fontManager.ttflist):
-        return
-    for path in font_manager.findSystemFonts(fontext="ttf"):
-        name = Path(path).name.lower()
-        if name.startswith(("liberationsans-", "arimo")):
-            font_manager.fontManager.addfont(path)
+    known = {f.name for f in font_manager.fontManager.ttflist}
+    paths = font_manager.findSystemFonts(fontext="ttf")
+    if "Arial" not in known:
+        for path in paths:
+            if Path(path).name.lower() in ("arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"):
+                font_manager.fontManager.addfont(path)
+    if not known & _ARIAL_LIKE_FAMILIES:
+        for path in paths:
+            if Path(path).name.lower().startswith(("liberationsans-", "arimo")):
+                font_manager.fontManager.addfont(path)
 
 
 Theme = Literal["compact", "notebook", "publication", "grant"]

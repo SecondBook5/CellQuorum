@@ -42,3 +42,25 @@ def test_text_resolves_to_an_arial_like_font_when_one_is_installed(style: str) -
     path = font_manager.findfont(font_manager.FontProperties(family=["sans-serif"]))
     name = Path(path).name.lower().replace("-", "").replace("_", "")
     assert any(tag in name for tag in ARIAL_LIKE), path
+
+
+def _arial_installed() -> bool:
+    roots = [Path("/usr/share/fonts"), Path.home() / ".fonts", Path.home() / ".local/share/fonts"]
+    return any(p.name.lower() == "arial.ttf" for r in roots if r.exists() for p in r.rglob("*.ttf"))
+
+
+@pytest.mark.skipif(not _arial_installed(), reason="Arial itself is not installed on this machine")
+@pytest.mark.parametrize("style", STYLES)
+def test_arial_itself_is_used_when_installed_even_with_a_stale_font_cache(style: str) -> None:
+    from matplotlib import font_manager
+
+    stale = [f for f in font_manager.fontManager.ttflist if f.name != "Arial"]
+    original = font_manager.fontManager.ttflist
+    font_manager.fontManager.ttflist = stale
+    figstyle._register_arial_compatible_fonts.cache_clear()
+    try:
+        figstyle.apply_theme(style)
+        path = font_manager.findfont(font_manager.FontProperties(family=["sans-serif"]))
+        assert Path(path).name.lower() == "arial.ttf", path
+    finally:
+        font_manager.fontManager.ttflist = original
