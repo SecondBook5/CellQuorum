@@ -91,10 +91,10 @@ dev = [
   "pytest-xdist==3.8.0",
   # Lint + format. Must match the ruff-pre-commit rev in .pre-commit-config.yaml
   # and the pinned install in .github/workflows/ci.yml — all three move together.
-  "ruff==0.8.6",
+  "ruff==0.17.3",
   # Type checking, plus stubs for the untyped third-party libraries we import.
-  "mypy==1.18.2",
-  "types-PyYAML==6.0.12.20250915",
+  "mypy==2.4.1",
+  "types-PyYAML==6.0.12.20260906",
   # pandas has no inline stubs good enough for the gate; several `type: ignore[call-overload]`
   # comments exist only because of these stubs, so the checker must have them to agree.
   "pandas-stubs==3.0.5.260730",
@@ -105,7 +105,7 @@ dev = [
   # needs it, which is why it is here rather than in the runtime dependencies.
   "colorspacious==1.1.2",
   # Git hook runner, so `pre-commit install` needs no separate global install.
-  "pre-commit==4.3.0",
+  "pre-commit==4.7.0",
   # Documentation site.
   "mkdocs-material==9.7.7",
   "mkdocstrings[python]==1.0.6",
