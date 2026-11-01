@@ -1,6 +1,6 @@
 # Reference PNG renderer pins; this is not a complete environment lock.
 matplotlib==3.10.8
-numpy==2.3.5
+numpy==2.5.4
 pillow==11.0.0
 # Optional packages the gallery draws with (chord/circos, TF-activity radial, Ricci curvature).
 # Without them the figures fall back or fail, and the pixel references no longer match.
