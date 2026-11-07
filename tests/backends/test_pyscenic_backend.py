@@ -28,7 +28,7 @@ def test_run_script_builds_micromamba_python_argv(monkeypatch, tmp_path) -> None
     # Resolve to a known path so the assertion does not depend on where this machine
     # installed micromamba: argv[0] is the resolved launcher, not the bare name.
     monkeypatch.setattr(
-        "cellquorum.backends.pyscenic_backend.resolve_launcher",
+        "cellquorum.backends.external_env.resolve_launcher",
         lambda _name: "/usr/bin/micromamba",
     )
 
