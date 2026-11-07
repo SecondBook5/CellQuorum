@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import pandas as pd
@@ -46,6 +47,61 @@ if TYPE_CHECKING:
 HEALTHY_ACCEPTANCE_RANGE = (0.10, 0.95)
 
 
+class _Stop(Exception):
+    """A guard or failure that ends the method with a recorded skip."""
+
+    def __init__(self, reason: str, **details: object) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = details
+
+
+@dataclass(frozen=True)
+class _Settings:
+    """Config values ``SccodaMethod._run`` reads, resolved once."""
+
+    condition_col: str
+    donor_col: str
+    cell_type_col: str
+    case: str | None
+    control: str | None
+    reference_celltype: str | None
+    seed: int
+    num_iterations: int
+    timeout: int
+
+    @classmethod
+    def from_config(cls, config: dict) -> _Settings:
+        return cls(
+            condition_col=config.get("condition_col", "condition"),
+            donor_col=config.get("donor_col", "patient_id"),
+            cell_type_col=config.get("cell_type_col", "cell_type"),
+            case=config.get("case"),
+            control=config.get("control"),
+            reference_celltype=config.get("reference_celltype"),
+            seed=int(config.get("seed", 0)),
+            num_iterations=int(config.get("num_iterations", 20000)),
+            timeout=int(config.get("timeout_seconds", 3600)),
+        )
+
+
+@dataclass
+class _Prepared:
+    """Aggregated inputs, the resolved reference and pairing, and where outputs go."""
+
+    cc: CelltypeCounts
+    resolved_reference: str | None
+    reference_reason: str
+    reference_choice: ReferenceChoice | None
+    use_pairing: bool
+    pairing_reason: str
+    paired_donors: int
+    counts_meta_csv: Path
+    out_csv: Path
+    diagnostics_json: Path
+    writer: StageArtifactWriter
+
+
 class SccodaMethod(AnalysisMethod):
     """scCODA Bayesian compositional DA test via sccoda_env subprocess.
 
@@ -84,122 +140,17 @@ class SccodaMethod(AnalysisMethod):
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
         """Aggregate cell-type counts, fit scCODA, and return the DA table."""
-
-        # Resolve config fields (all schema-driven; no hardcoded study assumptions).
-        condition_col = config.get("condition_col", "condition")
-        donor_col = config.get("donor_col", "patient_id")
-        cell_type_col = config.get("cell_type_col", "cell_type")
-        case = config.get("case")
-        control = config.get("control")
-        reference_celltype = config.get("reference_celltype")
-        seed = int(config.get("seed", 0))
-        num_iterations = int(config.get("num_iterations", 20000))
-        timeout = int(config.get("timeout_seconds", 3600))
-
-        # A comparison needs both case and control labels.
-        if not case or not control:
-            return self._skip("case/control labels not set in config")
-
-        registry = getattr(context, "backend_registry", None)
-        backend = None
-        if registry is not None:
-            try:
-                backend = registry.get("sccoda")
-            except Exception:
-                backend = None
-        if backend is None:
-            return self._skip("sccoda backend unavailable")
-
-        # Check backend availability (micromamba + sccoda_env import).
-        status = backend.status()
-        if not status.available:
-            missing_str = ", ".join(status.missing) if status.missing else "unknown"
-            return self._skip(f"sccoda backend unavailable ({missing_str})", missing=status.missing)
-
-        # Aggregate to sample × cell-type counts.
-        cc = aggregate_celltype_counts(
-            adata,
-            donor_col=donor_col,
-            condition_col=condition_col,
-            cell_type_col=cell_type_col,
-        )
-
-        # Resolve the compositional reference before fitting. scCODA's own
-        # "automatic" selection minimises var(p)/mean(p), which equals cv**2 * mean
-        # and therefore ranks cell types substantially by rarity -- it will happily
-        # make a 0.3% population the denominator of every reported effect. The
-        # engine picks on centred-log-ratio variance instead; see
-        # ``reference_selection`` for the measurement behind that.
-        resolved_reference, reference_reason, reference_choice = self._resolve_reference(
-            cc.counts, config, reference_celltype
-        )
-
-        # Decide whether to model donor. On a matched cohort, omitting donor tests a
-        # between-subject contrast on within-subject data -- the same design error
-        # that turned a 1-gene differential-expression result into 645 on this
-        # engine. Inferred from the data when nothing is declared, because whether a
-        # cohort is paired is a property of the cohort; but a `design` block that
-        # declares it outright is an instruction, not a hint, and overriding it from
-        # the data would mean `paired: false` silently produced a donor-modelled fit.
-        pair_mode = str(config.get("pair_by_donor", "auto")).lower()
-        declared = config.get("paired")
-        paired_donors = self._count_paired_donors(
-            cc.sample_meta, donor_col, condition_col, case, control
-        )
-        use_pairing, pairing_reason = self._resolve_pairing(
-            pair_mode, paired_donors, declared=None if declared is None else bool(declared)
-        )
-
-        # Write aggregated inputs to scratch.
-        scratch = Path(getattr(context.paths, "scratch", "."))
-        scratch.mkdir(parents=True, exist_ok=True)
-        counts_meta_csv = scratch / "da_counts_meta.csv"
-
-        # counts_meta.csv: samples × cell types + condition column (+ donor when the
-        # design is paired, since the helper reads its covariates from this file).
-        counts_with_meta = cc.counts.copy()
-        counts_with_meta[condition_col] = cc.sample_meta[condition_col]
-        if use_pairing:
-            counts_with_meta[donor_col] = cc.sample_meta[donor_col].astype(str)
-        counts_with_meta.to_csv(counts_meta_csv, index=True)
-
-        # Prepare the output path in the run results directory.
-        results_dir = Path(context.paths.results)
-        results_dir.mkdir(parents=True, exist_ok=True)
-        out_csv = results_dir / "da_sccoda.csv"
-        writer = StageArtifactWriter.from_context(context)
-        diagnostics_json = scratch / "da_sccoda_diagnostics.json"
-
-        args = [
-            str(counts_meta_csv),
-            str(out_csv),
-            condition_col,
-            case,
-            control,
-            str(seed),
-            str(num_iterations),
-        ]
-
-        # Positional reference argument: the resolved reference, which is the config
-        # value when set and the engine's pick otherwise.
-        if resolved_reference:
-            args.append(resolved_reference)
-
-        if use_pairing:
-            args += ["--covariates", donor_col]
-        args += ["--diagnostics-json", str(diagnostics_json)]
-
-        # Invoke the sccoda helper; non-zero exit -> recorded skip (never crash).
+        settings = _Settings.from_config(config)
+        case, control = settings.case, settings.control
         try:
-            proc = backend.run_script(SCCODA_HELPER, args, timeout=timeout)
-        except FileNotFoundError as exc:
-            return self._skip("helper execution failed", error=str(exc)[:500])
-        except subprocess.TimeoutExpired as exc:
-            # A configured timeout must skip this method, not crash the stage
-            # and abort the sibling methods still queued after it.
-            return self._skip(f"helper execution timed out after {timeout}s", error=str(exc)[:500])
-        if proc.returncode != 0:
-            return self._skip("sccoda helper failed", stderr=proc.stderr.strip()[:500])
+            backend = self._check_backend(settings, context)
+            prepared = self._prepare_inputs(adata, settings, config, context)
+            self._run_helper(backend, prepared, settings)
+        except _Stop as stop:
+            return self._skip(stop.reason, **stop.details)
+        assert case and control  # guaranteed by _check_backend
+        cc, out_csv = prepared.cc, prepared.out_csv
+        resolved_reference = prepared.resolved_reference
 
         # Read output CSV to compute metrics + back the composition figure (skip-not-crash).
         #
@@ -225,76 +176,22 @@ class SccodaMethod(AnalysisMethod):
         notes = [
             f"scCODA DA: {case} vs {control}, "
             f"reference={resolved_reference or 'auto'}, "
-            f"iterations={num_iterations}.",
+            f"iterations={settings.num_iterations}.",
             *cc.notes,
         ]
-        notes.append(f"Compositional reference: {reference_reason}.")
-        notes.append(f"Design: {pairing_reason}.")
+        notes.append(f"Compositional reference: {prepared.reference_reason}.")
+        notes.append(f"Design: {prepared.pairing_reason}.")
+        notes.extend(self._sensitivity_notes(sensitivity_metrics))
 
-        # Say what the second fit found, in the run summary. A compositional result
-        # whose credible set changes with the denominator is a different claim from
-        # one that does not, and the difference should not need a CSV to see.
-        stable = sensitivity_metrics["credible_set_reference_stable"]
-        if stable is True:
-            notes.append(
-                "Reference sensitivity: the credible set is unchanged when the model is "
-                "refitted against scCODA's own automatically selected reference."
-            )
-        elif stable is False:
-            notes.append(
-                f"Reference sensitivity: refitting against scCODA's own automatically "
-                f"selected reference changes the credible set "
-                f"({sensitivity_metrics['credible_set_reference_disagreement']} differ), so "
-                f"these effects depend on the choice of denominator."
-            )
-
-        # Audit whether each called effect is a cohort-wide shift or a subset one.
-        # scCODA reports a mean, and a mean cannot distinguish those; on this
-        # engine's own cohort its single credible call turned out to move in the
-        # reported direction in a minority of donors.
-        concordance = paired_abundance_concordance(
-            cc.counts,
-            cc.sample_meta[donor_col],
-            cc.sample_meta[condition_col],
-            case=case,
-            control=control,
+        df, concordance, extra_artifacts = self._audit_donor_concordance(
+            prepared, settings, df, primary, sensitivity, notes, warnings
         )
-        extra_artifacts: list[StageArtifact] = []
-        if primary is not None and not concordance.empty:
-            # Annotate each fit separately. The concordance columns are properties of
-            # the COUNTS rather than of the fit, so both blocks carry the same values;
-            # what must not be duplicated is the notes, which are the run summary's
-            # warning that a called effect is not donor-consistent. One warning per
-            # call, from the fit being reported.
-            primary, concordance_notes = qualify_abundance_calls(primary, concordance)
-            if sensitivity is not None and not sensitivity.empty:
-                sensitivity, _ = qualify_abundance_calls(sensitivity, concordance)
-            df = self._restack(primary, sensitivity)
-            warnings += self._write_back(df, out_csv, "donor-concordance annotations")
-            notes.extend(concordance_notes)
-            extra_artifacts.append(
-                writer.table(
-                    concordance,
-                    "da_sccoda_donor_concordance.csv",
-                    name="da_donor_concordance",
-                    description=(
-                        "Per-cell-type donor-level concordance for the scCODA calls: "
-                        "sign test on the paired log-ratio change, leave-one-donor-out "
-                        "stability, and the resulting pattern."
-                    ),
-                )
-            )
-            consistent = concordance[concordance["pattern"] == "consistent"]["cell_type"].tolist()
-            if consistent:
-                notes.append(
-                    f"Donor-consistent abundance shifts (sign test p<0.05, stable to dropping "
-                    f"any one donor): {', '.join(map(str, consistent))}."
-                )
 
         # Record the reference criterion, so a reader can see what was rejected.
+        reference_choice = prepared.reference_choice
         if reference_choice is not None and not reference_choice.criterion.empty:
             extra_artifacts.append(
-                writer.table(
+                prepared.writer.table(
                     reference_choice.criterion,
                     "da_sccoda_reference_criterion.csv",
                     name="da_reference_criterion",
@@ -310,7 +207,7 @@ class SccodaMethod(AnalysisMethod):
         # nothing" from "chain never explored the posterior", both of which produce
         # an empty result table.
         diagnostics, diagnostic_notes, diagnostic_warnings = self._read_diagnostics(
-            diagnostics_json, n_credible
+            prepared.diagnostics_json, n_credible
         )
         notes.extend(diagnostic_notes)
         warnings += diagnostic_warnings
@@ -321,8 +218,8 @@ class SccodaMethod(AnalysisMethod):
         figure_artifacts, figure_warnings = self._composition_artifacts(
             df,
             cc,
-            condition_col=condition_col,
-            donor_col=donor_col,
+            condition_col=settings.condition_col,
+            donor_col=settings.donor_col,
             case=case,
             control=control,
             config=config,
@@ -342,7 +239,7 @@ class SccodaMethod(AnalysisMethod):
                     description=(
                         f"scCODA DA ({case} vs {control}), "
                         f"reference={resolved_reference or 'auto'}, "
-                        f"iterations={num_iterations}."
+                        f"iterations={settings.num_iterations}."
                     ),
                 ),
                 *extra_artifacts,
@@ -350,36 +247,261 @@ class SccodaMethod(AnalysisMethod):
             ],
             notes=notes,
             warnings=warnings,
-            metrics={
-                "case": case,
-                "control": control,
-                "reference_celltype": resolved_reference,
-                "reference_source": (
-                    "config"
-                    if reference_celltype
-                    else ("engine" if reference_choice is not None else "sccoda_automatic")
-                ),
-                "reference_relaxed": (
-                    bool(reference_choice.relaxed) if reference_choice is not None else None
-                ),
-                "paired_by_donor": use_pairing,
-                "n_paired_donors": paired_donors,
-                "seed": seed,
-                "num_iterations": num_iterations,
-                "n_samples": int(cc.counts.shape[0]),
-                "n_celltypes": int(cc.counts.shape[1]),
-                "n_unlabeled_cells": cc.n_unlabeled,
-                "n_credible": n_credible,
-                "n_donor_consistent": (
-                    int((concordance["pattern"] == "consistent").sum())
-                    if not concordance.empty
-                    else None
-                ),
-                **sensitivity_metrics,
-                **diagnostics,
-            },
+            metrics=self._build_metrics(
+                prepared,
+                settings,
+                n_credible=n_credible,
+                concordance=concordance,
+                extra={**sensitivity_metrics, **diagnostics},
+            ),
             backend="sccoda",
         )
+
+    def _check_backend(self, settings: _Settings, context: PipelineContext) -> Any:
+        """Return the available sccoda backend, or raise ``_Stop`` saying why not."""
+        # A comparison needs both case and control labels.
+        if not settings.case or not settings.control:
+            raise _Stop("case/control labels not set in config")
+
+        registry = getattr(context, "backend_registry", None)
+        backend = None
+        if registry is not None:
+            try:
+                backend = registry.get("sccoda")
+            except Exception:
+                backend = None
+        if backend is None:
+            raise _Stop("sccoda backend unavailable")
+
+        # Check backend availability (micromamba + sccoda_env import).
+        status = backend.status()
+        if not status.available:
+            missing_str = ", ".join(status.missing) if status.missing else "unknown"
+            raise _Stop(f"sccoda backend unavailable ({missing_str})", missing=status.missing)
+        return backend
+
+    def _prepare_inputs(
+        self, adata: ad.AnnData, settings: _Settings, config: dict, context: PipelineContext
+    ) -> _Prepared:
+        """Aggregate counts, resolve the reference and pairing, and write the helper input."""
+        condition_col, donor_col = settings.condition_col, settings.donor_col
+
+        # Aggregate to sample × cell-type counts.
+        cc = aggregate_celltype_counts(
+            adata,
+            donor_col=donor_col,
+            condition_col=condition_col,
+            cell_type_col=settings.cell_type_col,
+        )
+
+        # Resolve the compositional reference before fitting. scCODA's own
+        # "automatic" selection minimises var(p)/mean(p), which equals cv**2 * mean
+        # and therefore ranks cell types substantially by rarity -- it will happily
+        # make a 0.3% population the denominator of every reported effect. The
+        # engine picks on centred-log-ratio variance instead; see
+        # ``reference_selection`` for the measurement behind that.
+        resolved_reference, reference_reason, reference_choice = self._resolve_reference(
+            cc.counts, config, settings.reference_celltype
+        )
+
+        # Decide whether to model donor. On a matched cohort, omitting donor tests a
+        # between-subject contrast on within-subject data -- the same design error
+        # that turned a 1-gene differential-expression result into 645 on this
+        # engine. Inferred from the data when nothing is declared, because whether a
+        # cohort is paired is a property of the cohort; but a `design` block that
+        # declares it outright is an instruction, not a hint, and overriding it from
+        # the data would mean `paired: false` silently produced a donor-modelled fit.
+        pair_mode = str(config.get("pair_by_donor", "auto")).lower()
+        declared = config.get("paired")
+        paired_donors = self._count_paired_donors(
+            cc.sample_meta, donor_col, condition_col, str(settings.case), str(settings.control)
+        )
+        use_pairing, pairing_reason = self._resolve_pairing(
+            pair_mode, paired_donors, declared=None if declared is None else bool(declared)
+        )
+
+        # Write aggregated inputs to scratch.
+        scratch = Path(getattr(context.paths, "scratch", "."))
+        scratch.mkdir(parents=True, exist_ok=True)
+        counts_meta_csv = scratch / "da_counts_meta.csv"
+
+        # counts_meta.csv: samples × cell types + condition column (+ donor when the
+        # design is paired, since the helper reads its covariates from this file).
+        counts_with_meta = cc.counts.copy()
+        counts_with_meta[condition_col] = cc.sample_meta[condition_col]
+        if use_pairing:
+            counts_with_meta[donor_col] = cc.sample_meta[donor_col].astype(str)
+        counts_with_meta.to_csv(counts_meta_csv, index=True)
+
+        # Prepare the output path in the run results directory.
+        results_dir = Path(context.paths.results)
+        results_dir.mkdir(parents=True, exist_ok=True)
+        return _Prepared(
+            cc=cc,
+            resolved_reference=resolved_reference,
+            reference_reason=reference_reason,
+            reference_choice=reference_choice,
+            use_pairing=use_pairing,
+            pairing_reason=pairing_reason,
+            paired_donors=paired_donors,
+            counts_meta_csv=counts_meta_csv,
+            out_csv=results_dir / "da_sccoda.csv",
+            diagnostics_json=scratch / "da_sccoda_diagnostics.json",
+            writer=StageArtifactWriter.from_context(context),
+        )
+
+    def _run_helper(self, backend: Any, prepared: _Prepared, settings: _Settings) -> None:
+        """Invoke the sccoda helper; any failure raises ``_Stop`` (never crash)."""
+        args = [
+            str(prepared.counts_meta_csv),
+            str(prepared.out_csv),
+            settings.condition_col,
+            str(settings.case),
+            str(settings.control),
+            str(settings.seed),
+            str(settings.num_iterations),
+        ]
+
+        # Positional reference argument: the resolved reference, which is the config
+        # value when set and the engine's pick otherwise.
+        if prepared.resolved_reference:
+            args.append(prepared.resolved_reference)
+
+        if prepared.use_pairing:
+            args += ["--covariates", settings.donor_col]
+        args += ["--diagnostics-json", str(prepared.diagnostics_json)]
+
+        try:
+            proc = backend.run_script(SCCODA_HELPER, args, timeout=settings.timeout)
+        except FileNotFoundError as exc:
+            raise _Stop("helper execution failed", error=str(exc)[:500]) from exc
+        except subprocess.TimeoutExpired as exc:
+            # A configured timeout must skip this method, not crash the stage
+            # and abort the sibling methods still queued after it.
+            raise _Stop(
+                f"helper execution timed out after {settings.timeout}s", error=str(exc)[:500]
+            ) from exc
+        if proc.returncode != 0:
+            raise _Stop("sccoda helper failed", stderr=proc.stderr.strip()[:500])
+
+    @staticmethod
+    def _sensitivity_notes(sensitivity_metrics: dict) -> list[str]:
+        """Say what the second fit found, in the run summary.
+
+        A compositional result whose credible set changes with the denominator is a
+        different claim from one that does not, and the difference should not need a CSV
+        to see.
+        """
+        stable = sensitivity_metrics["credible_set_reference_stable"]
+        if stable is True:
+            return [
+                "Reference sensitivity: the credible set is unchanged when the model is "
+                "refitted against scCODA's own automatically selected reference."
+            ]
+        if stable is False:
+            return [
+                f"Reference sensitivity: refitting against scCODA's own automatically "
+                f"selected reference changes the credible set "
+                f"({sensitivity_metrics['credible_set_reference_disagreement']} differ), so "
+                f"these effects depend on the choice of denominator."
+            ]
+        return []
+
+    def _audit_donor_concordance(
+        self,
+        prepared: _Prepared,
+        settings: _Settings,
+        df: pd.DataFrame | None,
+        primary: pd.DataFrame | None,
+        sensitivity: pd.DataFrame | None,
+        notes: list[str],
+        warnings: list[str],
+    ) -> tuple[pd.DataFrame | None, pd.DataFrame, list[StageArtifact]]:
+        """Audit whether each called effect is a cohort-wide shift or a subset one.
+
+        scCODA reports a mean, and a mean cannot distinguish those; on this engine's own
+        cohort its single credible call turned out to move in the reported direction in a
+        minority of donors. Appends to ``notes`` and ``warnings``; returns the (possibly
+        annotated) table, the concordance table and the artifacts it produced.
+        """
+        cc = prepared.cc
+        concordance = paired_abundance_concordance(
+            cc.counts,
+            cc.sample_meta[settings.donor_col],
+            cc.sample_meta[settings.condition_col],
+            case=str(settings.case),
+            control=str(settings.control),
+        )
+        extra_artifacts: list[StageArtifact] = []
+        if primary is not None and not concordance.empty:
+            # Annotate each fit separately. The concordance columns are properties of
+            # the COUNTS rather than of the fit, so both blocks carry the same values;
+            # what must not be duplicated is the notes, which are the run summary's
+            # warning that a called effect is not donor-consistent. One warning per
+            # call, from the fit being reported.
+            primary, concordance_notes = qualify_abundance_calls(primary, concordance)
+            if sensitivity is not None and not sensitivity.empty:
+                sensitivity, _ = qualify_abundance_calls(sensitivity, concordance)
+            df = self._restack(primary, sensitivity)
+            warnings += self._write_back(df, prepared.out_csv, "donor-concordance annotations")
+            notes.extend(concordance_notes)
+            extra_artifacts.append(
+                prepared.writer.table(
+                    concordance,
+                    "da_sccoda_donor_concordance.csv",
+                    name="da_donor_concordance",
+                    description=(
+                        "Per-cell-type donor-level concordance for the scCODA calls: "
+                        "sign test on the paired log-ratio change, leave-one-donor-out "
+                        "stability, and the resulting pattern."
+                    ),
+                )
+            )
+            consistent = concordance[concordance["pattern"] == "consistent"]["cell_type"].tolist()
+            if consistent:
+                notes.append(
+                    f"Donor-consistent abundance shifts (sign test p<0.05, stable to dropping "
+                    f"any one donor): {', '.join(map(str, consistent))}."
+                )
+        return df, concordance, extra_artifacts
+
+    @staticmethod
+    def _build_metrics(
+        prepared: _Prepared,
+        settings: _Settings,
+        *,
+        n_credible: int | None,
+        concordance: pd.DataFrame,
+        extra: dict,
+    ) -> dict:
+        cc, reference_choice = prepared.cc, prepared.reference_choice
+        return {
+            "case": settings.case,
+            "control": settings.control,
+            "reference_celltype": prepared.resolved_reference,
+            "reference_source": (
+                "config"
+                if settings.reference_celltype
+                else ("engine" if reference_choice is not None else "sccoda_automatic")
+            ),
+            "reference_relaxed": (
+                bool(reference_choice.relaxed) if reference_choice is not None else None
+            ),
+            "paired_by_donor": prepared.use_pairing,
+            "n_paired_donors": prepared.paired_donors,
+            "seed": settings.seed,
+            "num_iterations": settings.num_iterations,
+            "n_samples": int(cc.counts.shape[0]),
+            "n_celltypes": int(cc.counts.shape[1]),
+            "n_unlabeled_cells": cc.n_unlabeled,
+            "n_credible": n_credible,
+            "n_donor_consistent": (
+                int((concordance["pattern"] == "consistent").sum())
+                if not concordance.empty
+                else None
+            ),
+            **extra,
+        }
 
     def _resolve_reference(
         self, counts: pd.DataFrame, config: dict, configured: str | None
