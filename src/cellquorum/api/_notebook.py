@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cellquorum.backends.registry import BackendRegistry, build_default_backend_registry
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.executor import build_default_stage_registry
@@ -63,6 +64,7 @@ def run_stage(
     *,
     config: CellQuorumConfig | dict | None = None,
     output_dir: str | Path | None = None,
+    backend_registry: BackendRegistry | None = None,
     **stage_kwargs: Any,
 ) -> NotebookStageOutput:
     """
@@ -76,6 +78,10 @@ def run_stage(
             are merged into this stage's config block, which is also enabled.
         output_dir: Optional directory for any artifacts the stage writes. A
             temporary directory is used when omitted.
+        backend_registry: Optional backend registry. By default the same registry the
+            pipeline builds is used, so a stage that needs an external backend (the
+            scclr normalization recipe, R methods) finds it exactly as it does from
+            the command line.
         **stage_kwargs: Stage-specific settings merged into the stage's config
             block (e.g. ``mode="flag_no_drop"`` for qc).
 
@@ -123,6 +129,12 @@ def run_stage(
             paths=paths,
             adata=adata,
             random_seed=effective_config.run.random_seed,
+            backend_registry=backend_registry
+            or build_default_backend_registry(
+                rscript_path=effective_config.r.rscript_path,
+                max_memory_gb=effective_config.r.max_memory_gb,
+                sctenifoldknk_python=effective_config.perturbation.sctenifoldknk.python_executable,
+            ),
         )
         result = stage.run(context)
 

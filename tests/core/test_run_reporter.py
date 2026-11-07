@@ -137,3 +137,49 @@ def test_config_echo_excludes_per_stage_disabled():
     assert "clustering" in out
     # Dimensionality should NOT be shown (excluded from planned_stage_names).
     assert "dimensionality" not in out
+
+
+def test_config_echo_shows_the_cohort_batch_key_not_the_raw_default():
+    """The header reports what a stage will use; the cohort block fills shared keys at run time."""
+    rep, buf = _reporter()
+    cfg = CellQuorumConfig.model_validate(
+        {
+            "project": {"name": "tutorial"},
+            "cohort": {"batch_key": "donor"},
+            "stages": {"integration": True},
+        }
+    )
+    rep.config_echo(cfg, planned_stage_names=["integration"])
+    out = buf.getvalue()
+    assert "batch_key=donor" in out
+    assert "patient_id" not in out
+
+
+def test_config_echo_names_stages_that_run_only_because_of_the_defaults():
+    """Naming some stages does not switch the others off; the header must say they are running."""
+    rep, buf = _reporter()
+    cfg = CellQuorumConfig.model_validate(
+        {"project": {"name": "tutorial"}, "stages": {"qc_evidence": True, "grn": False}}
+    )
+    rep.config_echo(cfg, planned_stage_names=["qc_evidence", "preprocessing", "clustering"])
+    out = buf.getvalue()
+    assert "On by default" in out
+    assert "preprocessing" in out and "clustering" in out
+    assert "2 stage(s)" in out
+
+
+def test_config_echo_has_no_default_warning_when_every_stage_is_named():
+    rep, buf = _reporter()
+    cfg = CellQuorumConfig.model_validate(
+        {"project": {"name": "tutorial"}, "stages": {"qc_evidence": True, "preprocessing": True}}
+    )
+    rep.config_echo(cfg, planned_stage_names=["qc_evidence", "preprocessing"])
+    assert "On by default" not in buf.getvalue()
+
+
+def test_config_echo_has_no_default_warning_without_a_stages_block():
+    """No stages block means the standard profile was asked for; there is nothing to warn about."""
+    rep, buf = _reporter()
+    cfg = CellQuorumConfig.model_validate({"project": {"name": "standard"}})
+    rep.config_echo(cfg, planned_stage_names=["qc_evidence", "preprocessing"])
+    assert "On by default" not in buf.getvalue()

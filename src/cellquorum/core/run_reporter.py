@@ -119,6 +119,18 @@ class RunReporter:
         else:
             table.add_row("Enabled stages", "none")
 
+        # A config that names some stages still runs every stage it does not name, because the
+        # standard profile is on by default. Say so, or a short config that lists only the wanted
+        # stages quietly runs dozens of others (a tutorial config naming ten ran thirty-two).
+        named = set(config.stages.model_fields_set)
+        unnamed = [stage for stage in enabled_stages if stage not in named]
+        if named and unnamed:
+            table.add_row(
+                "On by default",
+                f"{len(unnamed)} stage(s) not named under stages: {', '.join(unnamed)}. "
+                "Set them to false there to switch them off.",
+            )
+
         # Show stage-specific parameters for enabled stages.
         config_dict = config.model_dump()
         for stage_name in enabled_stages:
@@ -126,6 +138,12 @@ class RunReporter:
             if stage_name in config_dict:
                 stage_cfg = config_dict[stage_name]
                 if isinstance(stage_cfg, dict) and stage_cfg:
+                    # Show what the stage will use, not the raw field: the cohort block fills the
+                    # shared keys (batch, donor, condition) at run time, so the raw default read
+                    # "batch_key=patient_id" for a run that batched by donor.
+                    from cellquorum.methods.stage_base import overlay_cohort_keys
+
+                    stage_cfg = overlay_cohort_keys(config, stage_cfg)
                     # Build compact param line.
                     params = []
                     # A `methods` list wins over the single `method` field.

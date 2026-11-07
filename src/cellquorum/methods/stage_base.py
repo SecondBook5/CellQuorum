@@ -10,7 +10,7 @@ class that satisfies the existing ``PipelineStage`` Protocol.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import MethodSkip
@@ -263,7 +263,7 @@ _COHORT_OVERLAY_KEYS: tuple[str, ...] = (
 )
 
 
-def _apply_cohort_overlay(context: PipelineContext, stage_config: dict) -> dict:
+def overlay_cohort_keys(config: Any, stage_config: dict) -> dict:
     """
     Return a copy of ``stage_config`` with cohort-declared keys overlaid.
 
@@ -272,14 +272,13 @@ def _apply_cohort_overlay(context: PipelineContext, stage_config: dict) -> dict:
     stage config is returned unchanged, so existing configs behave identically.
 
     Args:
-        context: Pipeline context exposing ``config`` (may lack a cohort block).
+        config: A CellQuorum configuration exposing ``cohort`` (may lack one).
         stage_config: The resolved per-stage config dict.
 
     Returns:
         A (possibly updated) config dict.
     """
 
-    config = getattr(context, "config", None)
     cohort = getattr(config, "cohort", None)
     if cohort is None:
         return stage_config
@@ -292,6 +291,12 @@ def _apply_cohort_overlay(context: PipelineContext, stage_config: dict) -> dict:
         if cohort_value and key in overlaid:
             overlaid[key] = cohort_value
     return overlaid
+
+
+def _apply_cohort_overlay(context: PipelineContext, stage_config: dict) -> dict:
+    """Overlay the cohort block onto a stage config, as the stage will see it at run time."""
+
+    return overlay_cohort_keys(getattr(context, "config", None), stage_config)
 
 
 __all__ = ["MethodDispatchStage"]

@@ -91,3 +91,34 @@ def test_notebook_api_adds_no_new_stage_classes() -> None:
             obj = getattr(module, name)
             # No class whose name ends in "Stage" should be defined here.
             assert not (isinstance(obj, type) and name.endswith("Stage"))
+
+
+def test_notebook_stage_receives_the_pipelines_backend_registry(monkeypatch) -> None:
+    """A notebook call hands the stage a backend registry, as the pipeline does.
+
+    Without one, a stage that needs an external backend (the scclr normalization recipe, R methods)
+    failed in a notebook even though the same stage ran from the command line.
+    """
+    from cellquorum.api import _notebook
+    from cellquorum.backends.registry import BackendRegistry
+
+    seen: dict[str, object] = {}
+
+    class _Probe:
+        def run(self, context):
+            seen["registry"] = context.backend_registry
+            return type(
+                "R", (), {"adata": context.adata, "metrics": {}, "warnings": [], "notes": []}
+            )()
+
+    class _Registry:
+        def get(self, name):
+            return _Probe() if name == "qc_evidence" else None
+
+        def registered_stage_names(self):
+            return ["qc_evidence"]
+
+    monkeypatch.setattr(_notebook, "build_default_stage_registry", lambda: _Registry())
+    adata = ad.AnnData(np.ones((3, 2), dtype=np.float32))
+    _notebook.run_stage("qc_evidence", adata)
+    assert isinstance(seen["registry"], BackendRegistry)
