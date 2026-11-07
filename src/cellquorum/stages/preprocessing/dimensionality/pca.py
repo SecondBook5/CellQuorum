@@ -677,7 +677,7 @@ class PCAMethod(AnalysisMethod):
             sp.save_npz(matrix_in, sparse)
             np.save(center_in, row_center)
 
-            result = backend.run_helper(
+            result = backend.run_script(
                 PFLOG_HELPER,
                 [
                     "pca",

@@ -191,7 +191,7 @@ class SccodaMethod(AnalysisMethod):
 
         # Invoke the sccoda helper; non-zero exit -> recorded skip (never crash).
         try:
-            proc = backend.run_helper(SCCODA_HELPER, args, timeout=timeout)
+            proc = backend.run_script(SCCODA_HELPER, args, timeout=timeout)
         except FileNotFoundError as exc:
             return self._skip("helper execution failed", error=str(exc)[:500])
         except subprocess.TimeoutExpired as exc:

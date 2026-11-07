@@ -30,19 +30,18 @@ changes.
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cellquorum.backends._probe import resolve_launcher
-from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendRequirement
+from cellquorum.backends.external_env import ExternalEnvBackend, launcher_requirement
 
 # Directory holding the in-env helper scripts run INSIDE the partipy environment.
 _PARTIPY_SCRIPTS_DIR = Path(__file__).parent / "partipy_scripts"
 
 
 @dataclass
-class PartipyBackend(BaseBackend):
+class PartipyBackend(ExternalEnvBackend):
     """Backend for executing partipy in an isolated micromamba environment.
 
     Availability requires a micromamba/conda launcher on PATH and that
@@ -58,20 +57,13 @@ class PartipyBackend(BaseBackend):
     """
 
     name: str = "partipy"
-    kind: BackendKind = "external"
     env_name: str = "partipy"
-    launcher: str = "micromamba"
-    timeout_seconds: int = 60
     script_timeout_seconds: int = 3600
+    module_name = "partipy"
 
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
-            BackendRequirement(
-                name="micromamba",
-                requirement_type="executable",
-                required=True,
-                install_hint="Install micromamba (or set launcher to conda/mamba).",
-            ),
+            launcher_requirement(),
             BackendRequirement(
                 name="partipy",
                 requirement_type="other",
@@ -85,115 +77,6 @@ class PartipyBackend(BaseBackend):
             ),
         ]
     )
-
-    def status(self) -> BackendStatus:
-        """Check whether partipy can run in its isolated environment."""
-        missing: list[str] = []
-        details: dict[str, str | int | bool] = {
-            "env_name": self.env_name,
-            "launcher": self.launcher,
-            "license": "GPL-3 (isolated; not linked into CellQuorum)",
-        }
-
-        if not self._launcher_available():
-            missing.append(self.launcher)
-            return BackendStatus(
-                name=self.name,
-                kind=self.kind,
-                available=False,
-                requirements=self.requirements(),
-                missing=missing,
-                warnings=[],
-                details=details,
-            )
-
-        if not self._partipy_importable():
-            missing.append("partipy")
-
-        return BackendStatus(
-            name=self.name,
-            kind=self.kind,
-            available=len(missing) == 0,
-            requirements=self.requirements(),
-            missing=missing,
-            warnings=[],
-            details=details,
-        )
-
-    def run_helper(
-        self,
-        script_path: str | Path,
-        args: list[str] | None = None,
-        *,
-        timeout: int | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """Run an in-env helper script inside the partipy environment.
-
-        Mirrors :meth:`cellquorum.backends.scclr_backend.ScclrBackend.run_helper`: the caller
-        writes input files and reads output files, and a non-zero exit code is returned rather
-        than raised so the caller can surface a domain-specific error.
-
-        Args:
-            script_path: Path to the helper script (runs inside the partipy env).
-            args: Positional arguments passed to the helper.
-            timeout: Optional timeout override; defaults to ``script_timeout_seconds``.
-
-        Returns:
-            Completed subprocess result with captured stdout and stderr.
-
-        Raises:
-            FileNotFoundError: If the launcher or the helper script is missing.
-        """
-        script = Path(script_path)
-        if not script.is_file():
-            raise FileNotFoundError(f"partipy helper script not found: {script}")
-        if not self._launcher_available():
-            raise FileNotFoundError(
-                f"Environment launcher '{self.launcher}' was not found on PATH."
-            )
-
-        cmd = [
-            resolve_launcher(self.launcher) or self.launcher,
-            "run",
-            "-n",
-            self.env_name,
-            "python",
-            str(script),
-            *(args or []),
-        ]
-        return subprocess.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout if timeout is not None else self.script_timeout_seconds,
-        )
-
-    def _launcher_available(self) -> bool:
-        """Return whether the environment launcher is on PATH."""
-        return resolve_launcher(self.launcher) is not None
-
-    def _partipy_importable(self) -> bool:
-        """Return whether ``import partipy`` succeeds inside the configured env."""
-        try:
-            result = subprocess.run(
-                [
-                    resolve_launcher(self.launcher) or self.launcher,
-                    "run",
-                    "-n",
-                    self.env_name,
-                    "python",
-                    "-c",
-                    "import partipy",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-        return result.returncode == 0
 
 
 def build_partipy_backend(

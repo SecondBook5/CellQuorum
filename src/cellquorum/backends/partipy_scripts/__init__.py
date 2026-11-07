@@ -1,7 +1,7 @@
 """In-env helper scripts executed inside the isolated partipy environment.
 
 These scripts are NOT imported by CellQuorum — they are invoked as subprocesses via
-``PartipyBackend.run_helper`` and run under the partipy env's interpreter, where
+``PartipyBackend.run_script`` and run under the partipy env's interpreter, where
 ``import partipy`` is available.
 
 The isolation is a licensing boundary as well as a dependency one: partipy is GPL-3 and

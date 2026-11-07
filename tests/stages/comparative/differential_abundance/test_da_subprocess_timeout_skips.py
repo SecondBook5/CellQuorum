@@ -47,10 +47,10 @@ def _cohort_adata():
 
 
 class _TimingOutBackend:
-    """A backend whose script/helper invocation always times out."""
+    """A backend whose script invocation always times out."""
 
     def _rscript_available(self) -> bool:
-        # Rscript is present; the timeout occurs later in run_script/run_helper.
+        # Rscript is present; the timeout occurs later in run_script.
         return True
 
     def _r_package_available(self, pkg: str) -> bool:
@@ -59,9 +59,6 @@ class _TimingOutBackend:
 
     def run_script(self, script, args, timeout=None):
         raise subprocess.TimeoutExpired(cmd="Rscript", timeout=timeout or 1)
-
-    def run_helper(self, script, args, timeout=None):
-        raise subprocess.TimeoutExpired(cmd="micromamba", timeout=timeout or 1)
 
     def status(self):
         class _S:

@@ -705,7 +705,7 @@ def _run_scclr_normalize(
         meta_out = tmp_path / "meta.json"
         sp.save_npz(counts_path, counts.tocsr())
 
-        result = backend.run_helper(  # type: ignore[attr-defined]
+        result = backend.run_script(  # type: ignore[attr-defined]
             PFLOG_HELPER,
             [
                 "normalize",

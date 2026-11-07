@@ -47,7 +47,7 @@ def test_helper_round_trips_normalize(tmp_path: Path):
     meta_out = tmp_path / "meta.json"
     sp.save_npz(counts_path, counts)
 
-    result = backend.run_helper(
+    result = backend.run_script(
         PFLOG_HELPER,
         ["normalize", str(counts_path), str(matrix_out), str(meta_out), "--target", "auto"],
     )
@@ -72,7 +72,7 @@ def test_helper_pca_round_trips(tmp_path: Path):
     pflog_path = tmp_path / "pflog.npz"
     meta_path = tmp_path / "meta.json"
     sp.save_npz(counts_path, counts)
-    r1 = backend.run_helper(
+    r1 = backend.run_script(
         PFLOG_HELPER,
         ["normalize", str(counts_path), str(pflog_path), str(meta_path), "--target", "auto"],
     )
@@ -82,7 +82,7 @@ def test_helper_pca_round_trips(tmp_path: Path):
     np.save(center_path, np.asarray(json.loads(meta_path.read_text())["row_center"], dtype=float))
     pca_out = tmp_path / "pca.npz"
     pca_meta = tmp_path / "pca_meta.json"
-    r2 = backend.run_helper(
+    r2 = backend.run_script(
         PFLOG_HELPER,
         [
             "pca",

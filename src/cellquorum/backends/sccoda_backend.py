@@ -12,19 +12,18 @@ CellQuorum process.
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cellquorum.backends._probe import resolve_launcher
-from cellquorum.backends.base import BackendKind, BackendRequirement, BackendStatus, BaseBackend
+from cellquorum.backends.base import BackendRequirement
+from cellquorum.backends.external_env import ExternalEnvBackend, launcher_requirement
 
 # Directory holding the in-env helper scripts run INSIDE the sccoda environment.
 _SCCODA_SCRIPTS_DIR = Path(__file__).parent / "sccoda_scripts"
 
 
 @dataclass
-class SccodaBackend(BaseBackend):
+class SccodaBackend(ExternalEnvBackend):
     """
     Backend for executing scCODA in an isolated micromamba environment.
 
@@ -42,24 +41,14 @@ class SccodaBackend(BaseBackend):
 
     name: str = "sccoda"
 
-    kind: BackendKind = "external"
-
     env_name: str = "sccoda_env"
 
-    launcher: str = "micromamba"
-
-    timeout_seconds: int = 60
-
     script_timeout_seconds: int = 3600
+    module_name = "sccoda"
 
     requirement_list: list[BackendRequirement] = field(
         default_factory=lambda: [
-            BackendRequirement(
-                name="micromamba",
-                requirement_type="executable",
-                required=True,
-                install_hint="Install micromamba (or set launcher to conda/mamba).",
-            ),
+            launcher_requirement(),
             BackendRequirement(
                 name="sccoda",
                 requirement_type="other",
@@ -72,131 +61,6 @@ class SccodaBackend(BaseBackend):
             ),
         ]
     )
-
-    def status(self) -> BackendStatus:
-        """
-        Check whether scCODA can run in its isolated environment.
-
-        Returns:
-            BackendStatus describing scCODA availability.
-        """
-
-        missing: list[str] = []
-        warnings: list[str] = []
-        details: dict[str, str | int | bool] = {
-            "env_name": self.env_name,
-            "launcher": self.launcher,
-        }
-
-        # The launcher must exist before we can enter the env at all.
-        if not self._launcher_available():
-            missing.append(self.launcher)
-            return BackendStatus(
-                name=self.name,
-                kind=self.kind,
-                available=False,
-                requirements=self.requirements(),
-                missing=missing,
-                warnings=warnings,
-                details=details,
-            )
-
-        # scCODA itself must import inside the configured env.
-        if not self._sccoda_importable():
-            missing.append("sccoda")
-
-        available = len(missing) == 0
-        return BackendStatus(
-            name=self.name,
-            kind=self.kind,
-            available=available,
-            requirements=self.requirements(),
-            missing=missing,
-            warnings=warnings,
-            details=details,
-        )
-
-    def run_helper(
-        self,
-        script_path: str | Path,
-        args: list[str] | None = None,
-        *,
-        timeout: int | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """
-        Run an in-env helper script inside the scCODA environment.
-
-        Mirrors ``RscriptBackend.run_script``: the caller writes any input files
-        and reads output files; this method only invokes
-        ``<launcher> run -n <env> python <script> [args...]`` and captures output.
-        Non-zero exit codes are returned (not raised) so the caller can inspect
-        stderr and raise a domain-specific error.
-
-        Args:
-            script_path: Path to the helper script (runs inside the scCODA env).
-            args: Positional arguments passed to the helper.
-            timeout: Optional timeout override; defaults to script_timeout_seconds.
-
-        Returns:
-            Completed subprocess result with captured stdout and stderr.
-
-        Raises:
-            FileNotFoundError: If the launcher or the helper script is missing.
-        """
-
-        script = Path(script_path)
-        if not script.is_file():
-            raise FileNotFoundError(f"scCODA helper script not found: {script}")
-
-        if not self._launcher_available():
-            raise FileNotFoundError(
-                f"Environment launcher '{self.launcher}' was not found on PATH."
-            )
-
-        cmd = [
-            resolve_launcher(self.launcher) or self.launcher,
-            "run",
-            "-n",
-            self.env_name,
-            "python",
-            str(script),
-            *(args or []),
-        ]
-        return subprocess.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout if timeout is not None else self.script_timeout_seconds,
-        )
-
-    def _launcher_available(self) -> bool:
-        """Return whether the environment launcher is on PATH."""
-
-        return resolve_launcher(self.launcher) is not None
-
-    def _sccoda_importable(self) -> bool:
-        """Return whether ``import sccoda`` succeeds inside the configured env."""
-
-        try:
-            result = subprocess.run(
-                [
-                    resolve_launcher(self.launcher) or self.launcher,
-                    "run",
-                    "-n",
-                    self.env_name,
-                    "python",
-                    "-c",
-                    "import sccoda",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-        return result.returncode == 0
 
 
 def build_sccoda_backend(

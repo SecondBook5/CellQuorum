@@ -179,7 +179,7 @@ def audit_archetypes(
         np.save(embedding_path, np.ascontiguousarray(fit_embedding, dtype=np.float64))
 
         try:
-            result = partipy.run_helper(
+            result = partipy.run_script(
                 ARCHETYPE_HELPER,
                 [
                     "fit",

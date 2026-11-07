@@ -41,7 +41,7 @@ class IsolatedBackend(Protocol):
         """Availability of the isolated environment."""
         ...
 
-    def run_helper(
+    def run_script(
         self,
         script_path: str | Path,
         args: list[str] | None = None,
