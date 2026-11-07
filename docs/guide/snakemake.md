@@ -50,7 +50,7 @@ The manifest (`workflow/hypotheses.yaml`) defines the set of hypotheses to run. 
 emt_krt_high:
   title: "EMT / KRT-high keratinocyte program"
   cell_types: [KC]
-  inputs: {KC: /data/lymphedema/kc_subset.h5ad}
+  inputs: {KC: /data/project/kc_subset.h5ad}
   skip:
     trajectory: "EMT is a snapshot state; trajectory not needed"
   gene_programs:

@@ -1,6 +1,6 @@
 """TDD tests for cellquorum.stats.reference_identity.
 
-Generalizes a real forensic diagnostic from the Mehrara analysis
+Generalizes a real forensic diagnostic from a collaborator's analysis
 (umap_blob_diagnostic.py) into reusable CellQuorum code: which cells does the
 reference-mapping classifier itself have low confidence in (an "ambiguous
 identity" blob, independent of the three-way consensus check), and which

@@ -45,14 +45,6 @@ through:
 The full spine now runs end-to-end in a single `cellquorum run`, threading the
 AnnData object through every enabled stage.
 
-The KC production configuration is:
-
-- `configs/le_kc.yaml`
-
-The most recent KC production outputs are under:
-
-- `runs/kc_production/`
-
 ## QC output contract
 
 Every QC run with figures enabled should emit both:

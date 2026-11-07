@@ -118,7 +118,7 @@ Variables the shipped configs and tests read:
 | Variable | Points at |
 |---|---|
 | `CELLQUORUM_CELLRANGER_ROOT` | Cell Ranger output root (the dir holding per-run `outs/`) |
-| `CELLQUORUM_KC_H5AD` | SoupX-corrected keratinocyte object, for `configs/le_kc.yaml` |
+| `CELLQUORUM_KC_H5AD` | SoupX-corrected keratinocyte object, for the keratinocyte integration tests |
 | `CELLQUORUM_AD_ATLAS_H5AD` | Atopic-dermatitis reference atlas (Broad SCP2613) |
 | `CELLQUORUM_KC_ATLAS_H5AD` | Fiskin keratinocyte reference atlas |
 | `CELLQUORUM_SMOKE_H5AD` | Subsampled smoke-test cohort (has a `/tmp` default) |

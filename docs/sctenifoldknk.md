@@ -38,7 +38,7 @@ perturbation:
   sctenifoldknk:
     python_executable: /path/to/sctenifoldknk/bin/python
     ko_genes: [IL33]       # multiple genes specify a JOINT gene knockout
-    condition_label: Lymphedema
+    condition_label: Case
     donor_key: donor_id
     groups: [Basal, Spinous, Transitional differentiating]
     by_cluster: true

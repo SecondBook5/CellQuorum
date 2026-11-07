@@ -148,9 +148,8 @@ from successful small fixtures.
 
 The exact supplied Windows path was not present. Two related collections were found:
 
-- `C:\Users\ajboo\BookAbraham\mehrara_analyses\figures` (114 PNG files).
-- `C:\Users\ajboo\BookAbraham\mehrara_analyses\Mehrara Lab analysis\figures`
-  (104 PNG files).
+- one local collection of 114 PNG files and a second of 104 PNG files, both from the author's
+  earlier analyses (paths omitted).
 
 Pending confirmation of the intended collection, five representative figures were
 inspected across both directories: the all-cell-type volcano grid, mechanosensory

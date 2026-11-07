@@ -7,11 +7,11 @@ This document describes how to run smoke tests on real biological h5ad files to 
 The fastest way to verify the pipeline is to use the `smoke_real_h5ad.py` script:
 
 ```bash
-cd /home/ajbook/projects/cellquorum
+cd <path-to-cellquorum>   # the repository root
 
 mamba run -n cellquorum-dev python scripts/smoke_real_h5ad.py \
-  --input-h5ad /mnt/e/mg_thymoma_tolerance_data/raw/mg_yasumizu_figshare/processed_scRNAseq_all_rmdoublet.h5ad \
-  --output-dir /mnt/e/cellquorum_smoke_runs/mg_thymoma_processed_smoke_script \
+  --input-h5ad "$DATA_DIR/processed_scRNAseq_all_rmdoublet.h5ad" \
+  --output-dir "$OUT_DIR/mg_thymoma_processed_smoke_script" \
   --n-cells 200 \
   --n-genes 500 \
   --counts-layer counts \
@@ -23,7 +23,7 @@ Expected output (JSON summary):
 ```json
 {
   "status": "success",
-  "input_h5ad": "/mnt/e/mg_thymoma_tolerance_data/raw/mg_yasumizu_figshare/processed_scRNAseq_all_rmdoublet.h5ad",
+  "input_h5ad": "<DATA_DIR>/processed_scRNAseq_all_rmdoublet.h5ad",
   "input_shape": [113948, 27631],
   "subset_shape": [200, 500],
   "successful_stages": ["qc", "preprocessing"],
@@ -162,7 +162,7 @@ The MG Thymoma dataset used in the example above:
 - **Size**: 113,948 cells × 27,631 genes
 - **Data type**: scRNA-seq after doublet removal
 - **Layers**: `counts` (raw integer counts)
-- **Location**: `/mnt/e/mg_thymoma_tolerance_data/raw/mg_yasumizu_figshare/processed_scRNAseq_all_rmdoublet.h5ad`
+- **Location**: wherever you saved the Figshare file (`$DATA_DIR` above)
 
 This is a good smoke test dataset because:
 - It has a large cell count (robust subsetting)

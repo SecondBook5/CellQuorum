@@ -140,7 +140,7 @@ _LEC_HALLMARK_SIGNIFICANT = [
 def test_node_names_in_a_tight_cluster_do_not_print_over_each_other() -> None:
     """Real defect on the LEC map: the significant inflammatory pathways share leading-edge genes
     and sit close together, and their names ran together (fixture: the 14 most significant
-    Hallmark sets on Dr. Mehrara's LEC cells, leading edges trimmed to 12 genes)."""
+    Hallmark sets on a LEC dataset, leading edges trimmed to 12 genes)."""
     table = pd.DataFrame(_LEC_HALLMARK_SIGNIFICANT, columns=["source", "score", "leading_edge"])
     table["padj"] = 0.001
     fig = enrichment_map(table)

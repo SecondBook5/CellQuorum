@@ -122,7 +122,7 @@ def _patch_tensor(monkeypatch, name, exc):
 
 
 def test_tensor_skip_says_so_when_the_elbow_finds_no_knee(tmp_path, monkeypatch):
-    """Real failure on Dr. Mehrara's lymphedema atlas: cell2cell's automatic elbow returned None for
+    """Real failure on a lymphedema atlas: cell2cell's automatic elbow returned None for
     a loss curve with no knee and the method reported only 'factorization failed', with the cause
     dropped. The reason must name the missing elbow and say what to set."""
     _patch_tensor(

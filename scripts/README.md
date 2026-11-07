@@ -16,13 +16,8 @@ and rendering into the package rather than copying it between scripts.
 | `smoke_real_h5ad.py` | Exercise the pipeline against an existing H5AD file. |
 | `inspect_reference_atlas.py` | Inspect SCP2613 reference metadata and query gene overlap. |
 | `inspect_celltypist_labels.py` | Inspect CellTypist model labels. |
-| `export_le_global.py` | Export the existing LE study's global analysis outputs. |
-| `validate_le_global.py` | Validate the LE global analysis outputs. |
-| `verify_le_manifest.py` | Check the LE study's manifest. |
 
-The LE helpers are study-specific maintained tooling, not generalized analysis
-APIs. Local `le_*.py` experiment scripts are ignored by Git and are not shipped
-as package capabilities. Do not make the installed pipeline depend on them.
+Study-specific scripts do not belong in this repository; keep them in the project that uses CellQuorum. Do not make the installed pipeline depend on anything in this folder.
 
 CI checks tracked scripts with Ruff. From the repository root:
 

@@ -1,4 +1,4 @@
-"""The grant theme: the look of the three figures Dr. Mehrara liked, applied to every figure."""
+"""The grant theme: the look of the three figures chosen for the grant, applied to every figure."""
 
 from __future__ import annotations
 

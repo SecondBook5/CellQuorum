@@ -167,7 +167,7 @@ def test_plot_categorized_dotplot_drops_categories_with_no_present_genes(tmp_pat
 def test_plot_categorized_dotplot_handles_a_gene_shared_across_categories(tmp_path):
     """A gene can legitimately appear in more than one category (e.g. COL1A1 in
     both a homeostatic/ECM panel and a myofibroblast panel) -- exactly the
-    real Mehrara panel this figure was built for. That duplicates the gene's
+    real marker panel this figure was built for. That duplicates the gene's
     row label, which broke a .loc-based scalar lookup before this test."""
     from cellquorum.visualization.marker_panels import plot_categorized_dotplot
 

@@ -1,6 +1,6 @@
 """The radial DoRothEA/CollecTRI GRN figure ("the cool circle plot").
 
-Ports a reference lab script (a hand-rolled Mehrara-lab analysis, not a
+Ports a reference lab script (a hand-rolled analysis from a collaborating lab, not a
 CellQuorum module) into an engine primitive: for one compartment's paired
 case-vs-control contrast, the most active transcription factors (regulators)
 sit on an inner ring, grouped into data-driven sectors clustered on shared

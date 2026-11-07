@@ -36,7 +36,7 @@ class DifferentialStateStage:
     """Donor-paired test of every resolved state/program score, case vs control.
 
     ``state_scoring`` writes per-cell program scores but never tests whether they
-    differ between conditions; four separate ad hoc scripts in the Mehrara
+    differ between conditions; four separate ad hoc scripts in a collaborating lab's
     manuscript each reinvented that test slightly differently. This stage is the
     engine capability that replaces them, reusing the already-validated
     ``two_group_test_on_donor_medians`` rather than a new statistical

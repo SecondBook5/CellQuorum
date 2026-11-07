@@ -256,7 +256,7 @@ def draw_categorized_dotplot(
 
     # A gene may legitimately repeat across categories (e.g. COL1A1 in both a
     # "Homeostatic/ECM" and a "Myofibroblast/contractile" panel -- exactly the
-    # case Mehrara's own table has). That means all_genes can have duplicate
+    # case a user's own table has). That means all_genes can have duplicate
     # names, so everything below is indexed by ROW POSITION, never by gene
     # name via .loc -- a duplicated label there returns a Series, not a
     # scalar, and silently breaks the color/size lookup per cell.
