@@ -142,3 +142,87 @@ def test_write_figures_false_skips_the_figure(tmp_path):
     }
     result = HVGMethod().run(a, cfg, context=_Context(tmp_path))
     assert not any(art.kind == "figure" for art in result.artifacts)
+
+
+# ═══ A singular seurat_v3 trend fit retries loudly; nothing else is softened ═══════════════
+
+
+def _singular_below(
+    monkeypatch, *, min_genes_ok: int, message: str = "reciprocal condition number 5e-15"
+):
+    """Make scanpy's HVG raise a loess failure while the gene set exceeds ``min_genes_ok``."""
+    from cellquorum.stages.preprocessing.feature_selection import hvg
+
+    real = hvg.sc.pp.highly_variable_genes
+    calls: list[int] = []
+
+    def fake(adata, **kwargs):
+        calls.append(adata.n_vars)
+        if adata.n_vars > min_genes_ok:
+            raise ValueError(message)
+        real(adata, **kwargs)
+
+    monkeypatch.setattr(hvg.sc.pp, "highly_variable_genes", fake)
+    return calls
+
+
+def _sparse_counts_adata(seed: int = 0) -> ad.AnnData:
+    """Genes 0-39 are well expressed; genes 40-79 are expressed in only a handful of cells."""
+    rng = np.random.default_rng(seed)
+    X = np.zeros((300, 80), dtype="float32")
+    X[:, :40] = rng.poisson(3.0, size=(300, 40))
+    for gene in range(40, 80):
+        X[rng.choice(300, 4, replace=False), gene] = 1.0
+    a = ad.AnnData(X=X.copy())
+    a.var_names = [f"g{i}" for i in range(80)]
+    a.layers["counts"] = X.copy()
+    set_layer_tag(a, "counts", kind="counts")
+    return a
+
+
+def test_a_working_first_attempt_is_not_retried_and_reports_no_retry(monkeypatch) -> None:
+    calls = _singular_below(monkeypatch, min_genes_ok=10_000)
+    result = HVGMethod().run(
+        _counts_adata(),
+        {"method": "seurat_v3", "n_top_genes": 20, "counts_layer": "counts"},
+        context=None,
+    )
+    assert calls == [60]
+    assert result.metrics["retry_min_cells"] is None
+    assert not result.warnings
+
+
+def test_a_singular_fit_retries_on_well_expressed_genes_and_says_so(monkeypatch) -> None:
+    calls = _singular_below(monkeypatch, min_genes_ok=40)
+    result = HVGMethod().run(
+        _sparse_counts_adata(),
+        {"method": "seurat_v3", "n_top_genes": 20, "counts_layer": "counts"},
+        context=None,
+    )
+    assert calls == [80, 40]
+    assert result.metrics["retry_min_cells"] == 10
+    assert any("repeated on genes expressed in at least 10 cells" in w for w in result.warnings)
+    var = result.adata.var
+    assert int(var["highly_variable"].sum()) == 20
+    # The rarely expressed genes were not eligible, so none of them is flagged.
+    assert not var.loc[[f"g{i}" for i in range(40, 80)], "highly_variable"].any()
+
+
+def test_a_different_error_is_not_softened(monkeypatch) -> None:
+    _singular_below(monkeypatch, min_genes_ok=0, message="something else went wrong")
+    with pytest.raises(ValueError, match="something else"):
+        HVGMethod().run(
+            _sparse_counts_adata(),
+            {"method": "seurat_v3", "n_top_genes": 20, "counts_layer": "counts"},
+            context=None,
+        )
+
+
+def test_the_original_error_is_raised_when_no_cell_bar_makes_the_fit_work(monkeypatch) -> None:
+    _singular_below(monkeypatch, min_genes_ok=0)
+    with pytest.raises(ValueError, match="condition number"):
+        HVGMethod().run(
+            _sparse_counts_adata(),
+            {"method": "seurat_v3", "n_top_genes": 20, "counts_layer": "counts"},
+            context=None,
+        )

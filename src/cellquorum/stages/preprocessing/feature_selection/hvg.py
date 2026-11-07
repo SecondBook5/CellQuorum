@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import anndata as ad
+import numpy as np
 import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
@@ -25,6 +26,74 @@ if TYPE_CHECKING:
 
 # Flavors that require raw counts vs. the log-normalized layer.
 _COUNT_FLAVORS = {"seurat_v3", "pearson_residuals"}
+
+#: Minimum number of expressing cells tried, in order, when the seurat_v3 trend fit is singular.
+_LOESS_RETRY_MIN_CELLS = (10, 20, 50)
+
+
+def _is_loess_failure(error: Exception) -> bool:
+    """Whether scanpy's seurat_v3 mean-variance trend fit failed numerically."""
+    text = str(error).lower()
+    return "condition number" in text or "singularit" in text
+
+
+def _highly_variable_with_retry(
+    fit_adata: ad.AnnData,
+    *,
+    method: str,
+    n_top: int,
+    layer: str,
+    batch_key: str | None,
+) -> int | None:
+    """Run scanpy's HVG selection; on a singular seurat_v3 fit, retry on well-expressed genes.
+
+    seurat_v3 fits a loess trend of variance on mean, and with a batch key it does so per batch.
+    A batch with few cells leaves many genes expressed in a handful of cells, the design matrix goes
+    singular and scanpy raises (a random 4,000-cell subset of four donors did this, while the full
+    data did not). The first attempt is unchanged, so a run that works keeps its exact result. Only
+    after a failure is the fit repeated on genes expressed in at least ``_LOESS_RETRY_MIN_CELLS``
+    cells, smallest first; genes below the bar are not eligible and are flagged false.
+
+    Returns:
+        None when the first attempt worked, otherwise the minimum cell count that made it work.
+
+    Raises:
+        ValueError: The original error, when the method is not seurat_v3, the failure is not a
+            singular fit, or no cell-count bar made it work.
+    """
+    try:
+        sc.pp.highly_variable_genes(
+            fit_adata, flavor=method, n_top_genes=n_top, layer=layer, batch_key=batch_key
+        )
+    except ValueError as error:
+        if method != "seurat_v3" or not _is_loess_failure(error):
+            raise
+        original = error
+    else:
+        return None
+
+    counts = fit_adata.layers[layer]
+    n_expressing = np.asarray((counts > 0).sum(axis=0)).ravel()
+    for min_cells in _LOESS_RETRY_MIN_CELLS:
+        eligible = n_expressing >= min_cells
+        if int(eligible.sum()) <= n_top:
+            break
+        subset = fit_adata[:, eligible].copy()
+        try:
+            sc.pp.highly_variable_genes(
+                subset, flavor=method, n_top_genes=n_top, layer=layer, batch_key=batch_key
+            )
+        except ValueError as error:
+            if not _is_loess_failure(error):
+                raise
+            continue
+        for column in subset.var.columns:
+            fit_adata.var[column] = subset.var[column].reindex(fit_adata.var_names)
+        fit_adata.var["highly_variable"] = (
+            fit_adata.var["highly_variable"].fillna(False).astype(bool)
+        )
+        return min_cells
+    raise original
 
 
 class HVGMethod(AnalysisMethod):
@@ -86,6 +155,8 @@ class HVGMethod(AnalysisMethod):
         fitting = fitting_cells(adata.obs)
         fit_adata = adata if fitting is None else adata[fitting].copy()
 
+        retried_at: int | None = None
+
         # scanpy writes var['highly_variable'] (+ ranks/means) in place.
         # pearson_residuals HVG lives ONLY in sc.experimental; all other flavors
         # (seurat, seurat_v3) are in sc.pp.
@@ -98,12 +169,8 @@ class HVGMethod(AnalysisMethod):
                 batch_key=batch_key,
             )
         else:
-            sc.pp.highly_variable_genes(
-                fit_adata,
-                flavor=method,
-                n_top_genes=n_top,
-                layer=layer,
-                batch_key=batch_key,
+            retried_at = _highly_variable_with_retry(
+                fit_adata, method=method, n_top=n_top, layer=layer, batch_key=batch_key
             )
 
         # Copy the gene-level result back onto the full object when HVG was fitted on a
@@ -151,8 +218,18 @@ class HVGMethod(AnalysisMethod):
                 "n_top_genes": n_top,
                 "n_excluded": n_excluded,
                 "layer": layer,
+                "retry_min_cells": retried_at,
             },
             notes=[f"HVG ({method}) flagged {n_hvg} genes (excluded {n_excluded})."],
+            warnings=(
+                [
+                    f"HVG ({method}): the trend fit was singular on the full gene set, so it was "
+                    f"repeated on genes expressed in at least {retried_at} cells; genes expressed "
+                    "in fewer cells are not eligible. This happens when a batch has few cells."
+                ]
+                if retried_at is not None
+                else []
+            ),
         )
 
 
