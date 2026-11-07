@@ -40,6 +40,11 @@ theme:
 
 plugins:
   - search
+  - mkdocs-jupyter:
+      execute: false          # notebooks are committed already executed, so the site shows real outputs
+      include: ["*.ipynb"]
+      ignore: ["*.md", "*.py"]  # the plugin reads every .md through pandoc before applying include, and hangs on the long pages
+      include_source: true
   - mkdocstrings:
       handlers:
         python:
@@ -70,7 +75,8 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Get started:
-      - Tutorial: guide/tutorial.md
+      - Your first run: guide/tutorial.md
+      - Tutorial, GSE140819 (notebook): tutorials/api_walkthrough.ipynb
   - User guide:
       - Configuration: guide/configuration.md
       - Backends & environments: guide/backends.md
@@ -82,12 +88,20 @@ nav:
       - How it works: reference/how-it-works.md
       - Figure gallery: gallery/index.md
       - Third-party software: reference/third-party-software.md
-  - Project:
+  - Method notes:
+      - Paired MultiNicheNet: multinichenet_paired_design.md
+      - sc-SHC clustering: scshc_execution.md
+      - scTenifoldKnk perturbations: sctenifoldknk.md
+      - CellRank runtime repairs: cellrank_runtime_safety.md
+      - QC graded adjudication: design/qc-graded-adjudication.md
+      - QC reporting figures: design/qc-reporting-figures.md
+      - GSE140819 benchmark: benchmarks/gse140819.md
+  - Development:
       - Maintaining CellQuorum: maintaining.md
       - Roadmap: ROADMAP.md
       - Changelog: changelog.md
       - Developer smoke tests: dev_smoke.md
+      - Consolidation audit: design/consolidation-audit.md
       - Deployment requirements and validation: design/deployment-goal.md
       - Baseline readiness assessment: design/production-readiness-audit.md
       - Design note, run log: design/run-log.md
-      - GSE140819 benchmark: benchmarks/gse140819.md

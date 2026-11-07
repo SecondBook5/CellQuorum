@@ -1,0 +1,142 @@
+# Tutorial config: GSE140819 (Slyper et al. 2020, Nat Med), four donors with matched whole-cell and nuclei libraries.
+#
+# Prepare the input first:   python scripts/prepare_gse140819_tutorial.py
+# Then run it:               cellquorum run --config configs/gse140819_tutorial.yaml
+# Walkthrough: docs/tutorials/api_walkthrough.ipynb
+#
+# The design is paired: the donor is the unit of replication, "cells" is the control and "nuclei" is the case, so the
+# question is what changes when the same tumour sample is profiled as nuclei instead of whole cells.
+
+project:
+  name: gse140819_cells_vs_nuclei
+  organism: human
+  species_id: 9606
+
+input:
+  h5ad: data/gse140819/tutorial.h5ad
+  counts_layer: counts
+
+run:
+  random_seed: 7
+  verbose: true
+
+compute:
+  backend: cpu                  # set to gpu on a machine with CUDA and the cellquorum-gpu environment
+
+# Structural obs keys, declared once. Every stage resolves its keys from here.
+cohort:
+  sample_key: sample
+  donor_key: donor
+  condition_key: condition
+  batch_key: donor
+  condition_levels: [cells, nuclei]
+
+# The primary comparison. Each of the four donors contributes one cells library and one nuclei library.
+design:
+  donor_col: donor
+  condition_col: condition
+  case: nuclei
+  control: cells
+  paired: true
+
+# Every stage is listed. Stages left out of a config run by default (33 of 43 do), so each one is named here.
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: true
+  preprocessing: true
+  feature_selection: true
+  dimensionality: true
+  clustering: true
+  integration: true               # Harmony over the donor
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  reference_mapping: false
+  integration_benchmark: false
+  integration_gate: false
+  population_identity: false
+  annotation_viz: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: true               # which cell types each preparation captures
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: true    # donor-paired test on those proportions
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: true
+  trajectory: false
+  trajectory_viz: false
+  molecular_inference: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+
+qc_evidence:
+  enabled: true
+  metrics:
+    layer: counts
+  doublets:
+    enabled: false
+  ambient:
+    enabled: false
+  graded:
+    # MALAT1 is retained in the nucleus, so a high MALAT1 fraction is evidence of a ruptured cell in a whole-cell
+    # library but is the expected signal in nuclei. This run holds both, so the nuclear-integrity axis is switched
+    # off per library: it keeps scoring the whole cells and is marked not applicable for the nuclei.
+    nuclei_key: condition
+    nuclei_values: [nuclei]
+    # An optional diagnostic that fits archetypes to the QC evidence. On a CPU it can run for its full 15-minute
+    # limit and be abandoned, so the tutorial leaves it out; it does not change any cell's QC call.
+    archetype_audit: false
+
+preprocessing:
+  normalization:
+    # The standard log1p of counts per 10,000. The default recipe needs the separate scclr environment, which a
+    # fresh install or the container does not have, so the tutorial names one that runs anywhere.
+    recipe: cellquorum_log1p_cp10k_v1
+    output_layer: cellquorum_normalized
+
+dimensionality:
+  enabled: true
+  input_layer: cellquorum_normalized
+  n_pcs: auto
+
+integration:
+  enabled: true
+  method: harmony
+
+clustering:
+  enabled: true
+  method: leiden
+  use_rep: X_pca_harmony
+
+embeddings:
+  embeddings: [umap]            # PHATE is also available but takes minutes on a CPU
+
+composition:
+  cell_type_key: cell_type      # the authors' labels, carried in obs
+
+differential_abundance:
+  enabled: true
+  methods:
+    - {method: proportion_ttest}  # a donor-paired test on cell-type proportions; needs no R
+  cell_type_col: cell_type
+
+report:
+  enabled: true
+  html: true
+  markdown: true

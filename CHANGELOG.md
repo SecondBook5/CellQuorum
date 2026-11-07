@@ -9,6 +9,17 @@ public API and the configuration schema.
 
 ## [Unreleased]
 
+### Changed
+
+- **The repository no longer carries any one study.** The lymphedema and mast-cell project configs, cohort
+  manifests, helper scripts, validation notebook and design notes were moved out of the tool repository, and
+  `configs/generic_pbmc_example.yaml` is the worked example. Study and collaborator names were removed from
+  comments and docs.
+- **Transport figures use neutral labels.** `transport_distance`, `transport_displacement` and `transport_flow`
+  take `source_label` and `target_label` (defaults `Control` and `Case`); the per-donor count columns are now
+  `n_source` and `n_target` (were `n_normal` and `n_le`), and the displacement scatter ids are `source` and
+  `target`. This is a breaking change for callers that used the old column names.
+
 ### Added
 
 - **`differential_state` (order=215) is a new stage**: donor-paired testing of
@@ -16,7 +27,7 @@ public API and the configuration schema.
   validated `cellquorum.stats.donor_comparison.two_group_test_on_donor_medians`
   rather than a new statistical implementation. `state_scoring` computes per-cell
   program scores but never tested whether they differ between conditions — four
-  separate scripts in the Mehrara manuscript (`plot_programs_percell.py`,
+  separate scripts in a collaborating lab's manuscript (`plot_programs_percell.py`,
   `plot_program_deepdive.py`, `plot_alarmins.py`, `plot_postn_axis.py`) each
   reinvented that missing test with slightly different donor-aggregation and FDR
   choices. Auto-detects `state_*` obs columns by default; BH-FDR across the whole
