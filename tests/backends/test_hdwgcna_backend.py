@@ -20,7 +20,7 @@ def test_unavailable_when_launcher_missing(monkeypatch: pytest.MonkeyPatch) -> N
     so is invisible to ``which``, which is why six backends all reported it missing on a
     machine that had it. Hiding it in a test therefore means patching that.
     """
-    monkeypatch.setattr("cellquorum.backends.hdwgcna_backend.resolve_launcher", lambda _name: None)
+    monkeypatch.setattr("cellquorum.backends.external_env.resolve_launcher", lambda _name: None)
     backend = build_hdwgcna_backend()
     status = backend.status()
     assert status.available is False
@@ -33,7 +33,7 @@ def test_run_script_builds_micromamba_rscript_command(
     script = tmp_path / "hdwgcna.R"
     script.write_text("cat('ok')\n")
     monkeypatch.setattr(
-        "cellquorum.backends.hdwgcna_backend.resolve_launcher",
+        "cellquorum.backends.external_env.resolve_launcher",
         lambda _name: "/usr/bin/micromamba",
     )
     captured: dict[str, list[str]] = {}
