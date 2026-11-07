@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,213 @@ from cellquorum.stats.multiple_testing import bh_fdr
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
     from cellquorum.stages.comparative.differential_abundance.aggregation import CelltypeCounts
+
+
+@dataclass(frozen=True)
+class _Settings:
+    """Config values ``ProportionTTestMethod._run`` reads, resolved once."""
+
+    condition_col: str
+    donor_col: str
+    cell_type_col: str
+    case: str
+    control: str
+    paired: bool
+    n_bootstrap: int
+    seed: int
+    fdr_method: str
+    fdr_alpha: float
+
+    @classmethod
+    def from_config(cls, config: dict) -> _Settings:
+        return cls(
+            condition_col=config.get("condition_col", "condition"),
+            donor_col=config.get("donor_col", "patient_id"),
+            cell_type_col=config.get("cell_type_col", "cell_type"),
+            # An unset label becomes "" so the `not case` guard in _run catches both.
+            case=config.get("case") or "",
+            control=config.get("control") or "",
+            paired=bool(config.get("paired", True)),  # default True (anchor is paired)
+            n_bootstrap=int(config.get("n_bootstrap", 10000)),
+            seed=int(config.get("seed", 42)),
+            fdr_method=config.get("fdr_method", "fdr_bh"),
+            fdr_alpha=float(config.get("fdr", 0.05)),
+        )
+
+
+@dataclass
+class _Design:
+    """One test design's per-cell-type results and the sample layout behind them."""
+
+    label: str
+    results_df: pd.DataFrame
+    donors: list[str]
+    is_case: list[bool]
+    design_metrics: dict[str, int]
+
+
+def _case_control_samples(cc: CelltypeCounts, settings: _Settings) -> pd.DataFrame:
+    """Per-sample proportions with donor and condition, restricted to {case, control}."""
+    total_per_sample = cc.counts.sum(axis=1)
+    proportion_df = cc.counts.div(total_per_sample, axis=0)
+
+    # Attach donor and condition from sample_meta (align on shared index)
+    # cc.sample_meta has columns literally named by condition_col and donor_col
+    sample_df = proportion_df.copy()
+    sample_df[settings.donor_col] = cc.sample_meta[settings.donor_col]
+    sample_df[settings.condition_col] = cc.sample_meta[settings.condition_col]
+
+    # Restrict to {case, control} samples
+    mask = sample_df[settings.condition_col].isin([settings.case, settings.control])
+    return sample_df[mask].copy()
+
+
+def _paired_results(
+    cc: CelltypeCounts, sample_df: pd.DataFrame, settings: _Settings
+) -> pd.DataFrame:
+    """Paired arcsine-sqrt t-test per cell type over the donors present in both arms."""
+    case, control = settings.case, settings.control
+    donor_col, condition_col = settings.donor_col, settings.condition_col
+    results = []
+    cell_types = [col for col in cc.counts.columns]
+
+    for ct in cell_types:
+        # Get proportions for this cell type by donor×condition
+        ct_data = sample_df[[ct, donor_col, condition_col]].copy()
+        ct_data.columns = ["proportion", "donor", "condition"]
+
+        # Pivot to donor × condition
+        pivot = ct_data.pivot(index="donor", columns="condition", values="proportion")
+
+        # Ensure we have both case and control columns
+        if case not in pivot.columns or control not in pivot.columns:
+            # This shouldn't happen given our guards, but be defensive
+            continue
+
+        # Align to paired donors (drop any NaN rows)
+        pivot = pivot.dropna()
+        if len(pivot) < 2:
+            # Not enough paired donors for this cell type
+            continue
+
+        case_props = pivot[case].to_numpy()
+        control_props = pivot[control].to_numpy()
+
+        # Transform: arcsin(sqrt(proportion))
+        arcsin_case = np.arcsin(np.sqrt(case_props))
+        arcsin_control = np.arcsin(np.sqrt(control_props))
+
+        # Delta in percentage points: 100*(case - control)
+        delta_pp = 100 * (case_props - control_props)
+
+        # Bootstrap CI
+        ci_low, ci_high = _bootstrap_ci(
+            delta_pp, seed=settings.seed, n_bootstrap=settings.n_bootstrap
+        )
+
+        # Paired t-test
+        try:
+            test_result = stats.ttest_rel(arcsin_case, arcsin_control)
+            statistic = test_result.statistic
+            pvalue = test_result.pvalue
+        except Exception:
+            # Handle zero-variance case gracefully
+            statistic = np.nan
+            pvalue = np.nan
+
+        # Mean percentages
+        control_mean_pct = 100 * control_props.mean()
+        case_mean_pct = 100 * case_props.mean()
+        effect_pp = case_mean_pct - control_mean_pct
+
+        # How many donors moved in the EFFECT's own direction. At single-digit n a
+        # cohort mean can be produced by two donors, so this is evidence the p-value
+        # does not carry — and the direction has to be the effect's, not "increased":
+        # a "0/9" beside a strong depletion reads as no support for it. A donor whose
+        # delta is exactly zero corroborates nothing and is counted against.
+        delta = case_props - control_props
+        n_donors_concordant = int((np.sign(delta) == np.sign(delta.mean())).sum())
+
+        results.append(
+            {
+                "cell_type": ct,
+                # The donors this ROW was tested on, which is not always the paired
+                # set: a donor missing an arm for this cell type is dropped above.
+                "n_case": len(pivot),
+                "n_control": len(pivot),
+                "n_donors_concordant": n_donors_concordant,
+                "control_mean_pct": control_mean_pct,
+                "case_mean_pct": case_mean_pct,
+                "effect_pp": effect_pp,
+                "bootstrap_ci_low_pp": ci_low,
+                "bootstrap_ci_high_pp": ci_high,
+                "statistic": statistic,
+                "pvalue": pvalue,
+                "paired": True,
+            }
+        )
+
+    return pd.DataFrame(results)
+
+
+def _unpaired_results(
+    cc: CelltypeCounts,
+    case_samples: pd.DataFrame,
+    control_samples: pd.DataFrame,
+    settings: _Settings,
+) -> pd.DataFrame:
+    """Welch arcsine-sqrt t-test per cell type, treating the two arms as independent."""
+    results = []
+    cell_types = [col for col in cc.counts.columns]
+
+    for ct in cell_types:
+        case_props = case_samples[ct].to_numpy()
+        control_props = control_samples[ct].to_numpy()
+
+        # Transform: arcsin(sqrt(proportion))
+        arcsin_case = np.arcsin(np.sqrt(case_props))
+        arcsin_control = np.arcsin(np.sqrt(control_props))
+
+        # Delta in percentage points: 100*(mean_case - mean_control)
+        case_mean = case_props.mean()
+        control_mean = control_props.mean()
+        effect_pp = 100 * (case_mean - control_mean)
+
+        # Bootstrap CI on the difference (unpaired: resample both arms independently)
+        ci_low, ci_high = _bootstrap_ci_unpaired(
+            case_props, control_props, seed=settings.seed, n_bootstrap=settings.n_bootstrap
+        )
+
+        # Unpaired t-test (Welch)
+        try:
+            test_result = stats.ttest_ind(arcsin_case, arcsin_control, equal_var=False)
+            statistic = test_result.statistic
+            pvalue = test_result.pvalue
+        except Exception:
+            statistic = np.nan
+            pvalue = np.nan
+
+        # Mean percentages
+        control_mean_pct = 100 * control_mean
+        case_mean_pct = 100 * case_mean
+
+        results.append(
+            {
+                "cell_type": ct,
+                "n_case": len(case_samples),
+                "n_control": len(control_samples),
+                "control_mean_pct": control_mean_pct,
+                "case_mean_pct": case_mean_pct,
+                "effect_pp": effect_pp,
+                "bootstrap_ci_low_pp": ci_low,
+                "bootstrap_ci_high_pp": ci_high,
+                "statistic": statistic,
+                "pvalue": pvalue,
+                "paired": False,
+            }
+        )
+
+    return pd.DataFrame(results)
 
 
 class ProportionTTestMethod(AnalysisMethod):
@@ -63,17 +271,8 @@ class ProportionTTestMethod(AnalysisMethod):
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
         """Compute per-cell-type proportion tests and return the DA table."""
-
-        # Resolve config fields (all schema-driven; no hardcoded study assumptions).
-        condition_col = config.get("condition_col", "condition")
-        donor_col = config.get("donor_col", "patient_id")
-        cell_type_col = config.get("cell_type_col", "cell_type")
-        case = config.get("case")
-        control = config.get("control")
-        paired = bool(config.get("paired", True))  # default True (anchor is paired)
-        n_bootstrap = int(config.get("n_bootstrap", 10000))
-        seed = int(config.get("seed", 42))
-        fdr_method = config.get("fdr_method", "fdr_bh")
+        settings = _Settings.from_config(config)
+        case, control = settings.case, settings.control
 
         # Guard: case/control unset → skip
         if not case or not control:
@@ -82,27 +281,15 @@ class ProportionTTestMethod(AnalysisMethod):
         # Aggregate to sample × cell-type counts
         cc = aggregate_celltype_counts(
             adata,
-            donor_col=donor_col,
-            condition_col=condition_col,
-            cell_type_col=cell_type_col,
+            donor_col=settings.donor_col,
+            condition_col=settings.condition_col,
+            cell_type_col=settings.cell_type_col,
         )
-
-        total_per_sample = cc.counts.sum(axis=1)
-        proportion_df = cc.counts.div(total_per_sample, axis=0)
-
-        # Attach donor and condition from sample_meta (align on shared index)
-        # cc.sample_meta has columns literally named by condition_col and donor_col
-        sample_df = proportion_df.copy()
-        sample_df[donor_col] = cc.sample_meta[donor_col]
-        sample_df[condition_col] = cc.sample_meta[condition_col]
-
-        # Restrict to {case, control} samples
-        mask = sample_df[condition_col].isin([case, control])
-        sample_df = sample_df[mask].copy()
+        sample_df = _case_control_samples(cc, settings)
 
         # Count samples per arm
-        case_samples = sample_df[sample_df[condition_col] == case]
-        control_samples = sample_df[sample_df[condition_col] == control]
+        case_samples = sample_df[sample_df[settings.condition_col] == case]
+        control_samples = sample_df[sample_df[settings.condition_col] == control]
 
         # Guard: <2 samples per arm → skip
         if len(case_samples) < 2 or len(control_samples) < 2:
@@ -115,11 +302,10 @@ class ProportionTTestMethod(AnalysisMethod):
         # Initialize artifact writer for result table (used in both paired/unpaired branches)
         writer = StageArtifactWriter.from_context(context)
 
-        # Paired branch
-        if paired:
+        if settings.paired:
             # Identify donors present in BOTH case and control
-            case_donors = set(case_samples[donor_col].unique())
-            control_donors = set(control_samples[donor_col].unique())
+            case_donors = set(case_samples[settings.donor_col].unique())
+            control_donors = set(control_samples[settings.donor_col].unique())
             paired_donors = case_donors & control_donors
 
             # Guard: <2 paired donors → skip
@@ -130,312 +316,128 @@ class ProportionTTestMethod(AnalysisMethod):
                 )
 
             # Restrict to paired donors
-            paired_mask = sample_df[donor_col].isin(paired_donors)
+            paired_mask = sample_df[settings.donor_col].isin(paired_donors)
             sample_df = sample_df[paired_mask].copy()
 
-            results = []
-            cell_types = [col for col in cc.counts.columns]
-
-            for ct in cell_types:
-                # Get proportions for this cell type by donor×condition
-                ct_data = sample_df[[ct, donor_col, condition_col]].copy()
-                ct_data.columns = ["proportion", "donor", "condition"]
-
-                # Pivot to donor × condition
-                pivot = ct_data.pivot(index="donor", columns="condition", values="proportion")
-
-                # Ensure we have both case and control columns
-                if case not in pivot.columns or control not in pivot.columns:
-                    # This shouldn't happen given our guards, but be defensive
-                    continue
-
-                # Align to paired donors (drop any NaN rows)
-                pivot = pivot.dropna()
-                if len(pivot) < 2:
-                    # Not enough paired donors for this cell type
-                    continue
-
-                case_props = pivot[case].values
-                control_props = pivot[control].values
-
-                # Transform: arcsin(sqrt(proportion))
-                arcsin_case = np.arcsin(np.sqrt(case_props))
-                arcsin_control = np.arcsin(np.sqrt(control_props))
-
-                # Delta in percentage points: 100*(case - control)
-                delta_pp = 100 * (case_props - control_props)
-
-                # Bootstrap CI
-                ci_low, ci_high = _bootstrap_ci(delta_pp, seed=seed, n_bootstrap=n_bootstrap)
-
-                # Paired t-test
-                try:
-                    test_result = stats.ttest_rel(arcsin_case, arcsin_control)
-                    statistic = test_result.statistic
-                    pvalue = test_result.pvalue
-                except Exception:
-                    # Handle zero-variance case gracefully
-                    statistic = np.nan
-                    pvalue = np.nan
-
-                # Mean percentages
-                control_mean_pct = 100 * control_props.mean()
-                case_mean_pct = 100 * case_props.mean()
-                effect_pp = case_mean_pct - control_mean_pct
-
-                # How many donors moved in the EFFECT's own direction. At single-digit n a
-                # cohort mean can be produced by two donors, so this is evidence the p-value
-                # does not carry — and the direction has to be the effect's, not "increased":
-                # a "0/9" beside a strong depletion reads as no support for it. A donor whose
-                # delta is exactly zero corroborates nothing and is counted against.
-                delta = case_props - control_props
-                n_donors_concordant = int((np.sign(delta) == np.sign(delta.mean())).sum())
-
-                results.append(
-                    {
-                        "cell_type": ct,
-                        # The donors this ROW was tested on, which is not always the paired
-                        # set: a donor missing an arm for this cell type is dropped above.
-                        "n_case": len(pivot),
-                        "n_control": len(pivot),
-                        "n_donors_concordant": n_donors_concordant,
-                        "control_mean_pct": control_mean_pct,
-                        "case_mean_pct": case_mean_pct,
-                        "effect_pp": effect_pp,
-                        "bootstrap_ci_low_pp": ci_low,
-                        "bootstrap_ci_high_pp": ci_high,
-                        "statistic": statistic,
-                        "pvalue": pvalue,
-                        "paired": True,
-                    }
-                )
-
-            results_df = pd.DataFrame(results)
-
-            results_df["fdr"] = bh_fdr(results_df["pvalue"].to_numpy(), method=fdr_method)
-
-            # The design floor beside the FDR. A paired arcsine t is parametric and so is NOT
-            # bounded by the floor -- that is what the distributional assumption buys -- but a
-            # reader comparing this table against a distribution-free one needs the scale, and
-            # a null FDR from a family that could not have produced a lone significant row is
-            # uninformative rather than negative.
-            results_df = annotate_fdr_reachability(
-                results_df,
+            design = _Design(
+                label="paired",
+                results_df=_paired_results(cc, sample_df, settings),
                 donors=[*sorted(paired_donors), *sorted(paired_donors)],
                 is_case=[False] * len(paired_donors) + [True] * len(paired_donors),
-                p_col="pvalue",
-                alpha=float(config.get("fdr", 0.05)),
+                design_metrics={"n_donors_paired": len(paired_donors)},
             )
-
-            # Count significant results (fdr < 0.05, ignoring NaN)
-            n_significant = int((results_df["fdr"] < 0.05).sum())
-
-            # Return result
-            resolution_artifacts = self._resolution_artifacts(
-                cc,
-                condition_col=condition_col,
-                case=case,
-                control=control,
-                config=config,
-                writer=writer,
-            )
-            summary_artifacts = self._distribution_summary_artifacts(
-                cc.counts,
-                cc.sample_meta[condition_col],
-                case=case,
-                control=control,
-                results_df=results_df,
-                config=config,
-                writer=writer,
-            )
-            composition_artifacts = self._composition_artifacts(
-                cc,
-                condition_col=condition_col,
-                donor_col=donor_col,
-                case=case,
-                control=control,
-                config=config,
-                writer=writer,
-                context=context,
-            )
-            return StageResult(
-                adata=adata,
-                artifacts=[
-                    writer.table(
-                        results_df,
-                        "da_proportion_ttest.csv",
-                        name="da_results",
-                        description=f"Proportion t-test DA (paired, {case} vs {control}).",
-                        index=False,
-                    ),
-                    *resolution_artifacts,
-                    *summary_artifacts,
-                    *composition_artifacts,
-                ],
-                notes=[f"Proportion t-test DA (paired): {case} vs {control}.", *cc.notes],
-                metrics={
-                    "case": case,
-                    "control": control,
-                    "paired": True,
-                    "n_celltypes": len(cell_types),
-                    "n_unlabeled_cells": cc.n_unlabeled,
-                    "n_donors_paired": len(paired_donors),
-                    "n_significant": n_significant,
-                    "design_floor_p": float(results_df["design_floor_p"].iloc[0])
-                    if len(results_df)
-                    else float("nan"),
-                    "family_min_concordant": int(results_df["family_min_concordant"].iloc[0])
-                    if len(results_df)
-                    else 0,
-                    "family_floor_reachable": bool(results_df["family_floor_reachable"].iloc[0])
-                    if len(results_df)
-                    else False,
-                    "seed": seed,
-                    "n_bootstrap": n_bootstrap,
-                },
-                backend="python",
-            )
-
         else:
-            # Unpaired branch
-            # Gather case and control proportions independently
-            results = []
-            cell_types = [col for col in cc.counts.columns]
-
-            for ct in cell_types:
-                case_props = case_samples[ct].values
-                control_props = control_samples[ct].values
-
-                # Transform: arcsin(sqrt(proportion))
-                arcsin_case = np.arcsin(np.sqrt(case_props))
-                arcsin_control = np.arcsin(np.sqrt(control_props))
-
-                # Delta in percentage points: 100*(mean_case - mean_control)
-                case_mean = case_props.mean()
-                control_mean = control_props.mean()
-                effect_pp = 100 * (case_mean - control_mean)
-
-                # Bootstrap CI on the difference (unpaired: resample both arms independently)
-                ci_low, ci_high = _bootstrap_ci_unpaired(
-                    case_props, control_props, seed=seed, n_bootstrap=n_bootstrap
-                )
-
-                # Unpaired t-test (Welch)
-                try:
-                    test_result = stats.ttest_ind(arcsin_case, arcsin_control, equal_var=False)
-                    statistic = test_result.statistic
-                    pvalue = test_result.pvalue
-                except Exception:
-                    statistic = np.nan
-                    pvalue = np.nan
-
-                # Mean percentages
-                control_mean_pct = 100 * control_mean
-                case_mean_pct = 100 * case_mean
-
-                results.append(
-                    {
-                        "cell_type": ct,
-                        "n_case": len(case_samples),
-                        "n_control": len(control_samples),
-                        "control_mean_pct": control_mean_pct,
-                        "case_mean_pct": case_mean_pct,
-                        "effect_pp": effect_pp,
-                        "bootstrap_ci_low_pp": ci_low,
-                        "bootstrap_ci_high_pp": ci_high,
-                        "statistic": statistic,
-                        "pvalue": pvalue,
-                        "paired": False,
-                    }
-                )
-
-            results_df = pd.DataFrame(results)
-
-            results_df["fdr"] = bh_fdr(results_df["pvalue"].to_numpy(), method=fdr_method)
-
-            # Same floor, computed from the unpaired design: with no donor spanning both
-            # arms the randomization set is C(n, n_case) rather than 2**k, which is far
-            # larger, so the floor is correspondingly lower. Reported for the same reason.
-            results_df = annotate_fdr_reachability(
-                results_df,
+            design = _Design(
+                label="unpaired",
+                results_df=_unpaired_results(cc, case_samples, control_samples, settings),
+                # With no donor spanning both arms the randomization set is
+                # C(n, n_case) rather than 2**k, which is far larger, so the
+                # floor is correspondingly lower. Reported for the same reason.
                 donors=[
                     *(f"case:{i}" for i in range(len(case_samples))),
                     *(f"control:{i}" for i in range(len(control_samples))),
                 ],
                 is_case=[True] * len(case_samples) + [False] * len(control_samples),
-                p_col="pvalue",
-                alpha=float(config.get("fdr", 0.05)),
+                design_metrics={"n_case": len(case_samples), "n_control": len(control_samples)},
             )
+        return self._finish(adata, cc, design, settings, config, writer, context)
 
-            # Count significant results
-            n_significant = int((results_df["fdr"] < 0.05).sum())
+    def _finish(
+        self,
+        adata: ad.AnnData,
+        cc: CelltypeCounts,
+        design: _Design,
+        settings: _Settings,
+        config: dict,
+        writer: StageArtifactWriter,
+        context: PipelineContext,
+    ) -> StageResult:
+        """Adjust, annotate the design floor, and assemble the artifacts and metrics."""
+        case, control = settings.case, settings.control
+        results_df = design.results_df
 
-            # Return result
-            resolution_artifacts = self._resolution_artifacts(
-                cc,
-                condition_col=condition_col,
-                case=case,
-                control=control,
-                config=config,
-                writer=writer,
-            )
-            summary_artifacts = self._distribution_summary_artifacts(
-                cc.counts,
-                cc.sample_meta[condition_col],
-                case=case,
-                control=control,
-                results_df=results_df,
-                config=config,
-                writer=writer,
-            )
-            composition_artifacts = self._composition_artifacts(
-                cc,
-                condition_col=condition_col,
-                donor_col=donor_col,
-                case=case,
-                control=control,
-                config=config,
-                writer=writer,
-                context=context,
-            )
-            return StageResult(
-                adata=adata,
-                artifacts=[
-                    writer.table(
-                        results_df,
-                        "da_proportion_ttest.csv",
-                        name="da_results",
-                        description=f"Proportion t-test DA (unpaired, {case} vs {control}).",
-                        index=False,
-                    ),
-                    *resolution_artifacts,
-                    *summary_artifacts,
-                    *composition_artifacts,
-                ],
-                notes=[f"Proportion t-test DA (unpaired): {case} vs {control}.", *cc.notes],
-                metrics={
-                    "case": case,
-                    "control": control,
-                    "paired": False,
-                    "n_celltypes": len(cell_types),
-                    "n_unlabeled_cells": cc.n_unlabeled,
-                    "n_case": len(case_samples),
-                    "n_control": len(control_samples),
-                    "n_significant": n_significant,
-                    "design_floor_p": float(results_df["design_floor_p"].iloc[0])
-                    if len(results_df)
-                    else float("nan"),
-                    "family_min_concordant": int(results_df["family_min_concordant"].iloc[0])
-                    if len(results_df)
-                    else 0,
-                    "family_floor_reachable": bool(results_df["family_floor_reachable"].iloc[0])
-                    if len(results_df)
-                    else False,
-                    "seed": seed,
-                    "n_bootstrap": n_bootstrap,
-                },
-                backend="python",
-            )
+        results_df["fdr"] = bh_fdr(results_df["pvalue"].to_numpy(), method=settings.fdr_method)
+
+        # The design floor beside the FDR. A parametric t is NOT bounded by the
+        # floor -- that is what the distributional assumption buys -- but a
+        # reader comparing this table against a distribution-free one needs the
+        # scale, and a null FDR from a family that could not have produced a
+        # lone significant row is uninformative rather than negative.
+        results_df = annotate_fdr_reachability(
+            results_df,
+            donors=design.donors,
+            is_case=design.is_case,
+            p_col="pvalue",
+            alpha=settings.fdr_alpha,
+        )
+
+        # Count significant results (fdr < 0.05, ignoring NaN)
+        n_significant = int((results_df["fdr"] < 0.05).sum())
+
+        resolution_artifacts = self._resolution_artifacts(
+            cc,
+            condition_col=settings.condition_col,
+            case=case,
+            control=control,
+            config=config,
+            writer=writer,
+        )
+        summary_artifacts = self._distribution_summary_artifacts(
+            cc.counts,
+            cc.sample_meta[settings.condition_col],
+            case=case,
+            control=control,
+            results_df=results_df,
+            config=config,
+            writer=writer,
+        )
+        composition_artifacts = self._composition_artifacts(
+            cc,
+            condition_col=settings.condition_col,
+            donor_col=settings.donor_col,
+            case=case,
+            control=control,
+            config=config,
+            writer=writer,
+            context=context,
+        )
+        return StageResult(
+            adata=adata,
+            artifacts=[
+                writer.table(
+                    results_df,
+                    "da_proportion_ttest.csv",
+                    name="da_results",
+                    description=f"Proportion t-test DA ({design.label}, {case} vs {control}).",
+                    index=False,
+                ),
+                *resolution_artifacts,
+                *summary_artifacts,
+                *composition_artifacts,
+            ],
+            notes=[f"Proportion t-test DA ({design.label}): {case} vs {control}.", *cc.notes],
+            metrics={
+                "case": case,
+                "control": control,
+                "paired": settings.paired,
+                "n_celltypes": len(cc.counts.columns),
+                "n_unlabeled_cells": cc.n_unlabeled,
+                **design.design_metrics,
+                "n_significant": n_significant,
+                "design_floor_p": float(results_df["design_floor_p"].iloc[0])
+                if len(results_df)
+                else float("nan"),
+                "family_min_concordant": int(results_df["family_min_concordant"].iloc[0])
+                if len(results_df)
+                else 0,
+                "family_floor_reachable": bool(results_df["family_floor_reachable"].iloc[0])
+                if len(results_df)
+                else False,
+                "seed": settings.seed,
+                "n_bootstrap": settings.n_bootstrap,
+            },
+            backend="python",
+        )
 
     def _resolution_artifacts(
         self,
