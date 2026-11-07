@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import warnings
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -430,162 +431,13 @@ class ScArchesMethod(AnalysisMethod):
                 details={"method": self.name, "atlas_h5ad": str(atlas_path)},
             )
 
-        label_key = config.get("label_key", "cell_type")
-        # An optional COARSER atlas column to derive a second resolution from. See
-        # `_collapse_labels` for why this is a collapse and not a second mapping.
-        coarse_label_key = config.get("coarse_label_key") or None
-        atlas_batch_key = config.get("atlas_batch_key", "batch")
-        # An explicit atlas var column holding identifiers of the query's kind. None means
-        # detect it by measuring overlap; see `_align_atlas_gene_space`.
-        atlas_gene_symbol_col = config.get("atlas_gene_symbol_col") or None
-        query_batch_value = config.get("query_batch_value", "query")
-        counts_layer = config.get("counts_layer", "counts")
-        n_top_genes = int(config.get("n_top_genes", 3000))
-        hvg_flavor = config.get("hvg_flavor", "seurat_v3")
-        force_genes = config.get("force_genes", [])
-        n_latent = int(config.get("n_latent", 30))
-        n_layers = int(config.get("n_layers", 2))
-        dropout_rate = float(config.get("dropout_rate", 0.2))
-        gene_likelihood = config.get("gene_likelihood", "zinb")
-        max_epochs_scvi = int(config.get("max_epochs_scvi", 400))
-        max_epochs_scanvi = int(config.get("max_epochs_scanvi", 20))
-        max_epochs_query = int(config.get("max_epochs_query", 100))
-        early_stopping = bool(config.get("early_stopping", True))
-        query_early_stopping_patience = int(config.get("query_early_stopping_patience", 10))
-        query_early_stopping_monitor = config.get(
-            "query_early_stopping_monitor", "reconstruction_loss_train"
-        )
-        unlabeled_category = config.get("unlabeled_category", "Unknown")
-        seeds = config.get("seeds", [0, 1, 2, 3, 4])
-        cv_folds = int(config.get("cv_folds", 3))
-        knn_k = int(config.get("knn_k", 30))
-        key_added = config.get("key_added", "ref_state")
-        compute_backend = config.get("compute_backend", "auto")
-        write_loss_curves = bool(config.get("write_loss_curves", True))
-        resume = bool(config.get("resume", True))
-        compartment_filter = config.get("compartment_filter")
-        reference_filters = config.get("reference_filters", [])
-        min_label_prob = config.get("min_label_prob")
-        label_prob_col = config.get("label_prob_col")
+        settings = _Settings.from_config(config, atlas_path)
 
-        atlas = sc.read_h5ad(atlas_path)
+        prepared = _prepare_training_sets(adata, settings, method_name=self.name)
+        if isinstance(prepared, MethodSkip):
+            return prepared
 
-        # Apply generic filters to the reference atlas.
-        if compartment_filter is not None:
-            col = compartment_filter.get("column")
-            keep = compartment_filter.get("keep")
-            if col and keep and col in atlas.obs.columns:
-                atlas = atlas[atlas.obs[col].isin(keep)].copy()
-
-        for filt in reference_filters:
-            col = filt.get("column")
-            keep = filt.get("keep", [])
-            if col and col in atlas.obs.columns:
-                atlas = atlas[atlas.obs[col].isin(keep)].copy()
-
-        if min_label_prob is not None and label_prob_col is not None:
-            if label_prob_col in atlas.obs.columns:
-                atlas = atlas[atlas.obs[label_prob_col] >= min_label_prob].copy()
-
-        # Guard: atlas must have >= knn_k cells after filtering.
-        if len(atlas) < knn_k:
-            return MethodSkip(
-                reason=f"reference_mapping skipped: filtered atlas has {len(atlas)} "
-                f"cells < knn_k={knn_k}",
-                details={"method": self.name, "n_atlas_cells": len(atlas), "knn_k": knn_k},
-            )
-
-        # Set atlas X to counts. Done while var_names are still the atlas's own identifiers,
-        # because `.raw` is indexed by those — resolving after the re-index below would look up
-        # symbols in an Ensembl-indexed `.raw`.
-        atlas.X = _resolve_counts(atlas, counts_layer, what="atlas")
-        # `.raw` has now been read and nothing reads it again, so drop it. On the filtered skin
-        # atlas that releases roughly 2.4 GB, which matters because the atlas is held fully in
-        # memory alongside the query, the shared-gene subset, and the HVG subset.
-        atlas.raw = None
-        atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
-
-        # Learn the label hierarchy from the atlas itself, before the atlas is subset to shared
-        # genes and thrown away. Validated rather than assumed: a granular level that appears
-        # under two different coarse types has no single collapse, and silently picking one
-        # would invent an annotation.
-        coarse_map: dict[str, str] | None = None
-        if coarse_label_key is not None:
-            coarse_map = _label_hierarchy(atlas, label_key, coarse_label_key)
-
-        # Put the atlas into whichever gene identifier it shares with the query before
-        # intersecting. Without this, a CellxGene atlas (Ensembl var_names) against a Cell
-        # Ranger cohort (symbol var_names) shares nothing at all.
-        atlas, symbol_column, n_aligned = _align_atlas_gene_space(
-            atlas, adata.var_names, symbol_column=atlas_gene_symbol_col
-        )
-        # Materialized only now, after any re-index and de-duplication, so the subset above
-        # copies one matrix rather than two. Resolving `X` alone was a half-fix: HVG selection
-        # and scVI's setup both address the counts by LAYER NAME, so an atlas that keeps its
-        # counts in `.raw` — every CellxGene download, where `layers` is empty — still died with
-        # a bare `KeyError: 'counts'`. Assignment stores the same object, so this is free.
-        atlas.layers[counts_layer] = atlas.X
-
-        gene_space_note: str | None = None
-        if symbol_column is not None:
-            gene_space_note = (
-                f"Atlas genes re-indexed from var_names onto var['{symbol_column}'] to match "
-                f"the query's identifiers: {n_aligned:,} shared genes (0 before)."
-            )
-
-        # Gene intersection.
-        shared = sorted(set(atlas.var_names) & set(adata.var_names))
-
-        # No overlap is a misconfiguration, not an absent capability, so it fails rather than
-        # skips. This was a MethodSkip: the atlas loaded, matched nothing, the stage vanished
-        # with a line in the log, and the run continued to the confirmation stages as though
-        # mapping had happened. A stage that IS the analysis must not opt out quietly.
-        if len(shared) == 0:
-            searched = [name for name in _SYMBOL_COLUMNS if name in atlas.var.columns]
-            raise CellQuorumDataError(
-                f"reference_mapping: the atlas and the query share no genes. The atlas names "
-                f"{len(atlas.var_names):,} genes like {list(atlas.var_names[:3])} and the query "
-                f"names {len(adata.var_names):,} like {list(adata.var_names[:3])} — usually "
-                f"Ensembl IDs against symbols. Symbol columns searched in the atlas var: "
-                f"{searched or 'none found'}. Set "
-                f"`reference_mapping.atlas_gene_symbol_col` to the column holding identifiers "
-                f"of the query's kind."
-            )
-
-        atlas_train = atlas[:, shared].copy()
-        # Release the full reference before the query is copied twice below. Measured on the
-        # real skin atlas the peak here is ~24.8 GB, and nothing reads `atlas` again, so holding
-        # it through two copies of a 202,000-cell query is how this stage runs out of memory
-        # after four minutes of loading. `atlas_train` owns what is still needed.
-        del atlas
-        query_train = adata[:, shared].copy()
-
-        # HVG selection. See `_select_hvg_genes` for why this dispatches on flavor
-        # rather than always using counts_layer.
-        hvg_list = _select_hvg_genes(
-            atlas_train,
-            n_top_genes=n_top_genes,
-            hvg_flavor=hvg_flavor,
-            force_genes=force_genes,
-            counts_layer=counts_layer,
-        )
-        atlas_train = atlas_train[:, hvg_list].copy()
-        query_train = query_train[:, hvg_list].copy()
-
-        # GPU gate. scVI uses PyTorch/Lightning, not RAPIDS/CuPy.
-        if compute_backend == "cpu":
-            use_gpu = False
-        elif compute_backend == "gpu":
-            if not _scvi_gpu_available():
-                raise RuntimeError(
-                    "reference_mapping.compute_backend='gpu' was requested, but "
-                    "PyTorch/Lightning does not report a supported CUDA accelerator."
-                )
-            use_gpu = True
-        else:
-            use_gpu = _scvi_gpu_available()
-
-        accelerator = "gpu" if use_gpu else "cpu"
+        accelerator = _resolve_accelerator(settings.compute_backend)
 
         # Resolve the per-seed checkpoint directory. These checkpoints are
         # intentionally stored under objects because they are machine-readable
@@ -595,420 +447,42 @@ class ScArchesMethod(AnalysisMethod):
             objects_path = Path(context.paths.objects)
             objects_path.mkdir(parents=True, exist_ok=True)
 
-        checkpoint_meta = _build_seed_checkpoint_meta(
-            atlas_path=atlas_path,
-            label_key=label_key,
-            counts_layer=counts_layer,
-            key_added=key_added,
-            query_obs_names=query_train.obs_names,
-            atlas_obs_names=atlas_train.obs_names,
-            hvg_list=hvg_list,
-            n_shared=len(shared),
-            knn_k=knn_k,
-            n_latent=n_latent,
+        seed_results = _train_seeds(prepared, settings, accelerator, objects_path)
+
+        consensus = _consensus_across_seeds(
+            seed_results.predictions, settings.seeds, len(prepared.query_train)
+        )
+        best_seed = consensus.best_seed
+
+        result_query, collapse_notes = _annotate_query(
+            adata, prepared, settings, seed_results, consensus
         )
 
-        # Per-seed training.
-        seed_predictions: dict[int, dict[str, Any]] = {}
-        seed_latents: dict[int, dict[str, np.ndarray]] = {}
-        seed_loss_history: dict[int, dict[str, dict[str, list[float]]]] = {}
-        resumed_seeds: list[int] = []
-        trained_seeds: list[int] = []
-        save_warnings: list[str] = []
-
-        # scvi is an optional GPU backend, absent from the core install and CI. Import
-        # it lazily here (never at module scope) so importing this module — e.g. during
-        # test collection — does not hard-fail when scvi is missing. The reference_mapping
-        # __init__ guard registers this method only when scvi is importable.
-        import scvi
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=FutureWarning)
-            warnings.filterwarnings("ignore", category=UserWarning)
-
-            for seed in seeds:
-                if resume and objects_path is not None:
-                    checkpoint = _load_seed_checkpoint(
-                        objects_path=objects_path,
-                        key_added=key_added,
-                        seed=int(seed),
-                        expected_meta=checkpoint_meta,
-                    )
-                    if checkpoint is not None:
-                        seed_predictions[seed] = checkpoint["prediction"]
-                        seed_latents[seed] = checkpoint["latent"]
-                        seed_loss_history[seed] = checkpoint["loss_history"]
-                        resumed_seeds.append(int(seed))
-                        continue
-
-                scvi.settings.seed = seed
-
-                # Setup scVI on atlas.
-                scvi.model.SCVI.setup_anndata(
-                    atlas_train,
-                    batch_key=atlas_batch_key,
-                    labels_key="_labels",
-                )
-
-                # Train scVI.
-                vae = scvi.model.SCVI(
-                    atlas_train,
-                    n_latent=n_latent,
-                    n_layers=n_layers,
-                    dropout_rate=dropout_rate,
-                    gene_likelihood=gene_likelihood,
-                    encode_covariates=True,
-                    deeply_inject_covariates=False,
-                )
-                vae.train(
-                    max_epochs=max_epochs_scvi,
-                    early_stopping=early_stopping,
-                    accelerator=accelerator,
-                )
-
-                # Train scANVI from scVI.
-                scanvi = scvi.model.SCANVI.from_scvi_model(
-                    vae, unlabeled_category=unlabeled_category
-                )
-                scanvi.train(max_epochs=max_epochs_scanvi, accelerator=accelerator)
-
-                # Persist the trained reference models (scVI + scANVI) so a run is
-                # reproducible and the reference can be reused across queries or
-                # recovered after a crash without retraining. Best-effort: a save
-                # failure must not abort mapping.
-                if objects_path is not None:
-                    save_warnings += _save_reference_models(
-                        objects_path=objects_path,
-                        key_added=key_added,
-                        seed=int(seed),
-                        scvi_model=vae,
-                        scanvi_model=scanvi,
-                    )
-
-                # Prepare query.
-                q = query_train.copy()
-                q.X = _resolve_counts(q, counts_layer, what="query")
-                # Same reason as the atlas: scVI's transferred setup addresses counts by layer
-                # name, so the layer has to exist even when the counts came from `.raw` or `X`.
-                q.layers[counts_layer] = q.X
-                q.obs["_labels"] = unlabeled_category
-                q.obs[atlas_batch_key] = query_batch_value
-
-                # Query surgery.
-                scvi.model.SCANVI.prepare_query_anndata(q, scanvi)
-                qmodel = scvi.model.SCANVI.load_query_data(q, scanvi)
-                qmodel.train(
-                    max_epochs=max_epochs_query,
-                    plan_kwargs={"weight_decay": 0.0},
-                    early_stopping=early_stopping,
-                    early_stopping_patience=query_early_stopping_patience,
-                    early_stopping_monitor=query_early_stopping_monitor,
-                    accelerator=accelerator,
-                )
-
-                # Predict labels.
-                pred_hard = qmodel.predict(q)
-                pred_soft = qmodel.predict(q, soft=True)
-
-                q_latent = qmodel.get_latent_representation(q)
-                ref_latent = scanvi.get_latent_representation(atlas_train)
-
-                # Validate at the PRODUCTION site: a collapsed latent here means scANVI
-                # training or query surgery failed for this seed, and every downstream
-                # coordinate, kNN and figure built on it is meaningless. Caught here it
-                # names the seed; caught downstream it is a mystery in a plot.
-                for latent, which in ((ref_latent, "reference"), (q_latent, "query")):
-                    n_variable = int((np.std(latent, axis=0) > 1e-6).sum())
-                    if n_variable < 2:
-                        raise CellQuorumStageError(
-                            "reference_mapping",
-                            f"scANVI {which} latent collapsed on seed {seed}: only "
-                            f"{n_variable}/{latent.shape[1]} dimensions have variance "
-                            f"(std > 1e-6). Training produced a degenerate manifold.",
-                        )
-
-                # kNN uncertainty (NOT softmax).
-                nn = NearestNeighbors(n_neighbors=knn_k)
-                nn.fit(ref_latent)
-                _, idx = nn.kneighbors(q_latent)
-
-                ref_labels = atlas_train.obs["_labels"].to_numpy()
-                knn_entropy_vals = np.zeros(len(q))
-                knn_agreement_vals = np.zeros(len(q))
-
-                for i in range(len(q)):
-                    neigh = ref_labels[idx[i]]
-                    _, counts = np.unique(neigh, return_counts=True)
-                    p = counts / knn_k
-                    knn_entropy_vals[i] = entropy(p)
-                    knn_agreement_vals[i] = (neigh == pred_hard[i]).mean()
-
-                seed_predictions[seed] = {
-                    "hard": pred_hard,
-                    "soft": pred_soft,
-                    "knn_entropy": knn_entropy_vals,
-                    "knn_agreement": knn_agreement_vals,
-                }
-                seed_latents[seed] = {"query": q_latent, "ref": ref_latent}
-
-                # Loss history.
-                seed_loss_history[seed] = {
-                    "scvi": _serialize_history(vae),
-                    "scanvi": _serialize_history(scanvi),
-                    "query_surgery": _serialize_history(qmodel),
-                }
-                trained_seeds.append(int(seed))
-
-                if objects_path is not None:
-                    _save_seed_checkpoint(
-                        objects_path=objects_path,
-                        key_added=key_added,
-                        seed=int(seed),
-                        meta=checkpoint_meta,
-                        prediction=seed_predictions[seed],
-                        latent=seed_latents[seed],
-                        loss_history=seed_loss_history[seed],
-                    )
-
-        # Consensus across seeds.
-        n_cells = len(query_train)
-
-        # Mean-posterior consensus: average each seed's soft probabilities over a
-        # shared, union label-column ordering, then derive the label and
-        # confidence from the AVERAGED distribution. This is the scientifically
-        # correct multi-seed consensus — the reported probabilities, label, and
-        # confidence are mutually consistent, unlike picking one "best" seed's
-        # probs alongside a separate hard vote.
-        mean_soft_df = _mean_soft_probabilities(seed_predictions, seeds)
-        prob_columns = list(mean_soft_df.columns)
-        prob_matrix = mean_soft_df.to_numpy()
-        consensus_labels = [prob_columns[i] for i in prob_matrix.argmax(axis=1)]
-        # Confidence = the averaged posterior mass on the consensus label.
-        consensus_confidence = prob_matrix.max(axis=1)
-
-        # Hard-vote agreement is retained as a secondary robustness signal: the
-        # fraction of seeds whose hard call matched the mean-posterior label.
-        consensus_fracs = []
-        for i in range(n_cells):
-            votes = [seed_predictions[s]["hard"][i] for s in seeds]
-            consensus_fracs.append(sum(v == consensus_labels[i] for v in votes) / len(seeds))
-
-        # Choose the best-agreeing seed for the (single-seed) latent + kNN metrics.
-        # NOTE: X_scANVI stays single-seed because independent scANVI latent spaces
-        # are not rotation/sign-aligned and cannot be averaged; it is labeled as
-        # such in uns. Only the probabilities are a true cross-seed consensus.
-        seed_mean_agreement = {s: seed_predictions[s]["knn_agreement"].mean() for s in seeds}
-        best_seed = max(seed_mean_agreement, key=lambda s: seed_mean_agreement[s])
-
-        # Write results onto the FULL input query (all genes, not HVG subset).
-        # Cells are NOT subset (only genes were), so obs_names order is preserved.
-        #
-        # Copied HERE rather than before training. It used to be `query_full = adata.copy()` up
-        # by the gene intersection, used for nothing but this line — so a second full copy of a
-        # 202,000-cell object with three layers sat resident through the entire multi-seed
-        # training loop, hours during which nothing read it.
-        result_query = adata.copy()
-        assert len(result_query) == n_cells, "Cell count mismatch after gene subset."
-        result_query.obs[key_added] = pd.Categorical(consensus_labels)
-        result_query.obs[f"{key_added}_consensus_frac"] = consensus_fracs
-        result_query.obs[f"{key_added}_confidence"] = consensus_confidence
-        result_query.obs[f"{key_added}_knn_entropy"] = seed_predictions[best_seed]["knn_entropy"]
-        result_query.obs[f"{key_added}_knn_agreement"] = seed_predictions[best_seed][
-            "knn_agreement"
-        ]
-
-        # The coarser resolution, derived rather than separately predicted.
-        collapse_notes: list[str] = []
-        if coarse_map is not None:
-            coarse_labels, unmapped = _collapse_labels(consensus_labels, coarse_map)
-            result_query.obs[f"{key_added}_coarse"] = pd.Categorical(coarse_labels)
-            # Confidence carries over unchanged: a cell's coarse call is exactly as certain as
-            # the granular call it came from, and any confusion WITHIN a coarse family — a
-            # capillary EC read as a venule EC — leaves the coarse label untouched, so the
-            # derived column is never less reliable than its source.
-            result_query.obs[f"{key_added}_coarse_confidence"] = consensus_confidence
-            if unmapped:
-                collapse_notes.append(
-                    f"reference_mapping: {len(unmapped)} predicted label(s) had no entry in the "
-                    f"{coarse_label_key!r} hierarchy and were left unmapped: "
-                    f"{sorted(unmapped)[:5]}"
-                )
-
-        # Per-seed columns.
-        for s in seeds:
-            result_query.obs[f"{key_added}_seed{s}"] = pd.Categorical(seed_predictions[s]["hard"])
-
-        # Mean-posterior consensus probabilities (consistent with the label above).
-        for col in prob_columns:
-            result_query.obs[f"refprob_{col}"] = mean_soft_df[col].to_numpy()
-        result_query.obsm[f"{key_added}_probabilities"] = prob_matrix
-
-        # Latent embedding from the best-agreeing seed (single-seed; see note). Already
-        # collapse-checked at its production site in the per-seed loop, so no re-check here.
-        result_query.obsm["X_scANVI"] = seed_latents[best_seed]["query"]
-
-        # uns metadata.
-        ref_states = list(atlas_train.obs["_labels"].unique())
-        result_query.uns["reference_mapping"] = {
-            "atlas_h5ad": str(atlas_path),
-            "label_key": label_key,
-            "n_latent": n_latent,
-            "n_hvg": len(hvg_list),
-            "n_shared": len(shared),
-            "ref_states": ref_states,
-            "seeds": seeds,
-            "probability_obsm": f"{key_added}_probabilities",
-            "probability_columns": [str(col) for col in prob_columns],
-            "probability_consensus": "mean_posterior_across_seeds",
-            "embedding_note": (
-                "X_scANVI is from a single (best-agreeing) seed; scANVI latent "
-                "spaces across seeds are not aligned and are not averaged."
-            ),
-            "uncertainty_note": "kNN entropy from k-NN in reference latent space",
-        }
-
-        # Diagnostics: kNN accuracy (guard against rare class / small fold NaN).
-        # cv_folds is user-configurable but must not exceed the smallest class's
-        # member count (stratified CV requires >= cv_folds members per class),
-        # and must be at least 2. Cap defensively so a large configured value on
-        # a small/imbalanced atlas degrades gracefully rather than raising.
-        ref_latent_best = seed_latents[best_seed]["ref"]
-        n_ref = len(atlas_train)
-        min_class_count = int(atlas_train.obs["_labels"].value_counts().min())
-        effective_cv_folds = max(2, min(cv_folds, min_class_count))
-        safe_k = max(1, min(knn_k, n_ref // (effective_cv_folds + 1)))
-        knn_clf = KNeighborsClassifier(n_neighbors=safe_k)
-        cv_scores = cross_val_score(
-            knn_clf, ref_latent_best, atlas_train.obs["_labels"], cv=effective_cv_folds
+        ref_latent_best = seed_results.latents[best_seed]["ref"]
+        knn_accuracy, effective_cv_folds = _knn_cv_accuracy(
+            prepared.atlas_train, ref_latent_best, settings
         )
-        knn_accuracy = cv_scores.mean()
-        if np.isnan(knn_accuracy):
-            knn_accuracy = None
+        metrics = _build_metrics(
+            prepared, settings, seed_results, consensus, knn_accuracy, effective_cv_folds
+        )
 
-        # Metrics.
-        metrics = {
-            "knn_accuracy": float(knn_accuracy) if knn_accuracy is not None else None,
-            "median_knn_entropy": float(np.median(seed_predictions[best_seed]["knn_entropy"])),
-            "median_knn_agreement": float(np.median(seed_predictions[best_seed]["knn_agreement"])),
-            "median_consensus_frac": float(np.median(consensus_fracs)),
-            "median_consensus_confidence": float(np.median(consensus_confidence)),
-            "frac_unanimous": float((np.array(consensus_fracs) == 1.0).mean()),
-            "n_ref_cells": int(len(atlas_train)),
-            "n_hvg": len(hvg_list),
-            "key_added": key_added,
-            "n_seeds": len(seeds),
-            "cv_folds_configured": cv_folds,
-            "cv_folds_effective": effective_cv_folds,
-            "resumed_seeds": resumed_seeds,
-            "trained_seeds": trained_seeds,
-            "resume_enabled": resume,
-        }
+        artifacts, reference_notes = _write_artifacts(
+            result_query,
+            prepared,
+            settings,
+            seed_results,
+            best_seed,
+            ref_latent_best,
+            objects_path,
+            context,
+        )
 
-        # Write final reference-mapping artifacts.
-        artifacts = []
-        # Collected here and folded into `notes` below, which is built after the artifacts.
-        reference_notes: list[str] = []
-
-        # The reference, as actually used, with its corrected coordinates. See
-        # `_write_prepared_reference` for why this is not optional.
-        if objects_path is not None:
-            prepared_path = objects_path / f"{key_added}_reference_prepared.h5ad"
-            n_prepared = _write_prepared_reference(
-                atlas_train,
-                ref_latent_best,
-                path=prepared_path,
-                key_added=key_added,
-                coarse_map=coarse_map,
-                counts_layer=counts_layer,
-                batch_key=atlas_batch_key,
-            )
-            artifacts.append(
-                StageArtifact(
-                    name="reference_prepared",
-                    path=prepared_path,
-                    kind="h5ad",
-                    description=(
-                        "The reference the mapping used: filtered, aligned to the query's gene "
-                        "identifiers, shared HVGs, labels under the query's prediction column, "
-                        "and the scANVI-corrected latent space in obsm['X_scANVI']."
-                    ),
-                )
-            )
-            # Published so `annotation_diagnostics` and CHOIR can find it without being told a
-            # path, and so neither has to re-read the raw atlas to guess at the same reference.
-            result_query.uns.setdefault("cellquorum", {})["reference_prepared"] = {
-                "path": str(prepared_path),
-                "label_column": key_added,
-                "latent_key": "X_scANVI",
-                "n_cells": n_prepared,
-                "n_genes": len(hvg_list),
-                "produced_by": f"reference_mapping seed {best_seed}",
-            }
-            reference_notes.append(
-                f"Prepared reference written ({n_prepared:,} cells x {len(hvg_list):,} genes) "
-                f"with the scANVI-corrected latent space, for the confirmation stages and the "
-                f"joint atlas+query embedding."
-            )
-
-        if hasattr(context.paths, "results"):
-            results_path = Path(context.paths.results)
-            if results_path.exists():
-                assignment_cols = [
-                    col
-                    for col in result_query.obs.columns
-                    if col == key_added
-                    or col.startswith(f"{key_added}_")
-                    or col.startswith("refprob_")
-                ]
-                assignments = result_query.obs[assignment_cols].copy()
-                assignments.insert(0, "cell_id", result_query.obs_names)
-                writer = StageArtifactWriter.from_context(context)
-                artifacts.append(
-                    writer.table(
-                        assignments,
-                        f"{key_added}_assignments.csv",
-                        name="reference_mapping_assignments",
-                        description="Per-cell transferred labels and uncertainty scores.",
-                        index=False,
-                    )
-                )
-
-        if write_loss_curves and hasattr(context.paths, "figures"):
-            figures_path = Path(context.paths.figures)
-            if figures_path.exists():
-                from cellquorum.stages.annotation.reference_mapping.diagnostics import (
-                    plot_loss_curves,
-                    plot_uncertainty,
-                )
-
-                # Loss curves for best seed.
-                loss_path = figures_path / f"{key_added}_loss_curves.png"
-                plot_loss_curves(seed_loss_history[best_seed], loss_path)
-                artifacts.append(
-                    StageArtifact(
-                        name="loss_curves",
-                        path=loss_path,
-                        kind="figure",
-                        description="scVI/scANVI/query loss curves",
-                    )
-                )
-
-                # Uncertainty histograms.
-                uncertainty_path = figures_path / f"{key_added}_uncertainty.png"
-                plot_uncertainty(result_query.obs, key_added, uncertainty_path)
-                artifacts.append(
-                    StageArtifact(
-                        name="uncertainty",
-                        path=uncertainty_path,
-                        kind="figure",
-                        description="kNN entropy + agreement + consensus distributions",
-                    )
-                )
-
+        ref_states = list(prepared.atlas_train.obs["_labels"].unique())
         notes = [
             f"Mapped {len(result_query)} cells to {len(ref_states)} reference states.",
-            f"Multi-seed consensus across {len(seeds)} seeds.",
-            f"Reference mapping seeds trained={trained_seeds}, resumed={resumed_seeds}.",
+            f"Multi-seed consensus across {len(settings.seeds)} seeds.",
+            f"Reference mapping seeds trained={seed_results.trained}, "
+            f"resumed={seed_results.resumed}.",
             f"Median kNN entropy: {metrics['median_knn_entropy']:.3f}",
             f"Median consensus fraction: {metrics['median_consensus_frac']:.3f}",
         ]
@@ -1018,16 +492,795 @@ class ScArchesMethod(AnalysisMethod):
             notes.append("kNN accuracy: N/A (too few cells per class for k-fold CV)")
         notes.extend(collapse_notes)
         notes.extend(reference_notes)
-        if gene_space_note is not None:
-            notes.append(gene_space_note)
+        if prepared.gene_space_note is not None:
+            notes.append(prepared.gene_space_note)
 
         return StageResult(
             adata=result_query,
             metrics=metrics,
             artifacts=artifacts,
             notes=notes,
-            warnings=save_warnings,
+            warnings=seed_results.save_warnings,
         )
+
+
+@dataclass(frozen=True)
+class _Settings:
+    """The method's configuration, read once and given real types.
+
+    ``_run`` used to read some thirty keys from the config dictionary inline. Reading them here
+    keeps the defaults in one place and lets each phase take the settings it needs.
+    """
+
+    atlas_path: Path
+    label_key: str
+    # An optional COARSER atlas column to derive a second resolution from. See
+    # `_collapse_labels` for why this is a collapse and not a second mapping.
+    coarse_label_key: str | None
+    atlas_batch_key: str
+    # An explicit atlas var column holding identifiers of the query's kind. None means
+    # detect it by measuring overlap; see `_align_atlas_gene_space`.
+    atlas_gene_symbol_col: str | None
+    query_batch_value: str
+    counts_layer: str
+    n_top_genes: int
+    hvg_flavor: str
+    force_genes: list
+    n_latent: int
+    n_layers: int
+    dropout_rate: float
+    gene_likelihood: str
+    max_epochs_scvi: int
+    max_epochs_scanvi: int
+    max_epochs_query: int
+    early_stopping: bool
+    query_early_stopping_patience: int
+    query_early_stopping_monitor: str
+    unlabeled_category: str
+    seeds: list
+    cv_folds: int
+    knn_k: int
+    key_added: str
+    compute_backend: str
+    write_loss_curves: bool
+    resume: bool
+    compartment_filter: dict | None
+    reference_filters: list
+    min_label_prob: float | None
+    label_prob_col: str | None
+
+    @classmethod
+    def from_config(cls, config: dict, atlas_path: Path) -> _Settings:
+        return cls(
+            atlas_path=atlas_path,
+            label_key=config.get("label_key", "cell_type"),
+            coarse_label_key=config.get("coarse_label_key") or None,
+            atlas_batch_key=config.get("atlas_batch_key", "batch"),
+            atlas_gene_symbol_col=config.get("atlas_gene_symbol_col") or None,
+            query_batch_value=config.get("query_batch_value", "query"),
+            counts_layer=config.get("counts_layer", "counts"),
+            n_top_genes=int(config.get("n_top_genes", 3000)),
+            hvg_flavor=config.get("hvg_flavor", "seurat_v3"),
+            force_genes=config.get("force_genes", []),
+            n_latent=int(config.get("n_latent", 30)),
+            n_layers=int(config.get("n_layers", 2)),
+            dropout_rate=float(config.get("dropout_rate", 0.2)),
+            gene_likelihood=config.get("gene_likelihood", "zinb"),
+            max_epochs_scvi=int(config.get("max_epochs_scvi", 400)),
+            max_epochs_scanvi=int(config.get("max_epochs_scanvi", 20)),
+            max_epochs_query=int(config.get("max_epochs_query", 100)),
+            early_stopping=bool(config.get("early_stopping", True)),
+            query_early_stopping_patience=int(config.get("query_early_stopping_patience", 10)),
+            query_early_stopping_monitor=config.get(
+                "query_early_stopping_monitor", "reconstruction_loss_train"
+            ),
+            unlabeled_category=config.get("unlabeled_category", "Unknown"),
+            seeds=config.get("seeds", [0, 1, 2, 3, 4]),
+            cv_folds=int(config.get("cv_folds", 3)),
+            knn_k=int(config.get("knn_k", 30)),
+            key_added=config.get("key_added", "ref_state"),
+            compute_backend=config.get("compute_backend", "auto"),
+            write_loss_curves=bool(config.get("write_loss_curves", True)),
+            resume=bool(config.get("resume", True)),
+            compartment_filter=config.get("compartment_filter"),
+            reference_filters=config.get("reference_filters", []),
+            min_label_prob=config.get("min_label_prob"),
+            label_prob_col=config.get("label_prob_col"),
+        )
+
+
+@dataclass
+class _Prepared:
+    """The reference and the query, reduced to the shared highly variable genes."""
+
+    atlas_train: ad.AnnData
+    query_train: ad.AnnData
+    hvg_list: list
+    n_shared: int
+    coarse_map: dict[str, str] | None
+    gene_space_note: str | None
+
+
+@dataclass
+class _SeedResults:
+    """What training produced, per seed, and which seeds were trained or resumed."""
+
+    predictions: dict[int, dict[str, Any]] = field(default_factory=dict)
+    latents: dict[int, dict[str, np.ndarray]] = field(default_factory=dict)
+    loss_history: dict[int, dict[str, dict[str, list[float]]]] = field(default_factory=dict)
+    resumed: list[int] = field(default_factory=list)
+    trained: list[int] = field(default_factory=list)
+    save_warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _Consensus:
+    """The mean-posterior consensus across seeds, and the seed used for single-seed outputs."""
+
+    mean_soft_df: pd.DataFrame
+    prob_columns: list
+    prob_matrix: np.ndarray
+    labels: list
+    confidence: np.ndarray
+    fracs: list
+    best_seed: Any
+
+
+def _filter_atlas(atlas: ad.AnnData, settings: _Settings) -> ad.AnnData:
+    """Apply the generic reference filters."""
+    if settings.compartment_filter is not None:
+        col = settings.compartment_filter.get("column")
+        keep = settings.compartment_filter.get("keep")
+        if col and keep and col in atlas.obs.columns:
+            atlas = atlas[atlas.obs[col].isin(keep)].copy()
+
+    for filt in settings.reference_filters:
+        col = filt.get("column")
+        keep = filt.get("keep", [])
+        if col and col in atlas.obs.columns:
+            atlas = atlas[atlas.obs[col].isin(keep)].copy()
+
+    if settings.min_label_prob is not None and settings.label_prob_col is not None:
+        if settings.label_prob_col in atlas.obs.columns:
+            atlas = atlas[atlas.obs[settings.label_prob_col] >= settings.min_label_prob].copy()
+    return atlas
+
+
+def _prepare_training_sets(
+    adata: ad.AnnData, settings: _Settings, *, method_name: str
+) -> _Prepared | MethodSkip:
+    """Load the atlas, bring it into the query's gene space and reduce both to shared HVGs.
+
+    The atlas is loaded and released inside this function so no caller holds a reference to the
+    full reference while the query is copied.
+    """
+    knn_k = settings.knn_k
+    counts_layer = settings.counts_layer
+    label_key = settings.label_key
+
+    atlas = sc.read_h5ad(settings.atlas_path)
+    atlas = _filter_atlas(atlas, settings)
+
+    # Guard: atlas must have >= knn_k cells after filtering.
+    if len(atlas) < knn_k:
+        return MethodSkip(
+            reason=f"reference_mapping skipped: filtered atlas has {len(atlas)} "
+            f"cells < knn_k={knn_k}",
+            details={"method": method_name, "n_atlas_cells": len(atlas), "knn_k": knn_k},
+        )
+
+    # Set atlas X to counts. Done while var_names are still the atlas's own identifiers,
+    # because `.raw` is indexed by those — resolving after the re-index below would look up
+    # symbols in an Ensembl-indexed `.raw`.
+    atlas.X = _resolve_counts(atlas, counts_layer, what="atlas")
+    # `.raw` has now been read and nothing reads it again, so drop it. On the filtered skin
+    # atlas that releases roughly 2.4 GB, which matters because the atlas is held fully in
+    # memory alongside the query, the shared-gene subset, and the HVG subset.
+    atlas.raw = None
+    atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
+
+    # Learn the label hierarchy from the atlas itself, before the atlas is subset to shared
+    # genes and thrown away. Validated rather than assumed: a granular level that appears
+    # under two different coarse types has no single collapse, and silently picking one
+    # would invent an annotation.
+    coarse_map: dict[str, str] | None = None
+    if settings.coarse_label_key is not None:
+        coarse_map = _label_hierarchy(atlas, label_key, settings.coarse_label_key)
+
+    # Put the atlas into whichever gene identifier it shares with the query before
+    # intersecting. Without this, a CellxGene atlas (Ensembl var_names) against a Cell
+    # Ranger cohort (symbol var_names) shares nothing at all.
+    atlas, symbol_column, n_aligned = _align_atlas_gene_space(
+        atlas, adata.var_names, symbol_column=settings.atlas_gene_symbol_col
+    )
+    # Materialized only now, after any re-index and de-duplication, so the subset above
+    # copies one matrix rather than two. Resolving `X` alone was a half-fix: HVG selection
+    # and scVI's setup both address the counts by LAYER NAME, so an atlas that keeps its
+    # counts in `.raw` — every CellxGene download, where `layers` is empty — still died with
+    # a bare `KeyError: 'counts'`. Assignment stores the same object, so this is free.
+    atlas.layers[counts_layer] = atlas.X
+
+    gene_space_note: str | None = None
+    if symbol_column is not None:
+        gene_space_note = (
+            f"Atlas genes re-indexed from var_names onto var['{symbol_column}'] to match "
+            f"the query's identifiers: {n_aligned:,} shared genes (0 before)."
+        )
+
+    # Gene intersection.
+    shared = sorted(set(atlas.var_names) & set(adata.var_names))
+
+    # No overlap is a misconfiguration, not an absent capability, so it fails rather than
+    # skips. This was a MethodSkip: the atlas loaded, matched nothing, the stage vanished
+    # with a line in the log, and the run continued to the confirmation stages as though
+    # mapping had happened. A stage that IS the analysis must not opt out quietly.
+    if len(shared) == 0:
+        searched = [name for name in _SYMBOL_COLUMNS if name in atlas.var.columns]
+        raise CellQuorumDataError(
+            f"reference_mapping: the atlas and the query share no genes. The atlas names "
+            f"{len(atlas.var_names):,} genes like {list(atlas.var_names[:3])} and the query "
+            f"names {len(adata.var_names):,} like {list(adata.var_names[:3])} — usually "
+            f"Ensembl IDs against symbols. Symbol columns searched in the atlas var: "
+            f"{searched or 'none found'}. Set "
+            f"`reference_mapping.atlas_gene_symbol_col` to the column holding identifiers "
+            f"of the query's kind."
+        )
+
+    atlas_train = atlas[:, shared].copy()
+    # Release the full reference before the query is copied twice below. Measured on the
+    # real skin atlas the peak here is ~24.8 GB, and nothing reads `atlas` again, so holding
+    # it through two copies of a 202,000-cell query is how this stage runs out of memory
+    # after four minutes of loading. `atlas_train` owns what is still needed.
+    del atlas
+    query_train = adata[:, shared].copy()
+
+    # HVG selection. See `_select_hvg_genes` for why this dispatches on flavor
+    # rather than always using counts_layer.
+    hvg_list = _select_hvg_genes(
+        atlas_train,
+        n_top_genes=settings.n_top_genes,
+        hvg_flavor=settings.hvg_flavor,
+        force_genes=settings.force_genes,
+        counts_layer=counts_layer,
+    )
+    atlas_train = atlas_train[:, hvg_list].copy()
+    query_train = query_train[:, hvg_list].copy()
+    return _Prepared(
+        atlas_train=atlas_train,
+        query_train=query_train,
+        hvg_list=hvg_list,
+        n_shared=len(shared),
+        coarse_map=coarse_map,
+        gene_space_note=gene_space_note,
+    )
+
+
+def _resolve_accelerator(compute_backend: str) -> str:
+    """GPU gate. scVI uses PyTorch/Lightning, not RAPIDS/CuPy."""
+    if compute_backend == "cpu":
+        use_gpu = False
+    elif compute_backend == "gpu":
+        if not _scvi_gpu_available():
+            raise RuntimeError(
+                "reference_mapping.compute_backend='gpu' was requested, but "
+                "PyTorch/Lightning does not report a supported CUDA accelerator."
+            )
+        use_gpu = True
+    else:
+        use_gpu = _scvi_gpu_available()
+    return "gpu" if use_gpu else "cpu"
+
+
+def _check_latent_not_collapsed(ref_latent: np.ndarray, q_latent: np.ndarray, seed: Any) -> None:
+    """Validate at the PRODUCTION site: a collapsed latent here means scANVI
+    training or query surgery failed for this seed, and every downstream
+    coordinate, kNN and figure built on it is meaningless. Caught here it
+    names the seed; caught downstream it is a mystery in a plot.
+    """
+    for latent, which in ((ref_latent, "reference"), (q_latent, "query")):
+        n_variable = int((np.std(latent, axis=0) > 1e-6).sum())
+        if n_variable < 2:
+            raise CellQuorumStageError(
+                "reference_mapping",
+                f"scANVI {which} latent collapsed on seed {seed}: only "
+                f"{n_variable}/{latent.shape[1]} dimensions have variance "
+                f"(std > 1e-6). Training produced a degenerate manifold.",
+            )
+
+
+def _knn_uncertainty(
+    ref_latent: np.ndarray,
+    q_latent: np.ndarray,
+    ref_labels: np.ndarray,
+    pred_hard: Any,
+    knn_k: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """kNN uncertainty (NOT softmax): entropy of the neighbours' labels, and agreement."""
+    nn = NearestNeighbors(n_neighbors=knn_k)
+    nn.fit(ref_latent)
+    _, idx = nn.kneighbors(q_latent)
+
+    n_query = len(q_latent)
+    knn_entropy_vals = np.zeros(n_query)
+    knn_agreement_vals = np.zeros(n_query)
+
+    for i in range(n_query):
+        neigh = ref_labels[idx[i]]
+        _, counts = np.unique(neigh, return_counts=True)
+        p = counts / knn_k
+        knn_entropy_vals[i] = entropy(p)
+        knn_agreement_vals[i] = (neigh == pred_hard[i]).mean()
+    return knn_entropy_vals, knn_agreement_vals
+
+
+def _train_one_seed(
+    seed: Any,
+    prepared: _Prepared,
+    settings: _Settings,
+    accelerator: str,
+    objects_path: Path | None,
+    scvi: Any,
+) -> tuple[dict[str, Any], dict[str, np.ndarray], dict[str, dict[str, list[float]]], list[str]]:
+    """Train scVI, scANVI and the query surgery for one seed, and predict.
+
+    Returns the prediction, the latents, the loss history and any warnings from saving the
+    reference models.
+    """
+    atlas_train = prepared.atlas_train
+    counts_layer = settings.counts_layer
+    key_added = settings.key_added
+    save_warnings: list[str] = []
+
+    scvi.settings.seed = seed
+
+    # Setup scVI on atlas.
+    scvi.model.SCVI.setup_anndata(
+        atlas_train,
+        batch_key=settings.atlas_batch_key,
+        labels_key="_labels",
+    )
+
+    # Train scVI.
+    vae = scvi.model.SCVI(
+        atlas_train,
+        n_latent=settings.n_latent,
+        n_layers=settings.n_layers,
+        dropout_rate=settings.dropout_rate,
+        gene_likelihood=settings.gene_likelihood,
+        encode_covariates=True,
+        deeply_inject_covariates=False,
+    )
+    vae.train(
+        max_epochs=settings.max_epochs_scvi,
+        early_stopping=settings.early_stopping,
+        accelerator=accelerator,
+    )
+
+    # Train scANVI from scVI.
+    scanvi = scvi.model.SCANVI.from_scvi_model(vae, unlabeled_category=settings.unlabeled_category)
+    scanvi.train(max_epochs=settings.max_epochs_scanvi, accelerator=accelerator)
+
+    # Persist the trained reference models (scVI + scANVI) so a run is
+    # reproducible and the reference can be reused across queries or
+    # recovered after a crash without retraining. Best-effort: a save
+    # failure must not abort mapping.
+    if objects_path is not None:
+        save_warnings += _save_reference_models(
+            objects_path=objects_path,
+            key_added=key_added,
+            seed=int(seed),
+            scvi_model=vae,
+            scanvi_model=scanvi,
+        )
+
+    # Prepare query.
+    q = prepared.query_train.copy()
+    q.X = _resolve_counts(q, counts_layer, what="query")
+    # Same reason as the atlas: scVI's transferred setup addresses counts by layer
+    # name, so the layer has to exist even when the counts came from `.raw` or `X`.
+    q.layers[counts_layer] = q.X
+    q.obs["_labels"] = settings.unlabeled_category
+    q.obs[settings.atlas_batch_key] = settings.query_batch_value
+
+    # Query surgery.
+    scvi.model.SCANVI.prepare_query_anndata(q, scanvi)
+    qmodel = scvi.model.SCANVI.load_query_data(q, scanvi)
+    qmodel.train(
+        max_epochs=settings.max_epochs_query,
+        plan_kwargs={"weight_decay": 0.0},
+        early_stopping=settings.early_stopping,
+        early_stopping_patience=settings.query_early_stopping_patience,
+        early_stopping_monitor=settings.query_early_stopping_monitor,
+        accelerator=accelerator,
+    )
+
+    # Predict labels.
+    pred_hard = qmodel.predict(q)
+    pred_soft = qmodel.predict(q, soft=True)
+
+    q_latent = qmodel.get_latent_representation(q)
+    ref_latent = scanvi.get_latent_representation(atlas_train)
+
+    _check_latent_not_collapsed(ref_latent, q_latent, seed)
+
+    knn_entropy_vals, knn_agreement_vals = _knn_uncertainty(
+        ref_latent,
+        q_latent,
+        atlas_train.obs["_labels"].to_numpy(),
+        pred_hard,
+        settings.knn_k,
+    )
+
+    prediction = {
+        "hard": pred_hard,
+        "soft": pred_soft,
+        "knn_entropy": knn_entropy_vals,
+        "knn_agreement": knn_agreement_vals,
+    }
+    latent = {"query": q_latent, "ref": ref_latent}
+    loss_history = {
+        "scvi": _serialize_history(vae),
+        "scanvi": _serialize_history(scanvi),
+        "query_surgery": _serialize_history(qmodel),
+    }
+    return prediction, latent, loss_history, save_warnings
+
+
+def _train_seeds(
+    prepared: _Prepared,
+    settings: _Settings,
+    accelerator: str,
+    objects_path: Path | None,
+) -> _SeedResults:
+    """Train every seed, resuming from a checkpoint when one matches."""
+    key_added = settings.key_added
+    results = _SeedResults()
+
+    checkpoint_meta = _build_seed_checkpoint_meta(
+        atlas_path=settings.atlas_path,
+        label_key=settings.label_key,
+        counts_layer=settings.counts_layer,
+        key_added=key_added,
+        query_obs_names=prepared.query_train.obs_names,
+        atlas_obs_names=prepared.atlas_train.obs_names,
+        hvg_list=prepared.hvg_list,
+        n_shared=prepared.n_shared,
+        knn_k=settings.knn_k,
+        n_latent=settings.n_latent,
+    )
+
+    # scvi is an optional GPU backend, absent from the core install and CI. Import
+    # it lazily here (never at module scope) so importing this module — e.g. during
+    # test collection — does not hard-fail when scvi is missing. The reference_mapping
+    # __init__ guard registers this method only when scvi is importable.
+    import scvi
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        warnings.filterwarnings("ignore", category=UserWarning)
+
+        for seed in settings.seeds:
+            if settings.resume and objects_path is not None:
+                checkpoint = _load_seed_checkpoint(
+                    objects_path=objects_path,
+                    key_added=key_added,
+                    seed=int(seed),
+                    expected_meta=checkpoint_meta,
+                )
+                if checkpoint is not None:
+                    results.predictions[seed] = checkpoint["prediction"]
+                    results.latents[seed] = checkpoint["latent"]
+                    results.loss_history[seed] = checkpoint["loss_history"]
+                    results.resumed.append(int(seed))
+                    continue
+
+            prediction, latent, loss_history, save_warnings = _train_one_seed(
+                seed, prepared, settings, accelerator, objects_path, scvi
+            )
+            results.save_warnings += save_warnings
+            results.predictions[seed] = prediction
+            results.latents[seed] = latent
+            results.loss_history[seed] = loss_history
+            results.trained.append(int(seed))
+
+            if objects_path is not None:
+                _save_seed_checkpoint(
+                    objects_path=objects_path,
+                    key_added=key_added,
+                    seed=int(seed),
+                    meta=checkpoint_meta,
+                    prediction=prediction,
+                    latent=latent,
+                    loss_history=loss_history,
+                )
+    return results
+
+
+def _consensus_across_seeds(
+    seed_predictions: dict[int, dict[str, Any]], seeds: list, n_cells: int
+) -> _Consensus:
+    """Mean-posterior consensus: average each seed's soft probabilities over a
+    shared, union label-column ordering, then derive the label and
+    confidence from the AVERAGED distribution. This is the scientifically
+    correct multi-seed consensus — the reported probabilities, label, and
+    confidence are mutually consistent, unlike picking one "best" seed's
+    probs alongside a separate hard vote.
+    """
+    mean_soft_df = _mean_soft_probabilities(seed_predictions, seeds)
+    prob_columns = list(mean_soft_df.columns)
+    prob_matrix = mean_soft_df.to_numpy()
+    consensus_labels = [prob_columns[i] for i in prob_matrix.argmax(axis=1)]
+    # Confidence = the averaged posterior mass on the consensus label.
+    consensus_confidence = prob_matrix.max(axis=1)
+
+    # Hard-vote agreement is retained as a secondary robustness signal: the
+    # fraction of seeds whose hard call matched the mean-posterior label.
+    consensus_fracs = []
+    for i in range(n_cells):
+        votes = [seed_predictions[s]["hard"][i] for s in seeds]
+        consensus_fracs.append(sum(v == consensus_labels[i] for v in votes) / len(seeds))
+
+    # Choose the best-agreeing seed for the (single-seed) latent + kNN metrics.
+    # NOTE: X_scANVI stays single-seed because independent scANVI latent spaces
+    # are not rotation/sign-aligned and cannot be averaged; it is labeled as
+    # such in uns. Only the probabilities are a true cross-seed consensus.
+    seed_mean_agreement = {s: seed_predictions[s]["knn_agreement"].mean() for s in seeds}
+    best_seed = max(seed_mean_agreement, key=lambda s: seed_mean_agreement[s])
+
+    return _Consensus(
+        mean_soft_df=mean_soft_df,
+        prob_columns=prob_columns,
+        prob_matrix=prob_matrix,
+        labels=consensus_labels,
+        confidence=consensus_confidence,
+        fracs=consensus_fracs,
+        best_seed=best_seed,
+    )
+
+
+def _annotate_query(
+    adata: ad.AnnData,
+    prepared: _Prepared,
+    settings: _Settings,
+    seed_results: _SeedResults,
+    consensus: _Consensus,
+) -> tuple[ad.AnnData, list[str]]:
+    """Write the transferred labels, probabilities, latent and metadata onto the full query."""
+    key_added = settings.key_added
+    seeds = settings.seeds
+    best_seed = consensus.best_seed
+    seed_predictions = seed_results.predictions
+    n_cells = len(prepared.query_train)
+
+    # Write results onto the FULL input query (all genes, not HVG subset).
+    # Cells are NOT subset (only genes were), so obs_names order is preserved.
+    #
+    # Copied HERE rather than before training. It used to be `query_full = adata.copy()` up
+    # by the gene intersection, used for nothing but this line — so a second full copy of a
+    # 202,000-cell object with three layers sat resident through the entire multi-seed
+    # training loop, hours during which nothing read it.
+    result_query = adata.copy()
+    assert len(result_query) == n_cells, "Cell count mismatch after gene subset."
+    result_query.obs[key_added] = pd.Categorical(consensus.labels)
+    result_query.obs[f"{key_added}_consensus_frac"] = consensus.fracs
+    result_query.obs[f"{key_added}_confidence"] = consensus.confidence
+    result_query.obs[f"{key_added}_knn_entropy"] = seed_predictions[best_seed]["knn_entropy"]
+    result_query.obs[f"{key_added}_knn_agreement"] = seed_predictions[best_seed]["knn_agreement"]
+
+    # The coarser resolution, derived rather than separately predicted.
+    collapse_notes: list[str] = []
+    if prepared.coarse_map is not None:
+        coarse_labels, unmapped = _collapse_labels(consensus.labels, prepared.coarse_map)
+        result_query.obs[f"{key_added}_coarse"] = pd.Categorical(coarse_labels)
+        # Confidence carries over unchanged: a cell's coarse call is exactly as certain as
+        # the granular call it came from, and any confusion WITHIN a coarse family — a
+        # capillary EC read as a venule EC — leaves the coarse label untouched, so the
+        # derived column is never less reliable than its source.
+        result_query.obs[f"{key_added}_coarse_confidence"] = consensus.confidence
+        if unmapped:
+            collapse_notes.append(
+                f"reference_mapping: {len(unmapped)} predicted label(s) had no entry in the "
+                f"{settings.coarse_label_key!r} hierarchy and were left unmapped: "
+                f"{sorted(unmapped)[:5]}"
+            )
+
+    # Per-seed columns.
+    for s in seeds:
+        result_query.obs[f"{key_added}_seed{s}"] = pd.Categorical(seed_predictions[s]["hard"])
+
+    # Mean-posterior consensus probabilities (consistent with the label above).
+    for col in consensus.prob_columns:
+        result_query.obs[f"refprob_{col}"] = consensus.mean_soft_df[col].to_numpy()
+    result_query.obsm[f"{key_added}_probabilities"] = consensus.prob_matrix
+
+    # Latent embedding from the best-agreeing seed (single-seed; see note). Already
+    # collapse-checked at its production site in the per-seed loop, so no re-check here.
+    result_query.obsm["X_scANVI"] = seed_results.latents[best_seed]["query"]
+
+    # uns metadata.
+    ref_states = list(prepared.atlas_train.obs["_labels"].unique())
+    result_query.uns["reference_mapping"] = {
+        "atlas_h5ad": str(settings.atlas_path),
+        "label_key": settings.label_key,
+        "n_latent": settings.n_latent,
+        "n_hvg": len(prepared.hvg_list),
+        "n_shared": prepared.n_shared,
+        "ref_states": ref_states,
+        "seeds": seeds,
+        "probability_obsm": f"{key_added}_probabilities",
+        "probability_columns": [str(col) for col in consensus.prob_columns],
+        "probability_consensus": "mean_posterior_across_seeds",
+        "embedding_note": (
+            "X_scANVI is from a single (best-agreeing) seed; scANVI latent "
+            "spaces across seeds are not aligned and are not averaged."
+        ),
+        "uncertainty_note": "kNN entropy from k-NN in reference latent space",
+    }
+    return result_query, collapse_notes
+
+
+def _knn_cv_accuracy(
+    atlas_train: ad.AnnData, ref_latent_best: np.ndarray, settings: _Settings
+) -> tuple[float | None, int]:
+    """Diagnostics: kNN accuracy (guard against rare class / small fold NaN).
+
+    cv_folds is user-configurable but must not exceed the smallest class's
+    member count (stratified CV requires >= cv_folds members per class),
+    and must be at least 2. Cap defensively so a large configured value on
+    a small/imbalanced atlas degrades gracefully rather than raising.
+    """
+    n_ref = len(atlas_train)
+    min_class_count = int(atlas_train.obs["_labels"].value_counts().min())
+    effective_cv_folds = max(2, min(settings.cv_folds, min_class_count))
+    safe_k = max(1, min(settings.knn_k, n_ref // (effective_cv_folds + 1)))
+    knn_clf = KNeighborsClassifier(n_neighbors=safe_k)
+    cv_scores = cross_val_score(
+        knn_clf, ref_latent_best, atlas_train.obs["_labels"], cv=effective_cv_folds
+    )
+    knn_accuracy = cv_scores.mean()
+    if np.isnan(knn_accuracy):
+        knn_accuracy = None
+    return knn_accuracy, effective_cv_folds
+
+
+def _build_metrics(
+    prepared: _Prepared,
+    settings: _Settings,
+    seed_results: _SeedResults,
+    consensus: _Consensus,
+    knn_accuracy: float | None,
+    effective_cv_folds: int,
+) -> dict[str, Any]:
+    best = seed_results.predictions[consensus.best_seed]
+    return {
+        "knn_accuracy": float(knn_accuracy) if knn_accuracy is not None else None,
+        "median_knn_entropy": float(np.median(best["knn_entropy"])),
+        "median_knn_agreement": float(np.median(best["knn_agreement"])),
+        "median_consensus_frac": float(np.median(consensus.fracs)),
+        "median_consensus_confidence": float(np.median(consensus.confidence)),
+        "frac_unanimous": float((np.array(consensus.fracs) == 1.0).mean()),
+        "n_ref_cells": int(len(prepared.atlas_train)),
+        "n_hvg": len(prepared.hvg_list),
+        "key_added": settings.key_added,
+        "n_seeds": len(settings.seeds),
+        "cv_folds_configured": settings.cv_folds,
+        "cv_folds_effective": effective_cv_folds,
+        "resumed_seeds": seed_results.resumed,
+        "trained_seeds": seed_results.trained,
+        "resume_enabled": settings.resume,
+    }
+
+
+def _write_artifacts(
+    result_query: ad.AnnData,
+    prepared: _Prepared,
+    settings: _Settings,
+    seed_results: _SeedResults,
+    best_seed: Any,
+    ref_latent_best: np.ndarray,
+    objects_path: Path | None,
+    context: PipelineContext,
+) -> tuple[list[StageArtifact], list[str]]:
+    """Write the final reference-mapping artifacts; return them with notes about the reference."""
+    key_added = settings.key_added
+    artifacts: list[StageArtifact] = []
+    # Collected here and folded into `notes` by the caller, which builds them after the artifacts.
+    reference_notes: list[str] = []
+
+    # The reference, as actually used, with its corrected coordinates. See
+    # `_write_prepared_reference` for why this is not optional.
+    if objects_path is not None:
+        prepared_path = objects_path / f"{key_added}_reference_prepared.h5ad"
+        n_prepared = _write_prepared_reference(
+            prepared.atlas_train,
+            ref_latent_best,
+            path=prepared_path,
+            key_added=key_added,
+            coarse_map=prepared.coarse_map,
+            counts_layer=settings.counts_layer,
+            batch_key=settings.atlas_batch_key,
+        )
+        artifacts.append(
+            StageArtifact(
+                name="reference_prepared",
+                path=prepared_path,
+                kind="h5ad",
+                description=(
+                    "The reference the mapping used: filtered, aligned to the query's gene "
+                    "identifiers, shared HVGs, labels under the query's prediction column, "
+                    "and the scANVI-corrected latent space in obsm['X_scANVI']."
+                ),
+            )
+        )
+        # Published so `annotation_diagnostics` and CHOIR can find it without being told a
+        # path, and so neither has to re-read the raw atlas to guess at the same reference.
+        result_query.uns.setdefault("cellquorum", {})["reference_prepared"] = {
+            "path": str(prepared_path),
+            "label_column": key_added,
+            "latent_key": "X_scANVI",
+            "n_cells": n_prepared,
+            "n_genes": len(prepared.hvg_list),
+            "produced_by": f"reference_mapping seed {best_seed}",
+        }
+        reference_notes.append(
+            f"Prepared reference written ({n_prepared:,} cells x {len(prepared.hvg_list):,} genes) "
+            f"with the scANVI-corrected latent space, for the confirmation stages and the "
+            f"joint atlas+query embedding."
+        )
+
+    if hasattr(context.paths, "results"):
+        results_path = Path(context.paths.results)
+        if results_path.exists():
+            assignment_cols = [
+                col
+                for col in result_query.obs.columns
+                if col == key_added or col.startswith(f"{key_added}_") or col.startswith("refprob_")
+            ]
+            assignments = result_query.obs[assignment_cols].copy()
+            assignments.insert(0, "cell_id", result_query.obs_names)
+            writer = StageArtifactWriter.from_context(context)
+            artifacts.append(
+                writer.table(
+                    assignments,
+                    f"{key_added}_assignments.csv",
+                    name="reference_mapping_assignments",
+                    description="Per-cell transferred labels and uncertainty scores.",
+                    index=False,
+                )
+            )
+
+    if settings.write_loss_curves and hasattr(context.paths, "figures"):
+        figures_path = Path(context.paths.figures)
+        if figures_path.exists():
+            from cellquorum.stages.annotation.reference_mapping.diagnostics import (
+                plot_loss_curves,
+                plot_uncertainty,
+            )
+
+            # Loss curves for best seed.
+            loss_path = figures_path / f"{key_added}_loss_curves.png"
+            plot_loss_curves(seed_results.loss_history[best_seed], loss_path)
+            artifacts.append(
+                StageArtifact(
+                    name="loss_curves",
+                    path=loss_path,
+                    kind="figure",
+                    description="scVI/scANVI/query loss curves",
+                )
+            )
+
+            # Uncertainty histograms.
+            uncertainty_path = figures_path / f"{key_added}_uncertainty.png"
+            plot_uncertainty(result_query.obs, key_added, uncertainty_path)
+            artifacts.append(
+                StageArtifact(
+                    name="uncertainty",
+                    path=uncertainty_path,
+                    kind="figure",
+                    description="kNN entropy + agreement + consensus distributions",
+                )
+            )
+    return artifacts, reference_notes
 
 
 def _serialize_history(model: object) -> dict[str, list[float]]:
