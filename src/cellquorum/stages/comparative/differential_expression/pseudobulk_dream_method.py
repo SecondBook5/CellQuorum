@@ -458,38 +458,95 @@ class PseudobulkDreamMethod(RAnalysisMethod):
         long-format result, or ``None`` when skipped / failed). Corrupt metadata
         propagates as a fatal exception; only support loss becomes a skip.
         """
+        return _PopulationFit(adata, plan, config, context, backend, writer, label, slug).run()
 
-        design: FactorialDesignConfig = plan["design"]
-        sample_col, subject_col = plan["sample_col"], plan["subject_col"]
-        universe: pd.DataFrame = plan["universe"]
-        subdir = f"{_OUTPUT_SUBDIR}/{slug}"
-        artifacts: list[StageArtifact] = []
 
+class _PopulationStop(Exception):
+    """A population that cannot be fitted: a recorded skip, or a failed R run."""
+
+    def __init__(self, reason: str, *, status: str = "skipped") -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.status = status
+
+
+class _PopulationFit:
+    """Aggregate, audit, validate and fit one population.
+
+    ``run`` returns a dict with ``summary`` (always), ``artifacts`` and ``table`` (the
+    long-format result, or ``None`` when skipped / failed). Corrupt metadata propagates as a
+    fatal exception; only support loss becomes a skip.
+    """
+
+    def __init__(
+        self,
+        adata: ad.AnnData,
+        plan: dict[str, Any],
+        config: dict,
+        context: PipelineContext,
+        backend: Any,
+        writer: StageArtifactWriter,
+        label: str,
+        slug: str,
+    ) -> None:
+        self.adata, self.plan, self.config, self.context = adata, plan, config, context
+        self.backend, self.writer, self.label, self.slug = backend, writer, label, slug
+        self.design: FactorialDesignConfig = plan["design"]
+        self.sample_col, self.subject_col = plan["sample_col"], plan["subject_col"]
+        self.universe: pd.DataFrame = plan["universe"]
+        self.subdir = f"{_OUTPUT_SUBDIR}/{slug}"
+        self.artifacts: list[StageArtifact] = []
+        self.row: dict[str, Any] = {}
+
+    def run(self) -> dict[str, Any]:
+        try:
+            self._select_cells()
+            self._aggregate_and_audit()
+            self._check_design()
+            self._write_r_inputs()
+            self._fit_in_r()
+            frames, contrast_support = self._contrast_tables()
+            self._write_provenance(contrast_support)
+        except _PopulationStop as stop:
+            self.row.update(status=stop.status, reason=stop.reason)
+            return {"summary": self.row, "artifacts": self.artifacts, "table": None}
+        self.row.update(
+            status="fitted",
+            reason="",
+            n_genes_after_filter=self.info.get("n_genes_after_filter"),
+            n_genes_failed=self.info.get("n_genes_failed", 0),
+        )
+        return {
+            "summary": self.row,
+            "artifacts": self.artifacts,
+            "table": pd.concat(frames, ignore_index=True),
+        }
+
+    def _select_cells(self) -> None:
+        adata, plan, sample_col = self.adata, self.plan, self.sample_col
         if plan["cell_type_col"]:
-            in_population = (adata.obs[plan["cell_type_col"]].astype(str) == label).to_numpy()
+            in_population = (adata.obs[plan["cell_type_col"]].astype(str) == self.label).to_numpy()
         else:
             in_population = np.ones(adata.n_obs, dtype=bool)
         eligible_mask = plan["eligible"]
         contributing = in_population if eligible_mask is None else in_population & eligible_mask
-        subset = adata[contributing]
-        observed_n_cells = (
+        self.subset = adata[contributing]
+        self.observed_n_cells = (
             adata.obs.loc[in_population, sample_col].astype(str).value_counts().astype(np.int64)
         )
-        row: dict[str, Any] = {
-            "cell_type": label,
-            "slug": slug,
+        self.row = {
+            "cell_type": self.label,
+            "slug": self.slug,
             "status": "skipped",
             "reason": "",
             "n_cells_observed": int(in_population.sum()),
-            "n_cells": int(subset.n_obs),
-            "n_cells_qc_excluded": int(in_population.sum() - subset.n_obs),
-            "n_specimens_universe": int(len(universe)),
+            "n_cells": int(self.subset.n_obs),
+            "n_cells_qc_excluded": int(in_population.sum() - self.subset.n_obs),
+            "n_specimens_universe": int(len(self.universe)),
         }
 
-        def skip(reason: str) -> dict[str, Any]:
-            row["reason"] = reason
-            return {"summary": row, "artifacts": artifacts, "table": None}
-
+    def _aggregate_and_audit(self) -> None:
+        plan, subset, label, slug = self.plan, self.subset, self.label, self.slug
         # Observed pseudobulk of THIS population's DE-eligible cells (declared metadata must
         # be constant). A population with no eligible cell at all yields an empty profile set;
         # the support audit below still reports every specimen and why it is out.
@@ -497,100 +554,109 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             pb = aggregate_pseudobulk(
                 subset,
                 layer=plan["layer"],
-                sample_col=sample_col,
+                sample_col=self.sample_col,
                 metadata_cols=plan["metadata_cols"],
             )
         else:
             pb = PseudobulkResult(
-                counts=pd.DataFrame(columns=list(adata.var_names), dtype=np.int64),
+                counts=pd.DataFrame(columns=list(self.adata.var_names), dtype=np.int64),
                 sample_meta=pd.DataFrame(columns=plan["metadata_cols"]),
                 n_cells=pd.Series(dtype=np.int64),
             )
-        row["n_specimens_observed"] = int(pb.counts.shape[0])
+        self.pb = pb
+        self.row["n_specimens_observed"] = int(pb.counts.shape[0])
 
         # Support audit against the FULL universe: absent specimens stay visible.
-        gates: PseudobulkSupportConfig = plan["gates"]
-        support = evaluate_pseudobulk_support(
+        self.gates: PseudobulkSupportConfig = plan["gates"]
+        self.support = evaluate_pseudobulk_support(
             pb,
-            sample_metadata=universe,
-            subject_col=subject_col,
-            factor_cols=[c for c in plan["metadata_cols"] if c != subject_col],
-            min_cells_per_sample=gates.min_cells_per_sample,
-            observed_n_cells=observed_n_cells,
+            sample_metadata=self.universe,
+            subject_col=self.subject_col,
+            factor_cols=[c for c in plan["metadata_cols"] if c != self.subject_col],
+            min_cells_per_sample=self.gates.min_cells_per_sample,
+            observed_n_cells=self.observed_n_cells,
         )
-        artifacts.append(
-            writer.table(
-                support.table,
+        self.artifacts.append(
+            self.writer.table(
+                self.support.table,
                 "support.csv",
                 name=f"dream_support:{slug}",
                 description=f"Specimen support for {label}: all specimens, with exclusion reasons.",
-                subdir=subdir,
+                subdir=self.subdir,
             )
         )
-        included = restrict_to_included(pb, support)
-        row["n_specimens_included"] = support.n_included
-        specimens = universe.loc[support.included_ids].drop(columns="n_cells_total")
+        self.included = restrict_to_included(pb, self.support)
+        self.row["n_specimens_included"] = self.support.n_included
+        self.specimens = self.universe.loc[self.support.included_ids].drop(columns="n_cells_total")
 
+    def _check_design(self) -> None:
+        """Re-analyse the design on the included specimens; stop if it cannot be fitted."""
+        support, specimens, design = self.support, self.specimens, self.design
         if support.n_included < 2:
-            return skip(f"fewer than 2 included specimens ({support.n_included})")
+            raise _PopulationStop(f"fewer than 2 included specimens ({support.n_included})")
 
         # Cell-type-specific design re-analysis on the included specimens.
         report = analyze_factorial_design(
-            specimens, design=design, sample_col=sample_col, subject_col=subject_col
+            specimens, design=design, sample_col=self.sample_col, subject_col=self.subject_col
         )
-        artifacts.append(
-            writer.json(
+        self.artifacts.append(
+            self.writer.json(
                 report.to_dict(),
                 "design_report.json",
-                name=f"dream_design_report:{slug}",
-                description=f"Factorial design report for {label} on its included specimens.",
-                subdir=subdir,
+                name=f"dream_design_report:{self.slug}",
+                description=f"Factorial design report for {self.label} on its included specimens.",
+                subdir=self.subdir,
             )
         )
         if not report.ok:
-            return skip(
+            raise _PopulationStop(
                 "requested model not estimable from remaining specimens: "
                 + " | ".join(report.errors)
             )
-        failures = support_gate_failures(report, design, gates)
+        failures = support_gate_failures(report, design, self.gates)
         if failures:
-            return skip("support gates failed: " + "; ".join(failures))
+            raise _PopulationStop("support gates failed: " + "; ".join(failures))
 
         try:
-            contrast_set = build_factorial_contrasts(
-                plan["contrasts"], design=design, sample_meta=specimens
+            self.contrast_set = build_factorial_contrasts(
+                self.plan["contrasts"], design=design, sample_meta=specimens
             )
         except ContrastNotEstimable as exc:
-            return skip(f"contrast not estimable from remaining specimens: {exc}")
+            raise _PopulationStop(
+                f"contrast not estimable from remaining specimens: {exc}"
+            ) from exc
 
-        encoder = FactorialDesignEncoder.fit(specimens, design)
-        machine = build_machine_design(
-            encoder=encoder,
-            specimens=specimens,
-            design=design,
-            contrasts=contrast_set,
-            sample_col=sample_col,
+    def _write_r_inputs(self) -> None:
+        """Keep the exact pseudobulk the model saw, with the contrast matrices."""
+        slug, label, subdir = self.slug, self.label, self.subdir
+        self.encoder = FactorialDesignEncoder.fit(self.specimens, self.design)
+        self.machine = build_machine_design(
+            encoder=self.encoder,
+            specimens=self.specimens,
+            design=self.design,
+            contrasts=self.contrast_set,
+            sample_col=self.sample_col,
         )
 
         # R inputs are kept with the results: the exact pseudobulk the model saw.
-        cell_dir = Path(context.paths.results) / _OUTPUT_SUBDIR / slug
-        out_dir = cell_dir / "r_output"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        counts_csv, meta_csv, l_csv = (
+        cell_dir = Path(self.context.paths.results) / _OUTPUT_SUBDIR / slug
+        self.out_dir = cell_dir / "r_output"
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.counts_csv, self.meta_csv, self.l_csv = (
             cell_dir / "pseudobulk_counts.csv",
             cell_dir / "pseudobulk_meta.csv",
             cell_dir / "contrast_matrix_machine.csv",
         )
-        included.counts.reset_index(names="sample").to_csv(counts_csv, index=False)
-        machine.meta.to_csv(meta_csv)
-        machine.L.rename_axis("coef").reset_index().to_csv(l_csv, index=False)
+        self.included.counts.reset_index(names="sample").to_csv(self.counts_csv, index=False)
+        self.machine.meta.to_csv(self.meta_csv)
+        self.machine.L.rename_axis("coef").reset_index().to_csv(self.l_csv, index=False)
         for fname, desc in (
             ("pseudobulk_counts.csv", "specimen x gene pseudobulk counts the model saw"),
             ("pseudobulk_meta.csv", "numeric fixed-effect and random-effect columns sent to R"),
             ("contrast_matrix_machine.csv", "contrast matrix L with R coefficient names"),
         ):
-            artifacts.append(
-                writer.register(
+            self.artifacts.append(
+                self.writer.register(
                     name=f"dream_input:{slug}:{fname.removesuffix('.csv')}",
                     filename=fname,
                     kind="csv",
@@ -598,9 +664,9 @@ class PseudobulkDreamMethod(RAnalysisMethod):
                     subdir=subdir,
                 )
             )
-        human_matrix = contrast_set.matrix()
-        artifacts.append(
-            writer.table(
+        human_matrix = self.contrast_set.matrix()
+        self.artifacts.append(
+            self.writer.table(
                 human_matrix.reset_index(names="coefficient"),
                 "contrast_matrix.csv",
                 name=f"dream_contrast_matrix:{slug}",
@@ -609,53 +675,58 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             )
         )
 
+    def _fit_in_r(self) -> None:
+        """Run the dream script and read its long-format results."""
+        config, plan = self.config, self.plan
         args = [
-            str(counts_csv), str(meta_csv), str(l_csv), machine.formula, str(out_dir),
-            str(plan["ddf"]), str(int(config.get("min_count", 10))),
+            str(self.counts_csv), str(self.meta_csv), str(self.l_csv), self.machine.formula,
+            str(self.out_dir), str(plan["ddf"]), str(int(config.get("min_count", 10))),
             str(int(config.get("min_total_count", 15))), str(plan["n_jobs"]),
         ]  # fmt: skip
         try:
-            proc = backend.run_script(
+            proc = self.backend.run_script(
                 _DREAM_R, args, timeout=int(config.get("timeout_seconds", 1800))
             )
         except FileNotFoundError as exc:
-            row.update(status="failed", reason=f"R execution failed: {str(exc)[:500]}")
-            return {"summary": row, "artifacts": artifacts, "table": None}
+            raise _PopulationStop(f"R execution failed: {str(exc)[:500]}", status="failed") from exc
         if proc.returncode != 0:
-            row.update(
-                status="failed",
-                reason="dream script failed: " + proc.stderr.strip()[-800:],
+            raise _PopulationStop(
+                "dream script failed: " + proc.stderr.strip()[-800:], status="failed"
             )
-            return {"summary": row, "artifacts": artifacts, "table": None}
 
-        info = json.loads((out_dir / "fit_info.json").read_text())
-        if info.get("status") != "ok":
-            return skip(f"no model fitted: {info.get('status')}")
+        self.info = json.loads((self.out_dir / "fit_info.json").read_text())
+        if self.info.get("status") != "ok":
+            raise _PopulationStop(f"no model fitted: {self.info.get('status')}")
 
-        long = pd.read_csv(out_dir / "results_long.csv")
-        failed_csv = out_dir / "failed_genes.csv"
+        self.long = pd.read_csv(self.out_dir / "results_long.csv")
+        failed_csv = self.out_dir / "failed_genes.csv"
         if failed_csv.exists():
-            artifacts.append(
-                writer.register(
-                    name=f"dream_failed_genes:{slug}",
+            self.artifacts.append(
+                self.writer.register(
+                    name=f"dream_failed_genes:{self.slug}",
                     filename="failed_genes.csv",
                     kind="csv",
-                    description=f"Genes whose mixed model failed for {label}, with the error.",
-                    subdir=f"{subdir}/r_output",
+                    description=(
+                        f"Genes whose mixed model failed for {self.label}, with the error."
+                    ),
+                    subdir=f"{self.subdir}/r_output",
                 )
             )
 
-        # Attach biological meaning to the internal contrast ids and write one file each.
+    def _contrast_tables(self) -> tuple[list[pd.DataFrame], dict[str, Any]]:
+        """Attach biological meaning to the internal contrast ids and write one file each."""
+        machine, contrast_set, specimens = self.machine, self.contrast_set, self.specimens
+        long, label, slug, info = self.long, self.label, self.slug, self.info
         csl = unique_slugs(contrast_set.names)
         frames: list[pd.DataFrame] = []
         n_samples, n_subjects = (
             len(specimens),
-            int(specimens[subject_col].nunique()) if subject_col else None,
+            int(specimens[self.subject_col].nunique()) if self.subject_col else None,
         )
         contrast_support: dict[str, Any] = {}
         for cid, cname in machine.contrast_ids.items():
             contrast = next(c for c in contrast_set.contrasts if c.name == cname)
-            sup = contrast.support(specimens, subject_col)
+            sup = contrast.support(specimens, self.subject_col)
             contrast_support[cname] = sup
             comp_rows: list[dict[str, Any]] = sup["components"]  # type: ignore[assignment]
             part = long[long["contrast"] == cid].drop(columns="contrast").copy()
@@ -670,28 +741,38 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             part["backend"] = f"variancePartition::dream {info.get('variancePartition', '')}"
             part = part.sort_values("PValue", kind="stable").reset_index(drop=True)
             frames.append(part)
-            artifacts.append(
-                writer.table(
+            self.artifacts.append(
+                self.writer.table(
                     part,
                     f"{csl[cname]}.csv",
                     name=f"dream_de:{slug}:{csl[cname]}",
                     description=f"{label}: {contrast.tested_effect} ({machine.human_formula}).",
-                    subdir=subdir,
+                    subdir=self.subdir,
                 )
             )
+        return frames, contrast_support
 
+    def _write_provenance(self, contrast_support: dict[str, Any]) -> None:
+        plan, row, support, included = self.plan, self.row, self.support, self.included
+        specimens, machine, encoder, design = (
+            self.specimens,
+            self.machine,
+            self.encoder,
+            self.design,
+        )
+        subject_col = self.subject_col
         provenance = {
             "cellquorum_version": cellquorum.__version__,
-            "cell_type": label,
+            "cell_type": self.label,
             "counts_layer": plan["layer"],
-            "sample_col": sample_col,
+            "sample_col": self.sample_col,
             "subject_col": subject_col,
             "n_cells_observed": row["n_cells_observed"],
-            "n_cells": int(subset.n_obs),
+            "n_cells": int(self.subset.n_obs),
             "n_cells_qc_excluded": row["n_cells_qc_excluded"],
             "de_eligibility": plan["eligibility"],
-            "n_specimens_universe": int(len(universe)),
-            "n_specimens_observed": int(pb.counts.shape[0]),
+            "n_specimens_universe": int(len(self.universe)),
+            "n_specimens_observed": int(self.pb.counts.shape[0]),
             "n_specimens_included": support.n_included,
             "excluded_specimens": support.table.loc[
                 ~support.table["included_for_expression"], ["sample_id", "exclusion_reason"]
@@ -705,7 +786,7 @@ class PseudobulkDreamMethod(RAnalysisMethod):
                     included.n_cells if included.n_cells is not None else pd.Series(dtype=int)
                 ).items()
             },
-            "support_gates": gates.model_dump(),
+            "support_gates": self.gates.model_dump(),
             "human_formula": machine.human_formula,
             "machine_formula": machine.formula,
             "fixed_effect_column_mapping": machine.fixed_columns,
@@ -715,33 +796,22 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             "interactions": [list(i) for i in design.interactions],
             "random_effects": list(design.random_effects),
             "ddf_requested": plan["ddf"],
-            "parallel": {"n_jobs": plan["n_jobs"], **(info.get("bpparam") or {})},
-            "filter_design_columns": info.get("filter_design_columns"),
+            "parallel": {"n_jobs": plan["n_jobs"], **(self.info.get("bpparam") or {})},
+            "filter_design_columns": self.info.get("filter_design_columns"),
             "contrast_ids": machine.contrast_ids,
-            "contrasts": contrast_set.to_dict(),
+            "contrasts": self.contrast_set.to_dict(),
             "contrast_support": contrast_support,
-            "r": info,
+            "r": self.info,
         }
-        artifacts.append(
-            writer.json(
+        self.artifacts.append(
+            self.writer.json(
                 provenance,
                 "model_provenance.json",
-                name=f"dream_provenance:{slug}",
-                description=f"Exact model, coding, support and R versions used for {label}.",
-                subdir=subdir,
+                name=f"dream_provenance:{self.slug}",
+                description=f"Exact model, coding, support and R versions used for {self.label}.",
+                subdir=self.subdir,
             )
         )
-        row.update(
-            status="fitted",
-            reason="",
-            n_genes_after_filter=info.get("n_genes_after_filter"),
-            n_genes_failed=info.get("n_genes_failed", 0),
-        )
-        return {
-            "summary": row,
-            "artifacts": artifacts,
-            "table": pd.concat(frames, ignore_index=True),
-        }
 
 
 __all__ = ["PseudobulkDreamMethod"]
