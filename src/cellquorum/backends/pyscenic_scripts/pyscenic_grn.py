@@ -331,8 +331,8 @@ def _assert_raw_counts(matrix: Any, source: str) -> None:
         )
 
 
-def main() -> None:
-    """Export raw counts to loom and run the pySCENIC CLI."""
+def _parse_args() -> argparse.Namespace:
+    """Parse the protocol command line."""
 
     p = argparse.ArgumentParser(
         description="pySCENIC GRN inference (protocol CLI; backend, opt-in)"
@@ -366,28 +366,31 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=0)
 
     # Parse command-line arguments.
-    args = p.parse_args()
+    return p.parse_args()
 
-    # Resolve the output directory.
-    out_dir = Path(args.out_dir)
 
-    # 1. Graceful bail-outs -----------------------------------------------------
+def _require_export_dependencies(out_dir: Path, tag: str) -> None:
+    """Exit 0 with a SKIPPED marker when the loom/HDF5 exporter cannot be imported."""
 
     # Import only the dependencies required by the direct HDF5 exporter.
     try:
-        import h5py
-        import loompy as lp
-        import numpy as np
-        import scipy.sparse as sp
+        import h5py  # noqa: F401
+        import loompy  # noqa: F401
+        import numpy  # noqa: F401
+        import scipy.sparse  # noqa: F401
 
     # Preserve the existing harmless-skip behavior for missing dependencies.
     except Exception as e:
         _write_empty(
             out_dir,
-            args.tag,
+            tag,
             f"loom/HDF5 import failed: {type(e).__name__}: {e}",
         )
         sys.exit(0)
+
+
+def _require_cistarget_resources(args: argparse.Namespace, out_dir: Path) -> list[str]:
+    """Return the ranking databases, or exit 0 with a SKIPPED marker when any is missing."""
 
     # Expand the ranking database glob once into a real list.
     ranking_files = sorted(glob.glob(args.rankings))
@@ -415,20 +418,30 @@ def main() -> None:
                 f"cisTarget resource '{name}' missing ({path!r})",
             )
             sys.exit(0)
+    return ranking_files
 
-    # 2. Export raw counts to loom ---------------------------------------------
 
-    # Create the output directory.
-    out_dir.mkdir(parents=True, exist_ok=True)
+def _read_counts(h5ad: str, layer: str) -> tuple[Any, Any, Any, str]:
+    """Read the count matrix and axis names straight from the H5AD file.
 
-    # Open the H5AD directly to bypass AnnData's incompatible nullable-string reader.
-    with h5py.File(args.h5ad, "r") as f:
+    Opens the file directly to bypass AnnData's incompatible nullable-string reader.
+
+    Returns:
+        ``(matrix, cell_ids, gene_ids, matrix_source)``.
+
+    Raises:
+        KeyError: If the file has neither the count layer nor ``/X``.
+    """
+
+    import h5py
+
+    with h5py.File(h5ad, "r") as f:
         # Prefer the configured count layer.
-        if "layers" in f and args.layer in f["layers"]:
+        if "layers" in f and layer in f["layers"]:
             # Read raw counts from the specified layer.
-            matrix = _read_h5_matrix(f["layers"][args.layer])
+            matrix = _read_h5_matrix(f["layers"][layer])
 
-            matrix_source = f"layers/{args.layer}"
+            matrix_source = f"layers/{layer}"
 
         # Fall back to X only when the count layer is absent.
         elif "X" in f:
@@ -438,48 +451,50 @@ def main() -> None:
 
         # Reject H5AD files without an expression matrix.
         else:
-            raise KeyError(f"H5AD contains neither /layers/{args.layer} nor /X.")
+            raise KeyError(f"H5AD contains neither /layers/{layer} nor /X.")
 
         cell_ids = _read_axis_names(f, "obs")
 
         gene_ids = _read_axis_names(f, "var")
+    return matrix, cell_ids, gene_ids, matrix_source
 
-    if matrix.shape != (cell_ids.shape[0], gene_ids.shape[0]):
-        raise ValueError(
-            f"H5AD dimension mismatch: matrix={matrix.shape}, "
-            f"obs={cell_ids.shape[0]}, var={gene_ids.shape[0]}."
-        )
 
-    # Verify that the selected matrix is genuinely raw counts.
-    _assert_raw_counts(matrix, matrix_source)
+def _downsample(matrix: Any, cell_ids: Any, max_cells: int, seed: int) -> tuple[Any, Any]:
+    """Draw a deterministic random sample of cells before densifying the matrix."""
 
-    print(f"[scenic] matrix source: {matrix_source} " f"shape={matrix.shape} dtype={matrix.dtype}")
+    import numpy as np
 
-    # Downsample before converting the sparse count matrix to dense.
-    if matrix.shape[0] > args.max_cells:
-        # Draw a deterministic random sample.
-        idx = np.random.RandomState(args.seed).choice(
-            matrix.shape[0],
-            args.max_cells,
-            replace=False,
-        )
+    if matrix.shape[0] <= max_cells:
+        return matrix, cell_ids
 
-        # Sort sampled indices to preserve stable source order.
-        idx.sort()
+    # Draw a deterministic random sample.
+    idx = np.random.RandomState(seed).choice(
+        matrix.shape[0],
+        max_cells,
+        replace=False,
+    )
 
-        # Subset the expression matrix.
-        matrix = matrix[idx, :]
+    # Sort sampled indices to preserve stable source order.
+    idx.sort()
 
-        # Subset the cell identifiers.
-        cell_ids = cell_ids[idx]
+    # Report the deterministic downsampling.
+    print(f"[scenic] downsampled to {max_cells} cells")
 
-        # Report the deterministic downsampling.
-        print(f"[scenic] downsampled to {args.max_cells} cells")
+    # Subset the expression matrix and the cell identifiers.
+    return matrix[idx, :], cell_ids[idx]
+
+
+def _write_loom(out_dir: Path, tag: str, matrix: Any, cell_ids: Any, gene_ids: Any) -> Path:
+    """Write the selected matrix to loom, genes by cells, as pySCENIC requires."""
+
+    import loompy as lp
+    import numpy as np
+    import scipy.sparse as sp
 
     # Convert only the selected matrix to a dense array for loompy.
     X = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
 
-    loom_path = out_dir / f"scenic_input_{args.tag}.loom"
+    loom_path = out_dir / f"scenic_input_{tag}.loom"
 
     # Remove a stale partial loom before writing.
     if loom_path.exists():
@@ -495,6 +510,67 @@ def main() -> None:
 
     # Report the completed loom export.
     print(f"[scenic] wrote loom {loom_path} " f"({X.shape[0]} cells x {X.shape[1]} genes)")
+    return loom_path
+
+
+def _run_logged(cmd: list[str], step: str, log_path: Path, tag: str) -> None:
+    """Run one pySCENIC command and tee output to a persistent log.
+
+    Args:
+        cmd: Executable and command-line arguments.
+        step: Human-readable step name.
+        log_path: Persistent log the command's output is appended to.
+        tag: Tag or dataset name shown in the log header.
+
+    Raises:
+        subprocess.CalledProcessError: If the command exits non-zero.
+        RuntimeError: If the subprocess output stream cannot be opened.
+    """
+
+    # Open the persistent log in append mode.
+    with open(log_path, "a", encoding="utf-8") as lg:
+        lg.write(f"\n===== [scenic:{tag}] " f"{step}: {' '.join(cmd)} =====\n")
+
+        # Flush the command header before execution.
+        lg.flush()
+
+        # Start the command with stderr redirected into stdout.
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        # Reject an unexpected missing output stream.
+        if proc.stdout is None:
+            proc.kill()
+            raise RuntimeError(f"Could not capture output for {step!r}.")
+
+        # Stream output to both SLURM and the persistent log.
+        for line in proc.stdout:
+            sys.stdout.write(line)
+
+            # Flush the live job log immediately.
+            sys.stdout.flush()
+
+            lg.write(line)
+
+            # Flush the persistent log immediately.
+            lg.flush()
+
+        # Wait for the command to finish.
+        rc = proc.wait()
+
+    # Convert a non-zero exit into a real workflow failure.
+    if rc != 0:
+        raise subprocess.CalledProcessError(rc, cmd)
+
+
+def _run_pyscenic(
+    args: argparse.Namespace, ranking_files: list[str], loom_path: Path, out_dir: Path
+) -> None:
+    """Run ``pyscenic grn`` then ``pyscenic ctx``; a real CLI failure exits non-zero."""
 
     # Define the adjacency output path.
     adj = out_dir / f"scenic_adjacencies_{args.tag}.tsv"
@@ -502,60 +578,7 @@ def main() -> None:
     # Define the regulon output path.
     reg = out_dir / f"scenic_regulons_{args.tag}.csv"
 
-    # 3. pySCENIC CLI: grn -> ctx ----------------------------------------------
-
     log_path = out_dir / f"scenic_log_{args.tag}.txt"
-
-    def _run_logged(cmd: list[str], step: str) -> None:
-        """Run one pySCENIC command and tee output to a persistent log.
-
-        Args:
-            cmd: Executable and command-line arguments.
-            step: Human-readable step name.
-
-        Raises:
-            subprocess.CalledProcessError: If the command exits non-zero.
-            RuntimeError: If the subprocess output stream cannot be opened.
-        """
-
-        # Open the persistent log in append mode.
-        with open(log_path, "a", encoding="utf-8") as lg:
-            lg.write(f"\n===== [scenic:{args.tag}] " f"{step}: {' '.join(cmd)} =====\n")
-
-            # Flush the command header before execution.
-            lg.flush()
-
-            # Start the command with stderr redirected into stdout.
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-
-            # Reject an unexpected missing output stream.
-            if proc.stdout is None:
-                proc.kill()
-                raise RuntimeError(f"Could not capture output for {step!r}.")
-
-            # Stream output to both SLURM and the persistent log.
-            for line in proc.stdout:
-                sys.stdout.write(line)
-
-                # Flush the live job log immediately.
-                sys.stdout.flush()
-
-                lg.write(line)
-
-                # Flush the persistent log immediately.
-                lg.flush()
-
-            # Wait for the command to finish.
-            rc = proc.wait()
-
-        # Convert a non-zero exit into a real workflow failure.
-        if rc != 0:
-            raise subprocess.CalledProcessError(rc, cmd)
 
     # Run the configured pySCENIC stages.
     try:
@@ -574,6 +597,8 @@ def main() -> None:
                 str(args.seed),
             ],
             "grn (GRNBoost2)",
+            log_path,
+            args.tag,
         )
 
         # Run cisTarget motif pruning with every matched ranking database.
@@ -594,6 +619,8 @@ def main() -> None:
                 str(args.num_workers),
             ],
             "ctx (cisTarget)",
+            log_path,
+            args.tag,
         )
 
         # Report the completed regulon output.
@@ -616,6 +643,45 @@ def main() -> None:
 
         # Exit non-zero so Snakemake marks the rule as failed.
         sys.exit(e.returncode or 1)
+
+
+def main() -> None:
+    """Export raw counts to loom and run the pySCENIC CLI."""
+
+    args = _parse_args()
+
+    # Resolve the output directory.
+    out_dir = Path(args.out_dir)
+
+    # 1. Graceful bail-outs -----------------------------------------------------
+    _require_export_dependencies(out_dir, args.tag)
+    ranking_files = _require_cistarget_resources(args, out_dir)
+
+    # 2. Export raw counts to loom ---------------------------------------------
+
+    # Create the output directory.
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    matrix, cell_ids, gene_ids, matrix_source = _read_counts(args.h5ad, args.layer)
+
+    if matrix.shape != (cell_ids.shape[0], gene_ids.shape[0]):
+        raise ValueError(
+            f"H5AD dimension mismatch: matrix={matrix.shape}, "
+            f"obs={cell_ids.shape[0]}, var={gene_ids.shape[0]}."
+        )
+
+    # Verify that the selected matrix is genuinely raw counts.
+    _assert_raw_counts(matrix, matrix_source)
+
+    print(f"[scenic] matrix source: {matrix_source} " f"shape={matrix.shape} dtype={matrix.dtype}")
+
+    # Downsample before converting the sparse count matrix to dense.
+    matrix, cell_ids = _downsample(matrix, cell_ids, args.max_cells, args.seed)
+
+    loom_path = _write_loom(out_dir, args.tag, matrix, cell_ids, gene_ids)
+
+    # 3. pySCENIC CLI: grn -> ctx ----------------------------------------------
+    _run_pyscenic(args, ranking_files, loom_path, out_dir)
 
 
 if __name__ == "__main__":
