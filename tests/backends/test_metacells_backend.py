@@ -25,7 +25,7 @@ def test_run_script_builds_micromamba_python_argv(monkeypatch, tmp_path) -> None
     script.write_text("print('hi')\n")
     b = build_metacells_backend()
     monkeypatch.setattr(
-        "cellquorum.backends.metacells_backend.resolve_launcher",
+        "cellquorum.backends.external_env.resolve_launcher",
         lambda _name: "/usr/bin/micromamba",
     )
 
