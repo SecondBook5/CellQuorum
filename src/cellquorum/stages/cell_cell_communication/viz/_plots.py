@@ -810,7 +810,7 @@ def cluster_focused_circos(
     fig.text(
         1.02,
         0.08,
-        "Ribbon width ∝ prioritization_score\nHatched = "
+        "Ribbon width proportional to prioritization_score\nHatched = "
         f"{focus_label} receiving; solid = {focus_label} sending",
         transform=fig.transFigure,
         fontsize=6.5,

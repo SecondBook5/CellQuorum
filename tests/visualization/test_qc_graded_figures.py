@@ -305,3 +305,94 @@ def test_a_metric_with_narrow_but_real_spread_still_draws(tmp_path: Path) -> Non
         control_label="Normal",
     )
     assert written is not None and written.exists()
+
+
+# ═══ An arm the axis does not apply to must be named, not drawn empty ═══════════════════════
+
+
+def _two_arm_obs(*, nuclei_scored: bool) -> pd.DataFrame:
+    """Whole cells always carry a nuclear-integrity severity; nuclei carry it only when asked."""
+    generator = np.random.default_rng(1)
+    rows = []
+    for donor in ("P1", "P2", "P3"):
+        for arm in ("cells", "nuclei"):
+            n = 60
+            severity = generator.uniform(0, 0.8, n)
+            if arm == "nuclei" and not nuclei_scored:
+                severity = np.full(n, np.nan)
+            rows.append(
+                pd.DataFrame(
+                    {
+                        "donor_id": donor,
+                        "condition": arm,
+                        "sample_id": f"{donor}_{arm}",
+                        "qc_ev_family_nuclear_integrity_severity": severity,
+                    }
+                )
+            )
+    frame = pd.concat(rows, ignore_index=True)
+    frame.index = pd.Index([f"cell_{i}" for i in range(len(frame))])
+    return frame
+
+
+def _capture_figure(monkeypatch: pytest.MonkeyPatch):
+    """Intercept the save so the test can read the figure the function drew."""
+    import cellquorum.visualization.figstyle as figstyle
+
+    captured: dict[str, object] = {}
+
+    def fake_save(figure, destination, **kwargs):
+        captured["figure"] = figure
+        return destination
+
+    monkeypatch.setattr(figstyle, "save_cellquorum_figure", fake_save)
+    return captured
+
+
+def _texts(figure) -> str:
+    return " ".join(text.get_text() for axis in figure.axes for text in axis.texts)
+
+
+def test_an_arm_without_a_severity_is_named_and_gets_no_legend_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cellquorum.visualization.qc.graded import plot_severity_ecdf
+
+    captured = _capture_figure(monkeypatch)
+    plot_severity_ecdf(
+        _two_arm_obs(nuclei_scored=False), tmp_path / "f.png", family="nuclear_integrity"
+    )
+    figure = captured["figure"]
+    legend_labels = [t.get_text() for t in figure.axes[0].get_legend().get_texts()]
+    assert legend_labels == ["cells"]
+    assert "nuclei: not scored" in _texts(figure)
+
+
+def test_the_paired_panel_says_why_it_is_empty_when_one_arm_is_unscored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cellquorum.visualization.qc.graded import plot_severity_ecdf
+
+    captured = _capture_figure(monkeypatch)
+    plot_severity_ecdf(
+        _two_arm_obs(nuclei_scored=False), tmp_path / "f.png", family="nuclear_integrity"
+    )
+    figure = captured["figure"]
+    assert "Not paired: only cells" in _texts(figure)
+    assert not figure.axes[1].axison
+
+
+def test_two_scored_arms_still_draw_both_curves_and_the_paired_panel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cellquorum.visualization.qc.graded import plot_severity_ecdf
+
+    captured = _capture_figure(monkeypatch)
+    plot_severity_ecdf(
+        _two_arm_obs(nuclei_scored=True), tmp_path / "f.png", family="nuclear_integrity"
+    )
+    figure = captured["figure"]
+    legend_labels = sorted(t.get_text() for t in figure.axes[0].get_legend().get_texts())
+    assert legend_labels == ["cells", "nuclei"]
+    assert "not scored" not in _texts(figure)
+    assert figure.axes[1].axison

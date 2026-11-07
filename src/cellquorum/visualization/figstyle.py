@@ -82,9 +82,9 @@ def _register_orange_cmap() -> None:
 
 _register_orange_cmap()
 
-#: The grant look, sampled from the three figures Dr. Mehrara chose: navy for Normal, plum for
-#: lymphedema, deep navy titles, near-black ink, slate for subtitles and statistics, pale grey for
-#: paired lines and reference lines.
+#: The grant look, sampled from the three figures chosen for the grant: navy for the control
+#: group, plum for the case group, deep navy titles, near-black ink, slate for subtitles and
+#: statistics, pale grey for paired lines and reference lines.
 GRANT_NORMAL = "#14304A"
 GRANT_CASE = "#9C3F71"
 GRANT_TITLE = "#132B44"
@@ -311,7 +311,11 @@ def distinct_palette(n: int) -> list[str]:
 #: (Liberation Sans, Arimo), and DejaVu Sans only as a last resort. DejaVu is always present, so
 #: anything listed after it is never reached.
 SANS_STACK: tuple[str, ...] = ("Arial", "Liberation Sans", "Arimo", "Helvetica", "DejaVu Sans")
+#: Serif stack, for the few figures that ask for a serif face: Times New Roman, then fonts with its
+#: metrics (Liberation Serif, Tinos), and DejaVu Serif only as a last resort.
+SERIF_STACK: tuple[str, ...] = ("Times New Roman", "Liberation Serif", "Tinos", "DejaVu Serif")
 _ARIAL_LIKE_FAMILIES = frozenset({"Arial", "Liberation Sans", "Arimo"})
+_TIMES_LIKE_FAMILIES = frozenset({"Times New Roman", "Liberation Serif", "Tinos"})
 
 
 @cache
@@ -334,6 +338,10 @@ def _register_arial_compatible_fonts() -> None:
     if not known & _ARIAL_LIKE_FAMILIES:
         for path in paths:
             if Path(path).name.lower().startswith(("liberationsans-", "arimo")):
+                font_manager.fontManager.addfont(path)
+    if not known & _TIMES_LIKE_FAMILIES:
+        for path in paths:
+            if Path(path).name.lower().startswith(("liberationserif-", "tinos")):
                 font_manager.fontManager.addfont(path)
 
 
@@ -407,6 +415,7 @@ def _apply_compact() -> None:
             "svg.fonttype": "none",
             "font.family": "sans-serif",
             "font.sans-serif": list(SANS_STACK),
+            "font.serif": list(SERIF_STACK),
             "font.size": 8,
             "axes.labelsize": 8,
             "axes.titlesize": 11,
@@ -861,6 +870,7 @@ def _apply_notebook() -> None:
             "savefig.pad_inches": 0.1,
             "font.family": "sans-serif",
             "font.sans-serif": list(SANS_STACK),
+            "font.serif": list(SERIF_STACK),
             "font.size": 10,
             "axes.labelsize": 10,
             "axes.titlesize": 11,
@@ -1259,6 +1269,7 @@ def _apply_publication(*, dpi: int, small: bool) -> None:
             "savefig.dpi": dpi,
             "font.family": "sans-serif",
             "font.sans-serif": list(SANS_STACK),
+            "font.serif": list(SERIF_STACK),
             "font.size": base_font,
             "axes.labelsize": axis_font,
             "axes.titlesize": title_font,

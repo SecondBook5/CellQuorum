@@ -63,6 +63,10 @@ FAMILY_LABELS: dict[str, str] = {
 }
 
 
+#: Fewest scored cells for which a severity curve is drawn.
+_MIN_CELLS_FOR_CURVE = 10
+
+
 def family_severity(obs: pd.DataFrame) -> pd.DataFrame:
     """Per-cell family severities present on this object, with readable column names.
 
@@ -501,6 +505,15 @@ def plot_severity_ecdf(
     )
     arm_levels = sorted(arms.unique())
     palette = _arm_palette(arm_levels, NORMAL_BLUE, LE_RED)
+    # An arm can have no severity for this family at all: the axis does not apply to it (the
+    # nuclear-integrity axis in single-nucleus libraries). Drawing it would put a legend entry on
+    # the figure with nothing behind it, so it is named in a note instead.
+    unscored = [
+        arm
+        for arm in arm_levels
+        if int(values[(arms == arm).to_numpy()].notna().sum()) < _MIN_CELLS_FOR_CURVE
+    ]
+    scored = [arm for arm in arm_levels if arm not in unscored]
 
     apply_theme("compact")
     figure, (curves, paired) = plt.subplots(
@@ -517,7 +530,7 @@ def plot_severity_ecdf(
     for group in sorted(groups.unique()):
         selected = (groups == group).to_numpy()
         sample = values[selected].dropna().to_numpy(dtype=float)
-        if sample.size < 10:
+        if sample.size < _MIN_CELLS_FOR_CURVE:
             continue
         arm = arms[selected].iloc[0]
         grid, curve = _ecdf(sample)
@@ -528,10 +541,8 @@ def plot_severity_ecdf(
             (sample >= concern_severity).mean()
         )
 
-    for arm in arm_levels:
+    for arm in scored:
         sample = values[(arms == arm).to_numpy()].dropna().to_numpy(dtype=float)
-        if sample.size < 10:
-            continue
         grid, curve = _ecdf(sample)
         curves.step(grid, curve, where="post", color=palette[arm], linewidth=2.1, alpha=0.95)
 
@@ -545,15 +556,40 @@ def plot_severity_ecdf(
         loc="left",
     )
     curves.legend(
-        handles=[
-            Line2D([], [], color=palette[arm], linewidth=2.0, label=arm) for arm in arm_levels
-        ],
+        handles=[Line2D([], [], color=palette[arm], linewidth=2.0, label=arm) for arm in scored],
         frameon=False,
         fontsize=8,
         loc="lower right",
     )
+    if unscored:
+        curves.text(
+            0.98,
+            0.30,
+            f"{', '.join(unscored)}: not scored\n(this axis does not apply)",
+            transform=curves.transAxes,
+            ha="right",
+            va="top",
+            fontsize=8,
+            color="0.35",
+        )
 
-    _plot_paired_flagged(paired, flagged, palette, concern_severity)
+    if len(scored) < 2:
+        # Pairing needs a severity in both arms. With one arm unscored there is nothing to join,
+        # and a one-sided panel of dots reads as missing data.
+        paired.axis("off")
+        paired.text(
+            0.0,
+            0.5,
+            "Not paired: only "
+            + (", ".join(scored) if scored else "no arm")
+            + "\nhas a severity for this family.",
+            transform=paired.transAxes,
+            fontsize=9,
+            color="0.35",
+            va="center",
+        )
+    else:
+        _plot_paired_flagged(paired, flagged, palette, concern_severity)
 
     for axis in (curves, paired):
         for spine in ("top", "right"):

@@ -35,6 +35,15 @@ def test_arial_like_fonts_are_tried_before_dejavu(style: str) -> None:
     assert stack.index("Liberation Sans") < stack.index("DejaVu Sans")
 
 
+@pytest.mark.parametrize("style", STYLES)
+def test_times_like_fonts_are_tried_before_dejavu_serif(style: str) -> None:
+    """The few figures that ask for a serif face get Times metrics, not DejaVu Serif."""
+    figstyle.apply_theme(style)
+    stack = matplotlib.rcParams["font.serif"]
+    assert stack[0] == "Times New Roman"
+    assert stack.index("Liberation Serif") < stack.index("DejaVu Serif")
+
+
 @pytest.mark.skipif(not _arial_like_installed(), reason="no Arial-compatible font on this machine")
 @pytest.mark.parametrize("style", STYLES)
 def test_text_resolves_to_an_arial_like_font_when_one_is_installed(style: str) -> None:

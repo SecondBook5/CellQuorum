@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import anndata as ad
@@ -56,14 +57,20 @@ def mock_context():
             return False
 
         def run_script(self, script: Path, args: list[str], timeout: int):
-            """Run Rscript — actually shells to the real binary."""
-            result = subprocess.run(
-                ["Rscript", str(script), *args],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-            return result
+            """Run Rscript — actually shells to the real binary.
+
+            Run from a throwaway directory, as the real backend does: R's default graphics
+            device writes ``Rplots.pdf`` into the working directory, which would otherwise be
+            the repository root.
+            """
+            with tempfile.TemporaryDirectory(prefix="cq-test-rscript-") as scratch:
+                return subprocess.run(
+                    ["Rscript", str(script), *args],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    cwd=scratch,
+                )
 
     class MockRegistry:
         def get(self, backend_name: str):

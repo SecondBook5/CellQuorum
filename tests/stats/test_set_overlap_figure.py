@@ -9,6 +9,8 @@ and that the figure and its notes cannot disagree with the table they came from.
 
 from __future__ import annotations
 
+import re
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -40,7 +42,9 @@ def _texts(fig) -> str:
     about *what* is said rather than about where the wrap happened to fall.
     """
     joined = "\n".join(artist.get_text() for artist in fig.findobj(match=plt.Text))
-    return " ".join(joined.split())
+    # A wrap can fall right after a hyphen ("gene-" / "naming"); rejoin it so a
+    # hyphenated word is still found whole.
+    return re.sub(r"(?<=\w)-\s+(?=\w)", "-", " ".join(joined.split()))
 
 
 # --------------------------------------------------------------------------- #

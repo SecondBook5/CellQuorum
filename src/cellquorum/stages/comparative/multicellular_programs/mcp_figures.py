@@ -103,7 +103,8 @@ def plot_mcp_summary(
     support_map = donor_support.set_index("program")["supported"].to_dict()
     for i, program in enumerate(program_order):
         supported = support_map.get(program, False)
-        marker = "✓" if supported else "✗"
+        # Plain words: Arial has no check-mark or ballot-X glyph, so those would draw as boxes.
+        marker = "yes" if supported else "no"
         color = figstyle.NORMAL_COLOR if supported else figstyle.QC_FAIL_COLOR
         ax_scores.text(
             i,

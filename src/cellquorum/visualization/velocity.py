@@ -283,7 +283,8 @@ def velocity_stream_figure(
     ax.text(
         0.5,
         -0.035,
-        "arrows = scVelo velocity projected into the embedding; " "line width ∝ local speed",
+        "arrows = scVelo velocity projected into the embedding; "
+        "line width proportional to local speed",
         transform=ax.transAxes,
         ha="center",
         va="top",
