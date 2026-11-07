@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,450 @@ from cellquorum.stages.gene_regulation.grn.regulon_curvature import (
 )
 from cellquorum.visualization import figstyle
 from cellquorum.visualization.figstyle import render_figure
+
+_TAG = "grn"
+
+
+class _PipelineStop(Exception):
+    """A guard or failure that ends the pySCENIC pipeline (not the radial figure)."""
+
+    def __init__(self, reason: str, **details: object) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = details
+
+
+@dataclass(frozen=True)
+class _Settings:
+    """Every config value ``PyscenicMethod._run`` reads, resolved once."""
+
+    layer: str
+    group_by_cfg: str | None
+    organism: str
+    num_workers: int
+    max_cells: int
+    min_cells_total: int
+    top_n: int
+    seed: int
+    launcher: str
+    timeout_seconds: int
+    tfs_path: str | None
+    motifs_path: str | None
+    rankings_glob: str | None
+    curvature_top_k_targets: int
+    curvature_ricci_alpha: float
+    curvature_plot_top_k: int
+    curvature_radial_n_tf: int
+    curvature_radial_per_tf: int
+    curvature_radial_n_sectors: int
+    cluster_labels: dict
+    radial_enabled: bool
+    radial_collection: str
+    radial_de_results_filename: str
+    radial_min_size: int
+    radial_n_tf: int
+    radial_per_tf: int
+    radial_n_sectors: int
+    radial_case_color: str | None
+    radial_control_color: str | None
+    case: str | None
+    control: str | None
+
+    @classmethod
+    def from_config(cls, config: dict, context) -> _Settings:  # noqa: ANN001
+        return cls(
+            layer=config.get("layer", "counts"),
+            group_by_cfg=config.get("group_by"),
+            organism=config.get("organism", "human"),
+            # Unset inherits compute.n_jobs (see GrnConfig.num_workers): this count
+            # goes to a dask LocalCluster inside the pySCENIC env, so asking for
+            # more workers than the run was configured for costs memory, not just
+            # cores.
+            num_workers=resolve_n_jobs(context, config.get("num_workers")),
+            max_cells=int(config.get("max_cells", 20000)),
+            min_cells_total=int(config.get("min_cells_total", 200)),
+            top_n=int(config.get("top_n", 5)),
+            seed=int(config.get("seed", 0)),
+            launcher=config.get("launcher", "micromamba"),
+            timeout_seconds=int(config.get("timeout_seconds", 7200)),
+            tfs_path=config.get("tfs_path"),
+            motifs_path=config.get("motifs_path"),
+            rankings_glob=config.get("rankings_glob"),
+            curvature_top_k_targets=int(config.get("curvature_top_k_targets", 15)),
+            curvature_ricci_alpha=float(config.get("curvature_ricci_alpha", 0.5)),
+            curvature_plot_top_k=int(config.get("curvature_plot_top_k", 30)),
+            curvature_radial_n_tf=int(config.get("curvature_radial_n_tf", 12)),
+            curvature_radial_per_tf=int(config.get("curvature_radial_per_tf", 6)),
+            curvature_radial_n_sectors=int(config.get("curvature_radial_n_sectors", 4)),
+            cluster_labels=config.get("cluster_labels") or {},
+            radial_enabled=bool(config.get("radial_enabled", True)),
+            radial_collection=config.get("radial_collection", "dorothea"),
+            radial_de_results_filename=config.get(
+                "radial_de_results_filename", "de_pseudobulk_edger.csv"
+            ),
+            radial_min_size=int(config.get("radial_min_size", 5)),
+            radial_n_tf=int(config.get("radial_n_tf", 12)),
+            radial_per_tf=int(config.get("radial_per_tf", 6)),
+            radial_n_sectors=int(config.get("radial_n_sectors", 4)),
+            radial_case_color=config.get("radial_case_color"),
+            radial_control_color=config.get("radial_control_color"),
+            case=config.get("case"),
+            control=config.get("control"),
+        )
+
+
+@dataclass(frozen=True)
+class _Outputs:
+    """Where the scratch input and the pySCENIC scripts' outputs live."""
+
+    h5ad: Path
+    out_dir: Path
+    regulons_csv: Path
+    adjacencies_tsv: Path
+    loom_path: Path
+    skip_marker: Path
+    auc_parquet: Path
+
+    @classmethod
+    def under(cls, scratch: Path, out_dir: Path) -> _Outputs:
+        return cls(
+            h5ad=scratch / "grn_input.h5ad",
+            out_dir=out_dir,
+            regulons_csv=out_dir / f"scenic_regulons_{_TAG}.csv",
+            adjacencies_tsv=out_dir / f"scenic_adjacencies_{_TAG}.tsv",
+            loom_path=out_dir / f"scenic_input_{_TAG}.loom",
+            skip_marker=out_dir / f"grn_SKIPPED_{_TAG}.txt",
+            auc_parquet=out_dir / f"scenic_auc_mtx_{_TAG}.parquet",
+        )
+
+
+def _missing_cistarget_resources(settings: _Settings) -> list[str]:
+    """Names of the cisTarget settings that are unset or point at nothing."""
+    rankings_glob = settings.rankings_glob
+    rankings_files = sorted(glob.glob(rankings_glob)) if rankings_glob else []
+    if not rankings_files and rankings_glob and os.path.exists(rankings_glob):
+        rankings_files = [rankings_glob]
+    missing = []
+    if not settings.tfs_path or not os.path.exists(settings.tfs_path):
+        missing.append("tfs_path")
+    if not settings.motifs_path or not os.path.exists(settings.motifs_path):
+        missing.append("motifs_path")
+    if not rankings_files:
+        missing.append("rankings_glob")
+    return missing
+
+
+def _check_prerequisites(adata, settings: _Settings, context) -> Any:  # noqa: ANN001
+    """Return the pySCENIC backend, or raise ``_PipelineStop`` naming what is missing."""
+    if adata.n_obs < settings.min_cells_total:
+        raise _PipelineStop(
+            f"too few cells ({adata.n_obs} < {settings.min_cells_total})",
+            n_obs=int(adata.n_obs),
+        )
+    if shutil.which(settings.launcher) is None:
+        raise _PipelineStop(
+            f"launcher '{settings.launcher}' not found on PATH", launcher=settings.launcher
+        )
+    registry = getattr(context, "backend_registry", None)
+    backend = None
+    if registry is not None:
+        try:
+            backend = registry.get("pyscenic")
+        except Exception:
+            backend = None
+    if backend is None:
+        raise _PipelineStop("pyscenic backend unavailable")
+    try:
+        module_ok = backend._py_module_available("pyscenic")
+    except Exception:
+        module_ok = False
+    if not module_ok:
+        raise _PipelineStop("pyscenic module unavailable in env")
+    # cisTarget resources: unset OR unresolvable -> skip before spawning subprocess.
+    missing_db = _missing_cistarget_resources(settings)
+    if missing_db:
+        raise _PipelineStop(
+            "cisTarget resources unset/missing "
+            f"({', '.join(missing_db)}); download the cisTarget DBs and set "
+            "grn.tfs_path / motifs_path / rankings_glob",
+            missing=missing_db,
+        )
+    return backend
+
+
+def _write_scratch_input(adata, settings: _Settings, context) -> _Outputs:  # noqa: ANN001
+    """Write the counts h5ad the GRN script reads and create the output directories."""
+    scratch = Path(getattr(context.paths, "scratch", "."))
+    scratch.mkdir(parents=True, exist_ok=True)
+    # figures/ was created before any pySCENIC guard so the radial GRN figure
+    # could be rendered first; out_dir stays results-rooted because it is also
+    # the pySCENIC subprocess's own --out-dir for its raw data outputs
+    # (regulons/adjacencies/loom/AUC).
+    out_dir = Path(getattr(context.paths, "results", ".")) / "grn"
+    outputs = _Outputs.under(scratch, out_dir)
+    # Through the shared writer: this hands the working object to another
+    # process, so a column h5py cannot encode would fail the stage here rather
+    # than in pySCENIC. See cellquorum.core.h5ad_io.
+    from cellquorum.core.h5ad_io import write_h5ad
+
+    layer = settings.layer
+    # Genuinely shallow, matching the same fix already applied in this stage
+    # category (coexpression/hdwgcna_method.py): `adata.copy()` duplicates
+    # every layer and obsm entry just to change which matrix is X, and then
+    # write_h5ad serializes all of it to a file the GRN script never reads --
+    # verified directly against pyscenic_scripts/pyscenic_grn.py, which only
+    # ever reads /obs and /var axis names plus the requested matrix.
+    if layer and layer != "X" and layer in adata.layers:
+        write_h5ad(
+            ad.AnnData(
+                X=adata.layers[layer],
+                obs=adata.obs.copy(),
+                var=adata.var.copy(),
+            ),
+            outputs.h5ad,
+        )
+    else:
+        write_h5ad(adata, outputs.h5ad)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return outputs
+
+
+def _infer_regulons(backend, outputs: _Outputs, settings: _Settings) -> pd.DataFrame:  # noqa: ANN001
+    """Run the grn -> ctx script and load its regulon table, or raise ``_PipelineStop``."""
+    grn_args = [
+        "--h5ad",
+        str(outputs.h5ad),
+        "--tfs",
+        str(settings.tfs_path),
+        "--motifs",
+        str(settings.motifs_path),
+        "--rankings",
+        str(settings.rankings_glob),
+        "--out-dir",
+        str(outputs.out_dir),
+        "--tag",
+        _TAG,
+        "--num-workers",
+        str(settings.num_workers),
+        "--max-cells",
+        str(settings.max_cells),
+        "--layer",
+        str(settings.layer),
+        "--seed",
+        str(settings.seed),
+    ]
+    try:
+        proc = backend.run_script(PYSCENIC_GRN_PY, grn_args, timeout=settings.timeout_seconds)
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        raise _PipelineStop(
+            "grn script execution failed or timed out", error=str(exc)[:500]
+        ) from exc
+    if proc.returncode != 0:
+        raise _PipelineStop("grn/ctx script failed", stderr=proc.stderr.strip()[:500])
+
+    if outputs.skip_marker.exists() or not outputs.regulons_csv.exists():
+        raise _PipelineStop(
+            outputs.skip_marker.read_text().strip()
+            if outputs.skip_marker.exists()
+            else "no regulons produced"
+        )
+    try:
+        regulons_df = load_regulons_csv(outputs.regulons_csv)
+    except Exception as exc:
+        raise _PipelineStop("could not read regulons CSV", error=str(exc)[:500]) from exc
+    if len(regulons_df) == 0:
+        raise _PipelineStop("no regulons detected")
+    return regulons_df
+
+
+def _run_aucell(
+    backend,  # noqa: ANN001
+    outputs: _Outputs,
+    settings: _Settings,
+    warnings: list[str],
+) -> pd.DataFrame | None:
+    """Score regulon activity per cell; ``None`` when AUCell produced nothing usable."""
+    aucell_args = [
+        "--loom",
+        str(outputs.loom_path),
+        "--regulons",
+        str(outputs.regulons_csv),
+        "--out",
+        str(outputs.auc_parquet),
+        "--num-workers",
+        str(settings.num_workers),
+    ]
+    auc = None
+    try:
+        aproc = backend.run_script(
+            PYSCENIC_AUCELL_PY, aucell_args, timeout=settings.timeout_seconds
+        )
+        if aproc.returncode == 0 and outputs.auc_parquet.exists():
+            auc = pd.read_parquet(outputs.auc_parquet)
+            if auc.empty:
+                auc = None
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        # A warning, not a note: without AUC there are no regulon activities,
+        # so every figure below is skipped too and the stage's real output is
+        # the regulon table alone.
+        warnings.append(f"AUCell skipped: {str(exc)[:200]}")
+    return auc
+
+
+def _render_curvature_figures(
+    regulons_df: pd.DataFrame,
+    settings: _Settings,
+    figures_dir: Path,
+    figs: list[Path],
+    warnings: list[str],
+) -> None:
+    """Regulon curvature: structural, needs only the regulon table (not AUC).
+
+    Ricci curvature is computed ONCE and rendered twice (the force-directed
+    hairball, then the same radial layout the DoRothEA figure uses, colored by
+    curvature instead of DE direction) -- confirmed the expensive part is the
+    curvature computation, not either rendering step.
+    """
+
+    def _curvature_figs() -> list[Path]:
+        G, edge_df, node_df = compute_regulon_curvature_tables(
+            regulons_df,
+            top_k_targets=settings.curvature_top_k_targets,
+            ricci_alpha=settings.curvature_ricci_alpha,
+        )
+        out = plot_regulon_curvature_from_tables(
+            G, edge_df, node_df, figures_dir, plot_top_k=settings.curvature_plot_top_k
+        )
+        if not edge_df.empty:
+            radial_fig = rgf.radial_regulon_curvature(
+                edge_df,
+                node_df,
+                G,
+                n_tf=settings.curvature_radial_n_tf,
+                per_tf=settings.curvature_radial_per_tf,
+                n_sectors=settings.curvature_radial_n_sectors,
+            )
+            out = out + figstyle.save_figure(radial_fig, figures_dir, "regulon_curvature_radial")
+        return out
+
+    render_figure("regulon curvature", _curvature_figs, figures=figs, warnings=warnings)
+
+
+def _render_activity_figures(
+    adata,  # noqa: ANN001
+    auc: pd.DataFrame,
+    group_by: str,
+    settings: _Settings,
+    figures_dir: Path,
+    figs: list[Path],
+    warnings: list[str],
+) -> None:
+    """Figures drawn from the AUCell matrix (run in the cellquorum env)."""
+    top_n = settings.top_n
+    cluster_labels = settings.cluster_labels
+    groups = None
+    if group_by in adata.obs.columns:
+        groups = adata.obs[group_by].astype(str)
+        groups.index = adata.obs_names
+    common = auc.index.intersection(adata.obs_names)
+    if groups is not None and len(common) > 0:
+        figure_kwargs = {
+            "group_label": group_by,
+            "top_n": top_n,
+            "cluster_labels": cluster_labels,
+        }
+        figure_calls: tuple[Callable[..., Any], ...] = (
+            rf.plot_rss_panels,
+            rf.plot_regulon_clustermap,
+        )
+        for fn in figure_calls:
+            # partial binds fn now: closing over the loop variable would draw the
+            # last function twice.
+            render_figure(
+                fn.__name__,
+                partial(fn, auc, groups, figures_dir, **figure_kwargs),
+                figures=figs,
+                warnings=warnings,
+            )
+        render_figure(
+            "cell clustermap",
+            lambda: rf.plot_regulon_cell_clustermap(
+                auc,
+                groups.to_frame(group_by),
+                figures_dir,
+                top_n=top_n,
+                cluster_labels=cluster_labels,
+                cluster_col=group_by,
+            ),
+            figures=figs,
+            warnings=warnings,
+        )
+    if "X_umap" in adata.obsm and len(common) > 0:
+
+        def _regulon_umap() -> list[Path]:
+            umap = pd.DataFrame(
+                adata.obsm["X_umap"][:, :2],
+                index=adata.obs_names,
+                columns=["UMAP1", "UMAP2"],
+            )
+            return rf.plot_regulon_umap(auc, umap, figures_dir, groups=groups, top_n=12)
+
+        render_figure("regulon-UMAP", _regulon_umap, figures=figs, warnings=warnings)
+
+
+def _collect_artifacts(outputs: _Outputs, figs: list[Path]) -> list[StageArtifact]:
+    artifacts: list[StageArtifact] = [
+        StageArtifact(
+            name="regulons",
+            path=outputs.regulons_csv,
+            kind="csv",
+            description="pySCENIC ctx regulons (TF->target enrichments)",
+        ),
+    ]
+    if outputs.adjacencies_tsv.exists():
+        artifacts.append(
+            StageArtifact(
+                name="adjacencies",
+                path=outputs.adjacencies_tsv,
+                kind="tsv",
+                description="GRNBoost2 TF-target adjacencies",
+            )
+        )
+    if outputs.auc_parquet.exists():
+        artifacts.append(
+            StageArtifact(
+                name="auc_mtx",
+                path=outputs.auc_parquet,
+                kind="parquet",
+                description="AUCell per-cell regulon activity (cells x regulons)",
+            )
+        )
+    for fig_path in figs:
+        artifacts.append(
+            StageArtifact(
+                name=f"figure_{fig_path.stem}",
+                path=fig_path,
+                kind="figure",
+                description="pySCENIC regulon figure",
+            )
+        )
+    return artifacts
+
+
+def _build_metrics(
+    adata,  # noqa: ANN001
+    regulons_df: pd.DataFrame,
+    auc: pd.DataFrame | None,
+    group_by: str,
+) -> dict[str, Any]:
+    n_tfs = int(regulons_df["TF"].nunique()) if "TF" in regulons_df.columns else 0
+    return {
+        "n_regulons": int(auc.shape[1]) if auc is not None else int(len(regulons_df)),
+        "n_tfs": n_tfs,
+        "n_cells_scored": int(auc.shape[0]) if auc is not None else 0,
+        "group_by": group_by,
+        "n_obs": int(adata.n_obs),
+    }
 
 
 class PyscenicMethod(AnalysisMethod):
@@ -168,395 +613,62 @@ class PyscenicMethod(AnalysisMethod):
         render_figure("radial GRN", _fig, figures=figs, warnings=warnings)
 
     def _run(self, adata, config, context) -> StageResult | MethodSkip:  # noqa: ANN001
-        # 1. Resolve config
-        layer = config.get("layer", "counts")
-        group_by_cfg = config.get("group_by")
-        organism = config.get("organism", "human")
-        # Unset inherits compute.n_jobs (see GrnConfig.num_workers): this count
-        # goes to a dask LocalCluster inside the pySCENIC env, so asking for more
-        # workers than the run was configured for costs memory, not just cores.
-        num_workers = resolve_n_jobs(context, config.get("num_workers"))
-        max_cells = int(config.get("max_cells", 20000))
-        min_cells_total = int(config.get("min_cells_total", 200))
-        top_n = int(config.get("top_n", 5))
-        seed = int(config.get("seed", 0))
-        launcher = config.get("launcher", "micromamba")
-        timeout_seconds = int(config.get("timeout_seconds", 7200))
-        tfs_path = config.get("tfs_path")
-        motifs_path = config.get("motifs_path")
-        rankings_glob = config.get("rankings_glob")
-        curvature_top_k_targets = int(config.get("curvature_top_k_targets", 15))
-        curvature_ricci_alpha = float(config.get("curvature_ricci_alpha", 0.5))
-        curvature_plot_top_k = int(config.get("curvature_plot_top_k", 30))
-        curvature_radial_n_tf = int(config.get("curvature_radial_n_tf", 12))
-        curvature_radial_per_tf = int(config.get("curvature_radial_per_tf", 6))
-        curvature_radial_n_sectors = int(config.get("curvature_radial_n_sectors", 4))
-        cluster_labels = config.get("cluster_labels") or {}
-        radial_enabled = bool(config.get("radial_enabled", True))
-        radial_collection = config.get("radial_collection", "dorothea")
-        radial_de_results_filename = config.get(
-            "radial_de_results_filename", "de_pseudobulk_edger.csv"
-        )
-        radial_min_size = int(config.get("radial_min_size", 5))
-        radial_n_tf = int(config.get("radial_n_tf", 12))
-        radial_per_tf = int(config.get("radial_per_tf", 6))
-        radial_n_sectors = int(config.get("radial_n_sectors", 4))
-        radial_case_color = config.get("radial_case_color")
-        radial_control_color = config.get("radial_control_color")
-        case = config.get("case")
-        control = config.get("control")
-
-        # 2. Resolve group_by generically
-        group_by = resolve_group_by(adata, group_by_cfg, default="all")
+        settings = _Settings.from_config(config, context)
+        group_by = resolve_group_by(adata, settings.group_by_cfg, default="all")
 
         figures_dir = Path(getattr(context.paths, "figures", ".")) / "grn"
         figures_dir.mkdir(parents=True, exist_ok=True)
         figs: list[Path] = []
         warnings: list[str] = []
 
-        # 3. Radial DoRothEA/CollecTRI GRN figure: computed FIRST and kept
+        # Radial DoRothEA/CollecTRI GRN figure: computed FIRST and kept
         # independent of every pySCENIC-specific guard below -- it needs
         # only the DE stage's own CSV and a curated prior net, never
         # GRNBoost2/cisTarget/AUCell, so a run with no cisTarget DBs
         # configured (a real, common case) must not also silently lose
         # this figure just because it lives in the same method.
-        if radial_enabled:
+        if settings.radial_enabled:
             self._render_radial_grn(
                 context=context,
                 figures_dir=figures_dir,
-                radial_collection=radial_collection,
-                radial_de_results_filename=radial_de_results_filename,
-                radial_min_size=radial_min_size,
-                radial_n_tf=radial_n_tf,
-                radial_per_tf=radial_per_tf,
-                radial_n_sectors=radial_n_sectors,
-                radial_case_color=radial_case_color,
-                radial_control_color=radial_control_color,
-                organism=organism,
+                radial_collection=settings.radial_collection,
+                radial_de_results_filename=settings.radial_de_results_filename,
+                radial_min_size=settings.radial_min_size,
+                radial_n_tf=settings.radial_n_tf,
+                radial_per_tf=settings.radial_per_tf,
+                radial_n_sectors=settings.radial_n_sectors,
+                radial_case_color=settings.radial_case_color,
+                radial_control_color=settings.radial_control_color,
+                organism=settings.organism,
                 group_by=group_by,
-                case=case,
-                control=control,
+                case=settings.case,
+                control=settings.control,
                 figs=figs,
                 warnings=warnings,
             )
 
-        # 4. Guards -> MethodSkip, unless the radial figure above already
-        # produced real output (a plain skip would silently discard it).
-        skip_reason: str | None = None
-        skip_kwargs: dict[str, object] = {}
-        if adata.n_obs < min_cells_total:
-            skip_reason = f"too few cells ({adata.n_obs} < {min_cells_total})"
-            skip_kwargs = {"n_obs": int(adata.n_obs)}
-        elif shutil.which(launcher) is None:
-            skip_reason = f"launcher '{launcher}' not found on PATH"
-            skip_kwargs = {"launcher": launcher}
-        else:
-            registry = getattr(context, "backend_registry", None)
-            backend = None
-            if registry is not None:
-                try:
-                    backend = registry.get("pyscenic")
-                except Exception:
-                    backend = None
-            if backend is None:
-                skip_reason = "pyscenic backend unavailable"
-            else:
-                try:
-                    module_ok = backend._py_module_available("pyscenic")
-                except Exception:
-                    module_ok = False
-                if not module_ok:
-                    skip_reason = "pyscenic module unavailable in env"
-                else:
-                    # cisTarget resources: unset OR unresolvable -> skip before
-                    # spawning subprocess.
-                    rankings_files = sorted(glob.glob(rankings_glob)) if rankings_glob else []
-                    if not rankings_files and rankings_glob and os.path.exists(rankings_glob):
-                        rankings_files = [rankings_glob]
-                    missing_db = []
-                    if not tfs_path or not os.path.exists(tfs_path):
-                        missing_db.append("tfs_path")
-                    if not motifs_path or not os.path.exists(motifs_path):
-                        missing_db.append("motifs_path")
-                    if not rankings_files:
-                        missing_db.append("rankings_glob")
-                    if missing_db:
-                        skip_reason = (
-                            "cisTarget resources unset/missing "
-                            f"({', '.join(missing_db)}); download the cisTarget DBs and set "
-                            "grn.tfs_path / motifs_path / rankings_glob"
-                        )
-                        skip_kwargs = {"missing": missing_db}
-        if skip_reason is not None:
-            return self._skip_or_partial(
-                adata, skip_reason, figs=figs, warnings=warnings, **skip_kwargs
-            )
-
-        # A skip_reason of None means every check above passed, which needs a backend.
-        assert backend is not None
-
-        # 5. Write counts h5ad to scratch
-        scratch = Path(getattr(context.paths, "scratch", "."))
-        scratch.mkdir(parents=True, exist_ok=True)
-        h5ad = scratch / "grn_input.h5ad"
-        # Through the shared writer: this hands the working object to another
-        # process, so a column h5py cannot encode would fail the stage here rather
-        # than in pySCENIC. See cellquorum.core.h5ad_io.
-        from cellquorum.core.h5ad_io import write_h5ad
-
-        # Genuinely shallow, matching the same fix already applied in this stage
-        # category (coexpression/hdwgcna_method.py): `adata.copy()` duplicates
-        # every layer and obsm entry just to change which matrix is X, and then
-        # write_h5ad serializes all of it to a file the GRN script never reads --
-        # verified directly against pyscenic_scripts/pyscenic_grn.py, which only
-        # ever reads /obs and /var axis names plus the requested matrix.
-        if layer and layer != "X" and layer in adata.layers:
-            write_h5ad(
-                ad.AnnData(
-                    X=adata.layers[layer],
-                    obs=adata.obs.copy(),
-                    var=adata.var.copy(),
-                ),
-                h5ad,
-            )
-        else:
-            write_h5ad(adata, h5ad)
-
-        out_dir = Path(getattr(context.paths, "results", ".")) / "grn"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        # figures_dir (figures/, not results/) was already created in step 3
-        # so the radial GRN figure could be rendered before any pySCENIC
-        # guard; out_dir here stays results-rooted because it's also the
-        # pySCENIC subprocess's own --out-dir for its raw data outputs
-        # (regulons/adjacencies/loom/AUC).
-        tag = "grn"
-
-        # 6. Run grn -> ctx in-env script
-        grn_args = [
-            "--h5ad",
-            str(h5ad),
-            "--tfs",
-            str(tfs_path),
-            "--motifs",
-            str(motifs_path),
-            "--rankings",
-            str(rankings_glob),
-            "--out-dir",
-            str(out_dir),
-            "--tag",
-            tag,
-            "--num-workers",
-            str(num_workers),
-            "--max-cells",
-            str(max_cells),
-            "--layer",
-            str(layer),
-            "--seed",
-            str(seed),
-        ]
+        # Every stop below goes through _skip_or_partial, so a plain MethodSkip
+        # is returned only when the radial figure above produced nothing.
         try:
-            proc = backend.run_script(PYSCENIC_GRN_PY, grn_args, timeout=timeout_seconds)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+            backend = _check_prerequisites(adata, settings, context)
+            outputs = _write_scratch_input(adata, settings, context)
+            regulons_df = _infer_regulons(backend, outputs, settings)
+        except _PipelineStop as stop:
             return self._skip_or_partial(
-                adata,
-                "grn script execution failed or timed out",
-                figs=figs,
-                warnings=warnings,
-                error=str(exc)[:500],
-            )
-        if proc.returncode != 0:
-            return self._skip_or_partial(
-                adata,
-                "grn/ctx script failed",
-                figs=figs,
-                warnings=warnings,
-                stderr=proc.stderr.strip()[:500],
+                adata, stop.reason, figs=figs, warnings=warnings, **stop.details
             )
 
-        regulons_csv = out_dir / f"scenic_regulons_{tag}.csv"
-        adjacencies_tsv = out_dir / f"scenic_adjacencies_{tag}.tsv"
-        loom_path = out_dir / f"scenic_input_{tag}.loom"
-        skip_marker = out_dir / f"grn_SKIPPED_{tag}.txt"
-        if skip_marker.exists() or not regulons_csv.exists():
-            reason = (
-                skip_marker.read_text().strip() if skip_marker.exists() else "no regulons produced"
-            )
-            return self._skip_or_partial(adata, reason, figs=figs, warnings=warnings)
-        try:
-            regulons_df = load_regulons_csv(regulons_csv)
-        except Exception as exc:
-            return self._skip_or_partial(
-                adata,
-                "could not read regulons CSV",
-                figs=figs,
-                warnings=warnings,
-                error=str(exc)[:500],
-            )
-        if len(regulons_df) == 0:
-            return self._skip_or_partial(
-                adata, "no regulons detected", figs=figs, warnings=warnings
-            )
+        auc = _run_aucell(backend, outputs, settings, warnings)
 
-        # 7. AUCell
-        auc_parquet = out_dir / f"scenic_auc_mtx_{tag}.parquet"
-        aucell_args = [
-            "--loom",
-            str(loom_path),
-            "--regulons",
-            str(regulons_csv),
-            "--out",
-            str(auc_parquet),
-            "--num-workers",
-            str(num_workers),
-        ]
-        auc = None
-        try:
-            aproc = backend.run_script(PYSCENIC_AUCELL_PY, aucell_args, timeout=timeout_seconds)
-            if aproc.returncode == 0 and auc_parquet.exists():
-                auc = pd.read_parquet(auc_parquet)
-                if auc.empty:
-                    auc = None
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-            # A warning, not a note: without AUC there are no regulon activities,
-            # so every figure below is skipped too and the stage's real output is
-            # the regulon table alone.
-            warnings.append(f"AUCell skipped: {str(exc)[:200]}")
-
-        # 7b. Regulon curvature: structural, needs only the regulon table
-        # itself (not AUC), so it renders even when AUCell above failed.
-        # Ricci curvature is computed ONCE and rendered twice (the
-        # force-directed hairball, then the same radial layout the
-        # DoRothEA figure above uses, colored by curvature instead of DE
-        # direction) -- confirmed the expensive part is the curvature
-        # computation, not either rendering step.
-        def _curvature_figs() -> list[Path]:
-            G, edge_df, node_df = compute_regulon_curvature_tables(
-                regulons_df,
-                top_k_targets=curvature_top_k_targets,
-                ricci_alpha=curvature_ricci_alpha,
-            )
-            out = plot_regulon_curvature_from_tables(
-                G, edge_df, node_df, figures_dir, plot_top_k=curvature_plot_top_k
-            )
-            if not edge_df.empty:
-                radial_fig = rgf.radial_regulon_curvature(
-                    edge_df,
-                    node_df,
-                    G,
-                    n_tf=curvature_radial_n_tf,
-                    per_tf=curvature_radial_per_tf,
-                    n_sectors=curvature_radial_n_sectors,
-                )
-                out = out + figstyle.save_figure(
-                    radial_fig, figures_dir, "regulon_curvature_radial"
-                )
-            return out
-
-        render_figure("regulon curvature", _curvature_figs, figures=figs, warnings=warnings)
-
-        # 8. Figures (in cellquorum env) when AUC available
+        _render_curvature_figures(regulons_df, settings, figures_dir, figs, warnings)
         if auc is not None and auc.shape[1] > 0:
-            groups = None
-            if group_by in adata.obs.columns:
-                groups = adata.obs[group_by].astype(str)
-                groups.index = adata.obs_names
-            common = auc.index.intersection(adata.obs_names)
-            if groups is not None and len(common) > 0:
-                figure_kwargs = {
-                    "group_label": group_by,
-                    "top_n": top_n,
-                    "cluster_labels": cluster_labels,
-                }
-                figure_calls: tuple[Callable[..., Any], ...] = (
-                    rf.plot_rss_panels,
-                    rf.plot_regulon_clustermap,
-                )
-                for fn in figure_calls:
-                    # partial binds fn now: closing over the loop variable would draw the
-                    # last function twice.
-                    render_figure(
-                        fn.__name__,
-                        partial(fn, auc, groups, figures_dir, **figure_kwargs),
-                        figures=figs,
-                        warnings=warnings,
-                    )
-                render_figure(
-                    "cell clustermap",
-                    lambda: rf.plot_regulon_cell_clustermap(
-                        auc,
-                        groups.to_frame(group_by),
-                        figures_dir,
-                        top_n=top_n,
-                        cluster_labels=cluster_labels,
-                        cluster_col=group_by,
-                    ),
-                    figures=figs,
-                    warnings=warnings,
-                )
-            if "X_umap" in adata.obsm and len(common) > 0:
-
-                def _regulon_umap() -> list[Path]:
-                    umap = pd.DataFrame(
-                        adata.obsm["X_umap"][:, :2],
-                        index=adata.obs_names,
-                        columns=["UMAP1", "UMAP2"],
-                    )
-                    return rf.plot_regulon_umap(auc, umap, figures_dir, groups=groups, top_n=12)
-
-                render_figure("regulon-UMAP", _regulon_umap, figures=figs, warnings=warnings)
-
-        # 9. Artifacts
-        artifacts: list[StageArtifact] = [
-            StageArtifact(
-                name="regulons",
-                path=regulons_csv,
-                kind="csv",
-                description="pySCENIC ctx regulons (TF->target enrichments)",
-            ),
-        ]
-        if adjacencies_tsv.exists():
-            artifacts.append(
-                StageArtifact(
-                    name="adjacencies",
-                    path=adjacencies_tsv,
-                    kind="tsv",
-                    description="GRNBoost2 TF-target adjacencies",
-                )
-            )
-        if auc_parquet.exists():
-            artifacts.append(
-                StageArtifact(
-                    name="auc_mtx",
-                    path=auc_parquet,
-                    kind="parquet",
-                    description="AUCell per-cell regulon activity (cells x regulons)",
-                )
-            )
-        for fig_path in figs:
-            artifacts.append(
-                StageArtifact(
-                    name=f"figure_{fig_path.stem}",
-                    path=fig_path,
-                    kind="figure",
-                    description="pySCENIC regulon figure",
-                )
-            )
-
-        # 10. Metrics
-        n_tfs = int(regulons_df["TF"].nunique()) if "TF" in regulons_df.columns else 0
-        metrics = {
-            "n_regulons": int(auc.shape[1]) if auc is not None else int(len(regulons_df)),
-            "n_tfs": n_tfs,
-            "n_cells_scored": int(auc.shape[0]) if auc is not None else 0,
-            "group_by": group_by,
-            "n_obs": int(adata.n_obs),
-        }
+            _render_activity_figures(adata, auc, group_by, settings, figures_dir, figs, warnings)
 
         return StageResult(
             adata=adata,
-            artifacts=artifacts,
+            artifacts=_collect_artifacts(outputs, figs),
             warnings=warnings,
-            metrics=metrics,
+            metrics=_build_metrics(adata, regulons_df, auc, group_by),
             backend="pyscenic",
         )
 
