@@ -9,6 +9,8 @@ with a matplotlib fallback so a missing dep never raises.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
 
 import matplotlib as mpl
 import matplotlib.patheffects as pe
@@ -16,6 +18,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
+from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
@@ -217,54 +220,60 @@ def cci_heatmap(
     return fig
 
 
-def plot_mnn_sample_activity(
+@dataclass
+class _MnnLayout:
+    """The rows, columns and groupings every panel of the MultiNicheNet figure shares."""
+
+    sample_d: pd.DataFrame
+    source_d: pd.DataFrame
+    rows: list
+    row_pos: dict
+    route_of_row: dict
+    group_boundaries: list
+    groups: list
+    samples: list
+    sample_x_range: dict
+    top_pad: float
+    ylim: tuple
+
+
+@dataclass
+class _MnnGeometry:
+    """Panel widths, in units worth a fixed number of inches, and the route-box margin."""
+
+    unit_in: float
+    content_units: float
+    margin_units: float
+    panel2_units: int
+    panel3_units: int
+    panel4_units: int
+    legend_units: float
+    fig_width_in: float
+    margin_frac: float
+    box_x0: float
+    box_x1: float
+    label_x: float
+
+
+#: Marker sizes for the sender/receiver presence legend, and for the points in panel 1.
+_MNN_KEEP_SIZES = {
+    "Sender & Receiver absent": 20,
+    "Receiver absent": 45,
+    "Sender absent": 70,
+    "Sender & Receiver present": 140,
+}
+
+
+def _mnn_layout(
     sample_df: pd.DataFrame,
     source_df: pd.DataFrame,
-    *,
-    top_n: int = 20,
-    cluster_labels: dict[str, str] | None = None,
-    group_order: Sequence[str] | None = None,
-) -> Figure:
-    """MultiNicheNet's own headline figure: per-sample expression, scaled and
-    raw ligand activity in the receiver, and ligand/receptor celltype
-    specificity, for the same top-N prioritized LR interactions.
-
-    Reproduces multinichenetr's own make_sample_lr_prod_activity_plots() in
-    matplotlib/house style rather than importing its ggplot output: same 4
-    panels, same source columns (sample_prioritization_tbl for panel 1;
-    group_prioritization_table_source for panels 2-3 and most of panel 4).
-
-    ``source_df`` must additionally carry scaled_pb_ligand/scaled_pb_receptor
-    (panel 4's color) merged in by the caller from group_prioritization_tbl
-    (mnn_prioritization.csv) on (id, group) -- confirmed against a real
-    MultiNicheNet rerun that those two columns are NOT part of
-    group_prioritization_table_source itself, despite both being read from
-    the same multi_nichenet_analysis() call's prioritization_tables.
-
-    Significance markers (panel 2) use RAW p_val_ligand/p_val_receptor with
-    an OR across the two, not p_adj with AND: confirmed against a real
-    MultiNicheNet run that the adjusted-AND criterion never fires on a
-    prioritized top-N shortlist (a real cohort tests 140k+ LR-sender-
-    receiver combinations, so FDR correction is heavy relative to a
-    hand-picked top 20-30) -- 0 of a real top-20 passed adjusted-OR, 14 of
-    20 passed raw-OR. MultiNicheNet's own prioritization_score is already a
-    soft composite that doesn't gate on DE significance, so a marker here
-    is "at least nominal DE support", not a hard significance claim.
-
-    Deliberately simplified from the reference: rows are grouped by
-    sender -> receiver route (separator lines, not nested facet strips --
-    matplotlib has no facet_grid equivalent, and free per-facet row heights
-    add real complexity for a readability gain grouped+separated rows
-    already get most of), sorted by prioritization_score within each route
-    (strongest nearest the top), and panels 2/3 show one activity value per
-    group rather than splitting by up/down direction (redundant with
-    activity_scaled's own sign in the near-totality of real rows). A
-    deliberate exception to one-plot-per-file, like
-    plot_tensor_factors: comparing these 4 views for the SAME interactions
-    is the entire point of the figure.
-    """
+    top_n: int,
+    cluster_labels: dict[str, str] | None,
+    group_order: Sequence[str] | None,
+) -> _MnnLayout | None:
+    """Pick the top-N interactions and fix their row, sample and group order; None if empty."""
     if sample_df is None or sample_df.empty or source_df is None or source_df.empty:
-        return empty_figure()
+        return None
 
     labels = cluster_labels or {}
 
@@ -283,7 +292,7 @@ def plot_mnn_sample_activity(
     sample_d = sample_df[sample_df["id"].isin(top_ids)].copy()
     source_d = source_df[source_df["id"].isin(top_ids)].copy()
     if sample_d.empty or source_d.empty:
-        return empty_figure()
+        return None
 
     id_route = source_d.drop_duplicates("id").set_index("id").apply(_route, axis=1).to_dict()
     # Ordered by (route, score ascending): same-route ids stay contiguous
@@ -330,7 +339,25 @@ def plot_mnn_sample_activity(
 
     top_pad = max(1.0, 0.06 * len(rows))
     ylim = (-0.5, len(rows) - 0.5 + top_pad)
+    return _MnnLayout(
+        sample_d=sample_d,
+        source_d=source_d,
+        rows=rows,
+        row_pos=row_pos,
+        route_of_row=route_of_row,
+        group_boundaries=group_boundaries,
+        groups=groups,
+        samples=samples,
+        sample_x_range=sample_x_range,
+        top_pad=top_pad,
+        ylim=ylim,
+    )
 
+
+def _mnn_geometry(layout: _MnnLayout) -> _MnnGeometry:
+    """Margin sizing: computed in real INCHES from character counts, not data units."""
+    rows, route_of_row = layout.rows, layout.route_of_row
+    samples, groups = layout.samples, layout.groups
     # Margin sizing: computed in real INCHES from character counts, not data
     # units. Data-unit sizing looked fine in isolation but silently broke at
     # real scale -- pixels-per-data-unit shrinks as len(samples) grows (the
@@ -340,7 +367,7 @@ def plot_mnn_sample_activity(
     # Inflammatory") hit a real ~18-sample render and visually collided
     # with the neighboring row's own label.
     #
-    # UNIT_IN must be a TRUE constant (inches per gridspec width-ratio
+    # unit_in must be a TRUE constant (inches per gridspec width-ratio
     # unit), not one implied by a FIXED figsize -- a fixed figsize=19 with
     # a variable margin_units created a circular underestimate: confirmed
     # on the real fibroblast run that a large margin_units (from long real
@@ -348,25 +375,25 @@ def plot_mnn_sample_activity(
     # which shrank the ACTUAL inches-per-unit well below the assumed 0.7,
     # so margin_frac * panel1's physical width delivered only ~74% of the
     # margin_in actually budgeted -- still colliding, just less visibly.
-    # Fixed by deriving the figure's WIDTH from total_units * UNIT_IN
-    # instead of the reverse: every unit is then worth exactly UNIT_IN
+    # Fixed by deriving the figure's WIDTH from total_units * unit_in
+    # instead of the reverse: every unit is then worth exactly unit_in
     # inches by construction, so margin_frac recovers the full margin_in
     # regardless of how large margin_units or len(samples) get.
-    CHAR_IN = 0.075
-    UNIT_IN = 0.55
+    char_in = 0.075
+    unit_in = 0.55
     max_pair_len = max(len(r.split(": ", 1)[1]) for r in rows)
     max_route_len = max(len(v) for v in set(route_of_row.values()))
-    label_margin_in = max_pair_len * CHAR_IN + 0.35
-    box_width_in = max_route_len * CHAR_IN + 0.5
+    label_margin_in = max_pair_len * char_in + 0.35
+    box_width_in = max_route_len * char_in + 0.5
     gap_in = 0.15
     margin_in = label_margin_in + box_width_in + gap_in
-    margin_units = margin_in / UNIT_IN
+    margin_units = margin_in / unit_in
     content_units = max(2, len(samples))
     panel2_units = len(groups)
     panel3_units = len(groups)
     panel4_units = 2 * len(groups)
     # 4.2 (was 2.6): the legend column's own physical width now derives
-    # from legend_units * UNIT_IN like every other panel (see below), and
+    # from legend_units * unit_in like every other panel (see below), and
     # 2.6 units (~1.4in) was too narrow once real numeric colorbars,
     # 2-line titles, and 4 size-legend dots all had to fit -- confirmed
     # on a real render: the "Fraction of expression" dots and their
@@ -375,7 +402,7 @@ def plot_mnn_sample_activity(
     total_units = (
         content_units + margin_units + panel2_units + panel3_units + panel4_units + legend_units
     )
-    fig_width_in = total_units * UNIT_IN
+    fig_width_in = total_units * unit_in
     # Fraction of panel 1's OWN rendered width reserved for the margin --
     # placed via a blended transform (x in axes-fraction, y in data) so its
     # PHYSICAL size stays exactly what was budgeted above regardless of
@@ -387,29 +414,29 @@ def plot_mnn_sample_activity(
     BOX_X0 = -margin_frac
     BOX_X1 = BOX_X0 + box_frac_width
     LABEL_X = -gap_frac  # right-aligned anchor; text extends left toward BOX_X1
-
-    fig, axes = plt.subplots(
-        1,
-        5,
-        # 0.5in/row (was 0.35) and extra top margin for the group header --
-        # confirmed too cramped on a real render next to the reference.
-        figsize=(fig_width_in, max(3.5, 0.5 * len(rows) + 1.0)),
-        squeeze=True,
-        gridspec_kw={
-            "width_ratios": [
-                # Extra width for the label/route margin: without it, that
-                # margin visually compresses the actual sample-column area
-                # instead of getting its own physical space.
-                content_units + margin_units,
-                panel2_units,
-                panel3_units,
-                panel4_units,
-                legend_units,
-            ],
-            "wspace": 0.35,
-        },
+    return _MnnGeometry(
+        unit_in=unit_in,
+        content_units=content_units,
+        margin_units=margin_units,
+        panel2_units=panel2_units,
+        panel3_units=panel3_units,
+        panel4_units=panel4_units,
+        legend_units=legend_units,
+        fig_width_in=fig_width_in,
+        margin_frac=margin_frac,
+        box_x0=BOX_X0,
+        box_x1=BOX_X1,
+        label_x=LABEL_X,
     )
 
+
+def _mnn_sample_panel(ax: Axes, layout: _MnnLayout, geom: _MnnGeometry) -> Any:
+    """Panel 1: per-sample scaled LR pseudobulk product, with the route boxes in its margin."""
+    sample_d, rows, row_pos = layout.sample_d, layout.rows, layout.row_pos
+    route_of_row, samples = layout.route_of_row, layout.samples
+    sample_x_range, top_pad, ylim = layout.sample_x_range, layout.top_pad, layout.ylim
+    BOX_X0, BOX_X1, LABEL_X = geom.box_x0, geom.box_x1, geom.label_x
+    keep_sizes = _MNN_KEEP_SIZES
     # Panel 1: per-sample scaled LR pseudobulk product, sized by
     # sender/receiver presence. Route-label boxes render in this SAME
     # axes' negative-x margin (not a separate axes to the left): a
@@ -419,13 +446,6 @@ def plot_mnn_sample_activity(
     # axes' content -- confirmed on a real render. Drawing everything in
     # one coordinate system with clip_on=False gives exact manual control
     # instead.
-    ax = axes[0]
-    keep_sizes = {
-        "Sender & Receiver absent": 20,
-        "Receiver absent": 45,
-        "Sender absent": 70,
-        "Sender & Receiver present": 140,
-    }
     x_pos = {s: i for i, s in enumerate(samples)}
     vmax = float(sample_d["scaled_LR_pb_prod"].abs().max()) or 1.0
     norm1 = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
@@ -493,9 +513,13 @@ def plot_mnn_sample_activity(
         ax.plot(
             [x0 + 0.05, x1 - 0.05], [len(rows) - 0.5, len(rows) - 0.5], color="0.4", linewidth=1.0
         )
+    return sc1
 
+
+def _mnn_activity_panel(ax: Axes, layout: _MnnLayout) -> Any:
+    """Panel 2: scaled ligand activity in the receiver, one column per group, with stars."""
+    source_d, rows, groups = layout.source_d, layout.rows, layout.groups
     # Panel 2: scaled ligand activity in receiver, one column per group.
-    ax = axes[1]
     vmax = float(source_d["activity_scaled"].abs().max()) or 1.0
     norm2 = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
     mat = source_d.pivot_table(index="__row", columns="group", values="activity_scaled")
@@ -532,9 +556,13 @@ def plot_mnn_sample_activity(
             for xi, g in enumerate(groups):
                 if bool(sig_mat.loc[r, g]) if pd.notna(sig_mat.loc[r, g]) else False:
                     ax.text(xi, yi, "*", ha="center", va="center", fontsize=10, color="black")
+    return im2
 
+
+def _mnn_ligand_activity_panel(ax: Axes, layout: _MnnLayout) -> Any:
+    """Panel 3: raw ligand activity in the receiver, one column per group."""
+    source_d, rows, groups = layout.source_d, layout.rows, layout.groups
     # Panel 3: raw ligand activity in receiver, one column per group.
-    ax = axes[2]
     mat = source_d.pivot_table(index="__row", columns="group", values="activity")
     mat = mat.reindex(index=rows, columns=groups)
     vals = mat.to_numpy(dtype=float)
@@ -550,10 +578,14 @@ def plot_mnn_sample_activity(
     ax.set_xticklabels(groups, rotation=90, fontsize=8)
     ax.set_yticks([])
     ax.set_title("Ligand activity", fontsize=9)
+    return im3
 
+
+def _mnn_specificity_panel(ax: Axes, layout: _MnnLayout) -> tuple[Any, float]:
+    """Panel 4: ligand/receptor celltype specificity; returns the points and the size scale."""
+    source_d, row_pos, groups = layout.source_d, layout.row_pos, layout.groups
     # Panel 4: ligand/receptor celltype specificity, colored by scaled
     # pseudobulk expression, sized by fraction of group expressing.
-    ax = axes[3]
     cols = [f"{lr}\n{g}" for g in groups for lr in ("ligand", "receptor")]
     col_pos = {c: i for i, c in enumerate(cols)}
     cs_rows = []
@@ -592,7 +624,12 @@ def plot_mnn_sample_activity(
     ax.set_xticklabels(cols, fontsize=6.5, rotation=45, ha="right")
     ax.set_yticks([])
     ax.set_title("Celltype specificity", fontsize=9)
+    return sc4, fraction_vmax
 
+
+def _mnn_route_separators(axes: Sequence[Axes], layout: _MnnLayout) -> None:
+    """Separator between each sender->receiver route's block of rows, on panels 2-4."""
+    group_boundaries = layout.group_boundaries
     # Separator between each sender->receiver route's block of rows, on
     # panels 2-4 (not panel 1, which already has its own bordered route
     # boxes as separation, or the legend column) -- confirmed too
@@ -604,12 +641,25 @@ def plot_mnn_sample_activity(
             ax.plot(xlim, [y, y], color="0.75", linewidth=0.7, zorder=0)
         ax.set_xlim(xlim)
 
+
+def _mnn_legend(
+    fig: Figure,
+    legend_ax: Axes,
+    layout: _MnnLayout,
+    geom: _MnnGeometry,
+    mappables: tuple[Any, Any, Any, Any],
+    fraction_vmax: float,
+) -> None:
+    """The stacked legend column: colorbars with numeric ticks, and the two size keys."""
+    sc1, im2, im3, sc4 = mappables
+    source_d = layout.source_d
+    keep_sizes = _MNN_KEEP_SIZES
+    UNIT_IN, legend_units = geom.unit_in, geom.legend_units
     # Legend column: a proper stacked legend (colorbars with real numeric
     # ticks + size keys) instead of only inline panel titles -- confirmed
     # against the reference figure that this is what read as "cooler":
     # nothing before this told a reader what a specific color or dot size
     # actually MEANT quantitatively.
-    legend_ax = axes[4]
     legend_ax.set_axis_off()
     legend_ax.set_xlim(0, 1)
     legend_ax.set_ylim(0, 1)
@@ -622,7 +672,7 @@ def plot_mnn_sample_activity(
     cbar_frac_width = CBAR_WIDTH_IN / legend_width_in
 
     def _cbar(mappable: ScalarMappable, y0: float, h: float, title: str) -> None:
-        cax = legend_ax.inset_axes([0.05, y0, cbar_frac_width, h])
+        cax = legend_ax.inset_axes((0.05, y0, cbar_frac_width, h))
         cb = fig.colorbar(mappable, cax=cax)
         cb.ax.tick_params(labelsize=7)
         # Title sits ABOVE the colorbar (va="bottom", anchored at the top
@@ -706,6 +756,87 @@ def plot_mnn_sample_activity(
             style="italic",
             color="0.3",
         )
+
+
+def plot_mnn_sample_activity(
+    sample_df: pd.DataFrame,
+    source_df: pd.DataFrame,
+    *,
+    top_n: int = 20,
+    cluster_labels: dict[str, str] | None = None,
+    group_order: Sequence[str] | None = None,
+) -> Figure:
+    """MultiNicheNet's own headline figure: per-sample expression, scaled and
+    raw ligand activity in the receiver, and ligand/receptor celltype
+    specificity, for the same top-N prioritized LR interactions.
+
+    Reproduces multinichenetr's own make_sample_lr_prod_activity_plots() in
+    matplotlib/house style rather than importing its ggplot output: same 4
+    panels, same source columns (sample_prioritization_tbl for panel 1;
+    group_prioritization_table_source for panels 2-3 and most of panel 4).
+
+    ``source_df`` must additionally carry scaled_pb_ligand/scaled_pb_receptor
+    (panel 4's color) merged in by the caller from group_prioritization_tbl
+    (mnn_prioritization.csv) on (id, group) -- confirmed against a real
+    MultiNicheNet rerun that those two columns are NOT part of
+    group_prioritization_table_source itself, despite both being read from
+    the same multi_nichenet_analysis() call's prioritization_tables.
+
+    Significance markers (panel 2) use RAW p_val_ligand/p_val_receptor with
+    an OR across the two, not p_adj with AND: confirmed against a real
+    MultiNicheNet run that the adjusted-AND criterion never fires on a
+    prioritized top-N shortlist (a real cohort tests 140k+ LR-sender-
+    receiver combinations, so FDR correction is heavy relative to a
+    hand-picked top 20-30) -- 0 of a real top-20 passed adjusted-OR, 14 of
+    20 passed raw-OR. MultiNicheNet's own prioritization_score is already a
+    soft composite that doesn't gate on DE significance, so a marker here
+    is "at least nominal DE support", not a hard significance claim.
+
+    Deliberately simplified from the reference: rows are grouped by
+    sender -> receiver route (separator lines, not nested facet strips --
+    matplotlib has no facet_grid equivalent, and free per-facet row heights
+    add real complexity for a readability gain grouped+separated rows
+    already get most of), sorted by prioritization_score within each route
+    (strongest nearest the top), and panels 2/3 show one activity value per
+    group rather than splitting by up/down direction (redundant with
+    activity_scaled's own sign in the near-totality of real rows). A
+    deliberate exception to one-plot-per-file, like
+    plot_tensor_factors: comparing these 4 views for the SAME interactions
+    is the entire point of the figure.
+    """
+    layout = _mnn_layout(sample_df, source_df, top_n, cluster_labels, group_order)
+    if layout is None:
+        return empty_figure()
+    geom = _mnn_geometry(layout)
+
+    fig, axes = plt.subplots(
+        1,
+        5,
+        # 0.5in/row (was 0.35) and extra top margin for the group header --
+        # confirmed too cramped on a real render next to the reference.
+        figsize=(geom.fig_width_in, max(3.5, 0.5 * len(layout.rows) + 1.0)),
+        squeeze=True,
+        gridspec_kw={
+            "width_ratios": [
+                # Extra width for the label/route margin: without it, that
+                # margin visually compresses the actual sample-column area
+                # instead of getting its own physical space.
+                geom.content_units + geom.margin_units,
+                geom.panel2_units,
+                geom.panel3_units,
+                geom.panel4_units,
+                geom.legend_units,
+            ],
+            "wspace": 0.35,
+        },
+    )
+
+    sc1 = _mnn_sample_panel(axes[0], layout, geom)
+    im2 = _mnn_activity_panel(axes[1], layout)
+    im3 = _mnn_ligand_activity_panel(axes[2], layout)
+    sc4, fraction_vmax = _mnn_specificity_panel(axes[3], layout)
+    _mnn_route_separators(axes, layout)
+    _mnn_legend(fig, axes[4], layout, geom, (sc1, im2, im3, sc4), fraction_vmax)
 
     # No fig.tight_layout(): confirmed (by diffing renders with it patched
     # to a no-op) it changes NOTHING on this figure -- the inset_axes-based
