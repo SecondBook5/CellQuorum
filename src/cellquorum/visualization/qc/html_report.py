@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import html
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -530,6 +531,335 @@ def build_rule_attribution_table(
     return pd.DataFrame(rows).sort_values("cells_failed", ascending=False).reset_index(drop=True)
 
 
+@dataclass(frozen=True)
+class _Cohort:
+    """The headline counts every section of the report refers back to."""
+
+    n_in: int
+    n_kept: int
+    n_samples: int
+
+    @property
+    def n_removed(self) -> int:
+        return self.n_in - self.n_kept
+
+    @property
+    def pct_removed(self) -> float:
+        return 100.0 * self.n_removed / self.n_in if self.n_in else 0.0
+
+    @classmethod
+    def from_sample_table(cls, sample_table: pd.DataFrame) -> _Cohort:
+        total_row = sample_table.loc[sample_table["sample"].eq("TOTAL")]
+        return cls(
+            n_in=int(total_row["cells_in"].iloc[0]) if len(total_row) else 0,
+            n_kept=int(total_row["cells_kept"].iloc[0]) if len(total_row) else 0,
+            n_samples=int(len(sample_table) - len(total_row)),
+        )
+
+
+def _header_html(project: str, stamp: str, floors: dict[str, int | None] | None) -> list[str]:
+    # QC has no mode: the floors are the only thing that can remove a barcode, and graded
+    # adjudication assigns permissions without deleting. So the honest header states the floors
+    # rather than a mode name, and says plainly when none of them is set.
+    active = {name: value for name, value in (floors or {}).items() if value is not None}
+    floor_text = (
+        " &middot; ".join(
+            f"<code>{_esc(name)} &ge; {value:,}</code>" for name, value in active.items()
+        )
+        if active
+        else "<code>no floors set</code> &middot; no barcode was removed"
+    )
+    return [
+        f"<h1>QC report &mdash; {_esc(project)}</h1>",
+        f'<p class="sub">Generated {stamp} &middot; {floor_text}</p>',
+    ]
+
+
+def _funnel_html(sample_table: pd.DataFrame, cohort: _Cohort) -> list[str]:
+    """Cohort funnel."""
+    worst = sample_table.loc[~sample_table["sample"].eq("TOTAL")]
+    worst_pct = float(worst["pct_removed"].max()) if len(worst) else float("nan")
+    worst_name = (
+        str(worst.loc[worst["pct_removed"].idxmax(), "sample"])
+        if len(worst) and np.isfinite(worst_pct)
+        else "—"
+    )
+    body = ['<div class="funnel">']
+    body.append(
+        f'<div class="stat"><div class="n">{_num(cohort.n_in)}</div>'
+        '<div class="k">Cells in</div></div>'
+    )
+    body.append(
+        f'<div class="stat"><div class="n">{_num(cohort.n_kept)}</div>'
+        '<div class="k">Retained</div></div>'
+    )
+    body.append(
+        f'<div class="stat warn"><div class="n">{_num(cohort.n_removed)}</div>'
+        f'<div class="k">Removed ({cohort.pct_removed:.1f}%)</div></div>'
+    )
+    if cohort.n_samples > 1:
+        body.append(
+            f'<div class="stat"><div class="n">{_num(cohort.n_samples)}</div>'
+            '<div class="k">Samples</div></div>'
+        )
+    if cohort.n_samples > 1 and np.isfinite(worst_pct):
+        body.append(
+            f'<div class="stat"><div class="n">{worst_pct:.1f}%</div>'
+            f'<div class="k">Worst sample &middot; {_esc(worst_name)}</div></div>'
+        )
+    body.append("</div>")
+    return body
+
+
+def _graded_html(graded_states: pd.DataFrame) -> list[str]:
+    """Graded adjudication. Placed directly under the funnel because it is the verdict.
+
+    The floors below removed 13 barcodes of 201,871 on the validation cohort, while this
+    decides what the other 201,858 are allowed to do.
+    """
+    body = ["<h2>What the evidence concluded</h2>"]
+    body.append(
+        '<p class="sub">Technical evidence, graded per cell within its own lineage, then '
+        "combined. Two routes to quarantine only: a barcode too uninformative to model, or "
+        "severe evidence from at least two <em>independent</em> families. A single extreme "
+        "axis never condemns a cell on its own.</p>"
+    )
+    body.append('<div class="funnel">')
+    for _, record in graded_states.iterrows():
+        css = "stat" if record["state"] == "core" else "stat warn"
+        body.append(
+            f'<div class="{css}"><div class="n">{_num(record["cells"])}</div>'
+            f'<div class="k">{_esc(record["state"])} '
+            f'({float(record["pct"]):.1f}%)</div></div>'
+        )
+    body.append("</div>")
+
+    body.append("<table><thead><tr>")
+    for name, css in (
+        ("State", ' class="txt"'),
+        ("Cells", ""),
+        ("%", ""),
+        ("Why", ' class="txt"'),
+    ):
+        body.append(f"<th{css}>{name}</th>")
+    body.append("</tr></thead><tbody>")
+    for _, record in graded_states.iterrows():
+        reasons = record["reasons"]
+        for index, (code, count) in enumerate(reasons):
+            body.append("<tr>")
+            if index == 0:
+                body.append(
+                    f'<td class="txt" rowspan="{len(reasons)}"><strong>'
+                    f'{_esc(record["state"])}</strong><br>'
+                    f'<span class="nil">{_esc(record["meaning"])}</span></td>'
+                )
+            body.append(_cell(count))
+            share = 100.0 * count / int(record["cells"]) if int(record["cells"]) else 0.0
+            body.append(_pct_bar(share, warn_above=101.0))
+            body.append(
+                f'<td class="txt"><code>{_esc(code)}</code> &mdash; '
+                f"{_esc(_REASON_TEXT.get(code, 'reason not described'))}</td>"
+            )
+            body.append("</tr>")
+    body.append(
+        "</tbody><caption>Percentages are within the state, not of the cohort. "
+        "A cell has exactly one reason.</caption></table>"
+    )
+    return body
+
+
+def _eligibility_html(eligibility: pd.DataFrame) -> list[str]:
+    body = ["<h2>What each analysis may be fitted on</h2>"]
+    body.append(
+        '<p class="sub">The verdict assigns permissions rather than deleting cells, so this '
+        "is what QC actually controls: every cohort statistic downstream is estimated from "
+        "the cells counted here.</p>"
+    )
+    body.append(
+        '<table><thead><tr><th class="txt">Analysis</th><th>May fit</th>'
+        "<th>% of cells</th></tr></thead><tbody>"
+    )
+    for _, record in eligibility.iterrows():
+        body.append("<tr>")
+        body.append(f'<td class="txt">{_esc(record["analysis"])}</td>')
+        body.append(_cell(record["may_fit"]))
+        body.append(_pct_bar(float(record["pct"]), warn_above=101.0))
+        body.append("</tr>")
+    body.append(
+        "</tbody><caption>A cell may be transformed by a model it is not permitted to fit "
+        "&mdash; that is the point of the distinction.</caption></table>"
+    )
+    return body
+
+
+def _attrition_html(sample_table: pd.DataFrame, case_label: str | None) -> list[str]:
+    """Per-sample attrition table.
+
+    Skipped by the caller for a single unlabelled library: the table would be the funnel
+    restated as one row plus its own total.
+    """
+    body = ["<h2>Per-sample attrition</h2>"]
+    optional = [c for c in ("donor", "condition") if c in sample_table.columns]
+    metric_labels = [
+        ("median_umi", "Median UMI", 0),
+        ("median_genes", "Median genes", 0),
+        ("median_pct_mito", "Median %mito", 2),
+        ("median_pct_ribo", "Median %ribo", 2),
+    ]
+    present_metrics = [m for m in metric_labels if m[0] in sample_table.columns]
+    header = [
+        "Sample",
+        *[c.title() for c in optional],
+        "Cells in",
+        "Kept",
+        "Removed",
+        "% removed",
+    ]
+    header += [label for _, label, _ in present_metrics]
+    body.append("<table><thead><tr>")
+    for index, name in enumerate(header):
+        css = ' class="txt"' if index <= len(optional) else ""
+        body.append(f"<th{css}>{_esc(name)}</th>")
+    body.append("</tr></thead><tbody>")
+    for _, record in sample_table.iterrows():
+        is_total = str(record["sample"]) == "TOTAL"
+        body.append('<tr class="total">' if is_total else "<tr>")
+        body.append(f'<td class="txt">{_esc(record["sample"])}</td>')
+        for column in optional:
+            value = record.get(column, "")
+            if column == "condition" and value:
+                body.append(f'<td class="txt">{_chip(str(value), case_label=case_label)}</td>')
+            else:
+                body.append(f'<td class="txt">{_esc(value)}</td>')
+        body.append(_cell(record.get("cells_in")))
+        body.append(_cell(record.get("cells_kept")))
+        body.append(_cell(record.get("cells_removed")))
+        body.append(_pct_bar(_as_float(record.get("pct_removed"))))
+        for key, _, digits in present_metrics:
+            body.append(_cell(record.get(key), digits))
+        body.append("</tr>")
+    body.append(
+        "</tbody><caption>Medians are computed on all input cells for that sample, "
+        "before filtering. Click any header to sort.</caption></table>"
+    )
+    return body
+
+
+def _rule_attribution_html(rule_table: pd.DataFrame) -> list[str]:
+    body = ["<h2>Which rule removed what</h2>"]
+    body.append(
+        "<table><thead><tr>"
+        '<th class="txt">Rule</th><th>Lower</th><th>Upper</th>'
+        "<th>Cells failed</th><th>% of input</th><th>Only this rule</th>"
+        "</tr></thead><tbody>"
+    )
+    for _, record in rule_table.iterrows():
+        body.append("<tr>")
+        body.append(f'<td class="txt">{_esc(record["rule"])}</td>')
+        body.append(_cell(record.get("lower"), 2))
+        body.append(_cell(record.get("upper"), 2))
+        body.append(_cell(record.get("cells_failed")))
+        body.append(_pct_bar(_as_float(record.get("pct_of_input"))))
+        body.append(_cell(record.get("only_this_rule")))
+        body.append("</tr>")
+    body.append(
+        "</tbody><caption>Rules overlap, so <em>cells failed</em> does not sum to the "
+        "total removed. <em>Only this rule</em> counts cells no other rule caught &mdash; "
+        "a rule with zero here is fully redundant.</caption></table>"
+    )
+    return body
+
+
+def _thresholds_html(thresholds: pd.DataFrame) -> list[str]:
+    body = ["<h2>Applied thresholds</h2>"]
+    columns = [
+        c
+        for c in ("axis", "metric", "rule_name", "lower", "upper", "source", "n_observations")
+        if c in thresholds.columns
+    ]
+    body.append("<table><thead><tr>")
+    for column in columns:
+        css = ' class="txt"' if column in {"axis", "metric", "rule_name", "source"} else ""
+        body.append(f"<th{css}>{_esc(column.replace('_', ' ').title())}</th>")
+    body.append("</tr></thead><tbody>")
+    for _, record in thresholds.iterrows():
+        body.append("<tr>")
+        for column in columns:
+            value = record.get(column)
+            if column in {"axis", "metric", "rule_name", "source"}:
+                body.append(f'<td class="txt">{_esc(value)}</td>')
+            elif pd.isna(value):
+                body.append('<td class="nil">&mdash;</td>')
+            else:
+                body.append(_cell(value, 3 if column in {"lower", "upper"} else 0))
+        body.append("</tr>")
+    body.append(
+        "</tbody><caption>MAD bounds are data-derived; <code>fixed</code> bounds come "
+        "from config. <em>N observations</em> is the population the bound was estimated "
+        "on.</caption></table>"
+    )
+    return body
+
+
+def _gene_filtering_html(gene_summary: dict[str, int]) -> list[str]:
+    n_genes = int(gene_summary.get("n_genes", 0))
+    n_genes_kept = int(gene_summary.get("n_genes_kept", 0))
+    body = ["<h2>Gene filtering</h2>", '<div class="funnel">']
+    body.append(
+        f'<div class="stat"><div class="n">{_num(n_genes)}</div><div class="k">Genes in</div></div>'
+    )
+    body.append(
+        f'<div class="stat"><div class="n">{_num(n_genes_kept)}</div>'
+        '<div class="k">Retained</div></div>'
+    )
+    removed = n_genes - n_genes_kept
+    pct = 100.0 * removed / n_genes if n_genes else 0.0
+    body.append(
+        f'<div class="stat warn"><div class="n">{_num(removed)}</div>'
+        f'<div class="k">Removed ({pct:.1f}%)</div></div>'
+    )
+    body.append("</div>")
+    return body
+
+
+def _figures_html(figures: Sequence[Path]) -> list[str]:
+    """Evidence figures, inlined.
+
+    These are the calibration outputs: distributions the bars were read off, and the
+    population-level view of what the verdict cost.
+    """
+    body = ["<h2>Evidence and calibration figures</h2>"]
+    body.append(
+        '<p class="sub">Distributions are on RAW metrics, pre-filter, because a figure drawn '
+        "after filtering cannot justify the bound that produced it. Paired panels read "
+        "control-arm-left within each donor.</p>"
+    )
+    for path in figures:
+        if not path.exists():
+            continue
+        body.append('<figure class="fig">')
+        body.append(f'<img alt="{_esc(path.stem)}" src="{embed_png(path)}">')
+        body.append(f"<figcaption>{_esc(path.stem)}</figcaption>")
+        body.append("</figure>")
+    return body
+
+
+def _notes_html(notes: Sequence[str]) -> list[str]:
+    body = ['<h2>Notes</h2><ul class="notes">']
+    for note in notes:
+        body.append(f"<li>{_esc(note)}</li>")
+    body.append("</ul>")
+    return body
+
+
+_FOOTER_HTML = (
+    "<footer>Written by CellQuorum QC. Every number here is read from "
+    "<code>cell_metrics.csv</code>, <code>cell_floors.csv</code> and the graded "
+    "evidence columns on <code>qc.h5ad</code> in this directory &mdash; those remain "
+    "canonical, and this report recomputes none of them.</footer>"
+)
+
+
 def render_qc_html_report(
     *,
     sample_table: pd.DataFrame,
@@ -571,287 +901,28 @@ def render_qc_html_report(
     """
 
     stamp = (generated_at or datetime.now(UTC)).strftime("%Y-%m-%d %H:%M UTC")
-    total_row = sample_table.loc[sample_table["sample"].eq("TOTAL")]
-    n_in = int(total_row["cells_in"].iloc[0]) if len(total_row) else 0
-    n_kept = int(total_row["cells_kept"].iloc[0]) if len(total_row) else 0
-    n_removed = n_in - n_kept
-    pct_removed = 100.0 * n_removed / n_in if n_in else 0.0
-    n_samples = int(len(sample_table) - len(total_row))
+    cohort = _Cohort.from_sample_table(sample_table)
 
     body: list[str] = ['<div class="wrap">']
-    body.append(f"<h1>QC report &mdash; {_esc(project)}</h1>")
-    # QC has no mode: the floors are the only thing that can remove a barcode, and graded
-    # adjudication assigns permissions without deleting. So the honest header states the floors
-    # rather than a mode name, and says plainly when none of them is set.
-    active = {name: value for name, value in (floors or {}).items() if value is not None}
-    floor_text = (
-        " &middot; ".join(
-            f"<code>{_esc(name)} &ge; {value:,}</code>" for name, value in active.items()
-        )
-        if active
-        else "<code>no floors set</code> &middot; no barcode was removed"
-    )
-    body.append(f'<p class="sub">Generated {stamp} &middot; {floor_text}</p>')
-
-    # Cohort funnel.
-    worst = sample_table.loc[~sample_table["sample"].eq("TOTAL")]
-    worst_pct = float(worst["pct_removed"].max()) if len(worst) else float("nan")
-    worst_name = (
-        str(worst.loc[worst["pct_removed"].idxmax(), "sample"])
-        if len(worst) and np.isfinite(worst_pct)
-        else "—"
-    )
-    body.append('<div class="funnel">')
-    body.append(
-        f'<div class="stat"><div class="n">{_num(n_in)}</div><div class="k">Cells in</div></div>'
-    )
-    body.append(
-        f'<div class="stat"><div class="n">{_num(n_kept)}</div><div class="k">Retained</div></div>'
-    )
-    body.append(
-        f'<div class="stat warn"><div class="n">{_num(n_removed)}</div>'
-        f'<div class="k">Removed ({pct_removed:.1f}%)</div></div>'
-    )
-    if n_samples > 1:
-        body.append(
-            f'<div class="stat"><div class="n">{_num(n_samples)}</div>'
-            '<div class="k">Samples</div></div>'
-        )
-    if n_samples > 1 and np.isfinite(worst_pct):
-        body.append(
-            f'<div class="stat"><div class="n">{worst_pct:.1f}%</div>'
-            f'<div class="k">Worst sample &middot; {_esc(worst_name)}</div></div>'
-        )
-    body.append("</div>")
-
-    # Graded adjudication. Placed directly under the funnel because it is the verdict: the
-    # floors below removed 13 barcodes of 201,871 on the validation cohort, while this decides
-    # what the other 201,858 are allowed to do.
+    body += _header_html(project, stamp, floors)
+    body += _funnel_html(sample_table, cohort)
     if graded_states is not None and not graded_states.empty:
-        body.append("<h2>What the evidence concluded</h2>")
-        body.append(
-            '<p class="sub">Technical evidence, graded per cell within its own lineage, then '
-            "combined. Two routes to quarantine only: a barcode too uninformative to model, or "
-            "severe evidence from at least two <em>independent</em> families. A single extreme "
-            "axis never condemns a cell on its own.</p>"
-        )
-        body.append('<div class="funnel">')
-        for _, record in graded_states.iterrows():
-            css = "stat" if record["state"] == "core" else "stat warn"
-            body.append(
-                f'<div class="{css}"><div class="n">{_num(record["cells"])}</div>'
-                f'<div class="k">{_esc(record["state"])} '
-                f'({float(record["pct"]):.1f}%)</div></div>'
-            )
-        body.append("</div>")
-
-        body.append("<table><thead><tr>")
-        for name, css in (
-            ("State", ' class="txt"'),
-            ("Cells", ""),
-            ("%", ""),
-            ("Why", ' class="txt"'),
-        ):
-            body.append(f"<th{css}>{name}</th>")
-        body.append("</tr></thead><tbody>")
-        for _, record in graded_states.iterrows():
-            reasons = record["reasons"]
-            for index, (code, count) in enumerate(reasons):
-                body.append("<tr>")
-                if index == 0:
-                    body.append(
-                        f'<td class="txt" rowspan="{len(reasons)}"><strong>'
-                        f'{_esc(record["state"])}</strong><br>'
-                        f'<span class="nil">{_esc(record["meaning"])}</span></td>'
-                    )
-                body.append(_cell(count))
-                share = 100.0 * count / int(record["cells"]) if int(record["cells"]) else 0.0
-                body.append(_pct_bar(share, warn_above=101.0))
-                body.append(
-                    f'<td class="txt"><code>{_esc(code)}</code> &mdash; '
-                    f"{_esc(_REASON_TEXT.get(code, 'reason not described'))}</td>"
-                )
-                body.append("</tr>")
-        body.append(
-            "</tbody><caption>Percentages are within the state, not of the cohort. "
-            "A cell has exactly one reason.</caption></table>"
-        )
-
+        body += _graded_html(graded_states)
     if eligibility is not None and not eligibility.empty:
-        body.append("<h2>What each analysis may be fitted on</h2>")
-        body.append(
-            '<p class="sub">The verdict assigns permissions rather than deleting cells, so this '
-            "is what QC actually controls: every cohort statistic downstream is estimated from "
-            "the cells counted here.</p>"
-        )
-        body.append(
-            '<table><thead><tr><th class="txt">Analysis</th><th>May fit</th>'
-            "<th>% of cells</th></tr></thead><tbody>"
-        )
-        for _, record in eligibility.iterrows():
-            body.append("<tr>")
-            body.append(f'<td class="txt">{_esc(record["analysis"])}</td>')
-            body.append(_cell(record["may_fit"]))
-            body.append(_pct_bar(float(record["pct"]), warn_above=101.0))
-            body.append("</tr>")
-        body.append(
-            "</tbody><caption>A cell may be transformed by a model it is not permitted to fit "
-            "&mdash; that is the point of the distinction.</caption></table>"
-        )
-
-    # Per-sample attrition. Skipped for a single unlabelled library: the table
-    # would be the funnel restated as one row plus its own total.
-    if n_samples > 1:
-        body.append("<h2>Per-sample attrition</h2>")
-        optional = [c for c in ("donor", "condition") if c in sample_table.columns]
-        metric_labels = [
-            ("median_umi", "Median UMI", 0),
-            ("median_genes", "Median genes", 0),
-            ("median_pct_mito", "Median %mito", 2),
-            ("median_pct_ribo", "Median %ribo", 2),
-        ]
-        present_metrics = [m for m in metric_labels if m[0] in sample_table.columns]
-        header = [
-            "Sample",
-            *[c.title() for c in optional],
-            "Cells in",
-            "Kept",
-            "Removed",
-            "% removed",
-        ]
-        header += [label for _, label, _ in present_metrics]
-        body.append("<table><thead><tr>")
-        for index, name in enumerate(header):
-            css = ' class="txt"' if index <= len(optional) else ""
-            body.append(f"<th{css}>{_esc(name)}</th>")
-        body.append("</tr></thead><tbody>")
-        for _, record in sample_table.iterrows():
-            is_total = str(record["sample"]) == "TOTAL"
-            body.append('<tr class="total">' if is_total else "<tr>")
-            body.append(f'<td class="txt">{_esc(record["sample"])}</td>')
-            for column in optional:
-                value = record.get(column, "")
-                if column == "condition" and value:
-                    body.append(f'<td class="txt">{_chip(str(value), case_label=case_label)}</td>')
-                else:
-                    body.append(f'<td class="txt">{_esc(value)}</td>')
-            body.append(_cell(record.get("cells_in")))
-            body.append(_cell(record.get("cells_kept")))
-            body.append(_cell(record.get("cells_removed")))
-            body.append(_pct_bar(_as_float(record.get("pct_removed"))))
-            for key, _, digits in present_metrics:
-                body.append(_cell(record.get(key), digits))
-            body.append("</tr>")
-        body.append(
-            "</tbody><caption>Medians are computed on all input cells for that sample, "
-            "before filtering. Click any header to sort.</caption></table>"
-        )
-
-    # Rule attribution.
+        body += _eligibility_html(eligibility)
+    if cohort.n_samples > 1:
+        body += _attrition_html(sample_table, case_label)
     if len(rule_table):
-        body.append("<h2>Which rule removed what</h2>")
-        body.append(
-            "<table><thead><tr>"
-            '<th class="txt">Rule</th><th>Lower</th><th>Upper</th>'
-            "<th>Cells failed</th><th>% of input</th><th>Only this rule</th>"
-            "</tr></thead><tbody>"
-        )
-        for _, record in rule_table.iterrows():
-            body.append("<tr>")
-            body.append(f'<td class="txt">{_esc(record["rule"])}</td>')
-            body.append(_cell(record.get("lower"), 2))
-            body.append(_cell(record.get("upper"), 2))
-            body.append(_cell(record.get("cells_failed")))
-            body.append(_pct_bar(_as_float(record.get("pct_of_input"))))
-            body.append(_cell(record.get("only_this_rule")))
-            body.append("</tr>")
-        body.append(
-            "</tbody><caption>Rules overlap, so <em>cells failed</em> does not sum to the "
-            "total removed. <em>Only this rule</em> counts cells no other rule caught &mdash; "
-            "a rule with zero here is fully redundant.</caption></table>"
-        )
-
-    # Applied thresholds.
+        body += _rule_attribution_html(rule_table)
     if thresholds is not None and len(thresholds):
-        body.append("<h2>Applied thresholds</h2>")
-        columns = [
-            c
-            for c in ("axis", "metric", "rule_name", "lower", "upper", "source", "n_observations")
-            if c in thresholds.columns
-        ]
-        body.append("<table><thead><tr>")
-        for column in columns:
-            css = ' class="txt"' if column in {"axis", "metric", "rule_name", "source"} else ""
-            body.append(f"<th{css}>{_esc(column.replace('_', ' ').title())}</th>")
-        body.append("</tr></thead><tbody>")
-        for _, record in thresholds.iterrows():
-            body.append("<tr>")
-            for column in columns:
-                value = record.get(column)
-                if column in {"axis", "metric", "rule_name", "source"}:
-                    body.append(f'<td class="txt">{_esc(value)}</td>')
-                elif pd.isna(value):
-                    body.append('<td class="nil">&mdash;</td>')
-                else:
-                    body.append(_cell(value, 3 if column in {"lower", "upper"} else 0))
-            body.append("</tr>")
-        body.append(
-            "</tbody><caption>MAD bounds are data-derived; <code>fixed</code> bounds come "
-            "from config. <em>N observations</em> is the population the bound was estimated "
-            "on.</caption></table>"
-        )
-
-    # Gene filtering.
+        body += _thresholds_html(thresholds)
     if gene_summary:
-        n_genes = int(gene_summary.get("n_genes", 0))
-        n_genes_kept = int(gene_summary.get("n_genes_kept", 0))
-        body.append("<h2>Gene filtering</h2>")
-        body.append('<div class="funnel">')
-        body.append(
-            f'<div class="stat"><div class="n">{_num(n_genes)}</div>'
-            '<div class="k">Genes in</div></div>'
-        )
-        body.append(
-            f'<div class="stat"><div class="n">{_num(n_genes_kept)}</div>'
-            '<div class="k">Retained</div></div>'
-        )
-        removed = n_genes - n_genes_kept
-        pct = 100.0 * removed / n_genes if n_genes else 0.0
-        body.append(
-            f'<div class="stat warn"><div class="n">{_num(removed)}</div>'
-            f'<div class="k">Removed ({pct:.1f}%)</div></div>'
-        )
-        body.append("</div>")
-
-    # Evidence figures, inlined. These are the calibration outputs: distributions the bars were
-    # read off, and the population-level view of what the verdict cost.
+        body += _gene_filtering_html(gene_summary)
     if figures:
-        body.append("<h2>Evidence and calibration figures</h2>")
-        body.append(
-            '<p class="sub">Distributions are on RAW metrics, pre-filter, because a figure drawn '
-            "after filtering cannot justify the bound that produced it. Paired panels read "
-            "control-arm-left within each donor.</p>"
-        )
-        for path in figures:
-            if not path.exists():
-                continue
-            body.append('<figure class="fig">')
-            body.append(f'<img alt="{_esc(path.stem)}" src="{embed_png(path)}">')
-            body.append(f"<figcaption>{_esc(path.stem)}</figcaption>")
-            body.append("</figure>")
-
+        body += _figures_html(figures)
     if notes:
-        body.append('<h2>Notes</h2><ul class="notes">')
-        for note in notes:
-            body.append(f"<li>{_esc(note)}</li>")
-        body.append("</ul>")
-
-    body.append(
-        "<footer>Written by CellQuorum QC. Every number here is read from "
-        "<code>cell_metrics.csv</code>, <code>cell_floors.csv</code> and the graded "
-        "evidence columns on <code>qc.h5ad</code> in this directory &mdash; those remain "
-        "canonical, and this report recomputes none of them.</footer>"
-    )
+        body += _notes_html(notes)
+    body.append(_FOOTER_HTML)
     body.append("</div>")
 
     return (
