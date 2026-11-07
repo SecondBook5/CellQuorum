@@ -1306,6 +1306,331 @@ def ligand_receiver_composite(
 _CHORD_UP, _CHORD_DOWN, _CHORD_GREY = "#C1121F", "#2A78D2", "#B9BEC4"
 
 
+@dataclass(frozen=True)
+class _ChordColumns:
+    sender: str
+    ligand: str
+    receiver: str
+    receptor: str
+    weight: str
+
+
+def _chord_pt(r: float, t: float) -> tuple[float, float]:
+    return (r * np.cos(t), r * np.sin(t))
+
+
+def _chord_spread(mid: list[float], min_gap: float = 0.075) -> list[float]:
+    """Push neighbouring angles apart until none is closer than ``min_gap``."""
+    idx = np.argsort(mid)
+    out = np.array(mid, dtype=float)
+    for _ in range(60):
+        ordered_angles = out[idx]
+        for i in range(1, len(ordered_angles)):
+            short = min_gap - (ordered_angles[i] - ordered_angles[i - 1])
+            if short > 0:
+                ordered_angles[i] += short / 2
+                ordered_angles[i - 1] -= short / 2
+        out[idx] = ordered_angles
+    return list(out)
+
+
+def _chord_frame(edges: pd.DataFrame, cols: _ChordColumns, top_n: int | None) -> pd.DataFrame:
+    """The drawable edges: finite non-zero weights, optionally the strongest ``top_n``."""
+    d = edges.copy()
+    d[cols.weight] = d[cols.weight].astype(float)
+    d = d[np.isfinite(d[cols.weight]) & (d[cols.weight].abs() > 0)]
+    if top_n is not None:
+        d = d.reindex(d[cols.weight].abs().sort_values(ascending=False).index).head(top_n)
+    return d
+
+
+class _ChordDrawer:
+    """Draws one chord: sectors by group, one ribbon per pair, names kept clear of each other."""
+
+    def __init__(
+        self,
+        d: pd.DataFrame,
+        cols: _ChordColumns,
+        *,
+        sender_palette: Mapping[str, str],
+        receiver_palette: Mapping[str, str],
+        flags: pd.Series,
+        marks: dict[str, str],
+        signed: bool,
+        ribbon_color: str,
+        scale: float | None,
+    ) -> None:
+        import matplotlib.pyplot as plt
+
+        self.d, self.cols, self.flags, self.marks = d, cols, flags, marks
+        self.sender_palette, self.receiver_palette = sender_palette, receiver_palette
+        self.signed, self.ribbon_color = signed, ribbon_color
+
+        self.lig_keys = self._order(cols.sender, cols.ligand, sender_palette)
+        self.rec_keys = self._order(cols.receiver, cols.receptor, receiver_palette)
+        total = float(scale) if scale is not None else float(d["w_abs"].sum())
+        self.gap, margin = 0.045, 0.18
+        self.unit = (
+            np.pi - 2 * margin - self.gap * max(len(self.lig_keys), len(self.rec_keys))
+        ) / total
+        self.lig_ang = self._angles(self.lig_keys, cols.sender, cols.ligand, np.pi / 2 + margin, 1)
+        self.rec_ang = self._angles(
+            self.rec_keys, cols.receiver, cols.receptor, np.pi / 2 - margin, -1
+        )
+        self.fig, self.ax = plt.subplots(figsize=(7.2, 5.6))
+        self.ax.set_xlim(-2.1, 2.3)
+        self.ax.set_ylim(-1.42, 1.3)
+        self.ax.set_aspect("equal")
+        self.ax.axis("off")
+        self.label_texts: dict[tuple[str, str], list[tuple[float, object]]] = {}
+        self.group_items: list[dict] = []
+        self.renderer: Any = None
+
+    def _order(
+        self, group_col: str, mol_col: str, palette: Mapping[str, str]
+    ) -> list[tuple[str, str]]:
+        sums = self.d.groupby([group_col, mol_col])["w_abs"].sum()
+        groups = sorted(
+            {g for g, _ in sums.index},
+            key=lambda g: (list(palette).index(g) if g in palette else len(palette), g),
+        )
+        return [(g, m) for g in groups for m in sums[g].sort_values(ascending=False).index]
+
+    def _angles(
+        self, keys: list[tuple[str, str]], col_g: str, col_m: str, start: float, direction: int
+    ) -> dict[tuple[str, str], tuple[float, float]]:
+        d = self.d
+        out, cursor = {}, start
+        for g, m in keys:
+            w = float(d.loc[(d[col_g] == g) & (d[col_m] == m), "w_abs"].sum()) * self.unit
+            out[(g, m)] = (cursor, cursor + direction * w)
+            cursor += direction * (w + self.gap)
+        return out
+
+    def draw(self) -> Figure:
+        self._ribbons()
+        self._molecule_labels()
+        self._start_renderer()
+        self._group_arc(self.lig_keys, self.lig_ang, self.sender_palette, "L")
+        self._group_arc(self.rec_keys, self.rec_ang, self.receiver_palette, "R")
+        return self.fig
+
+    def finish(self, title: str | None, note: str | None) -> Figure:
+        """Title and note, then keep the names off each other and inside the frame."""
+        if title:
+            self.ax.set_title(title, loc="left", fontsize=11, fontweight="bold", color=INK)
+        if note:
+            import textwrap
+
+            key = self.ax.text(
+                0.0,
+                -0.02,
+                textwrap.fill(note, width=90),
+                transform=self.ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7.5,
+                color=INK,
+            )
+            key.set_gid("note")
+        self._clear_overlaps()
+        self._fit_frame()
+        self._clear_overlaps()
+        self._fit_frame()
+        return self.fig
+
+    def _ribbon_colour(self, row: dict) -> str:
+        cols, marks = self.cols, self.marks
+        if self.signed:
+            return _CHORD_UP if row[cols.weight] > 0 else _CHORD_DOWN
+        if row[cols.ligand] in marks:
+            return marks[row[cols.ligand]]
+        if self.ribbon_color == "sender":
+            return self.sender_palette.get(row[cols.sender], _CHORD_GREY)
+        return _CHORD_GREY
+
+    def _ribbons(self) -> None:
+        from matplotlib.patches import PathPatch
+        from matplotlib.path import Path as MplPath
+
+        cols, unit = self.cols, self.unit
+        cursor_l = {k: min(v) for k, v in self.lig_ang.items()}
+        cursor_r = {k: max(v) for k, v in self.rec_ang.items()}
+        ordered = self.d.assign(strong=self.flags).sort_values("strong")
+        for row in ordered.to_dict("records"):
+            w = row["w_abs"] * unit
+            a0 = cursor_l[(row[cols.sender], row[cols.ligand])]
+            cursor_l[(row[cols.sender], row[cols.ligand])] = a0 + w
+            b1 = cursor_r[(row[cols.receiver], row[cols.receptor])]
+            cursor_r[(row[cols.receiver], row[cols.receptor])] = b1 - w
+            b0 = b1 - w
+            verts = [_chord_pt(0.98, a0)]
+            codes = [MplPath.MOVETO]
+            for t in np.linspace(a0, a0 + w, 8)[1:]:
+                verts.append(_chord_pt(0.98, t))
+                codes.append(MplPath.LINETO)
+            verts += [(0.0, 0.0), _chord_pt(0.98, b0)]
+            codes += [MplPath.CURVE3, MplPath.CURVE3]
+            for t in np.linspace(b0, b1, 8)[1:]:
+                verts.append(_chord_pt(0.98, t))
+                codes.append(MplPath.LINETO)
+            verts += [(0.0, 0.0), _chord_pt(0.98, a0)]
+            codes += [MplPath.CURVE3, MplPath.CURVE3]
+            colour = self._ribbon_colour(row)
+            strong = bool(row["strong"])
+            self.ax.add_patch(
+                PathPatch(
+                    MplPath(verts, codes),
+                    fc=colour,
+                    ec="none",
+                    alpha=0.85 if strong else 0.3,
+                    zorder=3 if strong else 2,
+                    gid=f"ribbon|{row[cols.ligand]}>{row[cols.receptor]}|{row[cols.receiver]}",
+                )
+            )
+
+    def _molecule_labels(self) -> None:
+        marks, ax = self.marks, self.ax
+        lig_mid = _chord_spread([sum(self.lig_ang[k]) / 2 for k in self.lig_keys])
+        rec_mid = _chord_spread([sum(self.rec_ang[k]) / 2 for k in self.rec_keys])
+        for (group, name), t in zip(self.lig_keys, lig_mid, strict=True):
+            colour = marks.get(name, INK)
+            lab = ax.text(
+                *_chord_pt(1.06, t),
+                name,
+                ha="right",
+                va="center",
+                fontsize=7.6,
+                color=colour,
+                fontweight="bold" if name in marks else "normal",
+                rotation=np.rad2deg(t) - 180,
+                rotation_mode="anchor",
+            )
+            lab.set_gid("ligand_label")
+            self.label_texts.setdefault(("L", group), []).append((t, lab))
+        for (group, name), t in zip(self.rec_keys, rec_mid, strict=True):
+            lab = ax.text(
+                *_chord_pt(1.06, t),
+                name,
+                ha="left",
+                va="center",
+                fontsize=7.6,
+                color=INK,
+                rotation=np.rad2deg(t),
+                rotation_mode="anchor",
+            )
+            lab.set_gid("receptor_label")
+            self.label_texts.setdefault(("R", group), []).append((t, lab))
+
+    def _start_renderer(self) -> None:
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+        fig = self.fig
+        self.renderer = (
+            fig.canvas.get_renderer()
+            if hasattr(fig.canvas, "get_renderer")
+            else FigureCanvasAgg(fig).get_renderer()
+        )
+
+    def _outer_radius(self, texts: list) -> float:
+        """How far from the centre a group's own molecule names reach, measured on the page."""
+        ax = self.ax
+        ax.apply_aspect()
+        radius = 0.0
+        for lab in texts:
+            box = lab.get_window_extent(self.renderer).transformed(ax.transData.inverted())
+            for x in (box.x0, box.x1):
+                for y in (box.y0, box.y1):
+                    radius = max(radius, float(np.hypot(x, y)))
+        return radius
+
+    def _group_arc(
+        self,
+        keys: list[tuple[str, str]],
+        ang: dict[tuple[str, str], tuple[float, float]],
+        palette: Mapping[str, str],
+        side: str,
+    ) -> None:
+        from matplotlib.patches import Wedge
+
+        ax = self.ax
+        groups = list(dict.fromkeys(k[0] for k in keys))
+        spans = {g: [ang[k] for k in keys if k[0] == g] for g in groups}
+        lows = {g: min(min(s) for s in spans[g]) for g in groups}
+        highs = {g: max(max(s) for s in spans[g]) for g in groups}
+        for g in groups:
+            ax.add_patch(
+                Wedge(
+                    (0, 0),
+                    1.0,
+                    np.rad2deg(lows[g]),
+                    np.rad2deg(highs[g]),
+                    width=0.03,
+                    fc=palette.get(g, "#6B7280"),
+                    ec="none",
+                )
+            )
+        # Small neighbouring sectors would print their names on top of each other, so the names
+        # are spread along the arc (a leader line would be the next step if it ever matters).
+        mids = _chord_spread([(lows[g] + highs[g]) / 2 for g in groups], min_gap=0.24)
+        for g, t in zip(groups, mids, strict=True):
+            # Beyond the molecule names of its own sector that lie near it on the circle, so the
+            # two never overlap; a long name far away along the arc does not push it out.
+            near = [lab for a, lab in self.label_texts.get((side, g), []) if abs(a - t) < 0.3]
+            reach = max(1.36, self._outer_radius(near) + 0.07)
+            lab = ax.text(
+                *_chord_pt(reach, t),
+                g,
+                ha="right" if side == "L" else "left",
+                va="center",
+                fontsize=10,
+                fontweight="bold",
+                color=palette.get(g, INK),
+            )
+            lab.set_gid("group_label")
+            self.group_items.append({"lab": lab, "angle": t, "reach": reach})
+
+    _NAMES = ("ligand_label", "receptor_label", "group_label")
+
+    def _clear_overlaps(self) -> None:
+        """Push each group name outward until it sits on no other name."""
+        ax, renderer = self.ax, self.renderer
+        ax.apply_aspect()
+        for item in self.group_items:
+            lab, angle = item["lab"], item["angle"]
+            others = [t for t in ax.texts if t.get_gid() in self._NAMES and t is not lab]
+            for _ in range(80):
+                box = lab.get_window_extent(renderer)
+                if not any(box.overlaps(o.get_window_extent(renderer)) for o in others):
+                    break
+                item["reach"] += 0.05
+                lab.set_position(_chord_pt(item["reach"], angle))
+
+    def _fit_frame(self) -> None:
+        """Widen the frame to whatever the names reach. Widening zooms the drawing out, which
+        makes the names larger in data units, so it is repeated until it stops changing."""
+        ax, renderer = self.ax, self.renderer
+        for _ in range(5):
+            ax.apply_aspect()
+            x_lo, x_hi = ax.get_xlim()
+            y_lo, y_hi = ax.get_ylim()
+            new = [x_lo, x_hi, y_lo, y_hi]
+            for lab in ax.texts:
+                if lab.get_gid() not in self._NAMES:
+                    continue
+                box = lab.get_window_extent(renderer).transformed(ax.transData.inverted())
+                new = [
+                    min(new[0], box.x0 - 0.05),
+                    max(new[1], box.x1 + 0.05),
+                    min(new[2], box.y0 - 0.05),
+                    max(new[3], box.y1 + 0.05),
+                ]
+            if np.allclose(new, [x_lo, x_hi, y_lo, y_hi], atol=1e-6):
+                return
+            ax.set_xlim(new[0], new[1])
+            ax.set_ylim(new[2], new[3])
+
+
 def ligand_receptor_chord(
     edges: pd.DataFrame,
     *,
@@ -1350,15 +1675,10 @@ def ligand_receptor_chord(
     if ribbon_color not in ("neutral", "sender"):
         raise ValueError(f"ribbon_color must be 'neutral' or 'sender', got {ribbon_color!r}")
     import matplotlib.pyplot as plt
-    from matplotlib.patches import PathPatch, Wedge
-    from matplotlib.path import Path as MplPath
 
     apply_theme("compact")
-    d = edges.copy()
-    d[weight_col] = d[weight_col].astype(float)
-    d = d[np.isfinite(d[weight_col]) & (d[weight_col].abs() > 0)]
-    if top_n is not None:
-        d = d.reindex(d[weight_col].abs().sort_values(ascending=False).index).head(top_n)
+    cols = _ChordColumns(sender_col, ligand_col, receiver_col, receptor_col, weight_col)
+    d = _chord_frame(edges, cols, top_n)
     if d.empty:
         fig = plt.figure(figsize=(6, 5.5))
         fig.add_subplot(111).axis("off")
@@ -1367,255 +1687,20 @@ def ligand_receptor_chord(
         d[col] = d[col].astype(str)
     d["w_abs"] = d[weight_col].abs()
     flags = d[significant_col].astype(bool) if significant_col else pd.Series(True, index=d.index)
-    marks = dict(highlight or {})
 
-    def _order(group_col: str, mol_col: str, palette: Mapping[str, str]) -> list[tuple[str, str]]:
-        sums = d.groupby([group_col, mol_col])["w_abs"].sum()
-        groups = sorted(
-            {g for g, _ in sums.index},
-            key=lambda g: (list(palette).index(g) if g in palette else len(palette), g),
-        )
-        return [(g, m) for g in groups for m in sums[g].sort_values(ascending=False).index]
-
-    lig_keys = _order(sender_col, ligand_col, sender_palette)
-    rec_keys = _order(receiver_col, receptor_col, receiver_palette)
-    total = float(scale) if scale is not None else float(d["w_abs"].sum())
-    gap, margin = 0.045, 0.18
-    unit = (np.pi - 2 * margin - gap * max(len(lig_keys), len(rec_keys))) / total
-
-    def _angles(
-        keys: list[tuple[str, str]], col_g: str, col_m: str, start: float, direction: int
-    ) -> dict[tuple[str, str], tuple[float, float]]:
-        out, cursor = {}, start
-        for g, m in keys:
-            w = float(d.loc[(d[col_g] == g) & (d[col_m] == m), "w_abs"].sum()) * unit
-            out[(g, m)] = (cursor, cursor + direction * w)
-            cursor += direction * (w + gap)
-        return out
-
-    lig_ang = _angles(lig_keys, sender_col, ligand_col, np.pi / 2 + margin, 1)
-    rec_ang = _angles(rec_keys, receiver_col, receptor_col, np.pi / 2 - margin, -1)
-    fig, ax = plt.subplots(figsize=(7.2, 5.6))
-    ax.set_xlim(-2.1, 2.3)
-    ax.set_ylim(-1.42, 1.3)
-    ax.set_aspect("equal")
-    ax.axis("off")
-
-    def _pt(r: float, t: float) -> tuple[float, float]:
-        return (r * np.cos(t), r * np.sin(t))
-
-    cursor_l = {k: min(v) for k, v in lig_ang.items()}
-    cursor_r = {k: max(v) for k, v in rec_ang.items()}
-    ordered = d.assign(strong=flags).sort_values("strong")
-    for row in ordered.to_dict("records"):
-        w = row["w_abs"] * unit
-        a0 = cursor_l[(row[sender_col], row[ligand_col])]
-        cursor_l[(row[sender_col], row[ligand_col])] = a0 + w
-        b1 = cursor_r[(row[receiver_col], row[receptor_col])]
-        cursor_r[(row[receiver_col], row[receptor_col])] = b1 - w
-        b0 = b1 - w
-        verts = [_pt(0.98, a0)]
-        codes = [MplPath.MOVETO]
-        for t in np.linspace(a0, a0 + w, 8)[1:]:
-            verts.append(_pt(0.98, t))
-            codes.append(MplPath.LINETO)
-        verts += [(0.0, 0.0), _pt(0.98, b0)]
-        codes += [MplPath.CURVE3, MplPath.CURVE3]
-        for t in np.linspace(b0, b1, 8)[1:]:
-            verts.append(_pt(0.98, t))
-            codes.append(MplPath.LINETO)
-        verts += [(0.0, 0.0), _pt(0.98, a0)]
-        codes += [MplPath.CURVE3, MplPath.CURVE3]
-        if signed:
-            colour = _CHORD_UP if row[weight_col] > 0 else _CHORD_DOWN
-        elif row[ligand_col] in marks:
-            colour = marks[row[ligand_col]]
-        elif ribbon_color == "sender":
-            colour = sender_palette.get(row[sender_col], _CHORD_GREY)
-        else:
-            colour = _CHORD_GREY
-        strong = bool(row["strong"])
-        ax.add_patch(
-            PathPatch(
-                MplPath(verts, codes),
-                fc=colour,
-                ec="none",
-                alpha=0.85 if strong else 0.3,
-                zorder=3 if strong else 2,
-                gid=f"ribbon|{row[ligand_col]}>{row[receptor_col]}|{row[receiver_col]}",
-            )
-        )
-
-    def _spread(mid: list[float], min_gap: float = 0.075) -> list[float]:
-        idx = np.argsort(mid)
-        out = np.array(mid, dtype=float)
-        for _ in range(60):
-            ordered_angles = out[idx]
-            for i in range(1, len(ordered_angles)):
-                short = min_gap - (ordered_angles[i] - ordered_angles[i - 1])
-                if short > 0:
-                    ordered_angles[i] += short / 2
-                    ordered_angles[i - 1] -= short / 2
-            out[idx] = ordered_angles
-        return list(out)
-
-    lig_mid = _spread([sum(lig_ang[k]) / 2 for k in lig_keys])
-    rec_mid = _spread([sum(rec_ang[k]) / 2 for k in rec_keys])
-    label_texts: dict[tuple[str, str], list[tuple[float, object]]] = {}
-    for (group, name), t in zip(lig_keys, lig_mid, strict=True):
-        colour = marks.get(name, INK)
-        lab = ax.text(
-            *_pt(1.06, t),
-            name,
-            ha="right",
-            va="center",
-            fontsize=7.6,
-            color=colour,
-            fontweight="bold" if name in marks else "normal",
-            rotation=np.rad2deg(t) - 180,
-            rotation_mode="anchor",
-        )
-        lab.set_gid("ligand_label")
-        label_texts.setdefault(("L", group), []).append((t, lab))
-    for (group, name), t in zip(rec_keys, rec_mid, strict=True):
-        lab = ax.text(
-            *_pt(1.06, t),
-            name,
-            ha="left",
-            va="center",
-            fontsize=7.6,
-            color=INK,
-            rotation=np.rad2deg(t),
-            rotation_mode="anchor",
-        )
-        lab.set_gid("receptor_label")
-        label_texts.setdefault(("R", group), []).append((t, lab))
-
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
-
-    renderer = (
-        fig.canvas.get_renderer()
-        if hasattr(fig.canvas, "get_renderer")
-        else FigureCanvasAgg(fig).get_renderer()
+    drawer = _ChordDrawer(
+        d,
+        cols,
+        sender_palette=sender_palette,
+        receiver_palette=receiver_palette,
+        flags=flags,
+        marks=dict(highlight or {}),
+        signed=signed,
+        ribbon_color=ribbon_color,
+        scale=scale,
     )
-
-    def _outer_radius(texts: list) -> float:
-        """How far from the centre a group's own molecule names reach, measured on the page."""
-        ax.apply_aspect()
-        radius = 0.0
-        for lab in texts:
-            box = lab.get_window_extent(renderer).transformed(ax.transData.inverted())
-            for x in (box.x0, box.x1):
-                for y in (box.y0, box.y1):
-                    radius = max(radius, float(np.hypot(x, y)))
-        return radius
-
-    group_items: list[dict] = []
-
-    def _group_arc(
-        keys: list[tuple[str, str]],
-        ang: dict[tuple[str, str], tuple[float, float]],
-        palette: Mapping[str, str],
-        side: str,
-    ) -> None:
-        groups = list(dict.fromkeys(k[0] for k in keys))
-        spans = {g: [ang[k] for k in keys if k[0] == g] for g in groups}
-        lows = {g: min(min(s) for s in spans[g]) for g in groups}
-        highs = {g: max(max(s) for s in spans[g]) for g in groups}
-        for g in groups:
-            ax.add_patch(
-                Wedge(
-                    (0, 0),
-                    1.0,
-                    np.rad2deg(lows[g]),
-                    np.rad2deg(highs[g]),
-                    width=0.03,
-                    fc=palette.get(g, "#6B7280"),
-                    ec="none",
-                )
-            )
-        # Small neighbouring sectors would print their names on top of each other, so the names
-        # are spread along the arc (a leader line would be the next step if it ever matters).
-        mids = _spread([(lows[g] + highs[g]) / 2 for g in groups], min_gap=0.24)
-        for g, t in zip(groups, mids, strict=True):
-            # Beyond the molecule names of its own sector that lie near it on the circle, so the
-            # two never overlap; a long name far away along the arc does not push it out.
-            near = [lab for a, lab in label_texts.get((side, g), []) if abs(a - t) < 0.3]
-            reach = max(1.36, _outer_radius(near) + 0.07)
-            lab = ax.text(
-                *_pt(reach, t),
-                g,
-                ha="right" if side == "L" else "left",
-                va="center",
-                fontsize=10,
-                fontweight="bold",
-                color=palette.get(g, INK),
-            )
-            lab.set_gid("group_label")
-            group_items.append({"lab": lab, "angle": t, "reach": reach})
-
-    _group_arc(lig_keys, lig_ang, sender_palette, "L")
-    _group_arc(rec_keys, rec_ang, receiver_palette, "R")
-    if title:
-        ax.set_title(title, loc="left", fontsize=11, fontweight="bold", color=INK)
-    if note:
-        import textwrap
-
-        key = ax.text(
-            0.0,
-            -0.02,
-            textwrap.fill(note, width=90),
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=7.5,
-            color=INK,
-        )
-        key.set_gid("note")
-
-    names = ("ligand_label", "receptor_label", "group_label")
-
-    def _clear_overlaps() -> None:
-        """Push each group name outward until it sits on no other name."""
-        ax.apply_aspect()
-        for item in group_items:
-            lab, angle = item["lab"], item["angle"]
-            others = [t for t in ax.texts if t.get_gid() in names and t is not lab]
-            for _ in range(80):
-                box = lab.get_window_extent(renderer)
-                if not any(box.overlaps(o.get_window_extent(renderer)) for o in others):
-                    break
-                item["reach"] += 0.05
-                lab.set_position(_pt(item["reach"], angle))
-
-    def _fit_frame() -> None:
-        """Widen the frame to whatever the names reach. Widening zooms the drawing out, which
-        makes the names larger in data units, so it is repeated until it stops changing."""
-        for _ in range(5):
-            ax.apply_aspect()
-            x_lo, x_hi = ax.get_xlim()
-            y_lo, y_hi = ax.get_ylim()
-            new = [x_lo, x_hi, y_lo, y_hi]
-            for lab in ax.texts:
-                if lab.get_gid() not in names:
-                    continue
-                box = lab.get_window_extent(renderer).transformed(ax.transData.inverted())
-                new = [
-                    min(new[0], box.x0 - 0.05),
-                    max(new[1], box.x1 + 0.05),
-                    min(new[2], box.y0 - 0.05),
-                    max(new[3], box.y1 + 0.05),
-                ]
-            if np.allclose(new, [x_lo, x_hi, y_lo, y_hi], atol=1e-6):
-                return
-            ax.set_xlim(new[0], new[1])
-            ax.set_ylim(new[2], new[3])
-
-    _clear_overlaps()
-    _fit_frame()
-    _clear_overlaps()
-    _fit_frame()
-    return fig
+    drawer.draw()
+    return drawer.finish(title, note)
 
 
 __all__ = [
