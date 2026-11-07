@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from typing import Annotated, Any
+
+from pydantic import AfterValidator, BaseModel, ConfigDict
 
 
 class StrictBaseModel(BaseModel):
@@ -19,6 +21,29 @@ class StrictBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _check_method_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Require every ``methods:`` entry to name its method with a ``method:`` key.
+
+    An entry without it is merged onto the stage's own settings, so the stage quietly runs its
+    default method instead (a differential-abundance entry written ``{name: proportion_ttest}`` ran
+    ``milo``, which was then skipped for lack of R, and the run reported success). A wrong key must
+    fail at config load, before any stage runs.
+    """
+    for index, entry in enumerate(entries):
+        if not str(entry.get("method", "")).strip():
+            raise ValueError(
+                f"methods[{index}] needs a `method:` key naming the method (it has keys "
+                f"{sorted(entry) or 'none'}). Without it the stage would run its default method "
+                "instead of the one you meant."
+            )
+    return entries
+
+
+#: A ``methods:`` list: each entry is a dict that names its method with ``method:``.
+MethodEntries = Annotated[list[dict[str, Any]], AfterValidator(_check_method_entries)]
+
+
 __all__ = [
+    "MethodEntries",
     "StrictBaseModel",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class DifferentialAbundanceConfig(StrictBaseModel):
@@ -47,7 +47,7 @@ class DifferentialAbundanceConfig(StrictBaseModel):
     enabled: bool = True
 
     # Selected DA methods (registry keys under stage_category 'differential_abundance').
-    methods: list[dict] = []
+    methods: MethodEntries = []
 
     # Observation column containing cell-type labels.
     cell_type_col: str = "cell_type"

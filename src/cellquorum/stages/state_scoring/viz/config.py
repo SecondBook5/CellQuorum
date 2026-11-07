@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class StateScoringVizConfig(StrictBaseModel):
@@ -37,7 +37,7 @@ class StateScoringVizConfig(StrictBaseModel):
     control: str | None = None
     figure_formats: list[str] = ["pdf", "png"]
     dpi: int = 300
-    methods: list[dict] = []
+    methods: MethodEntries = []
 
 
 __all__ = ["StateScoringVizConfig"]

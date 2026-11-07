@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class VelocityGenerationConfig(StrictBaseModel):
@@ -274,7 +274,7 @@ class TrajectoryConfig(StrictBaseModel):
     """
 
     enabled: bool = True
-    methods: list[dict] = []
+    methods: MethodEntries = []
     velocity: VelocityConfig = VelocityConfig()
     cellrank: CellRankConfig = CellRankConfig()
     dpt: DptConfig = DptConfig()

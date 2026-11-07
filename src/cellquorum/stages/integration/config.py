@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from cellquorum.backends.harmonypy_backend import DEFAULT_MAX_ITER_HARMONY
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class IntegrationConfig(StrictBaseModel):
@@ -63,7 +63,7 @@ class IntegrationConfig(StrictBaseModel):
     # method config with its own `method`, `output_rep`, etc.). An empty list (the
     # default) means use the scalar `method:` path; only a non-empty list triggers
     # multi-method dispatch, running each entry in order against the same AnnData.
-    methods: list[dict] = []
+    methods: MethodEntries = []
 
 
 __all__ = ["IntegrationConfig"]

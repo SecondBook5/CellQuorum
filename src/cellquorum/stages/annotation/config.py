@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class AnnotationConfig(StrictBaseModel):
@@ -59,7 +59,7 @@ class AnnotationConfig(StrictBaseModel):
     # method config with its own `method`, `key_added`, etc.). An empty list (the
     # default) means use the scalar `method:` path; only a non-empty list triggers
     # multi-method dispatch, running each entry in order against the same AnnData.
-    methods: list[dict] = []
+    methods: MethodEntries = []
 
 
 __all__ = ["AnnotationConfig"]

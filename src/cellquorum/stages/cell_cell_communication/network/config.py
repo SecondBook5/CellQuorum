@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class CCCNetworkConfig(StrictBaseModel):
@@ -29,7 +29,7 @@ class CCCNetworkConfig(StrictBaseModel):
     """
 
     enabled: bool = True
-    methods: list[dict] = []
+    methods: MethodEntries = []
     source_key: str = "liana_res"
     build_gci: bool = True
     gci_max_edges: int = 200_000

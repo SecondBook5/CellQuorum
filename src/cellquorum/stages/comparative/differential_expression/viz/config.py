@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class DeVizConfig(StrictBaseModel):
@@ -27,7 +27,7 @@ class DeVizConfig(StrictBaseModel):
     x_label: str | None = None  # default derived from case/control at render time
     case_color: str | None = None  # None → figstyle.LE_RED
     control_color: str | None = None  # None → figstyle.NORMAL_BLUE
-    methods: list[dict] = []
+    methods: MethodEntries = []
     # Genes to always label and mark with a distinct outline, regardless of
     # significance -- plots.volcano() already supports this (used by the
     # per-subcluster volcano), but nothing wired it through for the

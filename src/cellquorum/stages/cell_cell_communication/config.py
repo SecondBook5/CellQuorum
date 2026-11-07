@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class CellCellCommunicationConfig(StrictBaseModel):
@@ -43,7 +43,7 @@ class CellCellCommunicationConfig(StrictBaseModel):
     """
 
     enabled: bool = True
-    methods: list[dict] = []
+    methods: MethodEntries = []
     cell_type_col: str = "cell_type"
     sample_col: str = "sample_id"
     layer: str = "cellquorum_normalized"

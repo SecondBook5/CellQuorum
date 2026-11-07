@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class EnrichmentConfig(StrictBaseModel):
@@ -35,7 +35,7 @@ class EnrichmentConfig(StrictBaseModel):
     """
 
     enabled: bool = True
-    methods: list[dict] = []
+    methods: MethodEntries = []
     layer: str = "cellquorum_normalized"
     counts_layer: str = "counts"
     cell_type_col: str = "cell_type"

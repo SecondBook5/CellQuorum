@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field, field_validator
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class MagicConfig(StrictBaseModel):
@@ -131,7 +131,7 @@ class EmbeddingsConfig(StrictBaseModel):
     """
 
     enabled: bool = True
-    methods: list[dict] = []
+    methods: MethodEntries = []
     use_rep: str = "X_pca_harmony"
     layout_file: str | None = None
     view_percentile: list[float] | None = None
