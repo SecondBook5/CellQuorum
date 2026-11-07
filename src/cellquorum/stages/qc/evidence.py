@@ -816,6 +816,7 @@ def build_evidence_table(
     use_raw: bool = False,
     mito_posterior: pd.Series | None = None,
     nuclear_axis_applicable: bool = True,
+    nuclear_axis_mask: pd.Series | None = None,
     half_severity_z: float = DEFAULT_HALF_SEVERITY_Z,
     grouping: NullGrouping | None = None,
     lineage_conditional: bool = False,
@@ -836,6 +837,9 @@ def build_evidence_table(
             directly under the mixture model assumptions, without robust-tail rescaling.
             This is a model posterior, not empirical calibration against damage labels.
         nuclear_axis_applicable: False for single-nucleus assays.
+        nuclear_axis_mask: Optional per-cell boolean, True where the nuclear-integrity axes apply
+            (whole-cell libraries). Cells where it is False get those axes marked not applicable,
+            so one run can hold cells and nuclei. Ignored when ``nuclear_axis_applicable`` is False.
         half_severity_z: Robust z at which severity is 0.5.
         grouping: Per-cell reference classes from
             :func:`cellquorum.stages.qc.lineage.resolve_null_groups`, with each level's null
@@ -890,6 +894,35 @@ def build_evidence_table(
                 direction=direction,
                 severity=severity,
                 weight=weight,
+                value=value,
+            )
+        )
+
+    def add_nuclear(name: str, severity: pd.Series, value: pd.Series) -> None:
+        """Add a nuclear-integrity axis, marked not applicable where the mask says nuclei."""
+        if nuclear_axis_mask is None:
+            add(name, EvidenceFamily.NUCLEAR_INTEGRITY, Direction.UPPER_TAIL, severity, value=value)
+            return
+        applies = nuclear_axis_mask.reindex(severity.index).fillna(True).astype(bool)
+        availability = pd.Series(
+            np.where(
+                ~applies,
+                str(EvidenceAvailability.NOT_APPLICABLE),
+                np.where(
+                    severity.notna(),
+                    str(EvidenceAvailability.AVAILABLE_VALID),
+                    str(EvidenceAvailability.COMPUTATION_FAILED),
+                ),
+            ),
+            index=severity.index,
+        )
+        axes.append(
+            build_axis(
+                name=name,
+                family=EvidenceFamily.NUCLEAR_INTEGRITY,
+                direction=Direction.UPPER_TAIL,
+                severity=severity,
+                availability=availability,
                 value=value,
             )
         )
@@ -954,15 +987,13 @@ def build_evidence_table(
                 use_raw=use_raw,
             )
             if nuclear is not None:
-                add(
+                add_nuclear(
                     "malat1_fraction",
-                    EvidenceFamily.NUCLEAR_INTEGRITY,
-                    Direction.UPPER_TAIL,
                     severity_of(
                         nuclear,
                         direction=Direction.UPPER_TAIL,
                     ),
-                    value=nuclear,
+                    nuclear,
                 )
 
     # Independent of total_counts: written directly to obs by the optional
@@ -970,12 +1001,10 @@ def build_evidence_table(
     # counts, not derived from the gene-fraction machinery above.
     if nuclear_axis_applicable and "qc_splice_intronic_fraction" in obs.columns:
         splice = obs["qc_splice_intronic_fraction"].astype(float)
-        add(
+        add_nuclear(
             "splice_intronic_fraction",
-            EvidenceFamily.NUCLEAR_INTEGRITY,
-            Direction.UPPER_TAIL,
             severity_of(splice, direction=Direction.UPPER_TAIL),
-            value=splice,
+            splice,
         )
 
     multiplet = multiplet_agreement_severity(obs, groups, half_severity_z=half_severity_z)

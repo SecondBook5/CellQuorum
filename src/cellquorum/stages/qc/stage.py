@@ -739,6 +739,17 @@ class QCStage:
                 min_cells=graded_config.lineage_min_cells,
             )
 
+        nuclear_axis_mask = None
+        if graded_config.nuclei_key:
+            if graded_config.nuclei_key not in output_adata.obs.columns:
+                raise ValueError(
+                    f"qc_evidence.graded.nuclei_key {graded_config.nuclei_key!r} is not a column "
+                    "of obs, so the nuclei cannot be told from whole cells."
+                )
+            nuclear_axis_mask = ~output_adata.obs[graded_config.nuclei_key].astype(str).isin(
+                graded_config.nuclei_values
+            )
+
         evidence = build_evidence_table(
             output_adata,
             metrics_result.cell_metrics.reindex(output_adata.obs_names),
@@ -748,6 +759,7 @@ class QCStage:
             expression_adata=expression_adata,
             mito_posterior=mito_posterior,
             nuclear_axis_applicable=graded_config.nuclear_axis_applicable,
+            nuclear_axis_mask=nuclear_axis_mask,
             grouping=null_grouping,
             lineage_conditional=null_grouping is not None,
         )
@@ -762,6 +774,7 @@ class QCStage:
                 expression_adata=expression_adata,
                 mito_posterior=mito_posterior,
                 nuclear_axis_applicable=graded_config.nuclear_axis_applicable,
+                nuclear_axis_mask=nuclear_axis_mask,
             )
             if null_grouping is not None
             else evidence

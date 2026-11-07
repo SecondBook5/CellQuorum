@@ -848,7 +848,16 @@ class QCGradedConfig(StrictBaseModel):
         multiplet_severity: Multiplet severity at or above which a cell is flagged a
             probable multiplet. Recorded separately from damage; never quarantines.
         nuclear_axis_applicable: False for single-nucleus assays, where high
-            nuclear-retained signal is expected rather than evidence of leakage.
+            nuclear-retained signal is expected rather than evidence of leakage. It is one
+            setting for the whole run; for a run that mixes whole cells and nuclei leave it
+            true and name the nuclei with ``nuclei_key`` and ``nuclei_values`` instead.
+        nuclei_key: ``obs`` column that says which libraries are single-nucleus (an assay or
+            protocol column, for example). Used with ``nuclei_values``.
+        nuclei_values: Values of ``nuclei_key`` that mark single-nucleus libraries. For those
+            cells the nuclear-integrity axes are marked not applicable and evidence coverage
+            ignores them, so one run can hold whole cells and nuclei. Setting these together
+            with ``nuclear_axis_applicable: false`` is an error: that would be the same decision
+            spelled twice.
     """
 
     enabled: bool = True
@@ -864,6 +873,21 @@ class QCGradedConfig(StrictBaseModel):
     min_coverage_for_quarantine: float = 0.50
     multiplet_severity: float = 0.60
     nuclear_axis_applicable: bool = True
+    nuclei_key: str | None = None
+    nuclei_values: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_nuclei_selection(self) -> QCGradedConfig:
+        """Name the nuclei completely, and only where the axis can still apply."""
+        if bool(self.nuclei_key) != bool(self.nuclei_values):
+            raise ValueError("graded.nuclei_key and graded.nuclei_values must be set together.")
+        if self.nuclei_key and not self.nuclear_axis_applicable:
+            raise ValueError(
+                "graded.nuclei_key is set but graded.nuclear_axis_applicable is false, which "
+                "already turns the nuclear axis off for every library. Use one: leave "
+                "nuclear_axis_applicable true to switch it off only for the named nuclei."
+            )
+        return self
 
     lineage_conditional: bool = True
 
