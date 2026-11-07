@@ -48,10 +48,10 @@ def test_run_script_builds_micromamba_argv(monkeypatch, tmp_path: Path) -> None:
         return R()
 
     monkeypatch.setattr(
-        "cellquorum.backends.celloracle_backend.resolve_launcher",
+        "cellquorum.backends.external_env.resolve_launcher",
         lambda _name: "/usr/bin/micromamba",
     )
-    monkeypatch.setattr("cellquorum.backends.celloracle_backend.subprocess.run", fake_run)
+    monkeypatch.setattr("cellquorum.backends.external_env.subprocess.run", fake_run)
 
     b.run_script(script, ["--h5ad", "x.h5ad"], timeout=123)
     assert captured["cmd"][:5] == [
@@ -96,10 +96,10 @@ def test_run_script_caps_blas_threads_to_avoid_joblib_oversubscription(
         return R()
 
     monkeypatch.setattr(
-        "cellquorum.backends.celloracle_backend.resolve_launcher",
+        "cellquorum.backends.external_env.resolve_launcher",
         lambda _name: "/usr/bin/micromamba",
     )
-    monkeypatch.setattr("cellquorum.backends.celloracle_backend.subprocess.run", fake_run)
+    monkeypatch.setattr("cellquorum.backends.external_env.subprocess.run", fake_run)
     monkeypatch.setenv("SOME_UNRELATED_VAR", "keep-me")
 
     b.run_script(script, ["--h5ad", "x.h5ad"])
@@ -126,7 +126,7 @@ def test_run_script_missing_launcher_raises(monkeypatch, tmp_path: Path) -> None
     script = tmp_path / "s.py"
     script.write_text("x=1\n")
     b = build_celloracle_backend()
-    monkeypatch.setattr("cellquorum.backends.celloracle_backend.resolve_launcher", lambda _n: None)
+    monkeypatch.setattr("cellquorum.backends.external_env.resolve_launcher", lambda _n: None)
     with pytest.raises(FileNotFoundError):
         b.run_script(script, [])
 

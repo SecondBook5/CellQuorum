@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -126,7 +127,13 @@ class ExternalEnvBackend(BaseBackend):
             capture_output=True,
             text=True,
             timeout=timeout if timeout is not None else self.script_timeout_seconds,
+            env=self._subprocess_env(),
         )
+
+    def _subprocess_env(self) -> Mapping[str, str] | None:
+        """Return the environment variables for the helper process, or None to inherit ours."""
+
+        return None
 
     def _missing_in_env(self) -> list[str]:
         """Return what is missing inside the environment, once the launcher is known to exist."""
