@@ -35,6 +35,7 @@ figure is drawn through ``render_figure`` so one bad panel cannot sink a stage.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -185,6 +186,28 @@ def _apply_label_order(frame: pd.DataFrame, *, column: str, order: list[str]) ->
     return keyed.sort_values("_label_rank", kind="stable").drop(columns="_label_rank")
 
 
+@dataclass
+class _Tables:
+    """The statistics tables, ordered once so every table and panel shares one axis order."""
+
+    effects: pd.DataFrame
+    index_effects: pd.DataFrame
+    permanova: pd.DataFrame
+    correlation: pd.DataFrame
+    correlation_tests: pd.DataFrame
+
+
+@dataclass
+class _DepthResult:
+    """The depth audit's table, the column it audited against, and its verdict counts."""
+
+    frame: pd.DataFrame
+    column: str | None
+    n_driven: int
+    n_attenuated: int
+    n_masked: int
+
+
 class ModuleRemodelingMethod(AnalysisMethod):
     """Condition effects on module activity, per group, with figures."""
 
@@ -279,10 +302,8 @@ class ModuleRemodelingMethod(AnalysisMethod):
     ) -> StageResult | MethodSkip:
         donor_col = config.get("donor_col")
         condition_col = config.get("condition_col")
-        sample_col = config.get("sample_col")
         case = config.get("case")
         control = config.get("control")
-        cluster_col = config.get("cluster_col")
         group_col = config.get("group_col")
         key_added = config.get("key_added", "module_subtype")
         index_key = config.get("index_key", "contrast_index")
@@ -313,7 +334,143 @@ class ModuleRemodelingMethod(AnalysisMethod):
         notes: list[str] = []
         warnings: list[str] = []
 
-        # ---- Group axis: an existing obs column, or clusters we label. ----
+        axis = self._group_axis(adata, config, scores, notes)
+        if isinstance(axis, MethodSkip):
+            return axis
+        group_values, subtype_table = axis
+
+        metadata = adata.obs.copy()
+        group_field = group_col or key_added
+        # Overwrite rather than add: when the caller supplied ``group_col`` the
+        # statistics read that column by name, so the rendered labels have to land
+        # *there*. Adding them under ``key_added`` instead left every downstream
+        # call reading the raw column, which is how "1.0" and "nan" reached the
+        # figure even after the labels beside them were correct.
+        metadata[group_field] = pd.Series(
+            np.asarray(group_values, dtype=object), index=metadata.index
+        )
+
+        index_values = self._contrast_index(adata, config, scores, metadata, index_key, warnings)
+
+        unassigned = self._exclude_unassigned(scores, metadata, group_field, notes)
+        if isinstance(unassigned, MethodSkip):
+            return unassigned
+        scores, metadata = unassigned
+
+        tables = self._statistics(
+            adata, config, scores, metadata, group_field, index_values, index_key, warnings
+        )
+        group_order, program_order = self._order_tables(
+            tables, scores, metadata, group_field, config
+        )
+        effects = tables.effects
+
+        n_untestable = int((~np.isfinite(effects["effect"])).sum())
+        if n_untestable:
+            # A blank cell in the flagship figure means "not testable", which is
+            # not the same claim as "no effect" — say so where it is counted.
+            warnings.append(
+                f"{n_untestable}/{len(effects)} module x group cell(s) could not be tested; "
+                "they are drawn as crosses, not as null effects"
+            )
+        n_fallback = int((effects["method"] != "lmm").sum())
+        if n_fallback:
+            notes.append(
+                f"{n_fallback}/{len(effects)} cell(s) used a donor-level fallback rather than "
+                "the mixed model (see the 'method' and 'reason' columns)"
+            )
+
+        depth = self._depth_audit(
+            config, scores, metadata, index_values, index_key, program_order, notes, warnings
+        )
+
+        artifacts, index_frame = self._write_tables(
+            context,
+            config,
+            tables,
+            depth,
+            subtype_table,
+            metadata,
+            group_field,
+            group_order,
+            index_values,
+            index_key,
+        )
+
+        # ---- Figures. ----
+        figures_root = getattr(getattr(context, "paths", None), "figures", None)
+        figures_dir = Path(figures_root) / _STAGE_DIR if figures_root is not None else None
+        artifacts.extend(
+            self._draw(
+                effects=effects,
+                permanova=tables.permanova,
+                correlation_tests=tables.correlation_tests,
+                index_frame=index_frame,
+                index_effects=tables.index_effects,
+                group_field=group_field,
+                condition_col=condition_col,
+                index_key=index_key,
+                config=config,
+                case=case,
+                control=control,
+                out_dir=figures_dir,
+                warnings=warnings,
+            )
+        )
+
+        n_significant = int((effects["fdr"] < 0.05).sum())
+        # The depth verdict belongs on the headline, not only in the table: a run summary
+        # that reports significant programs and says nothing about the audit invites the
+        # reader to quote the first number without ever reaching the second.
+        headline = (
+            f"module remodeling: {scores.shape[1]} program(s) x "
+            f"{effects['group'].nunique()} group(s), {n_significant} significant at FDR<0.05"
+        )
+        if depth.frame.empty:
+            headline += "; depth unaudited"
+        elif depth.n_driven:
+            headline += f"; {depth.n_driven} program(s) depth-driven"
+        else:
+            headline += "; depth-audited, none depth-driven"
+        if depth.n_masked:
+            headline += f", {depth.n_masked} depth-masked"
+        notes.insert(0, headline + ".")
+
+        return StageResult(
+            adata=adata,
+            artifacts=artifacts,
+            notes=notes,
+            warnings=warnings,
+            metrics={
+                "case": case,
+                "control": control,
+                "n_programs": int(scores.shape[1]),
+                "n_groups": int(effects["group"].nunique()),
+                "n_significant": n_significant,
+                "n_untestable": n_untestable,
+                "n_fallback": n_fallback,
+                "depth_col": depth.column,
+                "n_depth_driven": depth.n_driven,
+                "n_depth_attenuated": depth.n_attenuated,
+                "n_depth_masked": depth.n_masked,
+                "n_unassigned_clusters": int((subtype_table["label"] == UNASSIGNED).sum())
+                if subtype_table is not None
+                else 0,
+                "seed": seed,
+            },
+            backend="python",
+        )
+
+    # ------------------------------------------------------------------ #
+    # phases of _run                                                      #
+    # ------------------------------------------------------------------ #
+    def _group_axis(
+        self, adata: ad.AnnData, config: dict, scores: pd.DataFrame, notes: list[str]
+    ) -> tuple[pd.Series, pd.DataFrame | None] | MethodSkip:
+        """The group axis: an existing obs column, or clusters we label."""
+        group_col = config.get("group_col")
+        cluster_col = config.get("cluster_col")
+        key_added = config.get("key_added", "module_subtype")
         if group_col:
             if group_col not in adata.obs.columns:
                 return self._skip(f"group_col '{group_col}' absent from obs")
@@ -350,23 +507,21 @@ class ModuleRemodelingMethod(AnalysisMethod):
                     f"{label} n={count}" for label, count in group_values.value_counts().items()
                 )
             )
+        return group_values, subtype_table
 
-        metadata = adata.obs.copy()
-        group_field = group_col or key_added
-        # Overwrite rather than add: when the caller supplied ``group_col`` the
-        # statistics read that column by name, so the rendered labels have to land
-        # *there*. Adding them under ``key_added`` instead left every downstream
-        # call reading the raw column, which is how "1.0" and "nan" reached the
-        # figure even after the labels beside them were correct.
-        metadata[group_field] = pd.Series(
-            np.asarray(group_values, dtype=object), index=metadata.index
-        )
-
-        # ---- The signed identity axis, when the caller defined one. ----
+    @staticmethod
+    def _contrast_index(
+        adata: ad.AnnData,
+        config: dict,
+        scores: pd.DataFrame,
+        metadata: pd.DataFrame,
+        index_key: str,
+        warnings: list[str],
+    ) -> pd.Series | None:
+        """The signed identity axis, when the caller defined one."""
         index_up = [p for p in (config.get("index_up") or []) if p in scores.columns]
         index_down = [p for p in (config.get("index_down") or []) if p in scores.columns]
         index_values = None
-        index_frame: pd.DataFrame | None = None
         if index_up and index_down:
             index_values = signed_program_contrast_index(scores, up=index_up, down=index_down)
             adata.obs[index_key] = index_values.to_numpy(dtype=float)
@@ -378,10 +533,16 @@ class ModuleRemodelingMethod(AnalysisMethod):
                 f"contrast index skipped: index_up resolved to {len(index_up)} program(s) and "
                 f"index_down to {len(index_down)}; both sides are required"
             )
+        return index_values
 
-        # ---- Cells with no group are excluded from the group statistics. ----
-        # They keep their obs columns above (they are real cells with a real module
-        # score and a real index value); what they cannot do is form a group.
+    def _exclude_unassigned(
+        self, scores: pd.DataFrame, metadata: pd.DataFrame, group_field: str, notes: list[str]
+    ) -> tuple[pd.DataFrame, pd.DataFrame] | MethodSkip:
+        """Cells with no group are excluded from the group statistics.
+
+        They keep their obs columns (they are real cells with a real module score and a real
+        index value); what they cannot do is form a group.
+        """
         assigned = metadata[group_field].notna().to_numpy()
         if not assigned.all():
             n_unassigned = int((~assigned).sum())
@@ -394,8 +555,27 @@ class ModuleRemodelingMethod(AnalysisMethod):
             metadata = metadata.loc[assigned]
             if scores.empty:
                 return self._skip(f"no cell has a value in obs['{group_field}']")
+        return scores, metadata
 
-        # ---- Statistics. ----
+    def _statistics(
+        self,
+        adata: ad.AnnData,
+        config: dict,
+        scores: pd.DataFrame,
+        metadata: pd.DataFrame,
+        group_field: str,
+        index_values: pd.Series | None,
+        index_key: str,
+        warnings: list[str],
+    ) -> _Tables:
+        """Effect sizes, PERMANOVA and program correlations."""
+        donor_col: str = config["donor_col"]
+        condition_col: str = config["condition_col"]
+        sample_col = config.get("sample_col")
+        case: str = config["case"]
+        control: str = config["control"]
+        seed = int(config.get("seed", 1337))
+
         # The sample is the unit condition was assigned to, so it is what the mixed
         # model needs as its lowest random level. Without it ``lmm_effect_sizes``
         # reconstructs donor x condition, which is the same thing for a cohort with one
@@ -454,11 +634,34 @@ class ModuleRemodelingMethod(AnalysisMethod):
                 f"PERMANOVA skipped: sample_col '{sample_col}' unresolved or absent from obs"
             )
 
-        # Two tables, not one. The matrix is the shape a heatmap wants and the shape
-        # the reference published; the long-form tests are the ones that can be cited.
-        # ``scores.corr()`` correlates cells, and 2,000 cells from 9 donors are not
-        # 2,000 observations — so the matrix is written without any significance
-        # attached to it, and the significance lives beside it at the donor level.
+        correlation, correlation_tests = self._correlations(
+            adata, config, scores, metadata, warnings
+        )
+        return _Tables(
+            effects=effects,
+            index_effects=index_effects,
+            permanova=permanova,
+            correlation=correlation,
+            correlation_tests=correlation_tests,
+        )
+
+    def _correlations(
+        self,
+        adata: ad.AnnData,
+        config: dict,
+        scores: pd.DataFrame,
+        metadata: pd.DataFrame,
+        warnings: list[str],
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Two tables, not one.
+
+        The matrix is the shape a heatmap wants and the shape the reference published; the
+        long-form tests are the ones that can be cited. ``scores.corr()`` correlates cells, and
+        2,000 cells from 9 donors are not 2,000 observations — so the matrix is written without
+        any significance attached to it, and the significance lives beside it at the donor level.
+        """
+        sample_col = config.get("sample_col")
+        condition_col = config.get("condition_col")
         correlation_method = str(config.get("correlation_method", "spearman"))
         correlation = scores.corr(
             method=cast("Literal['pearson', 'kendall', 'spearman']", correlation_method)
@@ -497,55 +700,71 @@ class ModuleRemodelingMethod(AnalysisMethod):
                 fdr_method=str(config.get("fdr_method", "fdr_bh")),
                 program_genes=self._program_genes(adata, config),
             )
+        return correlation, correlation_tests
 
-        # ---- One canonical axis order, applied to every table and panel. ----
-        # ``lmm_effect_sizes`` returns groups in order of appearance, which on the
-        # LEC arm was 1, 3, 6, 2, 4, 8, 5, 7 — and the dot-grid takes its columns
-        # from the table, so that arbitrary order became the panel's column order.
-        # Ordering the tables (rather than only the figures) keeps the CSV a
-        # faithful replot source and gives the four panels one shared axis.
+    @staticmethod
+    def _order_tables(
+        tables: _Tables,
+        scores: pd.DataFrame,
+        metadata: pd.DataFrame,
+        group_field: str,
+        config: dict,
+    ) -> tuple[list[str], list[str]]:
+        """One canonical axis order, applied to every table and panel.
+
+        ``lmm_effect_sizes`` returns groups in order of appearance, which on the LEC arm was
+        1, 3, 6, 2, 4, 8, 5, 7 — and the dot-grid takes its columns from the table, so that
+        arbitrary order became the panel's column order. Ordering the tables (rather than only
+        the figures) keeps the CSV a faithful replot source and gives the four panels one shared
+        axis. Reorders ``tables`` in place and returns the group and program orders.
+        """
         group_order = _resolve_group_order(metadata[group_field], config.get("group_order") or [])
         program_order, _bands = mr_figures.ordered_programs(
             list(scores.columns), config.get("module_categories") or {}
         )
-        effects = _apply_label_order(effects, column="group", order=group_order)
-        effects = _apply_label_order(effects, column="program", order=program_order)
-        permanova = _apply_label_order(permanova, column="group", order=group_order)
-        index_effects = _apply_label_order(index_effects, column="group", order=group_order)
-        correlation = correlation.reindex(index=program_order, columns=program_order)
+        tables.effects = _apply_label_order(tables.effects, column="group", order=group_order)
+        tables.effects = _apply_label_order(tables.effects, column="program", order=program_order)
+        tables.permanova = _apply_label_order(tables.permanova, column="group", order=group_order)
+        tables.index_effects = _apply_label_order(
+            tables.index_effects, column="group", order=group_order
+        )
+        tables.correlation = tables.correlation.reindex(index=program_order, columns=program_order)
         # b then a, relying on the sort being stable: the result is program_a-major with
         # program_b in the same order inside each block, matching the matrix's axes.
-        correlation_tests = _apply_label_order(
-            correlation_tests, column="program_b", order=program_order
+        tables.correlation_tests = _apply_label_order(
+            tables.correlation_tests, column="program_b", order=program_order
         )
-        correlation_tests = _apply_label_order(
-            correlation_tests, column="program_a", order=program_order
+        tables.correlation_tests = _apply_label_order(
+            tables.correlation_tests, column="program_a", order=program_order
         )
+        return group_order, program_order
 
-        n_untestable = int((~np.isfinite(effects["effect"])).sum())
-        if n_untestable:
-            # A blank cell in the flagship figure means "not testable", which is
-            # not the same claim as "no effect" — say so where it is counted.
-            warnings.append(
-                f"{n_untestable}/{len(effects)} module x group cell(s) could not be tested; "
-                "they are drawn as crosses, not as null effects"
-            )
-        n_fallback = int((effects["method"] != "lmm").sum())
-        if n_fallback:
-            notes.append(
-                f"{n_fallback}/{len(effects)} cell(s) used a donor-level fallback rather than "
-                "the mixed model (see the 'method' and 'reason' columns)"
-            )
+    @staticmethod
+    def _depth_audit(
+        config: dict,
+        scores: pd.DataFrame,
+        metadata: pd.DataFrame,
+        index_values: pd.Series | None,
+        index_key: str,
+        program_order: list[str],
+        notes: list[str],
+        warnings: list[str],
+    ) -> _DepthResult:
+        """Does each program's condition effect survive adjustment for sequencing depth?
 
-        # ---- Depth audit. ----
-        # Run on the whole lineage rather than per group, deliberately. The first leg of
-        # the audit is "does depth differ between the arms", which is a property of the
-        # cohort and not of the partition, and it is the leg that gates the other two: on
-        # depth-balanced arms no metric can be depth-driven however hard it tracks depth.
-        # Splitting by group would divide the donors again, drop most groups below
-        # ``min_pairs``, and answer the cohort question separately in each subset with less
-        # power — so a program the lineage-level audit contradicts is contradicted for
-        # every group's row on that program, and the note below says so.
+        Run on the whole lineage rather than per group, deliberately. The first leg of
+        the audit is "does depth differ between the arms", which is a property of the
+        cohort and not of the partition, and it is the leg that gates the other two: on
+        depth-balanced arms no metric can be depth-driven however hard it tracks depth.
+        Splitting by group would divide the donors again, drop most groups below
+        ``min_pairs``, and answer the cohort question separately in each subset with less
+        power — so a program the lineage-level audit contradicts is contradicted for
+        every group's row on that program, and the note below says so.
+        """
+        donor_col: str = config["donor_col"]
+        condition_col: str = config["condition_col"]
+        case: str = config["case"]
+        control: str = config["control"]
         depth_col = _resolve_depth_column(metadata, config.get("depth_col"))
         depth_audit = pd.DataFrame()
         n_depth_driven = 0
@@ -625,15 +844,41 @@ class ModuleRemodelingMethod(AnalysisMethod):
                     f"obs['{depth_col}'] ({balanced}/{len(depth_audit)} row(s) on "
                     "depth-balanced arms, the rest tested and robust)"
                 )
+        return _DepthResult(
+            frame=depth_audit,
+            column=depth_col,
+            n_driven=n_depth_driven,
+            n_attenuated=n_depth_attenuated,
+            n_masked=n_depth_masked,
+        )
 
-        # ---- Tables (the replot source). ----
-        # Both namespaces get a stage subdirectory: a run that scores eleven
-        # modules writes five tables and four figures, and dropping them loose
-        # into results/ and figures/ makes the run directory unreadable.
+    @staticmethod
+    def _write_tables(
+        context: PipelineContext,
+        config: dict,
+        tables: _Tables,
+        depth: _DepthResult,
+        subtype_table: pd.DataFrame | None,
+        metadata: pd.DataFrame,
+        group_field: str,
+        group_order: list[str],
+        index_values: pd.Series | None,
+        index_key: str,
+    ) -> tuple[list[StageArtifact], pd.DataFrame | None]:
+        """The tables (the replot source), and the per-cell index frame the figures read.
+
+        Both namespaces get a stage subdirectory: a run that scores eleven modules writes five
+        tables and four figures, and dropping them loose into results/ and figures/ makes the
+        run directory unreadable.
+        """
+        condition_col = config.get("condition_col")
+        case = config.get("case")
+        control = config.get("control")
+        index_frame: pd.DataFrame | None = None
         writer = StageArtifactWriter.from_context(context, default_subdir=_STAGE_DIR)
         artifacts = [
             writer.table(
-                effects,
+                tables.effects,
                 "module_effect_sizes_lmm.csv",
                 name="mr_effect_sizes",
                 description=(
@@ -643,7 +888,7 @@ class ModuleRemodelingMethod(AnalysisMethod):
                 index=False,
             ),
             writer.table(
-                correlation.reset_index(),
+                tables.correlation.reset_index(),
                 "module_correlation.csv",
                 name="mr_correlation",
                 description=(
@@ -653,7 +898,7 @@ class ModuleRemodelingMethod(AnalysisMethod):
                 index=False,
             ),
             writer.table(
-                correlation_tests,
+                tables.correlation_tests,
                 "module_correlation_tests.csv",
                 name="mr_correlation_tests",
                 description=(
@@ -663,15 +908,15 @@ class ModuleRemodelingMethod(AnalysisMethod):
                 index=False,
             ),
         ]
-        if not depth_audit.empty:
+        if not depth.frame.empty:
             artifacts.append(
                 writer.table(
-                    depth_audit,
+                    depth.frame,
                     "module_depth_audit.csv",
                     name="mr_depth_audit",
                     description=(
                         f"Does each program's {case} vs {control} shift survive adjustment for "
-                        f"obs['{depth_col}']: coupling rho, raw and adjusted effect, verdict."
+                        f"obs['{depth.column}']: coupling rho, raw and adjusted effect, verdict."
                     ),
                     index=False,
                 )
@@ -686,10 +931,10 @@ class ModuleRemodelingMethod(AnalysisMethod):
                     index=False,
                 )
             )
-        if not permanova.empty:
+        if not tables.permanova.empty:
             artifacts.append(
                 writer.table(
-                    permanova,
+                    tables.permanova,
                     "module_permanova.csv",
                     name="mr_permanova",
                     description=f"Multivariate condition effect per {group_field} (PERMANOVA).",
@@ -725,7 +970,7 @@ class ModuleRemodelingMethod(AnalysisMethod):
             )
             artifacts.append(
                 writer.table(
-                    index_effects,
+                    tables.index_effects,
                     "module_index_effects.csv",
                     name="mr_index_effects",
                     description=(
@@ -735,70 +980,7 @@ class ModuleRemodelingMethod(AnalysisMethod):
                     index=False,
                 )
             )
-
-        # ---- Figures. ----
-        figures_root = getattr(getattr(context, "paths", None), "figures", None)
-        figures_dir = Path(figures_root) / _STAGE_DIR if figures_root is not None else None
-        artifacts.extend(
-            self._draw(
-                effects=effects,
-                permanova=permanova,
-                correlation_tests=correlation_tests,
-                index_frame=index_frame,
-                index_effects=index_effects,
-                group_field=group_field,
-                condition_col=condition_col,
-                index_key=index_key,
-                config=config,
-                case=case,
-                control=control,
-                out_dir=figures_dir,
-                warnings=warnings,
-            )
-        )
-
-        n_significant = int((effects["fdr"] < 0.05).sum())
-        # The depth verdict belongs on the headline, not only in the table: a run summary
-        # that reports significant programs and says nothing about the audit invites the
-        # reader to quote the first number without ever reaching the second.
-        headline = (
-            f"module remodeling: {scores.shape[1]} program(s) x "
-            f"{effects['group'].nunique()} group(s), {n_significant} significant at FDR<0.05"
-        )
-        if depth_audit.empty:
-            headline += "; depth unaudited"
-        elif n_depth_driven:
-            headline += f"; {n_depth_driven} program(s) depth-driven"
-        else:
-            headline += "; depth-audited, none depth-driven"
-        if n_depth_masked:
-            headline += f", {n_depth_masked} depth-masked"
-        notes.insert(0, headline + ".")
-
-        return StageResult(
-            adata=adata,
-            artifacts=artifacts,
-            notes=notes,
-            warnings=warnings,
-            metrics={
-                "case": case,
-                "control": control,
-                "n_programs": int(scores.shape[1]),
-                "n_groups": int(effects["group"].nunique()),
-                "n_significant": n_significant,
-                "n_untestable": n_untestable,
-                "n_fallback": n_fallback,
-                "depth_col": depth_col,
-                "n_depth_driven": n_depth_driven,
-                "n_depth_attenuated": n_depth_attenuated,
-                "n_depth_masked": n_depth_masked,
-                "n_unassigned_clusters": int((subtype_table["label"] == UNASSIGNED).sum())
-                if subtype_table is not None
-                else 0,
-                "seed": seed,
-            },
-            backend="python",
-        )
+        return artifacts, index_frame
 
     # ------------------------------------------------------------------ #
     # figures                                                             #
