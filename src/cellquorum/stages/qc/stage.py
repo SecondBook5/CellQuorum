@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import anndata as ad
 import numpy as np
@@ -273,6 +273,47 @@ def _first_present_column(adata: ad.AnnData, candidates: Sequence[str | None]) -
     return None
 
 
+@dataclass
+class _Measured:
+    """What was measured before any judgement: metrics, lineages, the mito mixture, SampleQC."""
+
+    qc_config: QCConfig
+    metrics_result: QCMetricsResult
+    lineage: pd.Series | None
+    mixture: MitoMixtureResult | None
+    sampleqc: SampleQCResult | None
+
+
+@dataclass
+class _Judged:
+    """The floors applied and the graded verdict written onto the output object."""
+
+    output_adata: ad.AnnData
+    floors: Any
+    metric_annotation_warnings: list[str]
+    addon_metrics: dict[str, dict]
+    graded_warnings: list[str]
+
+
+@dataclass
+class _Audits:
+    """Everything checked about what QC did, and the inputs the artifacts are drawn from."""
+
+    cohort: Any
+    design: Any
+    group_key: str | None
+    report_groups: pd.Series | None
+    report_group_name: str
+    attrition_audit: Any
+    removed_cells: pd.DataFrame
+    inference_excluded_cells: pd.DataFrame
+    design_leak_warnings: list[str]
+    figure_adata: ad.AnnData
+    publication_keys: Any
+    donor_comparisons: Any
+    comparison_warnings: list[str]
+
+
 @register_stage(name="qc_evidence", order=20, config_flag="qc_evidence", config_field="qc_evidence")
 @dataclass(frozen=True)
 class QCStage:
@@ -326,6 +367,46 @@ class QCStage:
         # absent (matches every other path-resolution helper's own fallback).
         figures_dir = Path(getattr(context.paths, "figures", output_dir)) / self.output_subdir
 
+        measured = self._measure(adata, qc_config, context)
+        qc_config = measured.qc_config
+        judged = self._judge(adata, measured, context)
+        audits = self._audit(adata, measured, judged, context)
+
+        metrics_result, floors = measured.metrics_result, judged.floors
+        output_adata, sampleqc = judged.output_adata, measured.sampleqc
+        artifact_manifest = write_qc_artifacts(
+            output_dir=output_dir,
+            figures_dir=figures_dir,
+            metrics_result=metrics_result,
+            floors=floors,
+            mixture=measured.mixture,
+            config=qc_config,
+            adata=output_adata,
+            summary_extra={
+                **build_qc_stage_summary_extra(
+                    context=context, qc_config=qc_config, stage_name=self.name
+                ),
+                "ambient_correction": ambient_status,
+                "sampleqc": sampleqc.provenance if sampleqc is not None else {"status": "disabled"},
+            },
+            group_key=audits.group_key,
+            report_groups=audits.report_groups,
+            report_group_name=audits.report_group_name,
+            figure_adata=audits.figure_adata,
+            publication_keys=audits.publication_keys,
+            attrition_audit=audits.attrition_audit,
+            donor_comparisons=audits.donor_comparisons,
+            removed_cells=audits.removed_cells,
+            inference_excluded_cells=audits.inference_excluded_cells,
+        )
+        return self._assemble_result(
+            adata, qc_config, measured, judged, audits, artifact_manifest, ambient_status
+        )
+
+    def _measure(
+        self, adata: ad.AnnData, qc_config: QCConfig, context: PipelineContext
+    ) -> _Measured:
+        """Measure every cell before any judgement is made."""
         metrics_result = calculate_qc_metrics(adata, qc_config)
 
         # Group cells transcriptionally BEFORE anything is fitted, so every fitted quantity
@@ -361,6 +442,12 @@ class QCStage:
             mixture = fit_mito_mixture(metrics_result.cell_metrics, qc_config.mito_mixture)
 
         sampleqc = _fit_sampleqc_if_enabled(context, qc_config, metrics_result)
+        return _Measured(qc_config, metrics_result, lineage, mixture, sampleqc)
+
+    def _judge(self, adata: ad.AnnData, measured: _Measured, context: PipelineContext) -> _Judged:
+        """Apply the absolute floors, then score doublets and adjudicate the graded verdict."""
+        qc_config, metrics_result = measured.qc_config, measured.metrics_result
+        sampleqc = measured.sampleqc
 
         # Apply the absolute floors: barcodes that are not cells and genes that are not
         # measurable. This is the whole of what the fixed-and-MAD threshold path did that graded
@@ -414,13 +501,32 @@ class QCStage:
                 output_adata,
                 qc_config=qc_config,
                 metrics_result=metrics_result,
-                mixture=mixture,
-                lineage=lineage,
+                mixture=measured.mixture,
+                lineage=measured.lineage,
                 context=context,
                 expression_adata=adata,
             )
             addon_metrics["graded"] = graded_metrics
             graded_warnings.extend(graded_block_warnings)
+
+        return _Judged(
+            output_adata=output_adata,
+            floors=floors,
+            metric_annotation_warnings=metric_annotation_warnings,
+            addon_metrics=addon_metrics,
+            graded_warnings=graded_warnings,
+        )
+
+    def _audit(
+        self,
+        adata: ad.AnnData,
+        measured: _Measured,
+        judged: _Judged,
+        context: PipelineContext,
+    ) -> _Audits:
+        """Check what QC did: attrition, who was removed and why, design leaks, comparisons."""
+        qc_config, metrics_result = measured.qc_config, measured.metrics_result
+        output_adata, floors = judged.output_adata, judged.floors
 
         context_config = getattr(context, "config", None)
         cohort = getattr(context_config, "cohort", None)
@@ -502,32 +608,36 @@ class QCStage:
         donor_comparisons, comparison_warnings = compute_qc_donor_comparisons(
             figure_adata, publication_keys, paired=bool(getattr(design, "paired", False))
         )
-
-        artifact_manifest = write_qc_artifacts(
-            output_dir=output_dir,
-            figures_dir=figures_dir,
-            metrics_result=metrics_result,
-            floors=floors,
-            mixture=mixture,
-            config=qc_config,
-            adata=output_adata,
-            summary_extra={
-                **build_qc_stage_summary_extra(
-                    context=context, qc_config=qc_config, stage_name=self.name
-                ),
-                "ambient_correction": ambient_status,
-                "sampleqc": sampleqc.provenance if sampleqc is not None else {"status": "disabled"},
-            },
+        return _Audits(
+            cohort=cohort,
+            design=design,
             group_key=group_key,
             report_groups=report_groups,
             report_group_name=report_group_name,
-            figure_adata=figure_adata,
-            publication_keys=publication_keys,
             attrition_audit=attrition_audit,
-            donor_comparisons=donor_comparisons,
             removed_cells=removed_cells,
             inference_excluded_cells=inference_excluded_cells,
+            design_leak_warnings=design_leak_warnings,
+            figure_adata=figure_adata,
+            publication_keys=publication_keys,
+            donor_comparisons=donor_comparisons,
+            comparison_warnings=comparison_warnings,
         )
+
+    def _assemble_result(
+        self,
+        adata: ad.AnnData,
+        qc_config: QCConfig,
+        measured: _Measured,
+        judged: _Judged,
+        audits: _Audits,
+        artifact_manifest: Any,
+        ambient_status: dict,
+    ) -> StageResult:
+        """Gather the warnings, notes and metrics into the stage result."""
+        metrics_result, floors = measured.metrics_result, judged.floors
+        output_adata, addon_metrics = judged.output_adata, judged.addon_metrics
+        attrition_audit = audits.attrition_audit
 
         stage_artifacts = build_stage_artifacts_from_manifest(artifact_manifest)
 
@@ -537,12 +647,12 @@ class QCStage:
             artifact_manifest=artifact_manifest,
         )
 
-        warnings.extend(comparison_warnings)
-        warnings.extend(metric_annotation_warnings)
+        warnings.extend(audits.comparison_warnings)
+        warnings.extend(judged.metric_annotation_warnings)
 
-        warnings.extend(graded_warnings)
+        warnings.extend(judged.graded_warnings)
 
-        warnings.extend(design_leak_warnings)
+        warnings.extend(audits.design_leak_warnings)
 
         warnings.extend(attrition_audit.warnings)
 
