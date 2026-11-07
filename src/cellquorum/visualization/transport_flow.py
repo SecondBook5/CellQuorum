@@ -1,7 +1,7 @@
-"""Where the mass of each Normal state goes among the LE states, as one flow diagram.
+"""Where the mass of each control state goes among the case states, as one flow diagram.
 
-Optimal transport between a donor's Normal and LE cells sends mass from every Normal cell to
-LE cells. Summed over states it gives a state-to-state flow, the diagram moscot calls a Sankey.
+Optimal transport between a donor's control and case cells sends mass from every control cell to
+case cells. Summed over states it gives a state-to-state flow, the diagram moscot calls a Sankey.
 A raw flow mostly restates two facts that need no transport at all: how many cells each state
 has in each condition, and that nearby cells are matched. So the ribbon's width is the mass it
 carries but its colour is the excess over what shuffled condition labels give (log2 observed over
@@ -44,22 +44,22 @@ def transport_flow(
     significant: pd.DataFrame | None = None,
     source_order: Sequence[str] | None = None,
     target_order: Sequence[str] | None = None,
-    source_label: str = "Normal",
-    target_label: str = "Lymphedema",
+    source_label: str = "Control",
+    target_label: str = "Case",
     cbar_label: str = "Excess flow over shuffled labels (log2)",
     state_colors: dict[str, str] | None = None,
 ) -> Figure:
-    """Ribbons from Normal states (left) to LE states (right).
+    """Ribbons from control states (left) to case states (right).
 
     Args:
-        flow: Rows = Normal state, columns = LE state; non-negative mass, summing to the same
+        flow: Rows = control state, columns = case state; non-negative mass, summing to the same
             total in every donor-averaged table (normally 1).
         excess: Same shape as ``flow``; colours the ribbons (red: more flow than shuffled labels
             give, blue: less). Without it the ribbons are neutral grey.
         significant: Boolean, same shape; ribbons that are False are faded. Without it all
             ribbons are drawn at full strength.
         source_order, target_order: Stacking order of the bars; default the table order.
-        source_label, target_label: Column headings; Normal is always the left side.
+        source_label, target_label: Column headings; the control group is always the left side.
         cbar_label: Name of the colour scale.
         state_colors: Optional bar colour per state name.
     """

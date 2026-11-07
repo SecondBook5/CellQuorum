@@ -1,4 +1,4 @@
-"""State-to-state transport flow: Normal states on the left, LE states on the right."""
+"""State-to-state transport flow: control states on the left, case states on the right."""
 
 from __future__ import annotations
 
@@ -66,11 +66,11 @@ def test_ribbon_width_at_the_source_is_the_mass_it_carries() -> None:
     )
 
 
-def test_normal_is_on_the_left_and_lymphedema_on_the_right() -> None:
+def test_control_is_on_the_left_and_case_on_the_right() -> None:
     fig = transport_flow(_flow())
     texts = {t.get_gid(): t for t in _ax(fig).texts}
     assert texts["source|Inflamed"].get_position()[0] < texts["target|Inflamed"].get_position()[0]
-    assert "Normal" in _ax(fig).get_title() or any("Normal" in t.get_text() for t in _ax(fig).texts)
+    assert any("Control" in t.get_text() for t in _ax(fig).texts)
 
 
 def test_a_flow_that_does_not_clear_significance_is_fainter() -> None:

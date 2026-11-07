@@ -1,12 +1,12 @@
 """How far apart a donor's two conditions sit, against what shuffled condition labels give.
 
-An optimal-transport (earth mover's) distance between a donor's Normal cells and the same
-donor's LE cells is always positive: two samples of the same population are never identical, and
-the distance grows as cell numbers fall. A bare distance therefore says nothing. Each donor is
-drawn with the distance the same cells give after their condition labels are shuffled within the
-donor (grey: mean to 95th percentile), so a marker is only read against its own null. A donor
-whose distance does not clear that null is an open marker. The donor is the unit; cells are never
-pooled across donors.
+An optimal-transport (earth mover's) distance between a donor's source-condition cells (the
+control group) and the same donor's target-condition cells (the case group) is always positive:
+two samples of the same population are never identical, and the distance grows as cell numbers
+fall. A bare distance therefore says nothing. Each donor is drawn with the distance the same cells
+give after their condition labels are shuffled within the donor (grey: mean to 95th
+percentile), so a marker is only read against its own null. A donor whose distance does not
+clear that null is an open marker. The donor is the unit; cells are never pooled across donors.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
 _INK, _MUTED, _ACCENT, _NULL = "#202428", "#7A7A7A", "#C1121F", "#B9BEC4"
-_NORMAL = "#3B6FA0"
+_SOURCE = "#3B6FA0"
 _REQUIRED = ("state", "donor", "w2", "null_mean", "null_p95", "p_perm")
 
 
@@ -32,19 +32,23 @@ def transport_distance(
     *,
     state_order: Sequence[str] | None = None,
     alpha: float = 0.05,
-    measure_label: str = "Wasserstein-2 distance, Normal vs LE",
+    measure_label: str | None = None,
+    source_label: str = "Control",
+    target_label: str = "Case",
 ) -> Figure:
     """One row per donor, grouped by state.
 
     Args:
         table: One row per donor and state; columns ``state``, ``donor``, ``w2`` (observed
             distance), ``null_mean`` and ``null_p95`` (the same distance after within-donor label
-            shuffles), ``p_perm`` (permutation p-value). ``n_normal`` and ``n_le`` (cells per
-            condition) are written beside each donor when present.
+            shuffles), ``p_perm`` (permutation p-value). ``n_source`` and ``n_target`` (cells
+            per condition) are written beside each donor when present.
         state_order: Order of the state blocks; defaults to first appearance in ``table``.
         alpha: p-value below which a donor's marker is filled; above it the marker is open.
-        measure_label: What ``w2`` measures; the default is the transport distance. Any
-            per-donor statistic with a within-donor shuffled-label null can be drawn the same way.
+        measure_label: What ``w2`` measures; the default is the transport distance between the
+            two conditions. Any per-donor statistic with a within-donor shuffled-label null can
+            be drawn the same way.
+        source_label, target_label: Names of the two conditions (control first).
     """
     import matplotlib.pyplot as plt
 
@@ -53,7 +57,9 @@ def transport_distance(
         raise ValueError(f"transport_distance needs columns {missing}")
     apply_theme("compact")
     states = list(state_order) if state_order is not None else list(dict.fromkeys(table["state"]))
-    has_counts = {"n_normal", "n_le"} <= set(table.columns)
+    has_counts = {"n_source", "n_target"} <= set(table.columns)
+    if measure_label is None:
+        measure_label = f"Wasserstein-2 distance, {source_label} vs {target_label}"
 
     layout: list[tuple[str, str | None]] = []
     for state in states:
@@ -113,7 +119,7 @@ def transport_distance(
             cells = ax.text(
                 right,
                 i,
-                f"{int(row['n_normal'])} | {int(row['n_le'])}",
+                f"{int(row['n_source'])} | {int(row['n_target'])}",
                 ha="right",
                 va="center",
                 fontsize=7.5,
@@ -124,7 +130,7 @@ def transport_distance(
     ax.set_yticklabels(labels, fontsize=8.5)
     ax.set_ylim(n - 0.5, -0.5)
     ax.tick_params(axis="y", length=0)
-    suffix = "\nright: cells Normal | LE" if has_counts else ""
+    suffix = f"\nright: cells {source_label} | {target_label}" if has_counts else ""
     ax.set_xlabel(
         f"{measure_label}\n" f"(filled: p < {alpha:g}; grey: shuffled-label null){suffix}",
         fontsize=8,
@@ -143,24 +149,27 @@ def transport_displacement(
     target_value: np.ndarray | None = None,
     value_label: str = "Change along the arrow",
     background_xy: np.ndarray | None = None,
+    source_label: str = "Control",
+    target_label: str = "Case",
 ) -> Figure:
-    """One donor's transport plan drawn as where each Normal cell is carried to.
+    """One donor's transport plan drawn as where each source cell is carried to.
 
-    Each Normal cell is joined to the plan-weighted mean position of the LE cells it sends its
-    mass to (the barycentric projection of the plan). The arrow is a summary of a soft
-    assignment, not a claim that the cell becomes one particular LE cell. When values are given
+    Each source cell is joined to the plan-weighted mean position of the target cells it sends
+    its mass to (the barycentric projection of the plan). The arrow is a summary of a soft
+    assignment, not a claim that the cell becomes one particular target cell. When values are given
     (a module score, say) each arrow is coloured by the plan-weighted target value minus the
     source value, so the colour reads as the change the transport implies.
 
     Args:
-        source_xy: (n_source, 2) embedding of the Normal cells.
-        target_xy: (n_target, 2) embedding of the LE cells.
-        plan: (n_source, n_target) transport plan; rows are the mass each Normal cell sends.
+        source_xy: (n_source, 2) embedding of the source (control) cells.
+        target_xy: (n_target, 2) embedding of the target (case) cells.
+        plan: (n_source, n_target) transport plan; rows are the mass each source cell sends.
         source_value: Optional per-source-cell value for colouring.
         target_value: Optional per-target-cell value; both or neither value must be given.
         value_label: Colourbar label.
         background_xy: Optional (n, 2) embedding of every cell, drawn faint beneath for
             orientation; it plays no part in the plan.
+        source_label, target_label: Names of the two conditions, used in the key.
     """
     import matplotlib.pyplot as plt
     import numpy as np
@@ -170,14 +179,14 @@ def transport_displacement(
     apply_theme("compact")
     if plan.shape != (len(source_xy), len(target_xy)):
         raise ValueError(
-            f"plan is {plan.shape} but there are {len(source_xy)} Normal and "
-            f"{len(target_xy)} LE cells"
+            f"plan is {plan.shape} but there are {len(source_xy)} {source_label} and "
+            f"{len(target_xy)} {target_label} cells"
         )
     if (source_value is None) != (target_value is None):
         raise ValueError("give both source_value and target_value, or neither")
     mass = plan.sum(axis=1)
     if np.any(mass <= 0):
-        raise ValueError(f"{int((mass <= 0).sum())} Normal cells send no mass in the plan")
+        raise ValueError(f"{int((mass <= 0).sum())} {source_label} cells send no mass in the plan")
     weights = plan / mass[:, None]
     ends = weights @ target_xy
     fig, ax = plt.subplots(figsize=(5.2, 4.6))
@@ -185,10 +194,10 @@ def transport_displacement(
     if background_xy is not None:
         back = ax.scatter(background_xy[:, 0], background_xy[:, 1], s=4, color="#D9DCE0", zorder=1)
         back.set_gid("background")
-    normal = ax.scatter(source_xy[:, 0], source_xy[:, 1], s=9, color=_NORMAL, zorder=2)
-    normal.set_gid("normal")
-    le = ax.scatter(target_xy[:, 0], target_xy[:, 1], s=9, color=_ACCENT, alpha=0.55, zorder=2)
-    le.set_gid("lymphedema")
+    source = ax.scatter(source_xy[:, 0], source_xy[:, 1], s=9, color=_SOURCE, zorder=2)
+    source.set_gid("source")
+    target = ax.scatter(target_xy[:, 0], target_xy[:, 1], s=9, color=_ACCENT, alpha=0.55, zorder=2)
+    target.set_gid("target")
     segments = list(np.stack([source_xy, ends], axis=1))
     arrows = LineCollection(segments, linewidths=0.8, zorder=3)
     arrows.set_gid("arrows")
@@ -205,8 +214,12 @@ def transport_displacement(
     ax.add_collection(arrows)
     ax.legend(
         handles=[
-            Line2D([0], [0], marker="o", linestyle="", color=_NORMAL, label="Normal cells"),
-            Line2D([0], [0], marker="o", linestyle="", color=_ACCENT, label="Lymphedema cells"),
+            Line2D(
+                [0], [0], marker="o", linestyle="", color=_SOURCE, label=f"{source_label} cells"
+            ),
+            Line2D(
+                [0], [0], marker="o", linestyle="", color=_ACCENT, label=f"{target_label} cells"
+            ),
         ],
         loc="upper left",
         fontsize=8,

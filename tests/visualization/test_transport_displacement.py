@@ -80,7 +80,7 @@ def test_the_two_sets_of_cells_are_drawn_beneath_the_arrows() -> None:
     source, target, plan = _inputs()
     fig = transport_displacement(source, target, plan)
     gids = {c.get_gid() for c in _axis(fig).collections}
-    assert {"normal", "lymphedema"} <= gids
+    assert {"source", "target"} <= gids
 
 
 def test_a_background_of_all_cells_is_drawn_first_and_does_not_move_the_arrows() -> None:
@@ -89,15 +89,15 @@ def test_a_background_of_all_cells_is_drawn_first_and_does_not_move_the_arrows()
     fig = transport_displacement(source, target, plan, background_xy=background)
     collections = _axis(fig).collections
     gids = [c.get_gid() for c in collections]
-    assert gids.index("background") < gids.index("normal")
+    assert gids.index("background") < gids.index("source")
     arrows = next(c for c in collections if c.get_gid() == "arrows")
     np.testing.assert_allclose(np.asarray(arrows.get_segments())[:, 0, :], source)
 
 
-def test_a_key_names_the_two_dot_colours_as_normal_and_lymphedema_cells() -> None:
+def test_a_key_names_the_two_dot_colours_as_the_source_and_target_cells() -> None:
     """Real defect: the blue and red end-point dots had no key, so the figure did not say which
     cells were carried and which they were carried to."""
     source, target, plan = _inputs()
     legend = _axis(transport_displacement(source, target, plan)).get_legend()
     assert legend is not None
-    assert [t.get_text() for t in legend.get_texts()] == ["Normal cells", "Lymphedema cells"]
+    assert [t.get_text() for t in legend.get_texts()] == ["Control cells", "Case cells"]
