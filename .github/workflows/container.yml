@@ -1,0 +1,43 @@
+name: Container
+
+# Builds the CPU image and runs the synthetic demo inside it, as a non-root user with a mounted folder,
+# the way a user would. The image is large, so this runs when the container or environments change,
+# on a manual request, and on release tags, not on every push.
+on:
+  pull_request:
+    paths:
+      - "docker/**"
+      - "envs/**"
+      - "pyproject.toml"
+      - ".github/workflows/container.yml"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-image:
+    name: Build the CPU image and run the demo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        run: docker buildx build --load --target cpu -t cellquorum:ci -f docker/Dockerfile .
+
+      - name: Demo dataset and full run as the host user
+        run: |
+          mkdir demo && cd demo
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work -w /work cellquorum:ci demo my_demo
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work -w /work cellquorum:ci \
+            run --config my_demo/config.yaml --output-dir my_demo/run
+          test -s my_demo/run/reports/report.html

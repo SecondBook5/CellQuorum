@@ -7,9 +7,20 @@
 #   docker buildx imagetools inspect mambaorg/micromamba:1.5.8
 FROM mambaorg/micromamba:1.5.8@sha256:475730daef12ff9c0733e70092aeeefdf4c373a584c952dac3f7bdb739601990 AS base
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
+# Run as whatever user the caller passes (docker run --user "$(id -u):$(id -g)"), so results written to a
+# mounted directory belong to the caller. The base image's entrypoint resets HOME to a home directory only its
+# own user can write when USER is unset; setting USER and a world-writable HOME keeps micromamba, matplotlib
+# and numba caches working for any uid.
+ENV USER=cellquorum HOME=/tmp/cellquorum-home
+USER root
+RUN mkdir -p /tmp/cellquorum-home/.cache/mamba/proc && chmod -R 1777 /tmp/cellquorum-home
+USER $MAMBA_USER
 WORKDIR /opt/cellquorum
-COPY --chown=$MAMBA_USER:$MAMBA_USER envs/cellquorum-core.yml /tmp/core.yml
-RUN micromamba create -y -n cellquorum-core -f /tmp/core.yml && micromamba clean -a -y
+# Installed from the conda-lock file, not the recipe: every conda and pip package (with hashes) is fixed, so a
+# rebuild next month gives the same environment. Regenerate the lock after editing the recipe:
+#   conda-lock -f envs/cellquorum-core.yml --lockfile envs/cellquorum-core.conda-lock.yml
+COPY --chown=$MAMBA_USER:$MAMBA_USER envs/cellquorum-core.conda-lock.yml /tmp/core.conda-lock.yml
+RUN micromamba create -y -n cellquorum-core -f /tmp/core.conda-lock.yml && micromamba clean -a -y
 COPY --chown=$MAMBA_USER:$MAMBA_USER . /opt/cellquorum
 RUN micromamba run -n cellquorum-core pip install -e .
 
@@ -35,16 +46,24 @@ RUN micromamba create -y -n cellquorum-r -f /tmp/r.yml && \
 ARG DIALOGUE_SHA=9c146ccf28d7706aaa60d00947a9126b4e75fd69
 ARG CRAN_SNAPSHOT=https://packagemanager.posit.co/cran/2025-06-02
 RUN micromamba run -n cellquorum-r Rscript -e \
-    "options(repos=c(CRAN='${CRAN_SNAPSHOT}')); install.packages('unikn'); remotes::install_github('livnatje/DIALOGUE@${DIALOGUE_SHA}', dependencies=FALSE, upgrade='never')" && \
+    "options(repos=c(CRAN='${CRAN_SNAPSHOT}')); install.packages('unikn'); f <- tempfile(fileext='.tar.gz'); download.file('https://codeload.github.com/livnatje/DIALOGUE/tar.gz/${DIALOGUE_SHA}', f, mode='wb', quiet=TRUE); install.packages(f, repos=NULL, type='source')" && \
     micromamba run -n cellquorum-r Rscript -e "suppressPackageStartupMessages(library(DIALOGUE)); cat('DIALOGUE', as.character(packageVersion('DIALOGUE')), 'OK\n')" && \
     micromamba clean -a -y
+# Figures use Arial, or its metric twin Liberation Sans, and fall back to DejaVu when neither exists. The base image
+# has neither, so figures made in the container would differ from figures made on a workstation. Installing the
+# Liberation fonts makes the container draw the same text metrics as the host.
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
+USER $MAMBA_USER
 ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "micromamba", "run", "-n", "cellquorum-core", "cellquorum"]
 CMD ["--help"]
 
 ########## gpu: cpu + GPU env (RAPIDS + CUDA torch) ##########
 FROM cpu AS gpu
-COPY --chown=$MAMBA_USER:$MAMBA_USER envs/cellquorum-gpu.yml /tmp/gpu.yml
-RUN micromamba create -y -n cellquorum-gpu -f /tmp/gpu.yml && micromamba clean -a -y
+COPY --chown=$MAMBA_USER:$MAMBA_USER envs/cellquorum-gpu.conda-lock.yml /tmp/gpu.conda-lock.yml
+RUN micromamba create -y -n cellquorum-gpu -f /tmp/gpu.conda-lock.yml && micromamba clean -a -y
 # Install the package editable into the GPU env. Done here (not via `-e ..` in
 # the env yml) because the source is present at /opt/cellquorum by now and the
 # yml's relative path would resolve against /tmp inside the image.

@@ -21,6 +21,11 @@ dependencies:
 
   # Single-cell data structures and analysis.
   - anndata>=0.12,<0.13
+  # mudata (a scvi-tools and liana dependency) imports Settings from scverse-misc, which needs scverse-misc's
+  # `settings` extra: pydantic-settings and python-dotenv. A conda install of scverse-misc does not bring
+  # extras, so without these two `import mudata`, `import scvi` and `import liana` fail.
+  - pydantic-settings
+  - python-dotenv
   - scanpy>=1.10
   - h5py>=3.10
   - zarr>=2.17
@@ -111,3 +116,10 @@ dependencies:
       - palantir==1.4.4
       # Deep generative models (scVI/scArches); pulls torch.
       - scvi-tools==1.4.3
+      # Imported lazily by stages that otherwise skip or fail without them: PHATE embeddings, CellTypist
+      # annotation, and the chord and Sankey communication figures. They worked on a workstation because
+      # someone installed them by hand, and were missing from every fresh install and the container.
+      - phate==2.0.0
+      - celltypist==1.7.1
+      - pycirclize==1.10.1
+      - plotly==6.7.0

@@ -164,15 +164,15 @@ make lock
 
 This scans environment recipes in `envs/*.yml`, excludes existing
 `*.conda-lock.yml` outputs, and generates corresponding lockfiles. A failed solve
-stops the command. The wrapper requires conda-lock 4.0.2 in the selected Python:
+stops the command. The wrapper requires conda-lock 4.0.5 in the selected Python:
 
 ```bash
-python -m pip install conda-lock==4.0.2
+python -m pip install conda-lock==4.0.5
 make lock LOCK_PYTHON=python
 ```
 
 `scripts/lock_environments.py` fills missing intermediate manylinux tags in
-conda-lock 4.0.2, including 2.27 used by JAX and NVIDIA wheels. It retains the
+conda-lock 4.0.5, including 2.27 used by JAX and NVIDIA wheels. It retains the
 tool's glibc ceiling and target-version filtering. Changing conda-lock versions
 requires reviewing this workaround; the wrapper refuses an unreviewed version.
 The repository contains Linux CPU (417 package records) and GPU (528 package

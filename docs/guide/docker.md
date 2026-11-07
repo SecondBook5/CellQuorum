@@ -128,11 +128,28 @@ docker run --rm cellquorum:<version> --version
 To analyze data on the host, mount the data directory into the container:
 
 ```bash
-docker run --rm \
+docker run --rm --user "$(id -u):$(id -g)" \
   -v /path/to/data:/data \
   cellquorum:<version> \
   run --config /data/my_config.yaml --output-dir /data/results
 ```
+
+`--user "$(id -u):$(id -g)"` makes the container write as you, so the results belong to your account and
+the mounted folder only needs to be writable by you. Without it the container runs as its own built-in
+user and cannot write to a folder it does not own.
+
+To try the image without any data of your own, generate a synthetic dataset and run it:
+
+```bash
+mkdir demo && cd demo
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work -w /work cellquorum:<version> demo my_demo
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work -w /work cellquorum:<version> \
+  run --config my_demo/config.yaml --output-dir my_demo/run
+```
+
+Then open `my_demo/run/reports/report.html`. The image carries the Liberation fonts, so figures use the
+same text metrics as a workstation with Arial, and the environments are installed from lock files, so a
+rebuild gives the same software.
 
 ### Running R-backed methods (pseudobulk DE, Milo, propeller, NicheNet, SoupX)
 

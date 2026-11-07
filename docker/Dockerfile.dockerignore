@@ -1,0 +1,31 @@
+# Build context is the repository root (docker build -f docker/Dockerfile .). BuildKit reads this file
+# because it is named after the Dockerfile. Keep the context to what the image needs: source, envs, configs.
+.git
+.github
+.claude
+.superpowers
+.venvs
+.vscode
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.snakemake
+.coverage
+runs
+bundles
+generated
+data
+resources
+logs
+build
+site
+TOM
+omnipathr-log
+Rplots.pdf
+notebooks
+docs
+tests
+**/__pycache__
+*.pyc
+*.h5ad
+*.rds

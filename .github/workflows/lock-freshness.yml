@@ -1,0 +1,28 @@
+name: Lock freshness
+
+# A lock file fixes exact package builds, but it only reproduces an environment while those builds still exist on
+# the channel. Channels remove old builds (the rapidsai channel removed a pinned xgboost build, which broke the GPU
+# image), so this checks weekly that every pinned package can still be downloaded, and on any change to the locks.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  pull_request:
+    paths:
+      - "envs/*.conda-lock.yml"
+      - "scripts/check_lock_urls.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-packages-resolve:
+    name: Every pinned package still resolves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install PyYAML
+      - run: python scripts/check_lock_urls.py
