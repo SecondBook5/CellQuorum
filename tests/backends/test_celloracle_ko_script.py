@@ -153,3 +153,27 @@ def test_script_skips_gracefully_when_celloracle_absent(tmp_path: Path) -> None:
     assert proc.returncode == 0
     assert (out_dir / "perturbation_ranking.csv").exists()
     assert (out_dir / "perturbation_SKIPPED_t.txt").exists()
+
+
+def test_script_pins_the_hash_seed_to_the_run_seed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CellOracle's networks only repeat when string hashing does.
+
+    It orders each gene's regulators through a ``set`` and then draws bagging feature subsets by
+    position, so with a random hash seed two identical runs fitted networks whose coefficients
+    differed by up to 0.1 on real data; with the hash seed fixed they were bit-identical.
+    """
+    import os
+
+    pin = _load()["_pin_hash_seed"]
+    execs: list[list[str]] = []
+    monkeypatch.setattr(os, "execv", lambda path, argv: execs.append(list(argv)))
+
+    monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    pin(7)
+    assert os.environ["PYTHONHASHSEED"] == "7" and len(execs) == 1
+
+    pin(7)  # already pinned to this seed: no second re-exec
+    assert len(execs) == 1
+
+    pin(8)  # a different run seed gives a different, equally reproducible order
+    assert os.environ["PYTHONHASHSEED"] == "8" and len(execs) == 2

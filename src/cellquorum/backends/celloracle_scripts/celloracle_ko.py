@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -258,6 +259,13 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     oracle.import_TF_data(TF_info_matrix=base_grn)
 
     # Step 3: PCA + kNN imputation (tutorial-style component/k auto-selection).
+    #
+    # CellOracle builds sklearn's PCA with no random_state. On a matrix this size sklearn picks
+    # the randomized SVD solver, which then draws from numpy's global generator, so without this
+    # line the components differ between identical runs, the kNN graph and the imputed matrix
+    # follow, and every network, ranking and figure downstream changes with them. (The bagging
+    # ridge in get_links is not the source: CellOracle fixes its random_state at 123.)
+    np.random.seed(int(args.seed))
     oracle.perform_PCA()
     evr = np.cumsum(oracle.pca.explained_variance_ratio_)
     cand = np.where(np.diff(np.diff(evr) > 0.002))[0]
@@ -277,11 +285,11 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
 
     # Step 4: Cluster-specific GRN → filter → simulation-ready model.
     print(f"[celloracle] Inferring cluster-specific GRN (get_links, cluster={cluster_key})")
-    # NOTE: get_links uses bagging-ridge (bootstrap) and exposes no random_state, so
-    # the inferred edge set is not bit-reproducible run-to-run; only the downstream
-    # embedding-shift step (estimate_transition_prob) is seeded. threshold_number caps
-    # the edges kept PER CLUSTER network (CellOracle default 10000) -- NOT a per-TF
-    # target count, so it is decoupled from n_top_targets (the figure top-N).
+    # NOTE: get_links' bagging ridge has CellOracle's own fixed random_state (123); it repeats
+    # once the PCA above is seeded and the hash order is pinned (see _pin_hash_seed).
+    # estimate_transition_prob takes the run seed. threshold_number caps the edges kept PER
+    # CLUSTER network (CellOracle default 10000) -- NOT a per-TF target count, so it is
+    # decoupled from n_top_targets (the figure top-N).
     # n_jobs=1 (NOT the tempting n_jobs=4/-1): get_links()'s internal joblib/loky
     # worker pool segfaulted (exit 139) on the real 61,608-cell object at ANY
     # n_jobs>1, deterministically -- same crash with n_jobs=4 alone, n_jobs=4 plus
@@ -426,9 +434,27 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     print(f"[celloracle] Wrote perturbation_ranking.csv ({len(tf_scores)} TFs)")
 
 
+def _pin_hash_seed(seed: int) -> None:
+    """Re-run this script with ``PYTHONHASHSEED`` set from the run seed, unless it already is.
+
+    Python randomizes string hashing per process, which randomizes the iteration order of every
+    ``set`` of gene names. CellOracle builds each target gene's regulator list that way, and its
+    bagging ridge then draws random feature subsets BY POSITION, so with CellOracle's own fixed
+    random_state two identical runs still fitted different networks (coefficients differed by up
+    to 0.1 on real data; with the hash seed fixed they were bit-identical). The hash seed can
+    only be set before the interpreter starts, hence the re-exec.
+    """
+    value = str(int(seed) % 2**32)
+    if os.environ.get("PYTHONHASHSEED") == value:
+        return
+    os.environ["PYTHONHASHSEED"] = value
+    os.execv(sys.executable, [sys.executable, *sys.argv])  # noqa: S606
+
+
 def main() -> None:
     """Run the CellOracle KO workflow, or skip gracefully."""
     args = build_parser().parse_args()
+    _pin_hash_seed(args.seed)
     out_dir = Path(args.out_dir)
 
     # Heavy import gate: absence of CellOracle is a harmless skip, not a failure.
