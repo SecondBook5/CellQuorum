@@ -1077,14 +1077,35 @@ def render_table_figure(table: TypesetTable) -> Figure:
         measure.close()
 
 
-def _draw_table(
+@dataclass
+class _TableLayout:
+    """Measured geometry of a table: formatted strings, column positions and heights."""
+
+    rows: list[list[str]]
+    total_row: list[str] | None
+    widths: list[float]
+    x_edges: list[float]
+    table_width: float
+    total_width: float
+    runs: list[tuple[str | None, int, int]]
+    has_spanner: bool
+    total_height: float
+
+
+def _column_edges(widths: list[float]) -> list[float]:
+    x_edges = [_PAD_X]
+    for width in widths:
+        x_edges.append(x_edges[-1] + width + _COL_GAP)
+    return x_edges
+
+
+def _measure_layout(
     table: TypesetTable,
     columns: tuple[Column, ...],
     groups: list[tuple[str | None, pd.DataFrame]],
     measure: _TextWidth,
-    plt: ModuleType,
-) -> Figure:
-    """Lay out and draw a table. Split out so the measuring figure is always closed."""
+) -> _TableLayout:
+    """Format the body and measure every column, spanner and note."""
 
     # Formatted body first: column widths depend on the rendered strings, not the
     # underlying values.
@@ -1126,9 +1147,7 @@ def _draw_table(
             header += measure(column.marker, _MARKER_PT, "semibold") + 0.012
         widths.append(max([header, *candidates, 0.12]))
 
-    x_edges = [_PAD_X]
-    for width in widths:
-        x_edges.append(x_edges[-1] + width + _COL_GAP)
+    x_edges = _column_edges(widths)
     table_width = x_edges[-1] - _COL_GAP
     total_width = table_width + _PAD_X
 
@@ -1142,9 +1161,7 @@ def _draw_table(
         needed = measure(spanner, _SPANNER_PT, "semibold") + 0.10
         if needed > span_width:
             widths[end] += needed - span_width
-            x_edges = [_PAD_X]
-            for width in widths:
-                x_edges.append(x_edges[-1] + width + _COL_GAP)
+            x_edges = _column_edges(widths)
             table_width = x_edges[-1] - _COL_GAP
             total_width = table_width + _PAD_X
 
@@ -1164,203 +1181,283 @@ def _draw_table(
     total_h = (0.06 + _ROW_H) if total_row is not None else 0.0
     notes_h = (0.10 + len(note_lines) * _NOTE_LEAD) if note_lines else 0.0
     total_height = _PAD_Y + header_h + body_h + total_h + notes_h + _PAD_Y
+    return _TableLayout(
+        rows=rows,
+        total_row=total_row,
+        widths=widths,
+        x_edges=x_edges,
+        table_width=table_width,
+        total_width=total_width,
+        runs=runs,
+        has_spanner=has_spanner,
+        total_height=total_height,
+    )
 
-    figure = plt.figure(figsize=(total_width, total_height))
-    axes = figure.add_axes((0.0, 0.0, 1.0, 1.0))
-    axes.set_axis_off()
-    axes.set_xlim(0.0, total_width)
-    axes.set_ylim(total_height, 0.0)
 
-    serif = {"family": "serif", "color": _INK}
+class _TableDrawer:
+    """Draws a measured table top to bottom; ``y`` counts downward in inches."""
 
-    def rule(y: float, x0: float, x1: float, lw: float) -> None:
-        axes.plot([x0, x1], [y, y], lw=lw, color=_INK, solid_capstyle="butt", zorder=2)
+    def __init__(
+        self,
+        table: TypesetTable,
+        columns: tuple[Column, ...],
+        groups: list[tuple[str | None, pd.DataFrame]],
+        layout: _TableLayout,
+        measure: _TextWidth,
+        plt: ModuleType,
+    ) -> None:
+        self.table, self.columns, self.groups = table, columns, groups
+        self.layout, self.measure, self.plt = layout, measure, plt
+        self.figure = plt.figure(figsize=(layout.total_width, layout.total_height))
+        self.axes = self.figure.add_axes((0.0, 0.0, 1.0, 1.0))
+        self.axes.set_axis_off()
+        self.axes.set_xlim(0.0, layout.total_width)
+        self.axes.set_ylim(layout.total_height, 0.0)
+        self.serif = {"family": "serif", "color": _INK}
+        self.stub = _stub_index(columns, table.row_group)
+        self.y = _PAD_Y
 
-    def cell(index: int, y: float, text: str, size: float, weight: str, dx: float = 0.0) -> None:
+    def draw(self) -> Figure:
+        self._title()
+        self._header()
+        self._body()
+        self._total()
+        self._notes()
+        return self.figure
+
+    def _rule(self, y: float, x0: float, x1: float, lw: float) -> None:
+        self.axes.plot([x0, x1], [y, y], lw=lw, color=_INK, solid_capstyle="butt", zorder=2)
+
+    def _cell(
+        self, index: int, y: float, text: str, size: float, weight: str, dx: float = 0.0
+    ) -> None:
         """Draw one cell, right-aligned on its column edge unless it is a label."""
-        if columns[index].align == "left":
-            axes.text(
-                x_edges[index] + dx,
+        layout = self.layout
+        if self.columns[index].align == "left":
+            self.axes.text(
+                layout.x_edges[index] + dx,
                 y,
                 text,
                 fontsize=size,
                 fontweight=weight,
                 ha="left",
                 va="center",
-                **serif,
+                **self.serif,
             )
         else:
-            axes.text(
-                x_edges[index] + widths[index],
+            self.axes.text(
+                layout.x_edges[index] + layout.widths[index],
                 y,
                 text,
                 fontsize=size,
                 fontweight=weight,
                 ha="right",
                 va="center",
-                **serif,
+                **self.serif,
             )
 
-    y = _PAD_Y
-    axes.text(_PAD_X, y, table.title, fontsize=_TITLE_PT, fontweight="semibold", va="top", **serif)
-    y += 0.28
-    if table.subtitle:
+    def _title(self) -> None:
+        table, axes = self.table, self.axes
         axes.text(
             _PAD_X,
-            y,
-            table.subtitle,
-            fontsize=_SUBTITLE_PT,
-            va="top",
-            style="italic",
-            family="serif",
-            color=_SUBTLE,
-        )
-        y += 0.20
-
-    rule(y, _PAD_X, table_width, 1.25)
-    y += 0.06
-
-    if has_spanner:
-        for spanner, start, end in runs:
-            if spanner is None:
-                continue
-            x0, x1 = x_edges[start], x_edges[end] + widths[end]
-            axes.text(
-                (x0 + x1) / 2.0,
-                y + 0.10,
-                spanner,
-                fontsize=_SPANNER_PT,
-                fontweight="semibold",
-                ha="center",
-                va="center",
-                **serif,
-            )
-            rule(y + 0.185, x0, x1, 0.7)
-        y += 0.215
-
-    baseline = y + 0.115
-    for index, column in enumerate(columns):
-        label_width = measure(column.label, _HEAD_PT, "semibold")
-        if column.align == "left":
-            x_label = x_edges[index]
-        else:
-            marker_width = (
-                measure(column.marker, _MARKER_PT, "semibold") + 0.012 if column.marker else 0.0
-            )
-            x_label = x_edges[index] + widths[index] - marker_width - label_width
-        axes.text(
-            x_label,
-            baseline,
-            column.label,
-            fontsize=_HEAD_PT,
+            self.y,
+            table.title,
+            fontsize=_TITLE_PT,
             fontweight="semibold",
-            ha="left",
-            va="center",
-            **serif,
+            va="top",
+            **self.serif,
         )
-        if column.marker:
-            # Drawn as its own raised text rather than mathtext: a "$^{a}$" makes
-            # matplotlib parse the whole header as maths and set it in italics.
-            axes.text(
-                x_label + label_width + 0.012,
-                baseline - 0.045,
-                column.marker,
-                fontsize=_MARKER_PT,
-                fontweight="semibold",
-                ha="left",
-                va="center",
-                **serif,
-            )
-    y += 0.235
-    rule(y, _PAD_X, table_width, 0.85)
-    y += 0.04
-
-    stub = _stub_index(columns, table.row_group)
-    for group, chunk in groups:
-        if group is not None:
-            subtotal = table.group_total(group)
-            if subtotal is not None:
-                # Tinted bar behind the row, achromatic so it survives greyscale
-                # print and any colour vision deficiency.
-                axes.add_patch(
-                    plt.Rectangle(
-                        (_PAD_X - 0.05, y + 0.012),
-                        table_width - _PAD_X + 0.05,
-                        _GROUP_H - 0.024,
-                        facecolor=_BAND,
-                        edgecolor="none",
-                        zorder=0,
-                    )
-                )
-            axes.text(
-                x_edges[stub],
-                y + _GROUP_H / 2.0,
-                group,
-                fontsize=_HEAD_PT,
-                style="italic",
-                fontweight="semibold",
-                ha="left",
-                va="center",
-                **serif,
-            )
-            if subtotal is not None:
-                for index, text in enumerate(_bar_cells(table, columns, group, subtotal)):
-                    if index != stub:
-                        cell(index, y + _GROUP_H / 2.0, text, _BODY_PT, "semibold")
-            y += _GROUP_H
-        for _, record in chunk.iterrows():
-            for index, column in enumerate(columns):
-                if group is not None and column.key == table.row_group:
-                    continue
-                cell(
-                    index,
-                    y + _ROW_H / 2.0,
-                    _fmt(record.get(column.key), column.fmt),
-                    _BODY_PT,
-                    "normal",
-                    dx=_STUB_INDENT if (group is not None and index == stub) else 0.0,
-                )
-            y += _ROW_H
-
-    if total_row is not None:
-        y += 0.06
-        rule(y, _PAD_X, table_width, 0.7)
-        for index, column in enumerate(columns):
-            if column.key == table.row_group:
-                continue
-            cell(index, y + _ROW_H / 2.0 + 0.02, total_row[index], _BODY_PT, "semibold")
-        y += _ROW_H
-
-    y += 0.05
-    rule(y, _PAD_X, table_width, 1.25)
-    y += 0.11
-    marker_lines: dict[int, tuple[str | None, str]] = {}
-    for marker, text in table.footnotes:
-        for offset, line in enumerate(
-            _wrap_to_width(text, table_width - _PAD_X - 0.10, measure, _NOTE_PT)
-        ):
-            marker_lines[len(marker_lines)] = (marker if offset == 0 else None, line)
-    for _, (line_marker, line) in sorted(marker_lines.items()):
-        if line_marker:
+        self.y += 0.28
+        if table.subtitle:
             axes.text(
                 _PAD_X,
-                y - 0.018,
-                line_marker,
-                fontsize=_MARKER_PT - 0.6,
+                self.y,
+                table.subtitle,
+                fontsize=_SUBTITLE_PT,
                 va="top",
+                style="italic",
                 family="serif",
                 color=_SUBTLE,
             )
-        axes.text(
-            _PAD_X + 0.10, y, line, fontsize=_NOTE_PT, va="top", family="serif", color=_SUBTLE
-        )
-        y += _NOTE_LEAD
-    if table.source_note:
-        for line in _wrap_to_width(table.source_note, table_width - _PAD_X, measure, _NOTE_PT):
-            axes.text(_PAD_X, y, line, fontsize=_NOTE_PT, va="top", family="serif", color=_SUBTLE)
-            y += _NOTE_LEAD
+            self.y += 0.20
 
-    return figure
+    def _header(self) -> None:
+        layout, axes, columns, measure = self.layout, self.axes, self.columns, self.measure
+        x_edges, widths = layout.x_edges, layout.widths
+        y = self.y
+        self._rule(y, _PAD_X, layout.table_width, 1.25)
+        y += 0.06
+
+        if layout.has_spanner:
+            for spanner, start, end in layout.runs:
+                if spanner is None:
+                    continue
+                x0, x1 = x_edges[start], x_edges[end] + widths[end]
+                axes.text(
+                    (x0 + x1) / 2.0,
+                    y + 0.10,
+                    spanner,
+                    fontsize=_SPANNER_PT,
+                    fontweight="semibold",
+                    ha="center",
+                    va="center",
+                    **self.serif,
+                )
+                self._rule(y + 0.185, x0, x1, 0.7)
+            y += 0.215
+
+        baseline = y + 0.115
+        for index, column in enumerate(columns):
+            label_width = measure(column.label, _HEAD_PT, "semibold")
+            if column.align == "left":
+                x_label = x_edges[index]
+            else:
+                marker_width = (
+                    measure(column.marker, _MARKER_PT, "semibold") + 0.012 if column.marker else 0.0
+                )
+                x_label = x_edges[index] + widths[index] - marker_width - label_width
+            axes.text(
+                x_label,
+                baseline,
+                column.label,
+                fontsize=_HEAD_PT,
+                fontweight="semibold",
+                ha="left",
+                va="center",
+                **self.serif,
+            )
+            if column.marker:
+                # Drawn as its own raised text rather than mathtext: a "$^{a}$" makes
+                # matplotlib parse the whole header as maths and set it in italics.
+                axes.text(
+                    x_label + label_width + 0.012,
+                    baseline - 0.045,
+                    column.marker,
+                    fontsize=_MARKER_PT,
+                    fontweight="semibold",
+                    ha="left",
+                    va="center",
+                    **self.serif,
+                )
+        y += 0.235
+        self._rule(y, _PAD_X, layout.table_width, 0.85)
+        y += 0.04
+        self.y = y
+
+    def _body(self) -> None:
+        table, columns, axes, layout = self.table, self.columns, self.axes, self.layout
+        stub = self.stub
+        y = self.y
+        for group, chunk in self.groups:
+            if group is not None:
+                subtotal = table.group_total(group)
+                if subtotal is not None:
+                    # Tinted bar behind the row, achromatic so it survives greyscale
+                    # print and any colour vision deficiency.
+                    axes.add_patch(
+                        self.plt.Rectangle(
+                            (_PAD_X - 0.05, y + 0.012),
+                            layout.table_width - _PAD_X + 0.05,
+                            _GROUP_H - 0.024,
+                            facecolor=_BAND,
+                            edgecolor="none",
+                            zorder=0,
+                        )
+                    )
+                axes.text(
+                    layout.x_edges[stub],
+                    y + _GROUP_H / 2.0,
+                    group,
+                    fontsize=_HEAD_PT,
+                    style="italic",
+                    fontweight="semibold",
+                    ha="left",
+                    va="center",
+                    **self.serif,
+                )
+                if subtotal is not None:
+                    for index, text in enumerate(_bar_cells(table, columns, group, subtotal)):
+                        if index != stub:
+                            self._cell(index, y + _GROUP_H / 2.0, text, _BODY_PT, "semibold")
+                y += _GROUP_H
+            for _, record in chunk.iterrows():
+                for index, column in enumerate(columns):
+                    if group is not None and column.key == table.row_group:
+                        continue
+                    self._cell(
+                        index,
+                        y + _ROW_H / 2.0,
+                        _fmt(record.get(column.key), column.fmt),
+                        _BODY_PT,
+                        "normal",
+                        dx=_STUB_INDENT if (group is not None and index == stub) else 0.0,
+                    )
+                y += _ROW_H
+        self.y = y
+
+    def _total(self) -> None:
+        table, layout = self.table, self.layout
+        y = self.y
+        if layout.total_row is not None:
+            y += 0.06
+            self._rule(y, _PAD_X, layout.table_width, 0.7)
+            for index, column in enumerate(self.columns):
+                if column.key == table.row_group:
+                    continue
+                self._cell(
+                    index, y + _ROW_H / 2.0 + 0.02, layout.total_row[index], _BODY_PT, "semibold"
+                )
+            y += _ROW_H
+        self.y = y
+
+    def _notes(self) -> None:
+        table, axes, measure = self.table, self.axes, self.measure
+        table_width = self.layout.table_width
+        y = self.y
+        y += 0.05
+        self._rule(y, _PAD_X, table_width, 1.25)
+        y += 0.11
+        marker_lines: dict[int, tuple[str | None, str]] = {}
+        for marker, text in table.footnotes:
+            for offset, line in enumerate(
+                _wrap_to_width(text, table_width - _PAD_X - 0.10, measure, _NOTE_PT)
+            ):
+                marker_lines[len(marker_lines)] = (marker if offset == 0 else None, line)
+        for _, (line_marker, line) in sorted(marker_lines.items()):
+            if line_marker:
+                axes.text(
+                    _PAD_X,
+                    y - 0.018,
+                    line_marker,
+                    fontsize=_MARKER_PT - 0.6,
+                    va="top",
+                    family="serif",
+                    color=_SUBTLE,
+                )
+            axes.text(
+                _PAD_X + 0.10, y, line, fontsize=_NOTE_PT, va="top", family="serif", color=_SUBTLE
+            )
+            y += _NOTE_LEAD
+        if table.source_note:
+            for line in _wrap_to_width(table.source_note, table_width - _PAD_X, measure, _NOTE_PT):
+                axes.text(
+                    _PAD_X, y, line, fontsize=_NOTE_PT, va="top", family="serif", color=_SUBTLE
+                )
+                y += _NOTE_LEAD
+        self.y = y
+
+
+def _draw_table(
+    table: TypesetTable,
+    columns: tuple[Column, ...],
+    groups: list[tuple[str | None, pd.DataFrame]],
+    measure: _TextWidth,
+    plt: ModuleType,
+) -> Figure:
+    """Lay out and draw a table. Split out so the measuring figure is always closed."""
+
+    layout = _measure_layout(table, columns, groups, measure)
+    return _TableDrawer(table, columns, groups, layout, measure, plt).draw()
 
 
 def _wrap_to_width(text: str, width: float, measure: _TextWidth, size: float) -> list[str]:
