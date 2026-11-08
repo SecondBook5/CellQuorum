@@ -225,3 +225,32 @@ def test_write_normalization_figures_with_many_cells() -> None:
         # Should succeed and create all figures
         assert len(result.figure_paths) == 4
         assert len(result.warnings) == 0
+
+
+def test_expression_histogram_subsample_follows_the_seed(tmp_path: Path) -> None:
+    """The histogram is drawn from a random subsample of values, which has to follow the seed.
+
+    It drew from numpy's global generator, so the same data gave a different figure each run.
+    """
+    import matplotlib.pyplot as plt
+
+    from cellquorum.stages.preprocessing.visualization import (
+        _plot_expression_distribution_before_after,
+    )
+
+    rng = np.random.default_rng(0)
+    counts = rng.poisson(3.0, size=(3000, 100)).astype(np.float32)  # 300,000 values > the cap
+    adata = ad.AnnData(X=counts)
+    adata.layers["counts"] = counts.copy()
+    adata.layers["cellquorum_normalized"] = np.log1p(counts / counts.sum(axis=1, keepdims=True))
+
+    def render(name: str, seed: int) -> np.ndarray:
+        path = tmp_path / f"{name}.png"
+        _plot_expression_distribution_before_after(
+            adata, "counts", "cellquorum_normalized", path, 72, seed
+        )
+        return plt.imread(path)
+
+    first, again, other = render("first", 5), render("again", 5), render("other", 6)
+    assert np.array_equal(first, again)
+    assert not np.array_equal(first, other)

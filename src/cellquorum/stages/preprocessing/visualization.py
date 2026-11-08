@@ -49,6 +49,7 @@ def write_normalization_figures(
     dpi: int = 300,
     figure_format: str = "png",
     overwrite: bool = False,
+    random_state: int = 0,
 ) -> PreprocessingVisualizationResult:
     """
     Write normalization diagnostic figures.
@@ -69,6 +70,8 @@ def write_normalization_figures(
         dpi: Figure resolution (default: 300 for publication).
         figure_format: Figure format (png, pdf, svg).
         overwrite: Whether to overwrite existing figures.
+        random_state: Seed for the value subsample the expression histograms are drawn from,
+            so the same data and seed give the same figure.
 
     Returns:
         PreprocessingVisualizationResult with figure paths and warnings.
@@ -113,7 +116,7 @@ def write_normalization_figures(
     if overwrite or not fig_path.exists():
         try:
             _plot_expression_distribution_before_after(
-                adata, counts_layer, normalized_layer, fig_path, dpi
+                adata, counts_layer, normalized_layer, fig_path, dpi, random_state
             )
             figure_paths.append(fig_path)
         except Exception as e:
@@ -203,10 +206,16 @@ def _plot_total_counts_before_after(
 
 
 def _plot_expression_distribution_before_after(
-    adata: AnnData, counts_layer: str, normalized_layer: str, output_path: Path, dpi: int
+    adata: AnnData,
+    counts_layer: str,
+    normalized_layer: str,
+    output_path: Path,
+    dpi: int,
+    random_state: int = 0,
 ) -> None:
     """Plot expression value distribution before and after normalization."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    rng = np.random.default_rng(random_state)
 
     # Sample values for histogram (avoid plotting millions of points)
     max_values = 100000
@@ -217,14 +226,14 @@ def _plot_expression_distribution_before_after(
         # Sample from nonzero values
         counts_data = counts_matrix.data
         if len(counts_data) > max_values:
-            indices = np.random.choice(len(counts_data), max_values, replace=False)
+            indices = rng.choice(len(counts_data), max_values, replace=False)
             counts_sample = counts_data[indices]
         else:
             counts_sample = counts_data
     else:
         counts_flat = counts_matrix.flatten()
         if len(counts_flat) > max_values:
-            indices = np.random.choice(len(counts_flat), max_values, replace=False)
+            indices = rng.choice(len(counts_flat), max_values, replace=False)
             counts_sample = counts_flat[indices]
         else:
             counts_sample = counts_flat
@@ -249,14 +258,14 @@ def _plot_expression_distribution_before_after(
         # Sample from nonzero values
         norm_data = norm_matrix.data
         if len(norm_data) > max_values:
-            indices = np.random.choice(len(norm_data), max_values, replace=False)
+            indices = rng.choice(len(norm_data), max_values, replace=False)
             norm_sample = norm_data[indices]
         else:
             norm_sample = norm_data
     else:
         norm_flat = norm_matrix.flatten()
         if len(norm_flat) > max_values:
-            indices = np.random.choice(len(norm_flat), max_values, replace=False)
+            indices = rng.choice(len(norm_flat), max_values, replace=False)
             norm_sample = norm_flat[indices]
         else:
             norm_sample = norm_flat

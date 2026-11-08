@@ -172,6 +172,7 @@ class PreprocessingStage:
                 normalized_layer=normalization_result.output_layer,
                 dpi=preprocessing_config.figure_dpi,
                 figure_format=preprocessing_config.figure_format,
+                random_state=int(getattr(context, "random_seed", 1337)),
             )
             stage_artifacts.extend(
                 StageArtifact(
