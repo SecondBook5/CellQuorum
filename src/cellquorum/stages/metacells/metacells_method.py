@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import anndata as ad
 import numpy as np
@@ -106,243 +108,44 @@ class MetacellsMethod(AnalysisMethod):
         return []
 
     def _run(self, adata, config, context) -> StageResult | MethodSkip:  # noqa: ANN001
-        # 1. Resolve config
-        layer = config.get("layer", "counts")
-        rep_key = config.get("rep_key", "X_pca_harmony")
-        group_by = config.get("group_by", "ref_cell_type_granular_coarse")
-        target_metacell_size = int(config.get("target_metacell_size", 96))
-        min_cells = int(config.get("min_cells", 5000))
-        seed = int(config.get("seed", 0))
-        launcher = config.get("launcher", "micromamba")
-        timeout_seconds = int(config.get("timeout_seconds", 3600))
+        settings = _MetacellSettings.from_config(config)
+        backend, refusal = _preflight(adata, settings, context)
+        if refusal is not None:
+            return self._skip(refusal.reason, **refusal.details)
+        assert backend is not None  # a preflight with no refusal always resolved the backend
 
-        # 2. Guards -> MethodSkip
-        if adata.n_obs < min_cells:
-            return self._skip(
-                f"too few cells ({adata.n_obs} < {min_cells})", n_obs=int(adata.n_obs)
-            )
-        if group_by not in adata.obs.columns:
-            return self._skip(f"group_by column '{group_by}' absent", group_by=group_by)
-        if rep_key not in adata.obsm:
-            return self._skip(f"rep_key '{rep_key}' absent from obsm", rep_key=rep_key)
-        if shutil.which(launcher) is None:
-            return self._skip(f"launcher '{launcher}' not found on PATH", launcher=launcher)
-        registry = getattr(context, "backend_registry", None)
-        backend = None
-        if registry is not None:
-            try:
-                backend = registry.get("metacells")
-            except Exception:
-                backend = None
-        if backend is None:
-            return self._skip("metacells backend unavailable")
-        try:
-            module_ok = backend._py_module_available("metacells")
-        except Exception:
-            module_ok = False
-        if not module_ok:
-            return self._skip("metacells module unavailable in env")
-
-        # 3. Write scratch h5ad (raw counts + rep + group_by only)
-        scratch = Path(getattr(context.paths, "scratch", "."))
-        scratch.mkdir(parents=True, exist_ok=True)
-        h5ad = scratch / "metacells_input.h5ad"
-        write_h5ad(
-            ad.AnnData(
-                X=adata.layers[layer] if layer != "X" else adata.X,
-                obs=adata.obs[[group_by]].copy(),
-                var=adata.var[[]].copy(),
-                obsm={rep_key: adata.obsm[rep_key]},
-            ),
-            h5ad,
-        )
-
+        h5ad = _write_scratch_input(adata, settings, context)
         out_dir = Path(getattr(context.paths, "results", ".")) / "metacells"
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # 4. Run the in-env script
-        args = [
-            str(h5ad),
-            str(out_dir),
-            rep_key,
-            "X",  # the scratch h5ad already carries counts as X
-            group_by,
-            str(target_metacell_size),
-            str(min_cells),
-            str(seed),
-        ]
-        try:
-            proc = backend.run_script(RUN_METACELL2_PY, args, timeout=timeout_seconds)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-            return self._skip(
-                "metacells script execution failed or timed out", error=str(exc)[:500]
-            )
-        if proc.returncode != 0:
-            return self._skip("metacells script failed", stderr=proc.stderr.strip()[:500])
-
+        refusal = _run_script(backend, h5ad, out_dir, settings)
+        if refusal is not None:
+            return self._skip(refusal.reason, **refusal.details)
         assignments_csv = out_dir / "metacell_assignments.csv"
-        skip_marker = out_dir / "metacells_SKIPPED.txt"
-        if skip_marker.exists() or not assignments_csv.exists():
-            reason = (
-                skip_marker.read_text().strip()
-                if skip_marker.exists()
-                else "no assignments produced"
-            )
-            return self._skip(reason)
-        try:
-            # Explicit string dtypes: letting pandas infer types lets numeric-
-            # looking barcodes (e.g. "1000", "1001", ...) come back as int64,
-            # which then silently fails to match `adata.obs_names` (always
-            # str) in the `.map()` join below -- every cell would fall
-            # through to "Outliers" with no error and no warning.
-            assignments = pd.read_csv(assignments_csv, dtype={"cell_id": str, "metacell_id": str})
-        except Exception as exc:
-            return self._skip("could not read assignments CSV", error=str(exc)[:500])
-        if len(assignments) == 0:
-            return self._skip("no cell assignments produced")
+        assignments, refusal = _read_assignments(out_dir, assignments_csv)
+        if refusal is not None:
+            return self._skip(refusal.reason, **refusal.details)
+        assert assignments is not None  # a read with no refusal always produced the table
 
-        # 5. Write metacell_id onto the main object
-        id_by_cell = dict(zip(assignments["cell_id"], assignments["metacell_id"], strict=False))
-        matched = set(adata.obs_names) & set(assignments["cell_id"])
-        has_real_assignments = (assignments["metacell_id"] != "Outliers").any()
-        if has_real_assignments and len(matched) < max(1, int(0.01 * adata.n_obs)):
-            # The assignments table has real (non-Outliers) metacells, but
-            # almost none of its cell_id values actually match adata's
-            # obs_names -- the join below would silently fail and write a
-            # plausible-looking obs column that is 100% "Outliers". That is
-            # a wrong answer, not a legitimate result, so skip loudly rather
-            # than proceed.
-            return self._skip(
-                "assignments cell_id values do not match adata.obs_names "
-                f"({len(matched)}/{adata.n_obs} matched) -- join would silently fail",
-                n_matched=len(matched),
-                n_obs=int(adata.n_obs),
-            )
-        adata.obs["metacell_id"] = (
-            adata.obs_names.to_series().map(id_by_cell).fillna("Outliers").astype(str).to_numpy()
-        )
+        refusal = _attach_metacell_ids(adata, assignments)
+        if refusal is not None:
+            return self._skip(refusal.reason, **refusal.details)
 
         mc_adata_path = out_dir / "metacell_adata.h5ad"
-
-        # 5b. Build the small per-metacell "nodes" table every figure shares
-        real_assignments = assignments[assignments["metacell_id"] != "Outliers"]
-        nodes = pd.DataFrame(
-            {
-                "metacell_id": sorted(real_assignments["metacell_id"].unique()),
-            }
-        )
-        dom = dominant_group(assignments)
-        counts = real_assignments.groupby("metacell_id").size()
-        nodes["dominant_group"] = nodes["metacell_id"].map(dom)
-        nodes["n_cells"] = nodes["metacell_id"].map(counts).fillna(0).astype(int)
-
-        figures_dir = Path(getattr(context.paths, "figures", ".")) / "metacells"
-        figures_dir.mkdir(parents=True, exist_ok=True)
-        figs: list[Path] = []
+        nodes = _metacell_nodes(assignments)
         fig_warnings: list[str] = []
-
-        expr = None
-        marker_dir = None
-        if mc_adata_path.exists():
-            try:
-                mc_adata = ad.read_h5ad(mc_adata_path)
-                mc_x = mc_adata.X.toarray() if sp.issparse(mc_adata.X) else mc_adata.X
-                expr = pd.DataFrame(
-                    mc_x.T if hasattr(mc_x, "T") else mc_x,
-                    index=mc_adata.var_names,
-                    columns=mc_adata.obs_names,
-                )
-            except Exception as exc:  # noqa: BLE001
-                fig_warnings.append(f"could not read metacell_adata for figures: {str(exc)[:150]}")
-
-        # Metacell-to-metacell similarity from shared nearest hub genes -- a
-        # simple correlation graph over the pseudobulk expression, thresholded
-        # to the top-k strongest positive-correlation edges per node (k=8),
-        # since MetaCell2's own umap/graph object is not persisted by the
-        # in-env script (only the collected pseudobulk is). An unthresholded
-        # full pairwise graph is O(n^2) edges -- unreadable and unusably slow
-        # to render once metacell counts reach the hundreds to thousands.
-        edges = pd.DataFrame(columns=["source", "target", "weight"])
-        if expr is not None and expr.shape[1] > 1:
-            edges = _top_k_positive_edges(expr.corr(), k=8)
-
-        render_figure(
-            "metacell network",
-            lambda: plot_metacell_network(edges, nodes, figures_dir),
-            figures=figs,
-            warnings=fig_warnings,
+        expr = _pseudobulk_expression(mc_adata_path, fig_warnings)
+        figs = _render_metacell_figures(
+            assignments, nodes, expr, config, context, fig_warnings=fig_warnings
         )
-        if expr is not None:
-            render_figure(
-                "metacell gene heatmap",
-                lambda: plot_metacell_gene_heatmap(expr, nodes, figures_dir),
-                figures=figs,
-                warnings=fig_warnings,
-            )
-        render_figure(
-            "metacell composition bar",
-            lambda: plot_metacell_composition_bar(assignments, nodes, figures_dir),
-            figures=figs,
-            warnings=fig_warnings,
-        )
-        render_figure(
-            "metacell qc unclassified vs size",
-            lambda: plot_metacell_qc_unclassified_vs_size(assignments, nodes, figures_dir),
-            figures=figs,
-            warnings=fig_warnings,
-        )
-        render_figure(
-            "metacell qc size comparison",
-            lambda: plot_metacell_qc_size_comparison(assignments, nodes, figures_dir),
-            figures=figs,
-            warnings=fig_warnings,
-        )
+        artifacts = _stage_artifacts(assignments_csv, mc_adata_path, figs)
 
-        marker_genes = config.get("marker_genes") or []
-        if marker_genes and expr is not None:
-            marker_dir = figures_dir / "metacell_marker_traces"
-            render_figure(
-                "metacell marker traces",
-                lambda: plot_metacell_marker_traces(expr, nodes, marker_dir, marker_genes),
-                figures=figs,
-                warnings=fig_warnings,
-            )
-
-        # 6. Artifacts
-        artifacts: list[StageArtifact] = [
-            StageArtifact(
-                name="metacell_assignments",
-                path=assignments_csv,
-                kind="csv",
-                description="Per-cell metacell assignment (including the Outliers bucket)",
-            ),
-        ]
-        if mc_adata_path.exists():
-            artifacts.append(
-                StageArtifact(
-                    name="metacell_adata",
-                    path=mc_adata_path,
-                    kind="h5ad",
-                    description="Aggregated (pseudobulk) metacell AnnData",
-                )
-            )
-        for fig_path in figs:
-            artifacts.append(
-                StageArtifact(
-                    name=f"figure_{fig_path.stem}",
-                    path=fig_path,
-                    kind="figure",
-                    description="metacells stage figure",
-                )
-            )
-
-        # 7. Metrics
         summary = outlier_summary(assignments)
-        metrics = {
+        metrics: dict[str, object] = {
             "n_metacells": summary["n_metacells"],
             "n_outlier_cells": summary["n_outlier_cells"],
             "pct_outlier": summary["pct_outlier"],
-            "group_by": group_by,
+            "group_by": settings.group_by,
             "n_obs": int(adata.n_obs),
         }
 
@@ -353,6 +156,297 @@ class MetacellsMethod(AnalysisMethod):
             metrics=metrics,
             backend="metacells",
         )
+
+
+@dataclass(frozen=True)
+class _Refusal:
+    """Why the method skips, in the form ``AnalysisMethod._skip`` takes."""
+
+    reason: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _MetacellSettings:
+    """The method's resolved configuration."""
+
+    layer: str
+    rep_key: str
+    group_by: str
+    target_metacell_size: int
+    min_cells: int
+    seed: int
+    launcher: str
+    timeout_seconds: int
+
+    @classmethod
+    def from_config(cls, config: dict) -> _MetacellSettings:
+        """Read the method config, applying the same defaults the stage documents."""
+        return cls(
+            layer=config.get("layer", "counts"),
+            rep_key=config.get("rep_key", "X_pca_harmony"),
+            group_by=config.get("group_by", "ref_cell_type_granular_coarse"),
+            target_metacell_size=int(config.get("target_metacell_size", 96)),
+            min_cells=int(config.get("min_cells", 5000)),
+            seed=int(config.get("seed", 0)),
+            launcher=config.get("launcher", "micromamba"),
+            timeout_seconds=int(config.get("timeout_seconds", 3600)),
+        )
+
+
+def _preflight(
+    adata: ad.AnnData, settings: _MetacellSettings, context: Any
+) -> tuple[Any, _Refusal | None]:
+    """Check the object and the runtime; returns ``(backend, None)`` or ``(None, refusal)``."""
+    if adata.n_obs < settings.min_cells:
+        return None, _Refusal(
+            f"too few cells ({adata.n_obs} < {settings.min_cells})", {"n_obs": int(adata.n_obs)}
+        )
+    if settings.group_by not in adata.obs.columns:
+        return None, _Refusal(
+            f"group_by column '{settings.group_by}' absent", {"group_by": settings.group_by}
+        )
+    if settings.rep_key not in adata.obsm:
+        return None, _Refusal(
+            f"rep_key '{settings.rep_key}' absent from obsm", {"rep_key": settings.rep_key}
+        )
+    if shutil.which(settings.launcher) is None:
+        return None, _Refusal(
+            f"launcher '{settings.launcher}' not found on PATH", {"launcher": settings.launcher}
+        )
+    registry = getattr(context, "backend_registry", None)
+    backend = None
+    if registry is not None:
+        try:
+            backend = registry.get("metacells")
+        except Exception:
+            backend = None
+    if backend is None:
+        return None, _Refusal("metacells backend unavailable")
+    try:
+        module_ok = backend._py_module_available("metacells")
+    except Exception:
+        module_ok = False
+    if not module_ok:
+        return None, _Refusal("metacells module unavailable in env")
+    return backend, None
+
+
+def _write_scratch_input(adata: ad.AnnData, settings: _MetacellSettings, context: Any) -> Path:
+    """Write the scratch h5ad the script reads: raw counts, the representation, the groups."""
+    scratch = Path(getattr(context.paths, "scratch", "."))
+    scratch.mkdir(parents=True, exist_ok=True)
+    h5ad = scratch / "metacells_input.h5ad"
+    write_h5ad(
+        ad.AnnData(
+            X=adata.layers[settings.layer] if settings.layer != "X" else adata.X,
+            obs=adata.obs[[settings.group_by]].copy(),
+            var=adata.var[[]].copy(),
+            obsm={settings.rep_key: adata.obsm[settings.rep_key]},
+        ),
+        h5ad,
+    )
+    return h5ad
+
+
+def _run_script(
+    backend: Any, h5ad: Path, out_dir: Path, settings: _MetacellSettings
+) -> _Refusal | None:
+    """Run the in-env MetaCell2 script; a failure or timeout is a refusal, not an exception."""
+    args = [
+        str(h5ad),
+        str(out_dir),
+        settings.rep_key,
+        "X",  # the scratch h5ad already carries counts as X
+        settings.group_by,
+        str(settings.target_metacell_size),
+        str(settings.min_cells),
+        str(settings.seed),
+    ]
+    try:
+        proc = backend.run_script(RUN_METACELL2_PY, args, timeout=settings.timeout_seconds)
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        return _Refusal("metacells script execution failed or timed out", {"error": str(exc)[:500]})
+    if proc.returncode != 0:
+        return _Refusal("metacells script failed", {"stderr": proc.stderr.strip()[:500]})
+    return None
+
+
+def _read_assignments(
+    out_dir: Path, assignments_csv: Path
+) -> tuple[pd.DataFrame | None, _Refusal | None]:
+    """Read the script's per-cell assignments, or say why there are none."""
+    skip_marker = out_dir / "metacells_SKIPPED.txt"
+    if skip_marker.exists() or not assignments_csv.exists():
+        reason = (
+            skip_marker.read_text().strip() if skip_marker.exists() else "no assignments produced"
+        )
+        return None, _Refusal(reason)
+    try:
+        # Explicit string dtypes: letting pandas infer types lets numeric-
+        # looking barcodes (e.g. "1000", "1001", ...) come back as int64,
+        # which then silently fails to match `adata.obs_names` (always
+        # str) in the `.map()` join below -- every cell would fall
+        # through to "Outliers" with no error and no warning.
+        assignments = pd.read_csv(assignments_csv, dtype={"cell_id": str, "metacell_id": str})
+    except Exception as exc:
+        return None, _Refusal("could not read assignments CSV", {"error": str(exc)[:500]})
+    if len(assignments) == 0:
+        return None, _Refusal("no cell assignments produced")
+    return assignments, None
+
+
+def _attach_metacell_ids(adata: ad.AnnData, assignments: pd.DataFrame) -> _Refusal | None:
+    """Write ``metacell_id`` onto the object, refusing a join that would silently fail."""
+    id_by_cell = dict(zip(assignments["cell_id"], assignments["metacell_id"], strict=False))
+    matched = set(adata.obs_names) & set(assignments["cell_id"])
+    has_real_assignments = (assignments["metacell_id"] != "Outliers").any()
+    if has_real_assignments and len(matched) < max(1, int(0.01 * adata.n_obs)):
+        # The assignments table has real (non-Outliers) metacells, but
+        # almost none of its cell_id values actually match adata's
+        # obs_names -- the join below would silently fail and write a
+        # plausible-looking obs column that is 100% "Outliers". That is
+        # a wrong answer, not a legitimate result, so skip loudly rather
+        # than proceed.
+        return _Refusal(
+            "assignments cell_id values do not match adata.obs_names "
+            f"({len(matched)}/{adata.n_obs} matched) -- join would silently fail",
+            {"n_matched": len(matched), "n_obs": int(adata.n_obs)},
+        )
+    adata.obs["metacell_id"] = (
+        adata.obs_names.to_series().map(id_by_cell).fillna("Outliers").astype(str).to_numpy()
+    )
+    return None
+
+
+def _metacell_nodes(assignments: pd.DataFrame) -> pd.DataFrame:
+    """The small per-metacell table every figure shares: id, dominant group, cell count."""
+    real_assignments = assignments[assignments["metacell_id"] != "Outliers"]
+    nodes = pd.DataFrame({"metacell_id": sorted(real_assignments["metacell_id"].unique())})
+    dom = dominant_group(assignments)
+    counts = real_assignments.groupby("metacell_id").size()
+    nodes["dominant_group"] = nodes["metacell_id"].map(dom)
+    nodes["n_cells"] = nodes["metacell_id"].map(counts).fillna(0).astype(int)
+    return nodes
+
+
+def _pseudobulk_expression(mc_adata_path: Path, fig_warnings: list[str]) -> pd.DataFrame | None:
+    """The metacell pseudobulk as a genes x metacells frame, or None when it cannot be read."""
+    if not mc_adata_path.exists():
+        return None
+    try:
+        mc_adata = ad.read_h5ad(mc_adata_path)
+        mc_x = mc_adata.X.toarray() if sp.issparse(mc_adata.X) else mc_adata.X
+        return pd.DataFrame(
+            mc_x.T if hasattr(mc_x, "T") else mc_x,
+            index=mc_adata.var_names,
+            columns=mc_adata.obs_names,
+        )
+    except Exception as exc:  # noqa: BLE001
+        fig_warnings.append(f"could not read metacell_adata for figures: {str(exc)[:150]}")
+        return None
+
+
+def _render_metacell_figures(
+    assignments: pd.DataFrame,
+    nodes: pd.DataFrame,
+    expr: pd.DataFrame | None,
+    config: dict,
+    context: Any,
+    *,
+    fig_warnings: list[str],
+) -> list[Path]:
+    """Render every metacells figure; one failing figure becomes a warning, not an error."""
+    figures_dir = Path(getattr(context.paths, "figures", ".")) / "metacells"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    figs: list[Path] = []
+
+    # Metacell-to-metacell similarity from shared nearest hub genes -- a
+    # simple correlation graph over the pseudobulk expression, thresholded
+    # to the top-k strongest positive-correlation edges per node (k=8),
+    # since MetaCell2's own umap/graph object is not persisted by the
+    # in-env script (only the collected pseudobulk is). An unthresholded
+    # full pairwise graph is O(n^2) edges -- unreadable and unusably slow
+    # to render once metacell counts reach the hundreds to thousands.
+    edges = pd.DataFrame(columns=["source", "target", "weight"])
+    if expr is not None and expr.shape[1] > 1:
+        edges = _top_k_positive_edges(expr.corr(), k=8)
+
+    render_figure(
+        "metacell network",
+        lambda: plot_metacell_network(edges, nodes, figures_dir),
+        figures=figs,
+        warnings=fig_warnings,
+    )
+    if expr is not None:
+        render_figure(
+            "metacell gene heatmap",
+            lambda: plot_metacell_gene_heatmap(expr, nodes, figures_dir),
+            figures=figs,
+            warnings=fig_warnings,
+        )
+    render_figure(
+        "metacell composition bar",
+        lambda: plot_metacell_composition_bar(assignments, nodes, figures_dir),
+        figures=figs,
+        warnings=fig_warnings,
+    )
+    render_figure(
+        "metacell qc unclassified vs size",
+        lambda: plot_metacell_qc_unclassified_vs_size(assignments, nodes, figures_dir),
+        figures=figs,
+        warnings=fig_warnings,
+    )
+    render_figure(
+        "metacell qc size comparison",
+        lambda: plot_metacell_qc_size_comparison(assignments, nodes, figures_dir),
+        figures=figs,
+        warnings=fig_warnings,
+    )
+
+    marker_genes = config.get("marker_genes") or []
+    if marker_genes and expr is not None:
+        marker_dir = figures_dir / "metacell_marker_traces"
+        render_figure(
+            "metacell marker traces",
+            lambda: plot_metacell_marker_traces(expr, nodes, marker_dir, marker_genes),
+            figures=figs,
+            warnings=fig_warnings,
+        )
+    return figs
+
+
+def _stage_artifacts(
+    assignments_csv: Path, mc_adata_path: Path, figs: list[Path]
+) -> list[StageArtifact]:
+    """The assignments table, the pseudobulk object when written, and each figure."""
+    artifacts: list[StageArtifact] = [
+        StageArtifact(
+            name="metacell_assignments",
+            path=assignments_csv,
+            kind="csv",
+            description="Per-cell metacell assignment (including the Outliers bucket)",
+        ),
+    ]
+    if mc_adata_path.exists():
+        artifacts.append(
+            StageArtifact(
+                name="metacell_adata",
+                path=mc_adata_path,
+                kind="h5ad",
+                description="Aggregated (pseudobulk) metacell AnnData",
+            )
+        )
+    for fig_path in figs:
+        artifacts.append(
+            StageArtifact(
+                name=f"figure_{fig_path.stem}",
+                path=fig_path,
+                kind="figure",
+                description="metacells stage figure",
+            )
+        )
+    return artifacts
 
 
 __all__ = ["MetacellsMethod"]
