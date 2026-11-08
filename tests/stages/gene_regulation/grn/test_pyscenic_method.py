@@ -262,3 +262,21 @@ def test_scratch_h5ad_does_not_carry_unrelated_layers_and_obsm(tmp_path: Path) -
     assert "huge_unrelated_layer" not in written.layers
     assert "X_huge_unrelated" not in written.obsm
     assert written.X.shape == (a.n_obs, a.n_vars)
+
+
+def test_a_misspelled_group_by_says_the_group_figures_were_not_drawn(tmp_path: Path) -> None:
+    """The group-level figures used to disappear without a word when ``group_by`` was a typo."""
+    from types import SimpleNamespace
+
+    from cellquorum.stages.gene_regulation.grn.pyscenic_method import _render_activity_figures
+
+    adata = _adata()
+    auc = pd.DataFrame(1.0, index=adata.obs_names, columns=["regulon_a", "regulon_b"])
+    settings = SimpleNamespace(top_n=3, cluster_labels={}, group_by_cfg="cell_typo")
+    figs: list[Path] = []
+    warnings: list[str] = []
+
+    _render_activity_figures(adata, auc, "cell_typo", settings, tmp_path, figs, warnings)
+
+    assert figs == []
+    assert any("cell_typo" in w and "absent" in w for w in warnings)

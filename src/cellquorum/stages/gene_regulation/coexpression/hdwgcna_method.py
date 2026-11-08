@@ -48,6 +48,7 @@ class _Settings:
 
     layer: str
     group_by: str
+    group_by_explicit: bool
     condition_col: str | None
     n_hvg: int
     k: int
@@ -87,6 +88,7 @@ class _Settings:
         return cls(
             layer=layer,
             group_by=group_by,
+            group_by_explicit=bool(group_by_cfg),
             condition_col=condition_col,
             n_hvg=n_hvg,
             k=k,
@@ -111,6 +113,13 @@ def _check_prerequisites(adata: ad.AnnData, settings: _Settings, context: Pipeli
             f"too few cells ({adata.n_obs} < {settings.min_cells_total})",
             n_obs=int(adata.n_obs),
             min_cells_total=settings.min_cells_total,
+        )
+    # A configured grouping that is not a column is a typo, and R would not say so: its script
+    # falls back to one pooled group, so the run succeeds with modules built on all cells
+    # together and nothing in the output says the grouping was ignored.
+    if settings.group_by_explicit and settings.group_by not in adata.obs.columns:
+        raise _PipelineStop(
+            f"group_by column '{settings.group_by}' absent from obs", group_by=settings.group_by
         )
     if shutil.which(settings.launcher) is None:
         raise _PipelineStop(

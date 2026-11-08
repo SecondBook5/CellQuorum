@@ -378,6 +378,13 @@ def _render_activity_figures(
     if group_by in adata.obs.columns:
         groups = adata.obs[group_by].astype(str)
         groups.index = adata.obs_names
+    elif settings.group_by_cfg:
+        # A configured grouping that is not a column is a typo; without this the group-level
+        # figures just vanish and the run looks complete.
+        warnings.append(
+            f"group_by column '{settings.group_by_cfg}' absent from obs; the group-level "
+            f"regulon figures were not drawn"
+        )
     common = auc.index.intersection(adata.obs_names)
     if groups is not None and len(common) > 0:
         figure_kwargs = {

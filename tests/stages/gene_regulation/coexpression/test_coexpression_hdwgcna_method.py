@@ -45,6 +45,20 @@ def test_skips_when_too_few_cells(tmp_path: Path) -> None:
     assert "min" in res.reason.lower() or "cells" in res.reason.lower()
 
 
+def test_a_misspelled_group_by_is_refused_not_pooled(tmp_path: Path) -> None:
+    """The R script falls back to one pooled group when the column is absent, silently.
+
+    A typo in ``group_by`` therefore gave modules built on all cells together, with a clean
+    run and nothing to say the grouping had been ignored (reproduced against the real hdWGCNA:
+    ``group_by: nope`` succeeded with three modules).
+    """
+    res = HdwgcnaMethod()._run(
+        _adata(), {"group_by": "cell_typo", "min_cells_total": 10}, _ctx(tmp_path, None)
+    )
+    assert isinstance(res, MethodSkip)
+    assert "cell_typo" in res.reason and "absent" in res.reason
+
+
 def test_skips_when_launcher_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shutil.which", lambda _name: None)
     m = HdwgcnaMethod()
