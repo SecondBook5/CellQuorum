@@ -348,3 +348,41 @@ def test_a_milo_table_without_spatial_fdr_is_reported(tmp_path):
     _, _, n_da, warnings = MiloMethod()._read_results(path, spatial_fdr=0.1)
     assert n_da is None
     assert "SpatialFDR" in warnings[0]
+
+
+def test_milo_passes_the_configured_seed_to_r(tmp_path, mock_context):
+    """``makeNhoods`` is stochastic, so the stage's ``seed`` has to reach it.
+
+    milo.R set a literal seed of 0, so changing the configured seed changed nothing. Measured
+    with the real miloR on gut data: seed 0 twice gave identical tables, seed 5 gave 708
+    neighbourhoods against 713.
+    """
+    import subprocess
+
+    ctx = mock_context(tmp_path)
+    calls: list[list[str]] = []
+
+    class Recording:
+        def _rscript_available(self) -> bool:
+            return True
+
+        def _r_package_available(self, package: str) -> bool:
+            return True
+
+        def run_script(self, script, args, timeout):
+            calls.append(list(args))
+            return subprocess.CompletedProcess(args, 1, "", "stopped after recording")
+
+    ctx.backend_registry.get = lambda name: Recording()  # type: ignore[method-assign]
+    rng = np.random.default_rng(0)
+    adata = ad.AnnData(X=np.zeros((40, 1), dtype="float32"))
+    adata.obsm["X_pca"] = rng.normal(size=(40, 5))
+    adata.obs["condition"] = ["control", "case"] * 20
+    adata.obs["patient_id"] = [f"D{i % 4}" for i in range(40)]
+
+    for seed in (0, 7):
+        MiloMethod()._run(adata, {"case": "case", "control": "control", "seed": seed, "k": 5}, ctx)
+
+    assert [call[-1] for call in calls] == ["0", "7"]
+    # arguments 10 and 11 are always present, so the seed is always the twelfth
+    assert all(len(call) == 12 for call in calls)

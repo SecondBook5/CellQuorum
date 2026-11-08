@@ -75,6 +75,7 @@ class MiloMethod(RAnalysisMethod):
         prop = float(config.get("prop", 0.1))
         spatial_fdr = float(config.get("spatial_fdr", 0.1))
         paired = bool(config.get("paired", False))
+        seed = int(config.get("seed", 0))
         timeout = int(config.get("timeout_seconds", 1800))
 
         # A comparison needs both case and control labels.
@@ -143,15 +144,11 @@ class MiloMethod(RAnalysisMethod):
             str(prop),
         ]
 
-        # arg10: celltype_col is OPTIONAL and positional.
-        # If cell_type_col exists in obs, pass it.
-        # If cell_type_col does NOT exist BUT paired=true, pass empty string
-        # so paired lands at position 11.
-        # If no celltype AND not paired, omit both trailing args.
+        # arg10: celltype_col, or "" when there is none; arg11: paired flag; arg12: seed. All
+        # three are always passed so a later argument never depends on an earlier optional one.
         has_celltype = cell_type_col and cell_type_col in adata.obs.columns
         label_notes: list[str] = []
         if has_celltype:
-            args.append(cell_type_col)
             # Milo tests NEIGHBOURHOODS, so a cell with no label still belongs in
             # the graph and is kept -- unlike the count-based methods, which drop
             # it because a missing label cannot be a category to count. The label
@@ -167,13 +164,9 @@ class MiloMethod(RAnalysisMethod):
                     f"labels) and only affect how neighbourhoods are annotated. The "
                     f"count-based methods in this stage exclude them instead."
                 )
-        elif paired:
-            # No celltype but paired=true: pass empty string at position 10
-            args.append("")
-
-        # arg11: paired flag
-        if has_celltype or paired:
-            args.append("true" if paired else "false")
+        args.append(cell_type_col if has_celltype else "")
+        args.append("true" if paired else "false")
+        args.append(str(seed))
 
         # Invoke the milo script; non-zero exit -> recorded skip (never crash).
         try:

@@ -1,6 +1,6 @@
 # Milo neighborhood-level differential-abundance test.
 # Usage: Rscript milo.R <rep.csv> <meta.csv> <out.csv> \
-#        <condition_col> <case> <control> <donor_col> <k> <prop> [celltype_col] [paired]
+#        <condition_col> <case> <control> <donor_col> <k> <prop> [celltype_col] [paired] [seed]
 # rep.csv:  first column 'cell' id, remaining columns reduced-dim embedding (cells x dims).
 # meta.csv: first column cell id, columns include condition_col, donor_col, optional cell_type.
 # out.csv:  nhood, logFC, PValue, SpatialFDR, nhood_size, majority_celltype, celltype_fraction.
@@ -13,6 +13,7 @@ condition_col <- args[4]; case <- args[5]; control <- args[6]; donor_col <- args
 k <- as.integer(args[8]); prop <- as.numeric(args[9])
 celltype_col <- if (length(args) >= 10 && nzchar(args[10])) args[10] else NA
 paired <- length(args) >= 11 && tolower(args[11]) == "true"
+seed <- if (length(args) >= 12) as.integer(args[12]) else 0L
 
 # Read embedding (cells x dims) and metadata (cells x columns).
 emb <- read.csv(rep_csv, row.names = 1, check.names = FALSE)          # cells x dims
@@ -73,8 +74,9 @@ reducedDim(sce, "PCA") <- as.matrix(emb)
 milo <- Milo(sce)
 d <- ncol(emb)
 
-# Set seed for deterministic neighborhood sampling (makeNhoods is stochastic).
-set.seed(0)
+# Seed the neighbourhood sampling (makeNhoods is stochastic) with the configured seed. It used
+# to be a literal 0 here, so changing the stage's seed changed nothing.
+set.seed(seed)
 
 milo <- buildGraph(milo, k = k, d = d, reduced.dim = "PCA")
 milo <- makeNhoods(milo, prop = prop, k = k, d = d, refined = TRUE, reduced_dims = "PCA")
