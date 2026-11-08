@@ -59,8 +59,13 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from cellquorum.core.context import PipelineContext
+    from cellquorum.stages.qc.config import QCGradedConfig
+    from cellquorum.stages.qc.eligibility import EligibilityMasks
+    from cellquorum.stages.qc.evidence import AdjudicationResult, EvidenceTable
+    from cellquorum.stages.qc.lineage import NullGrouping
     from cellquorum.stages.qc.metrics import QCMetricsResult
     from cellquorum.stages.qc.sampleqc import SampleQCResult
+    from cellquorum.stages.qc.selfcheck import SelfCheckReport
 
 logger = logging.getLogger(__name__)
 
@@ -809,100 +814,30 @@ class QCStage:
         Returns:
             ``(graded_metrics, warnings)``.
         """
-        graded_metrics: dict[str, object] = {}
+        from cellquorum.stages.qc.eligibility import build_eligibility_masks
+
         graded_warnings: list[str] = []
-
-        # The RAW posterior, never the adjusted probability: the adjusted one folds miQC's
-        # post-processing into hard 0.0/1.0 and gives unfittable cells 0.0 meaning keep. Correct
-        # for a threshold; under grading 0.0 reads as "measured, no concern", which is the
-        # absent-evidence-as-health failure.
-        mito_posterior = None
-        if mixture is not None:
-            posterior = mixture.posterior
-            mito_posterior = posterior if not posterior.empty else None
-            graded_warnings.extend(mixture.warnings)
-
-        from cellquorum.stages.qc.archetypes import ARCHETYPE_COLUMN, audit_archetypes
-        from cellquorum.stages.qc.eligibility import (
-            Analysis,
-            Permission,
-            build_eligibility_masks,
-        )
-        from cellquorum.stages.qc.evidence import (
-            AdjudicationPolicy,
-            adjudicate_initial,
-            build_evidence_table,
-        )
-
         graded_config = qc_config.graded
+
+        mito_posterior = _raw_mito_posterior(mixture, graded_warnings)
 
         sample_key = getattr(getattr(context, "config", None), "cohort", None)
         sample_key = getattr(sample_key, "sample_key", None) or "sample_id"
 
-        null_grouping = None
-        if lineage is not None:
-            lineage = lineage.reindex(output_adata.obs_names)
-            null_grouping = resolve_null_groups(
-                output_adata.obs,
-                sample_key=sample_key if sample_key in output_adata.obs.columns else None,
-                lineage=lineage,
-                min_cells=graded_config.lineage_min_cells,
-            )
-
-        nuclear_axis_mask = None
-        if graded_config.nuclei_key:
-            if graded_config.nuclei_key not in output_adata.obs.columns:
-                raise ValueError(
-                    f"qc_evidence.graded.nuclei_key {graded_config.nuclei_key!r} is not a column "
-                    "of obs, so the nuclei cannot be told from whole cells."
-                )
-            nuclear_axis_mask = ~output_adata.obs[graded_config.nuclei_key].astype(str).isin(
-                graded_config.nuclei_values
-            )
-
-        evidence = build_evidence_table(
+        lineage, null_grouping = _lineage_null_grouping(
+            output_adata, lineage, graded_config, sample_key
+        )
+        evidence, absolute_evidence = _score_evidence(
             output_adata,
-            metrics_result.cell_metrics.reindex(output_adata.obs_names),
-            group_key=sample_key if sample_key in output_adata.obs.columns else None,
-            layer=qc_config.metrics.layer,
-            use_raw=qc_config.metrics.use_raw,
+            qc_config=qc_config,
+            metrics_result=metrics_result,
             expression_adata=expression_adata,
             mito_posterior=mito_posterior,
-            nuclear_axis_applicable=graded_config.nuclear_axis_applicable,
-            nuclear_axis_mask=nuclear_axis_mask,
-            grouping=null_grouping,
-            lineage_conditional=null_grouping is not None,
+            nuclear_axis_mask=_nuclear_axis_mask(output_adata, graded_config),
+            null_grouping=null_grouping,
+            sample_key=sample_key,
         )
-
-        absolute_evidence = (
-            build_evidence_table(
-                output_adata,
-                metrics_result.cell_metrics.reindex(output_adata.obs_names),
-                group_key=sample_key if sample_key in output_adata.obs.columns else None,
-                layer=qc_config.metrics.layer,
-                use_raw=qc_config.metrics.use_raw,
-                expression_adata=expression_adata,
-                mito_posterior=mito_posterior,
-                nuclear_axis_applicable=graded_config.nuclear_axis_applicable,
-                nuclear_axis_mask=nuclear_axis_mask,
-            )
-            if null_grouping is not None
-            else evidence
-        )
-        adjudication = adjudicate_initial(
-            evidence,
-            AdjudicationPolicy(
-                concern_severity=graded_config.concern_severity,
-                severe_severity=graded_config.severe_severity,
-                min_concordant_families=graded_config.min_concordant_families,
-                uninformative_capture_severity=graded_config.uninformative_capture_severity,
-                min_coverage_for_quarantine=graded_config.min_coverage_for_quarantine,
-                multiplet_severity=graded_config.multiplet_severity,
-            ),
-            called_doublets=(
-                output_adata.obs.get("predicted_doublet") if qc_config.doublets.enabled else None
-            ),
-        )
+        adjudication = _adjudicate_evidence(output_adata, evidence, qc_config)
 
         # Turn the verdict into per-analysis eligibility. This is the step that makes
         # QC load-bearing: the previous single `keep` boolean was read by three places
@@ -912,142 +847,368 @@ class QCStage:
             adjudication.state, probable_multiplet=adjudication.probable_multiplet
         )
 
-        # Per-lineage audit. Two things per-cell verdicts cannot say: "this whole group
-        # looks like debris" (suspect) and "this whole group is being dropped, and if it is
-        # real biology that is the rare-population loss" (vulnerable).
-        lineage_audit = None
-        if lineage is not None:
-            lineage_audit = audit_lineages(
-                lineage,
-                absolute_evidence.damage_family_severity(),
-                ~eligibility.mask(Analysis.MANIFOLD, Permission.FIT),
-                adjudication.probable_multiplet,
-                suspect_severity=graded_config.lineage_suspect_severity,
-                vulnerable_fraction=graded_config.lineage_vulnerable_fraction,
-            )
-            output_adata.obs[LINEAGE_COLUMN] = lineage.to_numpy()
-            if null_grouping is not None:
-                output_adata.obs[NULL_LEVEL_COLUMN] = null_grouping.level.to_numpy()
+        lineage_audit = _audit_lineage_groups(
+            output_adata,
+            lineage=lineage,
+            null_grouping=null_grouping,
+            absolute_evidence=absolute_evidence,
+            adjudication=adjudication,
+            eligibility=eligibility,
+            qc_config=qc_config,
+            context=context,
+            warnings=graded_warnings,
+        )
 
-            output_adata.uns.setdefault("cellquorum", {})["qc_lineage_audit"] = _audit_to_columns(
-                lineage_audit, index_name="lineage"
-            )
-
-            # Archetype audit: vertices, not blobs, so a population too small for Leiden
-            # can still be seen. Optional and self-disabling — partipy is GPL-3 and lives
-            # in its own environment, so absence is the normal case.
-            if graded_config.archetype_audit and PROVISIONAL_EMBEDDING in output_adata.obsm:
-                embedding = np.asarray(output_adata.obsm[PROVISIONAL_EMBEDDING])
-                placed = np.isfinite(embedding).all(axis=1)
-                if int(placed.sum()) > 50:
-                    archetype = audit_archetypes(
-                        embedding[placed],
-                        output_adata.obs_names[placed],
-                        ~eligibility.mask(Analysis.MANIFOLD, Permission.FIT)[placed],
-                        (
-                            output_adata.layers[qc_config.metrics.layer][placed]
-                            if qc_config.metrics.layer in output_adata.layers
-                            else output_adata.X[placed]
-                        ),
-                        n_archetypes_max=graded_config.archetype_max,
-                        bootstrap=graded_config.archetype_bootstrap,
-                        max_cells=graded_config.archetype_max_cells,
-                        n_restarts=graded_config.archetype_restarts,
-                        timeout_seconds=graded_config.archetype_timeout_seconds,
-                        scratch_dir=getattr(getattr(context, "paths", None), "scratch", None),
-                    )
-                    if archetype.available and archetype.dominant is not None:
-                        output_adata.obs[ARCHETYPE_COLUMN] = (
-                            archetype.dominant.reindex(output_adata.obs_names)
-                            .fillna("unsampled")
-                            .to_numpy()
-                        )
-                        output_adata.uns["cellquorum"]["qc_archetype_audit"] = _audit_to_columns(
-                            archetype.table, index_name="archetype"
-                        )
-                        for label, row in archetype.flagged().iterrows():
-                            graded_warnings.append(
-                                f"Archetype {label} (n={int(row['n_supporting'])}) has "
-                                f"{100.0 * row['excluded_fraction']:.0f}% of its cells "
-                                f"excluded from fitting and is "
-                                + (
-                                    "transcriptionally coherent, so a real population may "
-                                    "be being removed — inspect before trusting the run."
-                                    if row["losing_a_population"]
-                                    else "incoherent, so it is most likely debris that QC "
-                                    "is correctly removing."
-                                )
-                            )
-                    else:
-                        logger.info("Archetype audit unavailable: %s", archetype.reason)
-
-        for frame in (
-            evidence.to_obs_frame(),
-            adjudication.to_obs_frame(),
-            eligibility.to_obs_frame(),
-        ):
-            for column in frame.columns:
-                output_adata.obs[column] = frame[column].to_numpy()
-
-        # Self-check: compare the verdict against the evidence it claims to rest on, and fail
-        # rather than report a plausible wrong answer. Every defect in this area was found by a
-        # human asking a question; this is that question, asked by the run.
-        self_check = run_self_check(
-            adjudication.state,
-            metabolic_severity=next(
-                (axis.severity for axis in evidence.axes if axis.name == "mito_mixture_posterior"),
-                None,
-            ),
+        _write_graded_columns(output_adata, evidence, adjudication, eligibility)
+        self_check = _enforce_self_check(
+            adjudication,
+            evidence=evidence,
+            eligibility=eligibility,
             mito_posterior=mito_posterior,
-            null_level=None if null_grouping is None else null_grouping.level,
-            null_keys=None if null_grouping is None else null_grouping.keys,
+            null_grouping=null_grouping,
             lineage_audit=lineage_audit,
-            fit_mask=eligibility.mask(Analysis.MANIFOLD, Permission.FIT),
-            minimum_core=graded_config.self_check_minimum_core,
+            graded_config=graded_config,
+            warnings=graded_warnings,
         )
-        graded_warnings.extend(self_check.warnings())
-        if graded_config.self_check_fails_run and self_check.failures():
-            raise QCStageError(
-                "QC self-check failed, so the run stopped rather than emitting a verdict its own "
-                "evidence contradicts:\n"
-                + "\n".join(f"  - {check.name}: {check.detail}" for check in self_check.failures())
-                + "\n\nSet qc.graded.self_check_fails_run=false to downgrade these to warnings."
-            )
-
-        state_counts = adjudication.counts()
-        graded_metrics.update(
-            {
-                **state_counts,
-                "self_check": self_check.summary(),
-                "null_group_levels": ({} if null_grouping is None else null_grouping.summary()),
-                "n_lineages": (0 if lineage_audit is None else int(len(lineage_audit))),
-                "n_suspect_lineages": (
-                    0 if lineage_audit is None else int(lineage_audit["suspect"].sum())
-                ),
-                "n_vulnerable_lineages": (
-                    0 if lineage_audit is None else int(lineage_audit["vulnerable"].sum())
-                ),
-                "families": [str(family) for family in evidence.families_present()],
-                "median_evidence_coverage": float(adjudication.coverage.median()),
-                "n_probable_multiplet": int(adjudication.probable_multiplet.sum()),
-                "reasons": {
-                    str(reason): int(count)
-                    for reason, count in adjudication.reason.value_counts().items()
-                },
-                "eligibility": eligibility.summary(),
-            }
+        graded_metrics = _graded_metrics(
+            adjudication,
+            evidence=evidence,
+            eligibility=eligibility,
+            null_grouping=null_grouping,
+            lineage_audit=lineage_audit,
+            self_check=self_check,
         )
-        logger.info(
-            "QC graded adjudication: core=%s borderline=%s quarantine=%s "
-            "(coverage median %.2f over %s families)",
-            state_counts.get("core"),
-            state_counts.get("borderline"),
-            state_counts.get("quarantine"),
-            float(adjudication.coverage.median()),
-            len(evidence.families_present()),
-        )
-
         return graded_metrics, graded_warnings
+
+
+def _raw_mito_posterior(mixture: MitoMixtureResult | None, warnings: list[str]) -> pd.Series | None:
+    """The mixture's RAW posterior, or None when there is none to use.
+
+    The RAW posterior, never the adjusted probability: the adjusted one folds miQC's
+    post-processing into hard 0.0/1.0 and gives unfittable cells 0.0 meaning keep. Correct
+    for a threshold; under grading 0.0 reads as "measured, no concern", which is the
+    absent-evidence-as-health failure. The mixture's fitting warnings are appended to
+    ``warnings``.
+    """
+    if mixture is None:
+        return None
+    posterior = mixture.posterior
+    warnings.extend(mixture.warnings)
+    return posterior if not posterior.empty else None
+
+
+def _lineage_null_grouping(
+    output_adata: ad.AnnData,
+    lineage: pd.Series | None,
+    graded_config: QCGradedConfig,
+    sample_key: str,
+) -> tuple[pd.Series | None, NullGrouping | None]:
+    """Align the provisional lineages to the object and resolve the per-cell null grouping.
+
+    Returns ``(lineage, null_grouping)``; both are None when no lineages were computed.
+    """
+    if lineage is None:
+        return None, None
+    lineage = lineage.reindex(output_adata.obs_names)
+    null_grouping = resolve_null_groups(
+        output_adata.obs,
+        sample_key=sample_key if sample_key in output_adata.obs.columns else None,
+        lineage=lineage,
+        min_cells=graded_config.lineage_min_cells,
+    )
+    return lineage, null_grouping
+
+
+def _nuclear_axis_mask(output_adata: ad.AnnData, graded_config: QCGradedConfig) -> pd.Series | None:
+    """Cells that are whole cells rather than nuclei, or None when no nuclei key is set."""
+    if not graded_config.nuclei_key:
+        return None
+    if graded_config.nuclei_key not in output_adata.obs.columns:
+        raise ValueError(
+            f"qc_evidence.graded.nuclei_key {graded_config.nuclei_key!r} is not a column "
+            "of obs, so the nuclei cannot be told from whole cells."
+        )
+    return ~output_adata.obs[graded_config.nuclei_key].astype(str).isin(graded_config.nuclei_values)
+
+
+def _score_evidence(
+    output_adata: ad.AnnData,
+    *,
+    qc_config: QCConfig,
+    metrics_result: QCMetricsResult,
+    expression_adata: ad.AnnData | None,
+    mito_posterior: pd.Series | None,
+    nuclear_axis_mask: pd.Series | None,
+    null_grouping: NullGrouping | None,
+    sample_key: str,
+) -> tuple[EvidenceTable, EvidenceTable]:
+    """Build the evidence table, and the absolute one the lineage audit reads.
+
+    Returns ``(evidence, absolute_evidence)``. They are the same table unless a null grouping
+    exists, in which case ``evidence`` is lineage-conditional and ``absolute_evidence`` is the
+    cohort-wide version.
+    """
+    from cellquorum.stages.qc.evidence import build_evidence_table
+
+    graded_config = qc_config.graded
+    shared: dict[str, Any] = {
+        "group_key": sample_key if sample_key in output_adata.obs.columns else None,
+        "layer": qc_config.metrics.layer,
+        "use_raw": qc_config.metrics.use_raw,
+        "expression_adata": expression_adata,
+        "mito_posterior": mito_posterior,
+        "nuclear_axis_applicable": graded_config.nuclear_axis_applicable,
+        "nuclear_axis_mask": nuclear_axis_mask,
+    }
+    cell_metrics = metrics_result.cell_metrics.reindex(output_adata.obs_names)
+    evidence = build_evidence_table(
+        output_adata,
+        cell_metrics,
+        **shared,
+        grouping=null_grouping,
+        lineage_conditional=null_grouping is not None,
+    )
+    absolute_evidence = (
+        build_evidence_table(output_adata, cell_metrics, **shared)
+        if null_grouping is not None
+        else evidence
+    )
+    return evidence, absolute_evidence
+
+
+def _adjudicate_evidence(
+    output_adata: ad.AnnData, evidence: EvidenceTable, qc_config: QCConfig
+) -> AdjudicationResult:
+    """Assign each cell its provisional state from the evidence and the configured policy."""
+    from cellquorum.stages.qc.evidence import AdjudicationPolicy, adjudicate_initial
+
+    graded_config = qc_config.graded
+    return adjudicate_initial(
+        evidence,
+        AdjudicationPolicy(
+            concern_severity=graded_config.concern_severity,
+            severe_severity=graded_config.severe_severity,
+            min_concordant_families=graded_config.min_concordant_families,
+            uninformative_capture_severity=graded_config.uninformative_capture_severity,
+            min_coverage_for_quarantine=graded_config.min_coverage_for_quarantine,
+            multiplet_severity=graded_config.multiplet_severity,
+        ),
+        called_doublets=(
+            output_adata.obs.get("predicted_doublet") if qc_config.doublets.enabled else None
+        ),
+    )
+
+
+def _audit_lineage_groups(
+    output_adata: ad.AnnData,
+    *,
+    lineage: pd.Series | None,
+    null_grouping: NullGrouping | None,
+    absolute_evidence: EvidenceTable,
+    adjudication: AdjudicationResult,
+    eligibility: EligibilityMasks,
+    qc_config: QCConfig,
+    context: PipelineContext,
+    warnings: list[str],
+) -> pd.DataFrame | None:
+    """Per-lineage audit, then the optional archetype audit; None when there are no lineages.
+
+    Two things per-cell verdicts cannot say: "this whole group looks like debris" (suspect)
+    and "this whole group is being dropped, and if it is real biology that is the
+    rare-population loss" (vulnerable). Writes the lineage columns and audit table to the
+    object and any archetype warnings to ``warnings``.
+    """
+    from cellquorum.stages.qc.eligibility import Analysis, Permission
+
+    if lineage is None:
+        return None
+    graded_config = qc_config.graded
+    lineage_audit = audit_lineages(
+        lineage,
+        absolute_evidence.damage_family_severity(),
+        ~eligibility.mask(Analysis.MANIFOLD, Permission.FIT),
+        adjudication.probable_multiplet,
+        suspect_severity=graded_config.lineage_suspect_severity,
+        vulnerable_fraction=graded_config.lineage_vulnerable_fraction,
+    )
+    output_adata.obs[LINEAGE_COLUMN] = lineage.to_numpy()
+    if null_grouping is not None:
+        output_adata.obs[NULL_LEVEL_COLUMN] = null_grouping.level.to_numpy()
+
+    output_adata.uns.setdefault("cellquorum", {})["qc_lineage_audit"] = _audit_to_columns(
+        lineage_audit, index_name="lineage"
+    )
+
+    if graded_config.archetype_audit and PROVISIONAL_EMBEDDING in output_adata.obsm:
+        _audit_archetypes(
+            output_adata,
+            eligibility=eligibility,
+            qc_config=qc_config,
+            context=context,
+            warnings=warnings,
+        )
+    return lineage_audit
+
+
+def _audit_archetypes(
+    output_adata: ad.AnnData,
+    *,
+    eligibility: EligibilityMasks,
+    qc_config: QCConfig,
+    context: PipelineContext,
+    warnings: list[str],
+) -> None:
+    """Archetype audit: vertices, not blobs, so a population too small for Leiden can be seen.
+
+    Optional and self-disabling — partipy is GPL-3 and lives in its own environment, so
+    absence is the normal case. Writes the dominant archetype column and the audit table to
+    the object, and a warning for each archetype that is mostly excluded from fitting.
+    """
+    from cellquorum.stages.qc.archetypes import ARCHETYPE_COLUMN, audit_archetypes
+    from cellquorum.stages.qc.eligibility import Analysis, Permission
+
+    graded_config = qc_config.graded
+    embedding = np.asarray(output_adata.obsm[PROVISIONAL_EMBEDDING])
+    placed = np.isfinite(embedding).all(axis=1)
+    if int(placed.sum()) <= 50:
+        return
+    archetype = audit_archetypes(
+        embedding[placed],
+        output_adata.obs_names[placed],
+        ~eligibility.mask(Analysis.MANIFOLD, Permission.FIT)[placed],
+        (
+            output_adata.layers[qc_config.metrics.layer][placed]
+            if qc_config.metrics.layer in output_adata.layers
+            else output_adata.X[placed]
+        ),
+        n_archetypes_max=graded_config.archetype_max,
+        bootstrap=graded_config.archetype_bootstrap,
+        max_cells=graded_config.archetype_max_cells,
+        n_restarts=graded_config.archetype_restarts,
+        timeout_seconds=graded_config.archetype_timeout_seconds,
+        scratch_dir=getattr(getattr(context, "paths", None), "scratch", None),
+    )
+    if not (archetype.available and archetype.dominant is not None):
+        logger.info("Archetype audit unavailable: %s", archetype.reason)
+        return
+    output_adata.obs[ARCHETYPE_COLUMN] = (
+        archetype.dominant.reindex(output_adata.obs_names).fillna("unsampled").to_numpy()
+    )
+    output_adata.uns["cellquorum"]["qc_archetype_audit"] = _audit_to_columns(
+        archetype.table, index_name="archetype"
+    )
+    for label, row in archetype.flagged().iterrows():
+        warnings.append(
+            f"Archetype {label} (n={int(row['n_supporting'])}) has "
+            f"{100.0 * row['excluded_fraction']:.0f}% of its cells "
+            f"excluded from fitting and is "
+            + (
+                "transcriptionally coherent, so a real population may "
+                "be being removed — inspect before trusting the run."
+                if row["losing_a_population"]
+                else "incoherent, so it is most likely debris that QC " "is correctly removing."
+            )
+        )
+
+
+def _write_graded_columns(
+    output_adata: ad.AnnData,
+    evidence: EvidenceTable,
+    adjudication: AdjudicationResult,
+    eligibility: EligibilityMasks,
+) -> None:
+    """Write the evidence, verdict and eligibility columns to ``obs``."""
+    for frame in (
+        evidence.to_obs_frame(),
+        adjudication.to_obs_frame(),
+        eligibility.to_obs_frame(),
+    ):
+        for column in frame.columns:
+            output_adata.obs[column] = frame[column].to_numpy()
+
+
+def _enforce_self_check(
+    adjudication: AdjudicationResult,
+    *,
+    evidence: EvidenceTable,
+    eligibility: EligibilityMasks,
+    mito_posterior: pd.Series | None,
+    null_grouping: NullGrouping | None,
+    lineage_audit: pd.DataFrame | None,
+    graded_config: QCGradedConfig,
+    warnings: list[str],
+) -> SelfCheckReport:
+    """Compare the verdict against the evidence it claims to rest on.
+
+    Fail rather than report a plausible wrong answer. Every defect in this area was found by a
+    human asking a question; this is that question, asked by the run. Every check that did not
+    hold is added to ``warnings``; a failing check stops the run unless
+    ``self_check_fails_run`` is off.
+    """
+    from cellquorum.stages.qc.eligibility import Analysis, Permission
+
+    self_check = run_self_check(
+        adjudication.state,
+        metabolic_severity=next(
+            (axis.severity for axis in evidence.axes if axis.name == "mito_mixture_posterior"),
+            None,
+        ),
+        mito_posterior=mito_posterior,
+        null_level=None if null_grouping is None else null_grouping.level,
+        null_keys=None if null_grouping is None else null_grouping.keys,
+        lineage_audit=lineage_audit,
+        fit_mask=eligibility.mask(Analysis.MANIFOLD, Permission.FIT),
+        minimum_core=graded_config.self_check_minimum_core,
+    )
+    warnings.extend(self_check.warnings())
+    if graded_config.self_check_fails_run and self_check.failures():
+        raise QCStageError(
+            "QC self-check failed, so the run stopped rather than emitting a verdict its own "
+            "evidence contradicts:\n"
+            + "\n".join(f"  - {check.name}: {check.detail}" for check in self_check.failures())
+            + "\n\nSet qc.graded.self_check_fails_run=false to downgrade these to warnings."
+        )
+    return self_check
+
+
+def _graded_metrics(
+    adjudication: AdjudicationResult,
+    *,
+    evidence: EvidenceTable,
+    eligibility: EligibilityMasks,
+    null_grouping: NullGrouping | None,
+    lineage_audit: pd.DataFrame | None,
+    self_check: SelfCheckReport,
+) -> dict[str, object]:
+    """The structured metrics block for the graded verdict, and its one-line log summary."""
+    state_counts = adjudication.counts()
+    graded_metrics: dict[str, object] = {
+        **state_counts,
+        "self_check": self_check.summary(),
+        "null_group_levels": ({} if null_grouping is None else null_grouping.summary()),
+        "n_lineages": (0 if lineage_audit is None else int(len(lineage_audit))),
+        "n_suspect_lineages": (0 if lineage_audit is None else int(lineage_audit["suspect"].sum())),
+        "n_vulnerable_lineages": (
+            0 if lineage_audit is None else int(lineage_audit["vulnerable"].sum())
+        ),
+        "families": [str(family) for family in evidence.families_present()],
+        "median_evidence_coverage": float(adjudication.coverage.median()),
+        "n_probable_multiplet": int(adjudication.probable_multiplet.sum()),
+        "reasons": {
+            str(reason): int(count) for reason, count in adjudication.reason.value_counts().items()
+        },
+        "eligibility": eligibility.summary(),
+    }
+    logger.info(
+        "QC graded adjudication: core=%s borderline=%s quarantine=%s "
+        "(coverage median %.2f over %s families)",
+        state_counts.get("core"),
+        state_counts.get("borderline"),
+        state_counts.get("quarantine"),
+        float(adjudication.coverage.median()),
+        len(evidence.families_present()),
+    )
+    return graded_metrics
 
 
 __all__ = [
