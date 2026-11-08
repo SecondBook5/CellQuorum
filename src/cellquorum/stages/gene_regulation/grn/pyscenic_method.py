@@ -303,6 +303,8 @@ def _run_aucell(
         str(outputs.auc_parquet),
         "--num-workers",
         str(settings.num_workers),
+        "--seed",
+        str(settings.seed),
     ]
     auc = None
     try:

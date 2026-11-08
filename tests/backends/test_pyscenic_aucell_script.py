@@ -45,3 +45,14 @@ def test_skips_when_regulons_empty(tmp_path: Path) -> None:
     res = _run(["--loom", str(loom), "--regulons", str(regs), "--out", str(out)])
     assert res.returncode == 0, res.stderr
     assert (out.parent / f"{out.stem}_SKIPPED.txt").exists()
+
+
+def test_script_takes_a_seed_for_the_ranking_step() -> None:
+    """Without a seed, ``pyscenic aucell`` picks a random one and the AUC matrix changes per run.
+
+    Measured on real data: two identical runs gave per-regulon rank correlations down to 0.46
+    between their AUC matrices, though every earlier step was seeded and identical.
+    """
+    res = _run(["--help"])
+    assert res.returncode == 0, res.stderr
+    assert "--seed" in res.stdout

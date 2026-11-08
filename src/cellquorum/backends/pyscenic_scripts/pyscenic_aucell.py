@@ -35,6 +35,13 @@ def main() -> None:
     )
     p.add_argument("--out", required=True, help="output auc_mtx parquet (cells x regulons)")
     p.add_argument("--num-workers", type=int, default=8)
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="seed for the expression-ranking step; without one pyscenic picks a random seed "
+        "and the AUC matrix changes on every run",
+    )
     args = p.parse_args()
 
     out_path = Path(args.out)
@@ -64,6 +71,8 @@ def main() -> None:
         str(auc_csv),
         "--num_workers",
         str(args.num_workers),
+        "--seed",
+        str(args.seed),
     ]
     print(f"[aucell] {' '.join(cmd)}")
     try:
