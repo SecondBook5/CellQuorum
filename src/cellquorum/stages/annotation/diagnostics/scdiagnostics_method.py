@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import numpy as np
@@ -104,6 +105,117 @@ def _first_r_error(stderr: str) -> str | None:
     return None
 
 
+class _Stop(Exception):
+    """A failure that ends the method with a recorded skip."""
+
+    def __init__(self, reason: str, **details: object) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = details
+
+
+@dataclass
+class _Settings:
+    """Config values ``ScdiagnosticsMethod._run`` reads, resolved once."""
+
+    cell_type_col: str
+    expression_layer: str
+    reference_h5ad: str | None
+    soft_scores_obsm: str | None
+    pc_subset: list[int]
+    n_tree: Any
+    n_neighbor: Any
+    timeout: Any
+    max_query_cells: int
+
+    @classmethod
+    def from_config(cls, config: dict) -> _Settings:
+        return cls(
+            cell_type_col=config.get("cell_type_col", "cell_type"),
+            expression_layer=config.get("expression_layer", "lognorm"),
+            reference_h5ad=config.get("reference_h5ad"),
+            soft_scores_obsm=config.get("soft_scores_obsm"),
+            pc_subset=config.get("pc_subset", [1, 2, 3, 4, 5]),
+            n_tree=config.get("n_tree", 500),
+            n_neighbor=config.get("n_neighbor", 15),
+            timeout=config.get("timeout_seconds", 1800),
+            max_query_cells=int(config.get("max_query_cells_per_call", 25_000)),
+        )
+
+
+def _prefer_prepared_reference(adata: ad.AnnData, settings: _Settings) -> list[str]:
+    """Prefer the reference `reference_mapping` prepared over a hand-configured path.
+
+    A configured `reference_h5ad` was in practice the RAW atlas, which is the wrong
+    reference twice over: unfiltered, so it includes the lesional-disease cells the
+    mapping deliberately excluded, and indexed by Ensembl ID while the query uses gene
+    symbols, so the two share no genes at all. Confirming a mapping against a different
+    reference than the mapping used is not a confirmation.
+
+    Updates ``settings`` in place and returns the notes to report.
+    """
+    notes: list[str] = []
+    prepared = adata.uns.get("cellquorum", {}).get("reference_prepared")
+    if isinstance(prepared, dict) and Path(str(prepared.get("path", ""))).is_file():
+        if settings.reference_h5ad and str(settings.reference_h5ad) != str(prepared["path"]):
+            notes.append(
+                f"Using the reference prepared by reference_mapping "
+                f"({prepared['n_cells']:,} cells x {prepared['n_genes']:,} genes) instead of "
+                f"the configured reference_h5ad, so the diagnostics judge the mapping "
+                f"against the reference it was built from."
+            )
+        settings.reference_h5ad = prepared["path"]
+        # Labels on both sides live under the same column by construction, which is what
+        # scDiagnostics requires: it takes ONE column name for reference and query.
+        settings.cell_type_col = str(prepared.get("label_column", settings.cell_type_col))
+    return notes
+
+
+def _attach_diagnostics(
+    adata: ad.AnnData,
+    diag_df: pd.DataFrame,
+    *,
+    n_frames: int,
+    n_batches: int,
+    notes: list[str],
+) -> None:
+    """Join the diagnostic columns onto obs by barcode, in place.
+
+    Read-only with respect to existing data: this adds `scdiag_*` columns and never touches
+    cell_type or an embedding. NOT a deep copy: `adata.copy()` here duplicated the entire
+    cohort object -- two sparse layers over 201,871 x 33,417 is about 7.7 GB -- purely to add
+    a few obs columns, and it did so at the worst possible moment: immediately after the R
+    subprocess had allocated roughly 8.6 GB of densified matrices.
+    """
+    if diag_df.empty:
+        return
+    # Reindex diagnostic DataFrame to adata.obs_names order.
+    diag_df = diag_df.reindex(adata.obs_names)
+
+    # Validate barcode alignment. Unscored cells are an ERROR only when every batch
+    # succeeded: then a gap means R returned barcodes that do not match obs_names, which
+    # would silently misattribute scores to the wrong cells. When a batch failed, its
+    # cells are legitimately unscored and already named in the notes, so they stay NaN
+    # rather than aborting a stage that produced valid results for everything else.
+    n_missing = int(diag_df.isnull().all(axis=1).sum())
+    all_batches_ran = n_frames == n_batches
+    if n_missing > 0 and all_batches_ran:
+        raise CellQuorumBackendError(
+            f"scDiagnostics barcode misalignment: {n_missing} "
+            f"cells missing diagnostics after reindex, with every batch reporting "
+            f"success. R script barcodes do not match adata.obs_names."
+        )
+    if n_missing > 0:
+        notes.append(
+            f"{n_missing:,} of {adata.n_obs:,} cells are unscored because "
+            f"{n_batches - n_frames} of {n_batches} batches failed."
+        )
+
+    # Assign diagnostic columns to obs.
+    for col in diag_df.columns:
+        adata.obs[col] = diag_df[col].to_numpy()
+
+
 class ScdiagnosticsMethod(RAnalysisMethod):
     """scDiagnostics annotation-confidence diagnostics (query-only or query+ref).
 
@@ -157,37 +269,10 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         context: PipelineContext,
     ) -> StageResult | MethodSkip:
         """Execute scDiagnostics via R; return read-only diagnostics."""
-
-        cell_type_col = config.get("cell_type_col", "cell_type")
-        expression_layer = config.get("expression_layer", "lognorm")
-        reference_h5ad = config.get("reference_h5ad")
-        soft_scores_obsm = config.get("soft_scores_obsm")
-        pc_subset = config.get("pc_subset", [1, 2, 3, 4, 5])
-
-        # Prefer the reference `reference_mapping` prepared over a hand-configured path.
-        #
-        # A configured `reference_h5ad` was in practice the RAW atlas, which is the wrong
-        # reference twice over: unfiltered, so it includes the lesional-disease cells the
-        # mapping deliberately excluded, and indexed by Ensembl ID while the query uses gene
-        # symbols, so the two share no genes at all. Confirming a mapping against a different
-        # reference than the mapping used is not a confirmation.
-        reference_notes: list[str] = []
-        prepared = adata.uns.get("cellquorum", {}).get("reference_prepared")
-        if isinstance(prepared, dict) and Path(str(prepared.get("path", ""))).is_file():
-            if reference_h5ad and str(reference_h5ad) != str(prepared["path"]):
-                reference_notes.append(
-                    f"Using the reference prepared by reference_mapping "
-                    f"({prepared['n_cells']:,} cells x {prepared['n_genes']:,} genes) instead of "
-                    f"the configured reference_h5ad, so the diagnostics judge the mapping "
-                    f"against the reference it was built from."
-                )
-            reference_h5ad = prepared["path"]
-            # Labels on both sides live under the same column by construction, which is what
-            # scDiagnostics requires: it takes ONE column name for reference and query.
-            cell_type_col = str(prepared.get("label_column", cell_type_col))
-        n_tree = config.get("n_tree", 500)
-        n_neighbor = config.get("n_neighbor", 15)
-        timeout = config.get("timeout_seconds", 1800)
+        settings = _Settings.from_config(config)
+        reference_notes = _prefer_prepared_reference(adata, settings)
+        cell_type_col = settings.cell_type_col
+        soft_scores_obsm = settings.soft_scores_obsm
 
         # Resolve scratch directory for temp files.
         scratch = Path(getattr(context.paths, "scratch", "."))
@@ -196,7 +281,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         # Query-only entropy can be computed directly from soft probabilities.
         # This avoids requiring an R reference object when ScArches already
         # produced calibrated per-label probabilities.
-        if not reference_h5ad and soft_scores_obsm and soft_scores_obsm in adata.obsm:
+        if not settings.reference_h5ad and soft_scores_obsm and soft_scores_obsm in adata.obsm:
             return self._run_probability_entropy_only(
                 adata=adata,
                 soft_scores_obsm=soft_scores_obsm,
@@ -211,6 +296,78 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         if isinstance(backend, MethodSkip):
             return backend
 
+        try:
+            frames, batches, ref_arg, reference_genes = self._score_in_r(
+                adata, config, settings, backend, scratch, reference_notes
+            )
+        except _Stop as stop:
+            return self._skip(stop.reason, **stop.details)
+
+        diag_df = pd.concat(frames) if len(frames) > 1 else frames[0]
+
+        # Join diagnostic columns onto obs by barcode.
+        result_adata = adata
+        _attach_diagnostics(
+            result_adata,
+            diag_df,
+            n_frames=len(frames),
+            n_batches=len(batches),
+            notes=reference_notes,
+        )
+
+        # Count which diagnostics were computed.
+        diagnostics_run = [col for col in diag_df.columns if col.startswith("scdiag_")]
+        notes = list(reference_notes)
+        if diagnostics_run:
+            notes.append(
+                f"Computed {len(diagnostics_run)} diagnostic columns: " f"{diagnostics_run}"
+            )
+        else:
+            notes.append(
+                "No diagnostics computed: provide reference_h5ad and/or "
+                "soft_scores_obsm to enable diagnostics."
+            )
+
+        artifacts = [
+            _write_results_table(
+                diag_df,
+                context=context,
+                description="Per-cell scDiagnostics confidence metrics.",
+            ),
+            *_write_figures(
+                obs=result_adata.obs, cell_type_col=cell_type_col, context=context, config=config
+            ),
+        ]
+
+        return StageResult(
+            adata=result_adata,
+            artifacts=artifacts,
+            notes=notes,
+            metrics={
+                "n_diagnostics": len(diagnostics_run),
+                "diagnostics_computed": diagnostics_run,
+                "reference_used": ref_arg != "NONE",
+            },
+        )
+
+    def _score_in_r(
+        self,
+        adata: ad.AnnData,
+        config: dict,
+        settings: _Settings,
+        backend: Any,
+        scratch: Path,
+        reference_notes: list[str],
+    ) -> tuple[list[pd.DataFrame], list[list[str]], str, list[str] | None]:
+        """Write the R inputs and run the script once per batch of cell types.
+
+        Returns ``(frames, batches, reference argument, reference genes)``; raises ``_Stop``
+        when nothing could be scored. Appends to ``reference_notes``.
+        """
+        cell_type_col, expression_layer = settings.cell_type_col, settings.expression_layer
+        soft_scores_obsm = settings.soft_scores_obsm
+        reference_h5ad = settings.reference_h5ad
+
         # Write query h5ad (lognorm layer + X_pca + cell_type), restricted to the reference's
         # gene space. Reading the reference's var_names here costs one h5ad header read and
         # saves handing R roughly eleven times more matrix than it can use.
@@ -219,11 +376,11 @@ class ScdiagnosticsMethod(RAnalysisMethod):
             try:
                 reference_genes = list(ad.read_h5ad(reference_h5ad, backed="r").var_names)
             except Exception as exc:  # noqa: BLE001
-                return self._skip(
+                raise _Stop(
                     f"could not read the reference's gene space ({type(exc).__name__})",
                     error=str(exc)[:200],
                     reference_h5ad=str(reference_h5ad),
-                )
+                ) from exc
 
         query_h5ad = scratch / "scdiag_query.h5ad"
         self._write_query_h5ad(
@@ -273,13 +430,11 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         # incomparable between them. The reference PCA is recomputed per call on identical input,
         # so the space is identical across batches.
         query_labels = adata.obs[cell_type_col].astype(str)
-        batches = self._query_batches(
-            query_labels, int(config.get("max_query_cells_per_call", 25_000))
-        )
+        batches = self._query_batches(query_labels, settings.max_query_cells)
         if len(batches) > 1:
             reference_notes.append(
                 f"Query sent to R in {len(batches)} batches of whole cell types "
-                f"(<={int(config.get('max_query_cells_per_call', 25_000)):,} cells each). "
+                f"(<={settings.max_query_cells:,} cells each). "
                 f"scDiagnostics densifies unconditionally, so one call over all "
                 f"{adata.n_obs:,} cells asks R for a single contiguous "
                 f"{adata.n_obs * len(reference_genes or []) * 8 / 1e9:.1f} GB vector."
@@ -307,17 +462,17 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 cell_type_col,
                 ref_arg,
                 str(soft_scores_path) if soft_scores_path else "NONE",
-                ",".join(map(str, pc_subset)),
-                str(n_tree),
-                str(n_neighbor),
+                ",".join(map(str, settings.pc_subset)),
+                str(settings.n_tree),
+                str(settings.n_neighbor),
             ]
 
             # A failing batch is reported and skipped rather than ending the stage: the other
             # batches are independent measurements of different cells.
             try:
-                result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=timeout)
+                result = backend.run_script(_SCDIAGNOSTICS_R, args, timeout=settings.timeout)
             except (FileNotFoundError, CellQuorumBackendError) as exc:
-                return self._skip("R execution failed", error=str(exc)[:500])
+                raise _Stop("R execution failed", error=str(exc)[:500]) from exc
 
             if result.returncode != 0:
                 # The R diagnosis goes in the REASON, not only in details. It was in details
@@ -328,7 +483,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 # provenance/stage_execution_records.json.
                 detail = _first_r_error(result.stderr) or "no error line in stderr"
                 if len(batches) == 1:
-                    return self._skip(
+                    raise _Stop(
                         f"scDiagnostics R script failed: {detail}",
                         stderr=result.stderr.strip()[:500],
                     )
@@ -341,84 +496,11 @@ class ScdiagnosticsMethod(RAnalysisMethod):
             frames.append(self._read_diagnostic_csv(out_csv))
 
         if not frames:
-            return self._skip(
+            raise _Stop(
                 "scDiagnostics produced no results in any batch",
                 n_batches=len(batches),
             )
-
-        diag_df = pd.concat(frames) if len(frames) > 1 else frames[0]
-
-        # Join diagnostic columns onto obs by barcode (read-only with respect to existing data:
-        # this adds `scdiag_*` columns and never touches cell_type or an embedding).
-        #
-        # NOT a deep copy. `adata.copy()` here duplicated the entire cohort object -- two sparse
-        # layers over 201,871 x 33,417 is about 7.7 GB -- purely to add a few obs columns, and it
-        # did so at the worst possible moment: immediately after the R subprocess had allocated
-        # roughly 8.6 GB of densified matrices. Adding obs columns in place is what every other
-        # stage does; the copy was the anomaly.
-        result_adata = adata
-
-        if not diag_df.empty:
-            # Reindex diagnostic DataFrame to adata.obs_names order.
-            diag_df = diag_df.reindex(result_adata.obs_names)
-
-            # Validate barcode alignment. Unscored cells are an ERROR only when every batch
-            # succeeded: then a gap means R returned barcodes that do not match obs_names, which
-            # would silently misattribute scores to the wrong cells. When a batch failed, its
-            # cells are legitimately unscored and already named in the notes, so they stay NaN
-            # rather than aborting a stage that produced valid results for everything else.
-            n_missing = int(diag_df.isnull().all(axis=1).sum())
-            all_batches_ran = len(frames) == len(batches)
-            if n_missing > 0 and all_batches_ran:
-                raise CellQuorumBackendError(
-                    f"scDiagnostics barcode misalignment: {n_missing} "
-                    f"cells missing diagnostics after reindex, with every batch reporting "
-                    f"success. R script barcodes do not match adata.obs_names."
-                )
-            if n_missing > 0:
-                reference_notes.append(
-                    f"{n_missing:,} of {adata.n_obs:,} cells are unscored because "
-                    f"{len(batches) - len(frames)} of {len(batches)} batches failed."
-                )
-
-            # Assign diagnostic columns to obs.
-            for col in diag_df.columns:
-                result_adata.obs[col] = diag_df[col].to_numpy()
-
-        # Count which diagnostics were computed.
-        diagnostics_run = [col for col in diag_df.columns if col.startswith("scdiag_")]
-        notes = list(reference_notes)
-        if diagnostics_run:
-            notes.append(
-                f"Computed {len(diagnostics_run)} diagnostic columns: " f"{diagnostics_run}"
-            )
-        else:
-            notes.append(
-                "No diagnostics computed: provide reference_h5ad and/or "
-                "soft_scores_obsm to enable diagnostics."
-            )
-
-        artifacts = [
-            _write_results_table(
-                diag_df,
-                context=context,
-                description="Per-cell scDiagnostics confidence metrics.",
-            ),
-            *_write_figures(
-                obs=result_adata.obs, cell_type_col=cell_type_col, context=context, config=config
-            ),
-        ]
-
-        return StageResult(
-            adata=result_adata,
-            artifacts=artifacts,
-            notes=notes,
-            metrics={
-                "n_diagnostics": len(diagnostics_run),
-                "diagnostics_computed": diagnostics_run,
-                "reference_used": ref_arg != "NONE",
-            },
-        )
+        return frames, batches, ref_arg, reference_genes
 
     def _run_probability_entropy_only(
         self,
