@@ -300,10 +300,14 @@ def _column_groups(
     adata: ad.AnnData, groupby: str, categories_order: list[str] | None
 ) -> list[str]:
     """The dotplot's columns: the requested order, or the column's own category order."""
+    observed = set(adata.obs[groupby].astype(str))
+    # A categorical column keeps categories no cell holds any more (every subset does). A column
+    # for one has no cells to average, so its dots get a size of NaN and the figure cannot be
+    # drawn at all; only categories with cells are columns.
     groups = (
-        [c for c in categories_order if c in adata.obs[groupby].astype(str).unique()]
+        [c for c in categories_order if c in observed]
         if categories_order is not None
-        else list(pd.Categorical(adata.obs[groupby]).categories.astype(str))
+        else [c for c in pd.Categorical(adata.obs[groupby]).categories.astype(str) if c in observed]
     )
     if not groups:
         groups = sorted(adata.obs[groupby].astype(str).unique())

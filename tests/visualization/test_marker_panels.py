@@ -198,6 +198,27 @@ def test_plot_categorized_dotplot_returns_none_when_no_gene_present(tmp_path):
     assert out is None
 
 
+def test_categorized_dotplot_skips_a_category_no_cell_holds_and_still_draws(tmp_path):
+    """A subset leaves unused categories in a categorical column; they are not columns.
+
+    Each such column had no cells to average, so its dots got a size of NaN and the figure
+    raised from inside matplotlib's draw, far from the cause.
+    """
+    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
+
+    a = _categorized_adata()
+    a.obs["state"] = a.obs["state"].cat.add_categories(["S4_unused"])
+
+    fig = draw_categorized_dotplot(a, {"Panel": ["G0", "G1"]}, groupby="state", layer="norm")
+
+    assert fig is not None
+    fig.canvas.draw()
+    dot_axes = next(
+        ax for ax in fig.axes if [t.get_text() for t in ax.get_yticklabels()] == ["G0", "G1"]
+    )
+    assert [t.get_text() for t in dot_axes.get_xticklabels()] == ["S1", "S2", "S3"]
+
+
 # ---- lineage marker dotplot with dendrogram ----------------------------------------------
 
 
