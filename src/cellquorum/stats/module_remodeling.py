@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import itertools
 import warnings
+from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Literal
 
@@ -649,116 +650,242 @@ def lmm_effect_sizes(
     progs = list(programs) if programs is not None else list(scores.columns)
     meta = metadata.loc[scores.index]
     grp_values = list(groups) if groups is not None else list(pd.unique(meta[group_col]))
-
-    if sample_col is not None:
-        if sample_col not in meta.columns:
-            raise KeyError(f"sample_col '{sample_col}' is not a column of metadata")
-        sample_values = meta[sample_col].astype(str)
-    else:
-        # The sample is where condition was assigned. With one sample per donor per
-        # arm this reconstructs it exactly; with several it pools them, which loses
-        # power but cannot manufacture it.
-        sample_values = meta[donor_col].astype(str) + "|" + meta[condition_col].astype(str)
+    sample_values = _sample_identifiers(
+        meta, sample_col=sample_col, donor_col=donor_col, condition_col=condition_col
+    )
 
     rows = []
     for group in grp_values:
-        gmask = (meta[group_col] == group).to_numpy()
-        gmeta = meta.loc[gmask]
-        gscores = scores.loc[gmask]
-        gsample = sample_values.loc[gmask]
-        cond = gmeta[condition_col]
-        arm_mask = cond.isin([case, control]).to_numpy()
-        gmeta = gmeta.loc[arm_mask]
-        gscores = gscores.loc[arm_mask]
-        gsample = gsample.loc[arm_mask]
-        cond = gmeta[condition_col]
-
-        is_case = (cond == case).to_numpy()
-        donors_case = set(gmeta[donor_col][is_case])
-        donors_control = set(gmeta[donor_col][~is_case])
-        n_donors = len(donors_case | donors_control)
-        floor_p, n_pairs = randomization_floor(gmeta[donor_col].tolist(), is_case.tolist())
-
+        design = _group_design(
+            meta,
+            scores,
+            sample_values,
+            group=group,
+            group_col=group_col,
+            donor_col=donor_col,
+            condition_col=condition_col,
+            case=case,
+            control=control,
+        )
         for prog in progs:
-            y = gscores[prog].to_numpy(dtype=float)
-            df = pd.DataFrame(
-                {
-                    "score": y,
-                    "cond": is_case.astype(float),
-                    "donor": gmeta[donor_col].to_numpy(),
-                    "sample": gsample.to_numpy(),
-                }
-            )
-            n_case = int(is_case.sum())
-            n_control = int((~is_case).sum())
-
-            enough = (
-                len(donors_case) >= min_donors_per_arm and len(donors_control) >= min_donors_per_arm
-            )
-            effect = ci_low = ci_high = p_value = np.nan
-            method = "lmm"
-            components = ""
-            converged: bool | None = None
-            reason = ""
-
-            fit = _fit_effect(df) if enough else None
-            if fit is not None:
-                effect, ci_low, ci_high, raw_p, converged, components, nested_reason = fit
-                p_value, floor_reason = _floor_p(raw_p)
-                explanations = []
-                if nested_reason:
-                    explanations.append(nested_reason)
-                if not converged:
-                    explanations.append(
-                        "the optimizer stopped before convergence; the fixed effect, CI and p are "
-                        "retained because they are finite, but treat them as provisional"
-                    )
-                if floor_reason:
-                    explanations.append(floor_reason)
-                reason = "; ".join(explanations)
-            else:
-                if not enough:
-                    reason = (
-                        f"mixed model not attempted: {len(donors_case)} case and "
-                        f"{len(donors_control)} control donor(s), below min_donors_per_arm="
-                        f"{min_donors_per_arm}"
-                    )
-                else:
-                    reason = "mixed model produced no finite fixed effect"
-                method, effect, ci_low, ci_high, p_value, fallback_reason = _donor_level_effect(
-                    df, case_val=1.0, control_val=0.0
-                )
-                if fallback_reason:
-                    reason = f"{reason}; {fallback_reason}"
-
-            donor_effect, donor_p, donor_test, n_concordant = _donor_randomization(
-                df, case_val=1.0, control_val=0.0, seed=seed
-            )
-
             rows.append(
-                {
-                    "group": group,
-                    "program": prog,
-                    "effect": effect,
-                    "ci_low": ci_low,
-                    "ci_high": ci_high,
-                    "p_value": p_value,
-                    "n_case": n_case,
-                    "n_control": n_control,
-                    "n_donors": n_donors,
-                    "n_pairs": n_pairs,
-                    "design_floor_p": floor_p,
-                    "donor_effect": donor_effect,
-                    "donor_p": donor_p,
-                    "donor_test": donor_test,
-                    "n_donors_concordant": n_concordant,
-                    "method": method,
-                    "variance_components": components,
-                    "converged": converged,
-                    "reason": reason,
-                }
+                _program_row(
+                    design,
+                    group=group,
+                    program=prog,
+                    donor_col=donor_col,
+                    min_donors_per_arm=min_donors_per_arm,
+                    seed=seed,
+                )
             )
+    return _finish_effect_table(rows, fdr_method=fdr_method)
 
+
+@dataclass(frozen=True)
+class _GroupDesign:
+    """One group's cells restricted to the two arms, with the facts its tests need.
+
+    Attributes:
+        meta: Design frame of the group's case and control cells.
+        scores: Program scores of those cells.
+        sample: Per-cell sample identifier.
+        is_case: Per-cell case indicator.
+        donors_case: Donors with a case cell.
+        donors_control: Donors with a control cell.
+        n_donors: Donors in either arm.
+        floor_p: Smallest two-sided p-value the cohort's randomization set can reach.
+        n_pairs: Donors spanning both arms.
+    """
+
+    meta: pd.DataFrame
+    scores: pd.DataFrame
+    sample: pd.Series
+    is_case: np.ndarray
+    donors_case: set
+    donors_control: set
+    n_donors: int
+    floor_p: float
+    n_pairs: int
+
+
+def _sample_identifiers(
+    meta: pd.DataFrame, *, sample_col: str | None, donor_col: str, condition_col: str
+) -> pd.Series:
+    """The per-cell sample identifier: the named column, or donor x condition."""
+    if sample_col is not None:
+        if sample_col not in meta.columns:
+            raise KeyError(f"sample_col '{sample_col}' is not a column of metadata")
+        return meta[sample_col].astype(str)
+    # The sample is where condition was assigned. With one sample per donor per
+    # arm this reconstructs it exactly; with several it pools them, which loses
+    # power but cannot manufacture it.
+    return meta[donor_col].astype(str) + "|" + meta[condition_col].astype(str)
+
+
+def _group_design(
+    meta: pd.DataFrame,
+    scores: pd.DataFrame,
+    sample_values: pd.Series,
+    *,
+    group: object,
+    group_col: str,
+    donor_col: str,
+    condition_col: str,
+    case: str,
+    control: str,
+) -> _GroupDesign:
+    """Restrict one group to its case and control cells and describe the design they form."""
+    gmask = (meta[group_col] == group).to_numpy()
+    gmeta = meta.loc[gmask]
+    gscores = scores.loc[gmask]
+    gsample = sample_values.loc[gmask]
+    arm_mask = gmeta[condition_col].isin([case, control]).to_numpy()
+    gmeta = gmeta.loc[arm_mask]
+    gscores = gscores.loc[arm_mask]
+    gsample = gsample.loc[arm_mask]
+    cond = gmeta[condition_col]
+
+    is_case = (cond == case).to_numpy()
+    donors_case = set(gmeta[donor_col][is_case])
+    donors_control = set(gmeta[donor_col][~is_case])
+    floor_p, n_pairs = randomization_floor(gmeta[donor_col].tolist(), is_case.tolist())
+    return _GroupDesign(
+        meta=gmeta,
+        scores=gscores,
+        sample=gsample,
+        is_case=is_case,
+        donors_case=donors_case,
+        donors_control=donors_control,
+        n_donors=len(donors_case | donors_control),
+        floor_p=floor_p,
+        n_pairs=n_pairs,
+    )
+
+
+def _program_row(
+    design: _GroupDesign,
+    *,
+    group: object,
+    program: str,
+    donor_col: str,
+    min_donors_per_arm: int,
+    seed: int,
+) -> dict[str, object]:
+    """Fit one group x program and return its row of the effect table (without ``fdr``)."""
+    df = pd.DataFrame(
+        {
+            "score": design.scores[program].to_numpy(dtype=float),
+            "cond": design.is_case.astype(float),
+            "donor": design.meta[donor_col].to_numpy(),
+            "sample": design.sample.to_numpy(),
+        }
+    )
+    estimate = _program_estimate(design, df, min_donors_per_arm=min_donors_per_arm)
+    donor_effect, donor_p, donor_test, n_concordant = _donor_randomization(
+        df, case_val=1.0, control_val=0.0, seed=seed
+    )
+    return {
+        "group": group,
+        "program": program,
+        **estimate,
+        "n_case": int(design.is_case.sum()),
+        "n_control": int((~design.is_case).sum()),
+        "n_donors": design.n_donors,
+        "n_pairs": design.n_pairs,
+        "design_floor_p": design.floor_p,
+        "donor_effect": donor_effect,
+        "donor_p": donor_p,
+        "donor_test": donor_test,
+        "n_donors_concordant": n_concordant,
+    }
+
+
+def _program_estimate(
+    design: _GroupDesign, df: pd.DataFrame, *, min_donors_per_arm: int
+) -> dict[str, object]:
+    """The case-minus-control estimate for one program: mixed model, or the donor-level fallback.
+
+    Returns the effect, CI, p-value, method, variance components, convergence flag and the
+    reason that explains every degraded or blank result.
+    """
+    enough = (
+        len(design.donors_case) >= min_donors_per_arm
+        and len(design.donors_control) >= min_donors_per_arm
+    )
+    effect = ci_low = ci_high = p_value = np.nan
+    method = "lmm"
+    components = ""
+    converged: bool | None = None
+    reason = ""
+
+    fit = _fit_effect(df) if enough else None
+    if fit is not None:
+        effect, ci_low, ci_high, raw_p, converged, components, nested_reason = fit
+        p_value, floor_reason = _floor_p(raw_p)
+        explanations = []
+        if nested_reason:
+            explanations.append(nested_reason)
+        if not converged:
+            explanations.append(
+                "the optimizer stopped before convergence; the fixed effect, CI and p are "
+                "retained because they are finite, but treat them as provisional"
+            )
+        if floor_reason:
+            explanations.append(floor_reason)
+        reason = "; ".join(explanations)
+    else:
+        if not enough:
+            reason = (
+                f"mixed model not attempted: {len(design.donors_case)} case and "
+                f"{len(design.donors_control)} control donor(s), below min_donors_per_arm="
+                f"{min_donors_per_arm}"
+            )
+        else:
+            reason = "mixed model produced no finite fixed effect"
+        method, effect, ci_low, ci_high, p_value, fallback_reason = _donor_level_effect(
+            df, case_val=1.0, control_val=0.0
+        )
+        if fallback_reason:
+            reason = f"{reason}; {fallback_reason}"
+    return {
+        "effect": effect,
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "p_value": p_value,
+        "method": method,
+        "variance_components": components,
+        "converged": converged,
+        "reason": reason,
+    }
+
+
+_EFFECT_TABLE_COLUMNS = [
+    "group",
+    "program",
+    "effect",
+    "ci_low",
+    "ci_high",
+    "p_value",
+    "fdr",
+    "n_case",
+    "n_control",
+    "n_donors",
+    "n_pairs",
+    "design_floor_p",
+    "p_below_design_floor",
+    "donor_effect",
+    "donor_p",
+    "donor_test",
+    "n_donors_concordant",
+    "method",
+    "variance_components",
+    "converged",
+    "reason",
+]
+
+
+def _finish_effect_table(rows: list[dict[str, object]], *, fdr_method: str) -> pd.DataFrame:
+    """Add the family-wide FDR and the design-floor flag, and fix the column order."""
     out = pd.DataFrame(rows)
     out["fdr"] = bh_fdr(out["p_value"].to_numpy(), method=fdr_method)
     # A p-value the design's randomization set cannot reach is flagged rather than
@@ -771,31 +898,7 @@ def lmm_effect_sizes(
     # Nullable boolean: NA means no mixed model was fitted, which is a different
     # statement from a model that was fitted and did not converge.
     out["converged"] = out["converged"].astype("boolean")
-    return out[
-        [
-            "group",
-            "program",
-            "effect",
-            "ci_low",
-            "ci_high",
-            "p_value",
-            "fdr",
-            "n_case",
-            "n_control",
-            "n_donors",
-            "n_pairs",
-            "design_floor_p",
-            "p_below_design_floor",
-            "donor_effect",
-            "donor_p",
-            "donor_test",
-            "n_donors_concordant",
-            "method",
-            "variance_components",
-            "converged",
-            "reason",
-        ]
-    ]
+    return out[_EFFECT_TABLE_COLUMNS]
 
 
 def _is_nested_design(df: pd.DataFrame) -> bool:
