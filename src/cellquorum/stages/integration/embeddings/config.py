@@ -128,6 +128,10 @@ class EmbeddingsConfig(StrictBaseModel):
             umap, phate, paga, categorical_embedding, continuous_overlay). Setting
             this explicitly replaces the default list rather than adding to it, so
             an override that wants the defaults plus one more must name all of them.
+            Two render methods are opt-in and never in the default list:
+            ``state_score_umap`` and ``density_difference_umap`` (the specimen-weighted
+            case-minus-control density; its keys are documented in
+            ``density_difference_umap_method``).
     """
 
     enabled: bool = True

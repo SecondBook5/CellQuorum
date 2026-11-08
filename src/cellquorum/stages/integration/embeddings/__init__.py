@@ -8,6 +8,9 @@ from cellquorum.stages.integration.embeddings.config import (
     MagicConfig,
     OverlayConfig,
 )
+from cellquorum.stages.integration.embeddings.density_difference_umap_method import (
+    DensityDifferenceUmapMethod,
+)
 from cellquorum.stages.integration.embeddings.methods import (
     CategoricalEmbeddingMethod,
     ContinuousOverlayMethod,
@@ -24,6 +27,7 @@ for _method in (
     CategoricalEmbeddingMethod,
     ContinuousOverlayMethod,
     StateScoreUmapMethod,
+    DensityDifferenceUmapMethod,
 ):
     if not METHOD_REGISTRY.has("embeddings", _method.name):
         METHOD_REGISTRY.register(_method)
@@ -31,6 +35,7 @@ for _method in (
 __all__ = [
     "CategoricalEmbeddingMethod",
     "ContinuousOverlayMethod",
+    "DensityDifferenceUmapMethod",
     "EmbeddingsConfig",
     "MagicConfig",
     "OverlayConfig",
