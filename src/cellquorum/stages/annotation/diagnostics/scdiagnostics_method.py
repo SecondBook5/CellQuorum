@@ -127,6 +127,7 @@ class _Settings:
     n_neighbor: Any
     timeout: Any
     max_query_cells: int
+    random_state: int
 
     @classmethod
     def from_config(cls, config: dict) -> _Settings:
@@ -140,6 +141,7 @@ class _Settings:
             n_neighbor=config.get("n_neighbor", 15),
             timeout=config.get("timeout_seconds", 1800),
             max_query_cells=int(config.get("max_query_cells_per_call", 25_000)),
+            random_state=int(config.get("random_state", 0)),
         )
 
 
@@ -404,7 +406,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 scratch=scratch,
                 label_column=cell_type_col,
                 max_per_label=int(config.get("max_reference_cells_per_label", 300)),
-                seed=int(config.get("random_state", 0)),
+                seed=settings.random_state,
             )
             if ref_note:
                 reference_notes.append(ref_note)
@@ -465,6 +467,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 ",".join(map(str, settings.pc_subset)),
                 str(settings.n_tree),
                 str(settings.n_neighbor),
+                str(settings.random_state),
             ]
 
             # A failing batch is reported and skipped rather than ending the stage: the other

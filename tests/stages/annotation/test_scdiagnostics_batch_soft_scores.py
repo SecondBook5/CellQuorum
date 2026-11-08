@@ -108,6 +108,23 @@ def test_soft_scores_path_reaches_every_batch(two_batch_adata_and_backend):
     ), f"soft_scores path must reach every batch, not just the first -- got {soft_scores_args}"
 
 
+def test_the_configured_seed_reaches_r_for_every_batch(two_batch_adata_and_backend):
+    """R draws random numbers for the anomaly forests and kNN steps, so it needs the seed.
+
+    Without it two identical runs disagreed on every anomaly score and every kNN probability
+    (measured on real data against the real package), though the Python side was seeded.
+    """
+    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
+        ScdiagnosticsMethod,
+    )
+
+    adata, ctx, backend, config = two_batch_adata_and_backend
+
+    ScdiagnosticsMethod()._run(adata, {**config, "random_state": 7}, ctx)
+
+    assert [call[8] for call in backend.calls] == ["7", "7"]
+
+
 def test_published_table_covers_every_batch_not_only_the_last(two_batch_adata_and_backend):
     """The registered results table is the combined one, one row per cell, from every batch."""
     from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (

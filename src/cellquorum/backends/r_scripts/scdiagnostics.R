@@ -1,6 +1,6 @@
 # scDiagnostics annotation-confidence diagnostics.
 # Usage: Rscript scdiagnostics.R <query.h5ad> <out.csv> <cell_type_col> \
-#          <ref.h5ad|NONE> <soft_scores.csv|NONE> <pc_subset> <n_tree> <n_neighbor>
+#          <ref.h5ad|NONE> <soft_scores.csv|NONE> <pc_subset> <n_tree> <n_neighbor> [seed]
 suppressPackageStartupMessages({
   library(zellkonverter)
   library(scDiagnostics)
@@ -20,6 +20,12 @@ soft_scores_arg <- args[5]
 pc_subset_str <- args[6]
 n_tree <- as.integer(args[7])
 n_neighbor <- as.integer(args[8])
+
+# Seed everything below. The anomaly isolation forests and the kNN probability steps draw
+# random numbers, and without a seed two identical runs disagree on the anomaly score, the
+# anomaly flag and knn_prob_group -- measured on real data, not assumed.
+seed <- if (length(args) >= 9) as.integer(args[9]) else 0L
+set.seed(seed)
 
 # Parse PC subset (comma-separated 1-indexed integers).
 pc_subset <- as.integer(strsplit(pc_subset_str, ",")[[1]])
