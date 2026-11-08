@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import anndata as ad
 import numpy as np
@@ -164,27 +165,8 @@ class ScTenifoldKnkMethod(AnalysisMethod):
     def _run(
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
-        cfg = ScTenifoldKnkConfig(**config.get("sctenifoldknk", {}))
-        if not cfg.ko_genes:
-            raise ValueError("Explicit ko_genes required")
-        condition_key = config.get("condition_key")
-        cluster_key = config.get("cluster_key")
-        if bool(condition_key) != bool(cfg.condition_label):
-            raise ValueError("Specify condition_key and condition_label together")
-        if (cfg.by_cluster or cfg.groups) and not cluster_key:
-            raise ValueError("cluster_key required for subtype selection")
-        mask = np.ones(adata.n_obs, dtype=bool)
-        if condition_key:
-            mask &= adata.obs[condition_key].astype(str).eq(cfg.condition_label).to_numpy()
-        if cfg.groups is not None:
-            available = set(adata.obs.loc[mask, cluster_key].astype(str))
-            missing = set(cfg.groups) - available
-            if missing:
-                raise ValueError(
-                    f"Requested groups absent in selected condition: {sorted(missing)}"
-                )
-            mask &= adata.obs[cluster_key].astype(str).isin(cfg.groups).to_numpy()
-        work = adata[mask]
+        cfg, condition_key, cluster_key = _knk_settings(config)
+        work = _selected_cells(adata, cfg, condition_key, cluster_key)
         if work.n_obs < cfg.min_cells:
             return self._skip("too few cells in selected condition/groups", n_cells=work.n_obs)
         backend = (
@@ -195,152 +177,24 @@ class ScTenifoldKnkMethod(AnalysisMethod):
         status = backend.status()
         if not status.available:
             return self._skip("scTenifoldpy runtime unavailable", **status.details)
-        root = Path(context.paths.results) / "sctenifoldknk"
-        root.mkdir(parents=True, exist_ok=True)
-        for name in ["differential_regulation.csv", "pathway_enrichment.csv", "cohort_audit.csv"]:
-            (root / name).unlink(missing_ok=True)
-        scratch = Path(context.paths.scratch) / "sctenifoldknk"
-        scratch.mkdir(parents=True, exist_ok=True)
-        groups = (
-            [
-                (str(g), work[work.obs[cluster_key].astype(str).eq(str(g)).to_numpy()])
-                for g in sorted(work.obs[cluster_key].astype(str).unique())
-            ]
-            if cfg.by_cluster
-            else []
-        )
-        if cfg.pooled:
-            groups.append(("pooled", work))
-        if len({g for g, _ in groups}) != len(groups):
-            raise ValueError("A subtype named pooled conflicts with the pooled analysis")
-        warnings = []
-        audits = []
-        rankings = []
-        pathways = []
-        artifacts = []
-        seed = int(config.get("seed", 0))
-        for label, cohort in groups:
-            audit = {"group": label, "n_available": cohort.n_obs, "status": "skipped"}
-            if cohort.n_obs < cfg.min_cells:
-                audit["reason"] = "too few cells"
-                audits.append(audit)
-                warnings.append(f"{label}: too few cells")
-                continue
-            strata = [k for k in [cfg.donor_key, cluster_key if label == "pooled" else None] if k]
-            indices = select_cells(cohort.obs, cfg.max_cells, seed, strata)
-            selected = cohort[indices]
-            try:
-                matrix = prepare_matrix(selected, config.get("layer", "counts"), cfg)
-            except ValueError as exc:
-                audit["reason"] = str(exc)
-                audits.append(audit)
-                warnings.append(f"{label}: {exc}")
-                continue
-            tag = hashlib.sha256(label.encode()).hexdigest()[:12]
-            input_csv = scratch / f"{tag}_counts.csv"
-            matrix.to_csv(input_csv)
-            run_cfg = {**cfg.model_dump(), "seed": seed}
-            config_path = scratch / f"{tag}_config.json"
-            config_path.write_text(json.dumps(run_cfg, indent=2))
-            result_csv = root / f"{tag}_native.csv"
-            # Never allow an old successful result to mask a failed new execution.
-            for old in [
-                result_csv,
-                result_csv.with_suffix(".metadata.json"),
-                result_csv.with_suffix(".outgoing_edges.csv"),
-            ]:
-                old.unlink(missing_ok=True)
-            try:
-                proc = backend.run_script(
-                    [
-                        "--input",
-                        str(input_csv),
-                        "--config",
-                        str(config_path),
-                        "--output",
-                        str(result_csv),
-                    ],
-                    timeout=int(config.get("timeout_seconds", 10800)),
-                )
-            except subprocess.TimeoutExpired as exc:
-                raise RuntimeError(f"scTenifoldKnk timed out for {label}") from exc
-            log = root / f"{tag}.log"
-            log.write_text(proc.stdout + "\n" + proc.stderr)
-            artifacts.append(
-                StageArtifact(f"knk_log_{tag}", log, "text", f"Native package log: {label}")
-            )
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    f"scTenifoldKnk failed for {label} (exit {proc.returncode}); see {log}"
-                )
-            native = pd.read_csv(result_csv)
-            metadata = json.loads(result_csv.with_suffix(".metadata.json").read_text())
-            if native.empty:
-                raise RuntimeError(f"Empty scTenifoldKnk result for {label}")
-            audit.update(
-                n_used=selected.n_obs,
-                n_genes=len(matrix),
-                n_donors=int(selected.obs[cfg.donor_key].nunique()) if cfg.donor_key else None,
-                n_outgoing_edges=metadata["n_knockout_outgoing_edges"],
-                package_version=metadata["version"],
-            )
-            membership = root / f"{tag}_cells.csv"
-            cell_membership = selected.obs.copy()
-            fitted_ids = metadata.get("fitted_cell_ids", selected.obs_names.tolist())
-            cell_membership["knk_in_native_fit"] = cell_membership.index.isin(fitted_ids)
-            cell_membership.to_csv(membership)
-            audit["n_fitted_cells"] = metadata.get("n_fitted_cells", selected.n_obs)
-            audit["n_fitted_genes"] = metadata.get("n_fitted_genes", len(matrix))
-            for path, kind in [
-                (result_csv, "csv"),
-                (result_csv.with_suffix(".metadata.json"), "json"),
-                (result_csv.with_suffix(".outgoing_edges.csv"), "csv"),
-                (membership, "csv"),
-                (config_path, "json"),
-            ]:
-                artifacts.append(
-                    StageArtifact(
-                        f"knk_{tag}_{path.stem}", path, kind, f"scTenifoldKnk provenance: {label}"
-                    )
-                )
-            if not metadata["n_knockout_outgoing_edges"]:
-                audit["reason"] = "knockout genes have no outgoing fitted edges"
-                audits.append(audit)
-                warnings.append(f"{label}: no outgoing knockout edges; no interpretable KO")
-                continue
-            ranking = native.rename(
-                columns={
-                    "Gene": "gene",
-                    "Distance": "distance",
-                    "p-value": "p",
-                    "adjusted p-value": "FDR",
-                    "FC": "squared_distance_ratio",
-                }
-            )
-            required = ranking[["distance", "p", "FDR"]].to_numpy(float)
-            if (
-                not np.isfinite(required).all()
-                or (required[:, 0] < 0).any()
-                or (required[:, 1:] < 0).any()
-                or (required[:, 1:] > 1).any()
-            ):
-                raise RuntimeError(f"Nonfinite or invalid native statistics for {label}")
-            ranking["group"] = label
-            ranking["ko_genes"] = ";".join(cfg.ko_genes)
-            ranking["is_knockout_gene"] = ranking.gene.isin(cfg.ko_genes)
-            rankings.append(ranking)
-            if cfg.pathway_gmt:
-                enrichment = pathway_enrichment(ranking, Path(cfg.pathway_gmt), cfg)
-                if len(enrichment):
-                    enrichment["group"] = label
-                    pathways.append(enrichment)
-                else:
-                    warnings.append(f"{label}: no GMT pathways met tested-gene coverage thresholds")
-            audit["status"] = "success"
-            audit["reason"] = ""
-            audits.append(audit)
+        run = _open_run(context, config, cfg, backend, cluster_key)
+        collected = _Collected()
+        for label, cohort in _cohorts(work, cfg, cluster_key):
+            _fit_cohort(run, label, cohort, collected)
+        return self._assemble_result(adata, run, collected, context)
+
+    def _assemble_result(
+        self,
+        adata: ad.AnnData,
+        run: _KnkRun,
+        collected: _Collected,
+        context: PipelineContext,
+    ) -> StageResult:
+        """Write the audit, ranking, enrichment and figures, and build the stage result."""
+        cfg, root = run.cfg, run.root
+        artifacts, warnings = collected.artifacts, collected.warnings
         audit_path = root / "cohort_audit.csv"
-        pd.DataFrame(audits).to_csv(audit_path, index=False)
+        pd.DataFrame(collected.audits).to_csv(audit_path, index=False)
         artifacts.append(
             StageArtifact(
                 "knk_cohort_audit",
@@ -349,14 +203,14 @@ class ScTenifoldKnkMethod(AnalysisMethod):
                 "Cohort eligibility, sampling and fitted KO-edge audit",
             )
         )
-        if not rankings:
+        if not collected.rankings:
             return StageResult.skipped(
                 adata=adata,
                 reason="No interpretable scTenifoldKnk cohorts",
                 artifacts=artifacts,
                 warnings=warnings,
             )
-        ranking = pd.concat(rankings, ignore_index=True)
+        ranking = pd.concat(collected.rankings, ignore_index=True)
         rank_path = root / "differential_regulation.csv"
         ranking.to_csv(rank_path, index=False)
         artifacts.append(
@@ -367,7 +221,11 @@ class ScTenifoldKnkMethod(AnalysisMethod):
                 "Unsigned gene-network differential regulation; native per-cohort BH FDR",
             )
         )
-        enrichment = pd.concat(pathways, ignore_index=True) if pathways else pd.DataFrame()
+        enrichment = (
+            pd.concat(collected.pathways, ignore_index=True)
+            if collected.pathways
+            else pd.DataFrame()
+        )
         if len(enrichment):
             enrichment["FDR_across_cohorts"] = false_discovery_control(enrichment.p)
             path = root / "pathway_enrichment.csv"
@@ -385,7 +243,7 @@ class ScTenifoldKnkMethod(AnalysisMethod):
             enrichment,
             Path(context.paths.figures),
             cfg.figure_formats,
-            int(config.get("n_top_targets", 20)),
+            int(run.config.get("n_top_targets", 20)),
         )
         artifacts.extend(
             StageArtifact(
@@ -403,7 +261,9 @@ class ScTenifoldKnkMethod(AnalysisMethod):
             artifacts=artifacts,
             warnings=warnings,
             backend=self.backend,
-            method_version=next(a["package_version"] for a in audits if a["status"] == "success"),
+            method_version=next(
+                a["package_version"] for a in collected.audits if a["status"] == "success"
+            ),
             notes=[
                 "Cell-intrinsic virtual gene KO; "
                 "no receiver-cell or signed expression predictions.",
@@ -411,10 +271,284 @@ class ScTenifoldKnkMethod(AnalysisMethod):
                 "pooled is not simultaneous multi-subtype signaling KO.",
             ],
             metrics={
-                "n_cohorts": len(rankings),
+                "n_cohorts": len(collected.rankings),
                 "n_genes_tested": len(ranking),
                 "ko_genes": cfg.ko_genes,
                 "n_pathways": len(enrichment),
                 "condition_label": cfg.condition_label,
             },
         )
+
+
+@dataclass(frozen=True)
+class _KnkRun:
+    """What every cohort fit in one stage run shares.
+
+    Attributes:
+        cfg: The scTenifoldKnk settings.
+        config: The raw method config (layer, seed, timeout, figure options).
+        backend: The isolated scTenifoldpy runtime.
+        root: Results directory for this method's outputs.
+        scratch: Scratch directory for native inputs and configs.
+        cluster_key: obs column naming the subtype, or None.
+        seed: Seed passed to the native package.
+    """
+
+    cfg: ScTenifoldKnkConfig
+    config: dict
+    backend: ScTenifoldKnkBackend
+    root: Path
+    scratch: Path
+    cluster_key: str | None
+    seed: int
+
+
+@dataclass
+class _Collected:
+    """What the cohort loop accumulates, in the order it is produced."""
+
+    warnings: list[str] = field(default_factory=list)
+    audits: list[dict[str, Any]] = field(default_factory=list)
+    rankings: list[pd.DataFrame] = field(default_factory=list)
+    pathways: list[pd.DataFrame] = field(default_factory=list)
+    artifacts: list[StageArtifact] = field(default_factory=list)
+
+
+def _knk_settings(config: dict) -> tuple[ScTenifoldKnkConfig, str | None, str | None]:
+    """Parse and validate the method settings; returns ``(cfg, condition_key, cluster_key)``."""
+    cfg = ScTenifoldKnkConfig(**config.get("sctenifoldknk", {}))
+    if not cfg.ko_genes:
+        raise ValueError("Explicit ko_genes required")
+    condition_key = config.get("condition_key")
+    cluster_key = config.get("cluster_key")
+    if bool(condition_key) != bool(cfg.condition_label):
+        raise ValueError("Specify condition_key and condition_label together")
+    if (cfg.by_cluster or cfg.groups) and not cluster_key:
+        raise ValueError("cluster_key required for subtype selection")
+    return cfg, condition_key, cluster_key
+
+
+def _selected_cells(
+    adata: ad.AnnData, cfg: ScTenifoldKnkConfig, condition_key: str | None, cluster_key: str | None
+) -> ad.AnnData:
+    """The cells of the selected condition, restricted to the requested groups."""
+    mask = np.ones(adata.n_obs, dtype=bool)
+    if condition_key:
+        mask &= adata.obs[condition_key].astype(str).eq(cfg.condition_label).to_numpy()
+    if cfg.groups is not None:
+        available = set(adata.obs.loc[mask, cluster_key].astype(str))
+        missing = set(cfg.groups) - available
+        if missing:
+            raise ValueError(f"Requested groups absent in selected condition: {sorted(missing)}")
+        mask &= adata.obs[cluster_key].astype(str).isin(cfg.groups).to_numpy()
+    return adata[mask]
+
+
+def _open_run(
+    context: PipelineContext,
+    config: dict,
+    cfg: ScTenifoldKnkConfig,
+    backend: ScTenifoldKnkBackend,
+    cluster_key: str | None,
+) -> _KnkRun:
+    """Create the output and scratch directories and clear the previous run's tables."""
+    root = Path(context.paths.results) / "sctenifoldknk"
+    root.mkdir(parents=True, exist_ok=True)
+    for name in ["differential_regulation.csv", "pathway_enrichment.csv", "cohort_audit.csv"]:
+        (root / name).unlink(missing_ok=True)
+    scratch = Path(context.paths.scratch) / "sctenifoldknk"
+    scratch.mkdir(parents=True, exist_ok=True)
+    return _KnkRun(
+        cfg=cfg,
+        config=config,
+        backend=backend,
+        root=root,
+        scratch=scratch,
+        cluster_key=cluster_key,
+        seed=int(config.get("seed", 0)),
+    )
+
+
+def _cohorts(
+    work: ad.AnnData, cfg: ScTenifoldKnkConfig, cluster_key: str | None
+) -> list[tuple[str, ad.AnnData]]:
+    """The cohorts to fit: one per subtype, then the pooled cells."""
+    groups = (
+        [
+            (str(g), work[work.obs[cluster_key].astype(str).eq(str(g)).to_numpy()])
+            for g in sorted(work.obs[cluster_key].astype(str).unique())
+        ]
+        if cfg.by_cluster
+        else []
+    )
+    if cfg.pooled:
+        groups.append(("pooled", work))
+    if len({g for g, _ in groups}) != len(groups):
+        raise ValueError("A subtype named pooled conflicts with the pooled analysis")
+    return groups
+
+
+def _fit_cohort(run: _KnkRun, label: str, cohort: ad.AnnData, collected: _Collected) -> None:
+    """Fit one cohort and record its audit row, provenance, ranking and enrichment.
+
+    A cohort that cannot be fitted for a data reason (too few cells, a matrix the package
+    cannot use, a knockout gene with no outgoing edges) gets an audit row and a warning and
+    does not stop the others. A failure of the native run itself raises.
+    """
+    cfg = run.cfg
+    audit: dict[str, Any] = {"group": label, "n_available": cohort.n_obs, "status": "skipped"}
+    if cohort.n_obs < cfg.min_cells:
+        audit["reason"] = "too few cells"
+        collected.audits.append(audit)
+        collected.warnings.append(f"{label}: too few cells")
+        return
+    strata = [k for k in [cfg.donor_key, run.cluster_key if label == "pooled" else None] if k]
+    indices = select_cells(cohort.obs, cfg.max_cells, run.seed, strata)
+    selected = cohort[indices]
+    try:
+        matrix = prepare_matrix(selected, run.config.get("layer", "counts"), cfg)
+    except ValueError as exc:
+        audit["reason"] = str(exc)
+        collected.audits.append(audit)
+        collected.warnings.append(f"{label}: {exc}")
+        return
+    tag = hashlib.sha256(label.encode()).hexdigest()[:12]
+    result_csv, config_path = _execute_native(run, label, tag, matrix, collected)
+    native = pd.read_csv(result_csv)
+    metadata = json.loads(result_csv.with_suffix(".metadata.json").read_text())
+    if native.empty:
+        raise RuntimeError(f"Empty scTenifoldKnk result for {label}")
+    _record_provenance(
+        run, label, tag, selected, matrix, metadata, result_csv, config_path, audit, collected
+    )
+    if not metadata["n_knockout_outgoing_edges"]:
+        audit["reason"] = "knockout genes have no outgoing fitted edges"
+        collected.audits.append(audit)
+        collected.warnings.append(f"{label}: no outgoing knockout edges; no interpretable KO")
+        return
+    ranking = _native_ranking(native, label, cfg)
+    collected.rankings.append(ranking)
+    if cfg.pathway_gmt:
+        enrichment = pathway_enrichment(ranking, Path(cfg.pathway_gmt), cfg)
+        if len(enrichment):
+            enrichment["group"] = label
+            collected.pathways.append(enrichment)
+        else:
+            collected.warnings.append(
+                f"{label}: no GMT pathways met tested-gene coverage thresholds"
+            )
+    audit["status"] = "success"
+    audit["reason"] = ""
+    collected.audits.append(audit)
+
+
+def _execute_native(
+    run: _KnkRun, label: str, tag: str, matrix: pd.DataFrame, collected: _Collected
+) -> tuple[Path, Path]:
+    """Run the native package on one cohort's counts; returns ``(result_csv, config_path)``.
+
+    Writes the counts and config, clears any previous result so an old success cannot mask a
+    failed new execution, and records the package log. Raises on a timeout or a non-zero exit.
+    """
+    input_csv = run.scratch / f"{tag}_counts.csv"
+    matrix.to_csv(input_csv)
+    run_cfg = {**run.cfg.model_dump(), "seed": run.seed}
+    config_path = run.scratch / f"{tag}_config.json"
+    config_path.write_text(json.dumps(run_cfg, indent=2))
+    result_csv = run.root / f"{tag}_native.csv"
+    # Never allow an old successful result to mask a failed new execution.
+    for old in [
+        result_csv,
+        result_csv.with_suffix(".metadata.json"),
+        result_csv.with_suffix(".outgoing_edges.csv"),
+    ]:
+        old.unlink(missing_ok=True)
+    try:
+        proc = run.backend.run_script(
+            [
+                "--input",
+                str(input_csv),
+                "--config",
+                str(config_path),
+                "--output",
+                str(result_csv),
+            ],
+            timeout=int(run.config.get("timeout_seconds", 10800)),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"scTenifoldKnk timed out for {label}") from exc
+    log = run.root / f"{tag}.log"
+    log.write_text(proc.stdout + "\n" + proc.stderr)
+    collected.artifacts.append(
+        StageArtifact(f"knk_log_{tag}", log, "text", f"Native package log: {label}")
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"scTenifoldKnk failed for {label} (exit {proc.returncode}); see {log}")
+    return result_csv, config_path
+
+
+def _record_provenance(
+    run: _KnkRun,
+    label: str,
+    tag: str,
+    selected: ad.AnnData,
+    matrix: pd.DataFrame,
+    metadata: dict,
+    result_csv: Path,
+    config_path: Path,
+    audit: dict[str, Any],
+    collected: _Collected,
+) -> None:
+    """Fill the cohort's audit row and write its cell membership and provenance artifacts."""
+    cfg = run.cfg
+    audit.update(
+        n_used=selected.n_obs,
+        n_genes=len(matrix),
+        n_donors=int(selected.obs[cfg.donor_key].nunique()) if cfg.donor_key else None,
+        n_outgoing_edges=metadata["n_knockout_outgoing_edges"],
+        package_version=metadata["version"],
+    )
+    membership = run.root / f"{tag}_cells.csv"
+    cell_membership = selected.obs.copy()
+    fitted_ids = metadata.get("fitted_cell_ids", selected.obs_names.tolist())
+    cell_membership["knk_in_native_fit"] = cell_membership.index.isin(fitted_ids)
+    cell_membership.to_csv(membership)
+    audit["n_fitted_cells"] = metadata.get("n_fitted_cells", selected.n_obs)
+    audit["n_fitted_genes"] = metadata.get("n_fitted_genes", len(matrix))
+    for path, kind in [
+        (result_csv, "csv"),
+        (result_csv.with_suffix(".metadata.json"), "json"),
+        (result_csv.with_suffix(".outgoing_edges.csv"), "csv"),
+        (membership, "csv"),
+        (config_path, "json"),
+    ]:
+        collected.artifacts.append(
+            StageArtifact(
+                f"knk_{tag}_{path.stem}", path, kind, f"scTenifoldKnk provenance: {label}"
+            )
+        )
+
+
+def _native_ranking(native: pd.DataFrame, label: str, cfg: ScTenifoldKnkConfig) -> pd.DataFrame:
+    """Rename the native columns, validate the statistics, and label the cohort's ranking."""
+    ranking = native.rename(
+        columns={
+            "Gene": "gene",
+            "Distance": "distance",
+            "p-value": "p",
+            "adjusted p-value": "FDR",
+            "FC": "squared_distance_ratio",
+        }
+    )
+    required = ranking[["distance", "p", "FDR"]].to_numpy(float)
+    if (
+        not np.isfinite(required).all()
+        or (required[:, 0] < 0).any()
+        or (required[:, 1:] < 0).any()
+        or (required[:, 1:] > 1).any()
+    ):
+        raise RuntimeError(f"Nonfinite or invalid native statistics for {label}")
+    ranking["group"] = label
+    ranking["ko_genes"] = ";".join(cfg.ko_genes)
+    ranking["is_knockout_gene"] = ranking.gene.isin(cfg.ko_genes)
+    return ranking
