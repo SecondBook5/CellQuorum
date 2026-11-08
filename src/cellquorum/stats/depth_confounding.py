@@ -47,6 +47,7 @@ the unadjusted test is the one a declared family was corrected over.
 from __future__ import annotations
 
 from collections.abc import Hashable
+from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
@@ -433,11 +434,68 @@ def depth_confound_audit(
     depth = pd.to_numeric(metadata[depth_col], errors="coerce").to_numpy(dtype=float)
     donors = metadata[donor_col].astype(str)
     conditions = metadata[condition_col].astype(str)
+    depth_test, depth_is_confounded = _depth_gate(
+        depth, donors, conditions, case, control, alpha=alpha, min_pairs=min_pairs
+    )
+    audit = _AuditContext(
+        depth=depth,
+        donors=donors,
+        conditions=conditions,
+        samples=(donors + "|" + conditions).to_numpy(),
+        depth_col=depth_col,
+        case=case,
+        control=control,
+        alpha=alpha,
+        collapse_fraction=collapse_fraction,
+        min_pairs=min_pairs,
+        depth_test=depth_test,
+        depth_is_confounded=depth_is_confounded,
+    )
 
-    # Leg 1, evaluated once: is depth itself associated with condition? Without
-    # this there is nothing for depth to confound.
-    depth_wide, depth_pair_reason = _paired_by_sample(depth, donors, conditions, case, control)
-    depth_test = (
+    rows = [
+        _audit_metric(
+            metric, pd.to_numeric(metrics[metric], errors="coerce").to_numpy(dtype=float), audit
+        )
+        for metric in metrics.columns
+    ]
+    return _finish_audit_table(rows, fdr_method=fdr_method)
+
+
+@dataclass(frozen=True)
+class _AuditContext:
+    """What every metric in one audit shares: the cells' design, the depth gate and the rules."""
+
+    depth: np.ndarray
+    donors: pd.Series
+    conditions: pd.Series
+    samples: np.ndarray
+    depth_col: str
+    case: str
+    control: str
+    alpha: float
+    collapse_fraction: float
+    min_pairs: int
+    depth_test: dict[str, float | str]
+    depth_is_confounded: bool
+
+
+def _depth_gate(
+    depth: np.ndarray,
+    donors: pd.Series,
+    conditions: pd.Series,
+    case: str,
+    control: str,
+    *,
+    alpha: float,
+    min_pairs: int,
+) -> tuple[dict[str, float | str], bool]:
+    """Leg 1, evaluated once: is depth itself associated with condition?
+
+    Without this there is nothing for depth to confound. Returns the paired test of depth and
+    whether it clears ``min_pairs`` and ``alpha``.
+    """
+    depth_wide, _ = _paired_by_sample(depth, donors, conditions, case, control)
+    depth_test: dict[str, float | str] = (
         _paired_test(depth_wide, case, control)
         if not depth_wide.empty
         else {
@@ -450,158 +508,197 @@ def depth_confound_audit(
         }
     )
     depth_p = float(depth_test["t_p"])
-    depth_is_confounded = bool(
+    confounded = bool(
         float(depth_test["n_pairs"]) >= min_pairs and np.isfinite(depth_p) and depth_p < alpha
     )
+    return depth_test, confounded
 
-    samples = (donors + "|" + conditions).to_numpy()
 
-    rows: list[dict[str, object]] = []
-    for metric in metrics.columns:
-        values = pd.to_numeric(metrics[metric], errors="coerce").to_numpy(dtype=float)
-        usable = np.isfinite(values) & np.isfinite(depth)
+def _depth_coupling(
+    values: np.ndarray, depth: np.ndarray, samples: np.ndarray, usable: np.ndarray
+) -> tuple[float, float, float]:
+    """Pooled Spearman rho, its p-value, and the mean within-sample rho against depth.
 
-        rho, rho_p = (np.nan, np.nan)
-        within_rho = np.nan
-        # A constant metric has no correlation with anything -- which is the honest answer, not
-        # an error. It happens whenever the metrics are genes rather than scores, because a gene
-        # undetected in one group's cells is an all-zero column, so scipy's warning would fire
-        # once per such column and bury the run's real output.
-        if usable.sum() >= 3 and _varies(values[usable]) and _varies(depth[usable]):
-            rho, rho_p = stats.spearmanr(values[usable], depth[usable])
-            within_rho = _within_sample_rho(values, depth, samples, usable)
+    A constant metric has no correlation with anything -- which is the honest answer, not
+    an error. It happens whenever the metrics are genes rather than scores, because a gene
+    undetected in one group's cells is an all-zero column, so scipy's warning would fire
+    once per such column and bury the run's real output.
+    """
+    rho, rho_p = (np.nan, np.nan)
+    within_rho = np.nan
+    if usable.sum() >= 3 and _varies(values[usable]) and _varies(depth[usable]):
+        rho, rho_p = stats.spearmanr(values[usable], depth[usable])
+        within_rho = _within_sample_rho(values, depth, samples, usable)
+    return rho, rho_p, within_rho
 
-        raw_wide, raw_pair_reason = _paired_by_sample(values, donors, conditions, case, control)
-        raw = (
-            _paired_test(raw_wide, case, control)
-            if not raw_wide.empty
-            else _paired_test(pd.DataFrame({case: [], control: []}), case, control)
+
+def _paired_effect(values: np.ndarray, audit: _AuditContext) -> tuple[dict[str, float | str], str]:
+    """One value per donor-condition sample, paired on donor, then tested.
+
+    Returns the test and the reason string for any donor dropped for lacking an arm.
+    """
+    wide, pair_reason = _paired_by_sample(
+        values, audit.donors, audit.conditions, audit.case, audit.control
+    )
+    test = (
+        _paired_test(wide, audit.case, audit.control)
+        if not wide.empty
+        else _paired_test(
+            pd.DataFrame({audit.case: [], audit.control: []}), audit.case, audit.control
         )
+    )
+    return test, pair_reason
 
-        adjusted_values = _residualise(values, depth, samples)
-        adj_wide, _ = _paired_by_sample(adjusted_values, donors, conditions, case, control)
-        adjusted = (
-            _paired_test(adj_wide, case, control)
-            if not adj_wide.empty
-            else _paired_test(pd.DataFrame({case: [], control: []}), case, control)
+
+def _audit_metric(metric: Hashable, values: np.ndarray, audit: _AuditContext) -> dict[str, object]:
+    """Audit one metric: its coupling to depth, raw and adjusted effects, verdict and notes."""
+    usable = np.isfinite(values) & np.isfinite(audit.depth)
+    rho, rho_p, within_rho = _depth_coupling(values, audit.depth, audit.samples, usable)
+
+    raw, raw_pair_reason = _paired_effect(values, audit)
+    adjusted, _ = _paired_effect(_residualise(values, audit.depth, audit.samples), audit)
+
+    raw_delta = float(raw["delta"]) if np.isfinite(float(raw["delta"])) else np.nan
+    adj_delta = float(adjusted["delta"]) if np.isfinite(float(adjusted["delta"])) else np.nan
+    retained = abs(adj_delta) / abs(raw_delta) if raw_delta else np.nan
+
+    verdict, verdict_reason = _verdict(
+        depth_is_confounded=audit.depth_is_confounded,
+        n_pairs=int(raw["n_pairs"]),
+        raw_p=float(raw["t_p"]),
+        adjusted_p=float(adjusted["t_p"]),
+        raw_delta=raw_delta,
+        adjusted_delta=adj_delta,
+        alpha=audit.alpha,
+        collapse_fraction=audit.collapse_fraction,
+        min_pairs=audit.min_pairs,
+    )
+    notes = _verdict_notes(
+        audit,
+        verdict=verdict,
+        verdict_reason=verdict_reason,
+        raw_pair_reason=raw_pair_reason,
+        raw=raw,
+        adjusted=adjusted,
+        within_rho=within_rho,
+        retained=retained,
+    )
+    depth_test = audit.depth_test
+    return {
+        "metric": metric,
+        "n_cells": int(usable.sum()),
+        "spearman_rho_vs_depth": float(rho) if np.isfinite(rho) else np.nan,
+        "spearman_p_vs_depth": float(rho_p) if np.isfinite(rho_p) else np.nan,
+        "within_sample_rho_vs_depth": float(within_rho) if np.isfinite(within_rho) else np.nan,
+        "depth_delta": float(depth_test["delta"]),
+        "depth_n_donors_positive": int(depth_test["n_donors_positive"]),
+        "depth_t_p": float(depth_test["t_p"]),
+        "depth_wilcoxon_p": float(depth_test["wilcoxon_p"]),
+        "depth_is_confounded": audit.depth_is_confounded,
+        "n_pairs": int(raw["n_pairs"]),
+        "raw_mean_case": float(raw["mean_case"]),
+        "raw_mean_control": float(raw["mean_control"]),
+        "raw_delta": raw_delta,
+        "raw_n_donors_positive": int(raw["n_donors_positive"]),
+        "raw_t_p": float(raw["t_p"]),
+        "raw_wilcoxon_p": float(raw["wilcoxon_p"]),
+        "adjusted_delta": adj_delta,
+        "adjusted_n_donors_positive": int(adjusted["n_donors_positive"]),
+        "adjusted_t_p": float(adjusted["t_p"]),
+        "adjusted_wilcoxon_p": float(adjusted["wilcoxon_p"]),
+        "delta_retained_fraction": float(retained)
+        if np.isfinite(retained) and verdict not in _NO_RAW_CLAIM
+        else np.nan,
+        "verdict": verdict,
+        "reason": "; ".join(notes),
+    }
+
+
+def _verdict_notes(
+    audit: _AuditContext,
+    *,
+    verdict: str,
+    verdict_reason: str,
+    raw_pair_reason: str,
+    raw: dict[str, float | str],
+    adjusted: dict[str, float | str],
+    within_rho: float,
+    retained: float,
+) -> list[str]:
+    """The verdict's reason plus the caveats a ``depth_balanced`` row must carry."""
+    notes = [n for n in (verdict_reason, raw_pair_reason, str(raw["reason"])) if n]
+    if (
+        verdict == "depth_balanced"
+        and np.isfinite(within_rho)
+        and abs(within_rho) >= NOTABLE_COUPLING_RHO
+    ):
+        notes.append(
+            f"within-sample coupling to {audit.depth_col} is strong (rho={within_rho:+.3f}); this "
+            f"metric is safe in this cohort only because the arms are depth-balanced, and "
+            f"would not be in one that is not"
         )
-
-        raw_delta = float(raw["delta"]) if np.isfinite(float(raw["delta"])) else np.nan
-        adj_delta = float(adjusted["delta"]) if np.isfinite(float(adjusted["delta"])) else np.nan
-        retained = abs(adj_delta) / abs(raw_delta) if raw_delta else np.nan
-
-        verdict, verdict_reason = _verdict(
-            depth_is_confounded=depth_is_confounded,
-            n_pairs=int(raw["n_pairs"]),
-            raw_p=float(raw["t_p"]),
-            adjusted_p=float(adjusted["t_p"]),
-            raw_delta=raw_delta,
-            adjusted_delta=adj_delta,
-            alpha=alpha,
-            collapse_fraction=collapse_fraction,
-            min_pairs=min_pairs,
+    # "Depth is balanced" rests on a paired test over a handful of donors, which
+    # cannot rule out an imbalance too small to detect. So when the gate passes
+    # a metric whose effect nonetheless moves under adjustment, say so rather
+    # than let depth_balanced read as an all-clear on that specific claim.
+    if (
+        verdict == "depth_balanced"
+        and np.isfinite(float(raw["t_p"]))
+        and float(raw["t_p"]) < audit.alpha
+        and np.isfinite(retained)
+        and (
+            retained < audit.collapse_fraction
+            or not (np.isfinite(float(adjusted["t_p"])) and float(adjusted["t_p"]) < audit.alpha)
         )
-
-        notes = [n for n in (verdict_reason, raw_pair_reason, str(raw["reason"])) if n]
-        if (
-            verdict == "depth_balanced"
-            and np.isfinite(within_rho)
-            and abs(within_rho) >= NOTABLE_COUPLING_RHO
-        ):
-            notes.append(
-                f"within-sample coupling to {depth_col} is strong (rho={within_rho:+.3f}); this "
-                f"metric is safe in this cohort only because the arms are depth-balanced, and "
-                f"would not be in one that is not"
-            )
-        # "Depth is balanced" rests on a paired test over a handful of donors, which
-        # cannot rule out an imbalance too small to detect. So when the gate passes
-        # a metric whose effect nonetheless moves under adjustment, say so rather
-        # than let depth_balanced read as an all-clear on that specific claim.
-        if (
-            verdict == "depth_balanced"
-            and np.isfinite(float(raw["t_p"]))
-            and float(raw["t_p"]) < alpha
-            and np.isfinite(retained)
-            and (
-                retained < collapse_fraction
-                or not (np.isfinite(float(adjusted["t_p"])) and float(adjusted["t_p"]) < alpha)
-            )
-        ):
-            notes.append(
-                f"the arms are depth-balanced, yet adjustment still removes "
-                f"{(1 - retained) * 100:.0f}% of this effect (adjusted p="
-                f"{float(adjusted['t_p']):.3g}); a depth imbalance too small for a "
-                f"{int(depth_test['n_pairs'])}-pair test to detect would account for that, so do "
-                f"not treat this particular effect as cleared"
-            )
-
-        rows.append(
-            {
-                "metric": metric,
-                "n_cells": int(usable.sum()),
-                "spearman_rho_vs_depth": float(rho) if np.isfinite(rho) else np.nan,
-                "spearman_p_vs_depth": float(rho_p) if np.isfinite(rho_p) else np.nan,
-                "within_sample_rho_vs_depth": float(within_rho)
-                if np.isfinite(within_rho)
-                else np.nan,
-                "depth_delta": float(depth_test["delta"]),
-                "depth_n_donors_positive": int(depth_test["n_donors_positive"]),
-                "depth_t_p": float(depth_test["t_p"]),
-                "depth_wilcoxon_p": float(depth_test["wilcoxon_p"]),
-                "depth_is_confounded": depth_is_confounded,
-                "n_pairs": int(raw["n_pairs"]),
-                "raw_mean_case": float(raw["mean_case"]),
-                "raw_mean_control": float(raw["mean_control"]),
-                "raw_delta": raw_delta,
-                "raw_n_donors_positive": int(raw["n_donors_positive"]),
-                "raw_t_p": float(raw["t_p"]),
-                "raw_wilcoxon_p": float(raw["wilcoxon_p"]),
-                "adjusted_delta": adj_delta,
-                "adjusted_n_donors_positive": int(adjusted["n_donors_positive"]),
-                "adjusted_t_p": float(adjusted["t_p"]),
-                "adjusted_wilcoxon_p": float(adjusted["wilcoxon_p"]),
-                "delta_retained_fraction": float(retained)
-                if np.isfinite(retained) and verdict not in _NO_RAW_CLAIM
-                else np.nan,
-                "verdict": verdict,
-                "reason": "; ".join(notes),
-            }
+    ):
+        notes.append(
+            f"the arms are depth-balanced, yet adjustment still removes "
+            f"{(1 - retained) * 100:.0f}% of this effect (adjusted p="
+            f"{float(adjusted['t_p']):.3g}); a depth imbalance too small for a "
+            f"{int(audit.depth_test['n_pairs'])}-pair test to detect would account for that, so do "
+            f"not treat this particular effect as cleared"
         )
+    return notes
 
+
+_AUDIT_COLUMNS = [
+    "metric",
+    "n_cells",
+    "spearman_rho_vs_depth",
+    "spearman_p_vs_depth",
+    "within_sample_rho_vs_depth",
+    "depth_delta",
+    "depth_n_donors_positive",
+    "depth_t_p",
+    "depth_wilcoxon_p",
+    "depth_is_confounded",
+    "n_pairs",
+    "raw_mean_case",
+    "raw_mean_control",
+    "raw_delta",
+    "raw_n_donors_positive",
+    "raw_t_p",
+    "raw_wilcoxon_p",
+    "raw_fdr",
+    "adjusted_delta",
+    "adjusted_n_donors_positive",
+    "adjusted_t_p",
+    "adjusted_wilcoxon_p",
+    "adjusted_fdr",
+    "delta_retained_fraction",
+    "verdict",
+    "reason",
+]
+
+
+def _finish_audit_table(rows: list[dict[str, object]], *, fdr_method: str) -> pd.DataFrame:
+    """Add the raw and adjusted FDR (two separate families) and fix the column order."""
     table = pd.DataFrame(rows)
     if table.empty:
         return table
     table["raw_fdr"] = bh_fdr(table["raw_t_p"].to_numpy(), method=fdr_method)
     table["adjusted_fdr"] = bh_fdr(table["adjusted_t_p"].to_numpy(), method=fdr_method)
-    ordered = [
-        "metric",
-        "n_cells",
-        "spearman_rho_vs_depth",
-        "spearman_p_vs_depth",
-        "within_sample_rho_vs_depth",
-        "depth_delta",
-        "depth_n_donors_positive",
-        "depth_t_p",
-        "depth_wilcoxon_p",
-        "depth_is_confounded",
-        "n_pairs",
-        "raw_mean_case",
-        "raw_mean_control",
-        "raw_delta",
-        "raw_n_donors_positive",
-        "raw_t_p",
-        "raw_wilcoxon_p",
-        "raw_fdr",
-        "adjusted_delta",
-        "adjusted_n_donors_positive",
-        "adjusted_t_p",
-        "adjusted_wilcoxon_p",
-        "adjusted_fdr",
-        "delta_retained_fraction",
-        "verdict",
-        "reason",
-    ]
-    return table[ordered]
+    return table[_AUDIT_COLUMNS]
 
 
 def depth_stratified_abundance(
