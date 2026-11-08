@@ -234,25 +234,14 @@ def draw_categorized_dotplot(
     having no gene in the data is skipped, as it is everywhere else.
     """
     import matplotlib.pyplot as plt
-    import scipy.sparse as sp
-    from matplotlib.patches import FancyBboxPatch, Rectangle
 
-    present_categories = {
-        cat: [g for g in genes if g in adata.var_names] for cat, genes in gene_categories.items()
-    }
-    present_categories = {cat: genes for cat, genes in present_categories.items() if genes}
+    present_categories = _present_categories(adata, gene_categories)
     if not present_categories:
         return None
 
     apply_theme("notebook")
 
-    groups = (
-        [c for c in categories_order if c in adata.obs[groupby].astype(str).unique()]
-        if categories_order is not None
-        else list(pd.Categorical(adata.obs[groupby]).categories.astype(str))
-    )
-    if not groups:
-        groups = sorted(adata.obs[groupby].astype(str).unique())
+    groups = _column_groups(adata, groupby, categories_order)
 
     # A gene may legitimately repeat across categories (e.g. COL1A1 in both a
     # "Homeostatic/ECM" and a "Myofibroblast/contractile" panel -- exactly the
@@ -260,6 +249,73 @@ def draw_categorized_dotplot(
     # names, so everything below is indexed by ROW POSITION, never by gene
     # name via .loc -- a duplicated label there returns a Series, not a
     # scalar, and silently breaks the color/size lookup per cell.
+    expected = _checked_expected(expected, groups, gene_categories)
+    all_genes = [g for genes in present_categories.values() for g in genes]
+    mean_arr, pct_arr = _group_summaries(adata, layer, groupby, groups, all_genes)
+    vmax = float(np.nanpercentile(mean_arr, vmax_percentile)) or 1.0
+
+    n_rows, n_cols = len(all_genes), len(groups)
+    canvas = _open_dotplot_figure(n_rows, n_cols, all_genes)
+
+    # Row position by index, not gene name: a name can repeat across
+    # categories, so a name-keyed dict would silently collapse duplicates
+    # onto one row.
+    row_y = [n_rows - 1 - i for i in range(n_rows)]
+
+    block_rows = _draw_category_boxes(canvas.box_ax, canvas.dot_ax, present_categories, n_rows)
+    _draw_expected_bands(canvas.dot_ax, expected, groups, block_rows)
+    cmap = plt.get_cmap("Reds")
+    _draw_dots(canvas.dot_ax, mean_arr, pct_arr, vmax, row_y, cmap)
+    _style_dot_axes(canvas.dot_ax, groups, all_genes, row_y, n_rows)
+    _draw_dot_legends(canvas, cmap, vmax, vmax_percentile)
+
+    if title:
+        canvas.fig.suptitle(title, fontsize=12, weight="bold", y=1.0)
+
+    return canvas.fig
+
+
+@dataclass(frozen=True)
+class _DotplotCanvas:
+    """The figure and its three axes: category boxes, dots, and legends."""
+
+    fig: Figure
+    box_ax: Any
+    dot_ax: Any
+    legend_ax: Any
+    fig_h: float
+
+
+def _present_categories(
+    adata: ad.AnnData, gene_categories: Mapping[str, list[str]]
+) -> dict[str, list[str]]:
+    """Each category's genes that exist in the data; a category left with none is dropped."""
+    present = {
+        cat: [g for g in genes if g in adata.var_names] for cat, genes in gene_categories.items()
+    }
+    return {cat: genes for cat, genes in present.items() if genes}
+
+
+def _column_groups(
+    adata: ad.AnnData, groupby: str, categories_order: list[str] | None
+) -> list[str]:
+    """The dotplot's columns: the requested order, or the column's own category order."""
+    groups = (
+        [c for c in categories_order if c in adata.obs[groupby].astype(str).unique()]
+        if categories_order is not None
+        else list(pd.Categorical(adata.obs[groupby]).categories.astype(str))
+    )
+    if not groups:
+        groups = sorted(adata.obs[groupby].astype(str).unique())
+    return groups
+
+
+def _checked_expected(
+    expected: Mapping[str, str] | None,
+    groups: list[str],
+    gene_categories: Mapping[str, list[str]],
+) -> dict[str, str]:
+    """``expected`` as a dict, after refusing a group or category that does not exist."""
     expected = dict(expected or {})
     unknown_groups = sorted(set(expected) - set(groups))
     if unknown_groups:
@@ -269,24 +325,33 @@ def draw_categorized_dotplot(
         raise ValueError(
             f"expected names categories that are not in the panel: {unknown_categories}"
         )
-    all_genes = [g for genes in present_categories.values() for g in genes]
+    return expected
+
+
+def _group_summaries(
+    adata: ad.AnnData, layer: str, groupby: str, groups: list[str], all_genes: list[str]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Mean expression and percent of cells expressing, per gene row and group column."""
+    import scipy.sparse as sp
+
     var_positions = adata.var_names.get_indexer(all_genes)
     matrix = adata.layers[layer][:, var_positions]
     matrix = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
     group_labels = adata.obs[groupby].astype(str).to_numpy()
 
-    n_rows = len(all_genes)
-    mean_arr = np.full((n_rows, len(groups)), np.nan)
-    pct_arr = np.full((n_rows, len(groups)), np.nan)
+    mean_arr = np.full((len(all_genes), len(groups)), np.nan)
+    pct_arr = np.full((len(all_genes), len(groups)), np.nan)
     for col_idx, group in enumerate(groups):
-        mask = group_labels == group
-        sub = matrix[mask]
+        sub = matrix[group_labels == group]
         mean_arr[:, col_idx] = sub.mean(axis=0)
         pct_arr[:, col_idx] = (sub > 0).mean(axis=0) * 100.0
+    return mean_arr, pct_arr
 
-    vmax = float(np.nanpercentile(mean_arr, vmax_percentile)) or 1.0
 
-    n_cols = len(groups)
+def _open_dotplot_figure(n_rows: int, n_cols: int, all_genes: list[str]) -> _DotplotCanvas:
+    """Create the figure and its box, dot and legend axes, sized from the panel."""
+    import matplotlib.pyplot as plt
+
     row_h = 0.34
     fig_h = max(3.0, n_rows * row_h + 1.6)
     # Widths are in inches. The gene names are the dot axes' tick labels, drawn to the left of
@@ -309,13 +374,18 @@ def draw_categorized_dotplot(
     box_ax = fig.add_subplot(gs[0, 0])
     dot_ax = fig.add_subplot(gs[0, 2])
     legend_ax = fig.add_subplot(gs[0, 3])
+    return _DotplotCanvas(fig, box_ax, dot_ax, legend_ax, fig_h)
 
-    # Row position by index, not gene name: a name can repeat across
-    # categories, so a name-keyed dict would silently collapse duplicates
-    # onto one row.
-    row_y = [n_rows - 1 - i for i in range(n_rows)]
 
-    # Alternating row-band shading per category, and the boxed category label.
+def _draw_category_boxes(
+    box_ax: Any, dot_ax: Any, present_categories: dict[str, list[str]], n_rows: int
+) -> dict[str, tuple[float, int]]:
+    """Alternating row-band shading per category, and the boxed category label.
+
+    Returns each category's ``(bottom, n_genes)`` so the expected-block highlight can find it.
+    """
+    from matplotlib.patches import FancyBboxPatch
+
     row_cursor = 0
     block_rows: dict[str, tuple[float, int]] = {}
     for band_index, (category, genes) in enumerate(present_categories.items()):
@@ -350,8 +420,18 @@ def draw_categorized_dotplot(
     box_ax.set_xlim(0, 1)
     box_ax.set_ylim(-0.5, n_rows - 0.5)
     box_ax.axis("off")
+    return block_rows
 
-    # Expected-block highlight: the cell of each group's own marker block.
+
+def _draw_expected_bands(
+    dot_ax: Any,
+    expected: dict[str, str],
+    groups: list[str],
+    block_rows: dict[str, tuple[float, int]],
+) -> None:
+    """Expected-block highlight: the cell of each group's own marker block."""
+    from matplotlib.patches import Rectangle
+
     for group, category in expected.items():
         if category not in block_rows:
             continue
@@ -367,8 +447,17 @@ def draw_categorized_dotplot(
         band.set_gid(f"expected|{group}|{category}")
         dot_ax.add_patch(band)
 
-    # Dots.
-    cmap = plt.get_cmap("Reds")
+
+def _draw_dots(
+    dot_ax: Any,
+    mean_arr: np.ndarray,
+    pct_arr: np.ndarray,
+    vmax: float,
+    row_y: list[int],
+    cmap: Any,
+) -> None:
+    """One dot per gene and group: size is percent expressing, colour is mean expression."""
+    n_rows, n_cols = mean_arr.shape
     for row_idx in range(n_rows):
         y = row_y[row_idx]
         for col_idx in range(n_cols):
@@ -380,6 +469,12 @@ def draw_categorized_dotplot(
                 col_idx, y, s=size, color=color, edgecolor="#555555", linewidth=0.3, zorder=3
             )
 
+
+def _style_dot_axes(
+    dot_ax: Any, groups: list[str], all_genes: list[str], row_y: list[int], n_rows: int
+) -> None:
+    """Limits, tick labels and the removal of frame and tick marks on the dot axes."""
+    n_cols = len(groups)
     dot_ax.set_xlim(-0.6, n_cols - 0.4)
     dot_ax.set_ylim(-0.5, n_rows - 0.5)
     dot_ax.set_xticks(range(n_cols))
@@ -390,7 +485,14 @@ def draw_categorized_dotplot(
     for spine in dot_ax.spines.values():
         spine.set_visible(False)
 
-    # Legends: color scale + size scale, stacked in the third column.
+
+def _draw_dot_legends(
+    canvas: _DotplotCanvas, cmap: Any, vmax: float, vmax_percentile: float
+) -> None:
+    """Colour scale and size scale, stacked in the legend column."""
+    import matplotlib.pyplot as plt
+
+    fig, legend_ax, fig_h = canvas.fig, canvas.legend_ax, canvas.fig_h
     legend_ax.axis("off")
     # Legends keep a fixed physical size, stacked from the top, so a 40-row panel does not
     # stretch its colour bar to seven inches. Heights are fractions of the figure height.
@@ -425,11 +527,6 @@ def draw_categorized_dotplot(
     size_ax.text(0.15, 5.3, "% cells\nexpressing", fontsize=7.5, ha="left")
     size_ax.set_xlim(0, 1)
     size_ax.set_ylim(-1, 6)
-
-    if title:
-        fig.suptitle(title, fontsize=12, weight="bold", y=1.0)
-
-    return fig
 
 
 def plot_categorized_dotplot(
