@@ -307,3 +307,38 @@ def test_method_registered() -> None:
     from cellquorum.methods.registry import METHOD_REGISTRY
 
     assert METHOD_REGISTRY.has("coexpression", "hdwgcna")
+
+
+def test_a_failed_optional_r_step_is_reported_not_silent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The R script survives a failed TOM-edges or module-UMAP step and only prints a message.
+
+    The stage then succeeded with that output simply missing: a real small-intestine run
+    lacked its TOM edges, module UMAP and community network, and nothing said so.
+    """
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+    stderr = (
+        "[hdwgcna] wrote 3 gene-module assignments\n"
+        "[hdwgcna] TOM edges skipped: subscript out of bounds\n"
+        "[hdwgcna] module UMAP skipped: n_hubs larger than the module\n"
+    )
+
+    class FakeBackend:
+        def _r_package_available(self, _pkg: str) -> bool:  # noqa: ANN001
+            return True
+
+        def run_script(self, _script, _args, *, timeout=None):  # noqa: ANN001, ANN003
+            out_dir = Path(_args[1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame({"gene": ["G0", "G1"], "module": ["M1", "M2"]}).to_csv(
+                out_dir / "modules.csv", index=False
+            )
+            return subprocess.CompletedProcess(["x"], 0, stdout="", stderr=stderr)
+
+    res = HdwgcnaMethod()._run(_adata(), {}, _ctx(tmp_path, FakeBackend()))
+
+    assert not isinstance(res, MethodSkip)
+    assert any("TOM edges skipped" in w for w in res.warnings)
+    assert any("module UMAP skipped" in w for w in res.warnings)
+    assert not any("wrote 3 gene-module" in w for w in res.warnings)

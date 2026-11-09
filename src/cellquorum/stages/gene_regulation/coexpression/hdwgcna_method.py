@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -177,10 +178,29 @@ def _prepare_output_dirs(context: PipelineContext) -> tuple[Path, Path]:
     return out_dir, figures_dir
 
 
+# The R script wraps each optional step (TOM edges, dendrogram, module networks, module UMAP,
+# condition correlation) in its own tryCatch and only prints "[hdwgcna] <step> skipped: <why>" when
+# one fails, so the stage still succeeds with that output missing. These lines are how the engine
+# finds out.
+_R_STEP_FAILURE = re.compile(r"^\[hdwgcna\] (?P<what>.*(?:skipped|failed).*)$", re.MULTILINE)
+
+
+def _r_step_warnings(stderr: str) -> list[str]:
+    """One warning per optional R step that failed, so a missing output is never silent."""
+    return [
+        f"hdWGCNA R step did not finish: {m.group('what').strip()}"
+        for m in _R_STEP_FAILURE.finditer(stderr or "")
+        if not m.group("what").startswith("SKIPPED")
+    ]
+
+
 def _run_hdwgcna(
     backend: Any, h5ad: Path, out_dir: Path, figures_dir: Path, settings: _Settings
-) -> pd.DataFrame:
-    """Run the R script and load the module table, or raise ``_PipelineStop``."""
+) -> tuple[pd.DataFrame, list[str]]:
+    """Run the R script and load the module table, or raise ``_PipelineStop``.
+
+    Returns the module table and a warning for each optional R step that failed.
+    """
     soft_power = settings.soft_power
     args = [
         str(h5ad),
@@ -224,7 +244,7 @@ def _run_hdwgcna(
     # Guard against missing 'module' column
     if "module" not in modules_df.columns:
         raise _PipelineStop("modules.csv missing 'module' column")
-    return modules_df
+    return modules_df, _r_step_warnings(proc.stderr)
 
 
 def _render_figures(
@@ -451,12 +471,12 @@ class HdwgcnaMethod(AnalysisMethod):
             backend = _check_prerequisites(adata, settings, context)
             h5ad = _write_scratch_input(adata, settings, context)
             out_dir, figures_dir = _prepare_output_dirs(context)
-            modules_df = _run_hdwgcna(backend, h5ad, out_dir, figures_dir, settings)
+            modules_df, r_warnings = _run_hdwgcna(backend, h5ad, out_dir, figures_dir, settings)
         except _PipelineStop as stop:
             return self._skip(stop.reason, **stop.details)
 
         figs: list[Path] = []
-        warnings: list[str] = []
+        warnings: list[str] = list(r_warnings)
         _render_figures(adata, modules_df, out_dir, figures_dir, settings, figs, warnings)
 
         return StageResult(
