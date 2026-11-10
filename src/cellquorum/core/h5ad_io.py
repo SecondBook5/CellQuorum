@@ -49,6 +49,7 @@ import pandas as pd
 
 if TYPE_CHECKING:
     import anndata as ad
+    from anndata.experimental.backed import Dataset2D
 
 __all__ = [
     "H5adWriteError",
@@ -62,9 +63,9 @@ class H5adWriteError(RuntimeError):
     """Raised when an AnnData could not be written to h5ad."""
 
 
-def legacy_string_frame(frame: pd.DataFrame) -> pd.DataFrame:
+def legacy_string_frame(frame: pd.DataFrame | Dataset2D) -> pd.DataFrame:
     """Encode string metadata for older H5AD readers and NumPy-based analysis workers."""
-    frame = frame.copy()
+    frame = frame.copy() if isinstance(frame, pd.DataFrame) else frame.to_memory(copy=True)
     if isinstance(frame.index.dtype, pd.StringDtype):
         frame.index = frame.index.astype(object)
     for key, values in frame.items():
