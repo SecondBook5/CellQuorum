@@ -5,3 +5,4 @@ numpy==2.4.6
 scipy==1.16.3
 matplotlib==3.10.8
 scanpy==1.12.5
+umap-learn==0.5.12
