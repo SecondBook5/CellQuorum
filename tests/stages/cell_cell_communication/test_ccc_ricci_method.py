@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import anndata as ad
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import pytest
@@ -74,7 +75,10 @@ def test_ricci_skips_when_source_absent(tmp_path):
 def test_ricci_computes_curvature_when_available(tmp_path):
     pytest.importorskip("GraphRicciCurvature")
     a = _adata()
-    res = RicciMethod().run(a, _config(), _Ctx(tmp_path))
+    with mpl.rc_context({"axes.grid": False, "font.sans-serif": ["DejaVu Sans"]}):
+        res = RicciMethod().run(a, _config(), _Ctx(tmp_path))
+        assert not mpl.rcParams["axes.grid"]
+        assert mpl.rcParams["font.sans-serif"] == ["DejaVu Sans"]
     assert not isinstance(res, MethodSkip)
     assert (tmp_path / "results" / "ccc_network" / "curvature_cci_edges.csv").exists()
     assert "curvature" in res.adata.uns["ccc_network"]
