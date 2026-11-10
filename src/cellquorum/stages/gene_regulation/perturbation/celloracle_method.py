@@ -145,7 +145,11 @@ def _legacy_frame(frame: pd.DataFrame) -> pd.DataFrame:
         elif isinstance(values.dtype, pd.CategoricalDtype) and isinstance(
             values.cat.categories.dtype, pd.StringDtype
         ):
-            frame[key] = values.cat.rename_categories(values.cat.categories.astype(object))
+            frame[key] = pd.Categorical.from_codes(
+                values.cat.codes,
+                categories=values.cat.categories.astype(object),
+                ordered=values.cat.ordered,
+            )
     return frame
 
 
@@ -162,11 +166,9 @@ def _write_scratch_input(adata, settings: _Settings, context) -> Path:  # noqa: 
         X=matrix,
         obs=_legacy_frame(adata.obs),
         var=_legacy_frame(adata.var),
-        obsm={
-            key: _legacy_frame(value) if isinstance(value, pd.DataFrame) else value
-            for key, value in adata.obsm.items()
-        },
     )
+    for key, value in adata.obsm.items():
+        work.obsm[key] = _legacy_frame(value) if isinstance(value, pd.DataFrame) else value
 
     # Restrict to highly-variable genes before CellOracle ever sees the
     # object. CellOracle's own perform_PCA() runs a dense SVD over
