@@ -106,12 +106,16 @@ class UcellMethod(AnalysisMethod):
         scratch = Path(getattr(context.paths, "scratch", "."))
         scratch.mkdir(parents=True, exist_ok=True)
 
-        # Genuinely shallow like celloracle_method.py's own fix: only swap X to
-        # the configured layer, don't adata.copy() every other layer along with it.
-        if layer and layer != "X" and layer in adata.layers:
-            work = ad.AnnData(X=adata.layers[layer], obs=adata.obs.copy(), var=adata.var.copy())
-        else:
-            work = adata
+        # The isolated worker scores only X and its axis names. Object-typed
+        # indices keep barcodes and genes readable by its older AnnData.
+        matrix = (
+            adata.layers[layer] if layer and layer != "X" and layer in adata.layers else adata.X
+        )
+        work = ad.AnnData(
+            X=matrix,
+            obs=pd.DataFrame(index=adata.obs_names.astype(object)),
+            var=pd.DataFrame(index=adata.var_names.astype(object)),
+        )
 
         h5ad_path = scratch / "ucell_input.h5ad"
         write_h5ad(work, h5ad_path)

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import anndata as ad
+import h5py
 import numpy as np
 import pandas as pd
 
@@ -143,6 +144,15 @@ def test_success_writes_obsm_and_uns(tmp_path):
         ctx,
     )
     assert not isinstance(res, MethodSkip)
+    scratch_input = ctx.paths.scratch / "ucell_input.h5ad"
+    with h5py.File(scratch_input) as handle:
+        for axis in ("obs", "var"):
+            index_key = handle[axis].attrs["_index"]
+            assert handle[axis][index_key].attrs["encoding-type"] == "string-array"
+    worker_data = ad.read_h5ad(scratch_input)
+    assert worker_data.obs_names.tolist() == adata.obs_names.tolist()
+    assert worker_data.var_names.tolist() == adata.var_names.tolist()
+    np.testing.assert_array_equal(worker_data.X, adata.layers["cellquorum_normalized"])
     assert "X_state_ucell" in res.adata.obsm
     assert res.adata.obsm["X_state_ucell"].shape == (adata.n_obs, 1)
     assert res.adata.uns["state_ucell"]["programs"] == ["proliferating"]
