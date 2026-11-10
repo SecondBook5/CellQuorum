@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from cellquorum.core.reports import (
     render_methods_text,
     write_run_report,
 )
-from cellquorum.core.stage import StageExecutionRecord, StageResult
+from cellquorum.core.stage import StageArtifact, StageExecutionRecord, StageResult
 
 
 def _records() -> list[StageExecutionRecord]:
@@ -190,3 +191,103 @@ def test_write_run_report_noop_when_disabled(tmp_path: Path) -> None:
     write_run_report(config=cfg, records=_records(), artifact_manager=manager)
 
     assert not (tmp_path / "reports" / "report.md").exists()
+
+
+def test_html_links_only_recorded_local_outputs_and_encodes_filenames(tmp_path: Path) -> None:
+    root = tmp_path / "run"
+    folder = root / "figures"
+    folder.mkdir(parents=True)
+    panel = folder / "donor #1 & 2.pdf"
+    panel.touch()
+    (folder / "stale.png").touch()
+    outside = tmp_path / "external.csv"
+    outside.touch()
+    records = _records()
+    for path in [panel, outside, folder / "missing.pdf"]:
+        records[0].output_artifacts.append(StageArtifact("panel", path, "figure", "A < B"))
+    page = render_html(config=CellQuorumConfig(), records=records, run_root=root)
+    assert 'href="../figures/donor%20%231%20%26%202.pdf"' in page and "A &lt; B" in page
+    assert all(name not in page for name in ["stale.png", "missing.pdf", "external.csv"])
+
+
+def test_study_report_separates_disabled_from_requested_skips_and_setup():
+    records = _records()
+    stamp = datetime.now(UTC)
+    records.append(
+        StageExecutionRecord.success(
+            stage_name="bootstrap",
+            result=StageResult(adata=ad.AnnData(X=np.ones((1, 1)))),
+            started_at_utc=stamp,
+            ended_at_utc=stamp,
+            backend_used="python",
+        )
+    )
+    for name in ["trajectory", "trajectory_viz"]:
+        records.append(
+            StageExecutionRecord.skipped(
+                stage_name=name,
+                reason="The study lacks a specified lineage <root>.",
+                started_at_utc=stamp,
+                ended_at_utc=stamp,
+                details={"plan_status": "disabled", "implemented": True},
+            )
+        )
+    cfg = CellQuorumConfig()
+    md = render_markdown(config=cfg, records=records)
+    page = render_html(config=cfg, records=records)
+    for contents in [md, page]:
+        assert "1 completed · 1 skipped · 0 failed · 2 not selected" in contents
+        assert contents.count("The study lacks a specified lineage") == 1
+        assert "Rscript unavailable" in contents
+    assert "&lt;root&gt;" in page and "| trajectory | skipped |" not in md
+    records.append(
+        StageExecutionRecord.skipped(
+            stage_name="population_identity",
+            reason="Reused verified output",
+            started_at_utc=stamp,
+            ended_at_utc=stamp,
+            details={"resumed": True},
+        )
+    )
+    md = render_markdown(config=cfg, records=records)
+    assert "1 skipped" in md and "1 reused from checkpoint" in md
+    assert "| population_identity | reused |" in md
+
+
+def test_pbmc_uncertainty_counts_and_source_link_in_both_reports() -> None:
+    cfg = CellQuorumConfig.model_validate({"project": {"name": "PBMC"}})
+    metrics = {
+        "per_method": [
+            {
+                "key_added": "RNA call",
+                "pbmc_refinement": {"n_cells": 100, "uncertain": 3, "reasons": {"weak RNA": 3}},
+            }
+        ]
+    }
+    record = replace(_records()[0], stage_name="annotation", metrics=metrics)
+    for text in [
+        render_html(config=cfg, records=[record]),
+        render_markdown(config=cfg, records=[record]),
+    ]:
+        assert "3 of 100 cells (3.0%) are Unassigned" in text
+        assert "weak RNA (3)" in text
+        assert "../results/annotation/RNA%20call_evidence.csv" in text
+
+
+def test_report_accounts_for_unvisited_stages_in_the_actual_plan():
+    from cellquorum.core.planner import PipelinePlan, PlannedStage
+
+    cfg = CellQuorumConfig()
+    plan = PipelinePlan(
+        profile="publication",
+        stages=[
+            PlannedStage("qc", True, "enabled", "Requested"),
+            PlannedStage("discovery", True, "enabled", "Requested"),
+            PlannedStage("trajectory", False, "disabled", "No lineage root"),
+        ],
+    )
+    for render in (render_html, render_markdown):
+        report = render(config=cfg, records=_records()[:1], plan=plan)
+        assert "1 selected but not reached" in report
+        assert "without an execution record: discovery" in report
+        assert "1 not selected" in report and "No lineage root" in report

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import anndata as ad
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageResult
+from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.cell_cell_communication.viz import _plots
 from cellquorum.stages.cell_cell_communication.viz._io import (
@@ -112,32 +112,77 @@ class ChordVizMethod(AnalysisMethod):
             sources = [(lab, df) for lab, df in sources if lab in set(wanted)]
         if not sources:
             return self._skip("no canonical LR sources found")
-        labels = config.get("cluster_labels")
-        sources = [(lab, relabel_clusters(df, ["source", "target"], labels)) for lab, df in sources]
+        from cellquorum.stages.cell_cell_communication.viz.chord import (
+            liana_receiver_panel,
+            marker_display_labels,
+            population_palette,
+        )
 
+        study = getattr(context, "config", None)
+        grouping = getattr(getattr(study, "cell_cell_communication", None), "cell_type_col", None)
+        clusters = getattr(getattr(study, "clustering", None), "key_added", None)
+        marker = getattr(getattr(study, "annotation", None), "key_added", None)
+        labels = dict(config.get("cluster_labels") or {})
+        if grouping and grouping == clusters and marker:
+            labels = {**marker_display_labels(adata, grouping, marker), **labels}
         apply_theme("notebook")
         artifacts, warnings, n_figures = [], [], 0
         for label, df in sources:
             try:
+                raw = df
+                edges = _plots._top_edges(raw, "source", "target", "weight", top_k).copy()
+                df = relabel_clusters(edges, ["source", "target"], labels)
                 cts = list(set(df["source"].astype(str)) | set(df["target"].astype(str)))
-                palette = _plots.celltype_palette(cts)
-                fig = _plots.chord_diagram(df, palette=palette, top_k=top_k)
+                palette = population_palette(cts)
+                fig = _plots.chord_diagram(df, palette=palette, top_k=len(edges), overview=True)
                 paths = save_figure(fig, figures_dir, f"chord_{label}", formats=formats, dpi=dpi)
                 artifacts += figure_artifacts(
                     paths, name="ccc_figure", description=f"Chord diagram ({label})."
                 )
+                edges["sender_label"] = edges.source.map(
+                    lambda name: labels.get(str(name), str(name))
+                )
+                edges["receiver_label"] = edges.target.map(
+                    lambda name: labels.get(str(name), str(name))
+                )
+                table = results_dir / "cell_cell_communication" / f"chord_{label}_edges.csv"
+                table.parent.mkdir(parents=True, exist_ok=True)
+                edges.to_csv(table, index=False)
+                artifacts.append(
+                    StageArtifact(
+                        f"chord_{label}_edges",
+                        table,
+                        "csv",
+                        f"Population edges and summed interaction weights ({label}).",
+                    )
+                )
+                if label == "liana" and {"ligand", "receptor", "sample"} <= set(raw):
+                    companion = liana_receiver_panel(
+                        raw,
+                        labels,
+                        figures=figures_dir,
+                        results=results_dir / "cell_cell_communication",
+                        formats=formats,
+                        dpi=dpi,
+                        top_k=top_k,
+                        palette=palette,
+                    )
+                    artifacts.extend(companion)
+                    n_figures += int(bool(companion))
                 n_figures += 1
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"chord_viz: {label} failed: {str(exc)[:200]}")
 
         if n_figures == 0:
-            return self._skip("no plottable rows in any source", warnings=warnings)
+            return self._skip(
+                "; ".join(warnings) or "no plottable rows in any source", warnings=warnings
+            )
         return StageResult(
             adata=adata,
             artifacts=artifacts,
             notes=[f"chord_viz rendered {n_figures} figures."],
             warnings=warnings,
-            metrics={"method": self.name, "n_figures": n_figures},
+            metrics={"method": self.name, "n_figures": n_figures, "incomplete_reasons": warnings},
             backend="python",
         )
 

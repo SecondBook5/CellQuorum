@@ -209,3 +209,27 @@ def test_activity_skips_when_decoupler_absent(tmp_path, monkeypatch):
     }
     out = ActivityMethod()._run(_adata_with_zero_cell(), cfg, _Ctx(tmp_path))
     assert isinstance(out, MethodSkip)
+
+
+def test_activity_batches_preserve_scores(tmp_path, monkeypatch):
+    from cellquorum.stages.comparative.enrichment import activity_method
+    from cellquorum.stages.comparative.enrichment.priors import activity_batch_size
+
+    assert activity_batch_size(33417) * 33417 * 8 <= 32 * 1024**2
+    _patch_get_net(monkeypatch, _weighted_net())
+    config = {
+        "activity_resources": ["collectri"],
+        "cell_type_col": "cell_type",
+        "layer": "cellquorum_normalized",
+        "min_size": 3,
+    }
+    adata = _sparse_adata_with_zero_cell()
+    tables = []
+    for size in (4, 1024):
+        monkeypatch.setattr(activity_method, "activity_batch_size", lambda n_vars, size=size: size)
+        path = tmp_path / str(size)
+        path.mkdir()
+        result = ActivityMethod()._run(adata.copy(), config, _Ctx(path))
+        assert not isinstance(result, MethodSkip)
+        tables.append(pd.read_csv(path / "results" / "enrichment_activity_collectri.csv"))
+    pd.testing.assert_frame_equal(*tables, atol=1e-5, rtol=1e-5)

@@ -29,7 +29,7 @@ from cellquorum.core.output_hygiene import (
 )
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
 from cellquorum.core.run_reporter import RunReporter
-from cellquorum.core.stage import StageExecutionRecord
+from cellquorum.core.stage import StageArtifact, StageExecutionRecord
 from cellquorum.io import load_adata
 from cellquorum.io.anndata import declare_layer_kinds
 from cellquorum.version import __version__
@@ -252,6 +252,14 @@ def build_pipeline_context(
 
         manifest_obj = load_manifest(config.paths.manifest, data_root=config.paths.data_root)
         loaded_manifest = manifest_obj.to_dataframe()
+        if config.paths.relative_to_config:
+            base = config.paths.manifest.parent
+            for heading in loaded_manifest:
+                key = str(heading)
+                if key == "path" or key.endswith("_path"):
+                    loaded_manifest[key] = loaded_manifest[key].map(
+                        lambda value: str((base / value).resolve()), na_action="ignore"
+                    )
 
     metadata: dict[str, Any] = {
         "project_name": config.project.name,
@@ -620,6 +628,7 @@ def _write_run_report_after_provenance(
     config: CellQuorumConfig,
     context: PipelineContext,
     records: list[StageExecutionRecord],
+    plan: PipelinePlan | None = None,
     artifact_manager: ArtifactManager,
 ) -> None:
     """
@@ -631,8 +640,7 @@ def _write_run_report_after_provenance(
 
     Args:
         config: Resolved run configuration.
-        context: Final pipeline context (unused today; reserved for embedding
-            figures/tables in a richer report).
+        context: Final pipeline context with the report output directory.
         records: All stage execution records, in order.
         artifact_manager: The run-root artifact manager to write through.
     """
@@ -644,11 +652,20 @@ def _write_run_report_after_provenance(
     try:
         from cellquorum.core.reports import write_run_report
 
-        write_run_report(config=config, records=records, artifact_manager=artifact_manager)
-    except Exception:
+        warnings = write_run_report(
+            plan=plan,
+            config=config,
+            records=records,
+            artifact_manager=artifact_manager,
+            obs=context.adata.obs if context.adata is not None else None,
+        )
+        for warning in warnings:
+            logger.warning("%s", warning)
+    except Exception as exc:
         # Honor the opt-in: only fail the run when explicitly requested.
         if getattr(report_config, "fail_on_report_error", False):
             raise
+        logger.warning("Could not write the run report in %s: %s", context.paths.reports, exc)
 
 
 def write_pipeline_provenance(
@@ -657,6 +674,7 @@ def write_pipeline_provenance(
     plan: PipelinePlan,
     context: PipelineContext,
     stage_execution_records: list[StageExecutionRecord] | None = None,
+    write_manifest: bool = True,
 ) -> ArtifactManager:
     """
     Write initial CellQuorum provenance artifacts.
@@ -671,6 +689,7 @@ def write_pipeline_provenance(
         plan: Generated pipeline plan.
         context: Initialized pipeline context.
         stage_execution_records: Optional stage lifecycle records to write.
+        write_manifest: Write the index now, or defer it until final outputs are registered.
 
     Returns:
         ArtifactManager containing the registered provenance artifacts.
@@ -813,7 +832,10 @@ def write_pipeline_provenance(
     # durable primitive that future resume logic can read stage-by-stage.
     _write_stage_completion_sidecars(artifact_manager, records)
 
-    artifact_manager.write_manifest()
+    for record in records:
+        artifact_manager.artifacts.extend(record.output_artifacts)
+    if write_manifest:
+        artifact_manager.write_manifest()
 
     return artifact_manager
 
@@ -1153,6 +1175,11 @@ def execute_pipeline_run(
         )
         _add_cohort_warnings_to_plan(plan, context)
 
+        if plan.blockers:
+            from cellquorum.core.exceptions import CellQuorumConfigError
+
+            raise CellQuorumConfigError("Study preflight failed:\n" + "\n".join(plan.blockers))
+
         # Mark the end of execution-frame setup before stage execution.
         bootstrap_ended_at = datetime.now(UTC)
 
@@ -1172,7 +1199,11 @@ def execute_pipeline_run(
             context = _context_from_checkpoint(context, config, from_stage)
             plan = _restrict_plan_from_stage(plan, from_stage)
 
-        reporter = RunReporter(verbose=config.run.verbose, level=config.run.log_level)
+        reporter = RunReporter(
+            verbose=config.run.verbose,
+            level=config.run.log_level,
+            event_log=context.paths.logs / "stage_events.jsonl",
+        )
 
         # Print startup banner with version and project metadata.
         run_id = context.paths.root.name
@@ -1247,21 +1278,31 @@ def execute_pipeline_run(
             plan=plan,
             context=execution_result.context,
             stage_execution_records=all_records,
+            write_manifest=False,
         )
 
         # Persist the final in-memory AnnData so a from-scratch run leaves a real
         # annotated deliverable on disk (not just per-stage snapshots/provenance).
-        _write_final_object(config=config, context=execution_result.context)
-
-        # Render the human-readable run report AFTER provenance is written, so it
-        # sees the complete record set. Report failures never fail the run unless
-        # the user opts in via report.fail_on_report_error.
-        _write_run_report_after_provenance(
-            config=config,
-            context=execution_result.context,
-            records=all_records,
-            artifact_manager=artifacts,
-        )
+        try:
+            final_path = _write_final_object(config=config, context=execution_result.context)
+            if final_path is not None:
+                artifacts.artifacts.append(
+                    StageArtifact(
+                        name="final_annotated_object",
+                        path=final_path,
+                        kind="h5ad",
+                        description="Final annotated AnnData object.",
+                    )
+                )
+            _write_run_report_after_provenance(
+                plan=plan,
+                config=config,
+                context=execution_result.context,
+                records=all_records,
+                artifact_manager=artifacts,
+            )
+        finally:
+            artifacts.write_manifest()
 
         return PipelineRunResult(
             config=config,

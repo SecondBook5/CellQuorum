@@ -52,9 +52,6 @@ def test_default_cellquorum_config_builds_successfully() -> None:
     # Confirm quality control is enabled by default.
     assert config.stages.qc_evidence is True
 
-    # Confirm molecular inference is enabled as a gated capability by default.
-    assert config.stages.molecular_inference is True
-
     # Confirm adjudication is enabled as a gated capability.
     assert config.stages.adjudication is True
 
@@ -364,9 +361,6 @@ def test_stage_selection_config_defaults_to_major_capabilities_enabled() -> None
     # Confirm differential expression is enabled by default.
     assert config.differential_expression is True
 
-    # Confirm molecular inference is enabled as a gated capability by default.
-    assert config.molecular_inference is True
-
     # Confirm cell-cell communication is enabled as a gated capability by default.
     assert config.cell_cell_communication is True
 
@@ -457,7 +451,7 @@ def test_cellquorum_config_accepts_nested_model_instances() -> None:
         compute=ComputeConfig(backend="cpu", prefer_gpu=False),
         r=RConfig(enabled=False),
         report=ReportConfig(pdf=True),
-        stages=StageSelectionConfig(molecular_inference=True),
+        stages=StageSelectionConfig(integration_benchmark=True),
     )
 
     # Confirm the project model was retained.
@@ -476,4 +470,27 @@ def test_cellquorum_config_accepts_nested_model_instances() -> None:
     assert config.report.pdf is True
 
     # Confirm the stage model was retained.
-    assert config.stages.molecular_inference is True
+    assert config.stages.integration_benchmark is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["/tmp/output", "../outside.csv", "C:/external.csv", ""],  # machine-path-ok
+)
+def test_required_files_are_beneath_the_run(name):
+    with pytest.raises(ValidationError, match="relative output file"):
+        RunConfig(required_outputs={"embeddings": [name]})
+
+
+@pytest.mark.parametrize("name", ["molecular_inference", "integration_gate"])
+def test_retired_flags_are_readable_but_absent_from_current_schema(name):
+    assert name not in StageSelectionConfig.model_json_schema()["properties"]
+    raw = {"stages": {name: "false"}, "run": {"disabled_stage_reasons": {name: "old plan"}}}
+    cfg = CellQuorumConfig.model_validate(raw)
+    assert name not in cfg.stages.model_dump() and not cfg.run.disabled_stage_reasons
+    assert raw["stages"] == {name: "false"}
+    with pytest.warns(UserWarning, match=name):
+        cfg = CellQuorumConfig.model_validate({"stages": {name: True, "enrichment": False}})
+    assert not cfg.stages.enrichment
+    with pytest.raises(ValidationError):
+        StageSelectionConfig.model_validate({name: "typo"})

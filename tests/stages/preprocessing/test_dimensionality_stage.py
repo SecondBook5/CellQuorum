@@ -43,7 +43,7 @@ class _Ctx:
         return self._adata
 
 
-def test_pca_method_fixed_n_pcs(tmp_path):
+def test_fixed_pca_reports_shape_cumulative_variance_and_scree(tmp_path):
     m = PCAMethod()
     a = _adata()
     result = m.run(
@@ -58,35 +58,16 @@ def test_pca_method_fixed_n_pcs(tmp_path):
     assert result.metrics["n_pcs"] == 10
     assert result.metrics["n_pcs_mode"] == "fixed"
 
-
-def test_pca_method_auto_n_pcs_records_choice(tmp_path):
-    m = PCAMethod()
-    a = _adata()
-    result = m.run(
-        a,
-        {"n_pcs": "auto", "max_pcs": 30, "random_state": 0, "use_highly_variable": False},
-        context=_Ctx(a, tmp_path, {}),
-    )
-    assert result.metrics["n_pcs_mode"] == "auto"
-    assert 1 <= result.metrics["n_pcs"] <= 30
-    assert result.adata.obsm["X_pca"].shape[1] == result.metrics["n_pcs"]
-
-
-def test_pca_method_records_cumulative_variance(tmp_path):
-    """The chosen component count reports its captured cumulative variance."""
-    m = PCAMethod()
-    a = _adata()
-    result = m.run(
-        a,
-        {"n_pcs": 10, "max_pcs": 50, "random_state": 0, "use_highly_variable": False},
-        context=_Ctx(a, tmp_path, {}),
-    )
     cum = result.metrics["n_pcs_cumulative_variance"]
     assert isinstance(cum, float)
     assert 0.0 <= cum <= 1.0
 
+    scree = [art for art in result.artifacts if "scree" in art.name]
+    assert scree, "expected a scree artifact"
+    assert Path(scree[0].path).is_file()
 
-def test_pca_method_auto_under_selection_warns_loudly(tmp_path, caplog):
+
+def test_automatic_pca_records_its_choice_and_warns_about_underselection(tmp_path, caplog):
     """`n_pcs=auto` under-selecting far below the cap must warn (no-silent-decisions).
 
     The kneedle elbow lands at ~2 PCs on this steep-then-flat variance curve,
@@ -105,18 +86,9 @@ def test_pca_method_auto_under_selection_warns_loudly(tmp_path, caplog):
     assert any("selected only" in record.message for record in caplog.records)
     assert any("selected only" in note for note in result.notes)
 
-
-def test_pca_writes_scree_artifact(tmp_path):
-    m = PCAMethod()
-    a = _adata()
-    result = m.run(
-        a,
-        {"n_pcs": 10, "max_pcs": 50, "random_state": 0, "use_highly_variable": False},
-        context=_Ctx(a, tmp_path, {}),
-    )
-    scree = [art for art in result.artifacts if "scree" in art.name]
-    assert scree, "expected a scree artifact"
-    assert Path(scree[0].path).is_file()
+    assert result.metrics["n_pcs_mode"] == "auto"
+    assert 1 <= result.metrics["n_pcs"] <= 30
+    assert result.adata.obsm["X_pca"].shape[1] == result.metrics["n_pcs"]
 
 
 def test_dimensionality_stage_dispatches_and_validates(tmp_path):

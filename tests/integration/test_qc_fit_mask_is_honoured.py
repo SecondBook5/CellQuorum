@@ -87,6 +87,7 @@ def _select_hvgs(adata: ad.AnnData) -> set[str]:
 def test_damaged_cells_do_not_shape_the_hvg_set_when_excluded_from_fitting() -> None:
     """The stress block must not be selected when damaged cells may not fit."""
     adata = _cohort_with_a_distinct_damaged_signal()
+    before = adata.n_obs
     selected = _select_hvgs(adata)
 
     stress_selected = {gene for gene in selected if gene.startswith("STRESS")}
@@ -94,6 +95,12 @@ def test_damaged_cells_do_not_shape_the_hvg_set_when_excluded_from_fitting() -> 
         f"HVG selected {sorted(stress_selected)} — genes that are variable only because the "
         f"damaged cells are present. The fit mask was declared but not honoured."
     )
+
+    assert "highly_variable" in adata.var.columns
+    assert len(adata.var["highly_variable"]) == adata.n_vars
+    assert adata.var["highly_variable"].notna().all()
+
+    assert adata.n_obs == before
 
 
 def test_the_same_cells_do_shape_it_when_the_mask_is_absent() -> None:
@@ -112,24 +119,7 @@ def test_the_same_cells_do_shape_it_when_the_mask_is_absent() -> None:
         f"assertion above proves little — strengthen the fixture"
     )
 
-
-def test_hvg_results_are_written_for_every_gene_not_just_fitted_cells() -> None:
-    """Fit on a cell subset, apply to all genes. `var` is gene-level, so nothing is lost."""
-    adata = _cohort_with_a_distinct_damaged_signal()
-    _select_hvgs(adata)
-
-    assert "highly_variable" in adata.var.columns
-    assert len(adata.var["highly_variable"]) == adata.n_vars
-    assert adata.var["highly_variable"].notna().all()
-
-
-def test_all_cells_survive_hvg_selection() -> None:
-    """HVG flags genes and must never subset cells, masked or not."""
-    adata = _cohort_with_a_distinct_damaged_signal()
-    before = adata.n_obs
-    _select_hvgs(adata)
-
-    assert adata.n_obs == before
+    assert len(selected) == 20
 
 
 def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:
@@ -143,12 +133,3 @@ def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:
 
     with pytest.raises(CellQuorumDataError, match="permits no cells"):
         _select_hvgs(adata)
-
-
-def test_a_dataset_without_graded_qc_behaves_as_before() -> None:
-    """Absent QC columns must not become a hidden dependency."""
-    adata = _cohort_with_a_distinct_damaged_signal()
-    del adata.obs[FIT_COLUMN]
-
-    selected = _select_hvgs(adata)
-    assert len(selected) == 20

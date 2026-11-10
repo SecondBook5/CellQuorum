@@ -367,17 +367,6 @@ def test_an_arm_without_a_severity_is_named_and_gets_no_legend_entry(
     assert legend_labels == ["cells"]
     assert "nuclei: not scored" in _texts(figure)
 
-
-def test_the_paired_panel_says_why_it_is_empty_when_one_arm_is_unscored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from cellquorum.visualization.qc.graded import plot_severity_ecdf
-
-    captured = _capture_figure(monkeypatch)
-    plot_severity_ecdf(
-        _two_arm_obs(nuclei_scored=False), tmp_path / "f.png", family="nuclear_integrity"
-    )
-    figure = captured["figure"]
     assert "Not paired: only cells" in _texts(figure)
     assert not figure.axes[1].axison
 

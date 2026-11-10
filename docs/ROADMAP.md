@@ -3,11 +3,26 @@
 This file records the working plan for CellQuorum so the project direction is
 not dependent on chat history.
 
-CellQuorum is being built as a Python-native, GPU-capable scientific framework
-for single-cell RNA-seq systems biology. The execution engine is one feature of
-that framework: it should make analyses reproducible, resumable, inspectable,
-and easy to run, but the scientific identity is the evidence model, diagnostic
-gates, adjudication logic, and reusable analytical APIs.
+CellQuorum should take a defined biological study from count matrix and sample
+metadata to defensible statistics, publication figures, underlying tables and a
+readable report in one run. The [paired PBMC study](guide/paired-study.md) is an
+executable example. A real-data check now exercises 18 stages, including marker voting,
+agreement with the published labels, and paired state-score tests. The other 23
+implemented stages need evidence from workflows that request them.
+
+Extend that coverage with real studies chosen for each question. A multi-batch
+study with reference labels can test integration, annotation and cell states.
+A cohort with appropriate sender and receiver populations can test communication
+and regulatory hypotheses. A time-course study can test lineage and trajectory
+figures. Each workflow needs a dataset, a declared set of outputs and a scientific
+check that exercises the full analysis.
+
+The planned wet-lab interface follows Tifzoret’s Flask and SQL approach. A study
+form or a future CellAtria prompt should produce the same validated configuration
+the CLI accepts. The web worker should call the existing pipeline, index its run
+status and artifact manifest in SQL, and display the same figures, methods and
+warnings from disk. Keep each statistical method and figure implementation shared
+across these entry points.
 
 ## Current working capability
 
@@ -193,9 +208,10 @@ a wrapper.
    - fibrosis/ECM;
    - lineage- or tissue-specific programs.
 
-6. Molecular inference
+6. Pathway and transcription-factor activity
 
-   Add pathway and TF activity modules after DE/state scoring are stable.
+   Validate the enrichment activity method on a reference study with
+   known PROGENy pathway and CollecTRI transcription-factor responses.
 
 7. Communication and network layers
 

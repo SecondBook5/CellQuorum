@@ -381,7 +381,7 @@ def declare_layer_kinds(adata: ad.AnnData, kinds: Mapping[str, str]) -> None:
         if layer not in adata.layers:
             raise AnnDataLoadError(
                 f"input.layer_kinds names layer '{layer}', which is not in the file "
-                f"(layers: {sorted(adata.layers)})"
+                f"(layers: {sorted(k for k in adata.layers if k is not None)})"
             )
         existing = get_layer_tag(adata, layer)
         if existing is not None and existing["kind"] != kind:

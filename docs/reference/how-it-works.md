@@ -82,7 +82,8 @@ Bootstrap writes the pre-execution provenance to `provenance/`, including:
 - `backend_status.json` / `.csv` — backend availability at run start
 - `planner_warnings.json` and `run_metadata.json` — planner warnings and the run identity / environment-version stamp
 
-It also initializes the artifact manifest CSV, which stages append to as they produce outputs.
+A bootstrap-only run writes an initial index of its provenance files. During analysis,
+each stage records its outputs in its execution record.
 
 ### Step 4: Load Input Data
 
@@ -123,7 +124,8 @@ At the end of execution, the executor returns a `PipelineExecutionResult` contai
 
 **`core/pipeline.py`** (via `write_pipeline_provenance`) appends post-execution provenance to `provenance/`:
 - `stage_execution_records.json` / `.csv` — per-stage success/skip/fail records, timestamps, fingerprints
-- `artifact_manifest.csv` — the complete list of every CSV, figure, and h5ad produced
+- `artifact_manifest.csv` — an index of registered stage outputs, provenance files,
+  and the final object and reports written in this run
 
 If `run.write_final_object=True` (the default), the final `adata` is written to `objects/final_annotated.h5ad`.
 

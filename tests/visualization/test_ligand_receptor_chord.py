@@ -55,15 +55,13 @@ def _chord(**kwargs):
     return ligand_receptor_chord(_edges(), **base)
 
 
-def test_one_ribbon_per_pair_and_one_sector_label_per_molecule() -> None:
+def test_chord_labels_each_sector_and_fades_nonsignificant_pairs() -> None:
     fig = _chord(significant_col="significant")
+
     assert len(_ribbons(fig)) == 4
     assert sorted(_labels(fig, "ligand_label")) == ["CXCL12", "TGFB1", "VEGFC"]
     assert sorted(_labels(fig, "receptor_label")) == ["ACKR3", "CXCR4", "FLT4", "TGFBR2"]
 
-
-def test_a_ribbon_that_did_not_clear_its_test_is_fainter_than_one_that_did() -> None:
-    fig = _chord(significant_col="significant")
     ribbons = _ribbons(fig)
     assert (
         ribbons["ribbon|CXCL12>ACKR3|LEC"].get_alpha()
@@ -160,13 +158,18 @@ def _fill(patch) -> str:
     return to_hex(patch.get_facecolor()[:3])
 
 
-def test_unsigned_ribbons_take_the_sender_colour_when_asked_and_grey_otherwise() -> None:
-    """Real ask: the unsigned chord was mostly grey ribbons, which do not say who is sending."""
-    plain = _ribbons(_chord())
+def test_unsigned_chord_defaults_and_sender_colouring() -> None:
+    fig = _chord()
+
+    plain = _ribbons(fig)
     by_sender = _ribbons(_chord(ribbon_color="sender"))
     assert _fill(by_sender["ribbon|CXCL12>ACKR3|LEC"]) == "#4b83c4"
     assert _fill(by_sender["ribbon|VEGFC>FLT4|LEC"]) == "#d2a91a"
     assert _fill(plain["ribbon|CXCL12>ACKR3|LEC"]) != "#4b83c4"
+
+    ax = fig.axes[0]
+    assert ax.get_title(loc="left") == ""
+    assert not [t for t in ax.texts if t.get_gid() == "note"]
 
 
 def test_highlighted_ligands_keep_their_colour_over_the_sender_colour() -> None:
@@ -189,12 +192,6 @@ def test_a_title_and_a_key_note_can_be_drawn_on_the_chord() -> None:
     assert ax.get_title(loc="left") == "Lymphedema minus Normal"
     notes = [t.get_text() for t in ax.texts if t.get_gid() == "note"]
     assert notes == ["Red: higher in lymphedema"]
-
-
-def test_no_title_or_note_is_drawn_unless_given() -> None:
-    ax = _chord().axes[0]
-    assert ax.get_title(loc="left") == ""
-    assert not [t for t in ax.texts if t.get_gid() == "note"]
 
 
 _LYMPHEDEMA_INTO_LEC = [
@@ -268,3 +265,40 @@ def test_a_long_note_is_wrapped_so_it_does_not_widen_the_figure() -> None:
     fig = ligand_receptor_chord(_into_lec(), sender_palette={}, receiver_palette={}, note=note)
     drawn = [t.get_text() for t in fig.axes[0].texts if t.get_gid() == "note"][0]
     assert max(len(line) for line in drawn.splitlines()) <= 95
+
+
+def test_aligned_labels_remain_readable_at_manuscript_width() -> None:
+    from itertools import combinations
+
+    import matplotlib.pyplot as plt
+
+    edges = pd.DataFrame(
+        [
+            (f"CD14+ monocytes (C{i})", f"LIGAND{i}", "NK cells (C10)", "ITGB2", 1.0)
+            for i in range(8)
+        ],
+        columns=["sender", "ligand", "receiver", "receptor", "weight"],
+    )
+    fig = ligand_receptor_chord(
+        edges,
+        sender_palette=dict.fromkeys(edges.sender, "#882255"),
+        receiver_palette={"NK cells (C10)": "#6699CC"},
+        ribbon_color="sender",
+        aligned_labels=True,
+        title="Predicted signaling to NK cells (C10)",
+    )
+    try:
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        ax = fig.axes[0]
+        labels = [
+            t for t in ax.texts if t.get_gid() in {"ligand_label", "receptor_label", "group_label"}
+        ]
+        assert len(labels) == 18 and all(t.get_rotation() == 0 for t in labels)
+        boxes = [t.get_window_extent(renderer) for t in labels] + [
+            ax._left_title.get_window_extent(renderer)
+        ]
+        for a, b in combinations(boxes, 2):
+            assert not a.fully_overlaps(b)
+    finally:
+        plt.close(fig)

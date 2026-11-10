@@ -100,7 +100,8 @@ tryCatch(
       )), anno_list)
     }
     top_anno <- do.call(HeatmapAnnotation, c(
-      anno_list, list(annotation_name_gp = gpar(fontsize = 7), annotation_name_side = "left")
+      anno_list, list(annotation_name_gp = gpar(fontsize = 7), annotation_name_side = "left",
+                      gap = unit(3, "mm"))
     ))
     right_bar <- anno_barplot(
       cbind(Up = rowSums(up), Down = rowSums(down)),
@@ -114,6 +115,9 @@ tryCatch(
     ))
 
     n_blocks <- if (nrow(nes) >= 12) 4 else NULL
+    pdf(NULL)
+    label_gp <- gpar(fontsize = 7, fontface = "bold")
+    label_width <- max_text_width(rownames(nes), gp = label_gp) + unit(3, "mm")
     ht <- Heatmap(
       nes0, name = "NES", col = col_fun, rect_gp = gpar(type = "none"), cell_fun = cell_fun,
       width = ncol(nes) * unit(10, "mm"), height = nrow(nes) * unit(5.2, "mm"),
@@ -122,7 +126,7 @@ tryCatch(
       row_split = n_blocks, row_gap = unit(2.2, "mm"), row_title = NULL,
       row_dend_width = unit(1.2, "cm"), column_dend_height = unit(1.0, "cm"),
       row_names_side = "left", row_dend_side = "left",
-      row_names_gp = gpar(fontsize = 7, fontface = "bold"),
+      row_names_gp = label_gp, row_names_max_width = label_width,
       column_names_gp = gpar(fontsize = 8, fontface = "bold"), column_names_rot = 45,
       column_title = title, column_title_gp = gpar(fontsize = 12),
       top_annotation = top_anno, right_annotation = right_anno,
@@ -149,7 +153,7 @@ tryCatch(
 
     n_col <- ncol(nes)
     n_row <- nrow(nes)
-    width_in <- 3.4 + 0.39 * n_col + 2.9
+    width_in <- 4.2 + 0.39 * n_col + convertWidth(label_width, "in", valueOnly = TRUE)
     height_in <- 2.7 + 0.205 * n_row + 0.8 + (if (is.null(n_blocks)) 0 else 0.35)
 
     render <- function() {

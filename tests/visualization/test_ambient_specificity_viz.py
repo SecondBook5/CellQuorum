@@ -20,60 +20,34 @@ def _scores(n=20):
     return before, after
 
 
-def test_plot_panel_before_after_writes_two_standalone_files(tmp_path):
+def test_before_after_exports_share_the_colour_scale_and_house_theme(tmp_path):
+    from unittest.mock import patch
+
+    from cellquorum.visualization import ambient_specificity as viz
+
     before, after = _scores()
+    with (
+        patch.object(viz, "apply_theme", wraps=viz.apply_theme) as theme,
+        patch.object(viz, "save_figure", wraps=viz.save_figure) as save,
+    ):
+        written = plot_panel_before_after(
+            _coords(),
+            before,
+            after,
+            title_before="Keratin score — BEFORE",
+            title_after="Keratin score — AFTER",
+            out_dir=tmp_path,
+        )
 
-    written = plot_panel_before_after(
-        _coords(),
-        before,
-        after,
-        title_before="Keratin score — BEFORE",
-        title_after="Keratin score — AFTER",
-        out_dir=tmp_path,
-    )
-
+    theme.assert_called_once()
+    assert theme.call_args.args[0] == "notebook"
     assert set(written) == {"before", "after"}
     for path in written.values():
         assert path.exists()
         assert path.with_suffix(".pdf").exists()
 
-
-def test_plot_panel_before_after_applies_the_house_theme(tmp_path, monkeypatch):
-    from cellquorum.visualization import ambient_specificity as viz_module
-
-    calls = []
-    monkeypatch.setattr(viz_module, "apply_theme", lambda style, **kw: calls.append(style))
-    before, after = _scores()
-
-    plot_panel_before_after(
-        _coords(), before, after, title_before="B", title_after="A", out_dir=tmp_path
-    )
-
-    assert calls == ["notebook"], "plot_panel_before_after must apply the notebook house theme"
-
-
-def test_plot_panel_before_after_shares_one_color_scale(tmp_path, monkeypatch):
-    """Before and after must be visually comparable -- same vmax, not each
-    auto-scaled to its own max (which would make 'after' look unchanged even
-    when most of its mass was actually removed)."""
-    from cellquorum.visualization import ambient_specificity as viz_module
-
-    captured = []
-
-    def fake_save(fig, out_dir, stem, **kwargs):
-        captured.append((stem, fig))
-        return [out_dir / f"{stem}.png", out_dir / f"{stem}.pdf"]
-
-    monkeypatch.setattr(viz_module, "save_figure", fake_save)
-    before, after = _scores()
-
-    plot_panel_before_after(
-        _coords(), before, after, title_before="B", title_after="A", out_dir=tmp_path
-    )
-
-    vmaxes = {}
-    for stem, fig in captured:
-        sc = fig.axes[0].collections[0]
-        vmaxes[stem] = sc.norm.vmax
-
+    vmaxes = {
+        call.args[2]: call.args[0].axes[0].collections[0].norm.vmax for call in save.call_args_list
+    }
+    assert len(vmaxes) == 2
     assert len(set(vmaxes.values())) == 1, f"expected one shared vmax, got {vmaxes}"

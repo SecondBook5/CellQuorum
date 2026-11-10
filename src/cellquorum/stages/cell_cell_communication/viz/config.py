@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class CccVizConfig(StrictBaseModel):
@@ -34,6 +34,7 @@ class CccVizConfig(StrictBaseModel):
             MultiNicheNet's own prioritization_score.
     """
 
+    methods: MethodEntries = []
     enabled: bool = True
     top_k: int = 15
     figure_formats: list[str] = ["pdf", "png"]

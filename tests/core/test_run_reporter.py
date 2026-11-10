@@ -183,3 +183,18 @@ def test_config_echo_has_no_default_warning_without_a_stages_block():
     cfg = CellQuorumConfig.model_validate({"project": {"name": "standard"}})
     rep.config_echo(cfg, planned_stage_names=["qc_evidence", "preprocessing"])
     assert "On by default" not in buf.getvalue()
+
+
+def test_interrupted_and_retried_stage_have_distinct_journal_attempts(tmp_path):
+    import json
+
+    journal = tmp_path / "stage_events.jsonl"
+    first = RunReporter(verbose=False, event_log=journal)
+    first.stage_start("trajectory", 1, 1)
+    retry = RunReporter(verbose=False, event_log=journal)
+    retry.stage_start("trajectory", 1, 1)
+    events = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert [(event["stage"], event["status"]) for event in events] == [
+        ("trajectory", "started")
+    ] * 2
+    assert events[0]["attempt"] != events[1]["attempt"]

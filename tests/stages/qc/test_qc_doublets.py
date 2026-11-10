@@ -72,6 +72,25 @@ class _RecordingBackend:
         return subprocess.CompletedProcess(args=["Rscript"], returncode=0)
 
 
+def test_missing_configured_rscript_records_unmeasured_doublets(tmp_path):
+    from cellquorum.backends.rscript import RscriptBackend
+
+    adata = _counts_adata()
+    adata.obs["library"] = "A"
+    backend = RscriptBackend(rscript_path=str(tmp_path / "missing-Rscript"))
+    metrics = detect_doublets(
+        adata,
+        QCDoubletConfig(methods=["scdblfinder"], per_sample=True),
+        backend,
+        sample_key="library",
+    )
+
+    assert metrics["measured_cells"] == {"scdblfinder": 0}
+    assert adata.obs["doublet_score_scdblfinder"].isna().all()
+    assert any("scdblfinder" in w and "unavailable" in w for w in metrics["warnings"])
+    assert not any("in one process" in note for note in metrics["notes"])
+
+
 @requires("scrublet")
 def test_scrublet_consensus_writes_calls():
     a = _counts_adata()

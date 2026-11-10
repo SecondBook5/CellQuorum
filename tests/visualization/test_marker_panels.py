@@ -361,20 +361,15 @@ def _inches(fig, axes_name):
     return box.width * fig.get_figwidth(), box
 
 
-def test_draw_lineage_marker_dotplot_gene_names_are_readable_size():
+def test_lineage_dotplot_fits_wide_gene_columns_labels_and_legend():
     fig = draw_lineage_marker_dotplot(_wide_stats())
+
     dots = next(ax for ax in fig.axes if ax.get_label() == "dots")
     assert min(t.get_fontsize() for t in dots.get_xticklabels()) >= 9
 
-
-def test_draw_lineage_marker_dotplot_colorbar_is_slim():
-    fig = draw_lineage_marker_dotplot(_wide_stats())
     width_in, _ = _inches(fig, "colorbar")
     assert width_in <= 0.26
 
-
-def test_draw_lineage_marker_dotplot_gives_each_gene_column_room():
-    fig = draw_lineage_marker_dotplot(_wide_stats(48))
     width_in, _ = _inches(fig, "dots")
     assert width_in / 48 >= 0.27
 
@@ -436,7 +431,7 @@ def test_dendrogram_row_order_survives_a_constant_row():
     assert sorted(order) == [0, 1, 2] and np.isfinite(z).all()
 
 
-def test_draw_categorized_dotplot_returns_the_figure_with_one_dot_per_gene_and_group():
+def test_categorized_dotplot_encodes_every_gene_group_and_marks_only_expected_groups():
     from cellquorum.visualization.marker_panels import draw_categorized_dotplot
 
     a = _categorized_adata()
@@ -450,6 +445,8 @@ def test_draw_categorized_dotplot_returns_the_figure_with_one_dot_per_gene_and_g
     assert fig is not None
     dot_ax = max(fig.axes, key=lambda ax: len(ax.collections))
     assert len(dot_ax.collections) == 5 * 3  # five genes x three groups
+
+    assert _bands(fig) == {}
 
 
 def test_draw_categorized_dotplot_returns_none_when_no_gene_is_present():
@@ -505,14 +502,6 @@ def test_the_highlight_covers_the_group_column_and_every_row_of_the_block():
     x0, y0 = band.get_xy()
     assert (x0, band.get_width()) == (0.5, 1.0)  # column index 1, one column wide
     assert (y0, band.get_height()) == (-0.5, 2.0)  # the two rows of Category B, drawn last
-
-
-def test_no_expected_mapping_draws_no_highlight():
-    from cellquorum.visualization.marker_panels import draw_categorized_dotplot
-
-    fig = draw_categorized_dotplot(_categorized_adata(), _CATS, groupby="state", layer="norm")
-
-    assert _bands(fig) == {}
 
 
 def test_an_expected_group_that_is_not_a_column_is_an_error_not_a_missing_highlight():

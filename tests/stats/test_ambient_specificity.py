@@ -36,16 +36,15 @@ def _profile() -> pd.DataFrame:
     )
 
 
-def test_drops_a_foreign_low_specificity_gene():
+def test_ambient_mask_only_drops_foreign_genes_strictly_below_threshold():
     mask = ambient_gene_mask(_profile(), target_group="Fibroblasts", spec_threshold=0.25)
-    assert mask["KRT10"] == False  # noqa: E712
-
-
-def test_keeps_a_foreign_but_high_specificity_gene():
-    """ACTA2 peaks in Pericyte_SMC (foreign to Fibroblasts) but at 75% of its peak —
-    the specificity gate alone protects real shared biology even with no group_map."""
-    mask = ambient_gene_mask(_profile(), target_group="Fibroblasts", spec_threshold=0.25)
-    assert mask["ACTA2"]
+    assert mask.to_dict() == {
+        "KRT10": False,
+        "ACTA2": True,
+        "UNDETECTED": True,
+        "BORDERLINE": True,
+        "SPECIFIC_ELSEWHERE": True,  # Exactly 25% of its peak.
+    }
 
 
 def test_group_map_reclassifies_a_foreign_group_as_the_same_group():
@@ -60,17 +59,6 @@ def test_group_map_reclassifies_a_foreign_group_as_the_same_group():
         _profile(), target_group="Fibroblasts", spec_threshold=0.25, group_map=group_map
     )
     assert mask["ACTA2"]
-
-
-def test_threshold_is_exclusive_at_the_boundary():
-    """ratio == spec_threshold exactly is NOT below it -> kept, not ambient."""
-    mask = ambient_gene_mask(_profile(), target_group="Fibroblasts", spec_threshold=0.25)
-    assert mask["SPECIFIC_ELSEWHERE"]
-
-
-def test_undetected_gene_everywhere_is_kept_not_flagged_ambient():
-    mask = ambient_gene_mask(_profile(), target_group="Fibroblasts", spec_threshold=0.25)
-    assert mask["UNDETECTED"]
 
 
 def test_gene_peaking_in_the_target_group_itself_is_never_ambient():

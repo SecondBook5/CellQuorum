@@ -14,7 +14,11 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.priors import (
+    PriorFetchError,
+    collection_names,
+    get_net,
+)
 from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 from cellquorum.stats.multiple_testing import bh_fdr
 
@@ -22,8 +26,7 @@ if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
 
 # Cap on how many sources get a persisted running-ES walk per collection, to
-# bound file size. Significant sources are taken first; the remainder is filled
-# by |score| descending (deterministic).
+# bound file size. Rank by significance, adjusted p-value and absolute NES.
 _RUNNING_ES_MAX_SOURCES = 20
 
 
@@ -233,14 +236,11 @@ def gsea_table(
     score = pd.Series(es_arr[0], index=sources)
     pvalue = pd.Series(pv_arr[0], index=sources)
 
-    # A permutation p-value cannot be smaller than one permutation. When no shuffle beats
-    # the observed score the estimator returns 0, and reporting 0 claims a certainty the test
-    # cannot deliver. The floor is the resolution of the test that was actually run, and the
-    # frame records both the floor and which rows sit on it, so "p is at the limit" stays
-    # distinguishable from "p was measured this small".
+    # Older decoupler versions can return zero. Enforce the global permutation floor
+    # while preserving larger p-values from sign-specific corrected null distributions.
     resolution = 1.0 / (permutations + 1)
     raw = pvalue.to_numpy(dtype=float)
-    at_limit = np.isfinite(raw) & (raw < resolution)
+    at_limit = np.isfinite(raw) & (raw <= resolution)
     floored = np.where(at_limit, resolution, raw)
     padj = bh_fdr(floored, fdr_method)
     out = pd.DataFrame(
@@ -274,7 +274,9 @@ class GseaMethod(AnalysisMethod):
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
         de_name = config.get("de_results_filename", "de_pseudobulk_edger.csv")
-        collections = config.get("gene_set_collections", ["hallmark", "reactome"])
+        collections = collection_names(
+            config.get("gene_set_collections", ["hallmark", "reactome"]), config.get("gmt_path")
+        )
         gmt_path = config.get("gmt_path")
         organism = config.get("organism", "human")
         license = config.get("license", "academic")
@@ -346,18 +348,13 @@ class GseaMethod(AnalysisMethod):
             # a skipped-collection note, never a crash (skip-not-crash).
             try:
                 metric = ranking.iloc[0]  # single-contrast ranking → one Series
-                sig_sources = list(out.loc[out["significant"], "source"])
-                by_mag = list(
-                    out.reindex(
-                        out["score"].abs().sort_values(ascending=False, kind="mergesort").index
-                    )["source"]
+                # The table is in gene-set name order. Pick examples by evidence so the
+                # six walks that reach the report do not just start at the letter A.
+                ranked_sets = out.assign(magnitude=out["score"].abs()).sort_values(
+                    ["significant", "padj", "magnitude", "source"],
+                    ascending=[False, True, False, True],
                 )
-                ordered_sources: list[str] = []
-                for src in sig_sources + by_mag:
-                    if src not in ordered_sources:
-                        ordered_sources.append(src)
-                    if len(ordered_sources) >= _RUNNING_ES_MAX_SOURCES:
-                        break
+                ordered_sources = ranked_sets["source"].head(_RUNNING_ES_MAX_SOURCES)
                 source_targets = {
                     source: set(map(str, targets))
                     for source, targets in net.groupby("source")["target"]

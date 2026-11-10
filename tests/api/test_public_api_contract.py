@@ -88,17 +88,7 @@ def test_public_surface_is_stable(module_name):
         f"  added:   {sorted(declared - expected)}"
     )
 
-
-@pytest.mark.parametrize("module_name", sorted(EXPECTED))
-def test_declared_symbols_are_accessible(module_name):
-    """Every name a namespace declares in ``__all__`` must actually resolve.
-
-    Guards against an ``__all__`` that advertises a symbol the module no
-    longer provides — the export would be listed but ``from pkg import name``
-    (and ``from pkg import *``) would fail at runtime.
-    """
-    module = importlib.import_module(module_name)
-    missing = sorted(name for name in EXPECTED[module_name] if not hasattr(module, name))
+    missing = sorted(name for name in declared if not hasattr(module, name))
     assert not missing, f"{module_name} declares but does not provide: {missing}"
 
 

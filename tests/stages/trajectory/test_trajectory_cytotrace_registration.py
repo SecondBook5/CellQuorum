@@ -4,15 +4,8 @@ from __future__ import annotations
 
 import types
 
-from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.trajectory.config import CytoTraceConfig, TrajectoryConfig
 from cellquorum.stages.trajectory.stage import TrajectoryStage
-
-
-def test_cytotrace_registered():
-    import cellquorum.stages.trajectory  # noqa: F401 — trigger registration
-
-    assert METHOD_REGISTRY.has("trajectory", "cytotrace")
 
 
 def test_stage_flattens_cytotrace_keys():

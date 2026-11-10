@@ -43,26 +43,22 @@ def test_skips_when_cell_type_key_missing(tmp_path):
     assert result.status == "skipped"
 
 
-def test_writes_overall_composition_table(tmp_path):
-    context = _context(tmp_path, _adata())
-    result = CompositionStage().run(context)
+def test_composition_exports_overall_condition_and_sample_results(tmp_path):
+    result = CompositionStage().run(_context(tmp_path, _adata()))
     assert result.status == "success"
-    artifact_names = {a.name for a in result.artifacts}
-    assert "composition_overall" in artifact_names
-    overall_path = next(a.path for a in result.artifacts if a.name == "composition_overall")
-    table = pd.read_csv(overall_path)
-    assert set(table["cell_type"]) == {"A", "B"}
-    assert table.loc[table["cell_type"] == "A", "n_cells"].iloc[0] == 6
-
-
-def test_writes_condition_table_and_figure_when_condition_key_present(tmp_path):
-    context = _context(tmp_path, _adata())
-    result = CompositionStage().run(context)
-    artifact_names = {a.name for a in result.artifacts}
-    assert "composition_by_condition" in artifact_names
-    assert any(a.name == "composition_figure_condition" for a in result.artifacts)
-    for artifact in result.artifacts:
-        assert artifact.path.exists()
+    assert result.metrics["n_cells_used"] == 12
+    assert result.metrics["n_cell_types"] == 2
+    assert result.metrics["condition_key"] == "condition"
+    assert result.metrics["sample_key"] == "sample_id"
+    artifacts = {a.name: a.path for a in result.artifacts}
+    assert {
+        "composition_by_condition",
+        "composition_figure_condition",
+        "composition_by_sample",
+    } <= artifacts.keys()
+    assert all(path.exists() for path in artifacts.values())
+    counts = pd.read_csv(artifacts["composition_overall"]).set_index("cell_type")["n_cells"]
+    assert counts.to_dict() == {"A": 6, "B": 6}
 
 
 def test_skips_condition_table_gracefully_when_condition_key_absent(tmp_path):
@@ -77,13 +73,6 @@ def test_skips_condition_table_gracefully_when_condition_key_absent(tmp_path):
     assert "composition_overall" in artifact_names
 
 
-def test_writes_sample_table_when_sample_key_present(tmp_path):
-    context = _context(tmp_path, _adata())
-    result = CompositionStage().run(context)
-    artifact_names = {a.name for a in result.artifacts}
-    assert "composition_by_sample" in artifact_names
-
-
 def test_atlas_states_filters_cells_before_computing_composition(tmp_path):
     adata = _adata(
         qc_state_final=["core"] * 8 + ["quarantine"] * 4,
@@ -95,15 +84,6 @@ def test_atlas_states_filters_cells_before_computing_composition(tmp_path):
     table = pd.read_csv(overall_path).set_index("cell_type")
     # All 4 quarantined cells were cell_type B (indices 8-11 are B, 6-7 also B but core).
     assert table["n_cells"].sum() == 8
-
-
-def test_metrics_report_cell_and_group_counts(tmp_path):
-    context = _context(tmp_path, _adata())
-    result = CompositionStage().run(context)
-    assert result.metrics["n_cells_used"] == 12
-    assert result.metrics["n_cell_types"] == 2
-    assert result.metrics["condition_key"] == "condition"
-    assert result.metrics["sample_key"] == "sample_id"
 
 
 def test_by_sample_table_orders_donors_numerically_not_lexicographically(tmp_path):
@@ -191,15 +171,22 @@ def _bars_table():
     )
 
 
-def test_the_axis_is_a_proportion_of_cells_from_zero_to_one():
+def test_pooled_composition_shows_proportions_and_legend_in_stack_order():
     from cellquorum.stages.composition.stage import _stacked_bar
 
-    ax = _stacked_bar(_bars_table(), x_label="condition").axes[0]
+    fig = _stacked_bar(_bars_table(), x_label="condition")
+
+    ax = fig.axes[0]
 
     assert ax.get_ylim() == (0.0, 1.0)
     assert ax.get_ylabel() == "Proportion of cells"
     tops = [round(p.get_y() + p.get_height(), 6) for p in ax.patches]
     assert max(tops) == 1.0  # a 100-percent bar is a proportion of 1
+
+    assert [t.get_text() for t in ax.get_legend().get_texts()] == ["Small", "Mid", "Big"]
+    assert ax.get_legend().get_title().get_text() == "Cell type"
+
+    assert fig.axes[0].get_title() == ""
 
 
 def test_bars_use_the_colours_they_are_given_by_cell_type():
@@ -239,21 +226,6 @@ def test_no_segment_is_white_on_a_white_page():
     assert all(min(p.get_facecolor()[:3]) < 0.85 for p in fig.axes[0].patches)
 
 
-def test_the_legend_lists_cell_types_in_the_order_they_are_stacked_top_to_bottom():
-    from cellquorum.stages.composition.stage import _stacked_bar
-
-    ax = _stacked_bar(_bars_table(), x_label="condition").axes[0]
-
-    assert [t.get_text() for t in ax.get_legend().get_texts()] == ["Small", "Mid", "Big"]
-    assert ax.get_legend().get_title().get_text() == "Cell type"
-
-
-def test_the_pooled_figure_carries_no_title_of_its_own():
-    from cellquorum.stages.composition.stage import _stacked_bar
-
-    assert _stacked_bar(_bars_table(), x_label="condition").axes[0].get_title() == ""
-
-
 # ---- composition by patient -------------------------------------------------------------
 
 
@@ -272,7 +244,7 @@ def _panels(fig):
     return [ax for ax in fig.axes if ax.get_title()]
 
 
-def test_the_panels_follow_the_order_given_with_normal_on_the_left():
+def test_paired_composition_preserves_patient_order_missing_samples_and_shared_scale():
     from cellquorum.stages.composition.stage import _stacked_bar_by_patient
 
     fig = _stacked_bar_by_patient(_patient_tables())
@@ -281,29 +253,13 @@ def test_the_panels_follow_the_order_given_with_normal_on_the_left():
     assert [ax.get_title() for ax in panels] == ["Normal", "Lymphedema"]
     assert panels[0].get_position().x0 < panels[1].get_position().x0
 
-
-def test_patients_sit_in_natural_order_at_the_same_place_in_every_panel():
-    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
-
-    panels = _panels(_stacked_bar_by_patient(_patient_tables()))
-
     for ax in panels:
         assert [t.get_text() for t in ax.get_xticklabels()] == ["P1", "P2", "P10"]
 
-
-def test_a_patient_with_no_cells_in_a_condition_has_no_bar_there_not_an_empty_one():
-    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
-
-    normal, case = _panels(_stacked_bar_by_patient(_patient_tables()))
+    normal, case = panels
 
     assert len(normal.patches) == 3 * 3  # three patients, three cell types
     assert len(case.patches) == 2 * 3  # P10 has no lymphedema cells
-
-
-def test_every_bar_fills_the_axis_and_the_panels_share_it():
-    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
-
-    normal, case = _panels(_stacked_bar_by_patient(_patient_tables()))
 
     for ax in (normal, case):
         assert ax.get_ylim() == (0.0, 1.0)
@@ -312,14 +268,16 @@ def test_every_bar_fills_the_axis_and_the_panels_share_it():
     assert normal.get_ylabel() == "Proportion of cells"
     assert case.get_ylabel() == ""
 
-
-def test_there_is_one_legend_for_the_figure_in_stack_order():
-    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
-
-    fig = _stacked_bar_by_patient(_patient_tables())
-
     assert len(fig.legends) == 1
     assert [t.get_text() for t in fig.legends[0].get_texts()] == ["Small", "Mid", "Big"]
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    six_points = 6 / 72 * fig.dpi
+    for ax in _panels(fig):
+        box = ax.title.get_bbox_patch().get_window_extent(renderer)
+        assert box.y0 - ax.get_window_extent(renderer).y1 >= six_points
 
 
 def test_the_figure_has_the_title_it_is_given():
@@ -360,19 +318,6 @@ def test_no_patient_figure_without_a_donor_column(tmp_path):
     result = CompositionStage().run(_design_context(tmp_path, adata))
 
     assert "composition_by_patient" not in {a.name for a in result.artifacts}
-
-
-def test_the_panel_title_boxes_sit_above_the_bars_not_on_them():
-    from cellquorum.stages.composition.stage import _stacked_bar_by_patient
-
-    fig = _stacked_bar_by_patient(_patient_tables())
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-
-    six_points = 6 / 72 * fig.dpi
-    for ax in _panels(fig):
-        box = ax.title.get_bbox_patch().get_window_extent(renderer)
-        assert box.y0 - ax.get_window_extent(renderer).y1 >= six_points
 
 
 # ---- the UMAP's colours ------------------------------------------------------------------

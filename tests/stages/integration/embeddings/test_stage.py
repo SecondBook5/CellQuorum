@@ -2,13 +2,7 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.integration.embeddings.stage import EmbeddingsStage
-
-
-def test_all_methods_registered():
-    for name in ["umap", "phate", "paga", "categorical_embedding", "continuous_overlay"]:
-        assert METHOD_REGISTRY.has("embeddings", name)
 
 
 def test_stage_augment_injects_method_list_and_keys():

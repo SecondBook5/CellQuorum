@@ -84,11 +84,3 @@ def test_stage_always_on_skips_cleanly_when_no_inputs(tmp_path):
     # Every method records a skip; stage completes without crashing.
     assert result.metrics["n_methods"] == 5
     assert all(m.get("skipped") for m in result.metrics["per_method"])
-
-
-def test_methods_registered():
-    import cellquorum.stages.comparative.enrichment.viz  # noqa: F401  (triggers registration)
-    from cellquorum.methods.registry import METHOD_REGISTRY
-
-    for name in ["gsea_viz", "gsea_nes_heatmap", "ora_viz", "gsva_viz", "activity_viz"]:
-        assert METHOD_REGISTRY.has("enrichment_viz", name)

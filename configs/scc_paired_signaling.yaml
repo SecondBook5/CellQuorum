@@ -1,0 +1,150 @@
+project:
+  name: scc_paired_signaling
+  organism: human
+  species_id: 9606
+paths:
+  output_dir: runs/scc_paired_signaling
+input:
+  h5ad: ${oc.env:CELLQUORUM_SCC_INPUT,scc.h5ad}
+run:
+  profile: publication
+  random_seed: 42
+  required_outputs:
+    differential_expression:
+    - results/de_pseudobulk_edger_by_subcluster.csv
+    grn:
+    - results/grn/scenic_regulons_grn.csv
+    - results/grn/scenic_auc_mtx_grn.parquet
+    enrichment:
+    - results/enrichment_activity_collectri_by_donor.csv
+    cell_cell_communication:
+    - results/cell_cell_communication/liana_ranks.csv
+    - results/cell_cell_communication/tensor_factors_contexts.csv
+    - results/nichenet_activities.csv
+    - results/mnn_sample_prioritization.csv
+    - results/mnn_pairing_audit.csv
+  study_questions:
+  - communication
+  - regulation
+  require_selected_methods: true
+compute:
+  backend: cpu
+  prefer_gpu: false
+  n_jobs: 6
+r:
+  enabled: true
+cohort:
+  sample_key: sample_id
+  donor_key: patient
+  condition_key: tum.norm
+  condition_levels:
+  - Normal
+  - Tumor
+design:
+  donor_col: patient
+  condition_col: tum.norm
+  case: Tumor
+  control: Normal
+  paired: true
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: true
+  feature_selection: false
+  dimensionality: false
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: true
+  differential_state: false
+  coexpression: false
+  grn: true
+  perturbation: false
+  differential_abundance: false
+  enrichment: true
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: true
+  embeddings: false
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: true
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+preprocessing:
+  normalization:
+    recipe: cellquorum_log1p_cp10k_v1
+    preserve_counts_layer: counts
+    output_layer: cellquorum_normalized
+differential_expression:
+  method: pseudobulk_edger
+  layer: counts
+  cell_type_col: celltype_alt
+enrichment:
+  methods:
+  - method: activity
+    activity_resources:
+    - collectri
+  cell_type_col: celltype_alt
+grn:
+  group_by: celltype_alt
+  layer: counts
+  seed: 42
+  num_workers: 6
+  max_cells: 1000
+  timeout_seconds: 21600
+  radial_enabled: false
+  tfs_path: ${oc.env:CELLQUORUM_RESOURCES,resources}/scenic/allTFs_hg38.txt
+  motifs_path: ${oc.env:CELLQUORUM_RESOURCES,resources}/scenic/motifs-v10nr_clust-nr.hgnc.tbl
+  rankings_glob: ${oc.env:CELLQUORUM_RESOURCES,resources}/scenic/hg38_500bp_up_100bp_down_full_tx_v10_clust.genes_vs_motifs.rankings.feather
+cell_cell_communication:
+  methods:
+  - method: liana
+  - method: tensor_c2c
+  - method: nichenet
+  - method: multinichenet
+  cell_type_col: celltype_alt
+  sample_col: sample_id
+  rank: 3
+  tf_optimization: regular
+  nichenet_sender: KC_other
+  nichenet_receiver: Fibroblast
+  nichenet_de_cell_type: Fibroblast
+  nichenet_counts_layer: counts
+  mnn_cell_types:
+  - Fibroblast
+  - KC_other
+  nichenet_n_cores: 1
+  nichenet_ligand_target_matrix: ${oc.env:CELLQUORUM_RESOURCES,resources}/nichenet/ligand_target_matrix_nsga2r_final.rds
+  nichenet_lr_network: ${oc.env:CELLQUORUM_RESOURCES,resources}/nichenet/lr_network_human_21122021.rds
+  nichenet_weighted_networks: ${oc.env:CELLQUORUM_RESOURCES,resources}/nichenet/weighted_networks_nsga2r_final.rds
+ccc_viz:
+  methods:
+  - method: tensor_factors_viz
+  - method: nichenet_viz
+  - method: multinichenet_viz
+  figure_formats:
+  - pdf
+  - png
+report:
+  enabled: true
+  html: true
+  markdown: true
+  fail_on_report_error: true

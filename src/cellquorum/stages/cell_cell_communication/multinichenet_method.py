@@ -86,36 +86,48 @@ class MultiNicheNetMethod(RAnalysisMethod):
         n_pairs = None
         export_columns = [cell_type_col, sample_col, condition_col]
         analysis_adata = adata
+        selected_types = config.get("mnn_cell_types") or []
+        if selected_types:
+            missing = set(selected_types) - set(adata.obs[cell_type_col].dropna().astype(str))
+            if missing:
+                return self._skip(
+                    "requested MultiNicheNet populations absent", missing=sorted(missing)
+                )
+            analysis_adata = adata[adata.obs[cell_type_col].isin(selected_types)].copy()
         if config.get("paired", False):
             donor_col = config.get("donor_col")
             if not donor_col or donor_col not in adata.obs:
                 raise ValueError("Paired MultiNicheNet requires an existing donor_col")
-            obs = adata.obs
+            obs = analysis_adata.obs
             if obs[[sample_col, donor_col, condition_col]].isna().any().any():
                 raise ValueError("Missing sample, donor or condition in paired MultiNicheNet")
-            sample_meta = obs[[sample_col, donor_col, condition_col]].drop_duplicates()
+            sample_meta = adata.obs[[sample_col, donor_col, condition_col]].drop_duplicates()
             if sample_meta[sample_col].duplicated().any():
                 raise ValueError("Each sample must map to exactly one donor and condition")
             cell_counts = (
                 obs.groupby([sample_col, cell_type_col], observed=True).size().unstack(fill_value=0)
             )
             minimum = int(config.get("nichenet_min_cells", 10))
+            cell_counts = cell_counts.reindex(index=sample_meta[sample_col], fill_value=0)
             eligible_samples = cell_counts.index[cell_counts.ge(minimum).all(axis=1)]
             eligible_meta = sample_meta[sample_meta[sample_col].isin(eligible_samples)]
             pair_counts = pd.crosstab(eligible_meta[donor_col], eligible_meta[condition_col])
             pair_counts = pair_counts.reindex(columns=[control, case], fill_value=0)
             donors = pair_counts.index[pair_counts.eq(1).all(axis=1)]
             audit = sample_meta.copy()
+            audit = audit.join(cell_counts.add_prefix("cells_"), on=sample_col)
             audit["all_celltypes_min_cells"] = audit[sample_col].isin(eligible_samples)
-            audit["included_paired_analysis"] = audit[donor_col].isin(donors) & audit[
-                condition_col
-            ].isin([control, case])
+            audit["included_paired_analysis"] = (
+                audit["all_celltypes_min_cells"]
+                & audit[donor_col].isin(donors)
+                & audit[condition_col].isin([control, case])
+            )
             scratch.mkdir(parents=True, exist_ok=True)
             audit.to_csv(scratch / "mnn_pairing_audit.csv", index=False)
             if len(donors) < 3:
                 raise ValueError("Paired MultiNicheNet requires >=3 complete eligible donor pairs")
-            keep = obs[donor_col].isin(donors) & obs[condition_col].isin([control, case])
-            analysis_adata = adata[keep].copy()
+            keep = obs[sample_col].isin(audit.loc[audit.included_paired_analysis, sample_col])
+            analysis_adata = analysis_adata[keep].copy()
             n_pairs = len(donors)
             covariates = [donor_col]
             export_columns.append(donor_col)
@@ -185,6 +197,16 @@ class MultiNicheNetMethod(RAnalysisMethod):
                 description=f"MultiNicheNet prioritization ({case} vs {control}).",
             )
         ]
+        if n_pairs is not None:
+            artifacts.append(
+                writer.table(
+                    audit,
+                    "mnn_pairing_audit.csv",
+                    name="mnn_pairing_audit",
+                    description="Library counts and donor eligibility for paired MultiNicheNet.",
+                    index=False,
+                )
+            )
         for path, name, description in (
             (
                 sample_csv,

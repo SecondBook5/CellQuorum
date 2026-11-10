@@ -1,0 +1,104 @@
+project:
+  name: kang_population_review
+  organism: human
+  species_id: 9606
+cohort:
+  donor_key: replicate
+  condition_key: label
+  condition_levels:
+  - ctrl
+  - stim
+design:
+  donor_col: replicate
+  condition_col: label
+  control: ctrl
+  case: stim
+  paired: true
+r:
+  enabled: true
+compute:
+  backend: cpu
+  prefer_gpu: false
+report:
+  enabled: true
+  html: true
+  markdown: true
+  fail_on_report_error: true
+paths:
+  output_dir: runs/kang_population_review
+input:
+  h5ad: runs/kang_paired_analysis/objects/final_annotated.h5ad
+  counts_layer: counts
+run:
+  profile: publication
+  random_seed: 42
+  require_selected_methods: true
+  continue_on_stage_failure: true
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: false
+  feature_selection: false
+  dimensionality: false
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: true
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: true
+  query_projection: true
+  qc_finalization: true
+  adjudication: true
+  metacells: false
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: false
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: true
+query_projection:
+  use_rep: X_pca
+  label_column: cell_type
+annotation_consensus:
+  method_label_keys:
+  - marker_vote_label
+  - cell_type
+  key_added: cq_consensus
+adjudication:
+  cluster_key: leiden
+  donor_key: replicate
+  condition_key: label
+subclustering:
+  enabled: true
+  focus:
+    label_key: cell_type
+    labels:
+    - B cells
+  counts_layer: counts
+module_remodeling:
+  group_col: cell_type
+  donor_col: replicate
+  condition_col: label
+  case: stim
+  control: ctrl
+  seed: 42

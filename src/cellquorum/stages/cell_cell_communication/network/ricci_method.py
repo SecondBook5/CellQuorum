@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import anndata as ad
 import networkx as nx
 import pandas as pd
+from matplotlib import rc_context
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -37,7 +38,9 @@ def compute_ricci_curvature(G: nx.DiGraph, alpha: float = 0.5) -> tuple[pd.DataF
     if G.number_of_edges() == 0:
         return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
     try:
-        from GraphRicciCurvature.OllivierRicci import OllivierRicci
+        # NetworKit applies seaborn's whitegrid style at import time. Keep the caller's theme.
+        with rc_context():
+            from GraphRicciCurvature.OllivierRicci import OllivierRicci
     except ImportError:
         return pd.DataFrame(columns=_EDGE_COLS), pd.DataFrame(columns=_NODE_COLS)
 

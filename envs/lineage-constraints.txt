@@ -1,0 +1,6 @@
+# Versions used for the mouse pancreatic lineage reference.
+numpy==2.3.5
+scipy==1.16.3
+scanpy==1.12.5
+scvelo==0.3.4
+cellrank==2.3.2

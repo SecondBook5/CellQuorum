@@ -156,11 +156,11 @@ Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 
 | Job | Enforces |
 |---|---|
-| **Lint** | `ruff check` and `ruff format --check` on `src` and `tests`, at the exact pinned version. |
+| **Lint** | `ruff check` and `ruff format --check` on `src`, `tests` and `scripts` at the pinned version. |
 | **Typecheck** | `mypy` on the packages listed under `files` in `[tool.mypy]` in `pyproject.toml`, with no module exempted. |
-| **Test** | The suite on Python 3.12 and 3.13, with a coverage floor (`fail_under` in `pyproject.toml`). Optional-backend tests self-skip. |
+| **Test** | The full suite runs once on Python 3.12 and once on 3.13, with an 80% coverage floor for the core install. Optional-backend tests report skips when dependencies are unavailable. |
 | **Figures** | `tests/visualization/test_figure_gallery.py`: every gallery figure must match its stored baseline pixel for pixel. |
-| **Snakemake workflow** | `tests/workflow/test_snakemake_end_to_end.py`: the multi-hypothesis workflow runs from manifest to status matrix on the synthetic demo project. Needs the `workflow` extra, so the plain Test job skips it. |
+| **Snakemake workflow** | With the `workflow` extra installed, the dry run checks the planned targets and the demo runs from manifest to status matrix. |
 | **Docs** | `mkdocs build --strict` — a broken link or unresolved API reference fails the build. |
 | **Build** | Builds the wheel and sdist, asserts the wheel bundles every `.R` script, a non-empty `LICENSE` and `py.typed`, then installs the wheel into a clean environment and runs `tests/acceptance` there: the Python API and the command line a user types. |
 

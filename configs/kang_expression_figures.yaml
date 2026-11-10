@@ -1,0 +1,237 @@
+project:
+  name: kang_expression_figures
+  organism: human
+  species_id: 9606
+paths:
+  output_dir: runs/kang_expression_figures
+input:
+  h5ad: kang_sensitivity_input.h5ad
+run:
+  profile: publication
+  require_selected_methods: true
+  continue_on_stage_failure: true
+  random_seed: 42
+compute:
+  backend: cpu
+  prefer_gpu: false
+r:
+  enabled: true
+cohort:
+  donor_key: replicate
+  condition_key: label
+  condition_levels:
+  - ctrl
+  - stim
+design:
+  donor_col: replicate
+  condition_col: label
+  control: ctrl
+  case: stim
+  paired: true
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: false
+  feature_selection: true
+  dimensionality: false
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: true
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: true
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: true
+  enrichment_viz: true
+  de_viz: false
+  ccc_viz: false
+  embeddings: true
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+qc_evidence:
+  graded:
+    archetype_audit: false
+  doublets:
+    enabled: false
+  ambient:
+    enabled: false
+preprocessing:
+  normalization:
+    recipe: cellquorum_log1p_cp10k_v1
+    preserve_counts_layer: counts
+    output_layer: cellquorum_normalized
+feature_selection:
+  counts_layer: counts
+  method: seurat
+  n_top_genes: 1500
+dimensionality:
+  input_layer: cellquorum_normalized
+  n_pcs: 30
+clustering:
+  use_rep: X_pca
+  method: leiden
+embeddings:
+  use_rep: X_pca
+  embeddings:
+  - umap
+  - phate
+  methods:
+  - method: phate
+  - method: continuous_overlay
+  - method: state_score_umap
+    score_source: aucell
+    programs:
+    - interferon_isg
+  - method: density_difference_umap
+    sample_col: specimen
+    condition_col: label
+    label_column: cell_type
+  color_by:
+  - cell_type
+  - label
+  - leiden
+  figure_formats:
+  - pdf
+  - png
+  overlay:
+    genes:
+    - ISG15
+    - MX1
+    layer: cellquorum_normalized
+annotation:
+  methods:
+  - method: passthrough
+    source_key: cell_type
+    key_added: cq_published
+  - method: celltypist
+    model: Immune_All_Low.pkl
+    key_added: cq_celltypist
+  score_layer: cellquorum_normalized
+  marker_panels:
+    B cells:
+    - MS4A1
+    - CD79A
+    - CD79B
+    CD4 T cells:
+    - IL7R
+    - CCR7
+    - LTB
+    CD8 T cells:
+    - CD8A
+    - CD8B
+    - CCL5
+    NK cells:
+    - GNLY
+    - NKG7
+    - KLRD1
+    CD14+ Monocytes:
+    - CD14
+    - S100A8
+    - S100A9
+    FCGR3A+ Monocytes:
+    - FCGR3A
+    - MS4A7
+    - VMO1
+    Dendritic cells:
+    - FCER1A
+    - CD1C
+    - CST3
+    Megakaryocytes:
+    - PPBP
+    - PF4
+    - GNG11
+annotation_viz:
+  group_by: cell_type
+  methods:
+  - method: lineage_dotplot
+population_identity:
+  candidate_key: cell_type
+  annotation_keys:
+  - marker_vote_label
+  - cell_type
+  embedding_keys:
+  - X_pca
+state_scoring:
+  methods:
+  - method: ucell
+  builtin_programs:
+  - interferon_isg
+  - stress_hsp
+  - hypoxia_hif
+  random_state: 42
+state_scoring_viz:
+  score_source: aucell
+  cluster_key: cell_type
+  programs:
+  - interferon_isg
+  - stress_hsp
+  - hypoxia_hif
+differential_state:
+  obs_columns:
+  - state_interferon_isg
+  - state_stress_hsp
+  - state_hypoxia_hif
+  paired: true
+composition:
+  cell_type_key: cell_type
+differential_abundance:
+  methods:
+  - method: proportion_ttest
+  - method: propeller
+  - method: milo
+  - method: sccoda
+  cell_type_col: cell_type
+  use_rep: X_pca
+differential_expression:
+  method: pseudobulk_edger
+  layer: counts
+  cell_type_col: cell_type
+de_viz:
+  top_n_labels: 12
+  methods:
+  - method: volcano_viz
+  - method: volcano_by_subcluster
+    cell_type_col: cell_type
+  - method: de_heatmap
+    cell_type_col: cell_type
+    condition_col: label
+enrichment:
+  methods:
+  - method: ora
+  gene_set_collections:
+  - hallmark
+  gmt_path: data/h.all.v2025.1.Hs.symbols.gmt
+  gsea_permutations: 1000
+  seed: 42
+enrichment_viz:
+  collections:
+  - hallmark
+  methods:
+  - method: ora_viz
+report:
+  enabled: true
+  html: true
+  markdown: true
+  fail_on_report_error: true

@@ -6,7 +6,7 @@ terminal, and nothing more. The longer rules (code style, how to add a stage, ho
 pinned) are in [CONTRIBUTING.md](https://github.com/SecondBook5/cellquorum/blob/main/CONTRIBUTING.md); this page
 says *when* to reach for them.
 
-## The five-minute health check
+## Local checks
 
 From a checkout with the dev environment active:
 
@@ -14,8 +14,7 @@ From a checkout with the dev environment active:
 make check
 ```
 
-That runs the linter, the type checker and the fast tests, which is what a pull request has to
-pass first. If it is green, the repository is in the state its own rules describe.
+This runs Ruff, mypy and the fast tests locally. GitHub runs the full suite once on each supported Python version.
 
 ## What each CI job means
 
@@ -26,9 +25,9 @@ Every push runs `.github/workflows/ci.yml`. When one job is red, this is what it
 | CPU and GPU lock integrity | The pinned environment files disagree with each other. | Someone edited an `envs/*.yml` recipe without re-locking. Run `make lock` and commit the lock files. |
 | Lint | Formatting or style. | `make format`, review the diff, commit. Never hand-wave a lint failure with `# noqa` unless the reason is written next to it. |
 | Typecheck | A type error in a gated package. | Fix the code. The gated list is `files` in `[tool.mypy]` in `pyproject.toml`. Do not shrink it to make a build pass. |
-| Test (3.12, 3.13) | A test failed, or coverage fell under `fail_under` in `pyproject.toml`. | Read the failing test's name: the suite mirrors the source layout, so `tests/stages/qc/` tests `stages/qc/`. A coverage failure means new code arrived without tests. |
+| Test (3.12, 3.13) | A test failed or core-install coverage fell below 80%. | Read the failing test's name: the suite mirrors the source layout, so `tests/stages/qc/` tests `stages/qc/`. A coverage failure means new code arrived without tests. |
 | Publication figure comparisons | A figure no longer matches its stored image pixel for pixel. | Download the `figure-comparisons` artifact from the run and look at the difference. If you meant to change the figure, follow *Changing a figure on purpose* in CONTRIBUTING. If you did not, the code change altered a figure by accident: fix the code, not the image. |
-| Snakemake workflow (end to end) | The matrix workflow no longer runs from manifest to status matrix on the demo data. | Run `pytest tests/workflow/test_snakemake_end_to_end.py` after `pip install -e '.[dev,workflow]'`; the failing step is in the captured Snakemake output. |
+| Snakemake workflow (end to end) | The matrix workflow no longer runs from manifest to status matrix on the demo data. | Run `pytest tests/workflow/test_snakefile_dag.py tests/workflow/test_snakemake_end_to_end.py` after `pip install -e '.[dev,workflow]'`; the failing step is in the captured Snakemake output. |
 | Docs build (strict) | A broken link or an unresolvable API reference. | `make docs` reproduces it locally and names the page. |
 | Build | The wheel is missing a bundled R script, the license, or `py.typed`, or the installed package fails its end-to-end tests. | This catches mistakes that only appear when the package is *installed* rather than run from the checkout. Reproduce by building the wheel into a clean environment. |
 

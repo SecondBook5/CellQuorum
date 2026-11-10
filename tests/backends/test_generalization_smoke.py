@@ -150,5 +150,14 @@ def test_generic_config_file_plans_and_validates() -> None:
 
     cfg = CellQuorumConfig.model_validate(yaml.safe_load(config_path.read_text(encoding="utf-8")))
     plan = PipelinePlanner(cfg).build_plan()
-    # The plan renders and QC is among the enabled stages.
-    assert "qc_evidence" in plan.enabled_stage_names()
+    # An omitted flag can silently opt a starter into a new optional backend.
+    assert set(plan.enabled_stage_names()) == {
+        "qc_evidence",
+        "preprocessing",
+        "feature_selection",
+        "dimensionality",
+        "integration",
+        "clustering",
+        "population_identity",
+        "embeddings",
+    }

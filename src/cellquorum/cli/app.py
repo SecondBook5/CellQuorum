@@ -70,6 +70,7 @@ def _print_stage_table(plan: PipelinePlan) -> None:
 
     table.add_column("Status", style="bold")
 
+    table.add_column("Methods, inputs and required outputs")
     table.add_column("Reason")
 
     # Iterate over each planned stage.
@@ -83,6 +84,9 @@ def _print_stage_table(plan: PipelinePlan) -> None:
         table.add_row(
             stage.name,
             f"[{status_style}]{status_label}[/{status_style}]",
+            "\n".join(
+                [", ".join(stage.methods), *stage.required_inputs, *stage.expected_outputs]
+            ).strip(),
             stage.reason,
         )
 
@@ -232,6 +236,107 @@ def demo_command(
     console.print(f"Then open {directory / 'run' / 'reports' / 'report.html'} in a browser.")
 
 
+@app.command("import-counts")
+def import_counts_command(source: Path, output: Path) -> None:
+    """Convert a 10x matrix or library sheet to count-bearing AnnData."""
+    import os
+    import tempfile
+
+    from cellquorum.io.study_inputs import import_libraries
+
+    if output.suffix.lower() != ".h5ad" or output.exists():
+        raise typer.BadParameter("Choose a new output file ending in .h5ad.")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent) as tmp:
+        prepared = Path(tmp) / "counts.h5ad"
+        sheet = import_libraries(source, prepared)
+        os.link(prepared, output)
+    typer.echo(f"Wrote {len(sheet)} libraries to {output}.")
+
+
+@app.command("publication")
+def publication_command(
+    directory: Path,
+    question: Annotated[
+        list[str] | None,
+        typer.Option("--question", help="Study question to render. Repeat for multiple questions."),
+    ] = None,
+) -> None:
+    """Regenerate manuscript figures from a completed run's recorded artifacts."""
+    from cellquorum.cli.study import _metadata
+    from cellquorum.config.models import CellQuorumConfig
+    from cellquorum.core.artifacts import ArtifactManager
+    from cellquorum.core.context import PipelinePaths
+    from cellquorum.core.publication import write_publication_bundle
+    from cellquorum.core.stage import StageExecutionRecord
+
+    root = directory.resolve()
+    if not (root / "provenance/stage_execution_records.json").is_file():
+        raise typer.BadParameter("Choose a completed CellQuorum run directory.")
+    with PipelinePaths.from_output_dir(root).exclusive_run():
+        raw = json.loads((root / "provenance/resolved_config.json").read_text())
+        if question:
+            raw["run"]["study_questions"] = question
+        config = CellQuorumConfig.model_validate(raw)
+        records = [
+            StageExecutionRecord.from_dict(row)
+            for row in json.loads((root / "provenance/stage_execution_records.json").read_text())
+        ]
+        obj = root / "objects" / config.run.final_object_name
+        obs = _metadata(obj)[0] if obj.is_file() else None
+        import pandas as pd
+
+        from cellquorum.core.reports import render_html
+
+        manager = ArtifactManager.from_root(root)
+        panels = write_publication_bundle(config, records, manager, obs)
+        if config.report.html:
+            manager.write_text(
+                render_html(config=config, records=records, run_root=root, panels=panels),
+                name="run_report_html",
+                relative_path="reports/report.html",
+                kind="html",
+                description="Study report with manuscript panels.",
+            )
+        manifest = root / "provenance/artifact_manifest.csv"
+        if manifest.is_file():
+            previous = pd.read_csv(manifest)
+            updated = manager.to_manifest_dataframe()
+            kept = previous.loc[~previous.path.isin(updated.path)]
+            manager.write_dataframe(
+                pd.concat([kept, updated], ignore_index=True),
+                name="artifact_manifest",
+                relative_path="provenance/artifact_manifest.csv",
+                index=False,
+                description="Updated artifact index including regenerated manuscript panels.",
+            )
+    typer.echo(f"{len(panels)} manuscript panels. Open {root / 'reports/publication/index.html'}")
+
+
+@app.command("init")
+def init_command(
+    directory: Annotated[Path, typer.Argument(help="Study folder for config.yaml and the run.")],
+    input_path: Annotated[
+        Path,
+        typer.Option(
+            "--input",
+            exists=True,
+            readable=True,
+            help="AnnData, a 10x matrix, Cell Ranger outs, or a CSV/TSV sample sheet",
+        ),
+    ],
+) -> None:
+    """Set up a CPU study interactively using the counts and metadata in your own .h5ad."""
+    from cellquorum.cli.study import init_study
+    from cellquorum.core.exceptions import CellQuorumError
+
+    try:
+        init_study(directory, input_path)
+    except (CellQuorumError, OSError, ValueError, KeyError) as error:
+        typer.echo(f"Cannot set up the study. {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+
 @app.command("plan")
 def plan_command(
     config: Annotated[
@@ -264,7 +369,8 @@ def plan_command(
 
     # Import the engine only now that real work is being asked for (see the note
     # beside the module imports).
-    from cellquorum.config.loader import ConfigLoadError, load_config
+    from cellquorum.config.loader import load_config
+    from cellquorum.core.exceptions import CellQuorumConfigError
     from cellquorum.core.planner import build_pipeline_plan
 
     # Try to load and validate the configuration.
@@ -275,7 +381,7 @@ def plan_command(
         pipeline_plan = build_pipeline_plan(loaded_config)
 
     # Convert configuration errors into CLI-friendly failures.
-    except ConfigLoadError as error:
+    except CellQuorumConfigError as error:
         console.print(f"[bold red]Configuration error:[/bold red] {error}")
 
         # Exit with a non-zero status code.
@@ -284,7 +390,8 @@ def plan_command(
     if json_output:
         # Serialize the plan dictionary as formatted JSON without Rich wrapping.
         typer.echo(json.dumps(pipeline_plan.to_dict(), indent=2))
-
+        if pipeline_plan.blockers:
+            raise typer.Exit(code=1)
         return
 
     # Print a concise plan header.
@@ -297,6 +404,9 @@ def plan_command(
     _print_backend_table(pipeline_plan)
 
     _print_planner_warnings(pipeline_plan)
+    if pipeline_plan.blockers:
+        typer.echo("\n".join(pipeline_plan.blockers), err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command("run")
@@ -385,14 +495,19 @@ def run_command(
     # Try to initialize and optionally execute the CellQuorum pipeline run.
     try:
         # Run the public pipeline API from the supplied config path.
-        result = run_pipeline(
-            config,
-            output_dir=output_dir,
-            execute=not bootstrap_only,
-            quiet=quiet,
-            from_stage=from_stage,
-            until_stage=until_stage,
-        )
+        import sys
+        from contextlib import nullcontext, redirect_stdout
+
+        # Analysis libraries may print progress from inside the Python process.
+        with redirect_stdout(sys.stderr) if json_output else nullcontext():
+            result = run_pipeline(
+                config,
+                output_dir=output_dir,
+                execute=not bootstrap_only,
+                quiet=quiet or json_output,
+                from_stage=from_stage,
+                until_stage=until_stage,
+            )
 
     # Convert configuration failures into CLI-friendly errors.
     except ConfigLoadError as error:
@@ -423,7 +538,16 @@ def run_command(
     unable_stages = execution_result.unable_to_run_stage_names() if execution_result else []
     failed_stages = execution_result.failed_stage_names() if execution_result else []
 
+    recorded = (
+        {r.stage_name for r in execution_result.stage_execution_records}
+        if execution_result
+        else set()
+    )
+    unreached = (
+        [s for s in result.plan.enabled_stage_names() if s not in recorded] if executed else []
+    )
     summary: dict[str, Any] = {
+        "not_reached_stages": unreached,
         "run_id": result.context.run_id,
         "profile": result.plan.profile,
         "output_dir": str(result.context.paths.root),
@@ -437,8 +561,26 @@ def run_command(
         "successful_stages": successful_stages,
         "skipped_stages": skipped_stages,
         "disabled_stages": disabled_stages,
+        "unable_to_run_stages": unable_stages,
+        "not_applicable_stages": [
+            r.stage_name for r in execution_result.stage_execution_records if r.not_applicable
+        ]
+        if execution_result
+        else [],
+        "reused_stages": (
+            [
+                r.stage_name
+                for r in execution_result.stage_execution_records
+                if r.reused_from_checkpoint
+            ]
+            if execution_result
+            else []
+        ),
         "failed_stages": failed_stages,
     }
+    report = next((a.path for a in result.artifacts.artifacts if a.name == "run_report_html"), None)
+    if report is not None:
+        summary["report_html"] = str(report)
 
     if json_output:
         # Serialize the run summary without Rich wrapping.
@@ -451,7 +593,9 @@ def run_command(
         return
 
     # Print the run header.
-    if executed:
+    if failed_stages:
+        console.print("[bold red]CellQuorum run failed[/bold red]")
+    elif executed:
         console.print("[bold]CellQuorum run complete[/bold]")
     else:
         console.print("[bold]CellQuorum run initialized[/bold]")
@@ -461,6 +605,8 @@ def run_command(
     console.print(f"Profile: [cyan]{summary['profile']}[/cyan]")
 
     console.print(f"Output directory: [cyan]{summary['output_dir']}[/cyan]")
+    if report is not None:
+        console.print("Open the run report:", str(report), markup=False, soft_wrap=True)
 
     console.print(f"Provenance: [cyan]{summary['provenance_dir']}[/cyan]")
 
@@ -480,6 +626,8 @@ def run_command(
         # Only stages that were wanted but could not run are worth a colour. The many that the
         # configuration simply left off are counted, not listed: a long yellow list of them
         # buried the one stage that mattered.
+        if unreached:
+            console.print(f"Selected but not reached: {', '.join(unreached)}", markup=False)
         if unable_stages:
             console.print(f"[yellow]Skipped (could not run): {', '.join(unable_stages)}[/yellow]")
         if disabled_stages:

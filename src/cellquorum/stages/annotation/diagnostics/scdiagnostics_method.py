@@ -320,15 +320,12 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         # Count which diagnostics were computed.
         diagnostics_run = [col for col in diag_df.columns if col.startswith("scdiag_")]
         notes = list(reference_notes)
-        if diagnostics_run:
-            notes.append(
-                f"Computed {len(diagnostics_run)} diagnostic columns: " f"{diagnostics_run}"
+        if not diagnostics_run:
+            return self._skip(
+                "No diagnostic scores were produced. Supply a compatible reference "
+                "or soft label probabilities."
             )
-        else:
-            notes.append(
-                "No diagnostics computed: provide reference_h5ad and/or "
-                "soft_scores_obsm to enable diagnostics."
-            )
+        notes.append(f"Computed {len(diagnostics_run)} diagnostic columns: {diagnostics_run}.")
 
         artifacts = [
             _write_results_table(
@@ -551,7 +548,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 *figure_artifacts,
             ],
             notes=[
-                "Computed scdiag_entropy from soft label probabilities " f"('{soft_scores_obsm}')."
+                f"Computed scdiag_entropy from soft label probabilities ('{soft_scores_obsm}')."
             ],
             metrics={
                 "n_diagnostics": 1,
@@ -735,7 +732,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
 
         if barcode_col is None:
             raise ValueError(
-                "scDiagnostics CSV missing barcode column; " "cannot align diagnostics to cells"
+                "scDiagnostics CSV missing barcode column; cannot align diagnostics to cells"
             )
 
         # Read CSV with barcode column as string to match adata.obs_names.

@@ -95,24 +95,20 @@ class NmfMethod(AnalysisMethod):
         matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
         if gene_mask is not None:
             matrix = matrix[:, gene_mask]
-        # float32, and clipped IN PLACE.
-        #
-        # This was `toarray()` to float64 followed by `np.clip(dense, 0, None)`, which is a
-        # second full array: 201,871 x 2,000 is 3.2 GB per copy, so 6.4 GB held across all
-        # `n_runs` factorizations. float32 is more precision than a log-normalized expression
-        # matrix carries, and sklearn's NMF preserves the input dtype, so this is 1.6 GB total
-        # rather than 6.4 -- on a machine where this stage was already at zero free memory.
-        dense = (
-            matrix.toarray().astype(np.float32, copy=False)
-            if sp.issparse(matrix)
-            else np.asarray(matrix, dtype=np.float32)
-        )
-
-        # NMF needs non-negativity: clip the shifted-CLR layer's small negatives.
-        n_neg = int((dense < 0).sum())
-        clipped_frac = float(n_neg) / float(dense.size) if dense.size else 0.0
-        np.clip(dense, 0.0, None, out=dense)
-        x = dense
+        # Keep sparse counts sparse throughout fitting. Clip a private copy so a
+        # signed normalization layer remains available to downstream methods.
+        if sp.issparse(matrix):
+            x = sp.csr_matrix(matrix, dtype=np.float32, copy=True)
+            x.sum_duplicates()
+            values = x.data
+        else:
+            x = np.array(matrix, dtype=np.float32, copy=True)
+            values = x
+        n_neg = int(np.count_nonzero(values < 0))
+        clipped_frac = n_neg / (x.shape[0] * x.shape[1])
+        np.maximum(values, 0, out=values)
+        if sp.issparse(x):
+            x.eliminate_zeros()
 
         # Replicate factorizations; collect L2-normalized gene spectra (k x genes).
         # sklearn reports a stopped-at-the-cap fit only as a ConvergenceWarning on

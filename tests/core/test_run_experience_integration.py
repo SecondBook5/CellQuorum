@@ -219,14 +219,14 @@ def test_executor_without_reporter_arg_still_works(tmp_path: Path):
 
 
 def test_config_echo_with_planned_stage_names_shows_only_runnable_stages():
-    """Verify config_echo shows only planned+registered stages, not reserved slots."""
+    """Verify the reporter echoes the stage selection supplied by the runner."""
     # Build a config with reference_mapping enabled.
     cfg = CellQuorumConfig.model_validate(
         {
             "project": {"name": "test"},
             "stages": {
                 "reference_mapping": True,
-                "molecular_inference": True,  # RESERVED (not implemented).
+                "enrichment": True,
             },
         }
     )
@@ -244,5 +244,4 @@ def test_config_echo_with_planned_stage_names_shows_only_runnable_stages():
     # Check that reference_mapping appears.
     assert "reference_mapping" in output
 
-    # Check that molecular_inference does NOT appear (reserved, unimplemented).
-    assert "molecular_inference" not in output
+    assert "enrichment" not in output

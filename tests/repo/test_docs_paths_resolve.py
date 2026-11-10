@@ -17,10 +17,11 @@ on whether someone had run the pipeline.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
-import pytest
 from repo_paths import REPO_ROOT
 
 # The repository root: this file is tests/<name>.py.
@@ -63,15 +64,22 @@ def _repo_paths() -> set[str]:
     hand-maintained list of roots to try, which is what let ``trajectory/save.py`` and
     ``qc/artifacts.py`` read as broken when both files were exactly where the doc said.
     """
-    paths: set[str] = set()
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or SKIP_DIRS & set(path.parts):
-            continue
-        paths.add(path.relative_to(ROOT).as_posix())
+    if (ROOT / ".git").exists():
+        # Include new source files, while ignoring local studies, environments and old checkouts.
+        listed = subprocess.check_output(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT
+        )
+        candidates = (os.fsdecode(raw) for raw in listed.split(b"\0") if raw)
+        return {path for path in candidates if (ROOT / path).is_file()}
+
+    paths = set()
+    for directory, dirs, files in os.walk(ROOT):
+        dirs[:] = [
+            d for d in dirs if d not in SKIP_DIRS and (d == ".github" or not d.startswith("."))
+        ]
+        relative = Path(directory).relative_to(ROOT)
+        paths.update((relative / file).as_posix() for file in files)
     return paths
-
-
-REPO_PATHS = _repo_paths()
 
 
 def _doc_files() -> list[Path]:
@@ -96,7 +104,7 @@ def _is_source_path(token: str) -> bool:
     return suffix in {".yml", ".yaml"} and token.startswith(YAML_SOURCE_PREFIXES)
 
 
-def broken_citations(text: str) -> list[str]:
+def broken_citations(text: str, paths: set[str]) -> list[str]:
     """Backticked source paths in ``text`` that match nothing in the checkout."""
     broken: list[str] = []
     for lineno, line in enumerate(text.splitlines(), 1):
@@ -105,17 +113,19 @@ def broken_citations(text: str) -> list[str]:
             if not _is_source_path(token):
                 continue
             suffix = f"/{token}"
-            if not any(p == token or p.endswith(suffix) for p in REPO_PATHS):
+            if not any(p == token or p.endswith(suffix) for p in paths):
                 broken.append(f"line {lineno}: {token}")
     return broken
 
 
-@pytest.mark.parametrize("doc", _doc_files(), ids=lambda p: str(p.relative_to(ROOT)))
-def test_every_source_path_cited_in_a_doc_exists(doc: Path):
-    broken = broken_citations(doc.read_text(encoding="utf-8"))
-    assert not broken, f"{doc.relative_to(ROOT)} cites paths that do not exist: " + "; ".join(
-        broken
-    )
+def test_every_source_path_cited_in_the_docs_exists():
+    paths = _repo_paths()
+    broken = [
+        f"{doc.relative_to(ROOT)}: {message}"
+        for doc in _doc_files()
+        for message in broken_citations(doc.read_text(encoding="utf-8"), paths)
+    ]
+    assert not broken, "\n".join(broken)
 
 
 def test_the_check_catches_a_renamed_file():
@@ -129,7 +139,13 @@ def test_the_check_catches_a_renamed_file():
         "The writer lives in `stages/qc/renamed_away.py` now.\n"
         "SoupX runs `cellquorum/backends/r_scripts/soupx_per_library.R`.\n"
     )
-    broken = broken_citations(text)
+    broken = broken_citations(
+        text,
+        {
+            "src/cellquorum/core/stage.py",
+            "src/cellquorum/backends/r_scripts/soupx_per_library.R",
+        },
+    )
 
     # Line 1 resolves; line 2 does not exist at any depth. Line 3 is the docs/guide/backends.md
     # error verbatim — and it must NOT be reported, because suffix matching accepts a
@@ -143,4 +159,4 @@ def test_run_outputs_are_not_treated_as_source():
         "Status lands in `runs/matrix_status.md` and `runs/matrix_status.csv`.\n"
         "Figures go to `figures/qc_panel.pdf`; configs to `configs/generated.yaml`.\n"
     )
-    assert broken_citations(text) == []
+    assert broken_citations(text, set()) == []

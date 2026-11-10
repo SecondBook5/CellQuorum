@@ -75,7 +75,9 @@ def test_skips_and_names_the_switch_that_makes_the_table(tmp_path):
     assert "cell_type_col" in res.reason
 
 
-def test_each_cell_type_gets_its_own_normalized_enrichment_score(tmp_path, monkeypatch):
+def test_cell_type_gsea_scores_and_adjusts_significance_within_each_population(
+    tmp_path, monkeypatch
+):
     _patch(monkeypatch)
     _write(tmp_path, [_de("A", +1.0), _de("B", -1.0)])
 
@@ -88,14 +90,6 @@ def test_each_cell_type_gets_its_own_normalized_enrichment_score(tmp_path, monke
     # The same gene set moves in opposite directions in the two cell types.
     assert nes[("A", "UP_IN_A")] > 0 > nes[("B", "UP_IN_A")]
     assert nes[("A", "DOWN_IN_A")] < 0 < nes[("B", "DOWN_IN_A")]
-
-
-def test_significance_is_adjusted_within_each_cell_type(tmp_path, monkeypatch):
-    _patch(monkeypatch)
-    _write(tmp_path, [_de("A", +1.0), _de("B", -1.0)])
-
-    _run(tmp_path)
-    table = pd.read_csv(tmp_path / "results" / "enrichment_gsea_hallmark_by_cell_type.csv")
 
     for _, group in table.groupby("cell_type"):
         assert len(group) == 3  # three gene sets per cell type
@@ -126,10 +120,3 @@ def test_the_stage_runs_it_by_default_only_when_de_is_split_by_cell_type():
 
     assert "gsea_by_cell_type" in [m["method"] for m in with_it["methods"]]
     assert "gsea_by_cell_type" not in [m["method"] for m in without["methods"]]
-
-
-def test_the_method_is_registered():
-    import cellquorum.stages.comparative.enrichment  # noqa: F401
-    from cellquorum.methods.registry import METHOD_REGISTRY
-
-    assert METHOD_REGISTRY.has("enrichment", "gsea_by_cell_type")

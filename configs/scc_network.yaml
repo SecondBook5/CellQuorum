@@ -1,0 +1,87 @@
+project:
+  name: scc_network
+  organism: human
+  species_id: 9606
+cohort:
+  sample_key: sample_id
+  donor_key: patient
+  condition_key: tum.norm
+  condition_levels:
+  - Normal
+  - Tumor
+design:
+  donor_col: patient
+  condition_col: tum.norm
+  case: Tumor
+  control: Normal
+  paired: true
+compute:
+  backend: cpu
+  prefer_gpu: false
+  n_jobs: 6
+report:
+  enabled: true
+  html: true
+  markdown: true
+  fail_on_report_error: true
+paths:
+  output_dir: runs/scc_network
+input:
+  h5ad: runs/scc_paired_signaling/objects/final_annotated.h5ad
+  counts_layer: counts
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: false
+  feature_selection: false
+  dimensionality: false
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: true
+  embeddings: false
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: true
+  multicellular_programs: false
+  module_remodeling: false
+run:
+  profile: publication
+  random_seed: 42
+  require_selected_methods: true
+  continue_on_stage_failure: true
+ccc_viz:
+  methods:
+  - method: dotplot_viz
+  - method: chord_viz
+  - method: sankey_viz
+  - method: network_viz
+  - method: summary_viz
+ccc_network:
+  build_gci: true

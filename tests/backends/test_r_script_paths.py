@@ -7,16 +7,13 @@ level, so all eleven constants silently pointed at a nonexistent
 ``stages/backends/r_scripts`` directory. Nothing failed at import time — each
 method failed only when a pipeline actually reached that stage, one at a time.
 
-These tests fail loudly at collection time instead, and they assert the *file
-exists*, not merely that a path was constructed.
+The path audit reports every missing script with its referring module.
 """
 
 from __future__ import annotations
 
 import importlib
 from pathlib import Path
-
-import pytest
 
 from cellquorum.backends.script_paths import (
     R_SCRIPTS_DIR,
@@ -42,11 +39,13 @@ R_SCRIPT_REFERENCES = [
 ]
 
 
-@pytest.mark.parametrize(("module_path", "constant"), R_SCRIPT_REFERENCES)
-def test_stage_r_script_constant_resolves_to_an_existing_file(module_path, constant):
-    module = importlib.import_module(module_path)
-    path = Path(getattr(module, constant))
-    assert path.is_file(), f"{module_path}.{constant} -> {path} does not exist"
+def test_stage_r_script_references_resolve():
+    missing = []
+    for module_name, constant in R_SCRIPT_REFERENCES:
+        path = Path(getattr(importlib.import_module(module_name), constant))
+        if not path.is_file():
+            missing.append(f"{module_name}.{constant} -> {path}")
+    assert not missing, "\n".join(missing)
 
 
 def test_r_scripts_dir_is_inside_the_backends_package():

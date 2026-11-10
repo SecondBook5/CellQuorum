@@ -37,7 +37,7 @@ def _read_csv(path: Path) -> pd.DataFrame | None:
     try:
         if not path.exists():
             return None
-        df = pd.read_csv(path)
+        df = pd.read_csv(path, dtype={"source": str, "target": str})
     except Exception:  # noqa: BLE001
         return None
     return df if not df.empty else None
@@ -60,7 +60,14 @@ def load_canonical_lr_sources(
         except Exception:  # noqa: BLE001
             liana_df = None
     if liana_df is None:
-        liana_df = _read_csv(results_dir / "cell_cell_communication" / "liana_ranks.csv")
+        stored = _read_csv(results_dir / "cell_cell_communication" / "liana_ranks.csv")
+        if stored is not None:
+            if {"source", "target", "ligand", "receptor", "weight"} <= set(stored):
+                liana_df = stored
+            else:
+                canonical, _ = liana_to_canonical(stored)
+                if not canonical.empty:
+                    liana_df = canonical
     if liana_df is not None:
         out.append(("liana", liana_df))
 

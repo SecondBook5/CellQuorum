@@ -73,6 +73,10 @@ class AnalysisMethod(ABC):
         # Default: no donor requirement.
         return 0
 
+    def configured_layers(self, config: dict) -> list[str]:
+        """Layers used for eligibility when a method allows configurable inputs."""
+        return self.requires_layers()
+
     def requires_layers(self) -> list[str]:
         """Layers that must exist for the method to run; [] means none."""
 
@@ -134,7 +138,7 @@ class AnalysisMethod(ABC):
                 )
 
         # ---- Skip-guard: required layers ---- #
-        missing = [ly for ly in self.requires_layers() if ly not in adata.layers]
+        missing = [ly for ly in self.configured_layers(config) if ly not in adata.layers]
         if missing:
             return MethodSkip(
                 reason=f"method '{self.name}' skipped: required layers absent {missing}",

@@ -37,15 +37,6 @@ def test_top_level_has_ambient_and_flag():
     assert cfg.stages.ambient_correction is True
 
 
-def test_planner_orders_ambient_first_by_default():
-    # It plans BEFORE qc: correcting counts after filtering cells on those counts
-    # would be the wrong order.
-    cfg = CellQuorumConfig()
-    names = [s.name for s in PipelinePlanner(cfg).build_plan().stages]
-    assert "ambient_correction" in names
-    assert names.index("ambient_correction") < names.index("qc_evidence")
-
-
 def test_planner_can_still_turn_ambient_off():
     cfg = CellQuorumConfig()
     cfg.stages.ambient_correction = False

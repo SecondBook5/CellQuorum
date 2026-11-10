@@ -1,0 +1,1 @@
+A. Mean consensus NMF usage across cells of each annotated population. B. Distribution of cell counts per assigned metacell, excluding outliers. C. Number of genes in each non-grey hdWGCNA module. D. Each point is the mean DIALOGUE MCP2 score in keratinocytes from one specimen. Lines connect paired specimens. Across 5 resamples, mean stability was 0.161. The panel is descriptive.

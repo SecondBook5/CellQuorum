@@ -48,6 +48,7 @@ def transport_flow(
     target_label: str = "Case",
     cbar_label: str = "Excess flow over shuffled labels (log2)",
     state_colors: dict[str, str] | None = None,
+    ribbon_color: str = "neutral",
 ) -> Figure:
     """Ribbons from control states (left) to case states (right).
 
@@ -62,6 +63,9 @@ def transport_flow(
         source_label, target_label: Column headings; the control group is always the left side.
         cbar_label: Name of the colour scale.
         state_colors: Optional bar colour per state name.
+        ribbon_color: ``"neutral"`` (default) draws grey ribbons when ``excess`` is absent;
+            ``"source"`` colours each ribbon by its source state's ``state_colors`` entry, so the
+            eye can follow where each control state goes. ``excess`` always takes precedence.
     """
     import matplotlib as mpl
     import matplotlib.pyplot as plt
@@ -70,6 +74,8 @@ def transport_flow(
     from matplotlib.path import Path
 
     apply_theme("compact")
+    if ribbon_color not in ("neutral", "source"):
+        raise ValueError("ribbon_color must be 'neutral' or 'source'")
     if (flow.to_numpy(dtype=float) < 0).any():
         raise ValueError("flow has negative entries")
     for name, table in (("excess", excess), ("significant", significant)):
@@ -138,16 +144,22 @@ def transport_flow(
                     Path.CLOSEPOLY,
                 ],
             )
-            colour = (
-                cmap(norm(float(excess_of[ri[s], ci[t]]))) if excess_of is not None else _NEUTRAL
-            )
+            colour: str | tuple[float, float, float, float]
+            if excess_of is not None:
+                colour = cmap(norm(float(excess_of[ri[s], ci[t]])))
+            elif ribbon_color == "source" and s in state_colors:
+                colour = state_colors[s]
+            else:
+                colour = _NEUTRAL
             called = True if sig_of is None else bool(sig_of[ri[s], ci[t]])
             patch = PathPatch(
                 path,
                 facecolor=colour,
                 edgecolor=_EDGE,
                 linewidth=0.5,
-                alpha=0.85 if called else 0.4,
+                alpha=(0.6 if excess_of is None and ribbon_color == "source" else 0.85)
+                if called
+                else 0.4,
             )
             patch.set_gid(f"flow|{s}|{t}")
             ax.add_patch(patch)

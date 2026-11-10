@@ -175,7 +175,7 @@ def attribute_senders(
     if "expressed" in expression.columns:
         flag = expression["expressed"]
         # R writes booleans as the strings "TRUE"/"FALSE", and bool("FALSE") is True.
-        if flag.dtype == object:
+        if pd.api.types.is_string_dtype(flag.dtype) or flag.dtype == object:
             flag = flag.astype(str).str.upper().isin({"TRUE", "T", "1"})
         expressing = expression[flag.astype(bool)]
     elif min_fraction is not None and "fraction_expressing" in expression.columns:

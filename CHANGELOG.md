@@ -11,6 +11,10 @@ public API and the configuration schema.
 
 ### Changed
 
+- Removed the unimplemented `integration_gate` and `molecular_inference` stage
+  names from the catalog. Older configurations still load. Workflow manifests
+  that request PROGENy now use the enrichment activity method.
+
 - **The repository no longer carries any one study.** The lymphedema and mast-cell project configs, cohort
   manifests, helper scripts, validation notebook and design notes were moved out of the tool repository, and
   `configs/generic_pbmc_example.yaml` is the worked example. Study and collaborator names were removed from
@@ -36,8 +40,7 @@ public API and the configuration schema.
   planner slots. Purely descriptive (statistical testing of compositional shifts stays
   `differential_abundance`'s job): overall, per-condition, and per-sample cell-type
   proportion tables and stacked-bar figures, QC-state-aware via the same
-  `qc_state_column` auto-detect convention as `embeddings`. `integration_gate` and
-  `molecular_inference` remain the two still-reserved slots.
+  `qc_state_column` auto-detect convention as `embeddings`.
 - **An optional cross-compartment ambient-gene filter** for `differential_expression`
   (`ambient_filter` config block, off by default). SoupX (`ambient_correction`) runs per
   library before any cell-type label exists, so it cannot catch a gene that peaks in one

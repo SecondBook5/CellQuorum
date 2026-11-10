@@ -360,3 +360,55 @@ def test_disabling_a_stage_a_running_method_needs_points_at_skip(manifest, templ
 
     with pytest.raises(ManifestError, match="skip"):
         gen_configs(contradictory, template)
+
+
+def test_progeny_only_generates_a_weighted_activity_run(manifest, template):
+    entry = manifest["emt_krt"]
+    entry["skip"] = [name for name in scaffold.SCAFFOLD if name != "progeny"]
+    template["enrichment"] = {"gmt_path": "hallmark.gmt", "methods": [{"method": "gsea"}]}
+    template["stages"] = {"molecular_inference": False}
+    entry.setdefault("config_overrides", {})["stages"] = {"integration_gate": False}
+    cfg = gen_configs({"emt_krt": entry}, template)["emt_krt__KC"]
+    assert cfg["enrichment"]["methods"] == [
+        {"method": "activity", "activity_resources": ["progeny"], "gmt_path": None}
+    ]
+    assert cfg["stages"]["enrichment"] and not cfg["stages"]["enrichment_viz"]
+    assert not {"integration_gate", "molecular_inference"}.intersection(cfg["stages"])
+    assert "results/enrichment_activity_progeny.csv" in cfg["run"]["required_outputs"]["enrichment"]
+    validate_config_dict(cfg)
+
+
+@pytest.mark.parametrize("omit", [True, False])
+def test_shared_enrichment_stage_respects_progeny_selection(manifest, template, omit):
+    entry = manifest["emt_krt"]
+    if omit:
+        entry["blocked"] = {"progeny": "No pathway prior"}
+    template["enrichment"] = {
+        "gmt_path": "study.gmt",
+        "methods": [
+            {"method": "gsea", "seed": 12},
+            {"method": "activity", "min_size": 7, "activity_resources": ["collectri", "progeny"]},
+        ],
+    }
+    cfg = gen_configs({"emt_krt": entry}, template)["emt_krt__KC"]
+    methods = cfg["enrichment"]["methods"]
+    assert methods[:2] == [
+        {"method": "gsea", "seed": 12},
+        {"method": "activity", "min_size": 7, "activity_resources": ["collectri"]},
+    ]
+    assert cfg["enrichment"]["gmt_path"] == "study.gmt"
+    if omit:
+        assert len(methods) == 2
+        assert "results/enrichment_activity_progeny.csv" not in cfg.get("run", {}).get(
+            "required_outputs", {}
+        ).get("enrichment", [])
+    else:
+        assert methods[2:] == [
+            {
+                "method": "activity",
+                "min_size": 7,
+                "gmt_path": None,
+                "activity_resources": ["progeny"],
+            }
+        ]
+    validate_config_dict(cfg)

@@ -127,17 +127,15 @@ def _b_cells(skip=(), low=None):
 
 
 def test_universal_population_enters_r_with_twelve_specimens_one_call_per_cell_type(tmp_path):
-    res, backend, _ = _run(tmp_path, make_adata())
+    adata = make_adata()
+    before = adata.layers["counts"].copy()
+    res, backend, paths = _run(tmp_path, adata)
     assert res.status == "success"
     assert len(backend.calls) == 1  # one fit per cell type, all five contrasts in it
     call = backend.calls[0]
     assert sorted(call["specimens"]) == sorted(ALL_SPECIMENS)
     assert call["L"].shape == (4, 5)  # (Intercept)+3 fixed coefficients x 5 contrasts
 
-
-def test_machine_design_sent_to_r_uses_python_coding_and_subject_stays_random(tmp_path):
-    _, backend, _ = _run(tmp_path, make_adata())
-    call = backend.calls[0]
     assert call["formula"] == "~ cq_fx1 + cq_fx2 + cq_fx3 + (1 | cq_re1)"
     meta = call["meta"]
     # Subject is a random-effect grouping column, never a fixed numeric column.
@@ -149,6 +147,16 @@ def test_machine_design_sent_to_r_uses_python_coding_and_subject_stays_random(tm
     dod = call["L"]["cq_c5"].tolist()
     assert dod == [0, 0, 0, 1]
     assert call["L"]["cq_c1"].tolist() == [0, 1, 0, 0]  # trt vs ctl in colon
+
+    assert (adata.layers["counts"] != before).nnz == 0
+
+    prov = json.loads(
+        (
+            paths.results / "differential_expression/pseudobulk_dream/a/model_provenance.json"
+        ).read_text()
+    )
+    assert prov["de_eligibility"]["rule"].startswith("none")
+    assert prov["de_eligibility"]["n_cells_excluded"] == 0
 
 
 def test_population_absent_in_one_specimen_stays_visible_and_is_never_zero_profile(tmp_path):
@@ -178,13 +186,6 @@ def test_below_min_cells_specimen_is_excluded_with_reason(tmp_path):
     ).set_index("sample_id")
     assert support.loc["P3J", "exclusion_reason"] == "below_min_cells"
     assert all("P3J" not in c["specimens"] or len(c["specimens"]) == 12 for c in backend.calls)
-
-
-def test_unmodified_counts_layer(tmp_path):
-    adata = make_adata()
-    before = adata.layers["counts"].copy()
-    _run(tmp_path, adata)
-    assert (adata.layers["counts"] != before).nnz == 0
 
 
 # --- support loss => per-cell-type skip; never a silently simpler model ----------------------
@@ -365,7 +366,7 @@ def test_config_errors_surface_even_without_r(tmp_path):
 # --- artifacts and provenance -------------------------------------------------------------------
 
 
-def test_artifact_layout_is_unique_and_never_overwritten(tmp_path):
+def test_two_populations_export_separate_fits_and_a_combined_contrast_table(tmp_path):
     adata = make_adata(cells=_b_cells())
     res, _, paths = _run(tmp_path, adata)
     root = paths.results / "differential_expression/pseudobulk_dream"
@@ -382,9 +383,6 @@ def test_artifact_layout_is_unique_and_never_overwritten(tmp_path):
     names = [a.name for a in res.artifacts]
     assert len(names) == len(set(names))
 
-
-def test_combined_table_carries_the_output_contract(tmp_path):
-    res, _, _ = _run(tmp_path, make_adata(cells=_b_cells()))
     de = pd.read_csv(next(a.path for a in res.artifacts if a.name == "de_results"))
     for col in (
         "gene", "cell_type", "contrast", "tested_effect", "logFC", "AveExpr", "standard_error",
@@ -704,14 +702,3 @@ def test_qc_state_without_its_de_masks_is_fatal_not_a_silent_fallback(tmp_path):
     adata.obs["qc_state_initial"] = "core"  # QC ran, but the DE masks are absent
     with pytest.raises(CellQuorumDataError, match="mask.*missing"):
         _run(tmp_path, adata)
-
-
-def test_no_qc_columns_means_every_cell_is_eligible_and_it_is_recorded(tmp_path):
-    _, _, paths = _run(tmp_path, make_adata())
-    prov = json.loads(
-        (
-            paths.results / "differential_expression/pseudobulk_dream/a/model_provenance.json"
-        ).read_text()
-    )
-    assert prov["de_eligibility"]["rule"].startswith("none")
-    assert prov["de_eligibility"]["n_cells_excluded"] == 0

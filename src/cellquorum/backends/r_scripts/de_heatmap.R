@@ -3,7 +3,7 @@
 # propeller, which write CSVs the Python side plots -- this is the one figure
 # ComplexHeatmap genuinely outperforms a hand-rolled matplotlib rendering for:
 # real dendrograms, real annotation bars, no third-party equivalent in Python).
-# Usage: Rscript de_heatmap.R <matrix.csv> <out.png>
+# Usage: Rscript de_heatmap.R <matrix.csv> <first output> [groups.csv] [additional outputs...]
 suppressPackageStartupMessages({
   library(ComplexHeatmap)
   library(circlize)
@@ -11,18 +11,24 @@ suppressPackageStartupMessages({
 
 args <- commandArgs(trailingOnly = TRUE)
 matrix_csv <- args[1]
-out_png <- args[2]
+outputs <- args[c(2L, which(seq_along(args) > 3L))]
 
 tryCatch(
   {
     mat <- read.csv(matrix_csv, row.names = 1, check.names = FALSE)
     mat <- as.matrix(mat)
 
-    # Column names are "<cluster>_<condition>"; condition never contains "_"
-    # (validated Python-side by controlled vocabulary), so splitting on the
-    # FIRST underscore is unambiguous even for multi-word cluster labels.
-    clusters <- sub("_[^_]+$", "", colnames(mat))
-    conditions <- sub(".*_([^_]+)$", "\\1", colnames(mat))
+    # The Python stage supplies both labels independently, including embedded underscores.
+    pdf(NULL)
+    if (length(args) >= 3L) {
+      groups <- read.csv(args[3], colClasses = "character", check.names = FALSE, na.strings = NULL)
+      stopifnot(nrow(groups) == ncol(mat))
+      clusters <- groups$cluster
+      conditions <- groups$condition
+    } else {
+      clusters <- sub("_[^_]+$", "", colnames(mat))
+      conditions <- sub(".*_([^_]+)$", "\\1", colnames(mat))
+    }
 
     mat_z <- t(scale(t(mat)))
     mat_z[is.na(mat_z)] <- 0 # zero-variance rows (flat across all groups)
@@ -38,7 +44,9 @@ tryCatch(
     # layout noise (which side Lymphedema lands on).
     raw_cluster_levels <- unique(clusters)
     if (length(raw_cluster_levels) > 2) {
-      centroids <- sapply(raw_cluster_levels, function(cl) rowMeans(mat_z[, clusters == cl, drop = FALSE]))
+      centroids <- do.call(cbind, lapply(raw_cluster_levels, function(cl) {
+        rowMeans(mat_z[, clusters == cl, drop = FALSE])
+      }))
       slice_order <- raw_cluster_levels[hclust(dist(t(centroids)))$order]
     } else {
       slice_order <- sort(raw_cluster_levels)
@@ -47,8 +55,15 @@ tryCatch(
     cluster_levels <- levels(clusters)
     cluster_palette <- grDevices::hcl.colors(length(cluster_levels), "Set2")
     cluster_colors <- setNames(cluster_palette, cluster_levels)
-    condition_levels <- sort(unique(conditions))
-    condition_palette <- c("#c0392b", "#3a6ea5")[seq_along(condition_levels)]
+    ordered_arms <- length(args) >= 3L && "arm_order" %in% names(groups)
+    condition_levels <- if (ordered_arms) unique(conditions[order(groups$arm_order)]) else sort(unique(conditions))
+    condition_palette <- if (ordered_arms) {
+      c("#3a6ea5", "#c0392b")[as.integer(groups$arm_order[match(condition_levels, conditions)]) + 1L]
+    } else if (length(condition_levels) <= 2L) {
+      c("#c0392b", "#3a6ea5")[seq_along(condition_levels)]
+    } else {
+      grDevices::hcl.colors(length(condition_levels), "Dark 3")
+    }
     condition_colors <- setNames(condition_palette, condition_levels)
 
     # show_legend=FALSE + show_heatmap_legend=FALSE below: ComplexHeatmap's
@@ -107,7 +122,6 @@ tryCatch(
     n_data_cols <- ncol(mat_z)
     width_px <- max(3200, 230 * n_data_cols + 1100)
 
-    png(out_png, width = width_px, height = height_px, res = 300)
     ht <- Heatmap(
       mat_z,
       name = "z-score",
@@ -118,7 +132,7 @@ tryCatch(
       cluster_column_slices = FALSE,
       column_title = NULL,
       column_gap = unit(2.5, "mm"),
-      cluster_rows = TRUE,
+      cluster_rows = n_genes > 1L,
       show_row_dend = TRUE,
       show_row_names = show_names,
       row_names_gp = gpar(fontsize = 7, fontface = "italic"),
@@ -134,9 +148,17 @@ tryCatch(
     # from there -- with real identity labels ("Mechanosensory_Lymphedema")
     # the leftmost label's tail runs past the device's left edge and gets
     # clipped without it.
-    draw(ht, annotation_legend_list = legend_list, padding = unit(c(2, 20, 2, 2), "mm"))
-    dev.off()
-    cat("de_heatmap.R: wrote", out_png, "(", n_genes, "genes )\n")
+    for (output in outputs) {
+      switch(tolower(tools::file_ext(output)),
+        png = png(output, width = width_px, height = height_px, res = 300),
+        pdf = pdf(output, width = width_px / 300, height = height_px / 300),
+        svg = svg(output, width = width_px / 300, height = height_px / 300),
+        stop("Unsupported heatmap output format")
+      )
+      draw(ht, annotation_legend_list = legend_list, padding = unit(c(2, 20, 2, 2), "mm"))
+      dev.off()
+      cat("de_heatmap.R: wrote", output, "(", n_genes, "genes )\n")
+    }
   },
   error = function(e) {
     cat("ERROR in de_heatmap.R:", conditionMessage(e), "\n", file = stderr())

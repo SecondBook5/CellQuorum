@@ -99,20 +99,25 @@ def plot_mcp_summary(
             pc.set_facecolor(program_palette[program])
             pc.set_alpha(0.7)
 
-    # Annotate donor support.
+    ax_scores.axhline(0, color="gray", linestyle="--", linewidth=0.8, alpha=0.5)
+
+    # Reserve a separate row above every score, including when the range is negative.
+    bottom, top = ax_scores.get_ylim()
+    ax_scores.set_ylim(bottom, top + 0.15 * (top - bottom))
     support_map = donor_support.set_index("program")["supported"].to_dict()
     for i, program in enumerate(program_order):
         supported = support_map.get(program, False)
         # Plain words: Arial has no check-mark or ballot-X glyph, so those would draw as boxes.
-        marker = "yes" if supported else "no"
+        marker = "Donor support" if supported else "No donor support"
         color = figstyle.NORMAL_COLOR if supported else figstyle.QC_FAIL_COLOR
         ax_scores.text(
             i,
-            ax_scores.get_ylim()[1] * 0.95,
+            0.97,
             marker,
+            transform=ax_scores.get_xaxis_transform(),
             ha="center",
             va="top",
-            fontsize=10,
+            fontsize=8,
             color=color,
             weight="bold",
         )
@@ -122,7 +127,6 @@ def plot_mcp_summary(
     ax_scores.set_xlabel("Program")
     ax_scores.set_ylabel("Score")
     ax_scores.set_title("Program score distributions")
-    ax_scores.axhline(0, color="gray", linestyle="--", linewidth=0.8, alpha=0.5)
 
     plt.tight_layout()
 

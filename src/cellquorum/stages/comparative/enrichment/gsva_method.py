@@ -15,7 +15,11 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.differential_expression.pseudobulk import aggregate_pseudobulk
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.priors import (
+    PriorFetchError,
+    collection_names,
+    get_net,
+)
 from cellquorum.stats.multiple_testing import bh_fdr
 
 if TYPE_CHECKING:
@@ -56,7 +60,9 @@ class GsvaMethod(AnalysisMethod):
         case = config.get("case")
         control = config.get("control")
         paired = bool(config.get("paired", False))
-        collections = config.get("gene_set_collections", ["hallmark", "reactome"])
+        collections = collection_names(
+            config.get("gene_set_collections", ["hallmark", "reactome"]), config.get("gmt_path")
+        )
         gmt_path = config.get("gmt_path")
         organism = config.get("organism", "human")
         license = config.get("license", "academic")

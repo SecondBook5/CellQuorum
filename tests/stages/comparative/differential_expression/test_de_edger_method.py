@@ -1,34 +1,16 @@
 # tests/stages/comparative/differential_expression/test_de_edger_method.py
-import shutil
-import subprocess
-
 import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
 import scipy.sparse as sp
+from _external_data import r_package_available
 
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.comparative.differential_expression.pseudobulk_edger_method import (
     PseudobulkEdgeRMethod,
 )
-
-
-def _edger_available() -> bool:
-    if shutil.which("Rscript") is None:
-        return False
-    r = subprocess.run(
-        [
-            "Rscript",
-            "--vanilla",
-            "-e",
-            "quit(status=ifelse(requireNamespace('edgeR', quietly=TRUE),0,1))",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    return r.returncode == 0
 
 
 def _paired_adata():
@@ -222,7 +204,16 @@ def test_min_donors_per_arm_override_allows_pilot(tmp_path, monkeypatch):
     assert "rscript" in out.reason.lower() or "edger" in out.reason.lower()
 
 
-def test_ambient_filter_enabled_without_reference_or_target_raises(tmp_path):
+@pytest.fixture
+def available_edger(monkeypatch):
+    """Exercise input validation on every host. These cases finish before fitting."""
+    from cellquorum.backends.rscript import RscriptBackend
+
+    monkeypatch.setattr(RscriptBackend, "_rscript_available", lambda self: True)
+    monkeypatch.setattr(RscriptBackend, "_r_package_available", lambda self, package: True)
+
+
+def test_ambient_filter_enabled_without_reference_or_target_raises(tmp_path, available_edger):
     """enabled=True with no reference_path/target_group is a misconfiguration,
     not a silent no-op: the filter needs a reference from a WIDER cohort than
     the one being tested, so there is nothing sensible to fall back to."""
@@ -246,7 +237,7 @@ def test_ambient_filter_enabled_without_reference_or_target_raises(tmp_path):
         )
 
 
-def test_ambient_filter_skips_method_when_reference_file_missing(tmp_path):
+def test_ambient_filter_skips_method_when_reference_file_missing(tmp_path, available_edger):
     """A configured-but-unreadable reference must skip the WHOLE method, not
     silently proceed unfiltered (that would reproduce the exact false-positive
     the filter exists to prevent, without recording anything was wrong)."""
@@ -273,7 +264,7 @@ def test_ambient_filter_skips_method_when_reference_file_missing(tmp_path):
     assert "ambient_filter" in out.reason.lower()
 
 
-@pytest.mark.skipif(not _edger_available(), reason="Rscript+edgeR not available")
+@pytest.mark.skipif(not r_package_available("edgeR"), reason="Rscript+edgeR not available")
 def test_ambient_filter_drops_the_flagged_gene_before_de(tmp_path):
     """The ambient gene must never reach edgeR at all — not merely be flagged
     afterward — so it cannot appear anywhere in the DE output table."""
@@ -313,7 +304,7 @@ def test_ambient_filter_drops_the_flagged_gene_before_de(tmp_path):
     assert result.metrics["ambient_filter"]["n_dropped"] == 1
 
 
-@pytest.mark.skipif(not _edger_available(), reason="Rscript+edgeR not available")
+@pytest.mark.skipif(not r_package_available("edgeR"), reason="Rscript+edgeR not available")
 def test_paired_de_detects_upregulated_gene(tmp_path):
     method = PseudobulkEdgeRMethod()
     result = method._run(
@@ -339,7 +330,7 @@ def test_paired_de_detects_upregulated_gene(tmp_path):
     assert result.metrics["n_pseudosamples"] == 6
 
 
-@pytest.mark.skipif(not _edger_available(), reason="Rscript+edgeR not available")
+@pytest.mark.skipif(not r_package_available("edgeR"), reason="Rscript+edgeR not available")
 def test_auto_promote_matched_cohort_and_contrast_sign(tmp_path):
     """A matched cohort passed as unpaired auto-promotes; the contrast sign is correct.
 

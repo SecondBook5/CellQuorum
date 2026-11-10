@@ -423,6 +423,52 @@ class StageExecutionRecord:
     error: StageExecutionError | None = None
 
     @classmethod
+    def from_dict(cls, row: dict) -> StageExecutionRecord:
+        """Restore an execution record written by provenance, including its artifact paths."""
+        values = dict(row)
+        for key in ("started_at_utc", "ended_at_utc"):
+            values[key] = datetime.fromisoformat(values[key])
+        for key in ("input_artifacts", "output_artifacts"):
+            values[key] = [
+                StageArtifact(**{**item, "path": Path(item["path"])})
+                for item in values.get(key, [])
+            ]
+        if values.get("skip_reason"):
+            values["skip_reason"] = StageSkipReason(**values["skip_reason"])
+        if values.get("error"):
+            values["error"] = StageExecutionError(**values["error"])
+        if values.get("checkpoint_path"):
+            values["checkpoint_path"] = Path(values["checkpoint_path"])
+        return cls(**values)
+
+    @property
+    def reused_from_checkpoint(self) -> bool:
+        """Whether the outputs were reused from a validated completion marker."""
+        return (
+            self.status == "skipped"
+            and self.skip_reason is not None
+            and self.skip_reason.details.get("resumed") is True
+        )
+
+    @property
+    def not_applicable(self) -> bool:
+        """An evaluated data condition made the selected analysis unnecessary."""
+        return (
+            self.status == "skipped"
+            and self.skip_reason is not None
+            and self.skip_reason.details.get("not_applicable") is True
+        )
+
+    @property
+    def disabled_by_config(self) -> bool:
+        """Whether this record represents a stage the user switched off."""
+        return (
+            self.status == "skipped"
+            and self.skip_reason is not None
+            and self.skip_reason.details.get("plan_status") == "disabled"
+        )
+
+    @classmethod
     def success(
         cls,
         *,

@@ -57,6 +57,7 @@ def test_run_script_builds_the_environment_command(monkeypatch, tmp_path):
     assert seen["cmd"] == ["/x/micromamba", "run", "-n", "toy_env", "python", str(script), "a", "b"]
     assert seen["kwargs"]["timeout"] == 7
     assert seen["kwargs"]["check"] is False
+    assert seen["kwargs"]["capture_output"] is True
 
 
 def test_run_script_timeout_override(monkeypatch, tmp_path):

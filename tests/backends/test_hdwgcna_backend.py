@@ -62,7 +62,9 @@ def test_run_script_returns_nonzero_not_raises(
 ) -> None:
     script = tmp_path / "hdwgcna.R"
     script.write_text("stop('boom')\n")
-    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+    monkeypatch.setattr(
+        "cellquorum.backends.external_env.resolve_launcher", lambda _name: "/usr/bin/micromamba"
+    )
 
     def fake_run(cmd, **_kwargs):  # noqa: ANN001, ANN003
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
@@ -74,8 +76,7 @@ def test_run_script_returns_nonzero_not_raises(
     assert "boom" in proc.stderr
 
 
-def test_missing_script_raises_filenotfound(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/micromamba")
+def test_missing_script_raises_filenotfound() -> None:
     backend = build_hdwgcna_backend()
     with pytest.raises(FileNotFoundError):
         backend.run_script(Path("/nonexistent/hdwgcna.R"), [])

@@ -204,35 +204,11 @@ def test_sccoda_happy_path_auto_only(synthetic_adata, mock_context):
     assert result.metrics["sccoda_formula"] == 'Q("condition")'
 
 
-@pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
-def test_sccoda_engine_picks_the_reference_by_default(synthetic_adata, mock_context):
-    """The engine chooses the reference and records the criterion behind it.
-
-    Type2 is held at 30 cells per sample in both arms while Type0 and Type1 trade
-    places, so it is the only stable denominator in this cohort and the selector has
-    a knowable right answer.
-    """
-
-    result = SccodaMethod().run(
-        synthetic_adata,
-        {
-            "cell_type_col": "cell_type",
-            "condition_col": "condition",
-            "donor_col": "donor",
-            "case": "Disease",
-            "control": "Normal",
-            "seed": 0,
-            "num_iterations": 2000,
-        },
-        mock_context,
-    )
-
-    assert not isinstance(result, MethodSkip)
+def _assert_engine_reference(result, df):
     assert result.metrics["reference_source"] == "engine"
     assert result.metrics["reference_celltype"] == "Type2"
     assert result.metrics["reference_relaxed"] is False
 
-    df = pd.read_csv(result.artifacts[0].path)
     assert set(df["reference"]) == {"auto", "Type2"}
 
     # The criterion table is emitted so a reader can see what was rejected.
@@ -376,7 +352,9 @@ def test_a_declared_unpaired_design_is_not_overridden_by_the_data():
 
 
 @pytest.mark.skipif(not _SCCODA_AVAILABLE, reason="sccoda_env not available")
-def test_sccoda_determinism(synthetic_adata, mock_context, tmp_path):
+def test_engine_reference_and_seeded_posterior_reproducibility(
+    synthetic_adata, mock_context, tmp_path
+):
     """Run scCODA twice with the same seed and verify the posterior is identical.
 
     Asserting only ``credible_effect`` is too weak to protect this. When the fit
@@ -403,6 +381,8 @@ def test_sccoda_determinism(synthetic_adata, mock_context, tmp_path):
     result1 = method.run(synthetic_adata, config, context1)
     assert not isinstance(result1, MethodSkip)
     df1 = pd.read_csv(result1.artifacts[0].path)
+
+    _assert_engine_reference(result1, df1)
 
     # Run 2 (fresh context with different paths)
     class Paths:

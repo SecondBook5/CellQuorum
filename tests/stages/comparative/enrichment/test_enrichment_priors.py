@@ -180,3 +180,13 @@ def test_an_unknown_collection_still_reaches_dc_op_resource(monkeypatch):
     assert {"source", "target"}.issubset(get_net("CellPhoneDB").columns)
     with pytest.raises(PriorFetchError):
         get_net("NotAResource")
+
+
+def test_one_supplied_gmt_cannot_create_two_collection_identities():
+    from cellquorum.stages.comparative.enrichment.priors import collection_names
+
+    gmt = "/data/h.all.v2025.1.Hs.symbols.gmt"
+    defaults = ["hallmark", "reactome"]
+    assert collection_names(defaults, gmt) == ["h.all.v2025.1.Hs.symbols"]
+    assert collection_names(["hallmark"], gmt) == ["hallmark"]
+    assert collection_names(defaults, None) == defaults

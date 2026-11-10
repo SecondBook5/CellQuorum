@@ -39,7 +39,7 @@ design:
   control: cells
   paired: true
 
-# Every stage is listed. Stages left out of a config run by default (33 of 43 do), so each one is named here.
+# Every stage is listed. Explicit stage choices keep the tutorial reproducible as defaults evolve.
 stages:
   ambient_correction: false
   qc_splice_metrics: false
@@ -54,7 +54,6 @@ stages:
   annotation_consensus: false
   reference_mapping: false
   integration_benchmark: false
-  integration_gate: false
   population_identity: false
   annotation_viz: false
   state_scoring: false
@@ -79,7 +78,6 @@ stages:
   embeddings: true
   trajectory: false
   trajectory_viz: false
-  molecular_inference: false
   cell_cell_communication: false
   network_analysis: false
   multicellular_programs: false
@@ -126,6 +124,7 @@ clustering:
 
 embeddings:
   embeddings: [umap]            # PHATE is also available but takes minutes on a CPU
+  methods: [{method: umap}, {method: paga}, {method: categorical_embedding}]
 
 composition:
   cell_type_key: cell_type      # the authors' labels, carried in obs

@@ -140,6 +140,8 @@ def compute_umap(
     """
     # Check if we need to recompute neighbors on a different representation
     needs_recompute = False
+    if adata.n_obs < 3:
+        raise EmbeddingsComputeError("A two-dimensional UMAP requires at least three cells.")
     if use_rep is not None and _has_neighbors(adata):
         existing_rep = adata.uns.get("neighbors", {}).get("params", {}).get("use_rep")
         if existing_rep != use_rep:

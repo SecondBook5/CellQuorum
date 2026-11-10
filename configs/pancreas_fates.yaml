@@ -1,0 +1,96 @@
+project:
+  name: pancreas_fates
+  organism: mouse
+  species_id: 10090
+paths:
+  output_dir: runs/pancreas_fates
+input:
+  h5ad: ${oc.env:CELLQUORUM_PANCREAS_INPUT,endocrinogenesis.h5ad}
+run:
+  profile: trajectory
+  random_seed: 42
+  study_questions:
+  - lineage
+  lineage_rationale: Ductal epithelium precedes endocrine progenitors in the published
+    pancreatic developmental hierarchy.
+  require_selected_methods: true
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: false
+  feature_selection: false
+  dimensionality: false
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: false
+  trajectory: true
+  trajectory_viz: true
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+compute:
+  n_jobs: 2
+  backend: cpu
+  prefer_gpu: false
+trajectory:
+  methods:
+  - method: palantir
+  - method: cellrank
+  dpt:
+    root_key: clusters
+    root_group: Ductal
+    use_rep: X_pca
+  velocity:
+    grouping_col: clusters_coarse
+    mode: stochastic
+    whole_object: true
+    seed: 42
+  palantir:
+    root_key: clusters
+    root_group: Ductal
+    use_rep: X_pca
+    seed: 42
+  cellrank:
+    pseudotime_key: palantir_pseudotime
+    cluster_key: clusters
+    use_rep: X_pca
+    n_states: 6
+    n_terminal_states: 3
+trajectory_viz:
+  methods:
+  - method: pseudotime_viz
+  - method: fate_viz
+  - method: macrostate_viz
+  - method: driver_viz
+  pseudotime_keys:
+  - palantir_pseudotime
+report:
+  fail_on_report_error: true

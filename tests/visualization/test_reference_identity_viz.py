@@ -26,41 +26,24 @@ def _adata() -> ad.AnnData:
     return a
 
 
-def test_plot_identity_diagnostic_embeddings_applies_the_house_theme(tmp_path, monkeypatch):
-    """Without this, the panels render in bare matplotlib defaults instead of
-    CellQuorum's house style -- caught by visual review, not by a test, the
-    first time this module was written. Regression-guard it now."""
-    from cellquorum.visualization import reference_identity as viz_module
+def test_identity_diagnostics_export_four_standalone_panels_in_the_house_style(tmp_path):
+    from unittest.mock import patch
 
-    calls = []
-    monkeypatch.setattr(viz_module, "apply_theme", lambda style, **kw: calls.append(style))
+    from cellquorum.visualization import reference_identity as viz
 
-    plot_identity_diagnostic_embeddings(
-        _adata(),
-        basis="X_umap",
-        cell_type_col="cell_type",
-        top_prob_col="top_refprob",
-        doublet_col="doublet_score",
-        n_genes_col="n_genes",
-        out_dir=tmp_path,
-    )
+    with patch.object(viz, "apply_theme", wraps=viz.apply_theme) as theme:
+        written = plot_identity_diagnostic_embeddings(
+            _adata(),
+            basis="X_umap",
+            cell_type_col="cell_type",
+            top_prob_col="top_refprob",
+            doublet_col="doublet_score",
+            n_genes_col="n_genes",
+            out_dir=tmp_path,
+        )
 
-    assert calls == [
-        "notebook"
-    ], "plot_identity_diagnostic_embeddings must apply the notebook theme"
-
-
-def test_plot_identity_diagnostic_embeddings_writes_four_standalone_files(tmp_path):
-    written = plot_identity_diagnostic_embeddings(
-        _adata(),
-        basis="X_umap",
-        cell_type_col="cell_type",
-        top_prob_col="top_refprob",
-        doublet_col="doublet_score",
-        n_genes_col="n_genes",
-        out_dir=tmp_path,
-    )
-
+    theme.assert_called_once()
+    assert theme.call_args.args[0] == "notebook"
     assert set(written) == {"cell_type", "top_refprob", "doublet_score", "n_genes"}
     for path in written.values():
         assert path.exists()

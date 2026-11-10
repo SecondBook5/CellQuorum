@@ -6,7 +6,7 @@ An earlier version shelled out to `mamba run -n cellquorum-dev python`, which
 tested whatever happened to be installed in a hard-coded developer environment
 rather than the editable install under test -- so it passed or failed for
 reasons unrelated to the code being changed, and paid mamba's solver overhead
-on every one of the four cases.
+on every invocation.
 """
 
 from __future__ import annotations
@@ -97,8 +97,8 @@ def test_smoke_script_basic_execution(tmp_path: Path) -> None:
     assert summary["stage_records_exists"] is True
 
 
-def test_smoke_script_subset_limiting(tmp_path: Path) -> None:
-    """Test that smoke script respects n-cells and n-genes limits."""
+def test_smoke_script_subsets_without_explicit_counts_layer(tmp_path: Path) -> None:
+    """The default matrix source supports both cell and gene limits."""
     input_h5ad = tmp_path / "input.h5ad"
     make_tiny_h5ad(input_h5ad)
 
@@ -140,24 +140,3 @@ def test_smoke_script_missing_counts_layer(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "not found" in result.stderr or "not found" in result.stdout
-
-
-def test_smoke_script_without_counts_layer_flag(tmp_path: Path) -> None:
-    """Test that smoke script works without specifying counts-layer."""
-    input_h5ad = tmp_path / "input.h5ad"
-    make_tiny_h5ad(input_h5ad)
-
-    result = run_smoke(
-        "--input-h5ad",
-        str(input_h5ad),
-        "--output-dir",
-        str(tmp_path / "output"),
-        "--n-cells",
-        "4",
-        "--n-genes",
-        "6",
-        "--overwrite-output",
-    )
-
-    assert result.returncode == 0, f"Script failed: {result.stderr}"
-    assert parse_summary(result)["status"] == "success"

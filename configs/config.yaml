@@ -84,6 +84,5 @@ stages:
   subclustering: true
   composition: true
   differential_expression: true
-  molecular_inference: true
   cell_cell_communication: true
   network_analysis: true

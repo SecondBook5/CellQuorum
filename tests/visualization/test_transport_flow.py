@@ -47,15 +47,13 @@ def _ribbons(fig):
     return {p.get_gid(): p for p in _ax(fig).patches if str(p.get_gid()).startswith("flow|")}
 
 
-def test_a_pair_with_no_mass_has_no_ribbon() -> None:
-    ribbons = _ribbons(transport_flow(_flow()))
+def test_flow_ribbon_widths_and_positions_encode_positive_transport_mass() -> None:
+    fig = transport_flow(_flow())
+
+    ribbons = _ribbons(fig)
     assert "flow|Structural|CV" not in ribbons
     assert "flow|Inflamed|CV" in ribbons
     assert len(ribbons) == 5
-
-
-def test_ribbon_width_at_the_source_is_the_mass_it_carries() -> None:
-    ribbons = _ribbons(transport_flow(_flow()))
 
     def height(gid: str) -> float:
         v = ribbons[gid].get_path().vertices
@@ -65,26 +63,20 @@ def test_ribbon_width_at_the_source_is_the_mass_it_carries() -> None:
         pytest.approx(4.0)
     )
 
-
-def test_control_is_on_the_left_and_case_on_the_right() -> None:
-    fig = transport_flow(_flow())
     texts = {t.get_gid(): t for t in _ax(fig).texts}
     assert texts["source|Inflamed"].get_position()[0] < texts["target|Inflamed"].get_position()[0]
     assert any("Control" in t.get_text() for t in _ax(fig).texts)
 
 
-def test_a_flow_that_does_not_clear_significance_is_fainter() -> None:
+def test_flow_excess_and_significance_set_ribbon_colours_and_opacity() -> None:
     fig = transport_flow(_flow(), excess=_excess(), significant=_significant())
+
     ribbons = _ribbons(fig)
     assert (
         ribbons["flow|Structural|Inflamed"].get_alpha()
         > ribbons["flow|Inflamed|Structural"].get_alpha()
     )
 
-
-def test_excess_sets_the_colour_red_for_more_and_blue_for_less() -> None:
-    fig = transport_flow(_flow(), excess=_excess(), significant=_significant())
-    ribbons = _ribbons(fig)
     more = ribbons["flow|Inflamed|Structural"].get_facecolor()
     less = ribbons["flow|Structural|Inflamed"].get_facecolor()
     assert more[0] > more[2]
@@ -113,3 +105,31 @@ def test_the_order_given_sets_the_stacking() -> None:
     ys = {t.get_gid(): t.get_position()[1] for t in _ax(fig).texts}
     assert ys["source|Inflamed"] > ys["source|Structural"]
     assert np.isfinite(ys["target|CV"])
+
+
+def test_source_ribbon_color_follows_the_source_state():
+    colors = {"Structural": "#112233", "Inflamed": "#aa5500"}
+    fig = transport_flow(_flow(), state_colors=colors, ribbon_color="source")
+    patches = {
+        p.get_gid(): p for p in fig.axes[0].patches if (p.get_gid() or "").startswith("flow|")
+    }
+    from matplotlib.colors import to_rgb
+
+    assert to_rgb(patches["flow|Structural|Inflamed"].get_facecolor()) == pytest.approx(
+        to_rgb("#112233")
+    )
+    assert to_rgb(patches["flow|Inflamed|CV"].get_facecolor()) == pytest.approx(to_rgb("#aa5500"))
+
+
+def test_excess_overrides_source_ribbon_color():
+    colors = {"Structural": "#112233", "Inflamed": "#aa5500"}
+    fig = transport_flow(_flow(), excess=_excess(), state_colors=colors, ribbon_color="source")
+    from matplotlib.colors import to_rgb
+
+    patch = next(p for p in fig.axes[0].patches if p.get_gid() == "flow|Inflamed|Structural")
+    assert to_rgb(patch.get_facecolor()) != pytest.approx(to_rgb("#aa5500"))
+
+
+def test_unknown_ribbon_color_is_refused():
+    with pytest.raises(ValueError, match="ribbon_color"):
+        transport_flow(_flow(), ribbon_color="rainbow")

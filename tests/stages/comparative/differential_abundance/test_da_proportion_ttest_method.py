@@ -133,7 +133,9 @@ def mock_context(tmp_path):
     return Context()
 
 
-def test_paired_happy_path(paired_cohort_adata, mock_context):
+def test_paired_abundance_result_and_its_publication_outputs(
+    paired_cohort_adata, mock_context, tmp_path
+):
     """Paired t-test happy path: verify enriched type has positive effect_pp and low pvalue."""
 
     method = ProportionTTestMethod()
@@ -196,24 +198,13 @@ def test_paired_happy_path(paired_cohort_adata, mock_context):
     # FDR should be present and finite
     assert pd.notna(type_b["fdr"])
 
+    _assert_paired_distribution(result)
+    _assert_paired_composition(result)
 
-def test_paired_emits_cell_distribution_summary(paired_cohort_adata, mock_context):
-    """The method auto-emits a pooled Cell Distribution Summary alongside the DA table."""
+    _assert_repeated_intervals(paired_cohort_adata, config, tmp_path, df)
 
-    method = ProportionTTestMethod()
-    config = {
-        "cell_type_col": "cell_type",
-        "condition_col": "condition",
-        "donor_col": "donor",
-        "case": "case",
-        "control": "control",
-        "paired": True,
-        "seed": 42,
-    }
 
-    result = method.run(paired_cohort_adata, config, mock_context)
-    assert not isinstance(result, MethodSkip)
-
+def _assert_paired_distribution(result):
     summary_artifact = next(a for a in result.artifacts if a.name == "cell_distribution_summary")
     assert summary_artifact.path.name == "cell_distribution_summary.csv"
 
@@ -271,24 +262,22 @@ def test_distribution_summary_can_be_disabled(paired_cohort_adata, mock_context)
     assert result.metrics["paired"] is True
     assert result.metrics["n_donors_paired"] == 4
 
+    paired = pd.read_csv(result.artifacts[0].path)
+    # Four donors spanning both arms: 2**4 = 16 assignments.
+    assert paired["design_floor_p"].iloc[0] == pytest.approx(2 / 16)
+    assert paired["family_size"].iloc[0] == 3
 
-def test_paired_emits_composition_figure_and_backing_table(paired_cohort_adata, mock_context):
-    """The method auto-emits composition_proportions.csv + both stacked-bar figures."""
+    df = paired.set_index("cell_type")
+    # TypeA is depleted and TypeB enriched in every donor of this fixture; both are 4/4
+    # concordant, which is the point -- a "donors increased" count would read 0/4 and 4/4.
+    assert df.loc["TypeA", "effect_pp"] < 0
+    assert df.loc["TypeA", "n_donors_concordant"] == 4
+    assert df.loc["TypeB", "effect_pp"] > 0
+    assert df.loc["TypeB", "n_donors_concordant"] == 4
+    assert (df["n_donors_concordant"] <= df["n_case"]).all()
 
-    method = ProportionTTestMethod()
-    config = {
-        "cell_type_col": "cell_type",
-        "condition_col": "condition",
-        "donor_col": "donor",
-        "case": "case",
-        "control": "control",
-        "paired": True,
-        "seed": 42,
-    }
 
-    result = method.run(paired_cohort_adata, config, mock_context)
-    assert not isinstance(result, MethodSkip)
-
+def _assert_paired_composition(result):
     # Backing tidy table exists and sums to 1 within each sample.
     table = next(a for a in result.artifacts if a.name == "composition_proportions")
     assert table.path.name == "composition_proportions.csv"
@@ -368,8 +357,8 @@ def test_unpaired_path(unpaired_cohort_adata, mock_context):
     assert "n_donors_paired" not in result.metrics
 
 
-def test_the_design_floor_travels_with_the_fdr_on_both_paths(
-    paired_cohort_adata, unpaired_cohort_adata, mock_context
+def test_unpaired_table_reports_its_distinct_donor_design_floor(
+    unpaired_cohort_adata, mock_context
 ):
     """Every DA FDR carries the floor of the design that produced it.
 
@@ -392,13 +381,6 @@ def test_the_design_floor_travels_with_the_fdr_on_both_paths(
         "write_group_resolution": False,
     }
 
-    paired = pd.read_csv(
-        method.run(paired_cohort_adata, {**shared, "paired": True}, mock_context).artifacts[0].path
-    )
-    # Four donors spanning both arms: 2**4 = 16 assignments.
-    assert paired["design_floor_p"].iloc[0] == pytest.approx(2 / 16)
-    assert paired["family_size"].iloc[0] == 3
-
     unpaired = pd.read_csv(
         method.run(unpaired_cohort_adata, {**shared, "paired": False}, mock_context)
         .artifacts[0]
@@ -406,43 +388,6 @@ def test_the_design_floor_travels_with_the_fdr_on_both_paths(
     )
     # Three vs three disjoint donors: C(6, 3) = 20 assignments.
     assert unpaired["design_floor_p"].iloc[0] == pytest.approx(2 / 20)
-
-
-def test_paired_reports_how_many_donors_moved_in_the_effects_own_direction(
-    paired_cohort_adata, mock_context
-):
-    """``n_donors_concordant`` counts donors agreeing with the effect, not donors rising.
-
-    At single-digit n a cohort mean can be produced by two donors, so this is evidence the
-    p-value does not carry. It has to be relative to the effect: a depleted cell type with
-    "0/4 increased" beside a large negative effect reads as no support for it.
-    """
-    method = ProportionTTestMethod()
-    result = method.run(
-        paired_cohort_adata,
-        {
-            "cell_type_col": "cell_type",
-            "condition_col": "condition",
-            "donor_col": "donor",
-            "case": "case",
-            "control": "control",
-            "paired": True,
-            "seed": 42,
-            "write_distribution_summary": False,
-            "write_composition_figure": False,
-            "write_group_resolution": False,
-        },
-        mock_context,
-    )
-    df = pd.read_csv(result.artifacts[0].path).set_index("cell_type")
-
-    # TypeA is depleted and TypeB enriched in every donor of this fixture; both are 4/4
-    # concordant, which is the point -- a "donors increased" count would read 0/4 and 4/4.
-    assert df.loc["TypeA", "effect_pp"] < 0
-    assert df.loc["TypeA", "n_donors_concordant"] == 4
-    assert df.loc["TypeB", "effect_pp"] > 0
-    assert df.loc["TypeB", "n_donors_concordant"] == 4
-    assert (df["n_donors_concordant"] <= df["n_case"]).all()
 
 
 def test_group_resolution_table_names_the_rows_whose_ratio_is_too_thin(
@@ -500,25 +445,7 @@ def test_paired_no_overlap_skip(unpaired_cohort_adata, mock_context):
     assert "paired" in result.reason or "both arms" in result.reason
 
 
-def test_determinism(paired_cohort_adata, mock_context, tmp_path):
-    """Run twice with same seed → bootstrap CI should be identical."""
-
-    method = ProportionTTestMethod()
-    config = {
-        "cell_type_col": "cell_type",
-        "condition_col": "condition",
-        "donor_col": "donor",
-        "case": "case",
-        "control": "control",
-        "paired": True,
-        "seed": 42,
-    }
-
-    # Run 1
-    result1 = method.run(paired_cohort_adata, config, mock_context)
-    assert not isinstance(result1, MethodSkip)
-    df1 = pd.read_csv(result1.artifacts[0].path)
-
+def _assert_repeated_intervals(paired_cohort_adata, config, tmp_path, df1):
     # Run 2 (fresh context)
     run2_root = tmp_path / "run2"
 
@@ -533,7 +460,7 @@ def test_determinism(paired_cohort_adata, mock_context, tmp_path):
         backend_registry = build_default_backend_registry()
 
     context2 = Context()
-    result2 = method.run(paired_cohort_adata, config, context2)
+    result2 = ProportionTTestMethod().run(paired_cohort_adata, config, context2)
     assert not isinstance(result2, MethodSkip)
     df2 = pd.read_csv(result2.artifacts[0].path)
 

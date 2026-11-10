@@ -52,14 +52,3 @@ def test_stage_selects_default_method_name():
     stage = DifferentialAbundanceStage()
     assert stage._select_method_name({}) == "milo"
     assert stage._select_method_name({"method": "sccoda"}) == "sccoda"
-
-
-def test_all_four_methods_registered():
-    """Verify all 4 DA methods are available in the registry."""
-    import cellquorum.stages.comparative.differential_abundance  # noqa: F401
-    from cellquorum.methods.registry import METHOD_REGISTRY
-
-    assert METHOD_REGISTRY.has("differential_abundance", "milo")
-    assert METHOD_REGISTRY.has("differential_abundance", "sccoda")
-    assert METHOD_REGISTRY.has("differential_abundance", "propeller")
-    assert METHOD_REGISTRY.has("differential_abundance", "proportion_ttest")

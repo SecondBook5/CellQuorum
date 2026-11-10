@@ -75,6 +75,8 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Get started:
+      - Paired carcinoma signaling and regulation: guide/scc-study.md
+      - A complete paired study: guide/paired-study.md
       - Your first run: guide/tutorial.md
       - Tutorial, GSE140819 (notebook): tutorials/api_walkthrough.ipynb
   - User guide:
@@ -95,6 +97,7 @@ nav:
       - CellRank runtime repairs: cellrank_runtime_safety.md
       - QC graded adjudication: design/qc-graded-adjudication.md
       - QC reporting figures: design/qc-reporting-figures.md
+      - Public-study evidence: benchmarks/reference-studies.md
       - GSE140819 benchmark: benchmarks/gse140819.md
   - Development:
       - Maintaining CellQuorum: maintaining.md

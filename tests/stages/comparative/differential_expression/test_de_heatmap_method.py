@@ -3,13 +3,17 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
 
+from cellquorum.backends.script_paths import r_script_path
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.comparative.differential_expression.viz.de_heatmap_method import (
     DeHeatmapMethod,
@@ -119,9 +123,10 @@ class _FakeBackend:
     def run_script(self, script, args, *, timeout=None):
         self.calls.append((script, args))
         if self.write_output:
-            out_png = Path(args[1])
-            out_png.parent.mkdir(parents=True, exist_ok=True)
-            out_png.write_bytes(b"fake-png")
+            for filename in [args[1], *args[3:]]:
+                output = Path(filename)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(b"fake figure")
         return SimpleNamespace(returncode=self.returncode, stderr="")
 
 
@@ -186,3 +191,66 @@ def test_skip_reason_names_the_signal_when_subprocess_is_killed(tmp_path):
     assert isinstance(res, MethodSkip)
     assert "signal" in res.reason.lower()
     assert "sigkill" in res.reason.lower()
+
+
+def test_only_upregulated_genes_contribute_to_the_up_quota():
+    df = _de_df().query("logFC > 0")
+    assert select_top_genes(
+        df,
+        group_col="cell_type",
+        logfc_col="logFC",
+        fdr_col="FDR",
+        gene_col="gene",
+        fdr_cut=0.05,
+        top_n=1,
+    ) == ["UP0A", "UP1A"]
+
+
+def test_explicit_arms_preserve_labels_and_reference_order_in_each_cluster(tmp_path):
+    backend = _FakeBackend()
+    ctx = _ctx(tmp_path, backend, de_csv=_de_df())
+    a = _adata()
+    a.obs["condition"] = a.obs["condition"].map({"Lymphedema": "a_case", "Normal": "z_ctrl"})
+    a.obs.iloc[0, a.obs.columns.get_loc("condition")] = "third_arm"
+    result = DeHeatmapMethod()._run(
+        a,
+        {
+            "cell_type_col": "fibroblast_subcluster",
+            "cluster_labels": {"0": "cell_A", "1": "cell_B"},
+            "case": "a_case",
+            "control": "z_ctrl",
+            "figure_formats": ["pdf", "png"],
+        },
+        ctx,
+    )
+    assert [a.path.suffix for a in result.artifacts] == [".pdf", ".png"]
+    groups = pd.read_csv(backend.calls[0][1][2])
+    assert groups["cluster"].tolist() == ["cell_A", "cell_A", "cell_B", "cell_B"]
+    assert groups["condition"].tolist() == ["z_ctrl", "a_case"] * 2
+    matrix = pd.read_csv(backend.calls[0][1][0], index_col=0)
+    assert matrix.columns.tolist() == (groups["cluster"] + "_" + groups["condition"]).tolist()
+
+
+@pytest.mark.r
+def test_r_heatmap_renders_one_gene_across_three_populations(tmp_path):
+    rscript = shutil.which("Rscript")
+    if (
+        not rscript
+        or subprocess.run(
+            [
+                rscript,
+                "-e",
+                'quit(status=as.integer(!requireNamespace("ComplexHeatmap", quietly=TRUE)))',
+            ]
+        ).returncode
+    ):
+        pytest.skip("requires Rscript and ComplexHeatmap")
+    matrix = tmp_path / "one_gene.csv"
+    matrix.write_text("gene,A_0,A_1,B_0,B_1,C_0,C_1\nG1,1,2,3,1,5,8\n")
+    output = tmp_path / "one_gene.pdf"
+    subprocess.run(
+        [rscript, str(r_script_path("de_heatmap.R")), str(matrix), str(output)],
+        cwd=tmp_path,
+        check=True,
+    )
+    assert output.read_bytes().startswith(b"%PDF-")

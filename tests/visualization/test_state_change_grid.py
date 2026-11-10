@@ -69,40 +69,28 @@ def test_programs_run_down_and_states_across_in_the_order_given() -> None:
     assert [t.get_text() for t in ax.get_yticklabels()] == ["Up", "Down", "Mixed"]
 
 
-def test_each_cell_is_the_mean_donor_change_in_that_state() -> None:
-    _, ax = _draw(group_order=["A", "B"])
+def test_state_grid_shows_changes_donor_support_and_corrected_significance() -> None:
+    fig, ax = _draw(group_order=["A", "B"])
+
     grid = np.asarray(ax.images[0].get_array())
     assert grid[0, 0] == pytest.approx(0.12)
     assert grid[1, 0] == pytest.approx(-0.12)
     assert grid[2, 0] == pytest.approx(MIXED.mean())
     assert grid[2, 1] == pytest.approx(MIXED[:4].mean())  # only P1-P4 have both arms in B
 
-
-def test_each_cell_gives_its_change_and_the_donors_that_agree() -> None:
-    _, ax = _draw(group_order=["A", "B"])
     texts = {t.get_text() for t in ax.texts}
     assert "+0.12\n9/9*" in texts
     assert "-0.12\n9/9*" in texts
     assert f"{MIXED.mean():+.2f}\n5/9" in texts
     assert "+0.12\n4/4" in texts
 
-
-def test_the_correction_runs_over_every_cell_of_the_grid() -> None:
-    # Two unanimous nine-donor cells reach 0.0039 doubled; pooled over six cells that is 0.012.
-    _, ax = _draw(group_order=["A", "B"])
     starred = [t.get_text() for t in ax.texts if t.get_text().endswith("*")]
     assert len(starred) == 2
 
-
-def test_cells_with_too_few_donors_to_reach_significance_are_outlined() -> None:
-    _, ax = _draw(group_order=["A", "B"])
     outlines = [p for p in ax.patches if not p.get_fill()]
     assert len(outlines) == 3  # the three cells of state B, four donors each
     assert {round(p.get_x() + p.get_width() / 2) for p in outlines} == {1}
 
-
-def test_the_colour_scale_is_symmetric_and_covers_every_change() -> None:
-    _, ax = _draw(group_order=["A", "B"])
     norm = ax.images[0].norm
     assert norm.vmin == -norm.vmax
     assert norm.vmax == pytest.approx(0.15)  # the next round number above 0.12
@@ -134,9 +122,9 @@ def _small_changes():
     )
 
 
-def test_labels_carry_enough_decimals_for_the_scale_they_sit_on() -> None:
+def test_small_changes_keep_precision_and_rounded_zero_has_no_sign() -> None:
     values, donors, conditions, states = _small_changes()
-    _, ax = state_change_grid(
+    fig, ax = state_change_grid(
         values,
         donors,
         conditions,
@@ -145,21 +133,9 @@ def test_labels_carry_enough_decimals_for_the_scale_they_sit_on() -> None:
         control="Normal",
         colorbar_label="Change in score",
     )
+
     texts = [t.get_text() for t in ax.texts]
     assert any(t.startswith("+0.012\n") for t in texts)
 
-
-def test_a_change_that_rounds_to_zero_is_not_given_a_sign() -> None:
-    values, donors, conditions, states = _small_changes()
-    _, ax = state_change_grid(
-        values,
-        donors,
-        conditions,
-        states,
-        case="Lymphedema",
-        control="Normal",
-        colorbar_label="Change in score",
-    )
-    texts = [t.get_text() for t in ax.texts]
     assert sum(t.startswith("0.000\n") for t in texts) == 2
     assert not any(t.startswith(("-0.000", "+0.000")) for t in texts)

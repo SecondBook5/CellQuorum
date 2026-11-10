@@ -1,0 +1,76 @@
+project:
+  name: k562_gata1
+  organism: human
+paths:
+  output_dir: runs/k562_gata1
+input:
+  h5ad: training_controls.h5ad
+  counts_layer: counts
+  layer_kinds:
+    counts: counts
+run:
+  profile: perturbation
+  study_questions:
+  - perturbation
+  random_seed: 42
+  require_selected_methods: true
+  required_outputs:
+    perturbation:
+    - results/sctenifoldknk/differential_regulation.csv
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: false
+  feature_selection: false
+  dimensionality: false
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: true
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: false
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+compute:
+  n_jobs: 2
+  backend: cpu
+  prefer_gpu: false
+report:
+  fail_on_report_error: true
+perturbation:
+  method: sctenifoldknk
+  layer: counts
+  sctenifoldknk:
+    python_executable: ${oc.env:CELLQUORUM_KNK_PYTHON,null}
+    ko_genes:
+    - GATA1
+    pooled: true
+    by_cluster: false

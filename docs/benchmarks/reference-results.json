@@ -1,0 +1,501 @@
+[
+  {
+    "study": "scc_paired_signaling",
+    "run": "scc_release",
+    "results": {
+      "patients": 10,
+      "mnn_pairs": 5,
+      "liana_libraries": 18,
+      "regulons": 274,
+      "scenic_cells": 1000,
+      "mmp1_log2fc": 11.5889364600565,
+      "published_cd63_absolute_differences": {
+        "P6Normal": 0.17845967723690137,
+        "P10Tumor": 0.13537297443579988,
+        "P10Normal": 0.17942294634669942,
+        "P2Tumor": 0.18344527557129986
+      }
+    },
+    "performance": {
+      "elapsed": "35:08.11",
+      "peak_rss_kib": 8224000,
+      "cpu_utilization": "462%"
+    },
+    "checked_artifacts": {
+      "cell_cell_communication.liana": "results/cell_cell_communication/liana_ranks.csv",
+      "cell_cell_communication.tensor_c2c": "results/cell_cell_communication/tensor_factors_contexts.csv",
+      "cell_cell_communication.nichenet": "results/nichenet_ligand_target_weights.csv",
+      "cell_cell_communication.multinichenet": "results/mnn_sample_prioritization.csv",
+      "grn.pyscenic": "results/grn/scenic_auc_mtx_grn.parquet",
+      "enrichment.activity": "results/enrichment_activity_collectri_by_donor.csv",
+      "differential_expression.pseudobulk_edger": "results/de_pseudobulk_edger_by_subcluster.csv",
+      "cell_cell_communication": "results/cell_cell_communication/liana_ranks.csv",
+      "grn": "results/grn/scenic_auc_mtx_grn.parquet",
+      "enrichment": "results/enrichment_activity_collectri_by_donor.csv",
+      "differential_expression": "results/de_pseudobulk_edger_by_subcluster.csv"
+    }
+  },
+  {
+    "study": "scc_paired_signaling",
+    "run": "scc_paired_signaling",
+    "results": {
+      "patients": 10,
+      "mnn_pairs": 5,
+      "liana_libraries": 18,
+      "regulons": 274,
+      "scenic_cells": 1000,
+      "mmp1_log2fc": 11.5889364600565,
+      "published_cd63_absolute_differences": {
+        "P6Normal": 0.17845967723690137,
+        "P10Tumor": 0.13537297443579988,
+        "P10Normal": 0.17942294634669942,
+        "P2Tumor": 0.18344527557129986
+      }
+    },
+    "performance": {
+      "elapsed": "35:10.22",
+      "peak_rss_kib": 8223736,
+      "cpu_utilization": "468%"
+    },
+    "checked_artifacts": {
+      "cell_cell_communication.liana": "results/cell_cell_communication/liana_ranks.csv",
+      "cell_cell_communication.tensor_c2c": "results/cell_cell_communication/tensor_factors_contexts.csv",
+      "cell_cell_communication.nichenet": "results/nichenet_ligand_target_weights.csv",
+      "cell_cell_communication.multinichenet": "results/mnn_sample_prioritization.csv",
+      "grn.pyscenic": "results/grn/scenic_auc_mtx_grn.parquet",
+      "enrichment.activity": "results/enrichment_activity_collectri_by_donor.csv",
+      "differential_expression.pseudobulk_edger": "results/de_pseudobulk_edger_by_subcluster.csv",
+      "cell_cell_communication": "results/cell_cell_communication/liana_ranks.csv",
+      "grn": "results/grn/scenic_auc_mtx_grn.parquet",
+      "enrichment": "results/enrichment_activity_collectri_by_donor.csv",
+      "differential_expression": "results/de_pseudobulk_edger_by_subcluster.csv"
+    }
+  },
+  {
+    "study": "kang_paired_analysis",
+    "run": "kang_paired_analysis",
+    "results": {
+      "paired_donors": 8,
+      "positive_interferon_populations": 6
+    },
+    "performance": {
+      "elapsed": "2:56.12",
+      "peak_rss_kib": 2306440,
+      "cpu_utilization": "92%"
+    },
+    "checked_artifacts": {
+      "enrichment.gsea_by_cell_type": "results/enrichment_gsea_hallmark_by_cell_type.csv",
+      "differential_abundance.proportion_ttest": "results/da_proportion_ttest.csv",
+      "enrichment": "results/enrichment_gsea_hallmark_by_cell_type.csv",
+      "differential_abundance": "results/da_proportion_ttest.csv"
+    }
+  },
+  {
+    "study": "kang_population_review",
+    "run": "kang_population_review",
+    "results": {
+      "cells": 24562,
+      "borderline": 532,
+      "rescued": 423,
+      "subclustered_b_cells": 2651,
+      "adjudicated_clusters": 18,
+      "pairs_per_population": {
+        "B cells": 8,
+        "CD14+ Monocytes": 8,
+        "CD4 T cells": 8,
+        "CD8 T cells": 8,
+        "Dendritic cells": 8,
+        "FCGR3A+ Monocytes": 8,
+        "Megakaryocytes": 3,
+        "NK cells": 8
+      },
+      "unconverged_fits": 12,
+      "diagnostics_note": "Zero metrics were returned by the historical annotation_diagnostics stage. It is excluded from coverage here. The separate pancreas query supplied diagnostic evidence."
+    },
+    "performance": {
+      "elapsed": "3:08.10",
+      "peak_rss_kib": 1881568,
+      "cpu_utilization": "184%"
+    },
+    "checked_artifacts": {
+      "annotation_consensus": "results/annotation_consensus_agreement.csv",
+      "query_projection": "objects/final_annotated.h5ad",
+      "qc_finalization": "objects/final_annotated.h5ad",
+      "adjudication": "results/adjudication_results.csv",
+      "module_remodeling.module_remodeling": "results/module_remodeling/module_effect_sizes_lmm.csv",
+      "module_remodeling": "results/module_remodeling/module_effect_sizes_lmm.csv"
+    }
+  },
+  {
+    "study": "gse140819_cells_vs_nuclei",
+    "run": "run",
+    "results": {
+      "donor_pairs": 4,
+      "preparations": [
+        "cells",
+        "nuclei"
+      ],
+      "paired_removal_p": 0.875
+    },
+    "performance": {
+      "elapsed": "1:28.02",
+      "peak_rss_kib": 2872340,
+      "cpu_utilization": "89%"
+    },
+    "checked_artifacts": {
+      "qc_evidence": "results/qc/qc_donor_comparisons.csv"
+    }
+  },
+  {
+    "study": "pbmc_droplets",
+    "run": "pbmc_droplets_repaired",
+    "results": {
+      "retained_cells": 1176,
+      "retained_genes": 15230,
+      "original_umis": 9193863,
+      "corrected_umis": 9101567,
+      "estimated_fraction": 0.01
+    },
+    "performance": {
+      "elapsed": "1:43.58",
+      "peak_rss_kib": 2569464,
+      "cpu_utilization": "138%"
+    },
+    "checked_artifacts": {
+      "ambient_correction": "objects/final_annotated.h5ad"
+    }
+  },
+  {
+    "study": "pancreas_transfer",
+    "run": "pancreas_transfer_diagnostics",
+    "results": {
+      "query_cells": 2961,
+      "accuracy": 0.873015873015873,
+      "macro_recall": 0.8246296494586208,
+      "recall_by_type": {
+        "Pancreas Acinar": 0.7766990291262136,
+        "Pancreas Alpha": 0.9711451758340848,
+        "Pancreas Beta": 0.7022613065326633,
+        "Pancreas Delta": 0.9154929577464789,
+        "Pancreas Ductal": 0.9567099567099567,
+        "Pancreas Endothelial": 0.31343283582089554,
+        "Pancreas Gamma": 0.9771689497716894,
+        "Pancreas Stellate": 0.9841269841269841
+      }
+    },
+    "performance": {
+      "elapsed": "2:18.30",
+      "peak_rss_kib": 1515484,
+      "cpu_utilization": "88%",
+      "accelerator": "CUDA, scVI/scANVI and query mapping"
+    },
+    "checked_artifacts": {
+      "reference_mapping.scarches": "results/transferred_type_assignments.csv",
+      "annotation_diagnostics": "results/annotation_diagnostics/scdiagnostics_results.csv",
+      "annotation_diagnostics.scdiagnostics": "results/annotation_diagnostics/scdiagnostics_results.csv",
+      "reference_mapping": "results/transferred_type_assignments.csv"
+    }
+  },
+  {
+    "study": "pancreas_integration",
+    "run": "pancreas_integration_full",
+    "results": {
+      "baseline_iLISI": 0.004922151565551758,
+      "harmony_iLISI": 0.3297187089920044,
+      "baseline_NMI": 0.7368518454720607,
+      "harmony_NMI": 0.739018329058387
+    },
+    "performance": {
+      "elapsed": "1:02.11",
+      "peak_rss_kib": 1779276,
+      "cpu_utilization": "96%"
+    },
+    "checked_artifacts": {
+      "integration.harmony": "reports/integration_quality.csv",
+      "integration_benchmark.scib_benchmark": "reports/integration_quality.csv",
+      "integration": "reports/integration_quality.csv",
+      "integration_benchmark": "reports/integration_quality.csv"
+    }
+  },
+  {
+    "study": "pancreas_lineage",
+    "run": "pancreas_splice",
+    "results": {
+      "cells": 3696,
+      "unordered_cells": 2,
+      "median_pseudotime": {
+        "Ductal": 0.048988182097673416,
+        "Ngn3 low EP": 0.05322232283651829,
+        "Ngn3 high EP": 0.4020250588655472,
+        "Pre-endocrine": 0.651424914598465,
+        "Beta": 0.7083391547203064,
+        "Alpha": 0.712378203868866,
+        "Delta": 0.7000767588615417,
+        "Epsilon": 0.7051084935665131
+      }
+    },
+    "performance": {
+      "elapsed": "0:51.90",
+      "peak_rss_kib": 1577304,
+      "cpu_utilization": "95%"
+    },
+    "checked_artifacts": {
+      "trajectory.dpt": "objects/final_annotated.h5ad",
+      "trajectory.velocity": "results/trajectory/velocity/whole_object.h5ad",
+      "qc_splice_metrics": "objects/final_annotated.h5ad",
+      "trajectory": "objects/final_annotated.h5ad"
+    }
+  },
+  {
+    "study": "pancreas_fates",
+    "run": "pancreas_fates",
+    "results": {
+      "cells": 3696,
+      "destinations": {
+        "palantir": 1,
+        "cellrank": 6
+      },
+      "median_pseudotime": {
+        "Ductal": 0.04140494689108522,
+        "Ngn3 low EP": 0.06009018051326416,
+        "Ngn3 high EP": 0.40550599579914726,
+        "Pre-endocrine": 0.651456384703767,
+        "Beta": 0.7906995298834946,
+        "Alpha": 0.8200605726222457,
+        "Delta": 0.7980494100959477,
+        "Epsilon": 0.7104402624760596
+      },
+      "interpretation": "Only one Palantir destination was recovered. CellRank included progenitor and ductal macrostates among terminal states."
+    },
+    "performance": {
+      "elapsed": "1:09.89",
+      "peak_rss_kib": 2129012,
+      "cpu_utilization": "83%"
+    },
+    "checked_artifacts": {
+      "trajectory.palantir": "results/trajectory/palantir/palantir_pseudotime.h5ad",
+      "trajectory.cellrank": "results/trajectory/cellrank/fate_mapping.h5ad",
+      "trajectory": "results/trajectory/palantir/palantir_pseudotime.h5ad"
+    }
+  },
+  {
+    "study": "k562_gata1",
+    "run": "k562_gata1_default",
+    "results": {
+      "evaluation_cells": 552,
+      "genes": 1999,
+      "TF": "GATA1",
+      "spearman_abs_effect": 0.12490813725180909,
+      "positive_rank_association": true,
+      "measured_GATA1_log2fc": -0.8372632961619726
+    },
+    "performance": {
+      "elapsed": "0:47.50",
+      "peak_rss_kib": 1556340,
+      "cpu_utilization": "85%"
+    },
+    "checked_artifacts": {
+      "perturbation.sctenifoldknk": "reports/held_out_perturbation.csv",
+      "perturbation": "reports/held_out_perturbation.csv"
+    }
+  },
+  {
+    "study": "scc_network",
+    "results": {
+      "gene_channel_nodes": 2664,
+      "gene_channel_edges": 5703,
+      "highest_outgoing": "Fibroblast",
+      "highest_incoming": "KC_other",
+      "edges_compared": 6
+    },
+    "checked_artifacts": {
+      "ccc_network.topology": "results/ccc_network/topology_cci.csv",
+      "ccc_network.ricci": "results/ccc_network/differential_curvature_cci.csv",
+      "ccc_network": "results/ccc_network/topology_cci.csv"
+    },
+    "run": "scc_network_gene_channels",
+    "performance": {
+      "elapsed": "1:26.39",
+      "peak_rss_kib": 2056252,
+      "cpu_utilization": "74%"
+    }
+  },
+  {
+    "study": "scc_programs",
+    "results": {
+      "cells": 9916,
+      "metacells": 239,
+      "outlier_cells": 338,
+      "modules": [
+        "M1",
+        "M2",
+        "M3",
+        "M4",
+        "M5"
+      ],
+      "nmf_programs": 6,
+      "dialogue_resampling": [
+        {
+          "program": "MCP2",
+          "mean_stability": 0.1609782313595423,
+          "n_resamples": 5
+        }
+      ],
+      "dialogue_donors": [
+        {
+          "program": "MCP2",
+          "n_donors": 10,
+          "donor_fraction": 1.0,
+          "supported": true
+        }
+      ]
+    },
+    "checked_artifacts": {
+      "discovery.nmf": "results/discovery_nmf_usage_by_celltype.csv",
+      "metacells.metacells": "results/metacells/metacell_assignments.csv",
+      "coexpression.hdwgcna": "results/coexpression/eigengenes.csv",
+      "multicellular_programs.dialogue": "results/multicellular_programs/program_donor_support.csv",
+      "discovery": "results/discovery_nmf_usage_by_celltype.csv",
+      "metacells": "results/metacells/metacell_assignments.csv",
+      "coexpression": "results/coexpression/eigengenes.csv",
+      "multicellular_programs": "results/multicellular_programs/program_donor_support.csv"
+    },
+    "run": "scc_programs_14g",
+    "performance": {
+      "elapsed": "24:23.66",
+      "peak_rss_kib": 9218200,
+      "cpu_utilization": "128%"
+    }
+  },
+  {
+    "study": "kang_sensitivity",
+    "results": {
+      "paired_donors": 8,
+      "isg15_log2fc": {
+        "B cells": 5.52586672290767,
+        "CD14+ Monocytes": 7.52719783815746,
+        "CD4 T cells": 5.05992788191718,
+        "CD8 T cells": 4.50421193165551,
+        "Dendritic cells": 6.62078288107762,
+        "FCGR3A+ Monocytes": 5.97376236173637,
+        "NK cells": 4.54597715606925
+      },
+      "contributing_subjects": {
+        "B cells": 8,
+        "CD14+ Monocytes": 8,
+        "CD4 T cells": 8,
+        "CD8 T cells": 6,
+        "Dendritic cells": 6,
+        "FCGR3A+ Monocytes": 8,
+        "NK cells": 8
+      },
+      "gsva_gene_sets": 50,
+      "progeny_networks": 14
+    },
+    "checked_artifacts": {
+      "differential_expression.pseudobulk_dream": "results/differential_expression/pseudobulk_dream/de_pseudobulk_dream_all.csv",
+      "enrichment.gsva": "results/enrichment_gsva_scores_hallmark.csv",
+      "enrichment.activity": "results/enrichment_activity_progeny_by_donor.csv",
+      "differential_abundance.propeller": "results/da_propeller.csv",
+      "differential_expression": "results/differential_expression/pseudobulk_dream/de_pseudobulk_dream_all.csv",
+      "enrichment": "results/enrichment_gsva_scores_hallmark.csv",
+      "differential_abundance": "results/da_propeller.csv"
+    },
+    "run": "kang_sensitivity_docker",
+    "performance": {
+      "elapsed": "7:48.41",
+      "peak_rss_kib": 3176404,
+      "cpu_utilization": "211%"
+    }
+  },
+  {
+    "study": "kang_expression_figures",
+    "results": {
+      "cells": 24562,
+      "specimens": 16,
+      "interferon_alpha_overlap": 89,
+      "interferon_alpha_adjusted_p": 1.8060282154036832e-54
+    },
+    "checked_artifacts": {
+      "embeddings.phate": "objects/final_annotated.h5ad",
+      "feature_selection.seurat": "objects/final_annotated.h5ad",
+      "enrichment.ora": "results/enrichment_ora_hallmark.csv",
+      "embeddings": "objects/final_annotated.h5ad",
+      "feature_selection": "objects/final_annotated.h5ad",
+      "enrichment": "results/enrichment_ora_hallmark.csv"
+    },
+    "run": "kang_expression_verified",
+    "performance": {
+      "successful_stage_seconds": 52.41
+    }
+  },
+  {
+    "study": "pancreas_latent_sensitivity",
+    "results": {
+      "cells": 11352,
+      "cross_study_nearest_neighbor_label_agreement": {
+        "X_pca": 0.8394996476391825,
+        "X_scvi": 0.8123678646934461,
+        "X_scanvi": 0.8974630021141649
+      }
+    },
+    "checked_artifacts": {
+      "integration.scvi": "objects/final_annotated.h5ad",
+      "integration.scanvi": "objects/final_annotated.h5ad",
+      "integration": "objects/final_annotated.h5ad"
+    },
+    "run": "pancreas_latent_sensitivity",
+    "performance": {
+      "successful_stage_seconds": 91.27
+    }
+  },
+  {
+    "study": "pancreas_celloracle",
+    "results": {
+      "mean_predicted_shift": {
+        "Neurog3": 0.5636917905569864,
+        "Pdx1": 0.3759958613766392
+      },
+      "cells_per_simulation": 2000
+    },
+    "checked_artifacts": {
+      "perturbation.celloracle": "results/perturbation/perturbation_ranking.csv",
+      "perturbation": "results/perturbation/perturbation_ranking.csv"
+    },
+    "run": "pancreas_celloracle",
+    "performance": {
+      "elapsed": "8:00.33",
+      "peak_rss_kib": 2287084,
+      "cpu_utilization": "98%"
+    }
+  },
+  {
+    "study": "pancreas_lineage_programs",
+    "results": {
+      "cells": 3696,
+      "median_potency": {
+        "Ductal": 0.3006267325047942,
+        "Ngn3 low EP": 0.1968877123236656,
+        "Ngn3 high EP": 0.08337791566449895,
+        "Pre-endocrine": 0.07024311483081,
+        "Beta": 0.0481513502207246,
+        "Alpha": 0.0812630141714528,
+        "Delta": 0.07766488645335684,
+        "Epsilon": 0.10863032623660725
+      },
+      "fates": 6,
+      "fitted_gene_lineage_curves": 24
+    },
+    "checked_artifacts": {
+      "trajectory.cytotrace": "objects/final_annotated.h5ad",
+      "trajectory.cellrank": "objects/final_annotated.h5ad",
+      "trajectory_viz.gene_trend_viz": "results/trajectory/gene_trends.csv",
+      "trajectory_viz": "results/trajectory/gene_trends.csv",
+      "trajectory": "objects/final_annotated.h5ad"
+    },
+    "run": "pancreas_lineage_report",
+    "performance": {
+      "successful_stage_seconds": 138.31
+    }
+  }
+]

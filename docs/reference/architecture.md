@@ -11,7 +11,7 @@ through the engine and how the source is organized.
 flowchart TD
     CFG([YAML config / dict / CellQuorumConfig]) --> VAL[Pydantic validation<br/>strict, extra=forbid]
     VAL --> REG[Backend registry<br/>Python / R / Rscript / GPU / RAPIDS]
-    REG --> PLAN[Execution planner<br/>enabled · skipped · unimplemented]
+    REG --> PLAN[Execution planner<br/>enabled · disabled]
     PLAN --> BOOT[Run bootstrapper<br/>directories + provenance]
     BOOT --> EXEC[Registry-driven executor]
 
@@ -41,8 +41,7 @@ flowchart TD
    capability, not merely a declared preference.
 
 3. **Planning.** The planner walks the canonical stage order and, for each stage,
-   marks it enabled (its `stages.*` flag is on and it is implemented), skipped
-   (disabled), or unimplemented (a reserved slot). The plan is written to provenance
+   records whether its `stages.*` flag is enabled or disabled. The plan is written to provenance
    before execution.
 
 4. **Bootstrapping.** The run bootstrapper creates the standardized run directory

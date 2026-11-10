@@ -10,6 +10,7 @@ from cellquorum.config.cohort import resolve_cohort_key
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.stages.comparative.enrichment.config import default_enrichment_methods
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -34,7 +35,9 @@ class EnrichmentStage(MethodDispatchStage):
         config = getattr(context, "config", None)
 
         # Organism is always bridged (gene-set fetches are species-specific).
-        organism = getattr(config, "organism", None)
+        organism = getattr(getattr(config, "project", None), "organism", None) or getattr(
+            config, "organism", None
+        )
         if organism is not None and not augmented.get("organism"):
             augmented["organism"] = organism
 
@@ -60,16 +63,11 @@ class EnrichmentStage(MethodDispatchStage):
                 augmented["paired"] = bool(getattr(design, "paired", False))
 
         if not augmented.get("methods") and "method" not in augmented:
-            augmented["methods"] = [
-                {"method": "gsea"},
-                {"method": "ora"},
-                {"method": "gsva"},
-                {"method": "activity"},
-            ]
-            # One switch: DE split by cell type (differential_expression.cell_type_col) is what
-            # writes the per-cell-type table, so it is also what asks for its enrichment.
-            if getattr(getattr(config, "differential_expression", None), "cell_type_col", None):
-                augmented["methods"].insert(1, {"method": "gsea_by_cell_type"})
+            augmented["methods"] = default_enrichment_methods(
+                by_cell_type=bool(
+                    getattr(getattr(config, "differential_expression", None), "cell_type_col", None)
+                )
+            )
 
         return augmented
 

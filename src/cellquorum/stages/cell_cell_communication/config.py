@@ -78,6 +78,8 @@ class CellCellCommunicationConfig(StrictBaseModel):
     nichenet_n_cores: int | None = None
     nichenet_timeout_seconds: int = 7200
     # MultiNicheNet-specific (AJ's validated defaults)
+    # Optional populations defining the paired eligibility cohort for this method.
+    mnn_cell_types: list[str] = []
     mnn_fraction_cutoff: float = 0.05
     mnn_min_sample_prop: float = 0.5
     mnn_logfc_threshold: float = 0.5

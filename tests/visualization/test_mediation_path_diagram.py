@@ -77,12 +77,11 @@ def test_one_panel_per_group_in_the_order_given() -> None:
     ]
 
 
-def test_the_proportion_mediated_is_never_drawn() -> None:
-    assert "roportion" not in _all_text(_draw())
-
-
-def test_only_a_significant_indirect_effect_is_emphasised_and_starred() -> None:
+def test_path_diagram_emphasises_significant_indirect_effects() -> None:
     fig = _draw()
+
+    assert "roportion" not in _all_text(fig)
+
     acme = _texts(fig, "acme|")
     assert acme["acme|Structural"].get_text().endswith("**")
     assert not acme["acme|Inflamed"].get_text().endswith("*")

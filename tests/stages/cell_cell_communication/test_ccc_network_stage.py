@@ -4,7 +4,6 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.cell_cell_communication.network.stage import CCCNetworkStage
 
 
@@ -56,28 +55,18 @@ def _adata():
     return a
 
 
-def test_both_methods_registered():
-    assert METHOD_REGISTRY.has("ccc_network", "topology")
-    assert METHOD_REGISTRY.has("ccc_network", "ricci")
-
-
 def test_stage_default_injects_both_methods():
     stage = CCCNetworkStage()
     aug = stage._augment_config(_Ctx.__new__(_Ctx), {})  # design bridge tolerates missing config
     assert [m["method"] for m in aug["methods"]] == ["topology", "ricci"]
 
 
-def test_stage_runs_topology_end_to_end(tmp_path):
-    a = _adata()
-    ctx = _Ctx(tmp_path, a)
-    result = CCCNetworkStage().run(ctx)
-    # Topology always produces output; ricci may skip if dep absent (recorded as warning).
-    assert "ccc_network" in result.adata.uns
-    assert "topology" in result.adata.uns["ccc_network"]
-
-
-def test_stage_determinism(tmp_path):
+def test_topology_runs_end_to_end_and_reproduces_the_cci_table(tmp_path):
     r1 = CCCNetworkStage().run(_Ctx(tmp_path / "a", _adata()))
+    # Topology always produces output; ricci may skip if dep absent (recorded as warning).
+    assert "ccc_network" in r1.adata.uns
+    assert "topology" in r1.adata.uns["ccc_network"]
+
     r2 = CCCNetworkStage().run(_Ctx(tmp_path / "b", _adata()))
     t1 = r1.adata.uns["ccc_network"]["topology"]["cci"]
     t2 = r2.adata.uns["ccc_network"]["topology"]["cci"]
@@ -250,7 +239,7 @@ def test_an_explicit_stage_sample_col_still_wins_over_the_cohort_block():
     assert aug["sample_col"] == "library"
 
 
-def test_comparative_runs_when_obs_names_the_sample_column_sample_id(tmp_path):
+def test_comparative_cci_and_gene_topology_resolve_the_cohort_sample_id(tmp_path):
     """The LEC failure, end to end: comparative output exists and nothing warns."""
     a = _adata_with_sample_id()
     ctx = _Ctx(tmp_path, a)
@@ -263,6 +252,9 @@ def test_comparative_runs_when_obs_names_the_sample_column_sample_id(tmp_path):
     joined = " ".join(result.warnings)
     assert "comparative CCC skipped" not in joined
     assert "an arm is empty" not in joined
+
+    assert (tmp_path / "results" / "ccc_network" / "topology_gci.csv").exists()
+    assert "gci_max_edges" not in " ".join(result.warnings)
 
 
 def test_gci_over_the_cap_warns_and_says_cci_still_ran(tmp_path):
@@ -289,18 +281,6 @@ def test_gci_over_the_cap_warns_and_says_cci_still_ran(tmp_path):
     # CCI is unaffected; GCI produced no table.
     assert (tmp_path / "results" / "ccc_network" / "topology_cci.csv").exists()
     assert not (tmp_path / "results" / "ccc_network" / "topology_gci.csv").exists()
-
-
-def test_gci_under_the_cap_computes_and_does_not_warn(tmp_path):
-    """The complement: a cohort inside the cap gets its gene-channel table silently."""
-    a = _adata_with_sample_id()
-    ctx = _Ctx(tmp_path, a)
-    ctx.config.cohort = _Cohort()
-
-    result = CCCNetworkStage().run(ctx)
-
-    assert (tmp_path / "results" / "ccc_network" / "topology_gci.csv").exists()
-    assert "gci_max_edges" not in " ".join(result.warnings)
 
 
 def test_unresolvable_design_warns_instead_of_noting(tmp_path):

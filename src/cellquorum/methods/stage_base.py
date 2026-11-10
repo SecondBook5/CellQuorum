@@ -17,6 +17,7 @@ from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.registry import METHOD_REGISTRY, MethodRegistry
 
 if TYPE_CHECKING:
+    from cellquorum.config.models import CellQuorumConfig
     from cellquorum.core.context import PipelineContext
 
 
@@ -47,6 +48,29 @@ class MethodDispatchStage(ABC):
     def _select_method_name(self, config: dict) -> str:
         """Return the configured method name for this stage from the run config."""
 
+    def planned_methods(self, config: CellQuorumConfig) -> list[str]:
+        """Resolve the same configured methods and defaults used by this stage at run time."""
+        from cellquorum.core.context import PipelineContext, PipelinePaths
+        from cellquorum.methods.context_access import resolve_stage_config
+
+        context = PipelineContext(
+            config=config, paths=PipelinePaths.from_output_dir(config.paths.output_dir or ".")
+        )
+        settings = resolve_stage_config(context, self.name)
+        # Scalar methods and explicit method lists are fully specified without data.
+        # A few stages use the input graph to configure the method during execution.
+        if not settings.get("method") and not settings.get("methods"):
+            settings = self._resolved_settings(context)
+        entries = settings.get("methods") or [settings]
+        return [self._select_method_name({**settings, **entry}) for entry in entries]
+
+    def _resolved_settings(self, context: PipelineContext) -> dict:
+        from cellquorum.methods.context_access import resolve_stage_config
+
+        return self._augment_config(
+            context, _apply_cohort_overlay(context, resolve_stage_config(context, self.name))
+        )
+
     def run(self, context: PipelineContext) -> StageResult:
         """
         Resolve and execute the configured method, or a list of methods.
@@ -67,18 +91,7 @@ class MethodDispatchStage(ABC):
         # Pull the active AnnData off the context.
         adata = context.require_adata()
 
-        from cellquorum.methods.context_access import resolve_stage_config
-
-        stage_config = resolve_stage_config(context, self.name)
-
-        # Overlay the central cohort schema so structural obs keys are declared
-        # once and every dispatched method sees the resolved values.
-        stage_config = _apply_cohort_overlay(context, stage_config)
-
-        # Let a stage inject additional resolved keys (e.g. the DE stage bridges
-        # the experimental-design block into case/control). Default is a no-op,
-        # so every other stage behaves exactly as before.
-        stage_config = self._augment_config(context, stage_config)
+        stage_config = self._resolved_settings(context)
 
         # Honor the enabled flag: if disabled, return a recorded skip.
         if not stage_config.get("enabled", True):
@@ -186,6 +199,7 @@ class MethodDispatchStage(ABC):
                         "method": method_name,
                         "skipped": True,
                         "reason": outcome.reason,
+                        "details": dict(outcome.details),
                     }
                 )
                 continue
@@ -196,7 +210,13 @@ class MethodDispatchStage(ABC):
             notes.extend(outcome.notes)
             warnings.extend(outcome.warnings)
             artifacts.extend(outcome.artifacts)
-            per_method_metrics.append(dict(outcome.metrics))
+            per_method_metrics.append(
+                {
+                    "method": self._select_method_name(method_config),
+                    **outcome.metrics,
+                    "artifacts": [str(artifact.path) for artifact in outcome.artifacts],
+                }
+            )
 
         # Build aggregate metrics: include per-method results, and expose the last
         # successful method's output_rep (if any) as the effective downstream key.
@@ -206,6 +226,16 @@ class MethodDispatchStage(ABC):
             "n_methods": len(methods),
             "per_method": per_method_metrics,
         }
+        if all(method.get("skipped") for method in per_method_metrics):
+            return StageResult.skipped(
+                adata=current,
+                reason="All requested methods skipped: "
+                + ", ".join(str(method["method"]) for method in per_method_metrics),
+                warnings=warnings,
+                notes=notes,
+                artifacts=artifacts,
+                metrics=aggregate_metrics,
+            )
         # If any method succeeded, carry forward the last successful method's output_rep.
         if per_method_metrics:
             last_metrics = per_method_metrics[-1]

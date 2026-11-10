@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from rich.console import Console
 from rich.panel import Panel
@@ -24,11 +28,10 @@ class RunReporter:
     progress, and final run summary. This is what makes CellQuorum announce
     itself as a polished, reusable, config-driven tool at runtime.
 
-    When verbose=False, every method is a no-op producing zero output. This is
-    load-bearing: quiet runs must be truly silent and backward-compatible.
+    When verbose=False, the console stays silent. A configured event log still records stages.
 
     Args:
-        verbose: Whether to produce output. When False, all methods are no-ops.
+        verbose: Whether to produce console output.
         level: Output detail level (quiet, normal, verbose).
         console: Optional Rich Console for testing/customization.
     """
@@ -38,8 +41,11 @@ class RunReporter:
         verbose: bool = True,
         level: str = "normal",
         console: Console | None = None,
+        event_log: Path | None = None,
     ) -> None:
         """Initialize the RunReporter."""
+        self._event_log = event_log
+        self._attempt = uuid4().hex
         # Store the verbosity flag.
         self._verbose = verbose
 
@@ -191,6 +197,19 @@ class RunReporter:
 
         self._console.print(table)
 
+    def _record_event(self, stage: str, status: str) -> None:
+        """Close each line before the next computation so abrupt exits remain visible."""
+        if self._event_log is None:
+            return
+        event = {
+            "attempt": self._attempt,
+            "time_utc": datetime.now(UTC).isoformat(),
+            "stage": stage,
+            "status": status,
+        }
+        with self._event_log.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(event) + "\n")
+
     def stage_start(self, name: str, index: int, total: int) -> None:
         """
         Announce the start of a stage.
@@ -200,6 +219,7 @@ class RunReporter:
             index: Stage index (1-based).
             total: Total number of stages.
         """
+        self._record_event(name, "started")
         # Early return when not verbose or quiet.
         if not self._verbose or self._level == "quiet":
             return
@@ -221,6 +241,7 @@ class RunReporter:
         Args:
             record: Stage execution record with status, timing, and metadata.
         """
+        self._record_event(record.stage_name, record.status)
         # Early return when not verbose or quiet.
         if not self._verbose or self._level == "quiet":
             return

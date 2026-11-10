@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
-from pathlib import Path
+from collections.abc import Mapping
+from pathlib import Path, PureWindowsPath
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, TypeAdapter, field_validator, model_validator
 
 from cellquorum.config.base import StrictBaseModel
 from cellquorum.config.cohort import CohortConfig
@@ -131,6 +133,7 @@ class PathConfig(StrictBaseModel):
 
     scratch_root: Path | None = None
 
+    relative_to_config: bool = False
     manifest: Path | None = None
 
     output_dir: Path | None = None
@@ -371,6 +374,12 @@ class InputConfig(StrictBaseModel):
         return cleaned
 
 
+_RETIRED_STAGES = {
+    "integration_gate": "Use integration_benchmark to compare embeddings.",
+    "molecular_inference": "For pathway or TF activity, select method 'activity' under enrichment.",
+}
+
+
 class RunConfig(StrictBaseModel):
     """
     Store run-level execution settings.
@@ -445,6 +454,47 @@ class RunConfig(StrictBaseModel):
     # is attempted, all failures are recorded, and a later resume rerun only
     # re-executes the stages that failed.
     continue_on_stage_failure: bool = False
+
+    # Optional promises made by a workflow, keyed by the producing stage. Paths are
+    # relative to this run's output directory. This also covers multi-method stages
+    # where one method can finish while a required figure from another is missing.
+    study_questions: list[
+        Literal[
+            "populations", "differences", "communication", "regulation", "lineage", "perturbation"
+        ]
+    ] = Field(default_factory=list)
+    question_omissions: dict[str, str] = Field(default_factory=dict)
+    method_omissions: dict[str, str] = Field(default_factory=dict)
+    sensitivity_analysis: bool = False
+    lineage_rationale: str | None = None
+    require_selected_methods: bool = False
+    required_outputs: dict[str, list[str]] = Field(default_factory=dict)
+
+    # Optional study-specific explanation shown when a catalog stage is switched off.
+    disabled_stage_reasons: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("disabled_stage_reasons")
+    @classmethod
+    def drop_retired_stage_reasons(cls, reasons: dict[str, str]) -> dict[str, str]:
+        return {stage: reason for stage, reason in reasons.items() if stage not in _RETIRED_STAGES}
+
+    @field_validator("required_outputs")
+    @classmethod
+    def validate_output_paths(cls, groups: dict[str, list[str]]) -> dict[str, list[str]]:
+        for stage, names in groups.items():
+            if not names:
+                raise ValueError(f"run.required_outputs.{stage} needs at least one file")
+            for name in names:
+                path = Path(name)
+                if (
+                    not name.strip()
+                    or path == Path(".")
+                    or ".." in path.parts
+                    or PureWindowsPath(name).anchor
+                    or "\\" in name
+                ):
+                    raise ValueError(f"Expected a relative output file beneath the run: {name!r}")
+        return groups
 
     @field_validator("random_seed")
     @classmethod
@@ -728,6 +778,20 @@ class ClusteringConfig(StrictBaseModel):
     resolution_diagnostic: ResolutionDiagnosticConfig = ResolutionDiagnosticConfig()
 
 
+def omit_retired_stage_flags(flags: Mapping[str, object]) -> dict[str, object]:
+    """Read older configurations without advertising or substituting a retired stage."""
+    current = dict(flags)
+    for name in sorted(_RETIRED_STAGES.keys() & flags.keys()):
+        if TypeAdapter(bool).validate_python(current.pop(name)):
+            warnings.warn(
+                f"Ignoring retired stages.{name}. It never had an implementation. "
+                f"{_RETIRED_STAGES[name]}",
+                UserWarning,
+                stacklevel=3,
+            )
+    return current
+
+
 class StageSelectionConfig(StrictBaseModel):
     """
     Store high-level stage enablement flags.
@@ -758,7 +822,6 @@ class StageSelectionConfig(StrictBaseModel):
         coexpression: Whether co-expression (hdWGCNA) is enabled.
         grn: Whether GRN (pySCENIC) regulon inference is enabled.
         perturbation: Whether in-silico perturbation (CellOracle) is enabled.
-        molecular_inference: Whether molecular inference is enabled.
         cell_cell_communication: Whether communication analysis is enabled.
         network_analysis: Whether network analysis is enabled.
     """
@@ -803,8 +866,6 @@ class StageSelectionConfig(StrictBaseModel):
     reference_mapping: bool = False
 
     integration_benchmark: bool = False
-
-    integration_gate: bool = False
 
     population_identity: bool = True
 
@@ -864,8 +925,6 @@ class StageSelectionConfig(StrictBaseModel):
 
     trajectory_viz: bool = True
 
-    molecular_inference: bool = True
-
     cell_cell_communication: bool = True
 
     network_analysis: bool = True
@@ -873,6 +932,13 @@ class StageSelectionConfig(StrictBaseModel):
     multicellular_programs: bool = True
 
     module_remodeling: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_legacy_flags(cls, data: object) -> object:
+        if isinstance(data, Mapping):
+            return omit_retired_stage_flags(data)
+        return data
 
 
 class CellQuorumConfig(StrictBaseModel):

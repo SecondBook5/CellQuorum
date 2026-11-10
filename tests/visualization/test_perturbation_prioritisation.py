@@ -48,14 +48,20 @@ def _point(fig, panel, gid):
     return next(c for c in _axis(fig, panel).collections if c.get_gid() == gid)
 
 
-def test_rows_run_from_the_largest_distance_down() -> None:
-    fig = perturbation_prioritisation(_scdist(), _augur())
+def test_prioritisation_reports_ranked_distances_aucs_and_permutation_nulls() -> None:
+    fig = perturbation_prioritisation(_scdist(), _augur(), alpha=0.05)
+
     labels = [t.get_text() for t in _axis(fig, "scdist").get_yticklabels()]
     assert labels == ["LEC", "Fibroblasts", "DC", "B cells"]
 
+    gids = {c.get_gid() for c in _axis(fig, "augur").collections}
+    assert "auc|B cells" not in gids
+    assert "auc|LEC" in gids
+    notes = [t.get_text() for t in _axis(fig, "augur").texts]
+    assert any("not run" in s for s in notes)
 
-def test_a_distance_that_does_not_clear_alpha_is_an_open_marker() -> None:
-    fig = perturbation_prioritisation(_scdist(), _augur(), alpha=0.05)
+    assert {c.get_gid() for c in _axis(fig, "augur").collections} >= {"null|LEC", "null|DC"}
+
     fig.canvas.draw()
     sig = _point(fig, "scdist", "dist|LEC")
     ns = _point(fig, "scdist", "dist|DC")
@@ -66,20 +72,6 @@ def test_a_distance_that_does_not_clear_alpha_is_an_open_marker() -> None:
 def test_without_augur_there_is_only_the_distance_panel() -> None:
     fig = perturbation_prioritisation(_scdist())
     assert {ax.get_label() for ax in fig.axes if ax.get_label()} == {"scdist"}
-
-
-def test_a_population_augur_did_not_run_is_blank_not_an_auc_of_one_half() -> None:
-    fig = perturbation_prioritisation(_scdist(), _augur())
-    gids = {c.get_gid() for c in _axis(fig, "augur").collections}
-    assert "auc|B cells" not in gids
-    assert "auc|LEC" in gids
-    notes = [t.get_text() for t in _axis(fig, "augur").texts]
-    assert any("not run" in s for s in notes)
-
-
-def test_the_permutation_null_is_drawn_beside_each_auc() -> None:
-    fig = perturbation_prioritisation(_scdist(), _augur())
-    assert {c.get_gid() for c in _axis(fig, "augur").collections} >= {"null|LEC", "null|DC"}
 
 
 def test_the_highlighted_population_is_bold() -> None:

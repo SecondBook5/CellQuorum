@@ -107,3 +107,10 @@ def test_gsea_figures_name_the_score_and_the_direction_of_its_sign(tmp_path, mon
 
     assert "Normalised enrichment score" in seen["label"]
     assert "Lymphedema" in seen["label"] and "Normal" in seen["label"]
+
+
+def test_pooled_gsea_figures_do_not_read_a_per_cell_type_table(tmp_path):
+    ctx = _context(tmp_path)
+    _write_gsea_csv(ctx.paths, "hallmark_by_cell_type")
+    result = GseaVizMethod()._run(ctx.adata, {}, ctx)
+    assert isinstance(result, MethodSkip)

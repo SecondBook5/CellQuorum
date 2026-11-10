@@ -108,7 +108,8 @@ r:
     assert "qc_evidence" in result.stdout
 
     # Confirm an advanced gated capability appears in the plan output.
-    assert "molecular_inference" in result.stdout
+    assert "enrichment" in result.stdout
+    assert "molecular_inference" not in result.stdout
 
     # Confirm the backend status table appears.
     assert "CellQuorum backend status" in result.stdout

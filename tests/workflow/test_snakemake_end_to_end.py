@@ -10,7 +10,6 @@ from __future__ import annotations
 import csv
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +23,6 @@ from cellquorum.datasets.demo import write_demo_project
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.slow,
-    pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake is not installed"),
 ]
 
 SCAFFOLD_METHODS = [
@@ -48,6 +46,7 @@ STAGES_THE_DEMO_CANNOT_RUN = [
 
 @pytest.fixture(scope="module")
 def workflow_run(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    pytest.importorskip("snakemake", minversion="8")
     root = tmp_path_factory.mktemp("snakemake_e2e")
     data_path, demo_config_path = write_demo_project(root / "demo")
 
@@ -74,6 +73,8 @@ def workflow_run(tmp_path_factory: pytest.TempPathFactory) -> dict:
     workdir = root / "out"
     result = subprocess.run(
         [
+            sys.executable,
+            "-m",
             "snakemake",
             "--snakefile",
             str(REPO_ROOT / "workflow" / "Snakefile"),

@@ -8,9 +8,13 @@ no config objects, no biological literals.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.text import Text
 
 from cellquorum.visualization import figstyle
 
@@ -18,6 +22,52 @@ _QUAD_RED = "#FFE4E6"
 _QUAD_BLUE = "#E6F0FF"
 _AMBIENT_EDGE = "#7A7A7A"
 _HIGHLIGHT_COLOR = "#FFD700"  # gold: high-contrast against both case/control reds/blues
+
+
+def _spread_crowded_labels(ax: Axes, texts: list[Text]) -> bool:
+    """Give densely overlapping gene names separate rows and connect them to their points."""
+    if len(texts) < 4:
+        return False
+    boxes = [t.get_window_extent() for t in texts]
+    if not any(box.count_overlaps(boxes) >= 4 for box in boxes):
+        return False
+
+    sides = [[t for t in texts if (t.get_position()[0] < 0) == left] for left in (True, False)]
+    # Reserve the bottom of the panel for the count legend; measure row spacing in points.
+    low, high = 0.15, 0.975
+    fig = ax.get_figure()
+    assert isinstance(fig, Figure)
+    height = max(
+        fig.get_figheight(),
+        10 * max(map(len, sides)) / (72 * ax.get_position().height * (high - low)),
+    )
+    fig.set_figheight(height)
+    gap = 10 / (72 * height * ax.get_position().height)
+    for left, group in zip((True, False), sides, strict=True):
+        group.sort(key=lambda t: (t.get_position()[1], -abs(t.get_position()[0]), t.get_text()))
+        rows = np.arange(len(group)) * gap
+        desired = [np.clip(t.get_position()[1] / ax.get_ylim()[1], low, high) for t in group]
+        # Keep labels near their point while enforcing spacing in vertical rank order.
+        slots = (
+            np.minimum(np.maximum.accumulate(desired - rows), high - gap * (len(group) - 1)) + rows
+        )
+        for text, slot in zip(group, slots, strict=True):
+            ax.annotate(
+                text.get_text(),
+                xy=text.get_position(),
+                xytext=(0.015 if left else 0.985, slot),
+                textcoords="axes fraction",
+                ha="left" if left else "right",
+                va="center",
+                fontsize=text.get_fontsize(),
+                fontweight=text.get_fontweight(),
+                fontstyle=text.get_fontstyle(),
+                color=text.get_color(),
+                bbox={"fc": "white", "ec": "none", "alpha": 0.85, "pad": 0.6},
+                arrowprops={"arrowstyle": "-", "lw": 0.4, "color": "0.5"},
+            )
+            text.remove()
+    return True
 
 
 def volcano(
@@ -174,18 +224,23 @@ def volcano(
                 color=color,
             )
         )
-    try:
-        from adjustText import adjust_text
+    ax.set_xlim(-x_lim, x_lim)
+    ax.set_ylim(0, y_lim)
+    if texts and not _spread_crowded_labels(ax, texts):
+        try:
+            from adjustText import adjust_text
 
-        adjust_text(
-            texts,
-            ax=ax,
-            arrowprops={"arrowstyle": "-", "color": "gray", "lw": 0.3, "alpha": 0.5},
-            expand_points=(1.5, 1.5),
-            force_text=(0.5, 0.5),
-        )
-    except Exception:  # noqa: BLE001 — adjustText optional; plain labels are fine
-        pass
+            adjust_text(
+                texts,
+                ax=ax,
+                arrowprops={"arrowstyle": "-", "color": "gray", "lw": 0.3, "alpha": 0.5},
+                expand_points=(1.5, 1.5),
+                force_text=(0.5, 0.5),
+            )
+        except ImportError:
+            pass
+        except Exception as exc:
+            warnings.warn(f"Could not adjust volcano labels: {exc}", stacklevel=2)
 
     stats_text = f"FDR<{fdr_cut} & |log2FC|>{fc_cut}:\n  {n_up} up, {n_down} down"
     ax.text(
@@ -198,8 +253,6 @@ def volcano(
         bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
     )
 
-    ax.set_xlim(-x_lim, x_lim)
-    ax.set_ylim(0, y_lim)
     ax.set_xlabel(x_label, fontsize=11)
     ax.set_ylabel("-log10(FDR)", fontsize=11)
     ax.spines["top"].set_visible(False)

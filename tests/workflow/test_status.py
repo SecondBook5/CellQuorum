@@ -91,3 +91,20 @@ def test_csv_has_header() -> None:
     rows = [{"hypothesis": "h", "cell_type": "KC", "method": "m", "status": "succeeded"}]
     csv = matrix_to_csv(rows)
     assert csv.splitlines()[0] == "hypothesis,cell_type,method,status"
+
+
+def test_progeny_success_requires_its_own_recorded_table():
+    enrichment = {
+        "stage_name": "enrichment",
+        "status": "success",
+        "output_artifacts": [{"path": "results/enrichment_gsea_hallmark.csv"}],
+    }
+    assert method_status([enrichment], ["progeny"])["progeny"] == "incomplete"
+    enrichment["output_artifacts"].append({"path": "results/enrichment_activity_progeny.csv"})
+    assert method_status([enrichment], ["progeny"])["progeny"] == "succeeded"
+    assert (
+        method_status(
+            [enrichment, {"stage_name": "molecular_inference", "status": "skipped"}], ["progeny"]
+        )["progeny"]
+        == "skipped"
+    )

@@ -57,15 +57,10 @@ def _labels(fig) -> list[str]:
 # --- ligand_activity_ranking -------------------------------------------------------------
 
 
-def test_rows_are_the_top_n_best_first_with_their_rank() -> None:
-    fig = ligand_activity_ranking(_activities(), top_n=3)
-    assert _labels(fig) == ["TGFB1  (1)", "IL1B  (2)", "TNF  (3)"]
-
-
-def test_the_pool_percentiles_are_over_every_ligand_not_the_drawn_rows() -> None:
-    """Drawing p50 of the top three would make every panel's reference line meaningless."""
+def test_top_ligands_are_ranked_against_the_full_pool() -> None:
     activities = _activities()
     fig = ligand_activity_ranking(activities, top_n=3)
+    assert _labels(fig) == ["TGFB1  (1)", "IL1B  (2)", "TNF  (3)"]
     # A reference line is two points at one x; a lollipop marker is one point, and a
     # lollipop stem is two points at two x values.
     lines = [
@@ -79,13 +74,9 @@ def test_the_pool_percentiles_are_over_every_ligand_not_the_drawn_rows() -> None
     assert not any(abs(x - 0.24) < 1e-9 for x in lines)
 
 
-def test_the_notes_say_how_many_of_how_many_were_drawn() -> None:
-    fig = ligand_activity_ranking(_activities(60), top_n=5)
-    assert "top 5 of 60 ligands tested" in _notes(fig)
-
-
-def test_the_notes_refuse_to_call_the_percentiles_a_threshold() -> None:
-    notes = _notes(ligand_activity_ranking(_activities(), top_n=5))
+def test_ranking_notes_identify_the_pool_and_explain_the_percentiles() -> None:
+    notes = _notes(ligand_activity_ranking(_activities(60), top_n=5))
+    assert "top 5 of 60 ligands tested" in notes
     assert "no p-value" in notes
     assert "not a significance threshold" in notes
 
@@ -175,9 +166,10 @@ def test_the_caller_order_is_honoured_and_footnoted() -> None:
     assert "in the order given, by ligand activity" in _notes(fig)
 
 
-def test_without_a_supplied_order_the_note_denies_it_is_the_activity_ranking() -> None:
+def test_default_sender_grid_explains_its_order_and_colour() -> None:
     notes = _notes(sender_attribution_grid(_expression()))
     assert "not by ligand activity" in notes
+    assert "Colour is expression, not activity" in notes
 
 
 def test_a_missing_pair_is_grey_not_zero() -> None:
@@ -209,10 +201,6 @@ def test_the_expressed_flag_is_used_when_no_threshold_is_given() -> None:
 def test_the_cells_per_sender_are_stated() -> None:
     notes = _notes(sender_attribution_grid(_expression(), senders=["Fib", "Mac"]))
     assert "Fib 2,000" in notes
-
-
-def test_colour_is_declared_to_be_expression_not_activity() -> None:
-    assert "Colour is expression, not activity" in _notes(sender_attribution_grid(_expression()))
 
 
 def test_a_duplicated_pair_is_refused_rather_than_silently_resolved() -> None:
@@ -283,8 +271,13 @@ def test_the_target_cap_is_footnoted_when_it_bites() -> None:
     assert len(fig.axes[0].get_xticklabels()) == 2
 
 
-def test_the_cap_is_silent_when_it_does_not_bite() -> None:
-    assert "omitted" not in _notes(ligand_target_grid(_weights(), max_targets=40))
+def test_uncapped_target_grid_explains_the_prior_weights() -> None:
+    fig = ligand_target_grid(_weights(), max_targets=40)
+
+    assert "omitted" not in _notes(fig)
+
+    notes = _notes(fig)
+    assert "prior model, not a measured effect" in notes
 
 
 def test_curated_module_membership_is_appended_to_the_column_labels() -> None:
@@ -298,11 +291,6 @@ def test_curated_module_membership_is_appended_to_the_column_labels() -> None:
     assert "MYL9 · Actomyosin" in labels
     assert "FN1" in labels
     assert "1 of 2 target genes carry their curated-module membership" in _notes(fig)
-
-
-def test_the_note_calls_the_weights_a_prior_not_a_measurement() -> None:
-    notes = _notes(ligand_target_grid(_weights()))
-    assert "prior model, not a measured effect" in notes
 
 
 def test_target_grid_refusals() -> None:
@@ -329,13 +317,36 @@ def _two_arms() -> dict[str, pd.DataFrame]:
     return {"LEC": lec, "BEC": bec}
 
 
-def test_the_comparison_orders_by_the_distance_between_the_arms() -> None:
-    """A ligand both arms score highly is the tissue response, which is not the finding."""
+def test_ligand_activity_comparison_shows_arm_ranks_missing_candidates_and_key() -> None:
     fig = ligand_activity_arm_comparison(_two_arms())
+
     labels = [t.get_text() for t in fig.axes[0].get_yticklabels()]
     # PTK7L 0.19 (absent in BEC, so measured from zero), WNT5A 0.18, TGFB1 0.02, IL1B 0.01.
     # TGFB1 outscores WNT5A in both arms and still lands third, which is the whole point.
     assert labels == ["PTK7L †", "WNT5A", "TGFB1", "IL1B"]
+
+    ax = fig.axes[0]
+    # Rows are drawn top-down, so PTK7L (row 0 of 4) sits at y=3.
+    dots = [
+        line
+        for line in ax.get_lines()
+        if line.get_marker() == "o" and round(float(line.get_ydata()[0]), 6) == 3.0
+    ]
+    assert len(dots) == 1
+    assert abs(float(dots[0].get_xdata()[0]) - 0.19) < 1e-9
+
+    notes = _notes(fig)
+    assert "never a candidate in BEC" in notes
+    assert "not a low score" in notes
+
+    assert "no gap between two dots is a tested difference" in notes
+
+    legend = fig.axes[0].get_legend()
+    assert [t.get_text() for t in legend.get_texts()] == ["LEC", "BEC"]
+    colors = {h.get_color() for h in legend.legend_handles}
+    assert len(colors) == 2
+
+    assert "4 rows drawn of 4 ligands ranked in at least one receiver" in _notes(fig)
 
 
 def test_a_weak_single_arm_ligand_does_not_outrank_a_strong_two_arm_gap() -> None:
@@ -357,38 +368,6 @@ def test_a_weak_single_arm_ligand_does_not_outrank_a_strong_two_arm_gap() -> Non
     assert labels == ["PTK7L †", "WNT5A"]
 
 
-def test_a_ligand_never_a_candidate_in_one_arm_gets_one_dot_not_a_zero() -> None:
-    fig = ligand_activity_arm_comparison(_two_arms())
-    ax = fig.axes[0]
-    # Rows are drawn top-down, so PTK7L (row 0 of 4) sits at y=3.
-    dots = [
-        line
-        for line in ax.get_lines()
-        if line.get_marker() == "o" and round(float(line.get_ydata()[0]), 6) == 3.0
-    ]
-    assert len(dots) == 1
-    assert abs(float(dots[0].get_xdata()[0]) - 0.19) < 1e-9
-
-
-def test_the_note_calls_an_absent_ligand_a_receptor_absence_not_a_low_score() -> None:
-    notes = _notes(ligand_activity_arm_comparison(_two_arms()))
-    assert "never a candidate in BEC" in notes
-    assert "not a low score" in notes
-
-
-def test_the_comparison_refuses_to_imply_the_gap_was_tested() -> None:
-    notes = _notes(ligand_activity_arm_comparison(_two_arms()))
-    assert "no gap between two dots is a tested difference" in notes
-
-
-def test_the_two_arms_are_different_colours_and_named_in_the_legend() -> None:
-    fig = ligand_activity_arm_comparison(_two_arms())
-    legend = fig.axes[0].get_legend()
-    assert [t.get_text() for t in legend.get_texts()] == ["LEC", "BEC"]
-    colors = {h.get_color() for h in legend.legend_handles}
-    assert len(colors) == 2
-
-
 def test_a_supplied_ligand_order_is_honoured_and_footnoted() -> None:
     fig = ligand_activity_arm_comparison(
         _two_arms(), ligands=["IL1B", "TGFB1"], order_label="the manuscript's order"
@@ -406,12 +385,6 @@ def test_a_highlighted_ligand_in_no_arm_is_footnoted_not_invented() -> None:
     fig = ligand_activity_arm_comparison(_two_arms(), highlight=["GHOST"])
     assert "GHOST" not in " ".join(t.get_text() for t in fig.axes[0].get_yticklabels())
     assert "ranked in no receiver" in _notes(fig)
-
-
-def test_the_notes_count_the_pool_across_both_arms() -> None:
-    assert "4 rows drawn of 4 ligands ranked in at least one receiver" in _notes(
-        ligand_activity_arm_comparison(_two_arms())
-    )
 
 
 def test_the_pool_count_is_not_read_as_the_number_ranked() -> None:

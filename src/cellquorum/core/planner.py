@@ -11,6 +11,7 @@ from cellquorum.backends.registry import (
     build_default_backend_registry,
 )
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.core.exceptions import CellQuorumConfigError
 
 StagePlanStatus = Literal["enabled", "disabled"]
 
@@ -38,6 +39,9 @@ class PlannedStage:
     status: StagePlanStatus
 
     reason: str
+    methods: tuple[str, ...] = ()
+    expected_outputs: tuple[str, ...] = ()
+    required_inputs: tuple[str, ...] = ()
 
 
 @dataclass
@@ -63,6 +67,7 @@ class PipelinePlan:
     backend_status_table: list[BackendStatusRow] = field(default_factory=list)
 
     warnings: list[str] = field(default_factory=list)
+    blockers: list[str] = field(default_factory=list)
 
     def enabled_stage_names(self) -> list[str]:
         """
@@ -99,6 +104,9 @@ class PipelinePlan:
                 "enabled": stage.enabled,
                 "status": stage.status,
                 "reason": stage.reason,
+                "methods": list(stage.methods),
+                "expected_outputs": list(stage.expected_outputs),
+                "required_inputs": list(stage.required_inputs),
             }
             for stage in self.stages
         ]
@@ -108,6 +116,7 @@ class PipelinePlan:
             "stages": stage_rows,
             "backend_status_table": self.backend_status_table,
             "warnings": list(self.warnings),
+            "blockers": list(self.blockers),
         }
 
 
@@ -161,13 +170,28 @@ class PipelinePlanner:
 
         # Build planned stages from stage configuration.
         stages = self._build_stage_plan()
+        unavailable = self.config.run.required_outputs.keys() - {
+            s.name for s in stages if s.enabled
+        }
+        if unavailable:
+            raise CellQuorumConfigError(
+                f"run.required_outputs names unknown or disabled stages: {sorted(unavailable)}"
+            )
 
         # Build backend status rows for planner/report output.
         backend_status_table = self.backend_registry.to_status_table()
 
         warnings = self._build_warnings()
 
+        blockers = []
+        if self.config.run.require_selected_methods:
+            from cellquorum.core.study_preflight import study_blockers
+
+            blockers = study_blockers(
+                self.config, {s.name: list(s.methods) for s in stages if s.enabled}
+            )
         return PipelinePlan(
+            blockers=blockers,
             profile=self.config.run.profile,
             stages=stages,
             backend_status_table=backend_status_table,
@@ -184,31 +208,92 @@ class PipelinePlanner:
 
         from cellquorum.core.stages import all_stage_specs
 
-        # (stage_name, enabled?) in canonical order. Order and flag wiring live
-        # in the stage catalog (@register_stage); see core/stages.py for the
-        # ordering rationale. ccc_network's flag is `network_analysis`.
-        stage_flags = [
-            (spec.name, getattr(self.config.stages, spec.config_flag)) for spec in all_stage_specs()
-        ]
+        specs = all_stage_specs()
+        reasons = self.config.run.disabled_stage_reasons
+        unknown = reasons.keys() - {spec.name for spec in specs}
+        if unknown:
+            raise CellQuorumConfigError(
+                f"Unknown stages in run.disabled_stage_reasons: {sorted(unknown)}"
+            )
 
         planned_stages: list[PlannedStage] = []
 
-        for stage_name, enabled in stage_flags:
+        for spec in specs:
+            stage_name = spec.name
+            enabled = getattr(self.config.stages, spec.config_flag)
             status: StagePlanStatus = "enabled" if enabled else "disabled"
 
             reason = (
                 "Enabled by configuration. Method gates will decide whether this stage "
                 "actually runs on the dataset."
                 if enabled
-                else "Disabled by configuration."
+                else reasons.get(stage_name) or "Disabled by configuration."
             )
 
+            if enabled and self.config.run.study_questions:
+                families = {
+                    "cell_cell_communication": "Communication across populations",
+                    "ccc_viz": "Communication figures",
+                    "grn": "Transcriptional regulation",
+                    "trajectory": "Lineage ordering and fate",
+                    "trajectory_viz": "Lineage figures",
+                    "differential_expression": "Replicate-level changes within populations",
+                    "differential_abundance": "Replicate-level population proportions",
+                    "enrichment": "Gene-program and regulatory activity",
+                    "integration_benchmark": "Batch mixing and cell-type preservation",
+                    "population_identity": "Population identity and supporting evidence",
+                }
+                reason = families.get(stage_name, "Study preparation or supporting analysis") + "."
+                if stage_name == "cell_cell_communication":
+                    for method, omission in self.config.run.method_omissions.items():
+                        reason += f" {method} omitted. {omission}"
+
+            methods: tuple[str, ...] = ()
+            if enabled and spec.config_field:
+                from cellquorum.methods.stage_base import MethodDispatchStage
+
+                settings = getattr(self.config, spec.config_field)
+                stage = spec.factory() if spec.factory is not None else None
+                if isinstance(stage, MethodDispatchStage):
+                    methods = tuple(stage.planned_methods(self.config))
+                elif getattr(settings, "method", None):
+                    methods = (str(settings.method),)
+            required_inputs = []
+            stage_inputs = {
+                "qc_evidence": "Raw counts with gene identifiers and library metadata",
+                "differential_expression": "Raw counts and a replicated case/control design",
+                "differential_abundance": "Population labels and biological replicate IDs",
+                "grn": "Count layer, organism TF list, motif annotations and cisTarget rankings",
+                "reference_mapping": "Labeled reference atlas and count-bearing query",
+                "integration_benchmark": (
+                    "Baseline and integrated embeddings, batch and biological labels"
+                ),
+            }
+            method_inputs = {
+                "liana": "Population labels, library IDs and expression",
+                "tensor_c2c": "Per-library LIANA scores and sufficient eligible contexts",
+                "nichenet": "Named receiver, receiver differential expression and NicheNet priors",
+                "multinichenet": (
+                    "Replicated contrast, raw counts and NicheNet ligand and receptor priors"
+                ),
+                "activity": ("Log expression, population labels and a weighted prior"),
+                "dpt": "Neighbor representation and a biological root",
+                "velocity": ("Splice counts, looms, or annotated Cell Ranger BAMs"),
+                "palantir": "A diffusion representation and a biological root",
+            }
+            if enabled:
+                if stage_name in stage_inputs:
+                    required_inputs.append(stage_inputs[stage_name])
+                required_inputs.extend(method_inputs[m] for m in methods if m in method_inputs)
             planned_stages.append(
                 PlannedStage(
                     name=stage_name,
                     enabled=enabled,
                     status=status,
                     reason=reason,
+                    methods=methods,
+                    required_inputs=tuple(required_inputs),
+                    expected_outputs=tuple(self.config.run.required_outputs.get(stage_name, [])),
                 )
             )
 

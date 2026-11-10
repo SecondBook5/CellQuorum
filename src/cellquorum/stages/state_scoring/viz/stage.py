@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 _VIZ_CONFIG_KEYS = (
     "enabled",
     "score_source",
+    "descriptive",
     "programs",
     "cluster_key",
     "cluster_labels",

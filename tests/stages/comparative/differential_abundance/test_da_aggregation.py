@@ -24,58 +24,17 @@ def _adata():
     return a
 
 
-def test_aggregate_celltype_counts_shape_and_totals():
-    """Test basic aggregation shape, cell counts, and condition recording."""
-    a = _adata()
+def test_aggregate_celltype_counts_preserves_each_samples_counts_and_design():
     res = aggregate_celltype_counts(
-        a, donor_col="patient_id", condition_col="condition", cell_type_col="cell_type"
+        _adata(), donor_col="patient_id", condition_col="condition", cell_type_col="cell_type"
     )
-    # 2 donors x 2 conditions = up to 4 samples; 2 cell types.
+    assert res.counts.index.equals(res.sample_meta.index)
+    assert set(res.counts.index) == {"d1_Normal", "d1_LE", "d2_Normal", "d2_LE"}
     assert set(res.counts.columns) == {"Tcell", "Fib"}
-    assert res.counts.values.sum() == 12
-    # Each sample's condition is recorded.
-    assert set(res.sample_meta["condition"]).issubset({"Normal", "LE"})
-
-
-def test_aggregate_celltype_counts_row_sums():
-    """Test that row sums match cell counts per sample."""
-    a = _adata()
-    res = aggregate_celltype_counts(
-        a, donor_col="patient_id", condition_col="condition", cell_type_col="cell_type"
-    )
-    # Each sample's row sum should match the number of cells in that sample
-    # d1, Normal: 3 cells; d1, LE: 3 cells; d2, Normal: 3 cells; d2, LE: 3 cells
-    expected_totals = {
-        "d1_Normal": 3,
-        "d1_LE": 3,
-        "d2_Normal": 3,
-        "d2_LE": 3,
-    }
-    for sample_id, expected_count in expected_totals.items():
-        if sample_id in res.counts.index:
-            assert res.counts.loc[sample_id].sum() == expected_count
-
-
-def test_aggregate_celltype_counts_integer_values():
-    """Test that counts are integer-valued."""
-    a = _adata()
-    res = aggregate_celltype_counts(
-        a, donor_col="patient_id", condition_col="condition", cell_type_col="cell_type"
-    )
-    assert res.counts.values.dtype == np.int64 or res.counts.values.dtype == int
-
-
-def test_aggregate_celltype_counts_meta_alignment():
-    """Test that sample_meta is properly aligned with counts index."""
-    a = _adata()
-    res = aggregate_celltype_counts(
-        a, donor_col="patient_id", condition_col="condition", cell_type_col="cell_type"
-    )
-    # sample_meta should have the same index as counts
-    assert (res.counts.index == res.sample_meta.index).all()
-    # sample_meta should have donor_col and condition_col
-    assert "patient_id" in res.sample_meta.columns
-    assert "condition" in res.sample_meta.columns
+    assert np.issubdtype(res.counts.to_numpy().dtype, np.integer)
+    for sample, row in res.sample_meta.iterrows():
+        assert (row["patient_id"], row["condition"]) == tuple(sample.split("_"))
+        assert res.counts.loc[sample].to_dict() == {"Tcell": 1, "Fib": 2}
 
 
 def test_a_missing_cell_state_label_does_not_become_a_cell_type():

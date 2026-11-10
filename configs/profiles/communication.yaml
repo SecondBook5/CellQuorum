@@ -1,0 +1,4 @@
+cell_cell_communication:
+  methods: [{method: liana}, {method: tensor_c2c}, {method: nichenet}, {method: multinichenet}]
+ccc_viz:
+  methods: [{method: tensor_factors_viz}, {method: nichenet_viz}, {method: multinichenet_viz}]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +15,7 @@ from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.methods.base import MethodSkip
 
 if TYPE_CHECKING:
+    from cellquorum.backends.rscript import RscriptBackend
     from cellquorum.core.context import PipelineContext
     from cellquorum.stages.clustering.subclustering.config import (
         PartitionConfig,
@@ -30,7 +30,7 @@ _SCSHC_TEST_R = r_script_path("scshc_test.R")
 def run_choir(
     adata: ad.AnnData,
     config: SubclusteringConfig,
-    backend: object | None,
+    backend: RscriptBackend | None,
     scratch_dir: Path,
     reduction_key: str | None = None,
 ) -> ad.AnnData | MethodSkip:
@@ -55,7 +55,7 @@ def run_choir(
     Raises:
         CellQuorumBackendError: If CHOIR fails after starting.
     """
-    if backend is None or shutil.which("Rscript") is None:
+    if backend is None or not backend._rscript_available():
         return MethodSkip(
             reason="CHOIR partition skipped: Rscript unavailable",
             details={"method": "choir"},
@@ -164,7 +164,7 @@ def run_scshc_test(
     adata: ad.AnnData,
     cluster_key: str,
     config: SubclusteringConfig,
-    backend: object | None,
+    backend: RscriptBackend | None,
     scratch_dir: Path,
     batch_key: str | None = None,
 ) -> dict | MethodSkip:
@@ -201,7 +201,7 @@ def run_scshc_test(
     Raises:
         CellQuorumBackendError: If sc-SHC fails after starting.
     """
-    if backend is None or shutil.which("Rscript") is None:
+    if backend is None or not backend._rscript_available():
         return MethodSkip(
             reason="sc-SHC test skipped: Rscript unavailable",
             details={"method": "scshc"},
@@ -300,11 +300,12 @@ def run_scshc_test(
 
     # Build significance dict.
     n_significant = int(sig_df["significant"].sum()) if not sig_df.empty else 0
+    input_clusters = int(pd.Series(adata.obs[cluster_key]).nunique())
     significance = {
         "method": "scshc",
         "alpha": alpha,
         "batch_key": batch_arg,
-        "n_clusters_in": int(pd.Series(adata.obs[cluster_key]).nunique()),
+        "n_clusters_in": input_clusters,
         "n_splits_tested": len(sig_df),
         "n_significant": n_significant,
         "per_split": sig_df.to_dict(orient="records"),
@@ -325,7 +326,7 @@ def run_scshc_test(
         # The headline reading, stated rather than left to be derived: this is
         # the difference between "the partition survived" and "there is no
         # partition", and it is the number a write-up has to quote.
-        significance["merged_to_one"] = surviving == 1 and significance["n_clusters_in"] > 1
+        significance["merged_to_one"] = surviving == 1 and input_clusters > 1
 
     return significance
 
@@ -406,7 +407,7 @@ def run_leiden_stability(
     config: SubclusteringConfig,
     *,
     reduction_key: str,
-    context: PipelineContext = None,
+    context: PipelineContext | None = None,
 ) -> ad.AnnData | MethodSkip:
     """Bootstrap-validated Leiden partition: an alternative to CHOIR, not a fallback.
 
@@ -490,7 +491,7 @@ def run_leiden_stability(
         )
     candidates["iqr"] = candidates["q75"] - candidates["q25"]
     candidates["composite"] = candidates["median_jaccard"] - candidates["iqr"]
-    best_resolution = float(candidates.loc[candidates["composite"].idxmax(), "resolution"])
+    best_resolution = float(candidates["resolution"].loc[candidates["composite"].idxmax()])
 
     result_adata = adata.copy()
     run_neighbors_leiden_routed(

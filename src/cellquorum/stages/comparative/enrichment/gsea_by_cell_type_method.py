@@ -13,7 +13,11 @@ from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.comparative.enrichment.gsea_method import filter_net_by_size, gsea_table
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.priors import (
+    PriorFetchError,
+    collection_names,
+    get_net,
+)
 from cellquorum.stages.comparative.enrichment.ranking import de_table_to_ranking
 
 if TYPE_CHECKING:
@@ -43,7 +47,9 @@ class GseaByCellTypeMethod(AnalysisMethod):
     ) -> StageResult | MethodSkip:
         de_name = config.get("de_by_group_filename", "de_pseudobulk_edger_by_subcluster.csv")
         group_col = config.get("de_group_col", "cell_type")
-        collections = config.get("gene_set_collections", ["hallmark", "reactome"])
+        collections = collection_names(
+            config.get("gene_set_collections", ["hallmark", "reactome"]), config.get("gmt_path")
+        )
         min_size = int(config.get("min_size", 10))
         max_size = int(config.get("max_size", 500))
         min_genes = int(config.get("min_genes", 1000))

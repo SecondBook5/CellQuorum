@@ -118,7 +118,6 @@ def _chain_config(h5ad_path) -> CellQuorumConfig:
             "subclustering": False,
             "composition": False,
             "differential_expression": False,
-            "molecular_inference": False,
             "cell_cell_communication": False,
             "network_analysis": False,
         },
@@ -205,33 +204,10 @@ def test_full_cpu_chain_threads_every_stage_output(tmp_path):
     # significance test rather than always forcing a best-guess label -- this fixture's
     # small, shared 36-gene universe can leave a cluster's real signal statistically
     # indistinguishable from a same-sized random gene set drawn from that same pool.
+    annotation = _record(result.execution_result, "annotation")
+    assert annotation is not None and not annotation.metrics.get("skipped", False)
     assert "cell_type" in final.obs, "annotation labels lost"
     assert set(final.obs["cell_type"].unique()) <= {"TypeA", "TypeB", "Unassigned"}
-
-
-def test_annotation_actually_runs_not_skipped(tmp_path):
-    """Regression guard for the ordering bug: annotation must NOT skip.
-
-    Annotation needs the leiden column clustering produces; if the planner ever
-    reverts to running annotation before clustering, annotation would skip and
-    cell_type would be absent. This asserts it genuinely runs.
-    """
-
-    h5ad_path = tmp_path / "cohort.h5ad"
-    _synthetic_cohort().write_h5ad(h5ad_path)
-
-    result = execute_pipeline_run(
-        _chain_config(h5ad_path),
-        output_dir=tmp_path / "run",
-        backend_registry=_backend_registry(),
-        load_input=True,
-    )
-
-    # annotation succeeded and its record is not a skip.
-    ann = _record(result.execution_result, "annotation")
-    assert ann is not None
-    assert not ann.metrics.get("skipped", False), "annotation skipped — ordering bug?"
-    assert "cell_type" in result.context.adata.obs
 
 
 def test_full_analysis_chain_runs_de_da_enrichment_viz(tmp_path):
@@ -265,7 +241,6 @@ def test_full_analysis_chain_runs_de_da_enrichment_viz(tmp_path):
             "discovery": False,
             "subclustering": False,
             "composition": False,
-            "molecular_inference": False,
             "cell_cell_communication": False,
             "network_analysis": False,
         },
@@ -437,7 +412,6 @@ def test_embeddings_stage_runs_in_full_chain(tmp_path):
             "discovery": False,
             "subclustering": False,
             "composition": False,
-            "molecular_inference": False,
             "cell_cell_communication": False,
             "network_analysis": False,
         },

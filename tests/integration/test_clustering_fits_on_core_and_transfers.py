@@ -23,6 +23,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib import rc_context
 
 from cellquorum.stages.clustering.neighbors_leiden import (
     LABEL_SOURCE_COLUMN,
@@ -108,13 +109,20 @@ def _non_core_fraction_per_cluster(adata: ad.AnnData) -> pd.Series:
     )
 
 
-def test_excluded_cells_do_not_form_clusters_of_their_own() -> None:
+@pytest.fixture(scope="module")
+def fitted_cohort():
+    adata = _cohort(n_per_cluster=120, n_bridge=60)
+    with rc_context():
+        result = _cluster(adata)
+    return adata, result
+
+
+def test_excluded_cells_do_not_form_clusters_of_their_own(fitted_cohort) -> None:
     """No cluster may consist of cells that had no say in the partition.
 
     Such a cluster is the one that gets annotated as a novel cell type and written up.
     """
-    adata = _cohort()
-    _cluster(adata)
+    adata, _ = fitted_cohort
 
     fractions = _non_core_fraction_per_cluster(adata)
     spurious = fractions[fractions > 0.9]
@@ -123,13 +131,16 @@ def test_excluded_cells_do_not_form_clusters_of_their_own() -> None:
         f"shaped by cells forbidden from fitting it"
     )
 
+    labels = adata.obs["leiden"].astype(str).to_numpy()
+    assert not (set(labels[:120]) & set(labels[120:240]))
+
 
 def test_the_control_excluded_cells_really_do_form_their_own_clusters_unmasked() -> None:
     """Without the mask the leak is real, so the test above is not vacuous."""
     unmasked = _cohort()
     marks = unmasked.obs[FIT_COLUMN].copy()
     del unmasked.obs[FIT_COLUMN]
-    _cluster(unmasked)
+    result = _cluster(unmasked)
     unmasked.obs[FIT_COLUMN] = marks
 
     fractions = _non_core_fraction_per_cluster(unmasked)
@@ -139,24 +150,18 @@ def test_the_control_excluded_cells_really_do_form_their_own_clusters_unmasked()
         "fixture"
     )
 
-
-def test_the_two_real_populations_stay_separate() -> None:
-    """Whatever else happens, the actual biology must not be merged."""
-    adata = _cohort()
-    _cluster(adata)
-
-    labels = adata.obs["leiden"].astype(str).to_numpy()
-    assert not (set(labels[:120]) & set(labels[120:240]))
+    assert unmasked.obs["leiden"].notna().all()
+    assert (unmasked.obs[LABEL_SOURCE_COLUMN] == "fitted").all()
+    assert not any("transfer" in note for note in result.notes)
 
 
-def test_the_partition_matches_one_fitted_without_the_bridge_present() -> None:
+def test_the_partition_matches_one_fitted_without_the_bridge_present(fitted_cohort) -> None:
     """Fitting with the bridge masked must equal fitting on a cohort that never had it.
 
     The reference-immutability property for a partition: not "similar clustering" but the
     same clustering, since Leiden must never have seen those cells.
     """
-    full = _cohort()
-    _cluster(full)
+    full, _ = fitted_cohort
 
     core_only = _cohort()
     core_only = core_only[core_only.obs[FIT_COLUMN].to_numpy(bool)].copy()
@@ -171,31 +176,15 @@ def test_the_partition_matches_one_fitted_without_the_bridge_present() -> None:
 # ═══ 2. No silent drop: every cell keeps a label ════════════════════════════════════
 
 
-def test_every_cell_receives_a_cluster_label() -> None:
-    """Withholding labels would delete non-core cells from every cluster-grouped stage."""
-    adata = _cohort()
-    _cluster(adata)
+def test_cluster_transfer_labels_every_cell_and_keeps_the_full_graph(fitted_cohort):
+    adata, result = fitted_cohort
 
     assert adata.obs["leiden"].notna().all()
     assert len(adata.obs["leiden"]) == adata.n_obs
 
-
-def test_transferred_labels_come_from_the_fitted_category_set() -> None:
-    """Transfer must not invent a cluster that Leiden never found."""
-    adata = _cohort()
-    _cluster(adata)
-
-    core = adata.obs[FIT_COLUMN].to_numpy(bool)
-    fitted_labels = set(adata.obs["leiden"].astype(str)[core])
-    transferred = set(adata.obs["leiden"].astype(str)[~core])
-
-    assert transferred <= fitted_labels
-
-
-def test_label_source_records_which_cells_were_only_transferred() -> None:
-    """A transferred label must be distinguishable from a fitted one after the run."""
-    adata = _cohort()
-    _cluster(adata)
+    assert "connectivities" in adata.obsp
+    assert adata.obsp["connectivities"].shape == (adata.n_obs, adata.n_obs)
+    assert "neighbors" in adata.uns
 
     source = adata.obs[LABEL_SOURCE_COLUMN]
     core = adata.obs[FIT_COLUMN].to_numpy(bool)
@@ -203,8 +192,13 @@ def test_label_source_records_which_cells_were_only_transferred() -> None:
     assert (source[core] == "fitted").all()
     assert (source[~core] == "transferred").all()
 
+    scope = [note for note in result.notes if "QC-permitted" in note]
+    assert len(scope) == 1
+    assert "240" in scope[0]
+    assert "60" in scope[0]
 
-def test_bridge_cells_are_assigned_to_whichever_population_they_sit_nearest() -> None:
+
+def test_bridge_cells_are_assigned_to_whichever_population_they_sit_nearest(fitted_cohort) -> None:
     """Transfer must be spatially sensible, not arbitrary.
 
     The bridge spans the gap, so its ends must inherit labels from the population they sit
@@ -212,8 +206,7 @@ def test_bridge_cells_are_assigned_to_whichever_population_they_sit_nearest() ->
     sub-clusters at resolution 1.0, so the assertion is membership in that population's label
     set rather than equality with one nominated cell's label.
     """
-    adata = _cohort()
-    _cluster(adata)
+    adata, _ = fitted_cohort
 
     labels = adata.obs["leiden"].astype(str).to_numpy()
     left, right = set(labels[:120]), set(labels[120:240])
@@ -222,36 +215,14 @@ def test_bridge_cells_are_assigned_to_whichever_population_they_sit_nearest() ->
     assert bridge[0] in left, "the bridge end nearest the left population was mislabelled"
     assert bridge[-1] in right, "the bridge end nearest the right population was mislabelled"
 
+    core = adata.obs[FIT_COLUMN].to_numpy(bool)
+    fitted_labels = set(adata.obs["leiden"].astype(str)[core])
+    transferred = set(adata.obs["leiden"].astype(str)[~core])
 
-# ═══ 3. The graph downstream stages depend on ═══════════════════════════════════════
-
-
-def test_a_full_size_neighbors_graph_is_left_on_the_object() -> None:
-    """UMAP and PAGA raise NeighborsMissing without it, for every cell.
-
-    Fitting on a subset must not shrink what the next stage reads, or protecting the
-    partition would break visualisation for the whole pipeline.
-    """
-    adata = _cohort()
-    _cluster(adata)
-
-    assert "connectivities" in adata.obsp
-    assert adata.obsp["connectivities"].shape == (adata.n_obs, adata.n_obs)
-    assert "neighbors" in adata.uns
+    assert transferred <= fitted_labels
 
 
-# ═══ 4. Degradation and the transfer primitive ══════════════════════════════════════
-
-
-def test_a_dataset_without_graded_qc_behaves_as_before() -> None:
-    """Absent QC columns must not become a hidden dependency."""
-    adata = _cohort()
-    del adata.obs[FIT_COLUMN]
-    result = _cluster(adata)
-
-    assert adata.obs["leiden"].notna().all()
-    assert (adata.obs[LABEL_SOURCE_COLUMN] == "fitted").all()
-    assert not any("transfer" in note for note in result.notes)
+# ═══ 3. Degradation and the transfer primitive ══════════════════════════════════════
 
 
 def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:
@@ -263,17 +234,6 @@ def test_an_empty_fit_population_cannot_restore_excluded_cells() -> None:
     with pytest.raises(CellQuorumDataError, match="permits no cells"):
         _cluster(adata)
     assert "leiden" not in adata.obs
-
-
-def test_the_run_records_how_many_cells_fitted_and_how_many_were_transferred() -> None:
-    """A scope decision nobody can see after the fact is the failure being designed out."""
-    adata = _cohort(n_per_cluster=120, n_bridge=60)
-    result = _cluster(adata)
-
-    scope = [note for note in result.notes if "QC-permitted" in note]
-    assert len(scope) == 1
-    assert "240" in scope[0]
-    assert "60" in scope[0]
 
 
 @pytest.mark.parametrize("k", [1, 5, 15])

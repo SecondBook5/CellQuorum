@@ -42,29 +42,21 @@ def _gids(fig):
     return {c.get_gid() for c in _axis(fig).collections}
 
 
-def test_every_donor_state_pair_has_an_observed_distance_and_a_null() -> None:
-    fig = transport_distance(_table())
+def test_donor_state_distances_show_the_nulls_and_cell_counts() -> None:
+    fig = transport_distance(_table(), alpha=0.05)
+
     gids = _gids(fig)
     assert {"obs|Structural|P2", "obs|Inflamed|P4", "null|Structural|P7"} <= gids
 
+    counts = [t.get_text() for t in _axis(fig).texts if t.get_gid() == "cells|Structural|P7"]
+    assert counts == ["20 | 68"]
 
-def test_states_follow_the_order_given_not_the_table_order() -> None:
-    fig = transport_distance(_table(), state_order=["Structural", "Inflamed"])
-    heads = [t.get_text() for t in _axis(fig).texts if t.get_gid() == "state"]
-    assert [h.split("  ")[0] for h in heads] == ["Structural", "Inflamed"]
-
-
-def test_a_donor_whose_distance_does_not_beat_shuffled_labels_is_an_open_marker() -> None:
-    fig = transport_distance(_table(), alpha=0.05)
     fig.canvas.draw()
     called = next(c for c in _axis(fig).collections if c.get_gid() == "obs|Structural|P2")
     not_called = next(c for c in _axis(fig).collections if c.get_gid() == "obs|Structural|P7")
     assert len(called.get_facecolor()) == 1
     assert len(not_called.get_facecolor()) == 0
 
-
-def test_the_state_header_counts_donors_above_the_null() -> None:
-    fig = transport_distance(_table(), alpha=0.05)
     heads = {
         t.get_text().split("  ")[0]: t.get_text()
         for t in _axis(fig).texts
@@ -74,10 +66,10 @@ def test_the_state_header_counts_donors_above_the_null() -> None:
     assert "1 of 2" in heads["Inflamed"]
 
 
-def test_cell_counts_per_condition_are_written_beside_each_donor() -> None:
-    fig = transport_distance(_table())
-    counts = [t.get_text() for t in _axis(fig).texts if t.get_gid() == "cells|Structural|P7"]
-    assert counts == ["20 | 68"]
+def test_states_follow_the_order_given_not_the_table_order() -> None:
+    fig = transport_distance(_table(), state_order=["Structural", "Inflamed"])
+    heads = [t.get_text() for t in _axis(fig).texts if t.get_gid() == "state"]
+    assert [h.split("  ")[0] for h in heads] == ["Structural", "Inflamed"]
 
 
 def test_a_missing_column_is_named() -> None:

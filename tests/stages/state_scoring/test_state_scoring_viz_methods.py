@@ -129,3 +129,28 @@ def test_violin_stars_are_tested_on_the_design_donor_column(tmp_path, monkeypatc
     assert seen["donor_col"] == "donor"
     assert "donor" in seen["columns"]
     assert seen["paired"] is True
+
+
+def test_descriptive_scores_export_cells_without_a_contrast(tmp_path):
+    import pandas as pd
+
+    data = _adata()
+    del data.obs["condition"]
+    result = StateScoreViolinMethod()._run(
+        data,
+        {
+            "descriptive": True,
+            "cluster_key": "fibroblast_subcluster",
+            "figure_formats": ["pdf"],
+            "programs": ["proliferating"],
+        },
+        _ctx(tmp_path),
+    )
+    assert not isinstance(result, MethodSkip)
+    table = next(a.path for a in result.artifacts if a.kind == "csv")
+    cells = pd.read_csv(table, dtype={"cell": str, "cluster": str})
+    assert list(cells.cell) == list(data.obs_names)
+    assert list(cells.cluster) == list(data.obs["fibroblast_subcluster"])
+    np.testing.assert_allclose(cells.score, data.obsm["X_state_aucell"][:, 0])
+    assert "condition" not in cells
+    assert table.with_suffix(".pdf").name in {a.path.name for a in result.artifacts}

@@ -1,0 +1,116 @@
+project:
+  name: scc_programs
+  organism: human
+  species_id: 9606
+paths:
+  output_dir: runs/scc_programs
+input:
+  h5ad: ${oc.env:CELLQUORUM_SCC_INPUT,scc.h5ad}
+run:
+  profile: publication
+  random_seed: 42
+  require_selected_methods: true
+  continue_on_stage_failure: true
+compute:
+  backend: cpu
+  prefer_gpu: false
+  n_jobs: 6
+r:
+  enabled: true
+cohort:
+  sample_key: sample_id
+  donor_key: patient
+  condition_key: tum.norm
+  condition_levels:
+  - Normal
+  - Tumor
+design:
+  donor_col: patient
+  condition_col: tum.norm
+  case: Tumor
+  control: Normal
+  paired: true
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: true
+  feature_selection: true
+  dimensionality: true
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: true
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: true
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: true
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: false
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: true
+  module_remodeling: false
+preprocessing:
+  normalization:
+    recipe: cellquorum_log1p_cp10k_v1
+    preserve_counts_layer: counts
+    output_layer: cellquorum_normalized
+report:
+  enabled: true
+  html: true
+  markdown: true
+  fail_on_report_error: true
+feature_selection:
+  counts_layer: counts
+  n_top_genes: 1500
+dimensionality:
+  n_pcs: 30
+  input_layer: cellquorum_normalized
+discovery:
+  max_iter: 2000
+  n_components: 6
+  n_runs: 5
+  cell_type_col: celltype_alt
+  random_state: 42
+metacells:
+  enabled: true
+  group_by: celltype_alt
+  rep_key: X_pca
+  layer: counts
+  min_cells: 100
+  seed: 42
+coexpression:
+  group_by: celltype_alt
+  layer: counts
+  condition_col: tum.norm
+  n_hvg: 1000
+  seed: 42
+multicellular_programs:
+  cell_type_col: celltype_alt
+  sample_col: sample_id
+  donor_col: patient
+  condition_col: tum.norm
+  layer: cellquorum_normalized
+  n_programs: 3

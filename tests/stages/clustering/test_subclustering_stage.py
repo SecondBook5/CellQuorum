@@ -148,6 +148,9 @@ class _ChoirCapturingBackend:
     def __post_init__(self):
         self.captured = []
 
+    def _rscript_available(self) -> bool:
+        return True
+
     def _r_package_available(self, name: str) -> bool:
         return True
 
@@ -170,7 +173,7 @@ class _ChoirCapturingBackend:
         return _Result(returncode=self.returncode)
 
 
-def test_donor_gate_reuses_choirs_batch_corrected_embedding(monkeypatch, tmp_path):
+def test_donor_gate_reuses_choirs_batch_corrected_embedding(tmp_path):
     """The donor gate must test on the SAME corrected space CHOIR partitioned on.
 
     CHOIR gets a batch-corrected embedding (X_pca_harmony) precisely so its
@@ -181,10 +184,6 @@ def test_donor_gate_reuses_choirs_batch_corrected_embedding(monkeypatch, tmp_pat
     freshly-derived UNCORRECTED PCA instead defeats the purpose: an uncorrected
     embedding still encodes the very donor signal the gate is supposed to catch.
     """
-    from cellquorum.stages.clustering.subclustering import partition as partition_module
-
-    monkeypatch.setattr(partition_module.shutil, "which", lambda name: "/usr/bin/Rscript")
-
     parent = _parent_adata()
     ctx = _context(parent, focus_labels=["Fibroblasts"])
     ctx.config.subclustering = ctx.config.subclustering.model_copy(
@@ -200,7 +199,7 @@ def test_donor_gate_reuses_choirs_batch_corrected_embedding(monkeypatch, tmp_pat
     assert result.metrics.get("donor_gate_embedding_key") == "X_pca_harmony"
 
 
-def test_technical_qc_consistency_flags_a_qc_confounded_cluster(monkeypatch, tmp_path):
+def test_technical_qc_consistency_flags_a_qc_confounded_cluster(tmp_path):
     """A subcluster built disproportionately from degraded/probable-multiplet
     cells must be flagged against its siblings, and the flag must reach the
     stage's own metrics/warnings/artifacts -- not just the underlying
@@ -210,10 +209,6 @@ def test_technical_qc_consistency_flags_a_qc_confounded_cluster(monkeypatch, tmp
     to odd; QC columns are set the same way so cluster "1" is real degraded
     cells, not noise.
     """
-    from cellquorum.stages.clustering.subclustering import partition as partition_module
-
-    monkeypatch.setattr(partition_module.shutil, "which", lambda name: "/usr/bin/Rscript")
-
     parent = _parent_adata()
     n = parent.n_obs
     even = np.arange(n) % 2 == 0
@@ -238,7 +233,7 @@ def test_technical_qc_consistency_flags_a_qc_confounded_cluster(monkeypatch, tmp
     assert (tmp_path / "subclustering_technical_qc_consistency.csv").exists()
 
 
-def test_technical_qc_action_drop_removes_qc_confounded_cluster_cells(monkeypatch, tmp_path):
+def test_technical_qc_action_drop_removes_qc_confounded_cluster_cells(tmp_path):
     """`action: drop` is documented as governing clusters that fail ANY gate
 
     ("action when clusters fail gate (flag or drop)"), and the donor gate
@@ -250,10 +245,6 @@ def test_technical_qc_action_drop_removes_qc_confounded_cluster_cells(monkeypatc
     into CCC networks, coexpression, and GRN as ordinary peers, because
     nothing ever consulted `action` for this gate.
     """
-    from cellquorum.stages.clustering.subclustering import partition as partition_module
-
-    monkeypatch.setattr(partition_module.shutil, "which", lambda name: "/usr/bin/Rscript")
-
     parent = _parent_adata()
     n = parent.n_obs
     even = np.arange(n) % 2 == 0

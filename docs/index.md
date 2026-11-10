@@ -1,10 +1,9 @@
 # CellQuorum documentation
 
-CellQuorum is a publication-grade, config-driven single-cell RNA-seq workflow
-engine. You describe a dataset and its analysis in one validated YAML file and run
-it with one command; the engine plans, validates, and executes the workflow across
-Python, R/Bioconductor, and GPU backends, and records machine-readable provenance
-for every step.
+CellQuorum analyzes single-cell and single-nucleus RNA-seq studies. Run
+`cellquorum init my_study --input study.h5ad` to generate a configuration from the
+counts and metadata in your file. A completed run writes figures, result tables,
+a record of the methods used, and an HTML report. The [public-study matrix](benchmarks/study-coverage.csv) links evidence for all **41 registered stages**. The [scientific validation report](benchmarks/scientific-validation.md) includes per-method verdicts and the corresponding measurements.
 
 Start with the [README](https://github.com/SecondBook5/cellquorum#readme) for an
 overview and installation, then work through the [Tutorial](guide/tutorial.md) for a
@@ -12,11 +11,15 @@ hands-on first run. The guides below go deeper.
 
 ## Get started
 
+- [A complete paired PBMC study](guide/paired-study.md) takes a count matrix from
+  eight donors through QC, cell-type-specific differential expression, abundance,
+  Hallmark enrichment and the final figures.
+
 - **[Tutorial](guide/tutorial.md)**: a hands-on first run, from a raw `.h5ad` to a
   provenance-tracked run. Point the config at your data, preview the plan, run it, and read every
   output.
 - To see it work without any data of your own, run `cellquorum demo my_demo` (see the
-  [README](https://github.com/SecondBook5/cellquorum#see-it-work-in-two-minutes)).
+  [README](https://github.com/SecondBook5/cellquorum#run-the-cpu-demo)).
 
 ## User guide
 
@@ -52,8 +55,7 @@ Build this site locally with `make docs-serve` (live reload) or `make docs`
 
 ## Key facts
 
-- **41 registered stages** and more than 70 config-selectable methods, organized into a
-  best-practices pipeline (see the workflow diagram in the README).
+- The workflow diagram in the README maps the stages and the methods they offer.
 - **Two front doors:** the `cellquorum` / `cq` CLI and the `cellquorum.run_pipeline`
   Python API.
 - **Fail-loud contracts:** every stage boundary validates its `AnnData`; a method

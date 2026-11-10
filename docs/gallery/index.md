@@ -95,12 +95,12 @@ constraints and enables exact PNG comparisons against the visually inspected
 gallery images. Reproduce that check with:
 
 ```bash
-pip install -e '.[dev]' -c envs/figure-constraints.txt
+pip install -e '.[dev]' decoupler pyCirclize POT networkit python-louvain -c envs/figure-constraints.txt
+pip install --no-deps GraphRicciCurvature==0.5.3.2
 CELLQUORUM_CHECK_FIGURE_BASELINES=1 pytest tests/visualization/test_figure_gallery.py
 ```
 
-The reference rendering uses Matplotlib's bundled DejaVu Sans fallback, with no
-Arial or Helvetica installed. The constraints pin Matplotlib, NumPy, and Pillow;
+The reference rendering selects Matplotlib's bundled DejaVu Sans on every host. The constraints pin Matplotlib, NumPy, and Pillow;
 they are not a full environment lock. Intentional appearance changes require
 regenerating and visually reviewing the references. CI retains failed comparison
 artifacts for inspection. All six initial examples are present; this

@@ -31,20 +31,23 @@ def _axis(fig):
     return next(ax for ax in fig.axes if ax.get_label() == "displacement")
 
 
-def test_each_source_cell_points_at_the_plan_weighted_mean_of_its_targets() -> None:
+def test_transport_arrows_link_source_cells_to_weighted_targets_and_identify_both() -> None:
     source, target, plan = _inputs()
     fig = transport_displacement(source, target, plan)
+
     arrows = next(c for c in _axis(fig).collections if c.get_gid() == "arrows")
     ends = np.asarray(arrows.get_segments())[:, 1, :]
     np.testing.assert_allclose(ends, [[4.0, 0.0], [5.0, 1.0], [6.0, 2.0]])
 
-
-def test_arrows_start_at_the_source_cells() -> None:
-    source, target, plan = _inputs()
-    fig = transport_displacement(source, target, plan)
-    arrows = next(c for c in _axis(fig).collections if c.get_gid() == "arrows")
     starts = np.asarray(arrows.get_segments())[:, 0, :]
     np.testing.assert_allclose(starts, source)
+
+    gids = {c.get_gid() for c in _axis(fig).collections}
+    assert {"source", "target"} <= gids
+
+    legend = _axis(fig).get_legend()
+    assert legend is not None
+    assert [t.get_text() for t in legend.get_texts()] == ["Control cells", "Case cells"]
 
 
 def test_arrows_are_coloured_by_the_change_in_the_value_along_each_one() -> None:
@@ -76,13 +79,6 @@ def test_a_source_cell_the_plan_never_moves_is_an_error_not_a_zero_arrow() -> No
         transport_displacement(source, target, plan)
 
 
-def test_the_two_sets_of_cells_are_drawn_beneath_the_arrows() -> None:
-    source, target, plan = _inputs()
-    fig = transport_displacement(source, target, plan)
-    gids = {c.get_gid() for c in _axis(fig).collections}
-    assert {"source", "target"} <= gids
-
-
 def test_a_background_of_all_cells_is_drawn_first_and_does_not_move_the_arrows() -> None:
     source, target, plan = _inputs()
     background = np.array([[0.0, 0.0], [3.0, 3.0], [9.0, 9.0]])
@@ -92,12 +88,3 @@ def test_a_background_of_all_cells_is_drawn_first_and_does_not_move_the_arrows()
     assert gids.index("background") < gids.index("source")
     arrows = next(c for c in collections if c.get_gid() == "arrows")
     np.testing.assert_allclose(np.asarray(arrows.get_segments())[:, 0, :], source)
-
-
-def test_a_key_names_the_two_dot_colours_as_the_source_and_target_cells() -> None:
-    """Real defect: the blue and red end-point dots had no key, so the figure did not say which
-    cells were carried and which they were carried to."""
-    source, target, plan = _inputs()
-    legend = _axis(transport_displacement(source, target, plan)).get_legend()
-    assert legend is not None
-    assert [t.get_text() for t in legend.get_texts()] == ["Control cells", "Case cells"]

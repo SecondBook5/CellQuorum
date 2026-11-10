@@ -205,3 +205,20 @@ def test_add_qc_columns_prefers_qc_state_final_over_cellquorum_qc_keep_when_both
     row: dict = {}
     add_qc_columns(row, group)
     assert row["qc_fail_fraction"] == pytest.approx(0.3)
+
+
+def test_explicit_published_labels_remain_annotation_evidence(tmp_path):
+    adata = make_identity_adata(include_reference=False)
+    adata.obs["published"] = ["A"] * 24 + ["B"] * 24
+    adata.obs["predicted"] = ["A"] * 36 + ["B"] * 12
+    ctx = build_context(tmp_path, adata, write_figures=False)
+    cfg = ctx.config.population_identity
+    cfg.candidate_key = "published"
+    cfg.annotation_keys = ["predicted", "published"]
+    result = PopulationIdentityStage().run(ctx)
+    assert result.metrics["candidate_source"] == "annotation"
+    table = pd.read_csv(
+        ctx.paths.results / "population_identity/tables/population_by_annotation.csv"
+    )
+    comparison = table.set_index(["population_id", "predicted"])
+    assert comparison.loc[("B", "A"), "fraction_within_population"] == 0.5

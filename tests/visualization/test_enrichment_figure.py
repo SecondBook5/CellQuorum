@@ -108,15 +108,10 @@ def _notes(fig) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def test_the_rows_read_by_signed_score_so_the_two_directions_separate():
-    """Not by p-value: at a high permutation count the strongest pathways share one
-    floored p, and ordering on it would order the headline result arbitrarily."""
-    ax = gsea_dotplot(_table()).axes[0]
+def _assert_gsea_pathway_order_and_dots(fig):
+    ax = fig.axes[0]
     assert _rows(ax) == ["UP STRONG", "UP WEAK", "DOWN NS", "DOWN FLOORED"]
 
-
-def test_a_dot_is_filled_when_significant_and_open_when_not():
-    ax = gsea_dotplot(_table()).axes[0]
     faces = {
         float(c.get_offsets()[0][1]): tuple(round(v, 3) for v in c.get_facecolor()[0][:3])
         for c in ax.collections
@@ -126,12 +121,53 @@ def test_a_dot_is_filled_when_significant_and_open_when_not():
     assert faces[2.0] == (1.0, 1.0, 1.0)
     assert all(face != (1.0, 1.0, 1.0) for row, face in faces.items() if row != 2.0)
 
+    by_row = {}
+    for collection in ax.collections:
+        offsets = collection.get_offsets()
+        if len(offsets) == 1:
+            by_row[float(offsets[0][1])] = float(collection.get_sizes()[0])
+    # 65 genes (row 3) > 30 (row 0) > 12 (row 2) > 8 (row 1).
+    assert by_row[3.0] > by_row[0.0] > by_row[2.0] > by_row[1.0]
 
-def test_the_dot_area_is_the_leading_edge_size_at_a_scale_that_does_not_move():
+    low, high = ax.get_xlim()
+    assert low == pytest.approx(-high)
+    assert high > 2.4  # the largest |score| fits inside
+
+
+def _assert_gsea_significance_and_key(fig):
+    assert any(mark.endswith("†") for mark in _marks(fig.axes[0]))
+    notes = " ".join(gsea_notes(_table()))
+    assert "resolution limit" in notes
+    assert "1,000 permutations" in notes
+    assert "bound, not a measurement" in notes
+
+    marks = _marks(fig.axes[0])
+    assert not any(mark.startswith("ns") for mark in marks)
+    assert sum(mark.count("*") > 0 for mark in marks) == 3
+
+    assert "truncated" not in _notes(fig)
+
+    fig.canvas.draw()  # legend children get their real offsets only at draw time
+    legend = fig.axes[0].get_legend()
+    renderer = fig.canvas.get_renderer()
+    for handle, text in zip(legend.legend_handles, legend.get_texts(), strict=True):
+        marker = handle.get_window_extent(renderer)
+        assert text.get_window_extent(renderer).x0 >= marker.x1 - 1.0
+
+
+def test_gsea_dotplot_encodes_signed_scores_and_leading_edge_sizes():
+    fig = gsea_dotplot(_table())
+
+    _assert_gsea_pathway_order_and_dots(fig)
+    _assert_leading_edge_size_scale(fig)
+    _assert_gsea_significance_and_key(fig)
+
+
+def _assert_leading_edge_size_scale(fig):
     """The invariant: a 30-gene edge is the same dot in every figure this draws, so a
     pathway does not look like a bigger finding in the panel that held weaker ones."""
     table = _table()
-    full = gsea_dotplot(table).axes[0]
+    full = fig.axes[0]
     subset = gsea_dotplot(table.iloc[:2]).axes[0]
 
     def area(ax, row: float) -> float:
@@ -146,17 +182,6 @@ def test_the_dot_area_is_the_leading_edge_size_at_a_scale_that_does_not_move():
     # And the area is proportional to the count, not to its square root: area is what the
     # eye integrates, so 30 genes against 8 must be 30/8 of the ink.
     assert area(full, 0.0) / area(full, 1.0) == pytest.approx(30 / 8)
-
-
-def test_a_bigger_leading_edge_draws_a_bigger_dot():
-    ax = gsea_dotplot(_table()).axes[0]
-    by_row = {}
-    for collection in ax.collections:
-        offsets = collection.get_offsets()
-        if len(offsets) == 1:
-            by_row[float(offsets[0][1])] = float(collection.get_sizes()[0])
-    # 65 genes (row 3) > 30 (row 0) > 12 (row 2) > 8 (row 1).
-    assert by_row[3.0] > by_row[0.0] > by_row[2.0] > by_row[1.0]
 
 
 def test_up_and_down_are_drawn_in_different_colours_and_the_axis_says_which_is_which():
@@ -174,25 +199,9 @@ def test_up_and_down_are_drawn_in_different_colours_and_the_axis_says_which_is_w
     assert colors[0.0] != colors[3.0]
 
 
-def test_the_x_axis_is_symmetric_so_a_positive_and_negative_score_are_comparable():
-    ax = gsea_dotplot(_table()).axes[0]
-    low, high = ax.get_xlim()
-    assert low == pytest.approx(-high)
-    assert high > 2.4  # the largest |score| fits inside
-
-
 # --------------------------------------------------------------------------- #
 # significance, and the difference between measured and floored
 # --------------------------------------------------------------------------- #
-
-
-def test_a_floored_p_value_is_marked_beside_its_stars_and_explained_in_the_notes():
-    fig = gsea_dotplot(_table())
-    assert any(mark.endswith("†") for mark in _marks(fig.axes[0]))
-    notes = " ".join(gsea_notes(_table()))
-    assert "resolution limit" in notes
-    assert "1,000 permutations" in notes
-    assert "bound, not a measurement" in notes
 
 
 def test_a_table_with_no_floored_row_says_nothing_about_the_limit():
@@ -206,13 +215,6 @@ def test_a_boolean_column_that_came_back_off_disk_as_text_is_still_read_correctl
     table = _table()
     table["p_at_resolution_limit"] = ["False", "False", "False", "True"]
     assert "1 pathway(s)" in " ".join(gsea_notes(table))
-
-
-def test_a_non_significant_row_gets_no_star_rather_than_the_word_ns():
-    """``ns`` printed beside every null row turns the gutter into a column of noise."""
-    marks = _marks(gsea_dotplot(_table()).axes[0])
-    assert not any(mark.startswith("ns") for mark in marks)
-    assert sum(mark.count("*") > 0 for mark in marks) == 3
 
 
 # --------------------------------------------------------------------------- #
@@ -266,20 +268,27 @@ def test_a_table_missing_the_optional_columns_still_draws():
 # --------------------------------------------------------------------------- #
 
 
-def test_the_walk_marks_the_peak_and_the_peak_is_the_es_the_notes_report():
-    walk = _walk()
+def test_enrichment_walk_tracks_and_notes_without_a_summary_table():
+    walk = _walk(hits=(5, 9, 14, 20, 31))
     fig = gsea_running_es(walk, "UP_STRONG")
+
     peak = float(walk["running_es"].max())
     assert any(f"{peak:+.3f}" in text.get_text() for text in fig.axes[0].texts)
 
-
-def test_the_shaded_region_holds_the_hits_left_of_the_peak_for_an_enriched_set():
-    walk = _walk(hits=(5, 9, 14, 20, 31))
-    notes = _notes(gsea_running_es(walk, "UP_STRONG"))
+    notes = _notes(fig)
     # The peak of a walk with every hit at the top is at the last of them, rank 31, and
     # all five hits are inside it.
     assert "5 of 5 pathway genes" in notes
     assert "rank 31" in notes
+
+    walk_ax, hits_ax, metric_ax = fig.axes[:3]
+    assert walk_ax.get_xlim() == hits_ax.get_xlim() == metric_ax.get_xlim()
+    assert not [label for label in walk_ax.get_xticklabels() if label.get_text()]
+    assert [label for label in metric_ax.get_xticklabels() if label.get_text()]
+    assert "400" in metric_ax.get_xlabel()  # the ranked universe is named
+
+    assert "NES" in notes  # the ES/NES distinction is stated either way
+    assert "FDR" not in notes
 
 
 def test_a_depleted_set_shades_the_other_end_of_the_ranking():
@@ -288,15 +297,14 @@ def test_a_depleted_set_shades_the_other_end_of_the_ranking():
     assert "from the start of the ranking" not in notes
 
 
-def test_the_walk_reports_the_table_s_score_and_fdr_when_the_table_is_given():
-    notes = _notes(gsea_running_es(_walk(), "UP_STRONG", table=_table()))
+def test_enrichment_walk_reports_score_fdr_and_leading_edge():
+    fig = gsea_running_es(_walk(), "UP_STRONG", table=_table())
+
+    notes = _notes(fig)
     assert "NES = +1.90" in notes
     assert "FDR = 0.004" in notes
     assert "1,000 permutations" in notes
 
-
-def test_the_walk_names_the_first_leading_edge_genes_so_the_figure_stands_alone():
-    notes = _notes(gsea_running_es(_walk(), "UP_STRONG", table=_table()))
     assert "Leading edge: A, B" in notes
 
 
@@ -310,24 +318,9 @@ def test_a_disagreement_between_the_table_and_the_drawn_walk_is_named_not_hidden
     assert "different runs" in notes
 
 
-def test_the_three_tracks_share_one_x_range_and_only_the_bottom_one_is_labelled():
-    fig = gsea_running_es(_walk(), "UP_STRONG")
-    walk_ax, hits_ax, metric_ax = fig.axes[:3]
-    assert walk_ax.get_xlim() == hits_ax.get_xlim() == metric_ax.get_xlim()
-    assert not [label for label in walk_ax.get_xticklabels() if label.get_text()]
-    assert [label for label in metric_ax.get_xticklabels() if label.get_text()]
-    assert "400" in metric_ax.get_xlabel()  # the ranked universe is named
-
-
 def test_asking_for_a_pathway_the_walk_does_not_hold_says_what_it_does_hold():
     with pytest.raises(ValueError, match="no running-ES walk for 'ABSENT'"):
         gsea_running_es(_walk(), "ABSENT")
-
-
-def test_the_walk_can_be_drawn_without_its_table():
-    notes = _notes(gsea_running_es(_walk(), "UP_STRONG"))
-    assert "NES" in notes  # the ES/NES distinction is stated either way
-    assert "FDR" not in notes
 
 
 # --------------------------------------------------------------------------- #
@@ -347,38 +340,24 @@ def _long_table() -> pd.DataFrame:
     return table
 
 
-def test_a_prefix_on_every_row_is_dropped_and_the_drop_is_stated():
-    """Nine characters of gutter repeated down the figure, saying what the caption says."""
-    fig = gsea_dotplot(_long_table())
-    assert _rows(fig.axes[0])[0] == "LAMININ INTERACTIONS"
-    assert "shared 'REACTOME' prefix removed" in _notes(fig)
-
-
-def test_a_prefix_only_some_rows_share_is_kept():
-    table = _long_table()
-    table.loc[0, "source"] = "HALLMARK_MITOTIC_SPINDLE"
-    assert "HALLMARK MITOTIC SPINDLE" in _rows(gsea_dotplot(table).axes[0])
-
-
-def test_one_unbounded_name_does_not_set_the_width_of_the_whole_figure():
-    """The gutter is the widest label, so without a bound the 79-character name decides how
-    much room is left for the data area every other row is read in."""
+def test_long_pathway_names_are_bounded_and_traceable_to_the_table():
     bounded = gsea_dotplot(_long_table())
+
+    assert _rows(bounded.axes[0])[0] == "LAMININ INTERACTIONS"
+    assert "shared 'REACTOME' prefix removed" in _notes(bounded)
     unbounded = gsea_dotplot(_long_table(), max_label_chars=None)
     assert bounded.get_figwidth() < unbounded.get_figwidth()
     assert all(len(label) <= 48 for label in _rows(bounded.axes[0]))
     assert any(label.endswith("…") for label in _rows(bounded.axes[0]))
     assert "truncated with an ellipsis" in _notes(bounded)
 
-
-def test_a_truncated_name_says_where_the_full_one_is():
-    """A truncated name is no longer something a reader can look up, so the note has to say
-    the table still has it."""
-    assert "the table carries them in full" in _notes(gsea_dotplot(_long_table()))
+    assert "the table carries them in full" in _notes(bounded)
 
 
-def test_names_that_all_fit_are_not_footnoted_about_truncation():
-    assert "truncated" not in _notes(gsea_dotplot(_table()))
+def test_a_prefix_only_some_rows_share_is_kept():
+    table = _long_table()
+    table.loc[0, "source"] = "HALLMARK_MITOTIC_SPINDLE"
+    assert "HALLMARK MITOTIC SPINDLE" in _rows(gsea_dotplot(table).axes[0])
 
 
 def test_display_names_are_left_alone_by_both_steps():
@@ -388,18 +367,6 @@ def test_display_names_are_left_alone_by_both_steps():
     fig = gsea_dotplot(_long_table(), set_labels=dict.fromkeys(_long_table()["source"], chosen))
     assert set(_rows(fig.axes[0])) == {chosen}
     assert "prefix removed" not in _notes(fig)
-
-
-def test_the_size_key_labels_clear_the_markers_they_label():
-    """The largest marker is the point of the key and overflows a default handle box, which
-    prints the reader's gene count on top of the dot it belongs to."""
-    fig = gsea_dotplot(_table())
-    fig.canvas.draw()  # legend children get their real offsets only at draw time
-    legend = fig.axes[0].get_legend()
-    renderer = fig.canvas.get_renderer()
-    for handle, text in zip(legend.legend_handles, legend.get_texts(), strict=True):
-        marker = handle.get_window_extent(renderer)
-        assert text.get_window_extent(renderer).x0 >= marker.x1 - 1.0
 
 
 # --------------------------------------------------------------------------- #
@@ -444,19 +411,14 @@ def _dots(ax) -> dict[float, list[tuple[float, tuple[float, ...]]]]:
     return by_row
 
 
-def test_the_rows_are_ordered_by_how_far_the_arms_disagree():
-    """Not by either arm's score: the strongest pathways are the ones both arms agree on,
-    which is what a specificity panel is not about."""
-    ax = gsea_arm_comparison(_arms()).axes[0]
+def _assert_enrichment_comparison_effects(fig):
+    ax = fig.axes[0]
     # FLIPPED spans 2.0 to -1.8 (3.8), ONLY_A spans 1.5 to 1.4 (0.1), AGREED -2.2 to -2.1
     # (0.1), UNTESTED has one arm so spans 0. NULL_BOTH is not significant anywhere.
     assert _rows(ax)[0] == "FLIPPED"
     assert "NULL BOTH" not in _rows(ax)
     assert len(_rows(ax)) == 4
 
-
-def test_each_arm_gets_its_own_dot_and_a_bar_joins_them():
-    ax = gsea_arm_comparison(_arms()).axes[0]
     row = _rows(ax).index("FLIPPED")
     xs = sorted(x for x, _ in _dots(ax)[float(row)])
     assert xs == pytest.approx([-1.8, 2.0])
@@ -470,33 +432,38 @@ def test_each_arm_gets_its_own_dot_and_a_bar_joins_them():
         min(span) == pytest.approx(-1.8) and max(span) == pytest.approx(2.0) for span in spans
     )
 
-
-def test_a_tested_null_arm_is_an_open_dot_not_a_missing_one():
-    """The reader needs to see the effect was estimated in that arm and how big it was."""
-    ax = gsea_arm_comparison(_arms()).axes[0]
     row = float(_rows(ax).index("ONLY A"))
     faces = {round(x, 3): face for x, face in _dots(ax)[row]}
     assert faces[1.4] == (1.0, 1.0, 1.0)  # B: tested, ns → open
     assert faces[1.5] != (1.0, 1.0, 1.0)  # A: significant → filled
 
-
-def test_an_untested_pathway_draws_one_dot_and_the_note_refuses_to_call_it_a_null():
-    fig = gsea_arm_comparison(_arms())
-    ax = fig.axes[0]
     assert len(_dots(ax)[float(_rows(ax).index("UNTESTED"))]) == 1
     notes = _notes(fig)
     assert "No dot for B on UNTESTED" in notes
     assert "never tested in that arm, which is not the same as tested and null" in notes
 
 
-def test_the_two_arms_are_named_in_a_key_and_coloured_differently():
-    fig = gsea_arm_comparison(_arms())
+def _assert_enrichment_comparison_key_and_axes(fig):
     legend = fig.axes[0].get_legend()
     assert [text.get_text() for text in legend.get_texts()] == ["A", "B"]
     ax = fig.axes[0]
     row = float(_rows(ax).index("FLIPPED"))
     faces = {face for _, face in _dots(ax)[row]}
     assert len(faces) == 2  # both filled, and not the same colour
+
+    low, high = ax.get_xlim()
+    assert low == pytest.approx(-high)
+    assert high > 2.2
+
+    assert fig.axes[0].get_xlabel().startswith("Normalised enrichment score")
+    assert "One row per pathway" in _notes(fig)
+
+
+def test_enrichment_comparison_displays_each_arms_evidence():
+    fig = gsea_arm_comparison(_arms())
+
+    _assert_enrichment_comparison_effects(fig)
+    _assert_enrichment_comparison_key_and_axes(fig)
 
 
 def test_an_explicit_source_list_is_drawn_in_the_order_given_whatever_its_spread():
@@ -538,13 +505,6 @@ def test_a_pair_of_all_null_tables_is_refused_rather_than_drawn_empty():
         gsea_arm_comparison(arms)
 
 
-def test_the_x_axis_is_symmetric_and_holds_both_arms_extremes():
-    ax = gsea_arm_comparison(_arms()).axes[0]
-    low, high = ax.get_xlim()
-    assert low == pytest.approx(-high)
-    assert high > 2.2
-
-
 def test_the_panel_names_whatever_signed_score_it_was_handed():
     """The same shape of question — two arms, one signed score per row — is asked of a
     leading edge's log fold changes, and an axis reading "enrichment score" over fold
@@ -560,12 +520,6 @@ def test_the_panel_names_whatever_signed_score_it_was_handed():
     assert "One row per gene" in _notes(fig)
     assert "strongest genes are usually the ones both arms agree on" in _notes(fig)
     assert "pathway" not in _notes(fig)
-
-
-def test_the_default_quantity_is_still_the_enrichment_score():
-    fig = gsea_arm_comparison(_arms())
-    assert fig.axes[0].get_xlabel().startswith("Normalised enrichment score")
-    assert "One row per pathway" in _notes(fig)
 
 
 def test_a_supplied_order_is_stated_when_the_caller_names_it():

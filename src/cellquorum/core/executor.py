@@ -5,15 +5,18 @@ from __future__ import annotations
 import sys
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 from cellquorum.core.context import PipelineContext
 from cellquorum.core.fingerprint import compute_input_fingerprint
 from cellquorum.core.planner import PipelinePlan, PlannedStage
+from cellquorum.core.resume import missing_outputs
 from cellquorum.core.run_reporter import RunReporter
 from cellquorum.core.stage import (
     PipelineStage,
+    StageExecutionError,
     StageExecutionRecord,
     StageResult,
 )
@@ -105,12 +108,6 @@ def _contained_matplotlib_style() -> Iterator[None]:
             matplotlib.rcParams.update(restore)
 
 
-def _skipped_because_disabled(record: StageExecutionRecord) -> bool:
-    """Whether a skipped record is the plan's "disabled by configuration" decision."""
-    reason = record.skip_reason
-    return reason is not None and reason.details.get("plan_status") == "disabled"
-
-
 @dataclass(frozen=True)
 class PipelineExecutionResult:
     """
@@ -167,7 +164,7 @@ class PipelineExecutionResult:
         return [
             record.stage_name
             for record in self.stage_execution_records
-            if record.status == "skipped" and _skipped_because_disabled(record)
+            if record.disabled_by_config
         ]
 
     def unable_to_run_stage_names(self) -> list[str]:
@@ -185,7 +182,10 @@ class PipelineExecutionResult:
         return [
             record.stage_name
             for record in self.stage_execution_records
-            if record.status == "skipped" and not _skipped_because_disabled(record)
+            if record.status == "skipped"
+            and not record.disabled_by_config
+            and not record.reused_from_checkpoint
+            and not record.not_applicable
         ]
 
     def failed_stage_names(self) -> list[str]:
@@ -299,6 +299,44 @@ class PipelineExecutor:
                     planned_stage=planned_stage,
                 )
 
+                run_config = getattr(current_context.config, "run", None)
+                promised = getattr(run_config, "required_outputs", {}).get(planned_stage.name, ())
+                if promised and stage_record.status != "failed":
+                    stage_record = _check_required_outputs(
+                        stage_record, current_context.paths.root, promised
+                    )
+
+                if (
+                    planned_stage.enabled
+                    and getattr(run_config, "require_selected_methods", False)
+                    and stage_record.status != "failed"
+                    and not stage_record.not_applicable
+                    and not stage_record.reused_from_checkpoint
+                ):
+                    methods = stage_record.metrics.get("per_method", [])
+                    if not isinstance(methods, list):
+                        raise TypeError("Stage per_method metrics must be a list.")
+                    skipped = [
+                        f"{m['method']}: {m.get('reason', 'skipped')}"
+                        for m in methods
+                        if m.get("skipped")
+                    ]
+                    reasons = stage_record.metrics.get("incomplete_reasons", [])
+                    if not isinstance(reasons, list):
+                        raise TypeError("Stage incomplete_reasons must be a list.")
+                    skipped.extend(reasons)
+                    for method in methods:
+                        skipped.extend(method.get("incomplete_reasons", []))
+                    if stage_record.status == "skipped" and stage_record.skip_reason:
+                        skipped.append(stage_record.skip_reason.reason)
+                    if skipped:
+                        error = StageExecutionError.from_exception(
+                            stage_name=planned_stage.name,
+                            error=ValueError(
+                                "Requested analysis incomplete: " + " / ".join(skipped)
+                            ),
+                        )
+                        stage_record = replace(stage_record, status="failed", error=error)
                 stage_execution_records.append(stage_record)
 
                 reporter.stage_end(stage_record)
@@ -355,6 +393,17 @@ class PipelineExecutor:
                 # plus status, warnings and artifacts. Two records of the same thing where one
                 # of them holds the cohort.
                 current_context = current_context.with_adata(stage_result.adata)
+                if (
+                    planned_stage.name in {"qc_evidence", "qc_finalization"}
+                    and stage_result.adata is not None
+                ):
+                    from cellquorum.core.study_preflight import record_qc_support
+
+                    support = record_qc_support(
+                        current_context, planned_stage.name, stage_result.adata
+                    )
+                    if support is not None:
+                        stage_record.output_artifacts.append(support)
 
                 # Checkpoint the object this stage produced, when enabled. Written
                 # AFTER the context advances so the checkpoint holds exactly what
@@ -546,13 +595,19 @@ class PipelineExecutor:
                     stage_name=planned_stage.name,
                     provenance_dir=context.paths.provenance,
                     input_fingerprint=input_fingerprint,
+                    required_outputs=tuple(
+                        context.paths.root / path
+                        for path in getattr(
+                            getattr(context.config, "run", None), "required_outputs", {}
+                        ).get(planned_stage.name, ())
+                    ),
                 )
             except Exception:  # pragma: no cover - resume is best-effort
                 decision = None
 
             if decision is not None and decision.resume:
                 ended_at = datetime.now(UTC)
-                return None, StageExecutionRecord.skipped(
+                record = StageExecutionRecord.skipped(
                     stage_name=planned_stage.name,
                     reason=decision.reason,
                     started_at_utc=started_at,
@@ -562,6 +617,7 @@ class PipelineExecutor:
                     notes=[f"Resumed: {decision.reason}"],
                     input_fingerprint=input_fingerprint,
                 )
+                return None, replace(record, output_artifacts=list(decision.artifacts))
 
         # Execute the registered stage.
         try:
@@ -620,6 +676,26 @@ class PipelineExecutor:
         )
 
         return stage_result, stage_record
+
+
+def _check_required_outputs(
+    record: StageExecutionRecord, root: Path, promised: list[str]
+) -> StageExecutionRecord:
+    missing = missing_outputs(
+        tuple(root / name for name in promised),
+        {artifact.path for artifact in record.output_artifacts},
+    )
+    if not missing:
+        return record
+    absent = [str(path.relative_to(root)) for path in missing]
+    reason = record.skip_reason.reason if record.skip_reason else ""
+    error = StageExecutionError(
+        record.stage_name,
+        "MissingRequiredOutput",
+        f"Missing required output: {', '.join(absent)}. {reason}".strip(),
+        details={"missing": absent},
+    )
+    return replace(record, status="failed", error=error)
 
 
 def _is_resume_enabled(context: PipelineContext) -> bool:

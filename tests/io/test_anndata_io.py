@@ -276,14 +276,7 @@ def make_celltype_adata() -> ad.AnnData:
     return ad.AnnData(X=matrix, obs=obs, var=var)
 
 
-def test_load_adata_subset_keeps_only_matching_rows(tmp_path: Path) -> None:
-    """
-    Verify load_adata restricts to rows whose column value is in the values.
-
-    This is the load-time cell-type restriction a hypothesis relies on so it
-    never has to pre-slice a separate file.
-    """
-
+def test_subset_retains_selected_cells_and_records_counts(tmp_path: Path):
     path = tmp_path / "input.h5ad"
     make_celltype_adata().write_h5ad(path)
 
@@ -292,6 +285,12 @@ def test_load_adata_subset_keeps_only_matching_rows(tmp_path: Path) -> None:
     # Only the two Fibroblast rows survive, in original order.
     assert list(observed.obs_names) == ["c1", "c3"]
     assert observed.obs["cell_type"].tolist() == ["Fibroblasts", "Fibroblasts"]
+
+    prov = observed.uns["cellquorum_input_subset"]
+    assert prov["column"] == "cell_type"
+    assert prov["values"] == ["Fibroblasts"]
+    assert prov["n_before"] == 4
+    assert prov["n_after"] == 2
 
 
 def make_celltype_adata_with_atlas_embeddings() -> ad.AnnData:
@@ -317,20 +316,7 @@ def make_celltype_adata_with_atlas_embeddings() -> ad.AnnData:
     return adata
 
 
-def test_load_adata_subset_strips_whole_atlas_derived_embeddings(tmp_path: Path) -> None:
-    """A lineage subset must not silently inherit the parent atlas's PCA/graph.
-
-    Real bug, reproduced from a live run: dimensionality (PCA) failed to
-    recompute for a fibroblast-only slice, but nothing removed the SHARED
-    atlas object's own whole-cohort X_pca/X_pca_harmony from the subset, so
-    integration and clustering silently proceeded on embeddings fit across
-    all 13 cell types instead of skipping for a missing input. Any "fibroblast
-    substate" clustering built on that embedding mostly separates fibroblasts
-    from other cell types (already true of every cell in the slice) rather
-    than reflecting real fibroblast-specific structure -- a plausible-looking,
-    silently wrong answer.
-    """
-
+def test_subset_removes_atlas_fits_and_keeps_per_cell_scores(tmp_path: Path):
     path = tmp_path / "input.h5ad"
     make_celltype_adata_with_atlas_embeddings().write_h5ad(path)
 
@@ -344,17 +330,6 @@ def test_load_adata_subset_strips_whole_atlas_derived_embeddings(tmp_path: Path)
     assert "distances" not in observed.obsp
     assert "pca" not in observed.uns
     assert "neighbors" not in observed.uns
-
-
-def test_load_adata_subset_keeps_per_cell_reference_mapping_scores(tmp_path: Path) -> None:
-    """Per-cell reference-classification confidences stay valid at any subset
-    scope (they come from a model fit on a SEPARATE reference atlas, not a
-    joint fit on this cohort) and must survive the strip."""
-
-    path = tmp_path / "input.h5ad"
-    make_celltype_adata_with_atlas_embeddings().write_h5ad(path)
-
-    observed = load_adata(path, subset_column="cell_type", subset_values=["Fibroblasts"])
 
     assert "ref_state_probabilities" in observed.obsm
 
@@ -410,25 +385,6 @@ def test_load_adata_full_object_load_keeps_embeddings(tmp_path: Path) -> None:
 
     assert "X_pca" in observed.obsm
     assert "connectivities" in observed.obsp
-
-
-def test_load_adata_subset_records_provenance(tmp_path: Path) -> None:
-    """
-    Verify the applied subset is recorded on uns for run provenance.
-
-    The run reads this to log n_before/n_after so the cut is never silent.
-    """
-
-    path = tmp_path / "input.h5ad"
-    make_celltype_adata().write_h5ad(path)
-
-    observed = load_adata(path, subset_column="cell_type", subset_values=["Fibroblasts"])
-
-    prov = observed.uns["cellquorum_input_subset"]
-    assert prov["column"] == "cell_type"
-    assert prov["values"] == ["Fibroblasts"]
-    assert prov["n_before"] == 4
-    assert prov["n_after"] == 2
 
 
 def test_load_adata_subset_rejects_unknown_column(tmp_path: Path) -> None:
@@ -497,18 +453,7 @@ def make_two_annotation_adata() -> ad.AnnData:
     return ad.AnnData(X=matrix, obs=obs, var=var)
 
 
-def test_load_adata_agreement_drops_cells_the_annotations_disagree_about(
-    tmp_path: Path,
-) -> None:
-    """
-    Verify require_agreement keeps only cells both annotations call the same thing.
-
-    Cells two independent annotations disagree about are the ones most likely to
-    be misassigned, and they matter most when two slices are compared: one built
-    by agreement and one built by a single label are not filtered equally, so a
-    difference between them can be the filter rather than the biology.
-    """
-
+def test_agreement_filters_and_accounts_for_discordant_cells(tmp_path: Path):
     path = tmp_path / "input.h5ad"
     make_two_annotation_adata().write_h5ad(path)
 
@@ -521,26 +466,6 @@ def test_load_adata_agreement_drops_cells_the_annotations_disagree_about(
 
     # c3 is called Fibroblast by one annotation and T/NK by the other, so it goes.
     assert list(observed.obs_names) == ["c1"]
-
-
-def test_load_adata_agreement_records_what_it_cost(tmp_path: Path) -> None:
-    """
-    Verify provenance separates cells selected from cells that survived agreement.
-
-    Recording only the survivors makes a concordance filter indistinguishable from
-    a small population; the pair of numbers is what tells a reader whether the
-    requirement did anything and how much.
-    """
-
-    path = tmp_path / "input.h5ad"
-    make_two_annotation_adata().write_h5ad(path)
-
-    observed = load_adata(
-        path,
-        subset_column="cell_type",
-        subset_values=["Fibroblasts"],
-        agreement_column="ref_state",
-    )
 
     prov = observed.uns["cellquorum_input_subset"]
     assert prov["require_agreement"] == "ref_state"

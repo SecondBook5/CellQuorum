@@ -28,8 +28,15 @@ resolution <- as.numeric(args[4]); round_to_int <- as.logical(args[5])
 # guarantee independent of the order the outputs happen to be written in.
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-raw <- Seurat::Read10X_h5(raw_h5)
-filt <- Seurat::Read10X_h5(filt_h5)
+read_counts <- function(path, use_names = TRUE) {
+  if (dir.exists(path)) {
+    Seurat::Read10X(path, gene.column = if (use_names) 2L else 1L)
+  } else {
+    Seurat::Read10X_h5(path, use.names = use_names)
+  }
+}
+raw <- read_counts(raw_h5)
+filt <- read_counts(filt_h5)
 if (is.list(raw)) raw <- raw[["Gene Expression"]]
 if (is.list(filt)) filt <- filt[["Gene Expression"]]
 
@@ -61,6 +68,12 @@ rho <- mean(rho_per_cell)
 
 adj <- adjustCounts(sc, roundToInt = round_to_int)
 write_mtx(adj, out_dir)
+# Carry stable IDs across Seurat and AnnData, which deduplicate gene symbols differently.
+ids <- read_counts(filt_h5, use_names = FALSE)
+if (is.list(ids)) ids <- ids[["Gene Expression"]]
+stopifnot(identical(dim(ids), dim(filt)), identical(colnames(ids), colnames(filt)))
+writeLines(rownames(ids)[match(rownames(adj), rownames(filt))], file.path(out_dir, "gene_ids.tsv"))
+rm(ids)
 
 # Per-gene soup fraction: how much of each gene's total counts the correction
 # removed. This is what identifies WHICH genes were ambient — the input to a

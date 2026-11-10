@@ -15,6 +15,11 @@ from cellquorum.cli.workflow.scaffold import (
     SCAFFOLD_METHOD_STAGES,
     STAGE_ORDER,
 )
+from cellquorum.config.models import omit_retired_stage_flags
+from cellquorum.stages.comparative.enrichment.config import (
+    EnrichmentConfig,
+    default_enrichment_methods,
+)
 
 
 class ManifestError(ValueError):
@@ -153,6 +158,48 @@ def _apply_stage_overrides(
     return resolved
 
 
+def _configure_progeny(cfg: dict, run_methods: list[str]) -> None:
+    """Resolve PROGENy separately from gene-set enrichment on their shared stage."""
+    block = cfg.setdefault("enrichment", {})
+    requested = "progeny" in run_methods
+    progeny_only = requested and "pathway_enrichment" not in run_methods
+    methods = block.get("methods") or default_enrichment_methods(
+        by_cell_type=bool(cfg.get("differential_expression", {}).get("cell_type_col"))
+    )
+    resources = block.get("activity_resources", EnrichmentConfig().activity_resources)
+    selected = []
+    progeny_entry = {"method": "activity"}
+    for method in methods:
+        if method["method"] != "activity":
+            if not progeny_only:
+                selected.append(method)
+            continue
+        requested_resources = method.get("activity_resources", resources)
+        others = [name for name in requested_resources if name.lower() != "progeny"]
+        if len(others) < len(requested_resources):
+            progeny_entry = dict(method)
+        if others and not progeny_only:
+            selected.append({**method, "activity_resources": others})
+
+    if requested:
+        # A GMT at the stage level overrides resource lookup. Use the actual weighted
+        # PROGENy prior here even when the other methods use a custom gene-set file.
+        selected.append({**progeny_entry, "activity_resources": ["progeny"], "gmt_path": None})
+        outputs = (
+            cfg.setdefault("run", {})
+            .setdefault("required_outputs", {})
+            .setdefault("enrichment", [])
+        )
+        if "results/enrichment_activity_progeny.csv" not in outputs:
+            outputs.append("results/enrichment_activity_progeny.csv")
+    if not selected:
+        raise ManifestError(
+            "No enrichment methods remain after excluding PROGENy. "
+            "Select a gene-set method or disable enrichment."
+        )
+    block["methods"] = selected
+
+
 def gen_configs(
     manifest: Mapping[str, Any],
     template: Mapping[str, Any],
@@ -169,7 +216,7 @@ def gen_configs(
         # emits `stages` last and would otherwise overwrite them.
         stages = _apply_stage_overrides(
             stages,
-            (entry.get("config_overrides") or {}).get("stages") or {},
+            omit_retired_stage_flags((entry.get("config_overrides") or {}).get("stages") or {}),
             resolved["run"],
             method_stages,
         )
@@ -223,6 +270,14 @@ def gen_configs(
         for cell_type in cell_types:
             key = f"{hyp_id}__{cell_type}"
             cfg = _deep_merge(dict(template), overrides)
+            if "stages" in cfg:
+                cfg["stages"] = omit_retired_stage_flags(cfg["stages"])
+            if (
+                "progeny" in scaffold
+                and method_stages.get("progeny") == ["enrichment"]
+                and stages.get("enrichment")
+            ):
+                _configure_progeny(cfg, resolved["run"])
             input_block: dict[str, Any] = {"h5ad": inputs[cell_type]}
             if subset_on is not None:
                 subset_block: dict[str, Any] = {"column": subset_on, "values": [cell_type]}

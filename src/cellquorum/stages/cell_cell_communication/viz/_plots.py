@@ -1,16 +1,15 @@
 """Biology-agnostic plotting primitives for ccc_viz.
 
 Each function takes a tidy DataFrame plus explicit column-name arguments and
-draws. No file I/O, no config objects, no biological literals. Optional plotting
-deps (pycirclize, plotly) are import-guarded inside the functions that use them,
-with a matplotlib fallback so a missing dep never raises.
+draws. No file I/O, no config objects, no biological literals. The chord renderer uses pyCirclize.
+Sankey plots use Plotly when available.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import matplotlib as mpl
 import matplotlib.patheffects as pe
@@ -23,10 +22,13 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Wedge
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP, empty_figure
 from cellquorum.visualization.figstyle import get_group_palette as _get_group_palette
+
+if TYPE_CHECKING:
+    from pycirclize import Circos
 
 _OTHER_GRAY = "#9E9E9E"
 _SEQ_CMAP = SEQUENTIAL_CMAP
@@ -1267,9 +1269,10 @@ def chord_diagram(
     weight_col: str = "weight",
     palette: dict[str, str],
     top_k: int = 15,
+    overview: bool = False,
     link_kws_handler: Callable[[str, str], dict | None] | None = None,
 ) -> Figure:
-    """Circos chord (pycirclize) or matplotlib arc fallback. Never raises.
+    """Render the gallery Circos ribbon diagram with pyCirclize.
 
     ``link_kws_handler(from_sector, to_sector) -> style dict | None`` lets a
     caller style individual ribbons (e.g. distinguish direction) -- passed
@@ -1282,57 +1285,111 @@ def chord_diagram(
     edges = _top_edges(lr, source_col, target_col, weight_col, top_k)
     if edges.empty:
         return empty_figure()
-    try:
-        # pycirclize rewrites matplotlib's savefig settings when it is first imported. Contain
-        # that, so a chord's margins never depend on whether an earlier figure imported it.
-        with mpl.rc_context():
-            from pycirclize import Circos  # noqa: F401
+    # pycirclize rewrites matplotlib's savefig settings when it is first imported. Contain
+    # that, so a chord's margins never depend on whether an earlier figure imported it.
+    with mpl.rc_context():
+        from pycirclize import Circos  # noqa: F401
 
-        matrix = edges.pivot_table(
-            index=source_col,
-            columns=target_col,
-            values=weight_col,
-            aggfunc="sum",
-            fill_value=0.0,
+    matrix = edges.pivot_table(
+        index=source_col,
+        columns=target_col,
+        values=weight_col,
+        aggfunc="sum",
+        fill_value=0.0,
+    )
+    matrix = matrix.sort_index(kind="mergesort").sort_index(axis=1, kind="mergesort")
+    names = sorted(set(matrix.index) | set(matrix.columns))
+    cmap = {ct: palette.get(ct, _OTHER_GRAY) for ct in names}
+    style = {}
+    if overview:
+        style = dict(
+            space=min(1.3, 50 / len(names)),
+            label_kws={"size": 8, "orientation": "vertical"},
+            link_kws={"direction": 1, "alpha": 0.72, "ec": "white", "lw": 0.25},
         )
-        matrix = matrix.sort_index(kind="mergesort").sort_index(axis=1, kind="mergesort")
-        circos = Circos.initialize_from_matrix(
-            matrix,
-            cmap={
-                ct: palette.get(ct, _OTHER_GRAY)
-                for ct in sorted(set(matrix.index) | set(matrix.columns))
-            },
-            link_kws_handler=link_kws_handler,
-        )
+    circos = Circos.initialize_from_matrix(
+        matrix, cmap=cmap, link_kws_handler=link_kws_handler, **style
+    )
+    if not overview:
         return circos.plotfig()
-    except Exception:  # noqa: BLE001  (import OR pycirclize runtime -> fallback)
-        return _chord_fallback(edges, source_col, target_col, weight_col, palette)
+    return _chord_overview(circos, names, cmap)
 
 
-def _chord_fallback(
-    edges: pd.DataFrame, source_col: str, target_col: str, weight_col: str, palette: dict[str, str]
-) -> Figure:
-    """Matplotlib ring-of-arcs fallback (nodes on a circle, chords as lines)."""
-    nodes = sorted(set(edges[source_col]) | set(edges[target_col]))
-    ang = {n: 2 * np.pi * i / max(1, len(nodes)) for i, n in enumerate(nodes)}
-    fig, ax = plt.subplots(figsize=(6, 6))
-    for n, a in ang.items():
-        ax.add_patch(Wedge((np.cos(a), np.sin(a)), 0.06, 0, 360, color=palette.get(n, _OTHER_GRAY)))
-        ax.text(1.12 * np.cos(a), 1.12 * np.sin(a), str(n), ha="center", va="center", fontsize=8)
-    wmax = float(edges[weight_col].max()) or 1.0
-    for _, r in edges.iterrows():
-        a0, a1 = ang[r[source_col]], ang[r[target_col]]
-        ax.plot(
-            [np.cos(a0), np.cos(a1)],
-            [np.sin(a0), np.sin(a1)],
-            color=palette.get(r[source_col], _OTHER_GRAY),
-            linewidth=0.5 + 3.0 * r[weight_col] / wmax,
-            alpha=0.6,
+def _chord_overview(circos: Circos, names: list[str], palette: dict[str, str]) -> Figure:
+    """Keep short sector keys on the ring and give long population names a separate column."""
+    from matplotlib.lines import Line2D
+
+    keys = {}
+    families: dict[str, list[str]] = {}
+    for index, name in enumerate(names, 1):
+        family, sep, cluster = name.rpartition(" (C")
+        if sep and cluster.endswith(")") and cluster[:-1].isdecimal():
+            key = "C" + cluster[:-1]
+        elif name.isdecimal():
+            key, family = "C" + name, "Cluster"
+        else:
+            key, family = f"P{index}", name
+        keys[name] = key
+        families.setdefault(family, []).append(name)
+
+    ncols = max(1, (len(families) + 15) // 16)
+    fig = plt.figure(figsize=(4.4 + 2.6 * ncols, max(4.4, min(16, len(families)) * 0.22 + 1)))
+    grid = fig.add_gridspec(
+        1,
+        2,
+        width_ratios=(4.2, 2.55 * ncols),
+        left=0.025,
+        right=0.99,
+        top=0.90,
+        bottom=0.115,
+        wspace=0.10,
+    )
+    ring = fig.add_subplot(grid[0], projection="polar")
+    circos.plotfig(ax=ring)
+    for label in ring.texts:
+        if label.get_text() in keys:
+            label.set_text(keys[label.get_text()])
+    key_ax = fig.add_subplot(grid[1])
+    key_ax.axis("off")
+    handles = []
+    for family, members in families.items():
+        codes = sorted(
+            (keys[name] for name in members),
+            key=lambda k: (k[:1], int(k[1:]) if k[1:].isdecimal() else 0, k),
         )
-    ax.set_xlim(-1.3, 1.3)
-    ax.set_ylim(-1.3, 1.3)
-    ax.set_aspect("equal")
-    ax.set_axis_off()
+        legend_label = f"{family}   {', '.join(codes)}"
+        handles.append(
+            Line2D(
+                [],
+                [],
+                ls="none",
+                marker="s",
+                markersize=6,
+                markeredgewidth=0,
+                color=palette[members[0]],
+                label=legend_label,
+            )
+        )
+    key_ax.legend(
+        handles=handles,
+        title="Populations",
+        frameon=False,
+        loc="center left",
+        borderaxespad=0,
+        labelspacing=0.75,
+        handlelength=0.8,
+        ncol=ncols,
+        fontsize=8,
+    )
+    fig.text(
+        0.035, 0.94, "Inferred communication between populations", weight="semibold", fontsize=11
+    )
+    fig.text(
+        0.035,
+        0.05,
+        "Ribbons point from sender to receiver. Width shows summed interaction weights.",
+        fontsize=7.5,
+    )
     return fig
 
 
@@ -1510,13 +1567,24 @@ def curvature_network(
     """
     if edges is None or edges.empty:
         return empty_figure()
-    # Guard for missing weight_col (differential curvature frames lack it)
+    # Differential curvature tables carry a signed change instead of an edge weight.
     if weight_col not in edges.columns:
         e = edges.copy()
-        e[weight_col] = 1.0
+        e[weight_col] = e[curvature_col].abs()
     else:
         e = edges
-    e = _guarantee_node_seats(e, source_col, target_col, weight_col, top_k)
+    total_edges = len(e)
+    if top_k < 1:
+        raise ValueError("top_k must be positive")
+    node_count = len(pd.unique(pd.concat([e[source_col], e[target_col]], ignore_index=True)))
+    if node_count > 2 * top_k:
+        # Gene networks can contain thousands of nodes. Reserve population
+        # coverage for small graphs and bound the manuscript layout on large ones.
+        e = e.sort_values(
+            [weight_col, source_col, target_col], ascending=[False, True, True], kind="stable"
+        ).head(top_k)
+    else:
+        e = _guarantee_node_seats(e, source_col, target_col, weight_col, top_k)
     G = nx.DiGraph()
     for _, r in e.iterrows():
         G.add_edge(
@@ -1533,6 +1601,8 @@ def curvature_network(
     norm = signed_norm(curvs)
     cmap = plt.get_cmap("RdBu_r")
     fig, ax = plt.subplots(figsize=(9, 8))
+    if len(e) < total_edges:
+        ax.set_title(f"{len(e):,} displayed edges of {total_edges:,}", fontsize=10)
     wmax = (curvs.size and float(e[weight_col].max())) or 1.0
     for (u, v, d), c in zip(G.edges(data=True), curvs, strict=False):
         arrow = FancyArrowPatch(

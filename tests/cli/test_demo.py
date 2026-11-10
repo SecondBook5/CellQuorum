@@ -25,9 +25,6 @@ def test_the_demo_project_is_a_valid_input_and_config(tmp_path: Path) -> None:
     assert Path(str(config.input.h5ad)) == data_path.resolve()
     assert yaml.safe_load(config_path.read_text())["stages"]["clustering"] is True
 
-
-def test_the_demo_config_explains_itself(tmp_path: Path) -> None:
-    _, config_path = write_demo_project(tmp_path / "demo")
     assert config_path.read_text().startswith("#")
 
 

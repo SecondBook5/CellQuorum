@@ -68,19 +68,19 @@ def test_select_top_bottom_breaks_ties_by_index():
     pd.testing.assert_frame_equal(out, out_shuffled)
 
 
-def test_diverging_bar_returns_axes():
-    df = pd.DataFrame(
-        {
-            "source": [f"S{i}" for i in range(6)],
-            "score": [3, -2, 1, -4, 5, -0.5],
-            "padj": [1e-5, 0.2, 0.03, 1e-3, 1e-6, 0.5],
-        }
-    )
+def test_diverging_bar_marks_the_zero_reference_and_explains_adjusted_significance():
+    df = _scored()
     ax = plots.diverging_bar(df, value_col="score", label_col="source", pvalue_col="padj", top_k=3)
-    assert ax is not None
-    # axvline(0) present
-    assert any(np.allclose(line.get_xdata(), [0, 0]) for line in ax.get_lines())
-    plt.close("all")
+
+    try:
+        assert ax is not None
+        # axvline(0) present
+        assert any(np.allclose(line.get_xdata(), [0, 0]) for line in ax.get_lines())
+
+        words = " ".join(t.get_text() for t in ax.figure.texts)
+        assert "padj" in words and "***" in words
+    finally:
+        plt.close(ax.figure)
 
 
 def test_diverging_bar_wraps_reactome_length_labels():
@@ -142,7 +142,7 @@ def test_activity_dotplot_wraps_reactome_length_labels():
     plt.close("all")
 
 
-def test_running_es_curve_returns_three_track_figure():
+def test_running_es_curve_draws_three_tracks_and_fills_the_es_panel():
     n = 50
     df = pd.DataFrame(
         {
@@ -153,8 +153,14 @@ def test_running_es_curve_returns_three_track_figure():
         }
     )
     fig = plots.running_es_curve(df, title="S1")
-    assert len(fig.axes) == 3
-    plt.close("all")
+
+    try:
+        assert len(fig.axes) == 3
+
+        ax_es = fig.axes[0]
+        assert len(ax_es.collections) >= 1
+    finally:
+        plt.close(fig)
 
 
 def test_running_es_curve_metric_panel_uses_filled_area_not_one_bar_per_gene():
@@ -266,22 +272,6 @@ def test_running_es_curve_without_gene_column_still_renders():
     )
     fig = plots.running_es_curve(df, title="S1")
     assert len(fig.axes) == 3
-    plt.close("all")
-
-
-def test_running_es_curve_es_panel_has_a_filled_area_under_the_curve():
-    n = 50
-    df = pd.DataFrame(
-        {
-            "rank": np.arange(1, n + 1),
-            "running_es": np.concatenate([np.linspace(0, 0.6, 25), np.linspace(0.6, -0.1, 25)]),
-            "hit": ([1, 0, 0, 0, 1] * 10),
-            "metric": np.linspace(3, -3, n),
-        }
-    )
-    fig = plots.running_es_curve(df, title="S1")
-    ax_es = fig.axes[0]
-    assert len(ax_es.collections) >= 1
     plt.close("all")
 
 
@@ -566,7 +556,7 @@ def _condition_activity_df():
     return pd.DataFrame(rows)
 
 
-def test_cross_group_dotplot_by_condition_returns_two_panels_plus_colorbar():
+def test_condition_dotplot_labels_both_panels_and_includes_a_colourbar():
     df = _condition_activity_df()
     fig = plots.cross_group_dotplot_by_condition(
         df,
@@ -578,27 +568,16 @@ def test_cross_group_dotplot_by_condition_returns_two_panels_plus_colorbar():
         case="Lymphedema",
         top_k=5,
     )
-    # 2 content panels + 1 colorbar axes.
-    assert len(fig.axes) == 3
-    plt.close("all")
 
+    try:
+        # 2 content panels + 1 colorbar axes.
+        assert len(fig.axes) == 3
 
-def test_cross_group_dotplot_by_condition_titles_control_left_case_right():
-    df = _condition_activity_df()
-    fig = plots.cross_group_dotplot_by_condition(
-        df,
-        row_col="source",
-        col_col="cell_type",
-        value_col="score",
-        condition_col="condition",
-        control="Normal",
-        case="Lymphedema",
-        top_k=5,
-    )
-    control_ax, case_ax = fig.axes[0], fig.axes[1]
-    assert control_ax.get_title() == "Normal"
-    assert case_ax.get_title() == "Lymphedema"
-    plt.close("all")
+        control_ax, case_ax = fig.axes[0], fig.axes[1]
+        assert control_ax.get_title() == "Normal"
+        assert case_ax.get_title() == "Lymphedema"
+    finally:
+        plt.close(fig)
 
 
 def test_cross_group_dotplot_by_condition_zscores_per_row_not_raw_value():
@@ -697,16 +676,6 @@ def test_diverging_bar_names_the_quantity_on_its_axis_and_its_colourbar():
 
     assert ax.get_xlabel() == label
     assert any(a.get_ylabel() == label for a in ax.figure.axes)
-    plt.close("all")
-
-
-def test_diverging_bar_says_what_the_asterisks_mean():
-    ax = plots.diverging_bar(
-        _scored(), value_col="score", label_col="source", pvalue_col="padj", top_k=3
-    )
-
-    words = " ".join(t.get_text() for t in ax.figure.texts)
-    assert "padj" in words and "***" in words
     plt.close("all")
 
 

@@ -109,16 +109,7 @@ jobs:
       - name: Install package (dev)
         run: pip install -e .[dev] -c envs/ci-constraints.txt
 
-      # Run the fast tier first as a cheap tripwire. Most regressions surface here in
-      # well under a minute, so a broken branch fails fast instead of after the full
-      # suite. `-m` deselects the slow/gpu/r/integration tiers.
-      - name: Fast tier
-        run: pytest -m "not slow and not gpu and not r and not integration"
-
-      # Then the whole suite. Heavy GPU/R/external-backend tests self-skip via
-      # importorskip and availability probes when their deps are absent, so this
-      # plain runner naturally runs the core-only tier.
-      #
+      # The full suite includes the fast tests. Optional backend tests probe availability.
       # -n auto shards across the runner's cores. The suite spends most of its time
       # importing the single-cell stack per worker, so sharding trades some memory
       # for a large wall-clock win.
@@ -127,7 +118,7 @@ jobs:
       # and their code is uncovered: measured 82.3% here. The floor follows the same rule as
       # pyproject's, two points under what this environment measures.
       - name: Full suite with coverage
-        run: pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=80
+        run: pytest -n auto --dist loadfile --cov --cov-report=xml --cov-report=term --cov-fail-under=80
 
       - name: Upload coverage report
         if: always()
@@ -184,7 +175,9 @@ jobs:
       # the synthetic demo project. The plain test job skips this because it does not
       # install snakemake.
       - name: Run the end-to-end workflow test
-        run: pytest tests/workflow/test_snakemake_end_to_end.py -p no:cacheprovider
+        run: >
+          pytest tests/workflow/test_snakefile_dag.py tests/workflow/test_snakemake_end_to_end.py
+          -p no:cacheprovider
 
   docs:
     name: Docs build (strict)
@@ -217,36 +210,28 @@ jobs:
         run: pip install build twine
       - name: Build distributions
         run: python -m build
-      - name: Verify wheel bundles every R script
-        # Dynamic: the wheel must bundle exactly the R scripts that live in source,
-        # so adding/removing one never silently drifts from a hardcoded count.
+      - name: Verify wheel contents
+        shell: python
         run: |
-          expected=$(find src/cellquorum -name '*.R' | wc -l)
-          count=$(unzip -l dist/*.whl | grep -c '\.R$')
-          echo "R scripts — source: $expected, wheel: $count"
-          if [ "$count" -ne "$expected" ]; then
-            echo "::error::Wheel bundles $count R scripts but src/cellquorum has $expected"
-            exit 1
-          fi
-      - name: Verify wheel bundles a non-empty LICENSE
-        run: |
-          license_line=$(unzip -l dist/*.whl | grep -E '(^|/)LICENSE( |$)' | awk '$1 != "" && $1 != "0" {print}')
-          if [ -z "$license_line" ]; then
-            echo "::error::Wheel is missing a non-empty LICENSE"
-            unzip -l dist/*.whl | grep -i license || true
-            exit 1
-          fi
-          echo "LICENSE in wheel: $license_line"
-      - name: Verify wheel bundles the py.typed marker
-        # Without py.typed, type checkers in downstream projects silently treat the
-        # whole package as untyped. An editable dev install hides a missing
-        # package-data entry, so only the built wheel can prove this.
-        run: |
-          if ! unzip -l dist/*.whl | grep -q 'cellquorum/py.typed'; then
-            echo "::error::Wheel is missing cellquorum/py.typed (PEP 561 marker)"
-            exit 1
-          fi
-          echo "py.typed present in wheel"
+          import tomllib
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel, = Path("dist").glob("*.whl")
+          expected = {p.relative_to("src").as_posix() for p in Path("src/cellquorum").rglob("*.R")}
+          data_files = tomllib.loads(Path("pyproject.toml").read_text())["tool"]["setuptools"]["data-files"]
+          for destination, patterns in data_files.items():
+              for pattern in patterns:
+                  expected.update(f"{destination}/{p.name}" for p in Path().glob(pattern) if p.suffix == ".R")
+          with ZipFile(wheel) as archive:
+              bundled = {n.split(".data/data/", 1)[-1] for n in archive.namelist() if n.endswith(".R")}
+              assert expected == bundled, f"Missing R scripts {expected - bundled}, extra {bundled - expected}"
+              assert "cellquorum/py.typed" in archive.namelist(), "Wheel is missing py.typed"
+              assert any(
+                  Path(item.filename).name == "LICENSE" and item.file_size > 0
+                  for item in archive.infolist()
+              ), "Wheel is missing a non-empty LICENSE"
+          print(f"Verified {len(expected)} R scripts, py.typed and LICENSE in {wheel.name}")
       - name: Check distribution metadata renders
         # Catches a malformed README or bad metadata that PyPI would reject on
         # upload — cheaper to learn here than at release time.
@@ -272,4 +257,4 @@ jobs:
           mkdir -p /tmp/wheelcheck/acceptance
           cp tests/acceptance/*.py /tmp/wheelcheck/acceptance/
           cd /tmp/wheelcheck
-          /tmp/wheelcheck/bin/python -m pytest acceptance -q -o 'markers=integration: installed workflow acceptance' --strict-markers
+          /tmp/wheelcheck/bin/python -m pytest -c "$GITHUB_WORKSPACE/pyproject.toml" acceptance -q --strict-markers

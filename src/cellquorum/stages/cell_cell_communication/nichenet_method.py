@@ -85,7 +85,12 @@ class NicheNetMethod(RAnalysisMethod):
         # Receiver geneset from a pseudobulk DE CSV.
         de_csv = config.get("nichenet_de_csv")
         if not de_csv:
-            default_de = Path(context.paths.results) / "de_pseudobulk_edger.csv"
+            name = (
+                "de_pseudobulk_edger_by_subcluster.csv"
+                if config.get("nichenet_de_cell_type")
+                else "de_pseudobulk_edger.csv"
+            )
+            default_de = Path(context.paths.results) / name
             de_csv = str(default_de) if default_de.is_file() else None
         if not de_csv or not Path(de_csv).is_file():
             return self._skip("no DE geneset CSV available")

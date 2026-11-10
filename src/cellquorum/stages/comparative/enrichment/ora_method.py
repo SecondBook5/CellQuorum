@@ -25,7 +25,11 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.priors import (
+    PriorFetchError,
+    collection_names,
+    get_net,
+)
 from cellquorum.stats.multiple_testing import bh_fdr
 
 if TYPE_CHECKING:
@@ -46,7 +50,9 @@ class OraMethod(AnalysisMethod):
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
         de_name = config.get("de_results_filename", "de_pseudobulk_edger.csv")
-        collections = config.get("gene_set_collections", ["hallmark", "reactome"])
+        collections = collection_names(
+            config.get("gene_set_collections", ["hallmark", "reactome"]), config.get("gmt_path")
+        )
         gmt_path = config.get("gmt_path")
         organism = config.get("organism", "human")
         license = config.get("license", "academic")

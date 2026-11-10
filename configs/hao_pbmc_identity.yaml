@@ -1,0 +1,167 @@
+# RNA-only population identity benchmark.
+project:
+  name: hao_pbmc_identity
+  organism: human
+  species_id: 9606
+paths:
+  output_dir: runs/hao_pbmc_identity
+input:
+  h5ad: blind/hao_counts.h5ad
+run:
+  profile: publication
+  study_questions:
+  - populations
+  require_selected_methods: true
+  random_seed: 42
+  checkpoint: true
+  checkpoint_after:
+  - clustering
+  required_outputs:
+    annotation:
+    - results/annotation/marker_vote_label_evidence.csv
+    annotation_viz:
+    - figures/annotation/marker_dotplot.pdf
+    population_identity:
+    - results/population_identity/tables/population_summary.csv
+    embeddings:
+    - figures/embeddings/categorical_umap_marker_vote_label.pdf
+compute:
+  backend: cpu
+  prefer_gpu: false
+r:
+  enabled: false
+cohort:
+  donor_key: donor
+  sample_key: sample
+  condition_key: time
+  batch_key: Batch
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: true
+  preprocessing: true
+  feature_selection: true
+  dimensionality: true
+  integration: false
+  integration_benchmark: false
+  clustering: true
+  annotation: true
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: true
+  reference_mapping: false
+  population_identity: true
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: true
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+qc_evidence:
+  graded:
+    archetype_audit: false
+  doublets:
+    enabled: false
+  ambient:
+    enabled: false
+preprocessing:
+  normalization:
+    recipe: cellquorum_log1p_cp10k_v1
+    preserve_counts_layer: counts
+    output_layer: cellquorum_normalized
+feature_selection:
+  counts_layer: counts
+dimensionality:
+  input_layer: cellquorum_normalized
+  n_pcs: 30
+clustering:
+  use_rep: X_pca
+  method: leiden
+annotation:
+  method: marker_vote
+  lymphocyte_refinement: human_pbmc_v1
+  key_added: marker_vote_label
+  cluster_key: leiden
+  random_state: 42
+  marker_panels:
+    B cells:
+    - MS4A1
+    - CD79A
+    - CD79B
+    CD4 T cells:
+    - IL7R
+    - CCR7
+    - LTB
+    CD8 T cells:
+    - CD8A
+    - CD8B
+    - CCL5
+    NK cells:
+    - GNLY
+    - NKG7
+    - KLRD1
+    CD14+ Monocytes:
+    - CD14
+    - S100A8
+    - S100A9
+    FCGR3A+ Monocytes:
+    - FCGR3A
+    - MS4A7
+    - VMO1
+    Dendritic cells:
+    - FCER1A
+    - CD1C
+    - CST3
+    Megakaryocytes:
+    - PPBP
+    - PF4
+    - GNG11
+annotation_viz:
+  group_by: marker_vote_label
+  title: PBMC markers by RNA call
+  methods:
+  - method: marker_dotplot
+population_identity:
+  candidate_key: marker_vote_label
+  annotation_keys:
+  - marker_vote_label_cluster_vote
+  embedding_keys:
+  - X_pca
+embeddings:
+  use_rep: X_pca
+  embeddings:
+  - umap
+  methods:
+  - method: umap
+  - method: categorical_embedding
+  color_by:
+  - marker_vote_label
+  - leiden
+  figure_formats:
+  - pdf
+  - png
+report:
+  enabled: true
+  html: true
+  markdown: true
+  fail_on_report_error: true
