@@ -13,6 +13,10 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
+      study-data-libraries:
+        patterns:
+          - pandas
+          - anndata
       # One PR for the lint/format/type toolchain. A ruff bump often reformats many
       # files; keeping it grouped and separate from test tooling makes the churn
       # reviewable in isolation.
