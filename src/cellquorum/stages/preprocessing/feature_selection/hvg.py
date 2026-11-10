@@ -15,6 +15,7 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
+from cellquorum.core.anndata_access import obs_frame, var_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod
@@ -152,7 +153,7 @@ class HVGMethod(AnalysisMethod):
         #
         # Fitting on a cell subset and applying to all cells is exactly the fit/transform
         # split, and it is safe because the result lands in `var`, which is gene-level.
-        fitting = fitting_cells(adata.obs)
+        fitting = fitting_cells(obs_frame(adata))
         fit_adata = adata if fitting is None else adata[fitting].copy()
 
         retried_at: int | None = None
@@ -197,7 +198,7 @@ class HVGMethod(AnalysisMethod):
         figures_dir = getattr(getattr(context, "paths", None), "figures", None)
         if figures_dir is not None and config.get("write_figures", True):
             figure_path = write_hvg_figure(
-                adata.var, Path(figures_dir) / "feature_selection_hvg.png", method=method
+                var_frame(adata), Path(figures_dir) / "feature_selection_hvg.png", method=method
             )
             if figure_path is not None:
                 artifacts.append(

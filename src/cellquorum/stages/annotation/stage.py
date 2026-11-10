@@ -36,7 +36,7 @@ class AnnotationStage(MethodDispatchStage):
         # here (no context); read it from metrics recorded by the method, else
         # fall back to the default.
         key_added = str(result.metrics.get("key_added", "cell_type"))
-        DataContract(required_obs=[key_added]).validate(result.adata)
+        DataContract(required_obs=[key_added]).validate(result.require_adata())
 
 
 __all__ = ["AnnotationStage"]

@@ -12,6 +12,7 @@ from uuid import uuid4
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.stages.qc.attrition import AttritionAudit
 from cellquorum.stages.qc.config import QCConfig
@@ -384,7 +385,7 @@ def _write_cell_labels(w: _ArtifactWrite) -> None:
 
             keys = w.publication_keys or {}
 
-            coarse_key, granular_key = resolve_cell_type_keys(w.figure_source.obs)
+            coarse_key, granular_key = resolve_cell_type_keys(obs_frame(w.figure_source))
             label_columns = {
                 "sample": keys.get("sample_key") or keys.get("patient_key"),
                 "donor": keys.get("patient_key"),
@@ -454,7 +455,7 @@ def _write_figures(w: _ArtifactWrite) -> None:
                 from cellquorum.visualization.qc.graded import write_graded_qc_figures
 
                 graded_paths, graded_warnings = write_graded_qc_figures(
-                    w.figure_source.obs,
+                    obs_frame(w.figure_source),
                     w.figures_path,
                     concern_severity=w.qc_config.graded.concern_severity,
                     sample_column=w.group_key or "sample_id",
@@ -478,7 +479,7 @@ def _write_figures(w: _ArtifactWrite) -> None:
 
                     keys = w.publication_keys or {}
                     panel_frame = assemble_qc_frame(
-                        obs=w.figure_source.obs,
+                        obs=obs_frame(w.figure_source),
                         cell_metrics=_metrics_with_posterior(
                             w.metrics_result.cell_metrics, w.mixture
                         ),
@@ -532,7 +533,7 @@ def _write_publication_tables(w: _ArtifactWrite) -> None:
                         w.figures_path,
                         cell_metrics=w.metrics_result.cell_metrics,
                         cell_decisions=w.floors.cell_table(),
-                        obs=w.figure_source.obs,
+                        obs=obs_frame(w.figure_source),
                         sample_key=(
                             keys.get("sample_key") or keys.get("patient_key") or "sample_id"
                         ),
@@ -576,7 +577,7 @@ def _write_html_report(w: _ArtifactWrite) -> None:
                     w.output_path / "qc_report.html",
                     cell_metrics=w.metrics_result.cell_metrics,
                     cell_decisions=w.floors.cell_table(),
-                    obs=w.figure_source.obs,
+                    obs=obs_frame(w.figure_source),
                     sample_key=keys.get("sample_key") or keys.get("patient_key") or "sample_id",
                     donor_key=keys.get("patient_key"),
                     condition_key=keys.get("condition_key"),

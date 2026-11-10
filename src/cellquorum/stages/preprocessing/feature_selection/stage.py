@@ -33,11 +33,12 @@ class FeatureSelectionStage(MethodDispatchStage):
         if result.metrics.get("skipped"):
             return
         # The highly_variable column must exist and flag at least one gene.
-        if "highly_variable" not in result.adata.var.columns:
+        var = result.require_adata().var
+        if "highly_variable" not in var.columns:
             raise CellQuorumContractError(
                 "feature_selection did not produce var['highly_variable'] column."
             )
-        if int(result.adata.var["highly_variable"].sum()) < 1:
+        if int(var["highly_variable"].sum()) < 1:
             raise CellQuorumContractError("feature_selection produced zero highly-variable genes.")
 
 

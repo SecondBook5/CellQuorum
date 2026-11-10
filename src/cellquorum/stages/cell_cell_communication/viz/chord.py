@@ -7,6 +7,7 @@ from pathlib import Path
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.stage import StageArtifact
 from cellquorum.visualization.communication import ligand_receptor_chord
 from cellquorum.visualization.figio import figure_artifacts, save_figure
@@ -18,7 +19,7 @@ def marker_display_labels(adata: ad.AnnData, group_key: str, marker_key: str) ->
     if group_key == marker_key or group_key not in adata.obs or marker_key not in adata.obs:
         return {}
     display = {}
-    for cluster, cells in adata.obs.groupby(group_key, observed=True):
+    for cluster, cells in obs_frame(adata).groupby(group_key, observed=True):
         labels = cells[marker_key].dropna().unique()
         name = (
             str(labels[0])

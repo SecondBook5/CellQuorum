@@ -11,9 +11,9 @@ from typing import Any
 import anndata as ad
 import numpy as np
 import pandas as pd
-import scipy.sparse as sp
 
 from cellquorum.backends.metacells_backend import RUN_METACELL2_PY
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts.data_contract import DataContract
 from cellquorum.core.h5ad_io import legacy_string_frame, write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -237,15 +237,13 @@ def _write_scratch_input(adata: ad.AnnData, settings: _MetacellSettings, context
     scratch = Path(getattr(context.paths, "scratch", "."))
     scratch.mkdir(parents=True, exist_ok=True)
     h5ad = scratch / "metacells_input.h5ad"
-    write_h5ad(
-        ad.AnnData(
-            X=adata.layers[settings.layer] if settings.layer != "X" else adata.X,
-            obs=legacy_string_frame(adata.obs[[settings.group_by]]),
-            var=legacy_string_frame(adata.var[[]]),
-            obsm={settings.rep_key: adata.obsm[settings.rep_key]},
-        ),
-        h5ad,
+    work = ad.AnnData(
+        X=adata.layers[settings.layer] if settings.layer != "X" else adata.X,
+        obs=legacy_string_frame(adata.obs[[settings.group_by]]),
+        var=legacy_string_frame(adata.var[[]]),
     )
+    work.obsm[settings.rep_key] = adata.obsm[settings.rep_key]
+    write_h5ad(work, h5ad)
     return h5ad
 
 
@@ -336,9 +334,9 @@ def _pseudobulk_expression(mc_adata_path: Path, fig_warnings: list[str]) -> pd.D
         return None
     try:
         mc_adata = ad.read_h5ad(mc_adata_path)
-        mc_x = mc_adata.X.toarray() if sp.issparse(mc_adata.X) else mc_adata.X
+        mc_x = dense_matrix(mc_adata.X)
         return pd.DataFrame(
-            mc_x.T if hasattr(mc_x, "T") else mc_x,
+            mc_x.T,
             index=mc_adata.var_names,
             columns=mc_adata.obs_names,
         )

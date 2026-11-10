@@ -5,3 +5,8 @@ scanpy==1.12.5
 scvelo==0.3.4
 # 2.3.3 supports the HDF5 registration changes in AnnData 0.13.4.
 cellrank==2.3.3
+pandas==3.1.1
+anndata==0.13.4
+# PyGPCCA 1.0.4 on PyPI requires Jinja2 3.0.3. The pinned upstream source
+# used by our CPU and GPU environments accepts the report renderer's Jinja2.
+pygpcca @ git+https://github.com/msmdev/pygpcca.git@773c463cc5043a5d40e6f31bbbc20f4e49587008

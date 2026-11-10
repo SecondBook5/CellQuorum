@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+from cellquorum.core.anndata_access import memory_matrix
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
@@ -92,7 +93,9 @@ class NmfMethod(AnalysisMethod):
                 n_genes=len(genes),
             )
 
-        matrix = adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
+        matrix = memory_matrix(
+            adata.layers[layer] if layer != "X" and layer in adata.layers else adata.X
+        )
         if gene_mask is not None:
             matrix = matrix[:, gene_mask]
         # Keep sparse counts sparse throughout fitting. Clip a private copy so a

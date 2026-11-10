@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import anndata as ad
 
+from cellquorum.core.anndata_access import obs_frame, var_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.core.stage import StageResult
@@ -107,8 +108,8 @@ class ScANVIMethod(AnalysisMethod):
         # the matrices. obs is copied because a label column is written into it below.
         work = ad.AnnData(
             X=adata.layers["counts"],
-            obs=adata.obs.copy(),
-            var=adata.var.copy(),
+            obs=obs_frame(adata).copy(),
+            var=var_frame(adata).copy(),
         )
         # Missing labels (NaN/None) are the natural pandas representation for "not yet
         # annotated" and must become the unlabeled sentinel, not the literal string "nan" --

@@ -26,6 +26,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.visualization.figstyle import get_group_palette
 
 if TYPE_CHECKING:
@@ -369,7 +370,7 @@ def velocity_diagnostics_figure(
 
     ax = axes[-1]
     key = "velocity_confidence" if "velocity_confidence" in adata.obs else metrics[0][0]
-    data = [adata.obs.loc[groups == g, key].to_numpy(dtype=float) for g in order]
+    data = [obs_frame(adata).loc[groups == g, key].to_numpy(dtype=float) for g in order]
     parts = ax.boxplot(data, patch_artist=True, widths=0.62, showfliers=False)
     for patch, group in zip(parts["boxes"], order, strict=False):
         patch.set_facecolor(palette.get(group, "#9a9a9a"))

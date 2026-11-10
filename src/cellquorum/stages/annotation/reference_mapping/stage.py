@@ -37,7 +37,9 @@ class ReferenceMappingStage(MethodDispatchStage):
         key_added = str(result.metrics.get("key_added", "ref_state"))
 
         # scANVI embedding must be present in obsm.
-        DataContract(required_obs=[key_added], required_obsm=["X_scANVI"]).validate(result.adata)
+        DataContract(required_obs=[key_added], required_obsm=["X_scANVI"]).validate(
+            result.require_adata()
+        )
 
 
 __all__ = ["ReferenceMappingStage"]

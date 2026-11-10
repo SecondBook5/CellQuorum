@@ -16,6 +16,7 @@ from scipy import sparse
 from scipy.stats import false_discovery_control, hypergeom
 
 from cellquorum.backends.sctenifoldknk_backend import ScTenifoldKnkBackend
+from cellquorum.core.anndata_access import dense_matrix, memory_matrix, obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -57,8 +58,8 @@ def prepare_matrix(adata: ad.AnnData, layer: str, cfg: ScTenifoldKnkConfig) -> p
     """Select variable expressed genes, force-retain identifiable knockout genes."""
     if not adata.var_names.is_unique or not adata.obs_names.is_unique:
         raise ValueError("scTenifoldKnk requires unique cell and gene identifiers")
-    x = adata.X if layer == "X" else adata.layers[layer]
-    values = x.data if sparse.issparse(x) else np.asarray(x)
+    x = memory_matrix(adata.X if layer == "X" else adata.layers[layer])
+    values = x if isinstance(x, np.ndarray) else x.data
     if not np.isfinite(values).all() or (values < 0).any():
         raise ValueError("scTenifoldKnk requires finite nonnegative counts")
     if not np.allclose(values, np.rint(values), atol=1e-6, rtol=0):
@@ -92,7 +93,7 @@ def prepare_matrix(adata: ad.AnnData, layer: str, cfg: ScTenifoldKnkConfig) -> p
     keep = np.sort(np.r_[ko_idx, others[: cfg.max_genes - len(ko_idx)]].astype(int))
     if len(keep) < 10:
         raise ValueError("Fewer than ten variable expressed genes remain")
-    dense = x[:, keep].toarray() if sparse.issparse(x) else np.asarray(x)[:, keep]
+    dense = dense_matrix(x[:, keep])
     return pd.DataFrame(dense.T, index=adata.var_names[keep], columns=adata.obs_names)
 
 
@@ -333,10 +334,10 @@ def _selected_cells(
 ) -> ad.AnnData:
     """The cells of the selected condition, restricted to the requested groups."""
     mask = np.ones(adata.n_obs, dtype=bool)
-    if condition_key:
+    if condition_key and cfg.condition_label is not None:
         mask &= adata.obs[condition_key].astype(str).eq(cfg.condition_label).to_numpy()
     if cfg.groups is not None:
-        available = set(adata.obs.loc[mask, cluster_key].astype(str))
+        available = set(obs_frame(adata).loc[mask, cluster_key].astype(str))
         missing = set(cfg.groups) - available
         if missing:
             raise ValueError(f"Requested groups absent in selected condition: {sorted(missing)}")
@@ -403,7 +404,7 @@ def _fit_cohort(run: _KnkRun, label: str, cohort: ad.AnnData, collected: _Collec
         collected.warnings.append(f"{label}: too few cells")
         return
     strata = [k for k in [cfg.donor_key, run.cluster_key if label == "pooled" else None] if k]
-    indices = select_cells(cohort.obs, cfg.max_cells, run.seed, strata)
+    indices = select_cells(obs_frame(cohort), cfg.max_cells, run.seed, strata)
     selected = cohort[indices]
     try:
         matrix = prepare_matrix(selected, run.config.get("layer", "counts"), cfg)
@@ -509,7 +510,7 @@ def _record_provenance(
         package_version=metadata["version"],
     )
     membership = run.root / f"{tag}_cells.csv"
-    cell_membership = selected.obs.copy()
+    cell_membership = obs_frame(selected).copy()
     fitted_ids = metadata.get("fitted_cell_ids", selected.obs_names.tolist())
     cell_membership["knk_in_native_fit"] = cell_membership.index.isin(fitted_ids)
     cell_membership.to_csv(membership)

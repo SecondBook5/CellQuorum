@@ -18,6 +18,7 @@ import pandas as pd
 from cellquorum.backends.registry import BackendRegistry, build_default_backend_registry
 from cellquorum.config.loader import load_config, save_resolved_config
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.executor import PipelineExecutionResult, PipelineExecutor
@@ -657,7 +658,7 @@ def _write_run_report_after_provenance(
             config=config,
             records=records,
             artifact_manager=artifact_manager,
-            obs=context.adata.obs if context.adata is not None else None,
+            obs=obs_frame(context.adata) if context.adata is not None else None,
         )
         for warning in warnings:
             logger.warning("%s", warning)

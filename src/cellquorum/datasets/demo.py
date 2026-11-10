@@ -15,6 +15,8 @@ import pandas as pd
 import yaml
 from scipy import sparse
 
+from cellquorum.core.anndata_access import copy_x_to_layer
+
 N_CELLS = 120
 N_GENES = 80
 SEED = 71
@@ -60,7 +62,7 @@ def _demo_dataset() -> ad.AnnData:
     )
     genes = ["MT-CO1", "MT-ND1"] + [f"G{i}" for i in range(N_GENES - 2)]
     data = ad.AnnData(sparse.csr_matrix(counts), obs=obs, var=pd.DataFrame(index=genes))
-    data.layers["counts"] = data.X.copy()
+    copy_x_to_layer(data, "counts")
     return data
 
 

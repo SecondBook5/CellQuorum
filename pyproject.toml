@@ -158,7 +158,7 @@ where = ["src"]
 
 [tool.setuptools.data-files]
 "share/cellquorum/profiles" = ["configs/profiles/*.yaml"]
-"share/cellquorum/benchmarks" = ["docs/benchmarks/study-coverage.csv", "docs/benchmarks/reference-results.json", "docs/benchmarks/scientific-validation.csv", "docs/benchmarks/scientific-validation.md", "docs/benchmarks/scientific-validation.svg", "docs/benchmarks/reference-studies.md", "docs/benchmarks/pbmc-identity.md", "envs/scc-signaling-constraints.txt", "envs/lineage-constraints.txt"]
+"share/cellquorum/benchmarks" = ["docs/benchmarks/study-coverage.csv", "docs/benchmarks/reference-results.json", "docs/benchmarks/scientific-validation.csv", "docs/benchmarks/scientific-validation.md", "docs/benchmarks/scientific-validation.svg", "docs/benchmarks/reference-studies.md", "docs/benchmarks/pbmc-identity.md", "envs/scc-signaling-constraints.txt", "envs/lineage-constraints.txt", "envs/cytotrace2-requirements.txt"]
 "share/cellquorum/benchmarks/pbmc-identity" = ["docs/benchmarks/pbmc-identity/*"]
 "share/cellquorum/benchmarks/scc-programs" = ["docs/benchmarks/scc-programs/*"]
 "share/cellquorum/workflows/helpers" = ["scripts/prepare_scc.R", "scripts/prepare_pancreas_atlas.py", "scripts/prepare_perturbseq.py", "scripts/verify_reference_study.py", "scripts/study_coverage.py", "scripts/validate_study_results.py", "scripts/fetch_scc_resources.py", "scripts/prepare_kang_specimens.py", "scripts/prepare_hao_blind.py", "scripts/evaluate_pbmc_identity.py", "scripts/figure_scc_programs.py"]

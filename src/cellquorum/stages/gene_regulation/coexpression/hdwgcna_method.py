@@ -13,6 +13,7 @@ import anndata as ad
 import pandas as pd
 
 from cellquorum.backends.hdwgcna_backend import HDWGCNA_R
+from cellquorum.core.anndata_access import obs_frame, var_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -157,8 +158,8 @@ def _write_scratch_input(adata: ad.AnnData, settings: _Settings, context: Pipeli
         write_h5ad(
             ad.AnnData(
                 X=adata.layers[layer],
-                obs=adata.obs.copy(),
-                var=adata.var.copy(),
+                obs=obs_frame(adata).copy(),
+                var=var_frame(adata).copy(),
             ),
             h5ad,
         )

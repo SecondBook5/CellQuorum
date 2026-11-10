@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.anndata_access import memory_matrix
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.fingerprint import resource_checksum
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -187,12 +188,12 @@ class AmbientCorrectionStage:
                         raise CellQuorumContractError(
                             "Rerun SoupX with resume: false to record stable gene IDs."
                         )
-                    library.var_names = library.var["gene_ids"].astype(str)
+                    library.var_names = library.var["gene_ids"].astype(str).tolist()
                     library.obs_names = (
                         library.obs["sample_id"].astype(str)
                         + ":"
                         + library.obs["barcode"].astype(str)
-                    )
+                    ).tolist()
                 combined = ad.concat(corrected_libraries, join="inner")
                 ids = adata.var["gene_ids"].astype(str)
                 if set(combined.obs_names) != set(adata.obs_names) or set(
@@ -207,7 +208,7 @@ class AmbientCorrectionStage:
                         "Choose a fresh input. The uncorrected_counts layer already exists."
                     )
                 corrected_adata.layers["uncorrected_counts"] = corrected_adata.X.copy()
-                corrected_adata.X = combined[adata.obs_names, ids].X.copy()
+                corrected_adata.X = memory_matrix(combined[adata.obs_names, ids].X).copy()
                 corrected_adata.layers["counts"] = corrected_adata.X.copy()
             else:
                 corrected_adata = ad.concat(corrected_libraries, join="outer")

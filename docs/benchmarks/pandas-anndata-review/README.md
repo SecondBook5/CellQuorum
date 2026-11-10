@@ -35,3 +35,43 @@ In all five patients with both TGFB1–ENG measurements, the tumor had a lower L
 - [Paired tensor factor correlations](scc-tensor-alignment.csv)
 - [Editable comparison figure](scc-rank-comparison.svg)
 - [SCC reference data and recipe](../reference-studies.md)
+
+## Mouse pancreas lineage after the CytoTRACE 2 repair
+
+On the same 3,696 cells and reference recipe, the repaired wheel completed Palantir,
+stochastic scVelo, CellRank and CytoTRACE 2. The analysis environment used pandas
+3.1.1, AnnData 0.13.4 and NumPy 2.3.5. CytoTRACE 2 used its 19-model ensemble
+with pandas 2.3.3 and NumPy 1.26.4 in a separate CPU worker. Both environments
+passed `pip check`. The CLI took 3 min 45 s and reached 6.48 GiB peak resident
+memory in the Linux/WSL validation run. [Installation instructions](../../../envs/README.md#extended-pancreas-lineage-from-a-clean-python-312-install)
+
+| Population | Cells | Median potency |
+|---|---:|---:|
+| Ductal | 916 | 0.300627 |
+| Ngn3 low EP | 262 | 0.196888 |
+| Ngn3 high EP | 642 | 0.083378 |
+| Pre-endocrine | 592 | 0.070243 |
+| Alpha | 481 | 0.081263 |
+| Beta | 591 | 0.048151 |
+| Delta | 70 | 0.077665 |
+| Epsilon | 142 | 0.108630 |
+
+Every potency class agreed with the baseline. The largest absolute change in
+any cell's potency score was 4.19 × 10⁻⁹ or less. All six CellRank fate
+probability columns agreed exactly after aligning cell and fate identifiers.
+The 4,800 fitted values across 24 gene–lineage curves agreed within 10⁻¹⁴.
+[Per-cell scores and classes](pancreas/pancreas-potency-by-cell.csv.gz) ·
+[Population medians](pancreas/pancreas-potency-by-population.csv) ·
+[Numerical and rendered-page comparisons](pancreas/comparison.json)
+
+The two restored publication pages use the same Palantir panel. Their eight
+bar lengths reproduce the median pseudotime from the final analysis object.
+The largest absolute difference in a plotted median was 2.23 × 10⁻¹⁶.
+The rendered pages differ in 1.65% and 3.81% of pixels, respectively, at 150 dpi.
+[Plotted data](pancreas/lineage.palantir.csv) ·
+[Standalone PDF](pancreas/lineage.palantir.pdf) · [Standalone SVG](pancreas/lineage.palantir.svg) ·
+[Assembled PDF](pancreas/lineage.pdf) · [Assembled SVG](pancreas/lineage.svg)
+
+![Standalone Palantir panel](pancreas/lineage.palantir.png)
+
+![Assembled lineage page](pancreas/lineage.png)

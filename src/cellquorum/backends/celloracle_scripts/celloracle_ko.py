@@ -233,7 +233,11 @@ def _run_celloracle(args: argparse.Namespace) -> None:  # pragma: no cover
     if int(args.max_cells) > 0 and adata.n_obs > int(args.max_cells):
         cond_key = args.condition_key if args.condition_key in adata.obs.columns else None
         keep = _stratified_subsample(
-            adata.obs, cluster_key, cond_key, int(args.max_cells), int(args.seed)
+            adata.obs if isinstance(adata.obs, pd.DataFrame) else adata.obs.to_memory(),
+            cluster_key,
+            cond_key,
+            int(args.max_cells),
+            int(args.seed),
         )
         print(
             f"[celloracle] Subsampling {adata.n_obs} -> {len(keep)} cells "

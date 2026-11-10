@@ -11,6 +11,7 @@ import pandas as pd
 from matplotlib.figure import Figure
 
 from cellquorum.config.cohort import resolve_cohort_key
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_catalog import register_stage
@@ -68,7 +69,7 @@ class CompositionStage:
             )
 
         mask = _qc_mask(adata, config)
-        obs = adata.obs.loc[mask] if mask is not None else adata.obs
+        obs = obs_frame(adata).loc[mask] if mask is not None else obs_frame(adata)
         n_cells_used = int(len(obs))
         if n_cells_used == 0:
             return StageResult.skipped(adata=adata, reason="no cells survived atlas_states filter")

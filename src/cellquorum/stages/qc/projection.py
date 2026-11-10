@@ -30,6 +30,7 @@ import pandas as pd
 from scipy.stats import entropy
 from sklearn.neighbors import NearestNeighbors
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.context_access import resolve_stage_config
@@ -307,7 +308,7 @@ class QueryProjectionStage:
 
         k = config["k"]
         coords = np.asarray(adata.obsm[rep])
-        reference_labels = adata.obs.loc[core_mask, label_column]
+        reference_labels = obs_frame(adata).loc[core_mask, label_column]
         if reference_labels.isna().any():
             raise ValueError(
                 f"Reference label column '{label_column}' contains missing core labels."
@@ -346,7 +347,7 @@ class QueryProjectionStage:
         }
         adata.obs = pd.concat(
             [
-                adata.obs.drop(columns=list(new_cols), errors="ignore"),
+                obs_frame(adata).drop(columns=list(new_cols), errors="ignore"),
                 pd.DataFrame(new_cols, index=adata.obs_names),
             ],
             axis=1,

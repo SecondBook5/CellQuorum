@@ -47,6 +47,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame, var_frame
+
 if TYPE_CHECKING:
     import anndata as ad
     from anndata.experimental.backed import Dataset2D
@@ -178,12 +180,12 @@ def sanitize_for_h5ad(adata: ad.AnnData) -> list[str]:
     """
     notes: list[str] = []
     notes += _sanitize_uns_keys(adata.uns)
-    notes += _sanitize_frame_columns(adata.obs, axis="obs")
-    notes += _sanitize_frame_columns(adata.var, axis="var")
+    notes += _sanitize_frame_columns(obs_frame(adata), axis="obs")
+    notes += _sanitize_frame_columns(var_frame(adata), axis="var")
     notes += _sanitize_mapping_keys(adata.obsm, name="obsm")
     notes += _sanitize_mapping_keys(adata.varm, name="varm")
-    notes += _coerce_unwritable_columns(adata.obs, axis="obs")
-    notes += _coerce_unwritable_columns(adata.var, axis="var")
+    notes += _coerce_unwritable_columns(obs_frame(adata), axis="obs")
+    notes += _coerce_unwritable_columns(var_frame(adata), axis="var")
     notes += _coerce_cellrank_lineage_arrays(adata)
     notes += _jsonify_unwritable_uns(adata.uns)
     return notes

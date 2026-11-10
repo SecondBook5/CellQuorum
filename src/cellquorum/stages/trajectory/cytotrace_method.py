@@ -81,6 +81,23 @@ class CytoTraceMethod(AnalysisMethod):
         )
 
         artifacts: list[StageArtifact] = []
+        for name, relative_path, kind, description in [
+            (
+                "cytotrace2_scores",
+                "cytotrace2_results/cytotrace2_results.txt",
+                "tsv",
+                "Absolute and relative potency scores and potency class by barcode.",
+            ),
+            (
+                "cytotrace2_runtime",
+                "cytotrace2-runtime.json",
+                "json",
+                "Package versions used by the CytoTRACE 2 model worker.",
+            ),
+        ]:
+            path = workdir / relative_path
+            if path.is_file():
+                artifacts.append(StageArtifact(name, path, kind, description))
         results_dir = Path(context.paths.results) / "trajectory" / "cytotrace"
         try:
             results_dir.mkdir(parents=True, exist_ok=True)

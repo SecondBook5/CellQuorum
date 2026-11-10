@@ -11,6 +11,7 @@ import anndata as ad
 import pandas as pd
 
 from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.context import resolve_n_jobs
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -98,10 +99,10 @@ class MultiNicheNetMethod(RAnalysisMethod):
             donor_col = config.get("donor_col")
             if not donor_col or donor_col not in adata.obs:
                 raise ValueError("Paired MultiNicheNet requires an existing donor_col")
-            obs = analysis_adata.obs
+            obs = obs_frame(analysis_adata)
             if obs[[sample_col, donor_col, condition_col]].isna().any().any():
                 raise ValueError("Missing sample, donor or condition in paired MultiNicheNet")
-            sample_meta = adata.obs[[sample_col, donor_col, condition_col]].drop_duplicates()
+            sample_meta = obs_frame(adata)[[sample_col, donor_col, condition_col]].drop_duplicates()
             if sample_meta[sample_col].duplicated().any():
                 raise ValueError("Each sample must map to exactly one donor and condition")
             cell_counts = (

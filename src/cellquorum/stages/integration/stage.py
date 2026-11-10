@@ -43,7 +43,7 @@ class IntegrationStage(MethodDispatchStage):
         # Resolve the expected output embedding key from provenance/metrics and
         # assert it exists — turns a silent Harmony fallback into a loud failure.
         output_rep = str(result.metrics.get("output_rep", "X_pca_harmony"))
-        DataContract(required_obsm=[output_rep]).validate(result.adata)
+        DataContract(required_obsm=[output_rep]).validate(result.require_adata())
 
 
 __all__ = ["IntegrationStage"]

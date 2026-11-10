@@ -156,7 +156,7 @@ def compute_umap(
 
     if needs_recompute or (use_rep is not None and not _has_neighbors(adata)):
         # Recompute neighbors on the specified representation
-        if use_rep not in adata.obsm:
+        if use_rep is None or use_rep not in adata.obsm:
             raise RepMissing(f"representation '{use_rep}' absent from obsm")
         sc.pp.neighbors(
             adata,
@@ -200,7 +200,7 @@ def compute_phate(
         import phate
     except ImportError as exc:
         raise PhateUnavailable("phate not installed") from exc
-    if use_rep not in adata.obsm:
+    if use_rep is None or use_rep not in adata.obsm:
         raise RepMissing(f"representation '{use_rep}' absent from obsm")
     operator = phate.PHATE(
         knn=knn, decay=decay, t="auto", n_jobs=-1, random_state=random_state, verbose=False

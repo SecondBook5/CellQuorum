@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import tempfile
+from collections.abc import Sized
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from anndata.io import read_elem
 
 from cellquorum.config.design import DesignConfig, validate_design_against_obs
 from cellquorum.config.models import CellQuorumConfig, StageSelectionConfig
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.labels import as_label_strings
 from cellquorum.stages.qc.config import QCFloorConfig
 
@@ -45,14 +47,15 @@ def _metadata(path: Path) -> tuple[pd.DataFrame, int, list[str]]:
         if isinstance(handle["obs"], h5py.Group) and "_index" in handle["var"].attrs:
             obs = read_elem(handle["obs"])
             var = handle["var"]
-            gene_names = read_elem(var[var.attrs["_index"]])
-            return obs, len(gene_names), layers
+            index = read_elem(var[var.attrs["_index"]])
+            if isinstance(obs, pd.DataFrame) and isinstance(index, Sized):
+                return obs, len(index), layers
 
     # Older files store categorical codes in obs and their labels in uns. AnnData's
     # backwards-compatible reader rejoins them before we show any values to the user.
     data = ad.read_h5ad(path, backed="r")
     try:
-        return data.obs, data.n_vars, layers
+        return obs_frame(data), data.n_vars, layers
     finally:
         data.file.close()
 

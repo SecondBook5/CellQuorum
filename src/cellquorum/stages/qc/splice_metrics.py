@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import anndata as ad
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -60,6 +61,7 @@ class QCSpliceMetricsStage:
 
             for layer in ("spliced", "unspliced"):
                 assert_integer_valued(adata.layers[layer], layer=layer)
+            velo_adata: ad.AnnData | None
             velo_adata, notes = adata, ["Using input splice count layers."]
         else:
             try:

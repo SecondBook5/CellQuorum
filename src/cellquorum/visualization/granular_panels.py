@@ -102,7 +102,8 @@ def plot_granular_panels_per_coarse_type(
                 {"fine": pd.Categorical(fine_in_type.to_numpy(), categories=distinct)}
             ),
         )
-        sub.obsm["X_panel"] = coords[mask]
+        panel_coords = coords[mask]
+        sub.obsm["X_panel"] = panel_coords
 
         if paga_overlay and len(distinct) >= 2:
             try:
@@ -120,8 +121,8 @@ def plot_granular_panels_per_coarse_type(
             paga_threshold=paga_threshold,
         )
         ax = fig.axes[0]
-        x_lo, x_hi = _robust_bounds(sub.obsm["X_panel"][:, 0])
-        y_lo, y_hi = _robust_bounds(sub.obsm["X_panel"][:, 1])
+        x_lo, x_hi = _robust_bounds(panel_coords[:, 0])
+        y_lo, y_hi = _robust_bounds(panel_coords[:, 1])
         pad = 0.08 * (x_hi - x_lo + 1e-9)
         pad_y = 0.08 * (y_hi - y_lo + 1e-9)
         ax.set_xlim(x_lo - pad, x_hi + pad)

@@ -16,6 +16,7 @@ import scipy.io as sio
 import scipy.sparse as sp
 
 from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.anndata_access import copy_x_to_layer
 from cellquorum.core.exceptions import CellQuorumBackendError, CellQuorumDataError
 
 # Path to the bundled SoupX R script.
@@ -173,7 +174,7 @@ def import_corrected_matrix(out_dir: str | Path, sample_id: str) -> ad.AnnData:
 
     # Build the AnnData; namespace barcodes by sample.
     adata = ad.AnnData(X=sp.csr_matrix(mat))
-    adata.var_names = genes
+    adata.var_names = genes.tolist()
     if (d / "gene_ids.tsv").is_file():
         adata.var["gene_ids"] = pd.read_csv(d / "gene_ids.tsv", header=None, dtype=str)[
             0
@@ -184,7 +185,7 @@ def import_corrected_matrix(out_dir: str | Path, sample_id: str) -> ad.AnnData:
     # Record sample_id as an explicit obs column (robust — do NOT reconstruct it
     # downstream by splitting namespaced barcodes, which can themselves contain '_').
     adata.obs["sample_id"] = sample_id
-    adata.layers["counts"] = adata.X.copy()
+    copy_x_to_layer(adata, "counts")
     return adata
 
 

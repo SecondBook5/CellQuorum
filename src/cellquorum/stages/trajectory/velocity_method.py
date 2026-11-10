@@ -55,7 +55,7 @@ class VelocityMethod(AnalysisMethod):
 
             for layer in ("spliced", "unspliced"):
                 assert_integer_valued(adata.layers[layer], layer=layer)
-            velo_adata = adata
+            velo_adata: ad.AnnData | None = adata
             notes.append("Used spliced and unspliced count layers from the input object.")
         elif manifest is not None:
             manifest = self._maybe_generate(manifest, config, sample_col, loom_path_col, notes)

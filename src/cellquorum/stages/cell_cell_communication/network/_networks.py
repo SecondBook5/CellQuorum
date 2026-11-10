@@ -13,6 +13,8 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
+
 if TYPE_CHECKING:
     import anndata as ad
 
@@ -215,7 +217,7 @@ def resolve_condition_arms(
         )
         return arms
     mapping = (
-        adata.obs[[sample_col, condition_col]]
+        obs_frame(adata)[[sample_col, condition_col]]
         .astype(str)
         .drop_duplicates()
         .set_index(sample_col)[condition_col]

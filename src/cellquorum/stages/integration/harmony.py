@@ -25,6 +25,7 @@ from cellquorum.backends.harmonypy_backend import (
     HarmonyDiagnostics,
     harmony_correct,
 )
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
@@ -223,7 +224,7 @@ class HarmonyMethod(AnalysisMethod):
         # Recorded rather than ignored, because the alternative is a declaration that reads
         # as compliant while nothing enforces it — the precise failure the cell_scope contract
         # was added to prevent. scVI and scANVI have real encoders and do honour the scope.
-        if fitting_cells(adata.obs) is not None:
+        if fitting_cells(obs_frame(adata)) is not None:
             notes.append(
                 "Harmony fitted on all cells: it has no out-of-sample transform, so the QC "
                 "fit population could not be honoured. The corrected embedding is influenced "

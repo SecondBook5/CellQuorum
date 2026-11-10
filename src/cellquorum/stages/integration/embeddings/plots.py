@@ -21,6 +21,7 @@ from matplotlib.axes import Axes
 from matplotlib.colors import Normalize, to_hex
 from matplotlib.figure import Figure
 
+from cellquorum.core.anndata_access import memory_matrix
 from cellquorum.visualization.figio import figure_artifacts, save_figure
 from cellquorum.visualization.figstyle import ORANGE_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
@@ -945,8 +946,8 @@ def magic_zscore_layer(
     """
     if source_layer not in adata.layers:
         return False
-    m = adata.layers[source_layer]
-    m = m.toarray() if hasattr(m, "toarray") else np.asarray(m, dtype=float)
+    matrix = memory_matrix(adata.layers[source_layer])
+    m = np.asarray(matrix, dtype=float) if isinstance(matrix, np.ndarray) else matrix.toarray()
     mu = m.mean(0, keepdims=True)
     sd = m.std(0, keepdims=True) + 1e-9
     adata.layers[out_layer] = (m - mu) / sd

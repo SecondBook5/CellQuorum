@@ -102,7 +102,7 @@ class StageResult:
         metrics: JSON-serializable structured metrics for summaries and reports.
     """
 
-    adata: ad.AnnData
+    adata: ad.AnnData | None
 
     artifacts: list[StageArtifact] = field(default_factory=list)
 
@@ -131,6 +131,14 @@ class StageResult:
     output_fingerprint: str | None = None
 
     checkpoint_path: Path | None = None
+
+    def require_adata(self) -> ad.AnnData:
+        """Return the output object for a method whose contract requires one."""
+        if self.adata is None:
+            from cellquorum.core.contracts import CellQuorumContractError
+
+            raise CellQuorumContractError("The stage returned no analysis object")
+        return self.adata
 
     def __post_init__(self) -> None:
         """

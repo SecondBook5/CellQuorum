@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumBackendError
 from cellquorum.core.h5ad_io import write_h5ad
@@ -334,7 +335,10 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 description="Per-cell scDiagnostics confidence metrics.",
             ),
             *_write_figures(
-                obs=result_adata.obs, cell_type_col=cell_type_col, context=context, config=config
+                obs=obs_frame(result_adata),
+                cell_type_col=cell_type_col,
+                context=context,
+                config=config,
             ),
         ]
 
@@ -538,7 +542,7 @@ class ScdiagnosticsMethod(RAnalysisMethod):
         )
 
         figure_artifacts = _write_figures(
-            obs=result_adata.obs, cell_type_col=cell_type_col, context=context, config=config
+            obs=obs_frame(result_adata), cell_type_col=cell_type_col, context=context, config=config
         )
 
         return StageResult(
@@ -691,8 +695,8 @@ class ScdiagnosticsMethod(RAnalysisMethod):
                 adata = adata[:, shared]
 
         query = ad.AnnData(X=adata.layers[expression_layer].copy())
-        query.obs_names = adata.obs_names
-        query.var_names = adata.var_names
+        query.obs_names = adata.obs_names.tolist()
+        query.var_names = adata.var_names.tolist()
         # Written as plain strings. A pandas Categorical becomes an h5ad categorical, which
         # zellkonverter reads as an R factor, which scDiagnostics' `projectPCA` reports as the
         # factor's integer CODES — so its `cell_type == "<label>"` filter matched nothing and

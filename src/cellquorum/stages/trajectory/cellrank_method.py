@@ -66,15 +66,7 @@ class CellRankMethod(AnalysisMethod):
             # already applied once in this exact file's realtime-kernel helper
             # (_cellrank.py's moscot TemporalProblem construction), whose comment
             # calls this "the largest [copy] in the pipeline".
-            work = ad.AnnData(
-                X=adata.X,
-                obs=adata.obs.copy(),
-                var=adata.var,
-                obsm=dict(adata.obsm),
-                obsp=dict(adata.obsp),
-                layers=dict(adata.layers),
-                uns=adata.uns,
-            )
+            work = _cellrank.copy_with_private_obs(adata)
 
         # Optionally load the whole-object velocity h5ad for a VelocityKernel.
         velocity_adata = self._load_velocity_adata(config, context, work, warnings)

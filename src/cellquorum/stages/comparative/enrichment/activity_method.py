@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import anndata as ad
+import pandas as pd
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -115,6 +116,8 @@ class ActivityMethod(AnalysisMethod):
                 )
                 source = adata if result is None else result
                 es = source.obsm.pop("score_ulm")
+                if not isinstance(es, pd.DataFrame):
+                    raise ValueError("decoupler returned scores without cell and program labels")
                 source.obsm.pop("padj_ulm", None)
                 # decoupler preserves obs names on the returned index, so realign
                 # the cell-type labels to that (possibly shortened) index instead

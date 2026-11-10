@@ -13,6 +13,7 @@ import pandas as pd
 
 from cellquorum.config.design import validate_design_against_obs
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.context import PipelineContext
 from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact
@@ -97,6 +98,12 @@ def study_blockers(config: CellQuorumConfig, methods: dict[str, list[str]]) -> l
     for stage, pkg in [("multicellular_programs", "DIALOGUE"), ("ambient_correction", "SoupX")]:
         if stage in methods:
             r_packages.add(pkg)
+    if "cytotrace" in methods.get("trajectory", []):
+        from cellquorum.stages.trajectory._cytotrace import worker_issue
+
+        issue = worker_issue()
+        if issue:
+            errors.append(issue)
     for method, module in [
         ("velocity", "scvelo"),
         ("cellrank", "cellrank"),
@@ -222,7 +229,7 @@ def record_qc_support(
         or not config.design.control
     ):
         return None
-    obs = adata.obs
+    obs = obs_frame(adata)
     keys = [config.design.donor_col, config.design.condition_col]
     if any(key not in obs for key in keys):
         return None

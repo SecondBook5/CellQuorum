@@ -17,6 +17,8 @@ from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.registry import METHOD_REGISTRY, MethodRegistry
 
 if TYPE_CHECKING:
+    import anndata as ad
+
     from cellquorum.config.models import CellQuorumConfig
     from cellquorum.core.context import PipelineContext
 
@@ -124,7 +126,7 @@ class MethodDispatchStage(ABC):
 
     def _run_single_method(
         self,
-        adata: object,
+        adata: ad.AnnData,
         method_config: dict,
         context: PipelineContext,
     ) -> StageResult | MethodSkip:
@@ -152,7 +154,7 @@ class MethodDispatchStage(ABC):
 
     def _run_methods_list(
         self,
-        adata: object,
+        adata: ad.AnnData,
         stage_config: dict,
         methods: list[dict],
         context: PipelineContext,
@@ -206,7 +208,7 @@ class MethodDispatchStage(ABC):
 
             # Validate and thread this method's AnnData into the next method.
             self._validate_output(outcome)
-            current = outcome.adata
+            current = outcome.require_adata()
             notes.extend(outcome.notes)
             warnings.extend(outcome.warnings)
             artifacts.extend(outcome.artifacts)

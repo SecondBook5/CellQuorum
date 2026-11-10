@@ -125,6 +125,8 @@ class AucellMethod(AnalysisMethod):
         source = adata if result is None else result
         try:
             es = source.obsm.pop("score_aucell")
+            if not isinstance(es, pd.DataFrame):
+                return self._skip("AUCell returned scores without cell and program labels")
         except KeyError:
             return self._skip("AUCell produced no program columns")
         aligned = es.reindex(adata.obs_names)

@@ -149,6 +149,8 @@ class ActivityCascadeVizMethod(AnalysisMethod):
                 )
                 source = adata if result is None else result
                 es = source.obsm.pop(f"score_{method}")
+                if not isinstance(es, pd.DataFrame):
+                    raise ValueError("decoupler returned scores without cell and program labels")
                 source.obsm.pop(f"padj_{method}", None)
                 # decoupler may drop all-zero cells — realign pseudotime to the
                 # returned (possibly shortened) index before binning.

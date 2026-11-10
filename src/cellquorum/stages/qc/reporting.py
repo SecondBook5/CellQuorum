@@ -10,6 +10,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame, var_frame
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.stages.qc._errors import QCStageError
 from cellquorum.stages.qc.artifacts import QCArtifactManifest
@@ -48,7 +49,7 @@ def compute_qc_donor_comparisons(
     control, case = keys.get("normal_label"), keys.get("disease_label")
     if not paired or not (sample and donor and condition and control and case):
         return {}, []
-    metadata = adata.obs[[sample, donor, condition]]
+    metadata = obs_frame(adata)[[sample, donor, condition]]
     if (
         metadata.isna().any().any()
         or metadata.astype("string").apply(lambda values: values.str.strip().eq("")).any().any()
@@ -57,7 +58,7 @@ def compute_qc_donor_comparisons(
     if (metadata.groupby(sample, observed=True)[[donor, condition]].nunique() > 1).any().any():
         return {}, ["QC donor comparisons omitted: a sample maps to multiple donors or conditions."]
     frame = assemble_qc_frame(
-        obs=adata.obs,
+        obs=obs_frame(adata),
         sample_key=sample,
         donor_key=donor,
         condition_key=condition,
@@ -126,7 +127,7 @@ def build_qc_figure_adata(
         An unfiltered object with metrics, floor outcomes and graded columns on obs.
     """
 
-    figure_adata = ad.AnnData(obs=adata.obs.copy(), var=adata.var.copy())
+    figure_adata = ad.AnnData(obs=obs_frame(adata).copy(), var=var_frame(adata).copy())
     figure_adata.obs[FLOOR_REASON_COLUMN] = (
         floors.reason.reindex(figure_adata.obs_names).fillna("").to_numpy()
     )
@@ -176,14 +177,14 @@ def annotate_adata_with_qc_metrics(
         metric_table=metrics_result.cell_metrics,
         axis_label="obs",
     )
-    obs_conflicts = add_metric_columns_to_axis(axis_frame=adata.obs, metrics=cell_metrics)
+    obs_conflicts = add_metric_columns_to_axis(axis_frame=obs_frame(adata), metrics=cell_metrics)
 
     gene_metrics = align_metric_table_to_axis(
         axis_names=adata.var_names,
         metric_table=metrics_result.gene_metrics,
         axis_label="var",
     )
-    var_conflicts = add_metric_columns_to_axis(axis_frame=adata.var, metrics=gene_metrics)
+    var_conflicts = add_metric_columns_to_axis(axis_frame=var_frame(adata), metrics=gene_metrics)
 
     warnings: list[str] = []
     if obs_conflicts:

@@ -38,7 +38,7 @@ class DimensionalityStage(MethodDispatchStage):
 
         # Skipped results pass through without validation.
         if not result.metrics.get("skipped"):
-            DataContract(required_obsm=["X_pca"]).validate(result.adata)
+            DataContract(required_obsm=["X_pca"]).validate(result.require_adata())
 
 
 __all__ = ["DimensionalityStage"]

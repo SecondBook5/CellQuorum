@@ -20,6 +20,7 @@ import scipy.sparse as sp
 
 from cellquorum.backends.rscript import RscriptBackend
 from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.stages.qc.config import QCDoubletConfig
 
 if TYPE_CHECKING:
@@ -384,7 +385,9 @@ def detect_doublets(
         adata.obs["predicted_doublet"] = combine_consensus(call_frame, config.consensus).to_numpy()
         score_cols = [f"doublet_score_{m}" for m in methods_run]
 
-        adata.obs["doublet_score"] = adata.obs[score_cols].max(axis=1, skipna=True).to_numpy()
+        obs_frame(adata)["doublet_score"] = (
+            obs_frame(adata)[score_cols].max(axis=1, skipna=True).to_numpy()
+        )
     else:
         adata.obs["predicted_doublet"] = False
         adata.obs["doublet_score"] = np.nan

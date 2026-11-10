@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.visualization.figstyle import apply_theme, cell_type_palette, save_figure
 
 if TYPE_CHECKING:
@@ -125,15 +126,13 @@ def plot_marker_feature_grid(
         return None
 
     import matplotlib.pyplot as plt
-    import scipy.sparse as sp
 
     apply_theme("notebook")
     out_path = Path(out_path)
 
     genes = [gene for _, gene in present]
     sub = adata[:, genes]
-    matrix = sub.layers[layer]
-    matrix = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
+    matrix = dense_matrix(sub.layers[layer])
 
     coords = np.asarray(adata.obsm[basis])[:, :2]
     palette = cell_type_palette([ct for ct, _ in present])
@@ -336,11 +335,8 @@ def _group_summaries(
     adata: ad.AnnData, layer: str, groupby: str, groups: list[str], all_genes: list[str]
 ) -> tuple[np.ndarray, np.ndarray]:
     """Mean expression and percent of cells expressing, per gene row and group column."""
-    import scipy.sparse as sp
 
-    var_positions = adata.var_names.get_indexer(all_genes)
-    matrix = adata.layers[layer][:, var_positions]
-    matrix = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
+    matrix = dense_matrix(adata[:, all_genes].layers[layer])
     group_labels = adata.obs[groupby].astype(str).to_numpy()
 
     mean_arr = np.full((len(all_genes), len(groups)), np.nan)
@@ -592,7 +588,6 @@ def marker_panel_statistics(
     from the object. Columns are addressed by position, so a gene named in two panel groups
     yields two columns.
     """
-    import scipy.sparse as sp
 
     labels = adata.obs[groupby].astype(str).to_numpy()
     observed = pd.Series(labels).unique().tolist()
@@ -604,7 +599,6 @@ def marker_panel_statistics(
     )
     genes: list[str] = []
     gene_group: list[str] = []
-    positions: list[int] = []
     for group, panel_genes in marker_panel.items():
         if str(group) not in set(groups):
             continue
@@ -612,12 +606,10 @@ def marker_panel_statistics(
             if gene in adata.var_names:
                 genes.append(gene)
                 gene_group.append(str(group))
-                positions.append(int(adata.var_names.get_loc(gene)))
     if not genes:
         empty = np.zeros((len(groups), 0))
         return MarkerPanelStatistics(groups, [], [], empty, empty)
-    matrix = adata.layers[layer][:, positions]
-    matrix = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
+    matrix = dense_matrix(adata[:, genes].layers[layer])
     mean = np.vstack([matrix[labels == g].mean(axis=0) for g in groups])
     pct = np.vstack([(matrix[labels == g] > 0).mean(axis=0) * 100.0 for g in groups])
     return MarkerPanelStatistics(groups, genes, gene_group, mean, pct)

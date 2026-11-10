@@ -104,7 +104,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
-    scores = adata.obs[score_cols].copy()
+    import pandas as pd
+
+    obs = adata.obs if isinstance(adata.obs, pd.DataFrame) else adata.obs.to_memory()
+    scores = obs[score_cols].copy()
     scores.insert(0, "cell", adata.obs_names.to_numpy())
     scores.to_csv(out_csv, index=False)
     print(f"[pyucell] wrote {len(score_cols)} signature score(s) -> {out_csv}")

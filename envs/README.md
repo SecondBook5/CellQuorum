@@ -241,3 +241,31 @@ SampleQC from assessment-only to automatic cell removal.
 
 This pins SampleQC's source, not its full transitive R environment. A freshly
 provisioned and locked R profile remains a deployment requirement.
+
+### Extended pancreas lineage from a clean Python 3.12 install
+
+Run these commands from the source checkout on Linux or WSL. The lineage
+constraints select the tested pandas and AnnData pair, NumPy for stochastic
+velocity, and the upstream PyGPCCA revision compatible with the report renderer.
+Git is needed to install that revision.
+
+```bash
+python3.12 -m venv .venvs/lineage
+.venvs/lineage/bin/python -m pip install '.[lineage]' -c envs/lineage-constraints.txt
+.venvs/lineage/bin/python -m pip check
+
+python3.12 -m venv .venvs/cytotrace2
+.venvs/cytotrace2/bin/python -m pip install -r envs/cytotrace2-requirements.txt
+.venvs/cytotrace2/bin/python -m pip check
+export CELLQUORUM_CYTOTRACE2_PYTHON="$PWD/.venvs/cytotrace2/bin/python"
+export PATH="$PWD/.venvs/lineage/bin:$PATH"
+```
+
+CytoTRACE 2 1.1.0.4 needs NumPy 1 and pandas 2 for the upstream gene mapping.
+CellQuorum passes counts and original barcodes to the worker and records its
+package versions with the per-cell results. On first use the model downloads its
+19 weights. For offline reuse, copy the complete model1.pt through model19.pt
+ensemble from a matching installation into the worker's
+`cytotrace2_py/resources/models` directory. The lineage constraints and worker
+requirements also ship under `share/cellquorum/benchmarks` in the installed
+wheel. Use the same exported interpreter for `cellquorum plan` and `cellquorum run`.

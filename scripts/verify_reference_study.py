@@ -603,6 +603,25 @@ def check_extended_lineage(run: Path, data: Path) -> dict:
             "median_potency": medians.to_dict(),
             "fates": fates.shape[1],
         }
+        publication = run / "reports/publication"
+        for stem in ("lineage.palantir", "lineage"):
+            for extension in ("pdf", "svg"):
+                page = publication / f"{stem}.{extension}"
+                require(page.is_file() and page.stat().st_size > 0, f"Missing figure: {page.name}")
+        panel = pd.read_csv(publication / "lineage.palantir.csv").set_index("group")
+        expected = obj.obs.groupby("clusters", observed=True).palantir_pseudotime.agg(
+            ["count", "median"]
+        )
+        require(
+            panel.index.is_unique and set(expected.index) == set(panel.index),
+            "Palantir figure populations differ from the analysis object.",
+        )
+        expected = expected.loc[panel.index]
+        require(
+            np.array_equal(panel.n_cells, expected["count"])
+            and np.allclose(panel.value, expected["median"], rtol=0, atol=1e-12),
+            "Palantir figure cell counts or medians differ from the analysis object.",
+        )
         settings = json.loads((run / "provenance/resolved_config.json").read_text())[
             "trajectory_viz"
         ]

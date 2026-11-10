@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import anndata as ad
 
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -103,7 +104,7 @@ class StateScoreUmapMethod(AnalysisMethod):
         artifacts = []
         for program in requested:
             idx = programs_arr.index(program)
-            score = adata.obsm[obsm_key][:, idx]
+            score = dense_matrix(adata.obsm[obsm_key])[:, idx]
             try:
                 if pooled:
                     fig = plot_score_pooled(

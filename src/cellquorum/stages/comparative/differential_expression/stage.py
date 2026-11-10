@@ -147,7 +147,7 @@ class DifferentialExpressionStage(MethodDispatchStage):
             notes.extend(pooled_outcome.notes)
             artifacts.extend(pooled_outcome.artifacts)
             metrics.update(pooled_outcome.metrics)
-            result_adata = pooled_outcome.adata
+            result_adata = pooled_outcome.require_adata()
 
         result = StageResult(
             adata=result_adata,

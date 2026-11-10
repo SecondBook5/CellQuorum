@@ -10,6 +10,7 @@ import pandas as pd
 from statsmodels.stats.multitest import multipletests
 
 from cellquorum.config.cohort import resolve_cohort_key
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
@@ -86,7 +87,7 @@ class DifferentialStateStage:
         assert condition_key is not None and donor_key is not None  # narrows for mypy
 
         columns = resolve_score_columns(
-            adata.obs, explicit=config.obs_columns, prefix=config.score_prefix
+            obs_frame(adata), explicit=config.obs_columns, prefix=config.score_prefix
         )
         if not columns:
             return StageResult.skipped(
@@ -95,7 +96,7 @@ class DifferentialStateStage:
 
         rows = []
         for column in columns:
-            frame = adata.obs[[column, condition_key, donor_key]].copy()
+            frame = obs_frame(adata)[[column, condition_key, donor_key]].copy()
             frame = frame[frame[condition_key].isin([case, control])]
             frame = drop_underpowered_donor_groups(
                 frame,

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.labels import as_label_strings
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -119,7 +120,7 @@ class MiloMethod(RAnalysisMethod):
         meta_cols = [condition_col, donor_col]
         if cell_type_col and cell_type_col in adata.obs.columns:
             meta_cols.append(cell_type_col)
-        meta = adata.obs[meta_cols].copy()
+        meta = obs_frame(adata)[meta_cols].copy()
         for column in meta_cols:
             meta[column] = as_label_strings(meta[column])
         meta.to_csv(meta_csv, index=True)

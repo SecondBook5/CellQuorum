@@ -74,6 +74,23 @@ jobs:
           ruff check scripts
           ruff format --check scripts
 
+  lineage-install:
+    name: Clean lineage install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install the lineage extra in a fresh environment
+        run: |
+          python -m venv /tmp/lineage
+          /tmp/lineage/bin/pip install '.[lineage]' -c envs/lineage-constraints.txt
+          cd /tmp
+          lineage/bin/pip check
+          lineage/bin/python -I -c "import cellquorum, cellrank, palantir, scvelo, pygam"
+
   typecheck:
     name: Typecheck (engine spine)
     runs-on: ubuntu-latest

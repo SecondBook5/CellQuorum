@@ -36,6 +36,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
@@ -93,7 +94,7 @@ def _null_score_distribution(
             scored, list(random_genes), score_name="_null_score", random_state=random_state + i
         )
         for cluster, mask in cluster_masks.items():
-            null_scores[cluster].append(float(scored.obs.loc[mask, "_null_score"].mean()))
+            null_scores[cluster].append(float(obs_frame(scored).loc[mask, "_null_score"].mean()))
     return {cluster: np.asarray(values) for cluster, values in null_scores.items()}
 
 
@@ -234,7 +235,7 @@ class MarkerVoteMethod(AnalysisMethod):
         for cluster, mask in cluster_masks.items():
             best_type, best_score = None, -np.inf
             for cell_type, col in score_cols.items():
-                mean_score = float(scored.obs.loc[mask, col].mean())
+                mean_score = float(obs_frame(scored).loc[mask, col].mean())
                 null = null_by_size[panel_sizes[cell_type]][cluster]
                 if _empirical_p_value(mean_score, null) >= significance_alpha:
                     continue

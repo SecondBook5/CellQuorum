@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import anndata as ad
 import numpy as np
 
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -120,7 +121,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
         labels = adata.obs[label_col].to_numpy() if label_col else None
 
         # Pre-embedding for pcr_comparison.
-        X_pre = adata.obsm[pre_embedding]
+        X_pre = dense_matrix(adata.obsm[pre_embedding])
 
         # Compute metrics for each embedding.
         # ``caveats``, not ``notes``, for two reasons. It is spelled that way because
@@ -136,7 +137,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
                 continue
 
-            X_post = adata.obsm[emb_key]
+            X_post = dense_matrix(adata.obsm[emb_key])
             batch_metrics, bio_metrics, emb_caveats = self._compute_metrics(
                 X_pre=X_pre,
                 X_post=X_post,
@@ -356,7 +357,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
                 continue
 
-            X = adata.obsm[emb_key]
+            X = dense_matrix(adata.obsm[emb_key])
             metadata_df = adata.obs[[batch_key]]
             if label_col:
                 metadata_df = adata.obs[[batch_key, label_col]]

@@ -22,6 +22,7 @@ import scanpy as sc
 import scipy.sparse as sp
 from kneed import KneeLocator
 
+from cellquorum.core.anndata_access import memory_matrix, obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -244,7 +245,7 @@ class PCAMethod(AnalysisMethod):
         # object: asking for more components than there are fitting cells, or than there are
         # genes left after the HVG mask, is what turns a small core or a short HVG list into
         # an error deep inside the SVD.
-        fitting = fitting_cells(adata.obs)
+        fitting = fitting_cells(obs_frame(adata))
         n_fit_cells = adata.n_obs if fitting is None else int(fitting.sum())
         mask_var = "highly_variable" if use_hvg else None
         n_genes_used = (
@@ -506,7 +507,7 @@ class PCAMethod(AnalysisMethod):
         """Fit with explicit arithmetic precision and preserve the expression layer."""
         if precision not in {"input", "float32", "float64"}:
             raise ValueError(f"Unsupported PCA precision: {precision}")
-        source = adata.layers[input_layer]
+        source = memory_matrix(adata.layers[input_layer])
         try:
             if precision != "input":
                 adata.layers[input_layer] = source.astype(precision, copy=False)
@@ -656,7 +657,7 @@ class PCAMethod(AnalysisMethod):
             )
 
         layer = adata.layers[input_layer]
-        sparse = layer.tocsr() if sp.issparse(layer) else sp.csr_matrix(np.asarray(layer))
+        sparse = sp.csr_matrix(layer)
         row_center = np.asarray(adata.obs[row_center_col].to_numpy(), dtype=float)
 
         if mask_var is not None:

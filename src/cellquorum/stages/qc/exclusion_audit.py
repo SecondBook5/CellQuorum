@@ -16,6 +16,7 @@ import re
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.stages.qc.evidence import AdjudicationReason, QCStateInitial
 
 _MASK_COLUMN = re.compile(r"^qc_(fit|transform|inference)_[a-z]+$")
@@ -93,7 +94,7 @@ def inference_excluded_table(adata: ad.AnnData) -> pd.DataFrame:
         same columns) when QC wrote no verdict or excluded nobody.
     """
 
-    obs = adata.obs
+    obs = obs_frame(adata)
     columns = [
         "exclusion_category",
         "qc_state_initial",
