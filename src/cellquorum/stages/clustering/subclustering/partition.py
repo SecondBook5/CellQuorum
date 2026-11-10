@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -56,7 +55,7 @@ def run_choir(
     Raises:
         CellQuorumBackendError: If CHOIR fails after starting.
     """
-    if backend is None or shutil.which("Rscript") is None:
+    if backend is None or not backend._rscript_available():
         return MethodSkip(
             reason="CHOIR partition skipped: Rscript unavailable",
             details={"method": "choir"},
@@ -202,7 +201,7 @@ def run_scshc_test(
     Raises:
         CellQuorumBackendError: If sc-SHC fails after starting.
     """
-    if backend is None or shutil.which("Rscript") is None:
+    if backend is None or not backend._rscript_available():
         return MethodSkip(
             reason="sc-SHC test skipped: Rscript unavailable",
             details={"method": "scshc"},

@@ -18,13 +18,13 @@ import pandas as pd
 import scipy.io as sio
 import scipy.sparse as sp
 
+from cellquorum.backends.rscript import RscriptBackend
 from cellquorum.backends.script_paths import r_script_path
 from cellquorum.stages.qc.config import QCDoubletConfig
 
 if TYPE_CHECKING:
     from anndata import AnnData
 
-    from cellquorum.backends.rscript import RscriptBackend
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,13 @@ def run_scdblfinder(
     depend on the core count.
     """
 
-    if backend is None or not _SCDBLFINDER_R.is_file():
+    # A local R backend can be registered even when its configured executable is missing.
+    # Check before serializing the count matrix. Injected runners manage their own runtime.
+    if (
+        backend is None
+        or not _SCDBLFINDER_R.is_file()
+        or (isinstance(backend, RscriptBackend) and not backend._rscript_available())
+    ):
         return np.full(adata.n_obs, np.nan, dtype=float), None
 
     counts = adata.layers["counts"] if "counts" in adata.layers else adata.X
@@ -322,12 +328,6 @@ def detect_doublets(
                 n_jobs=n_jobs,
                 timeout=config.timeout_seconds,
             )
-            if per_sample and method in _NATIVE_PER_SAMPLE:
-                notes.append(
-                    f"doublet method '{method}' split by capture itself "
-                    f"({sample_key}), in one process"
-                )
-
             if result is None:
                 continue
             scores, native = result
@@ -340,6 +340,12 @@ def detect_doublets(
         if not scored_mask.any():
             warnings.append(f"doublet method '{method}' unavailable (skipped)")
             continue
+        if per_sample and method in _NATIVE_PER_SAMPLE:
+            notes.append(
+                f"doublet method '{method}' split by capture itself "
+                f"({sample_key}), in one process"
+            )
+
         if not scored_mask.all():
             warnings.append(
                 f"doublet method '{method}' left {int((~scored_mask).sum())} cells unscored; "

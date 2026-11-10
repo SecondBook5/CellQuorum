@@ -52,6 +52,9 @@ class _CapturingBackend:
     def __post_init__(self):
         self.captured = []
 
+    def _rscript_available(self) -> bool:
+        return True
+
     def _r_package_available(self, name: str) -> bool:
         return True
 
@@ -156,8 +159,7 @@ def _config():
     return config
 
 
-def test_run_choir_forwards_reduction_key_as_ninth_arg(tmp_path, _config, monkeypatch):
-    monkeypatch.setattr(partition.shutil, "which", lambda name: "/usr/bin/Rscript")
+def test_run_choir_forwards_reduction_key_as_ninth_arg(tmp_path, _config):
     adata = _focus_subset()
     key = reembed_focus_batch_aware(
         adata, counts_layer="counts", batch_key="donor_id", n_top_genes=40, n_comps=10
@@ -181,10 +183,9 @@ def test_run_choir_forwards_reduction_key_as_ninth_arg(tmp_path, _config, monkey
     assert written.var["highly_variable"].dtype == bool
 
 
-def test_run_choir_passes_none_when_no_embedding_available(tmp_path, _config, monkeypatch):
+def test_run_choir_passes_none_when_no_embedding_available(tmp_path, _config):
     # No reduction and no HVG flag: CHOIR computes its own reduction. This must
     # degrade quietly rather than send a bogus key that choir.R would reject.
-    monkeypatch.setattr(partition.shutil, "which", lambda name: "/usr/bin/Rscript")
     adata = _focus_subset()
     backend = _CapturingBackend()
 
@@ -193,10 +194,9 @@ def test_run_choir_passes_none_when_no_embedding_available(tmp_path, _config, mo
     assert args[8] == "NONE"
 
 
-def test_run_choir_passes_none_when_hvg_flag_missing(tmp_path, _config, monkeypatch):
+def test_run_choir_passes_none_when_hvg_flag_missing(tmp_path, _config):
     # An embedding without var_features is unusable by choir.R; the guard must
     # catch that here rather than letting the R script fail the whole stage.
-    monkeypatch.setattr(partition.shutil, "which", lambda name: "/usr/bin/Rscript")
     adata = _focus_subset()
     adata.obsm["X_pca_harmony"] = np.zeros((adata.n_obs, 5), dtype="float32")
     backend = _CapturingBackend()
@@ -206,10 +206,9 @@ def test_run_choir_passes_none_when_hvg_flag_missing(tmp_path, _config, monkeypa
     assert args[8] == "NONE"
 
 
-def test_run_choir_writes_plain_string_index(tmp_path, _config, monkeypatch):
+def test_run_choir_writes_plain_string_index(tmp_path, _config):
     # A pandas nullable-string index (which real run objects carry) is refused by
     # the h5ad writer and misread by zellkonverter as a categorical.
-    monkeypatch.setattr(partition.shutil, "which", lambda name: "/usr/bin/Rscript")
     adata = _focus_subset()
     adata.obs_names = pd.array([f"cell{i}" for i in range(adata.n_obs)], dtype="string")
     backend = _CapturingBackend()
