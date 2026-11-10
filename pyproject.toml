@@ -103,7 +103,7 @@ workflow = [
 dev = [
   "click>=8",  # scripts/smoke_real_h5ad.py
   # Test runner and the plugins the test tiers rely on.
-  "pytest==9.0.2",
+  "pytest==9.2.0",
   "pytest-cov==7.1.0",
   "pytest-xdist==3.8.0",
   # Lint + format. Must match the ruff-pre-commit rev in .pre-commit-config.yaml
