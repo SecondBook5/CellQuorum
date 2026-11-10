@@ -54,8 +54,8 @@ def select_top_genes(
     genes: set[str] = set()
     for _group, sub in sig.groupby(group_col):
         ordered = sub.sort_values(logfc_col, ascending=False)
-        genes.update(ordered.head(top_n)[gene_col].tolist())
-        genes.update(ordered.tail(top_n)[gene_col].tolist())
+        genes.update(ordered.loc[ordered[logfc_col] > 0].head(top_n)[gene_col])
+        genes.update(ordered.loc[ordered[logfc_col] < 0].tail(top_n)[gene_col])
     return sorted(genes)
 
 
@@ -111,25 +111,45 @@ class DeHeatmapMethod(RAnalysisMethod):
         if sp.issparse(X):
             X = X.toarray()
         expr = pd.DataFrame(X, columns=genes, index=adata.obs_names)
-        raw_cluster = adata.obs[cell_type_col].astype(str)
-        expr["cluster"] = raw_cluster.map(lambda c: cluster_labels.get(c, c)).to_numpy()
-        expr["condition"] = adata.obs[condition_col].astype(str).to_numpy()
-        expr["group"] = expr["cluster"] + "_" + expr["condition"]
-        matrix = expr.groupby("group")[genes].mean().T
+        cluster = adata.obs[cell_type_col].astype("string").replace(cluster_labels)
+        condition = adata.obs[condition_col].astype("string")
+        arms = [config.get("control"), config.get("case")]
+        if all(arms):
+            condition = condition.where(condition.isin(arms))
+        matrix = (
+            expr.groupby([cluster.rename("cluster"), condition.rename("condition")], observed=True)
+            .mean()
+            .T
+        )
+        if matrix.shape[1] < 2:
+            return self._skip("too few labeled groups to draw a comparison heatmap")
+        groups = matrix.columns.to_frame(index=False)
+        if all(arms):
+            groups["arm_order"] = groups["condition"].map({arm: i for i, arm in enumerate(arms)})
+            groups = groups.sort_values(["cluster", "arm_order"], kind="stable")
+            matrix = matrix.iloc[:, groups.index.to_list()]
+        matrix.columns = groups["cluster"].str.cat(groups["condition"], sep="_").to_list()
 
         scratch_dir = Path(context.paths.scratch)
         scratch_dir.mkdir(parents=True, exist_ok=True)
         matrix_csv = scratch_dir / "de_heatmap_matrix.csv"
         matrix.to_csv(matrix_csv)
+        groups_csv = scratch_dir / "de_heatmap_groups.csv"
+        groups.to_csv(groups_csv, index=False)
 
         figures_dir = Path(context.paths.figures) / "differential_expression"
         figures_dir.mkdir(parents=True, exist_ok=True)
-        out_png = figures_dir / "de_heatmap.png"
+        formats = list(dict.fromkeys(config.get("figure_formats", ["png"])))
+        if not formats or set(formats) - {"pdf", "png", "svg"}:
+            return self._skip("DE heatmap figure_formats must select png, pdf or svg")
+        outputs = [figures_dir / f"de_heatmap.{fmt}" for fmt in formats]
 
         timeout_seconds = int(config.get("timeout_seconds", 600))
         try:
             proc = backend.run_script(
-                _DE_HEATMAP_R, [str(matrix_csv), str(out_png)], timeout=timeout_seconds
+                _DE_HEATMAP_R,
+                [str(matrix_csv), str(outputs[0]), str(groups_csv), *[str(p) for p in outputs[1:]]],
+                timeout=timeout_seconds,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
             return self._skip("de_heatmap.R execution failed or timed out", error=str(exc)[:500])
@@ -148,20 +168,21 @@ class DeHeatmapMethod(RAnalysisMethod):
                 reason, returncode=rc, stderr=str(getattr(proc, "stderr", "")).strip()[:500]
             )
 
-        if not out_png.exists():
+        if not all(p.is_file() and p.stat().st_size for p in outputs):
             return self._skip("de_heatmap.R reported success but wrote no output")
 
         artifacts = [
             StageArtifact(
                 name="de_heatmap",
-                path=out_png,
+                path=path,
                 kind="figure",
                 description=(
                     f"Cross-cluster DE heatmap: {len(genes)} significant genes "
                     f"(top {top_n} up/down per cluster, FDR<{fdr_cut}), z-scored, "
-                    "split by cluster and condition."
+                    "showing mean normalized expression over cells in each group."
                 ),
             )
+            for path in outputs
         ]
         return StageResult(
             adata=adata,

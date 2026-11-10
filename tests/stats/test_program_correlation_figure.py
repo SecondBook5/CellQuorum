@@ -164,16 +164,6 @@ def test_the_notes_name_what_was_removed_rather_than_asserting_it_was_the_condit
     assert "condition and log1p total counts" in joined
 
 
-def test_a_frame_with_no_adjustment_record_still_reads_as_the_condition():
-    """Back-compatibility with a table written before the covariates existed: the
-    condition is what such a frame's upper triangle removed."""
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        assert "with the condition removed" in _figure_text(fig)
-    finally:
-        plt.close(fig)
-
-
 def test_an_adjustment_over_fewer_units_than_the_measurement_is_disclosed():
     """Two coefficients computed over different numbers of units is the thing a reader
     would never guess from a matrix, so it cannot stay in the CSV alone."""
@@ -230,24 +220,53 @@ def test_the_family_size_counts_tested_pairs_not_all_pairs():
 # --------------------------------------------------------------------------- #
 
 
-def test_the_two_triangles_carry_different_quantities():
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        matrix = _matrix_axes(fig).images[0].get_array()
-        order = [label.get_text() for label in _matrix_axes(fig).get_yticklabels()]
-        i, j = order.index("endomt"), order.index("junctions")
-        assert matrix[max(i, j), min(i, j)] == pytest.approx(0.83)  # measured, below
-        assert matrix[min(i, j), max(i, j)] == pytest.approx(0.78)  # adjusted, above
-    finally:
-        plt.close(fig)
+def _assert_correlation_values_and_marks(fig):
+    ax = _matrix_axes(fig)
+    matrix = ax.images[0].get_array()
+    order = [label.get_text() for label in ax.get_yticklabels()]
+    i, j = order.index("endomt"), order.index("junctions")
+    assert matrix[max(i, j), min(i, j)] == pytest.approx(0.83)  # measured, below
+    assert matrix[min(i, j), max(i, j)] == pytest.approx(0.78)  # adjusted, above
+
+    assert all(matrix.mask[k, k] for k in range(matrix.shape[0]))
+
+    assert "‡" in _figure_text(fig)
+
+    cell_marks = [text.get_text() for text in ax.texts]
+    assert "ns" not in cell_marks
+    # Two significant cells out of six occupied ones, and nothing drawn in the four
+    # null cells at all.
+    assert sorted(cell_marks) == ["*", "***‡"]
+
+    by_text = {text.get_text(): text for text in ax.texts}
+    assert by_text["***‡"].get_color() == "white"  # |r| = 0.83
 
 
-def test_the_diagonal_is_left_empty_rather_than_drawn_at_one():
-    """A set correlates with itself at 1 and would own the end of the colour scale."""
+def _assert_correlation_layout_and_footnotes(fig):
+    assert "with the condition removed" in _figure_text(fig)
+
+    box = _matrix_axes(fig).get_position()
+    width_in = box.width * fig.get_figwidth()
+    height_in = box.height * fig.get_figheight()
+    assert width_in == pytest.approx(height_in, abs=0.02)
+
+    renderer = fig.canvas.get_renderer()
+    limit = fig.get_figwidth() * fig.dpi
+    for note in fig.texts:
+        assert note.get_window_extent(renderer).x1 <= limit + 1.0, note.get_text()
+
+    tops = [note.get_window_extent(renderer).y1 for note in fig.texts]
+    axes_bottom = box.y0 * fig.get_figheight() * fig.dpi
+    # Every note line sits below the panel, including the topmost one.
+    assert max(tops) <= axes_bottom + 1.0
+
+
+def test_program_correlation_heatmap_shows_measured_and_adjusted_results():
     fig = program_correlation_heatmap(_tests_frame())
+
     try:
-        matrix = _matrix_axes(fig).images[0].get_array()
-        assert all(matrix.mask[k, k] for k in range(matrix.shape[0]))
+        _assert_correlation_values_and_marks(fig)
+        _assert_correlation_layout_and_footnotes(fig)
     finally:
         plt.close(fig)
 
@@ -259,27 +278,6 @@ def test_the_colour_scale_is_the_full_correlation_range_not_the_observed_one():
     try:
         image = _matrix_axes(fig).images[0]
         assert (image.norm.vmin, image.norm.vmax) == (-1.0, 1.0)
-    finally:
-        plt.close(fig)
-
-
-def test_a_shared_gene_pair_is_marked_in_its_cell():
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        assert "‡" in _figure_text(fig)
-    finally:
-        plt.close(fig)
-
-
-def test_a_null_cell_is_left_blank_rather_than_labelled_ns():
-    """Fifty-five cells reading "ns" hide the handful that carry a result."""
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        cell_marks = [text.get_text() for text in _matrix_axes(fig).texts]
-        assert "ns" not in cell_marks
-        # Two significant cells out of six occupied ones, and nothing drawn in the four
-        # null cells at all.
-        assert sorted(cell_marks) == ["*", "***‡"]
     finally:
         plt.close(fig)
 
@@ -307,29 +305,6 @@ def test_without_an_adjustment_the_upper_triangle_is_empty_and_says_why():
         upper = [matrix.mask[i, j] for i in range(3) for j in range(3) if j > i]
         assert all(upper), "the lower triangle was mirrored instead of left empty"
         assert "no condition was supplied" in _figure_text(fig)
-    finally:
-        plt.close(fig)
-
-
-def test_the_cell_label_flips_to_white_on_a_dark_cell():
-    """Ink on a saturated cell of a diverging map is unreadable in print."""
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        by_text = {text.get_text(): text for text in _matrix_axes(fig).texts}
-        assert by_text["***‡"].get_color() == "white"  # |r| = 0.83
-    finally:
-        plt.close(fig)
-
-
-def test_the_axes_are_square_on_the_page_so_no_dead_band_is_left():
-    """``aspect="equal"`` is applied after layout; an axes that is not already square
-    gets shrunk and re-centred, leaving a band of empty figure under the labels."""
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        box = _matrix_axes(fig).get_position()
-        width_in = box.width * fig.get_figwidth()
-        height_in = box.height * fig.get_figheight()
-        assert width_in == pytest.approx(height_in, abs=0.02)
     finally:
         plt.close(fig)
 
@@ -379,35 +354,6 @@ def test_an_empty_frame_is_refused_rather_than_drawn_blank():
         program_correlation_heatmap(_tests_frame().iloc[:0])
 
 
-def test_a_long_footnote_wraps_instead_of_stretching_the_figure():
-    """Notes are saved with ``bbox_inches="tight"``, so a wide note is not clipped —
-    it widens the saved figure and leaves the panel in a band of empty page. The
-    figure's aspect ratio must not be a function of how many words the caveats needed.
-    """
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        renderer = fig.canvas.get_renderer()
-        limit = fig.get_figwidth() * fig.dpi
-        for note in fig.texts:
-            assert note.get_window_extent(renderer).x1 <= limit + 1.0, note.get_text()
-    finally:
-        plt.close(fig)
-
-
-def test_the_room_reserved_for_the_notes_is_the_room_they_take():
-    """Counting notes rather than wrapped lines reserves one line for a three-line
-    caveat, and the bottom note is then drawn over the column labels."""
-    fig = program_correlation_heatmap(_tests_frame())
-    try:
-        renderer = fig.canvas.get_renderer()
-        tops = [note.get_window_extent(renderer).y1 for note in fig.texts]
-        axes_bottom = _matrix_axes(fig).get_position().y0 * fig.get_figheight() * fig.dpi
-        # Every note line sits below the panel, including the topmost one.
-        assert max(tops) <= axes_bottom + 1.0
-    finally:
-        plt.close(fig)
-
-
 def test_turning_the_footnotes_off_keeps_the_one_that_reads_the_panel():
     """``footnotes=False`` drops the statistical caveats, which a caption may repeat.
     It cannot drop the sentence saying which triangle is which — without it the two
@@ -427,8 +373,9 @@ def test_turning_the_footnotes_off_keeps_the_one_that_reads_the_panel():
 # --------------------------------------------------------------------------- #
 
 
-def test_every_pair_gets_a_row_labelled_with_both_programs():
+def test_correlation_slopes_show_ranked_pairs_and_explain_adjustment():
     fig = program_correlation_slopes(_tests_frame())
+
     try:
         labels = [
             label.get_text()
@@ -438,16 +385,26 @@ def test_every_pair_gets_a_row_labelled_with_both_programs():
         ]
         assert any("endomt/junctions" in label for label in labels)
         assert len(labels) == 3
-    finally:
-        plt.close(fig)
 
-
-def test_pairs_are_ordered_by_absolute_coefficient_so_the_finding_is_at_the_top():
-    fig = program_correlation_slopes(_tests_frame())
-    try:
         labels = [label.get_text() for ax in fig.axes for label in ax.get_yticklabels()]
         assert "endomt/junctions" in labels[0]  # |0.83|
         assert "junctions/flow" in labels[-1]  # |0.12|
+
+        text = _figure_text(fig)
+        assert "As measured" in text
+        assert "Condition removed" in text
+
+        # The axis label's position is solved from the tick labels at draw time, so
+        # before a draw it still reports its unplaced default.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        ax = next(ax for ax in fig.axes if ax.get_xlabel())
+        axis_bottom = min(
+            [ax.xaxis.get_label().get_window_extent(renderer).y0]
+            + [label.get_window_extent(renderer).y0 for label in ax.get_xticklabels()]
+        )
+        assert fig.texts, "no notes were drawn"
+        assert max(note.get_window_extent(renderer).y1 for note in fig.texts) <= axis_bottom + 1.0
     finally:
         plt.close(fig)
 
@@ -495,37 +452,6 @@ def test_truncation_is_footnoted_rather_than_silent():
             if label.get_text()
         ]
         assert len(labels) == 2
-    finally:
-        plt.close(fig)
-
-
-def test_the_notes_clear_the_x_axis_instead_of_being_printed_through_it():
-    """Folding the axis-label room into the axes height rather than reserving it below
-    stacks the notes from the figure's bottom edge and prints the tick labels over them.
-    """
-    fig = program_correlation_slopes(_tests_frame())
-    try:
-        # The axis label's position is solved from the tick labels at draw time, so
-        # before a draw it still reports its unplaced default.
-        fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
-        ax = next(ax for ax in fig.axes if ax.get_xlabel())
-        axis_bottom = min(
-            [ax.xaxis.get_label().get_window_extent(renderer).y0]
-            + [label.get_window_extent(renderer).y0 for label in ax.get_xticklabels()]
-        )
-        assert fig.texts, "no notes were drawn"
-        assert max(note.get_window_extent(renderer).y1 for note in fig.texts) <= axis_bottom + 1.0
-    finally:
-        plt.close(fig)
-
-
-def test_the_legend_names_which_dot_is_which():
-    fig = program_correlation_slopes(_tests_frame())
-    try:
-        text = _figure_text(fig)
-        assert "As measured" in text
-        assert "Condition removed" in text
     finally:
         plt.close(fig)
 

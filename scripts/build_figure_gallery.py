@@ -10,6 +10,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import patch
 
 import matplotlib
 
@@ -25,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from cellquorum.stages.comparative.differential_expression.viz.plots import volcano  # noqa: E402
 from cellquorum.stats.donor_comparison import two_group_test_on_donor_medians  # noqa: E402
+from cellquorum.visualization import figstyle  # noqa: E402
 from cellquorum.visualization.enrichment import gsea_dotplot, gsea_running_es  # noqa: E402
 from cellquorum.visualization.figstyle import (
     LE_RED,
@@ -81,7 +83,9 @@ def build_gallery(output: Path) -> list[Path]:
     build from the library defaults makes the pictures independent of what ran before.
     """
     pristine = {key: value for key, value in matplotlib.rcParamsDefault.items() if key != "backend"}
-    with matplotlib.rc_context(pristine):
+    # The reviewed reference PDFs embed DejaVu Sans. Render the synthetic gallery with
+    # that same face even on machines that have the optional publication fonts installed.
+    with patch.object(figstyle, "SANS_STACK", ("DejaVu Sans",)), matplotlib.rc_context(pristine):
         return _build_gallery(output)
 
 

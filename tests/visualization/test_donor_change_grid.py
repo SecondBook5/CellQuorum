@@ -53,14 +53,12 @@ def _draw(**kwargs):
     return fig, ax
 
 
-def test_one_column_per_donor_in_natural_order_then_the_mean() -> None:
-    _, ax = _draw()
+def test_donor_grid_shows_paired_changes_agreement_and_scale() -> None:
+    fig, ax = _draw()
+
     labels = [t.get_text() for t in ax.get_xticklabels()]
     assert labels == ["P1", "P2", "P4", "P5", "P6", "P7", "P8", "P10", "P12", "Mean"]
 
-
-def test_each_cell_is_that_donors_case_minus_control_change() -> None:
-    _, ax = _draw()
     grid = np.asarray(ax.images[0].get_array())
     assert grid[0, 0] == pytest.approx(0.04)  # Up, P1
     assert grid[0, 3] == pytest.approx(0.03)  # Up, P5
@@ -69,27 +67,22 @@ def test_each_cell_is_that_donors_case_minus_control_change() -> None:
         np.mean([0.04, 0.06, 0.05, 0.17, 0.03, 0.05, 0.06, 0.04, 0.05])
     )
 
-
-def test_the_mean_column_says_how_many_donors_agree_and_stars_the_corrected_ones() -> None:
-    _, ax = _draw()
     texts = {t.get_text() for t in ax.texts}
     assert "9/9*" in texts
     assert "5/9" in texts
 
-
-def test_donors_that_disagree_with_their_row_are_outlined() -> None:
-    _, ax = _draw()
     outlines = [p for p in ax.patches if not p.get_fill()]
     assert len(outlines) == 4
     assert {round(p.get_y() + p.get_height() / 2) for p in outlines} == {1}  # all in the Mixed row
 
-
-def test_the_colour_scale_is_symmetric_and_covers_every_change() -> None:
-    _, ax = _draw()
     norm = ax.images[0].norm
     assert norm.vmin == -norm.vmax
     assert norm.vmax >= 0.17
     assert norm.vmax == pytest.approx(0.2)  # the next round number above the largest change
+
+    words = " ".join(t.get_text() for t in fig.findobj(plt.Text))
+    assert "dashed outline" in words.lower()
+    assert "FDR" in words
 
 
 def test_the_scale_can_be_set_by_the_caller() -> None:
@@ -103,10 +96,3 @@ def test_a_donor_with_one_arm_missing_is_left_blank_not_read_as_no_change() -> N
     column = [t.get_text() for t in ax.get_xticklabels()].index("P7")
     assert np.ma.getmaskarray(ax.images[0].get_array())[:, column].all()
     assert np.isfinite(grid[:, -1]).all()
-
-
-def test_the_figure_says_what_the_marks_mean() -> None:
-    fig, _ = _draw()
-    words = " ".join(t.get_text() for t in fig.findobj(plt.Text))
-    assert "dashed outline" in words.lower()
-    assert "FDR" in words

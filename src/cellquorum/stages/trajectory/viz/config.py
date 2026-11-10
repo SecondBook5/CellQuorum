@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 from cellquorum.visualization.figstyle import SEQUENTIAL_CMAP
 
 
@@ -14,6 +14,7 @@ class TrajectoryVizConfig(StrictBaseModel):
     to any biological value).
     """
 
+    methods: MethodEntries = []
     enabled: bool = True
     figure_formats: list[str] = ["pdf", "png"]
     dpi: int = 300

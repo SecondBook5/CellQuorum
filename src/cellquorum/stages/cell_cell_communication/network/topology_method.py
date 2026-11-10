@@ -115,7 +115,7 @@ class TopologyMethod(AnalysisMethod):
                         name=f"ccc_comparative_{level}",
                         desc=f"Case-vs-control {level.upper()} topology.",
                     )
-            elif condition_col:
+            elif condition_col and case is not None and control is not None:
                 # A warning: a condition column was configured, so the case-vs-control
                 # table is an asked-for output, and an empty arm means the comparison
                 # this stage exists to make did not happen.

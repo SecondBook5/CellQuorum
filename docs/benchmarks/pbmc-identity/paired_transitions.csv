@@ -1,0 +1,33 @@
+study,donor,reference,cells,gained,lost,correct_both,neither
+Hao,P1,CD8 T cells,3233,318,825,85,2005
+Hao,P1,NK cells,1590,1,13,1575,1
+Hao,P2,CD8 T cells,3497,272,546,61,2618
+Hao,P2,NK cells,1610,0,16,1593,1
+Hao,P3,CD8 T cells,1623,63,574,76,910
+Hao,P3,NK cells,2423,0,1,2422,0
+Hao,P4,CD8 T cells,3049,103,434,16,2496
+Hao,P4,NK cells,688,0,4,683,1
+Hao,P5,CD8 T cells,3605,933,459,240,1973
+Hao,P5,NK cells,2760,4,12,2743,1
+Hao,P6,CD8 T cells,1503,103,509,45,846
+Hao,P6,NK cells,3357,0,7,3350,0
+Hao,P7,CD8 T cells,3232,690,710,102,1730
+Hao,P7,NK cells,2303,1,11,2290,1
+Hao,P8,CD8 T cells,5727,1820,1001,429,2477
+Hao,P8,NK cells,3933,0,22,3911,0
+Kang,patient_101,CD8 T cells,83,35,0,0,48
+Kang,patient_101,NK cells,149,0,5,144,0
+Kang,patient_1015,CD8 T cells,145,95,0,0,50
+Kang,patient_1015,NK cells,354,0,3,349,2
+Kang,patient_1016,CD8 T cells,993,886,0,0,107
+Kang,patient_1016,NK cells,188,0,24,162,2
+Kang,patient_1039,CD8 T cells,20,9,0,0,11
+Kang,patient_1039,NK cells,43,0,2,40,1
+Kang,patient_107,CD8 T cells,18,5,0,0,13
+Kang,patient_107,NK cells,77,0,1,76,0
+Kang,patient_1244,CD8 T cells,41,11,0,0,30
+Kang,patient_1244,NK cells,209,0,2,207,0
+Kang,patient_1256,CD8 T cells,246,189,0,0,57
+Kang,patient_1256,NK cells,428,0,22,405,1
+Kang,patient_1488,CD8 T cells,75,42,0,0,33
+Kang,patient_1488,NK cells,268,0,6,262,0

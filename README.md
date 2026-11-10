@@ -2,9 +2,7 @@
 
 # CellQuorum
 
-**A publication-grade, config-driven single-cell RNA-seq workflow engine.**
-
-*One configuration file. One command. A validated, reproducible, provenance-tracked analysis — on CPU or GPU, in Python and R.*
+**Single-cell and single-nucleus RNA-seq analysis for studies with biological replicates.**
 
 [![CI](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml/badge.svg)](https://github.com/SecondBook5/cellquorum/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)
@@ -17,27 +15,64 @@
 
 ---
 
-CellQuorum takes a single-cell RNA-seq experiment from a raw count matrix to a reproducible,
-publication-ready analysis: you describe the dataset and the analysis in one YAML file, and one
-command plans it, validates it, runs it, and records exactly what it did. It is built for
-experiments with donors and conditions, where the question is "what changes between groups" and
-the statistics have to treat donors, not cells, as the replicates.
+Start with a library sample sheet, Cell Ranger outputs, a 10x H5 or Matrix Market matrix, or a count-bearing AnnData (`.h5ad`) file. A YAML file
+identifies your donors, conditions, and requested analyses. A run writes an annotated object,
+figures, result tables, and an HTML report. For comparisons between conditions, the study
+design specifies the biological replicate and whether samples are paired.
 
-## See it work in two minutes
+CellQuorum has **41 stages** and **82 selectable methods**. The study design and available data determine which analyses can run.
 
-You do not need any data of your own for a first run.
+The [paired carcinoma walkthrough](docs/guide/scc-study.md) runs four communication methods and two regulatory methods together and produces donor-linked manuscript figures. The [reference-study coverage matrix](docs/benchmarks/study-coverage.csv) identifies the evidence for each stage and method. The [public-study validation report](docs/benchmarks/scientific-validation.md) shows which results held up, where they disagreed with the study and which biological claims remain unresolved.
+
+## Run a complete paired study
+
+The [paired PBMC walkthrough](docs/guide/paired-study.md) takes public count data from
+eight donors through marker-based annotation, cell-state scoring, donor-aware expression,
+abundance and pathway analysis. One run
+produces per-cell-type volcano plots, a cross-cell-type expression heatmap, a Hallmark
+pathway heatmap, the underlying statistics and a linked report. After downloading the
+two inputs and installing the dependencies in the walkthrough, run:
+
+```bash
+cellquorum run -c configs/kang_paired_analysis.yaml
+```
+
+## Run the CPU demo
+
+Try the CPU workflow on synthetic data in a fresh Python 3.12 environment:
 
 ```bash
 git clone https://github.com/SecondBook5/cellquorum.git && cd cellquorum
+python3.12 -m venv .venv
+source .venv/bin/activate    # Linux, macOS, or WSL
 python -m pip install -e .
 
 cellquorum demo my_demo                                      # a tiny synthetic dataset + config
 cellquorum plan --config my_demo/config.yaml                 # what will run, and on which backends
-cellquorum run  --config my_demo/config.yaml -o my_demo/run  # a minute or two on a laptop
+cellquorum run  --config my_demo/config.yaml -o my_demo/run
 ```
 
-Then open `my_demo/run/reports/report.html`. To analyse your own data, copy `my_demo/config.yaml`
-and change the input path and the column names; the [tutorial](docs/guide/tutorial.md) walks through it.
+Open `my_demo/run/reports/report.html`. Expand an analysis under **Analysis outputs** to see its
+files. The demo exercises QC, normalization, PCA, clustering, population summaries, and UMAP.
+
+## Run your own study
+
+Start from a library sample sheet, a supported 10x count matrix, or an AnnData file with raw counts in `X` or a named layer.
+
+```bash
+cellquorum init my_study --input /path/to/study.h5ad
+cellquorum plan -c my_study/config.yaml
+cellquorum run -c my_study/config.yaml
+```
+
+Choose **discovery** to consider every question the study supports, or **questions** to select analyses such as communication, regulation or lineage. The setup uses your metadata columns to identify biological replicates, conditions and pairing, and offers sensitivity analysis where applicable. The saved YAML can be shared and rerun. The plan shows method prerequisites before computation.
+
+A single filtered library can produce composition, marker evidence and descriptive program scores. The standard install includes AUCell. For communication, install the signaling extra with `python -m pip install -e '.[signaling]'` from this checkout. Broad regulation also uses the isolated hdWGCNA and pySCENIC environments and species-matched reference files. [Advanced study setup](docs/guide/scc-study.md).
+
+For a smaller CPU run, choose **explore** for QC, clustering and UMAP or **abundance** for a replicate-aware comparison. Open `my_study/run/reports/report.html` for the figures and tables. [First-study walkthrough](docs/guide/tutorial.md).
+
+**For a worked comparison**, the [cells and nuclei example](configs/gse140819_tutorial.yaml)
+uses matched libraries from four donors and tests cell-type abundance by donor.
 
 ## What you get
 
@@ -68,51 +103,34 @@ and change the input path and the column names; the [tutorial](docs/guide/tutori
 pinned by a pixel-exact test, so a code change cannot quietly alter how a figure looks. See the
 [full gallery](docs/gallery/index.md).</sub>
 
-## Why you can trust a result
+## Reviewing a result
 
-- **No silent wrong answers.** Configuration is validated before anything runs. Each stage checks
-  its inputs and, if they are missing, records a skip with the reason instead of guessing. A
-  misspelled column name, a failed figure, or a result that could not be written reaches the run
-  summary and the report; it is not buried in a log.
+- **Check what ran.** The report shows which stages completed, warnings from individual methods,
+  and reasons for skipped or failed stages. A stage can complete with a warning about a method
+  or figure it could not produce.
 - **Donors are the replicates.** Differential expression is pseudobulked per donor and
   abundance tests can be paired by donor, so a few thousand cells from one person do not masquerade
   as a few thousand independent observations.
 - **Reproducible and auditable.** Every run writes its resolved configuration, plan, backend
-  versions and an index of every output. A resumed run refuses a checkpoint that was made with
+  versions and an index of registered outputs. A resumed run refuses a checkpoint that was made with
   different settings.
-- **Tested like software.** Thousands of automated tests, a coverage floor enforced in CI, strict
-  type checking on nearly the whole package, weekly security scans (CodeQL and a dependency
-  audit), and a test that installs the built package into a clean environment and runs the
-  commands above.
+- **Installation checks.** CI installs the built package into a clean environment and exercises
+  its CLI. The [real-data benchmark](docs/benchmarks/gse140819.md) describes the biological
+  comparisons tested and their limitations.
 
 ---
 
 ## Overview
 
-CellQuorum turns an advanced single-cell RNA-seq analysis into a **single validated
-configuration file** and **one command**. It handles pairwise, factorial, and
-single-sample designs; you describe the dataset and the analysis in YAML, and the
-engine plans, validates, and executes the workflow — threading one `AnnData` object
-through every stage and recording exactly what it did.
-
-The engine pairs an **execution spine** (strict configuration validation, backend
-detection, planning, provenance) with a **config-driven analysis backbone** of
-**41 stages** and **70+ selectable methods**, spanning quality control through
-gene-regulatory networks, cell-cell communication, and trajectory inference. Stages
-dispatch to Python, R/Bioconductor, or GPU backends transparently, and every stage
-boundary is guarded by **fail-loud data contracts** — a method whose inputs are
-missing *skips with a recorded reason* rather than crashing or silently emitting
-wrong results.
-
-> **Design principle — no silent wrong answers.** Configuration is validated before
-> anything runs, data contracts are checked at every stage boundary, and skips,
-> failures, and never-run stages are recorded distinctly in machine-readable
-> provenance. If a result cannot be trusted, the run tells you.
+The core workflow carries one AnnData object through QC, preprocessing, integration,
+and clustering. Downstream stages reuse its counts, labels, and study design for
+differential expression, abundance, regulatory networks, communication, and trajectory
+analysis. Some methods require an R installation, an isolated environment, or reference data.
+See the [backend guide](docs/guide/backends.md) for their requirements.
 
 ## Highlights
 
 - **Config over code.** Every method is chosen in YAML (`integration.method: harmony | scvi`), so a dataset is expressed as configuration, not a script.
-- **41 stages, 70+ methods.** A best-practices pipeline from ambient correction to trajectory, each stage offering config-selectable methods.
 - **GPU by default, when available.** Normalization, PCA, neighbors, and Leiden route onto [`rapids-singlecell`](https://github.com/scverse/rapids_singlecell)/[`cupy`](https://cupy.dev) when a capable CUDA device is present, and fall back to scanpy (CPU) otherwise — with identical output keys either way.
 - **Python + R, transparently.** R/Bioconductor methods ([edgeR](https://bioconductor.org/packages/edgeR), [Milo](https://github.com/MarioniLab/miloR), [propeller](https://github.com/phipsonlab/speckle), [NicheNet](https://github.com/saeyslab/nichenetr), [DIALOGUE](https://github.com/livnatje/DIALOGUE), [SoupX](https://github.com/constantAmateur/SoupX), [hdWGCNA](https://github.com/smorabit/hdWGCNA)) and isolated heavyweight backends ([pySCENIC](https://github.com/aertslab/pySCENIC), [scCODA](https://github.com/theislab/scCODA), [CellOracle](https://github.com/morris-lab/CellOracle)) are dispatched behind one interface.
 - **Fail-loud data contracts.** Structural, layer-provenance, and statistical checks reject, for example, raw counts mislabeled as log-normalized.
@@ -127,15 +145,14 @@ propagating the updated `AnnData` downstream:
 
 <p align="center">
   <img src="docs/assets/pipeline.svg" width="100%"
-       alt="CellQuorum pipeline fan-out: config.yaml and an AnnData input flow through a shared backbone — preprocessing, then integration and clustering, then annotation and identity — that produces one annotated object. From there four analysis families fan out in parallel — state and embeddings, differential analysis, gene regulation, and communication and trajectory — each listing its config-selectable methods (Harmony, scVI, hdWGCNA, pySCENIC, CellOracle, LIANA, Tensor-cell2cell, DIALOGUE, scVelo, CellRank, and more), and all converge on a provenance-tracked run directory. Reserved, not-yet-implemented stages appear as muted rows.">
+       alt="CellQuorum pipeline fan-out: config.yaml and an AnnData input flow through a shared backbone — preprocessing, then integration and clustering, then annotation and identity — that produces one annotated object. From there four analysis families fan out in parallel — state and embeddings, differential analysis, gene regulation, and communication and trajectory — each listing its config-selectable methods (Harmony, scVI, hdWGCNA, pySCENIC, CellOracle, LIANA, Tensor-cell2cell, DIALOGUE, scVelo, CellRank, and more), and all converge on a provenance-tracked run directory.">
 </p>
 
 *The diagram is generated from the stage registry (`docs/assets/gen_pipeline_diagram.py`),
 so it always matches the engine: a shared preprocessing → integration → annotation
 backbone produces one annotated object, then the four downstream analysis families
 fan out in parallel and converge on the run directory. Each stage row names its
-config-selectable methods, and reserved (not-yet-implemented) stages appear as muted
-rows. A stage also skips cleanly when disabled in the config or when its required
+config-selectable methods. A stage also skips cleanly when disabled in the config or when its required
 inputs or backends are unavailable.*
 
 ## Installation
@@ -166,16 +183,9 @@ see [`docs/guide/docker.md`](docs/guide/docker.md).
 
 ## Getting started
 
-**New here? Work through the [hands-on tutorial](docs/guide/tutorial.md).** It takes you
-from a raw `.h5ad` to a finished, provenance-tracked run in five steps:
-
-1. Copy the shipped example — `cp configs/generic_pbmc_example.yaml configs/my_run.yaml`
-2. Point `input.h5ad` at your data and set your `cohort:` / `design:` obs columns
-3. Preview — `cellquorum plan -c configs/my_run.yaml`
-4. Execute — `cellquorum run -c configs/my_run.yaml -o runs/my_run`
-5. Read `runs/my_run/reports/` first, then `figures/` and `results/`
-
-The command reference below is the quick lookup once you have a config.
+The [first-study walkthrough](docs/guide/tutorial.md) explains how to choose a study
+design and read the report. To preview your saved configuration before a run, use
+`cellquorum plan -c my_study/config.yaml`. You can edit the YAML to add analyses.
 
 ## Running your own config
 
@@ -230,8 +240,8 @@ compute:
   prefer_gpu: true
   fallback_to_cpu: true
 
-stages:                # enable/disable stages (all default true except
-  qc_evidence: true             # ambient_correction and integration_gate)
+stages:
+  qc_evidence: true
   preprocessing: true
   dimensionality: true
   integration: true
@@ -291,9 +301,6 @@ their projects; licenses and citations are in [Third-party software](docs/refere
 | `ccc_viz` | dotplot / chord / Sankey / curvature-network / summary | Python |
 | `trajectory` (+ `trajectory_viz`) | [scVelo](https://github.com/theislab/scvelo) RNA velocity per lineage ([velocyto](https://github.com/velocyto-team/velocyto.py) loom ingestion); [CellRank](https://github.com/theislab/cellrank) fate probabilities; [Palantir](https://github.com/dpeerlab/Palantir) and diffusion pseudotime; [CytoTRACE 2](https://github.com/digitalcytometry/cytotrace2) | Python |
 
-Two further slots (`integration_gate`, `molecular_inference`) are reserved in the
-planner and skip as *not yet implemented*.
-
 ## Backends & environments
 
 CellQuorum uses layered environments to isolate incompatible dependency stacks.
@@ -338,7 +345,7 @@ Before analysis begins, CellQuorum writes machine-readable provenance into
 | File | Purpose |
 |---|---|
 | `resolved_config.json` | the validated, fully-resolved runtime configuration |
-| `pipeline_plan.json` / `stage_plan.csv` | enabled / skipped / unimplemented stage plan |
+| `pipeline_plan.json` / `stage_plan.csv` | selected stages, ordering and reasons for omissions |
 | `backend_status.json` / `.csv` | detected backend availability |
 | `planner_warnings.json` | planner warnings |
 | `run_metadata.json` | run identity, paths, profile, seed, environment/version stamp |

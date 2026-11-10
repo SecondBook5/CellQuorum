@@ -1,0 +1,3 @@
+differential_expression: {method: pseudobulk_edger}
+differential_abundance: {methods: [{method: proportion_ttest}]}
+de_viz: {methods: [{method: volcano_viz}, {method: volcano_by_subcluster}]}

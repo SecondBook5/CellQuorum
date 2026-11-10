@@ -48,6 +48,22 @@ STAGES_THAT_FIT_ACROSS_CELLS: frozenset[str] = frozenset(
 )
 
 
+#: Where each fitting stage's methods live. Non-recursive on purpose: ``preprocessing`` has
+#: ``feature_selection`` and ``dimensionality`` beneath it, and a recursive search would let
+#: the parent pass on its children's work.
+_STAGE_SOURCE_DIRS: dict[str, str] = {
+    "preprocessing": "stages/preprocessing",
+    "feature_selection": "stages/preprocessing/feature_selection",
+    "dimensionality": "stages/preprocessing/dimensionality",
+    "integration": "stages/integration",
+    "clustering": "stages/clustering",
+}
+
+#: Reading the fit population, however it is spelled. ``fitting_cells`` is the shared reader;
+#: ``resolve_training_set`` is integration's wrapper around it for the VAE methods.
+_FIT_POPULATION_READERS = ("fitting_cells", "resolve_training_set")
+
+
 def _spec(name: str):
     """The registered spec for one stage name."""
     specs = {spec.name: spec for spec in all_stage_specs()}
@@ -56,37 +72,29 @@ def _spec(name: str):
 
 
 @pytest.mark.parametrize("stage_name", sorted(STAGES_THAT_FIT_ACROSS_CELLS))
-def test_fitting_stage_declares_a_cell_scope(stage_name: str) -> None:
-    """A stage that fits across cells must not leave its fit population implicit.
-
-    Args:
-        stage_name: Registered stage name.
-    """
-    spec = _spec(stage_name)
-    assert spec.cell_scope is not None, (
-        f"stage {stage_name!r} fits a quantity across cells but declares no cell_scope. "
-        f"Pass cell_scope=CellScopePolicy(fit_scope=...) to @register_stage. Leaving it "
-        f"implicit is how a QC verdict ends up controlling nothing."
-    )
-
-
-@pytest.mark.parametrize("stage_name", sorted(STAGES_THAT_FIT_ACROSS_CELLS))
-def test_fitting_on_every_cell_requires_a_stated_reason(stage_name: str) -> None:
-    """``fit_scope=ALL`` is allowed, but only with a justification on the record.
-
-    Some transforms are genuinely per-cell and independent. The policy permits that and
-    refuses to let it be reached silently.
-
-    Args:
-        stage_name: Registered stage name.
-    """
+def test_fitting_stage_declares_and_uses_its_cell_scope(stage_name):
     scope = _spec(stage_name).cell_scope
-    assert scope is not None
+    assert scope is not None, f"{stage_name} must declare its fitting population"
     if scope.fit_scope is CellScope.ALL:
-        assert scope.reason, (
-            f"stage {stage_name!r} fits on every cell without a reason; questionable cells "
-            f"would define the biological reference"
-        )
+        assert scope.reason, f"{stage_name} must justify fitting on all cells"
+    if scope.fit_scope is not CellScope.CORE:
+        return
+    import cellquorum
+
+    directory = Path(cellquorum.__file__).parent / _STAGE_SOURCE_DIRS[stage_name]
+    sources = sorted(path for path in directory.glob("*.py") if path.name != "__init__.py")
+    assert sources, f"no source files found for {stage_name} at {directory}"
+
+    wired = [
+        path.name
+        for path in sources
+        if any(reader in path.read_text() for reader in _FIT_POPULATION_READERS)
+    ]
+    assert wired, (
+        f"stage {stage_name!r} declares fit_scope=CORE but nothing in {directory} reads the "
+        f"fit population (looked for {' or '.join(_FIT_POPULATION_READERS)}). A declared scope "
+        f"that no code consults reads as compliant while controlling nothing."
+    )
 
 
 def test_the_fitted_chain_is_protected_end_to_end() -> None:
@@ -102,8 +110,7 @@ def test_the_fitted_chain_is_protected_end_to_end() -> None:
     whole diagnostic purpose (see its ``cell_scope`` reason in
     ``cellquorum.stages.metacells.stage``): it characterizes contamination/outlier structure
     across every cell, including QC-flagged ones, and does not feed the shared biological
-    reference this test protects. ``test_fitting_stage_declares_a_cell_scope`` and
-    ``test_fitting_on_every_cell_requires_a_stated_reason`` already cover it elsewhere.
+    reference this test protects. The per-stage policy check verifies its justification.
     """
     reference_building_chain = STAGES_THAT_FIT_ACROSS_CELLS - {"metacells"}
     scopes = {
@@ -131,71 +138,3 @@ def test_policy_allows_fitting_on_all_cells_with_a_reason() -> None:
         fit_scope=CellScope.ALL, reason="per-cell independent transform, no cohort statistic"
     )
     assert policy.fit_scope is CellScope.ALL
-
-
-def test_declared_scopes_survive_registration() -> None:
-    """A declaration that the registry drops is worse than none — it reads as compliant.
-
-    ``register_stage`` accepted ``cell_scope`` and did not store it on the spec, so five
-    stages declared core-only fitting and the registry reported zero. Nothing failed; the
-    contract was simply absent. This asserts the round trip.
-    """
-    declared = [spec for spec in all_stage_specs() if spec.cell_scope is not None]
-    assert len(declared) >= len(STAGES_THAT_FIT_ACROSS_CELLS), (
-        f"only {len(declared)} specs carry a cell_scope but "
-        f"{len(STAGES_THAT_FIT_ACROSS_CELLS)} stages declare one — register_stage is "
-        f"dropping the declaration"
-    )
-
-
-#: Where each fitting stage's methods live. Non-recursive on purpose: ``preprocessing`` has
-#: ``feature_selection`` and ``dimensionality`` beneath it, and a recursive search would let
-#: the parent pass on its children's work.
-_STAGE_SOURCE_DIRS: dict[str, str] = {
-    "preprocessing": "stages/preprocessing",
-    "feature_selection": "stages/preprocessing/feature_selection",
-    "dimensionality": "stages/preprocessing/dimensionality",
-    "integration": "stages/integration",
-    "clustering": "stages/clustering",
-}
-
-#: Reading the fit population, however it is spelled. ``fitting_cells`` is the shared reader;
-#: ``resolve_training_set`` is integration's wrapper around it for the VAE methods.
-_FIT_POPULATION_READERS = ("fitting_cells", "resolve_training_set")
-
-
-@pytest.mark.parametrize("stage_name", sorted(STAGES_THAT_FIT_ACROSS_CELLS))
-def test_a_core_declaring_stage_actually_reads_the_fit_population(stage_name: str) -> None:
-    """A declaration nothing acts on is the failure this contract exists to prevent.
-
-    ``test_declared_scopes_survive_registration`` proves the declaration reaches the registry.
-    This proves some code in the stage *consults* it. The behavioural proofs live in
-    ``test_qc_fit_mask_is_honoured``, ``test_pca_fits_on_core_and_projects``,
-    ``test_clustering_fits_on_core_and_transfers``, ``test_normalization_fits_target_on_core``
-    and ``test_integration_fit_population``; this is the cheap structural guard that fails when
-    a *new* method or stage is added and simply never wired.
-
-    Args:
-        stage_name: Registered stage name.
-    """
-    scope = _spec(stage_name).cell_scope
-    assert scope is not None
-    if scope.fit_scope is not CellScope.CORE:
-        pytest.skip(f"{stage_name} does not declare CORE")
-
-    import cellquorum
-
-    directory = Path(cellquorum.__file__).parent / _STAGE_SOURCE_DIRS[stage_name]
-    sources = sorted(path for path in directory.glob("*.py") if path.name != "__init__.py")
-    assert sources, f"no source files found for {stage_name} at {directory}"
-
-    wired = [
-        path.name
-        for path in sources
-        if any(reader in path.read_text() for reader in _FIT_POPULATION_READERS)
-    ]
-    assert wired, (
-        f"stage {stage_name!r} declares fit_scope=CORE but nothing in {directory} reads the "
-        f"fit population (looked for {' or '.join(_FIT_POPULATION_READERS)}). A declared scope "
-        f"that no code consults reads as compliant while controlling nothing."
-    )

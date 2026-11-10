@@ -10,7 +10,12 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.priors import (
+    PriorFetchError,
+    activity_batch_size,
+    collection_names,
+    get_net,
+)
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -33,19 +38,18 @@ class ActivityMethod(AnalysisMethod):
             expected_kind="lognorm",
         )
 
+    def configured_layers(self, config: dict) -> list[str]:
+        return self.input_contract(config).required_layers
+
     def requires_obs(self, config: dict) -> list[str]:
         return [config.get("cell_type_col", "cell_type")]
-
-    def requires_layers(self) -> list[str]:
-        # Base hook is config-less (the scvi pattern); guard on the default
-        # lognorm layer name. The contract re-checks the configured layer
-        # (and its lognorm tag) before _run.
-        return ["cellquorum_normalized"]
 
     def _run(
         self, adata: ad.AnnData, config: dict, context: PipelineContext
     ) -> StageResult | MethodSkip:
-        resources = config.get("activity_resources", ["collectri", "progeny"])
+        resources = collection_names(
+            config.get("activity_resources", ["collectri", "progeny"]), config.get("gmt_path")
+        )
         cell_type_col = config.get("cell_type_col", "cell_type")
         layer = config.get("layer", "cellquorum_normalized")
         gmt_path = config.get("gmt_path")
@@ -102,7 +106,13 @@ class ActivityMethod(AnalysisMethod):
             # instead returns a NEW, smaller AnnData and leaves the original
             # untouched (verified empirically, same as aucell's behavior).
             try:
-                result = dc.mt.ulm(adata, net, tmin=min_size, layer=ulm_layer)
+                result = dc.mt.ulm(
+                    adata,
+                    net,
+                    tmin=min_size,
+                    layer=ulm_layer,
+                    bsize=activity_batch_size(adata.n_vars),
+                )
                 source = adata if result is None else result
                 es = source.obsm.pop("score_ulm")
                 source.obsm.pop("padj_ulm", None)
@@ -142,6 +152,27 @@ class ActivityMethod(AnalysisMethod):
                     index=False,
                 )
             )
+            donor = config.get("donor_col")
+            if donor and donor in adata.obs and donor not in group_cols:
+                es[donor] = adata.obs[donor].reindex(es.index).to_numpy()
+                groups = [*group_cols, donor]
+                grouped = es.groupby(groups, observed=True)
+                scores = (
+                    grouped.mean()
+                    .reset_index()
+                    .melt(id_vars=groups, var_name="source", value_name="mean_score")
+                )
+                scores = scores.merge(grouped.size().rename("n_cells").reset_index(), on=groups)
+                artifacts.append(
+                    writer.table(
+                        scores.rename(columns={cell_type_col: "cell_type"}),
+                        f"enrichment_activity_{resource}_by_donor.csv",
+                        name=f"{resource}_donor_activity",
+                        description="Mean inferred ULM activity and cell "
+                        "counts per biological replicate.",
+                        index=False,
+                    )
+                )
             done.append(resource)
 
         if not done:

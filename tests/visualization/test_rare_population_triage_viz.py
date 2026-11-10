@@ -18,29 +18,19 @@ def _triage_df() -> pd.DataFrame:
     )
 
 
-def test_writes_png_and_a_vector_twin(tmp_path):
-    out = plot_condition_enrichment_bar(_triage_df(), out_path=tmp_path / "enrich.png")
+def test_condition_enrichment_exports_only_candidate_populations(tmp_path):
+    from unittest.mock import patch
+
+    from cellquorum.visualization import rare_population_triage as viz
+
+    with patch.object(viz, "save_figure", wraps=viz.save_figure) as save:
+        out = plot_condition_enrichment_bar(_triage_df(), out_path=tmp_path / "enrich.png")
 
     assert out == tmp_path / "enrich.png"
     assert out.exists()
     assert out.with_suffix(".pdf").exists()
-
-
-def test_only_candidates_are_plotted(tmp_path, monkeypatch):
-    from cellquorum.visualization import rare_population_triage as viz_module
-
-    captured = {}
-
-    def fake_save(fig, out_dir, stem, **kwargs):
-        captured["fig"] = fig
-        return [out_dir / f"{stem}.png", out_dir / f"{stem}.pdf"]
-
-    monkeypatch.setattr(viz_module, "save_figure", fake_save)
-
-    plot_condition_enrichment_bar(_triage_df(), out_path=tmp_path / "enrich.png")
-
-    ax = captured["fig"].axes[0]
-    labels = [t.get_text() for t in ax.get_yticklabels()]
+    fig = save.call_args.args[0]
+    labels = [tick.get_text() for tick in fig.axes[0].get_yticklabels()]
     assert "D" not in labels  # noise excluded
     assert set(labels) == {"A", "B", "C"}
 

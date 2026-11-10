@@ -179,29 +179,16 @@ def _milo_results_integer_celltypes() -> pd.DataFrame:
     )
 
 
-def test_plot_milo_beeswarm_actually_plots_points_for_integer_celltypes():
-    """The real bug: with an int64 majority_celltype column (Milo's real
-    output shape for a numeric cluster label), every group must still end up
-    with its points on the canvas -- not silently filtered to zero by a
-    string/int comparison mismatch.
-    """
+def test_milo_beeswarm_keeps_integer_celltypes_and_their_effect_range():
     fig = plot_milo_beeswarm(
         _milo_results_integer_celltypes(), case="LE", control="N", spatial_fdr=0.1
     )
+
     ax = fig.axes[0]
     scatter_collections = [c for c in ax.collections if c.get_offsets().size > 0]
     total_points = sum(len(c.get_offsets()) for c in scatter_collections)
     assert total_points == 6  # every neighborhood row must be plotted
 
-
-def test_plot_milo_beeswarm_xlim_reflects_the_real_data_range():
-    """A direct pin on the axis-blowout symptom: the x-axis must scale to the
-    actual logFC data, not collapse to near-zero because nothing was plotted.
-    """
-    fig = plot_milo_beeswarm(
-        _milo_results_integer_celltypes(), case="LE", control="N", spatial_fdr=0.1
-    )
-    ax = fig.axes[0]
     xmin, xmax = ax.get_xlim()
     assert xmax - xmin > 1.0  # not the ~0.1-wide collapsed range from the bug
 
@@ -327,16 +314,12 @@ def _direction_notes(ax):
     return {t.get_text(): t for t in ax.texts if "enriched in" in t.get_text()}
 
 
-def test_milo_direction_labels_point_along_the_axis_they_describe():
-    """Real defect: the labels read '↑ enriched in Lymphedema' and 'enriched in Normal ↓' under a
-    horizontal axis, where up and down mean nothing."""
+def test_milo_direction_labels_point_along_the_axis_and_clear_its_label():
     fig = plot_milo_beeswarm(_milo_results(), case="Lymphedema", control="Normal", spatial_fdr=0.1)
+
     notes = _direction_notes(fig.axes[0])
     assert set(notes) == {"enriched in Lymphedema →", "← enriched in Normal"}
 
-
-def test_milo_direction_labels_do_not_touch_the_axis_label():
-    fig = plot_milo_beeswarm(_milo_results(), case="Lymphedema", control="Normal", spatial_fdr=0.1)
     ax = fig.axes[0]
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()

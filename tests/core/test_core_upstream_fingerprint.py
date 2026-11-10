@@ -234,3 +234,44 @@ def test_unknown_stage_raises_rather_than_hashing_nothing():
 def test_missing_blocks_are_tolerated():
     # A minimal config must still fingerprint rather than raise.
     assert isinstance(_fp({"run": {}, "input": None, "stages": {}}), str)
+
+
+def test_replacing_input_or_upstream_prior_with_same_length_invalidates_checkpoint(tmp_path):
+    source = tmp_path / "input.h5ad"
+    prior = tmp_path / "genes.gmt"
+    source.write_bytes(b"abcd")
+    prior.write_bytes(b"1234")
+    config = {
+        "input": {"h5ad": str(source)},
+        "stages": {"enrichment": True},
+        "enrichment": {"methods": [{"method": "gsea", "gmt_path": str(prior)}]},
+    }
+
+    def fingerprint():
+        return compute_upstream_fingerprint(
+            through_stage="enrichment", stage_order={"enrichment": 5}, config=config
+        )
+
+    initial = fingerprint()
+    source.write_bytes(b"wxyz")
+    changed = fingerprint()
+    assert initial != changed
+    prior.write_bytes(b"5678")
+    assert fingerprint() != changed
+
+
+def test_change_in_referenced_droplets_invalidates_ambient_checkpoint(tmp_path):
+    raw = tmp_path / "raw.h5"
+    raw.write_bytes(b"123")
+    manifest = tmp_path / "samples.csv"
+    manifest.write_text(f"sample_id,raw_matrix_path\nA,{raw}\n")
+    config = {"paths": {"manifest": str(manifest)}, "stages": {"ambient_correction": True}}
+
+    def fingerprint():
+        return compute_upstream_fingerprint(
+            through_stage="ambient_correction", stage_order={"ambient_correction": 1}, config=config
+        )
+
+    initial = fingerprint()
+    raw.write_bytes(b"456")
+    assert initial != fingerprint()

@@ -81,13 +81,16 @@ def test_skips_when_no_panel_gene_is_in_the_data(tmp_path):
     assert isinstance(res, MethodSkip)
 
 
-def test_writes_the_figure_and_the_numbers_behind_it(tmp_path):
+def test_marker_dotplot_exports_figure_source_and_highlighted_groups(tmp_path):
     res = MarkerDotplotMethod()._run(_adata(), _config(), _ctx(tmp_path))
+
     assert not isinstance(res, MethodSkip)
     assert (tmp_path / "figs" / "annotation" / "marker_dotplot.png").exists()
     assert (tmp_path / "results" / "annotation" / "marker_dotplot_mean.csv").exists()
     assert (tmp_path / "results" / "annotation" / "marker_dotplot_pct.csv").exists()
     assert res.artifacts
+
+    assert res.metrics["highlighted"] == ["Alpha", "Beta"]
 
 
 def test_the_numbers_are_per_group_per_gene_in_panel_order(tmp_path):
@@ -96,11 +99,6 @@ def test_the_numbers_are_per_group_per_gene_in_panel_order(tmp_path):
     assert list(mean.index) == ["G0", "G1", "G2", "G3"]
     assert list(mean.columns) == ["Alpha", "Beta", "Gamma"]
     assert mean.loc["G0", "Alpha"] > mean.loc["G0", "Beta"]
-
-
-def test_it_reports_which_groups_it_highlighted(tmp_path):
-    res = MarkerDotplotMethod()._run(_adata(), _config(), _ctx(tmp_path))
-    assert res.metrics["highlighted"] == ["Alpha", "Beta"]
 
 
 def test_highlighting_can_be_switched_off(tmp_path):
@@ -118,13 +116,6 @@ def test_the_stage_and_its_config_are_part_of_the_default_config():
     assert cfg.stages.annotation_viz is True
     assert cfg.annotation_viz.enabled is True
     assert cfg.annotation_viz.highlight_expected is True
-
-
-def test_the_method_is_registered():
-    import cellquorum.stages.annotation.viz  # noqa: F401
-    from cellquorum.methods.registry import METHOD_REGISTRY
-
-    assert METHOD_REGISTRY.has("annotation_viz", "marker_dotplot")
 
 
 def test_the_panel_the_label_column_and_the_layer_come_from_the_annotation_block():
@@ -157,23 +148,6 @@ def test_an_explicit_label_column_beats_the_annotation_block():
         )
     )
     assert AnnotationVizStage()._augment_config(ctx, {})["group_by"] == "canonical_population"
-
-
-def test_the_planner_runs_it_after_population_identity_and_before_subclustering():
-    from cellquorum.config.models import CellQuorumConfig
-    from cellquorum.core.planner import build_pipeline_plan
-
-    names = [s.name for s in build_pipeline_plan(CellQuorumConfig()).stages]
-    assert names.index("population_identity") < names.index("annotation_viz")
-    assert names.index("annotation_viz") < names.index("subclustering")
-
-
-def test_the_executor_registry_includes_it():
-    from cellquorum.core.executor import build_default_stage_registry
-    from cellquorum.stages.annotation.viz.stage import AnnotationVizStage
-
-    registry = build_default_stage_registry()
-    assert isinstance(registry.get("annotation_viz"), AnnotationVizStage)
 
 
 def test_labels_that_are_plain_strings_follow_the_order_of_the_panel(tmp_path):
@@ -224,8 +198,9 @@ def test_the_clustered_dotplot_skips_with_one_group_because_there_is_no_tree_to_
     assert "two groups" in res.reason
 
 
-def test_the_clustered_dotplot_writes_the_figure_and_the_numbers_behind_it(tmp_path):
+def test_clustered_dotplot_exports_figure_source_and_row_order(tmp_path):
     res = _lineage(tmp_path)
+
     assert not isinstance(res, MethodSkip)
     assert (tmp_path / "figs" / "annotation" / "lineage_marker_dotplot.png").exists()
     mean = pd.read_csv(
@@ -234,9 +209,6 @@ def test_the_clustered_dotplot_writes_the_figure_and_the_numbers_behind_it(tmp_p
     assert set(mean.index) == {"Alpha", "Beta", "Gamma"}
     assert res.artifacts
 
-
-def test_the_clustered_dotplot_reports_the_row_order_the_tree_chose(tmp_path):
-    res = _lineage(tmp_path)
     assert sorted(res.metrics["row_order"]) == ["Alpha", "Beta", "Gamma"]
 
 

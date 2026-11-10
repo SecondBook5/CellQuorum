@@ -27,6 +27,7 @@ class StateScoringVizConfig(StrictBaseModel):
         dpi: Raster DPI for PNG output.
     """
 
+    descriptive: bool = False
     enabled: bool = True
     score_source: str = "aucell"
     programs: list[str] = []

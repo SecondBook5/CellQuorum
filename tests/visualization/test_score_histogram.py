@@ -38,26 +38,28 @@ def _heights(fig, level):
     return np.array([p.get_height() for p in fig.axes[0].patches if p.get_gid() == f"bars|{level}"])
 
 
-def test_one_set_of_bars_per_condition_control_first() -> None:
+def test_score_histogram_shows_cell_counts_on_shared_bins() -> None:
     fig = _draw()
+
     gids = [p.get_gid() for p in fig.axes[0].patches]
     assert gids[0] == "bars|Normal" and gids[-1] == "bars|Lymphedema"
     assert set(gids) == {"bars|Normal", "bars|Lymphedema"}
 
-
-def test_bar_heights_are_the_cell_counts_of_each_condition() -> None:
-    fig = _draw()
     assert _heights(fig, "Normal").sum() == 200
     assert _heights(fig, "Lymphedema").sum() == 300
 
-
-def test_both_conditions_share_the_same_bin_edges() -> None:
-    fig = _draw()
     edges = {
         level: [p.get_x() for p in fig.axes[0].patches if p.get_gid() == f"bars|{level}"]
         for level in ("Normal", "Lymphedema")
     }
     np.testing.assert_allclose(edges["Normal"], edges["Lymphedema"])
+
+    texts = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert texts == ["Normal (n = 200)", "Lymphedema (n = 300)"]
+
+    ax = fig.axes[0]
+    assert ax.get_xlabel() == "EndoMT index"
+    assert ax.get_ylabel() == "Cells"
 
 
 def test_the_number_of_bins_is_the_one_asked_for() -> None:
@@ -69,18 +71,6 @@ def test_share_scales_each_condition_to_one_whatever_its_size() -> None:
     assert _heights(fig, "Normal").sum() == pytest.approx(1.0)
     assert _heights(fig, "Lymphedema").sum() == pytest.approx(1.0)
     assert fig.axes[0].get_ylabel() == "Share of cells"
-
-
-def test_the_legend_gives_the_number_of_cells_per_condition() -> None:
-    fig = _draw()
-    texts = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
-    assert texts == ["Normal (n = 200)", "Lymphedema (n = 300)"]
-
-
-def test_the_axes_are_named() -> None:
-    ax = _draw().axes[0]
-    assert ax.get_xlabel() == "EndoMT index"
-    assert ax.get_ylabel() == "Cells"
 
 
 def test_a_condition_with_no_cells_is_named() -> None:

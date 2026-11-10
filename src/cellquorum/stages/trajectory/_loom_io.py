@@ -137,8 +137,12 @@ def reconcile_looms(
         obj_names = adata.obs_names[(atlas_samples == sample_id).to_numpy()]
         prefix = f"{sample_id}_"
         bare_to_obj: dict[str, str] = {}
+        original = adata.obs.loc[obj_names, "barcode"] if "barcode" in adata.obs else None
         for name in obj_names:
-            bare = name[len(prefix) :] if name.startswith(prefix) else str(name)
+            if original is not None:
+                bare = str(original.loc[name])
+            else:
+                bare = name[len(prefix) :] if name.startswith(prefix) else str(name)
             bare_to_obj[bare] = str(name)
 
         loom_bare = np.array([loom_cellid_to_bare(c) for c in cell_ids])

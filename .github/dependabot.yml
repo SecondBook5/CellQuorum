@@ -1,14 +1,10 @@
-# Dependabot keeps the pinned dev toolchain and the CI actions current.
-#
-# Scope note: this watches the DEV toolchain and GitHub Actions, not the runtime
-# scientific stack. Runtime dependencies in pyproject.toml are declared as lower
-# bounds on purpose (a library must co-exist with whatever a user already has), so
-# there is nothing for Dependabot to bump there. The conda environment recipes in
-# envs/ are solved by conda-lock via `make lock`, which Dependabot cannot drive.
+# GitHub checks for updates monthly and opens pull requests for review.
+# The pip check covers development tools and Python pins used for CI and figure
+# generation, including NumPy and pandas. Conda locks are managed via `make lock`.
 version: 2
 
 updates:
-  # The pinned dev tools (ruff, mypy, pytest, mkdocs) in the [dev] extra.
+  # Group related development tools. Other Python updates can get individual PRs.
   - package-ecosystem: pip
     directory: /
     schedule:

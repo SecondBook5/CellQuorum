@@ -20,6 +20,8 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pytest
+from matplotlib import rc_context
 
 from cellquorum.stages.clustering.neighbors_leiden import LABEL_SOURCE_COLUMN, LeidenMethod
 from cellquorum.stages.preprocessing.dimensionality.pca import PCAMethod
@@ -135,7 +137,17 @@ def _core_only(adata: ad.AnnData) -> ad.AnnData:
 # ═══ The composed property ═════════════════════════════════════════════════════════
 
 
-def test_the_chain_gives_core_cells_the_result_they_would_have_had_alone(tmp_path) -> None:
+@pytest.fixture(scope="module")
+def core_reference(tmp_path_factory):
+    core = _core_only(_cohort())
+    with rc_context():
+        _run_chain(core, tmp_path_factory.mktemp("core_reference"))
+    return core
+
+
+def test_the_chain_gives_core_cells_the_result_they_would_have_had_alone(
+    core_reference, tmp_path
+) -> None:
     """Gene set, axes and partition must all be identical to a damaged-cell-free run.
 
     The single strongest statement available about the fitted chain: the presence of
@@ -145,8 +157,7 @@ def test_the_chain_gives_core_cells_the_result_they_would_have_had_alone(tmp_pat
     full = _cohort()
     _run_chain(full, tmp_path)
 
-    core = _core_only(_cohort())
-    _run_chain(core, tmp_path)
+    core = core_reference
 
     # 1. The same genes.
     assert set(full.var_names[full.var["highly_variable"].to_numpy(bool)]) == set(
@@ -160,8 +171,20 @@ def test_the_chain_gives_core_cells_the_result_they_would_have_had_alone(tmp_pat
         == core.obs["leiden"].astype(str).to_numpy()
     ).all()
 
+    assert full.obsm["X_pca"].shape[0] == full.n_obs
+    assert np.isfinite(full.obsm["X_pca"]).all()
+    assert full.obs["leiden"].notna().all()
+    assert full.n_obs == 370
 
-def test_the_control_the_damaged_cells_really_do_change_all_three(tmp_path) -> None:
+    damaged = full.obs["is_damaged"].to_numpy(bool)
+    assert (full.obs[LABEL_SOURCE_COLUMN][damaged] == "transferred").all()
+    assert (full.obs[LABEL_SOURCE_COLUMN][~damaged] == "fitted").all()
+
+    selected = full.var_names[full.var["highly_variable"].to_numpy(bool)]
+    assert not [gene for gene in selected if gene.startswith("STRESS")]
+
+
+def test_the_control_the_damaged_cells_really_do_change_all_three(core_reference, tmp_path) -> None:
     """Without the masks each link moves, so the composed test above is not vacuous.
 
     Checked link by link, because a control that only proved one of the three had shifted
@@ -172,8 +195,7 @@ def test_the_control_the_damaged_cells_really_do_change_all_three(tmp_path) -> N
     del unmasked.obs[CLUSTERING_FIT]
     _run_chain(unmasked, tmp_path)
 
-    core = _core_only(_cohort())
-    _run_chain(core, tmp_path)
+    core = core_reference
 
     leaked_genes = set(unmasked.var_names[unmasked.var["highly_variable"].to_numpy(bool)])
     clean_genes = set(core.var_names[core.var["highly_variable"].to_numpy(bool)])
@@ -191,46 +213,5 @@ def test_the_control_the_damaged_cells_really_do_change_all_three(tmp_path) -> N
     clean_labels = core.obs["leiden"].astype(str).to_numpy()
     assert not (unmasked_labels == clean_labels).all(), "the partition of core cells held"
 
-
-# ═══ Nothing is lost along the way ═════════════════════════════════════════════════
-
-
-def test_every_cell_comes_out_of_the_chain_with_coordinates_and_a_label(tmp_path) -> None:
-    """Protecting the reference must not quietly delete the cells being protected against."""
-    adata = _cohort()
-    _run_chain(adata, tmp_path)
-
-    assert adata.obsm["X_pca"].shape[0] == adata.n_obs
-    assert np.isfinite(adata.obsm["X_pca"]).all()
-    assert adata.obs["leiden"].notna().all()
-    assert adata.n_obs == 370
-
-
-def test_the_damaged_cells_are_marked_as_transferred_not_fitted(tmp_path) -> None:
-    """Their labels must be traceable to transfer, so a reader can discount them."""
-    adata = _cohort()
-    _run_chain(adata, tmp_path)
-
-    damaged = adata.obs["is_damaged"].to_numpy(bool)
-    assert (adata.obs[LABEL_SOURCE_COLUMN][damaged] == "transferred").all()
-    assert (adata.obs[LABEL_SOURCE_COLUMN][~damaged] == "fitted").all()
-
-
-def test_the_stress_block_never_enters_the_gene_set(tmp_path) -> None:
-    """The specific leak, checked at the end of the chain rather than at HVG alone."""
-    adata = _cohort()
-    _run_chain(adata, tmp_path)
-
-    selected = adata.var_names[adata.var["highly_variable"].to_numpy(bool)]
-    assert not [gene for gene in selected if gene.startswith("STRESS")]
-
-
-def test_a_dataset_without_graded_qc_runs_the_chain_unchanged(tmp_path) -> None:
-    """The whole chain must remain usable on data that never went through graded QC."""
-    adata = _cohort()
-    del adata.obs[MANIFOLD_FIT]
-    del adata.obs[CLUSTERING_FIT]
-    _run_chain(adata, tmp_path)
-
-    assert adata.obsm["X_pca"].shape[0] == adata.n_obs
-    assert adata.obs["leiden"].notna().all()
+    assert unmasked.obsm["X_pca"].shape[0] == unmasked.n_obs
+    assert unmasked.obs["leiden"].notna().all()

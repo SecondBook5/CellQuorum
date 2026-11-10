@@ -1,0 +1,3 @@
+grn: {method: pyscenic, radial_enabled: false}
+enrichment:
+  methods: [{method: activity, activity_resources: [collectri], gmt_path: null}]

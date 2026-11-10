@@ -20,6 +20,10 @@ dependencies:
   - numba
   - matplotlib
   - h5py
+  # CellOracle imports velocyto/loompy and reads its GRN tables with pyarrow.
+  - loompy=3.0.8
+  - pyarrow
+  - attrs
   - louvain
   - python-igraph
   - setuptools<81

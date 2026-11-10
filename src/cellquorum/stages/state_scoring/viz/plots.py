@@ -159,4 +159,27 @@ def state_score_violin(
     return fig
 
 
-__all__ = ["state_score_violin"]
+def population_score_violin(
+    df: pd.DataFrame,
+    *,
+    score_label: str,
+    cluster_labels: dict[str, str],
+    cluster_key: str,
+    color: str,
+) -> Figure:
+    """Show observed cell score distributions when the study has no contrast."""
+    groups = df.groupby("cluster", sort=False, observed=True)["score"]
+    fig, ax = plt.subplots(figsize=(max(4, 0.85 * groups.ngroups + 1), 4))
+    labels = []
+    for i, (group, scores) in enumerate(groups):
+        raincloud(ax, scores.dropna().to_numpy(), float(i), color=color)
+        labels.append(f"{cluster_labels.get(str(group), str(group))} (n={scores.count()})")
+    ax.set_xticks(range(len(labels)), labels, rotation=45, ha="right")
+    ax.set_xlim(-0.55, len(labels) - 0.4)
+    ax.set_ylabel(score_label)
+    ax.set_xlabel(cluster_key)
+    fig.tight_layout()
+    return fig
+
+
+__all__ = ["state_score_violin", "population_score_violin"]

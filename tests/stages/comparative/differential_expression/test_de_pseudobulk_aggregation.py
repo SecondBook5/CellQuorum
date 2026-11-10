@@ -31,37 +31,20 @@ def _toy_adata():
     return a
 
 
-def test_aggregate_shapes_and_labels():
+def test_counts_and_design_match_the_four_donor_condition_pseudobulks():
     res = aggregate_pseudobulk(
         _toy_adata(), layer="counts", donor_col="patient_id", condition_col="condition"
     )
-    # 4 pseudo-samples (d1/Normal, d1/LE, d2/Normal, d2/LE), 3 genes.
-    assert res.counts.shape == (4, 3)
-    assert set(res.counts.index) == {"d1__Normal", "d1__LE", "d2__Normal", "d2__LE"}
+    expected = {
+        "d1__Normal": [4, 0, 2],
+        "d1__LE": [0, 5, 1],
+        "d2__Normal": [2, 2, 2],
+        "d2__LE": [1, 2, 1],
+    }
     assert list(res.counts.columns) == ["GeneA", "GeneB", "GeneC"]
-
-
-def test_aggregate_sums_within_group():
-    res = aggregate_pseudobulk(
-        _toy_adata(), layer="counts", donor_col="patient_id", condition_col="condition"
-    )
-    # d1/Normal is the sum of the first two cells: [1,0,2] + [3,0,0] = [4,0,2].
-    np.testing.assert_array_equal(res.counts.loc["d1__Normal"].to_numpy(), [4, 0, 2])
-    # d2/LE is the sum of the last two cells: [0,1,0] + [1,1,1] = [1,2,1].
-    np.testing.assert_array_equal(res.counts.loc["d2__LE"].to_numpy(), [1, 2, 1])
-
-
-def test_sample_meta_aligns_to_counts():
-    res = aggregate_pseudobulk(
-        _toy_adata(), layer="counts", donor_col="patient_id", condition_col="condition"
-    )
-    assert list(res.sample_meta.index) == list(res.counts.index)
-    assert res.sample_meta.loc["d1__LE", "patient_id"] == "d1"
-    assert res.sample_meta.loc["d1__LE", "condition"] == "LE"
-
-
-def test_counts_are_integer_valued():
-    res = aggregate_pseudobulk(
-        _toy_adata(), layer="counts", donor_col="patient_id", condition_col="condition"
-    )
-    assert (res.counts.to_numpy() == res.counts.to_numpy().astype(int)).all()
+    assert res.sample_meta.index.equals(res.counts.index)
+    assert res.counts.index.is_unique and set(res.counts.index) == set(expected)
+    for sample, values in expected.items():
+        np.testing.assert_array_equal(res.counts.loc[sample], values)
+        row = res.sample_meta.loc[sample]
+        assert (row["patient_id"], row["condition"]) == tuple(sample.split("__"))

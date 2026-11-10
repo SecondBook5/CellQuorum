@@ -254,6 +254,7 @@ def condition_split_heatmap(
     condition_order: list,
     expr_cmap: str = SEQUENTIAL_CMAP,
     title: str = "",
+    score_label: str = "Score",
     gene_group_labels: list[str] | None = None,
 ) -> Figure:
     """Build the stacked-annotation, condition-split expression heatmap.
@@ -334,9 +335,10 @@ def condition_split_heatmap(
         ax_pt.imshow(pt_grad, aspect="auto", cmap="Spectral_r", vmin=0, vmax=1)
         ax_pt.set_xticks([])
         ax_pt.set_yticks([])
-        ax_pt.set_title(str(c), fontsize=11, fontweight="bold", pad=6)
+        if len(condition_order) > 1 or c != "all":
+            ax_pt.set_title(str(c), fontsize=11, fontweight="bold", pad=6)
         if j == 0:
-            ax_pt.set_ylabel("Pseudotime", rotation=0, ha="right", va="center", fontsize=7.5)
+            ax_pt.set_ylabel("Cell rank", rotation=0, ha="right", va="center", fontsize=7.5)
         r += 1
         if any_score:
             ax_s = fig.add_subplot(gs[r, j])
@@ -346,7 +348,7 @@ def condition_split_heatmap(
             ax_s.set_xticks([])
             ax_s.set_yticks([])
             if j == 0:
-                ax_s.set_ylabel("Score", rotation=0, ha="right", va="center", fontsize=7.5)
+                ax_s.set_ylabel(score_label, rotation=0, ha="right", va="center", fontsize=7.5)
             r += 1
         for cat_track in categorical_tracks:
             cats, colors = cat_track["cats"], cat_track["colors"]
@@ -372,7 +374,7 @@ def condition_split_heatmap(
         )
         ax.set_xticks(tick_pos)
         ax.set_xticklabels(tick_lab, fontsize=7.5)
-        ax.set_xlabel("pseudotime (percent of range)", fontsize=8)
+        ax.set_xlabel("pseudotime rank within condition (percentile)", fontsize=8)
         ax.set_yticks([])
         if j == n_cols - 1:
             last_expr_ax = ax
@@ -390,7 +392,7 @@ def condition_split_heatmap(
         cax_g = fig.add_axes((0.93, 0.74, 0.014, 0.12))
         cb_g = fig.colorbar(im_score, cax=cax_g, ticks=[s_vmin, s_vmax])
         cb_g.ax.set_yticklabels(["Min", "Max"], fontsize=7)
-        cb_g.set_label("Score", fontsize=7.5)
+        cb_g.set_label(score_label, fontsize=7.5)
     if im_expr is not None:
         cax = fig.add_axes((0.93, 0.40, 0.014, 0.24))
         fig.colorbar(im_expr, cax=cax, label="scaled expr")

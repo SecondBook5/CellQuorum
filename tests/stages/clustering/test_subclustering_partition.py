@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -10,6 +9,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import pytest
+from _external_data import require_r_package
 
 from cellquorum.methods.base import MethodSkip
 from cellquorum.stages.clustering.subclustering.partition import run_choir, run_scshc_test
@@ -417,57 +417,6 @@ def test_run_scshc_test_method_skip_when_scshc_unavailable(tmp_path: Path) -> No
 # ---- Real R tests (gated on Rscript + CHOIR + scSHC availability) ---- #
 
 
-def _r_available() -> bool:
-    """Check whether Rscript is available."""
-    return shutil.which("Rscript") is not None
-
-
-def _choir_available() -> bool:
-    """Check whether CHOIR R package is available."""
-    if not _r_available():
-        return False
-    import subprocess
-
-    result = subprocess.run(
-        [
-            "Rscript",
-            "--vanilla",
-            "-e",
-            "quit(status = ifelse(requireNamespace('CHOIR', quietly = TRUE), 0, 1))",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    return result.returncode == 0
-
-
-def _scshc_available() -> bool:
-    """Check whether scSHC R package is available."""
-    if not _r_available():
-        return False
-    import subprocess
-
-    result = subprocess.run(
-        [
-            "Rscript",
-            "--vanilla",
-            "-e",
-            "quit(status = ifelse(requireNamespace('scSHC', quietly = TRUE), 0, 1))",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    return result.returncode == 0
-
-
-@pytest.mark.skipif(
-    not (_r_available() and _choir_available()),
-    reason="Rscript or CHOIR R package unavailable",
-)
 def test_run_choir_real_r(tmp_path: Path) -> None:
     """
     Real R test: run CHOIR on synthetic data with planted structure.
@@ -475,6 +424,7 @@ def test_run_choir_real_r(tmp_path: Path) -> None:
     This test requires Rscript + CHOIR installed. Uses TINY n_iterations/n_trees.
     Verifies the logcounts assay fix allows CHOIR to run successfully.
     """
+    require_r_package("CHOIR")
     # Build synthetic counts adata with planted structure (800 cells, 400 genes).
     # Plant two groups with differential expression to help CHOIR find signal.
     rng = np.random.default_rng(42)
@@ -528,10 +478,6 @@ def test_run_choir_real_r(tmp_path: Path) -> None:
     assert n_subclusters >= 1
 
 
-@pytest.mark.skipif(
-    not (_r_available() and _scshc_available()),
-    reason="Rscript or scSHC R package unavailable",
-)
 def test_run_scshc_test_real_r(tmp_path: Path) -> None:
     """
     Real R test: run sc-SHC on synthetic clusters.
@@ -540,6 +486,7 @@ def test_run_scshc_test_real_r(tmp_path: Path) -> None:
     NOTE: This test may skip if R environment has issues; the mocked tests
     are the primary verification of the scshc_test.py wiring.
     """
+    require_r_package("scSHC")
     # Build synthetic counts adata with cluster labels (MORE genes).
     rng = np.random.default_rng(42)
     counts = rng.poisson(lam=5.0, size=(100, 200))  # 200 genes

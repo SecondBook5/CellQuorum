@@ -84,29 +84,30 @@ def test_velocity_end_to_end_with_looms(tmp_path):
     pytest.importorskip("scvelo")
     pytest.importorskip("loompy")
     import loompy
+    import scvelo as scv
+    from sklearn.decomposition import PCA
 
-    # Build a loom whose barcodes match the atlas, enough genes/cells for scVelo.
-    atlas_genes = [f"GENE_{i}" for i in range(50)]
-    barcodes = [f"{b}{i:04d}" for i, b in enumerate(["AAAA"] * 40)]
+    # Independent noise has no expected velocity genes. Simulate a transcription
+    # trajectory and keep the separate sample-specific loom/barcode handoff.
+    simulation = scv.datasets.simulation(
+        n_obs=160, n_vars=50, noise_model="gillespie", random_seed=7
+    )
+    spliced = np.asarray(simulation.layers["spliced"], dtype="float32")
+    unspliced = np.asarray(simulation.layers["unspliced"], dtype="float32")
+    atlas_genes = [f"GENE_{i}" for i in range(simulation.n_vars)]
+    barcodes = [f"AAAA{i:04d}" for i in range(simulation.n_obs)]
     names = [f"s1_{bc}-1" for bc in barcodes]
-    rng = np.random.default_rng(0)
     a = ad.AnnData(
-        X=rng.random((40, 50)).astype("float32"),
-        obs=pd.DataFrame({"sample_id": ["s1"] * 40, "cell_type": ["T"] * 40}, index=names),
+        X=spliced.copy(), obs=pd.DataFrame({"sample_id": "s1", "cell_type": "T"}, index=names)
     )
     a.var_names = atlas_genes
-    a.obsm["X_pca"] = rng.random((40, 10))
-    a.obsm["X_umap"] = rng.random((40, 2))
+    a.obsm["X_pca"] = PCA(n_components=10, random_state=7).fit_transform(np.log1p(spliced))
+    a.obsm["X_umap"] = a.obsm["X_pca"][:, :2].copy()
 
     loom = tmp_path / "s1.loom"
-    n_g, n_c = len(atlas_genes), len(barcodes)
     loompy.create(
         str(loom),
-        layers={
-            "": rng.integers(0, 5, size=(n_g, n_c)).astype("float32"),
-            "spliced": rng.integers(0, 5, size=(n_g, n_c)).astype("float32"),
-            "unspliced": rng.integers(0, 3, size=(n_g, n_c)).astype("float32"),
-        },
+        layers={"": spliced.T, "spliced": spliced.T, "unspliced": unspliced.T},
         row_attrs={"Gene": np.array(atlas_genes, dtype=object)},
         col_attrs={"CellID": np.array([f"s1:{bc}x" for bc in barcodes], dtype=object)},
     )

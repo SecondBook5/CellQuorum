@@ -5,6 +5,13 @@ from __future__ import annotations
 from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
+def default_enrichment_methods(*, by_cell_type: bool) -> list[dict[str, str]]:
+    names = ["gsea", "ora", "gsva", "activity"]
+    if by_cell_type:
+        names.insert(1, "gsea_by_cell_type")
+    return [{"method": name} for name in names]
+
+
 class EnrichmentConfig(StrictBaseModel):
     """Gene-set enrichment and TF/pathway activity analysis.
 

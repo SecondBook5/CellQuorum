@@ -27,6 +27,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from cellquorum.core.stage import StageArtifact
+
 # Stages whose ``run`` does not change the AnnData that flows downstream. Only
 # these are eligible for resume until AnnData checkpointing exists. Keep this
 # conservative: when in doubt, a stage is NOT listed and simply re-runs.
@@ -49,6 +51,7 @@ class ResumeDecision:
 
     # Human-readable reason (for notes/records) whether or not resuming.
     reason: str
+    artifacts: tuple[StageArtifact, ...] = ()
 
 
 def _completion_sidecar_path(provenance_dir: Path, stage_name: str) -> Path:
@@ -67,6 +70,7 @@ def decide_stage_resume(
     stage_name: str,
     provenance_dir: Path,
     input_fingerprint: str | None,
+    required_outputs: tuple[Path, ...] = (),
 ) -> ResumeDecision:
     """
     Decide whether a stage can be resumed (skipped) on this run.
@@ -111,12 +115,33 @@ def decide_stage_resume(
         return ResumeDecision(False, "input fingerprint changed; re-running")
 
     # Every recorded artifact must still exist, or outputs are incomplete.
+    artifacts = []
     for artifact in payload.get("output_artifacts", []):
         artifact_path = artifact.get("path")
         if artifact_path is None or not Path(artifact_path).exists():
             return ResumeDecision(False, "a recorded artifact is missing; re-running")
+        path = Path(artifact_path)
+        artifacts.append(
+            StageArtifact(
+                name=artifact.get("name", path.name),
+                path=path,
+                kind=artifact.get("kind", "file"),
+                description=artifact.get("description", ""),
+            )
+        )
 
-    return ResumeDecision(True, "resumed from completion marker (fingerprint match)")
+    if required_outputs:
+        registered = {a.path for a in artifacts}
+        if missing_outputs(required_outputs, registered):
+            return ResumeDecision(False, "a required stage output is missing or empty; re-running")
+    return ResumeDecision(
+        True, "resumed from completion marker (fingerprint match)", tuple(artifacts)
+    )
+
+
+def missing_outputs(required: tuple[Path, ...], registered: set[Path]) -> list[Path]:
+    """Check only artifacts attributed to this stage execution or its validated sidecar."""
+    return [p for p in required if p not in registered or not p.is_file() or p.stat().st_size == 0]
 
 
 __all__ = ["RESUMABLE_STAGES", "ResumeDecision", "decide_stage_resume"]

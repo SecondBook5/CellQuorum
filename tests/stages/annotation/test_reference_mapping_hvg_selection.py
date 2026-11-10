@@ -68,10 +68,12 @@ def test_seurat_flavor_on_raw_counts_would_have_picked_a_different_set() -> None
 
 def test_seurat_flavor_does_not_leave_a_temporary_layer_behind() -> None:
     atlas = _atlas_with_known_variable_genes()
+    original_layers = set(atlas.layers)
+    assert "counts" in original_layers
     _select_hvg_genes(
         atlas, n_top_genes=10, hvg_flavor="seurat", force_genes=[], counts_layer="counts"
     )
-    assert set(atlas.layers.keys()) == {"counts"}
+    assert set(atlas.layers) == original_layers
 
 
 def test_seurat_v3_flavor_still_uses_raw_counts_directly() -> None:

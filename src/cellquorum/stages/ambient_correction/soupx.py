@@ -174,6 +174,11 @@ def import_corrected_matrix(out_dir: str | Path, sample_id: str) -> ad.AnnData:
     # Build the AnnData; namespace barcodes by sample.
     adata = ad.AnnData(X=sp.csr_matrix(mat))
     adata.var_names = genes
+    if (d / "gene_ids.tsv").is_file():
+        adata.var["gene_ids"] = pd.read_csv(d / "gene_ids.tsv", header=None, dtype=str)[
+            0
+        ].to_numpy()
+    adata.obs["barcode"] = barcodes
     adata.obs_names = [f"{sample_id}_{bc}" for bc in barcodes]
     adata.var_names_make_unique()
     # Record sample_id as an explicit obs column (robust — do NOT reconstruct it

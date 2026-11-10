@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import scipy.sparse as sp
+from matplotlib import rc_context
 
 from cellquorum.core.exceptions import CellQuorumStageError
 from cellquorum.stages.preprocessing.dimensionality.pca import (
@@ -102,16 +103,24 @@ def _run_pca(adata: ad.AnnData, tmp_path: Path, **overrides: object) -> object:
 # ═══ 1. No leak: non-core cells cannot move the basis ═══════════════════════════════
 
 
-def test_outlier_cells_do_not_move_the_basis(tmp_path: Path) -> None:
+@pytest.fixture(scope="module")
+def projected_cohort(tmp_path_factory):
+    adata = _cohort(n_core=200, n_outlier=40)
+    with rc_context():
+        result = _run_pca(adata, tmp_path_factory.mktemp("projected_pca"))
+    return adata, result
+
+
+def test_outlier_cells_do_not_move_the_basis(projected_cohort, tmp_path: Path) -> None:
     """The fitted basis must be identical to one fitted with the outliers absent.
 
     This is the reference-immutability property. Anything weaker — "similar", "correlated" —
     would let a damaged cell tilt the manifold by a little, every run, invisibly.
     """
-    full = _cohort()
-    _run_pca(full, tmp_path)
+    full, _ = projected_cohort
 
-    core_only = full[full.obs[FIT_COLUMN].to_numpy(bool)].copy()
+    raw = _cohort()
+    core_only = raw[raw.obs[FIT_COLUMN].to_numpy(bool)].copy()
     del core_only.obs[FIT_COLUMN]
     _run_pca(core_only, tmp_path)
 
@@ -119,24 +128,19 @@ def test_outlier_cells_do_not_move_the_basis(tmp_path: Path) -> None:
         full.varm["PCs"], core_only.varm["PCs"], atol=1e-8, err_msg="the basis shifted"
     )
 
-
-def test_the_variance_spectrum_describes_the_fit_population(tmp_path: Path) -> None:
-    """Downstream reads uns['pca'] to pick n_pcs, so it must describe the core too."""
-    full = _cohort()
-    _run_pca(full, tmp_path)
-
-    core_only = full[full.obs[FIT_COLUMN].to_numpy(bool)].copy()
-    del core_only.obs[FIT_COLUMN]
-    _run_pca(core_only, tmp_path)
-
     np.testing.assert_allclose(
         full.uns["pca"]["variance_ratio"],
         core_only.uns["pca"]["variance_ratio"],
         atol=1e-8,
     )
 
+    core_rows = full.obs[FIT_COLUMN].to_numpy(bool)
+    np.testing.assert_allclose(full.obsm["X_pca"][core_rows], core_only.obsm["X_pca"], atol=1e-4)
 
-def test_the_control_outliers_really_would_have_captured_a_component(tmp_path: Path) -> None:
+
+def test_the_control_outliers_really_would_have_captured_a_component(
+    projected_cohort, tmp_path: Path
+) -> None:
     """Without the mask the outliers dominate, so the test above is not vacuous.
 
     The private gene block is 25 units off the core's axes, so an unmasked fit must load it
@@ -145,10 +149,9 @@ def test_the_control_outliers_really_would_have_captured_a_component(tmp_path: P
     """
     unmasked = _cohort()
     del unmasked.obs[FIT_COLUMN]
-    _run_pca(unmasked, tmp_path)
+    result = _run_pca(unmasked, tmp_path)
 
-    masked = _cohort()
-    _run_pca(masked, tmp_path)
+    masked, _ = projected_cohort
 
     block = slice(40, 50)
     leak = np.abs(unmasked.varm["PCs"][block, 0]).mean()
@@ -158,38 +161,35 @@ def test_the_control_outliers_really_would_have_captured_a_component(tmp_path: P
         f"large enough contrast for the immutability test above to mean anything"
     )
 
+    assert unmasked.obsm["X_pca"].shape == (unmasked.n_obs, 10)
+    assert not any("QC-permitted" in note for note in result.notes)
+
 
 # ═══ 2. No silent loss: every cell still gets coordinates ═══════════════════════════
 
 
-def test_every_cell_receives_an_embedding(tmp_path: Path) -> None:
+def test_every_cell_receives_an_embedding(projected_cohort) -> None:
     """Excluded from the fit is not excluded from the manifold.
 
     A borderline cell must be projected, not dropped, or QC would be deleting cells through
     the back door while reporting that it flagged them.
     """
-    adata = _cohort()
-    _run_pca(adata, tmp_path)
+    adata, result = projected_cohort
 
     assert adata.obsm["X_pca"].shape[0] == adata.n_obs
     assert np.isfinite(adata.obsm["X_pca"]).all()
 
+    embedding = adata.obsm["X_pca"]
+    core = adata.obs[FIT_COLUMN].to_numpy(bool)
+    spread = np.linalg.norm(embedding[core] - embedding[core].mean(axis=0), axis=1).mean()
+    distance = np.linalg.norm(embedding[~core] - embedding[core].mean(axis=0), axis=1).mean()
 
-def test_projected_coordinates_match_what_a_core_only_fit_computed(tmp_path: Path) -> None:
-    """For the core cells, projection must reproduce scanpy's own embedding.
+    assert distance > spread, "projected outliers were not distinguishable from the core"
 
-    The claim being checked is that ``(X - mean) @ PCs`` *is* the PCA transform and not an
-    approximation of it. If this drifts, every projected cell is subtly misplaced.
-    """
-    full = _cohort()
-    _run_pca(full, tmp_path)
-
-    core_only = full[full.obs[FIT_COLUMN].to_numpy(bool)].copy()
-    del core_only.obs[FIT_COLUMN]
-    _run_pca(core_only, tmp_path)
-
-    core_rows = full.obs[FIT_COLUMN].to_numpy(bool)
-    np.testing.assert_allclose(full.obsm["X_pca"][core_rows], core_only.obsm["X_pca"], atol=1e-4)
+    scope_notes = [note for note in result.notes if "QC-permitted" in note]
+    assert len(scope_notes) == 1
+    assert "200" in scope_notes[0]
+    assert "40" in scope_notes[0]
 
 
 def test_fit_then_project_and_the_hvg_mask_combine_correctly(tmp_path: Path) -> None:
@@ -197,7 +197,7 @@ def test_fit_then_project_and_the_hvg_mask_combine_correctly(tmp_path: Path) -> 
 
     Each has its own test above; neither exercises the other. This is the one place that
     checks a masked fit-then-project run still reproduces a core-only masked fit exactly --
-    the same claim as test_projected_coordinates_match_what_a_core_only_fit_computed, but
+    the same core-only coordinate comparison as above, but
     with mask_var not None, which is what routes through project_onto_fitted_basis's
     zero-filled-outside-the-mask codepath instead of the unmasked one.
     """
@@ -216,23 +216,6 @@ def test_fit_then_project_and_the_hvg_mask_combine_correctly(tmp_path: Path) -> 
     core_rows = full.obs[FIT_COLUMN].to_numpy(bool)
     np.testing.assert_allclose(full.obsm["X_pca"][core_rows], core_only.obsm["X_pca"], atol=1e-4)
     assert np.isfinite(full.obsm["X_pca"]).all(), "every cell, including outliers, must project"
-
-
-def test_outliers_land_far_from_the_core_in_the_embedding(tmp_path: Path) -> None:
-    """Projection must still place them where they belong — visibly apart.
-
-    That is the point of projecting rather than dropping: a figure can show where the
-    questionable cells sit relative to the manifold they did not define.
-    """
-    adata = _cohort()
-    _run_pca(adata, tmp_path)
-
-    embedding = adata.obsm["X_pca"]
-    core = adata.obs[FIT_COLUMN].to_numpy(bool)
-    spread = np.linalg.norm(embedding[core] - embedding[core].mean(axis=0), axis=1).mean()
-    distance = np.linalg.norm(embedding[~core] - embedding[core].mean(axis=0), axis=1).mean()
-
-    assert distance > spread, "projected outliers were not distinguishable from the core"
 
 
 # ═══ 3. The projection primitive itself ════════════════════════════════════════════
@@ -269,16 +252,6 @@ def test_sparse_input_survives_the_whole_stage(tmp_path: Path) -> None:
 # ═══ 4. Degradation: absent, empty, and small fit populations ══════════════════════
 
 
-def test_a_dataset_without_graded_qc_behaves_as_before(tmp_path: Path) -> None:
-    """Absent QC columns must not become a hidden dependency."""
-    adata = _cohort()
-    del adata.obs[FIT_COLUMN]
-    result = _run_pca(adata, tmp_path)
-
-    assert adata.obsm["X_pca"].shape == (adata.n_obs, 10)
-    assert not any("QC-permitted" in note for note in result.notes)
-
-
 def test_an_empty_fit_population_cannot_restore_excluded_cells(
     tmp_path: Path,
 ) -> None:
@@ -307,23 +280,7 @@ def test_component_count_is_capped_by_the_fit_population_not_the_cohort(
     assert adata.obsm["X_pca"].shape[1] <= 5  # n_fit_cells - 1
 
 
-# ═══ 5. Provenance: the decision has to be legible after the run ═══════════════════
-
-
-def test_the_run_records_how_many_cells_fitted_and_how_many_were_projected(
-    tmp_path: Path,
-) -> None:
-    """A scope decision nobody can see after the fact is the failure being designed out."""
-    adata = _cohort(n_core=200, n_outlier=40)
-    result = _run_pca(adata, tmp_path)
-
-    scope_notes = [note for note in result.notes if "QC-permitted" in note]
-    assert len(scope_notes) == 1
-    assert "200" in scope_notes[0]
-    assert "40" in scope_notes[0]
-
-
-# ═══ 6. A missing figures directory must fail loudly, never write into cwd ═════
+# ═══ 5. A missing figures directory must fail loudly, never write into cwd ═════
 
 
 def test_pca_without_a_figures_directory_raises_rather_than_writing_to_cwd(tmp_path):
@@ -342,7 +299,7 @@ def test_pca_without_a_figures_directory_raises_rather_than_writing_to_cwd(tmp_p
         PCAMethod()._run(adata, config, context=None)
 
 
-# ═══ 7. A degenerate component budget must name its cause, not crash inside sklearn ═══
+# ═══ 6. A degenerate component budget must name its cause, not crash inside sklearn ═══
 
 
 def test_too_few_fit_cells_raises_naming_the_fit_population(tmp_path):

@@ -164,3 +164,32 @@ def test_activity_viz_malformed_csv_skips_instead_of_crash(tmp_path):
     out = ActivityVizMethod()._run(ctx.adata, {}, ctx)
     assert isinstance(out, MethodSkip)
     assert any("failed to read" in str(w) for w in out.details.get("warnings", []))
+
+
+def test_condition_figure_uses_study_column_name(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from cellquorum.stages.comparative.enrichment.viz import viz_methods
+
+    ctx = _context(tmp_path)
+    ctx.config = SimpleNamespace(
+        design=SimpleNamespace(condition_col="label", case="LE", control="Normal")
+    )
+    _write_activity_with_condition(ctx.paths, "collectri")
+    path = ctx.paths.results / "enrichment_activity_collectri.csv"
+    frame = pd.read_csv(path).rename(columns={"condition": "label"})
+    frame.to_csv(path, index=False)
+    frame.assign(donor="A").to_csv(
+        path.with_name("enrichment_activity_collectri_by_donor.csv"), index=False
+    )
+    actual = viz_methods.plots.cross_group_dotplot_by_condition
+    columns = []
+
+    def record(*args, **kwargs):
+        columns.append(kwargs["condition_col"])
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(viz_methods.plots, "cross_group_dotplot_by_condition", record)
+    result = ActivityVizMethod()._run(ctx.adata, {"figure_formats": ["png"]}, ctx)
+    assert not isinstance(result, MethodSkip)
+    assert columns == ["label"]

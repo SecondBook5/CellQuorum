@@ -46,8 +46,16 @@ class _RecordingBackend:
         self.calls.append(list(args))
         out_csv = Path(args[1])
         query_h5ad = Path(args[0])
-        barcodes = ad.read_h5ad(query_h5ad, backed="r").obs_names
-        pd.DataFrame({"barcode": barcodes}).to_csv(out_csv, index=False)
+        query = ad.read_h5ad(query_h5ad, backed="r")
+        try:
+            # Emulate the R result for the actual batch and supplied scores.
+            soft = pd.read_csv(args[4], index_col=0).loc[query.obs_names]
+            entropy = -(soft * np.log(soft.clip(lower=1e-12))).sum(axis=1)
+            pd.DataFrame({"barcode": query.obs_names, "scdiag_entropy": entropy.to_numpy()}).to_csv(
+                out_csv, index=False
+            )
+        finally:
+            query.file.close()
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
 
@@ -92,20 +100,26 @@ def two_batch_adata_and_backend(tmp_path: Path):
     return adata, ctx, backend, config
 
 
-def test_soft_scores_path_reaches_every_batch(two_batch_adata_and_backend):
+def test_all_batches_receive_soft_scores_and_contribute_to_the_published_table(
+    two_batch_adata_and_backend,
+):
     from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
         ScdiagnosticsMethod,
     )
 
     adata, ctx, backend, config = two_batch_adata_and_backend
 
-    ScdiagnosticsMethod()._run(adata, config, ctx)
+    result = ScdiagnosticsMethod()._run(adata, config, ctx)
 
     assert len(backend.calls) == 2, "expected the query split into 2 whole-cell-type batches"
     soft_scores_args = [call[4] for call in backend.calls]
     assert all(
         arg != "NONE" for arg in soft_scores_args
     ), f"soft_scores path must reach every batch, not just the first -- got {soft_scores_args}"
+
+    (artifact,) = [a for a in result.artifacts if a.name == "scdiagnostics_results"]
+    published = pd.read_csv(artifact.path)
+    assert sorted(published["barcode"]) == sorted(adata.obs_names)
 
 
 def test_the_configured_seed_reaches_r_for_every_batch(two_batch_adata_and_backend):
@@ -123,18 +137,3 @@ def test_the_configured_seed_reaches_r_for_every_batch(two_batch_adata_and_backe
     ScdiagnosticsMethod()._run(adata, {**config, "random_state": 7}, ctx)
 
     assert [call[8] for call in backend.calls] == ["7", "7"]
-
-
-def test_published_table_covers_every_batch_not_only_the_last(two_batch_adata_and_backend):
-    """The registered results table is the combined one, one row per cell, from every batch."""
-    from cellquorum.stages.annotation.diagnostics.scdiagnostics_method import (
-        ScdiagnosticsMethod,
-    )
-
-    adata, ctx, _backend, config = two_batch_adata_and_backend
-
-    result = ScdiagnosticsMethod()._run(adata, config, ctx)
-
-    (artifact,) = [a for a in result.artifacts if a.name == "scdiagnostics_results"]
-    published = pd.read_csv(artifact.path)
-    assert sorted(published["barcode"]) == sorted(adata.obs_names)

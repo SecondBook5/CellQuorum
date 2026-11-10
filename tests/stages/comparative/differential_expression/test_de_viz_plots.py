@@ -53,6 +53,22 @@ def test_volcano_handles_fdr_zero_without_inf():
     assert np.all(np.isfinite(ys))
 
 
+def test_tied_adjusted_p_values_have_readable_gene_labels():
+    from matplotlib.text import Text
+
+    genes = [f"Marker_{i}" for i in range(40)]
+    frame = pd.DataFrame({"gene": genes, "logFC": np.repeat([-2.0, 2.0], 20), "FDR": 1e-6})
+    fig = plots.volcano(
+        frame, fc_cut=1.0, fdr_cut=0.05, case_color="red", control_color="blue", x_label="Effect"
+    )
+    fig.draw_without_rendering()
+    labels = [t for t in fig.axes[0].texts if t.get_text() in genes]
+    assert len(labels) == len(genes)
+    # Measure the text itself. Annotation.get_window_extent includes its leader line.
+    boxes = [Text.get_window_extent(t) for t in labels]
+    assert all(box.count_overlaps(boxes) == 1 for box in boxes)
+
+
 def test_volcano_significant_counts_match_mask():
     # 3 significant (G0 up, G1 down, G3 up), G5 fails fc, others fail fdr.
     df = _demo_df()
@@ -85,10 +101,7 @@ def test_volcano_includes_extreme_effects_and_nonsignificant_scale():
     assert ax.get_ylim()[1] > -np.log10(0.05)
 
 
-def test_volcano_highlights_marker_genes_even_if_not_significant():
-    # G2 defines this cluster's identity but isn't DE between conditions --
-    # top_n_labels=0 means no gene would normally get a text label, so any
-    # label present must come from highlight_genes, not the significance path.
+def test_highlighted_marker_genes_have_labels_and_filled_symbols():
     df = _demo_df()
     fig = plots.volcano(
         df,
@@ -100,24 +113,10 @@ def test_volcano_highlights_marker_genes_even_if_not_significant():
         top_n_labels=0,
         highlight_genes={"G2"},
     )
+
     labels = [t.get_text() for t in fig.axes[0].texts]
     assert "G2" in labels
 
-
-def test_volcano_highlight_markers_are_filled_yellow_not_hollow():
-    # A hollow black-outline star at this size reads as noise next to the
-    # colored dots -- a real, opaque fill is what actually pops.
-    df = _demo_df()
-    fig = plots.volcano(
-        df,
-        fc_cut=1.0,
-        fdr_cut=0.05,
-        case_color="#C41E3A",
-        control_color="#1B4F8A",
-        x_label="x",
-        top_n_labels=0,
-        highlight_genes={"G2"},
-    )
     # The highlight scatter is the last ax.scatter() call in volcano() --
     # after the main up/down/ambient scatters -- so it's the last collection.
     star = fig.axes[0].collections[-1]

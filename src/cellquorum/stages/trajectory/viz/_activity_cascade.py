@@ -24,7 +24,11 @@ import pandas as pd
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
-from cellquorum.stages.comparative.enrichment.priors import PriorFetchError, get_net
+from cellquorum.stages.comparative.enrichment.priors import (
+    PriorFetchError,
+    activity_batch_size,
+    get_net,
+)
 from cellquorum.stages.trajectory.viz import _helpers
 from cellquorum.visualization.figstyle import apply_theme
 
@@ -136,7 +140,13 @@ class ActivityCascadeVizMethod(AnalysisMethod):
                 # all-zero observations it instead returns a NEW, smaller AnnData
                 # carrying the scores and leaves the original untouched (verified
                 # empirically, same behavior across aucell/ulm/mlm).
-                result = getattr(dc.mt, method)(adata, net, tmin=min_size, layer=activity_layer)
+                result = getattr(dc.mt, method)(
+                    adata,
+                    net,
+                    tmin=min_size,
+                    layer=activity_layer,
+                    bsize=activity_batch_size(adata.n_vars),
+                )
                 source = adata if result is None else result
                 es = source.obsm.pop(f"score_{method}")
                 source.obsm.pop(f"padj_{method}", None)

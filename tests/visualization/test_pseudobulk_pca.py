@@ -53,20 +53,23 @@ def _points(fig) -> int:
     return sum(len(c.get_offsets()) for c in fig.axes[0].collections if c.get_gid() == "samples")
 
 
-def test_one_point_per_sample() -> None:
+def test_sample_pca_shows_all_samples_and_variance_from_variable_genes() -> None:
     expression, meta = _data()
-    assert _points(_draw(expression, meta)) == len(meta)
-
-
-def test_axis_labels_carry_the_variance_each_component_explains() -> None:
-    expression, meta = _data()
+    padded = expression.assign(**{f"flat{i}": 5.0 for i in range(200)})
     fig = _draw(expression, meta)
+
+    assert _points(fig) == len(meta)
+
     values = expression.to_numpy()
     top = values[:, np.argsort(values.var(axis=0))[::-1][:40]]  # the n_top genes the PCA uses
     s = np.linalg.svd(top - top.mean(axis=0), compute_uv=False)
     expected = 100 * s[0] ** 2 / (s**2).sum()
     shown = float(re.search(r"PC1 \((\d+)%\)", fig.axes[0].get_xlabel()).group(1))
     assert abs(shown - expected) <= 0.51
+
+    a = fig.axes[0].get_xlabel()
+    b = _draw(padded, meta).axes[0].get_xlabel()
+    assert a == b
 
 
 def test_donor_pairs_are_joined_only_when_both_conditions_exist() -> None:
@@ -76,14 +79,6 @@ def test_donor_pairs_are_joined_only_when_both_conditions_exist() -> None:
     fig = _draw(expression, meta)
     joined = [ln for ln in fig.axes[0].lines if ln.get_gid() == "pair"]
     assert len(joined) == 4
-
-
-def test_a_gene_that_never_varies_does_not_change_the_variance_explained() -> None:
-    expression, meta = _data()
-    padded = expression.assign(**{f"flat{i}": 5.0 for i in range(200)})
-    a = _draw(expression, meta).axes[0].get_xlabel()
-    b = _draw(padded, meta).axes[0].get_xlabel()
-    assert a == b
 
 
 def test_fewer_than_three_samples_is_an_error() -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,11 +9,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not installed")
 def test_dry_run_expands_expected_targets(tmp_path: Path) -> None:
+    pytest.importorskip("snakemake", minversion="8")
     fixture = Path(__file__).parent / "fixtures" / "hypotheses_fixture.yaml"
     result = subprocess.run(
         [
+            sys.executable,
+            "-m",
             "snakemake",
             "-n",
             "--snakefile",

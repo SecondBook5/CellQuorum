@@ -8,7 +8,6 @@ import pandas as pd
 import pytest
 
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.core.executor import build_default_stage_registry
 from cellquorum.core.pipeline import build_pipeline_context
 from cellquorum.stages.annotation.adjudication.config import AdjudicationConfig
 from cellquorum.stages.annotation.adjudication.evidence import build_cluster_evidence_table
@@ -191,9 +190,3 @@ def test_adjudication_stage_uses_the_real_donor_column_named_via_cohort(tmp_path
     result = AdjudicationStage().run(context)
 
     assert result.status == "success"
-
-
-def test_default_stage_registry_includes_adjudication():
-    registry = build_default_stage_registry()
-
-    assert registry.get("adjudication") is not None

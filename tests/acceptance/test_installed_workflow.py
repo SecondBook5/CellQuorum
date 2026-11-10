@@ -96,9 +96,9 @@ def config_for(source: Path) -> dict:
     }
 
 
-def fixture_file(path: Path) -> None:
+def fixture_file(path: Path, *, n_genes: int = 80, labeled: bool = False) -> None:
     rng = np.random.default_rng(71)
-    counts = rng.poisson(3, size=(120, 80)).astype(np.float32)
+    counts = rng.poisson(3, size=(120, n_genes)).astype(np.float32)
     counts[:, :2] = rng.poisson(0.15, size=(120, 2))
     obs = pd.DataFrame(
         {
@@ -108,13 +108,26 @@ def fixture_file(path: Path) -> None:
         },
         index=[f"cell{i}" for i in range(120)],
     )
+    if labeled:
+        obs["cell_type"] = rng.choice(["T cell", "B cell"], size=len(obs))
     data = ad.AnnData(
         sparse.csr_matrix(counts),
         obs=obs,
-        var=pd.DataFrame(index=["MT-CO1", "MT-ND1"] + [f"G{i}" for i in range(78)]),
+        var=pd.DataFrame(index=["MT-CO1", "MT-ND1"] + [f"G{i}" for i in range(n_genes - 2)]),
     )
     data.layers["counts"] = data.X.copy()
     data.write_h5ad(path)
+
+
+def test_cpu_neighbor_graph_with_the_large_cohort_backend() -> None:
+    """Exercise the approximate sparse graph that a small default fixture bypasses."""
+    import scanpy as sc
+
+    coords = np.random.default_rng(19).normal(size=(128, 10)).astype(np.float32)
+    data = ad.AnnData(X=coords)
+    sc.pp.neighbors(data, n_neighbors=8, use_rep="X", transformer="pynndescent", random_state=19)
+    graph = data.obsp["connectivities"]
+    assert graph.shape == (128, 128) and graph.nnz > 128
 
 
 def test_installed_analysis_checkpoint_and_outputs(tmp_path: Path) -> None:

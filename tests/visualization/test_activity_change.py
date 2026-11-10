@@ -31,31 +31,39 @@ def _table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_the_colourbar_names_the_change_and_the_comparison():
+def test_activity_grid_displays_donor_supported_changes_in_requested_order():
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import to_rgb
+
     fig = plot_activity_change(_table(), groups=["Structural", "CV", "Inflamed"], value_label=LABEL)
 
-    assert any(a.get_ylabel() == LABEL for a in fig.axes)
+    try:
+        assert any(a.get_ylabel() == LABEL for a in fig.axes)
 
+        ticks = [t.get_text() for t in fig.axes[0].get_xticklabels()]
+        assert ticks == ["Structural", "CV", "Inflamed"]
 
-def test_columns_follow_the_order_given_not_alphabetical():
-    fig = plot_activity_change(_table(), groups=["Structural", "CV", "Inflamed"], value_label=LABEL)
+        outlines = [p for p in fig.axes[0].patches if isinstance(p, Rectangle)]
+        assert len(outlines) == 2  # TF1 in Structural and TF2 in Inflamed, FDR < 0.05
 
-    ticks = [t.get_text() for t in fig.axes[0].get_xticklabels()]
-    assert ticks == ["Structural", "CV", "Inflamed"]
+        words = [t.get_text() for t in fig.axes[0].texts]
+        assert words.count("n<3") == 4  # CV has 2 pairs for every source
 
-
-def test_a_significant_cell_is_outlined_and_the_others_are_not():
-    fig = plot_activity_change(_table(), groups=["Structural", "CV", "Inflamed"], value_label=LABEL)
-
-    outlines = [p for p in fig.axes[0].patches if isinstance(p, Rectangle)]
-    assert len(outlines) == 2  # TF1 in Structural and TF2 in Inflamed, FDR < 0.05
-
-
-def test_a_group_with_too_few_donor_pairs_is_marked_not_coloured():
-    fig = plot_activity_change(_table(), groups=["Structural", "CV", "Inflamed"], value_label=LABEL)
-
-    words = [t.get_text() for t in fig.axes[0].texts]
-    assert words.count("n<3") == 4  # CV has 2 pairs for every source
+        ax = fig.axes[0]
+        image = ax.images[0]
+        cmap, norm = image.get_cmap(), image.norm
+        data = np.ma.getdata(image.get_array())
+        labels = [t for t in ax.texts if t.get_text() != "n<3"]
+        assert labels
+        for text in labels:
+            column, row = int(round(text.get_position()[0])), int(round(text.get_position()[1]))
+            r, g, b = cmap(norm(data[row, column]))[:3]
+            background = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            r2, g2, b2 = to_rgb(text.get_color())
+            foreground = 0.2126 * r2 + 0.7152 * g2 + 0.0722 * b2
+            assert abs(foreground - background) > 0.45, (text.get_text(), foreground, background)
+    finally:
+        plt.close(fig)
 
 
 def test_a_significant_source_is_never_dropped_to_fit_the_row_cap():
@@ -88,25 +96,3 @@ def test_pinned_sources_are_always_shown_even_when_their_change_is_small():
 
     rows = {t.get_text() for t in fig.axes[0].get_yticklabels()}
     assert "TF3" in rows  # weakest source of all, shown because it was asked for
-
-
-def test_every_value_is_legible_against_its_own_cell():
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import to_rgb
-
-    fig = plot_activity_change(_table(), groups=["Structural", "CV", "Inflamed"], value_label=LABEL)
-
-    ax = fig.axes[0]
-    image = ax.images[0]
-    cmap, norm = image.get_cmap(), image.norm
-    data = np.ma.getdata(image.get_array())
-    labels = [t for t in ax.texts if t.get_text() != "n<3"]
-    assert labels
-    for text in labels:
-        column, row = int(round(text.get_position()[0])), int(round(text.get_position()[1]))
-        r, g, b = cmap(norm(data[row, column]))[:3]
-        background = 0.2126 * r + 0.7152 * g + 0.0722 * b
-        r2, g2, b2 = to_rgb(text.get_color())
-        foreground = 0.2126 * r2 + 0.7152 * g2 + 0.0722 * b2
-        assert abs(foreground - background) > 0.45, (text.get_text(), foreground, background)
-    plt.close("all")

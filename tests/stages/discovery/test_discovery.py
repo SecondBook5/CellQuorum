@@ -102,9 +102,22 @@ def test_nmf_records_clipped_negative_fraction(tmp_path):
     # Inject negatives (shifted-CLR-style) so the clip path is exercised.
     a.layers[LAYER][0, 0] = -0.5
     cfg = _config()
+    cfg["use_hvg"] = False
+    a.layers[LAYER] = a.layers[LAYER].astype(np.float32)
+    original = a.layers[LAYER].copy()
     out = NmfMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
     assert not isinstance(out, MethodSkip)
     assert out.metrics["clipped_negative_fraction"] > 0.0
+    np.testing.assert_array_equal(a.layers[LAYER], original)
+
+    from scipy.sparse import csr_matrix
+
+    a.layers[LAYER] = csr_matrix(original)
+    sparse_out = NmfMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
+    assert (
+        sparse_out.metrics["clipped_negative_fraction"] == out.metrics["clipped_negative_fraction"]
+    )
+    np.testing.assert_array_equal(a.layers[LAYER].toarray(), original)
 
 
 def test_nmf_respects_hvg_subset(tmp_path):
@@ -153,7 +166,7 @@ def test_stage_disabled_returns_recorded_skip(tmp_path):
     assert "X_cnmf" not in a.obsm
 
 
-def test_nmf_warns_when_replicate_fits_hit_the_iteration_cap(tmp_path):
+def test_nmf_reports_replicate_and_projection_iteration_limits(tmp_path):
     """A solver that stopped at its cap did not find the programs it reports.
 
     On the real LEC arm sklearn emitted ``ConvergenceWarning: Maximum number of
@@ -174,18 +187,6 @@ def test_nmf_warns_when_replicate_fits_hit_the_iteration_cap(tmp_path):
     # Every replicate is reported, not just "some": 5 of 5 at n_runs=5.
     assert "5/5" in joined
     assert out.metrics["n_nonconverged_fits"] == 5
-
-
-def test_nmf_warns_when_the_usage_projection_hits_the_cap(tmp_path):
-    """The projection's own iteration count was being discarded.
-
-    ``non_negative_factorization`` returns ``(W, H, n_iter)`` and the call site
-    unpacked it as ``usage, _, _`` — so the one number that says whether the
-    cell x program usage matrix converged was thrown away at the point of use.
-    """
-    a = _adata()
-    cfg = _config(max_iter=1)
-    out = NmfMethod()._run(a, cfg, _Ctx(tmp_path, a, cfg))
 
     assert out.metrics["usage_projection_converged"] is False
     assert "usage projection" in " ".join(out.warnings)

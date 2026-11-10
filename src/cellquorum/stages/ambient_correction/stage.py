@@ -11,6 +11,7 @@ disabled, when no manifest is available, or when Rscript/SoupX is unavailable.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,7 @@ import anndata as ad
 import pandas as pd
 
 from cellquorum.core.contracts import CellQuorumContractError
+from cellquorum.core.fingerprint import resource_checksum
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.stages.ambient_correction.soupx import (
@@ -102,13 +104,20 @@ class AmbientCorrectionStage:
         warnings: list[str] = []
         for record in manifest:
             sample_id = record["sample_id"]
-            sample_dir = root / record["cellranger_path"] / "outs"
-            raw_h5 = sample_dir / "raw_feature_bc_matrix.h5"
-            filt_h5 = sample_dir / "filtered_feature_bc_matrix.h5"
-            if not raw_h5.is_file() or not filt_h5.is_file():
+            sample_dir = (root / record.get("cellranger_path", "")).resolve()
+            if (sample_dir / "outs").is_dir():
+                sample_dir /= "outs"
+
+            raw_h5 = _matrix_path(
+                record.get("raw_matrix_path"), sample_dir, "raw_feature_bc_matrix"
+            )
+            filt_h5 = _matrix_path(
+                record.get("filtered_matrix_path"), sample_dir, "filtered_feature_bc_matrix"
+            )
+            if not raw_h5.exists() or not filt_h5.exists():
                 # Surface as a WARNING (not just a note) so a mistyped
                 # cellranger_path / missing library is visible, not silently dropped.
-                msg = f"{sample_id}: CellRanger raw/filtered h5 not found — skipped"
+                msg = f"{sample_id}: CellRanger raw/filtered matrices not found — skipped"
                 notes.append(msg)
                 warnings.append(msg)
                 continue
@@ -118,10 +127,28 @@ class AmbientCorrectionStage:
             # failure skip the multi-minute-per-library correction step.
             resume = getattr(ac, "resume", True)
             cached_rho = read_rho_sidecar(out_dir) if resume else None
-            if resume and cached_rho is not None and corrected_output_exists(out_dir):
+            fingerprint = json.dumps(
+                {
+                    "schema": 1,
+                    "raw": resource_checksum(raw_h5),
+                    "filtered": resource_checksum(filt_h5),
+                    "resolution": ac.cluster_resolution,
+                    "round_to_int": ac.round_to_int,
+                },
+                sort_keys=True,
+            )
+            stamp = out_dir / "input_fingerprint.json"
+            if (
+                resume
+                and cached_rho is not None
+                and corrected_output_exists(out_dir)
+                and stamp.is_file()
+                and stamp.read_text() == fingerprint
+            ):
                 rho = cached_rho
                 notes.append(f"{sample_id}: rho={rho:.4f} (reused; SoupX skipped)")
             else:
+                stamp.unlink(missing_ok=True)
                 rho = run_soupx_library(
                     raw_h5,
                     filt_h5,
@@ -131,6 +158,7 @@ class AmbientCorrectionStage:
                     round_to_int=ac.round_to_int,
                     timeout=ac.timeout_seconds,
                 )
+                stamp.write_text(fingerprint)
                 notes.append(f"{sample_id}: rho={rho:.4f}")
             fractions[sample_id] = rho
             # Read the corrected counts back into an AnnData (barcodes namespaced
@@ -146,7 +174,43 @@ class AmbientCorrectionStage:
         # hold-everything-then-combine shape as the executor's retained stage results.
         ran_soupx = bool(corrected_libraries)
         if corrected_libraries:
-            corrected_adata = ad.concat(corrected_libraries, join="outer")
+            if (
+                adata is not None
+                and adata.uns.get("cellquorum_input_format") == "library_gene_expression_counts"
+            ):
+                if len(corrected_libraries) != len(manifest):
+                    raise CellQuorumContractError(
+                        "Ambient correction did not finish for every imported library."
+                    )
+                for library in corrected_libraries:
+                    if "gene_ids" not in library.var:
+                        raise CellQuorumContractError(
+                            "Rerun SoupX with resume: false to record stable gene IDs."
+                        )
+                    library.var_names = library.var["gene_ids"].astype(str)
+                    library.obs_names = (
+                        library.obs["sample_id"].astype(str)
+                        + ":"
+                        + library.obs["barcode"].astype(str)
+                    )
+                combined = ad.concat(corrected_libraries, join="inner")
+                ids = adata.var["gene_ids"].astype(str)
+                if set(combined.obs_names) != set(adata.obs_names) or set(
+                    combined.var_names
+                ) != set(ids):
+                    raise CellQuorumContractError(
+                        "Corrected counts do not match input barcodes and gene IDs."
+                    )
+                corrected_adata = adata.copy()
+                if "uncorrected_counts" in corrected_adata.layers:
+                    raise CellQuorumContractError(
+                        "Choose a fresh input. The uncorrected_counts layer already exists."
+                    )
+                corrected_adata.layers["uncorrected_counts"] = corrected_adata.X.copy()
+                corrected_adata.X = combined[adata.obs_names, ids].X.copy()
+                corrected_adata.layers["counts"] = corrected_adata.X.copy()
+            else:
+                corrected_adata = ad.concat(corrected_libraries, join="outer")
             corrected_libraries.clear()
             # Carry the per-library contamination fractions in uns for provenance.
             corrected_adata.uns.setdefault("cellquorum", {})["ambient_correction"] = {
@@ -204,6 +268,13 @@ class AmbientCorrectionStage:
         )
 
 
+def _matrix_path(configured: str | None, directory: Path, stem: str) -> Path:
+    if configured:
+        return Path(configured).resolve()
+    h5 = directory / (stem + ".h5")
+    return h5 if h5.is_file() else directory / stem
+
+
 def _resolve_manifest(context: PipelineContext) -> list[dict]:
     """Return the manifest rows (sample_id + cellranger_path) or [].
 
@@ -223,17 +294,14 @@ def _resolve_manifest(context: PipelineContext) -> list[dict]:
     if "include" in df.columns:
         df = df[df["include"].astype(str).str.lower() == "true"]
 
-    # Keep only rows that carry a cellranger_path; return as row dicts.
-    if "cellranger_path" not in df.columns or "sample_id" not in df.columns:
+    if "sample_id" not in df:
         return []
-    # Drop rows with a null cellranger_path: a path-only manifest legitimately
-    # carries the column (all-null) after the schema change, and must skip
-    # gracefully here rather than crash downstream on `root / None / "outs"`.
-    df = df[df["cellranger_path"].notna()]
-    if df.empty:
-        return []
-    cols = [c for c in ("sample_id", "cellranger_path") if c in df.columns]
-    return df[cols].to_dict("records")
+    return [
+        row.dropna().to_dict()
+        for _, row in df.iterrows()
+        if pd.notna(row.get("cellranger_path"))
+        or (pd.notna(row.get("filtered_matrix_path")) and pd.notna(row.get("raw_matrix_path")))
+    ]
 
 
 def _join_manifest_metadata(adata: ad.AnnData, manifest: pd.DataFrame | None) -> None:

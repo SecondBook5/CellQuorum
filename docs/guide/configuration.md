@@ -16,7 +16,7 @@ instance (see the [Python API](../reference/api.md)).
 | `project` | project metadata | `name`, `organism`, `species_id` |
 | `paths` | filesystem roots | `data_root`, `run_root`, `scratch_root`, `manifest`, `output_dir` |
 | `input` | the dataset | input `.h5ad` path, counts layer, optional `subset`/`exclude` |
-| `run` | run behavior | `profile`, `run_id`, `random_seed`, `resume`, `overwrite`, `log_level`, `write_final_object`, `continue_on_stage_failure` |
+| `run` | run behavior | `profile`, `run_id`, `random_seed`, `resume`, `overwrite`, `log_level`, `write_final_object`, `continue_on_stage_failure`, `required_outputs` |
 | `compute` | CPU/GPU routing | `backend` (`auto`/`cpu`/`gpu`), `prefer_gpu`, `fallback_to_cpu`, `n_jobs` |
 | `r` | R backend | `enabled`, `preferred_backend`, `fallback_to_rscript`, `rscript_path`, `timeout_seconds` |
 | `report` | reporting | `html`, `markdown`, `pdf`, `fail_on_report_error` |
@@ -26,6 +26,20 @@ instance (see the [Python API](../reference/api.md)).
 | `design` | experimental design | design specification for differential analyses |
 | `contrasts` | named contrasts | case/control contrasts referenced by DE/DA |
 | *per-stage blocks* | stage parameters | one block per stage, e.g. `qc:`, `integration:`, `enrichment:` |
+
+`run.required_outputs` maps enabled stage names to file paths relative to the run
+directory. A full run checks that each named file is registered by its stage and
+exists with content. This also applies when reusing an eligible checkpoint. Use
+this for deliverables the study promises. A partial run using `--from-stage` or
+`--until-stage` checks the stages it executes. See the [paired study](paired-study.md).
+
+`run.disabled_stage_reasons` maps stage names to optional explanations for
+excluding them from a study. These appear in the plan, stage records and reports
+whenever the corresponding flag is off. The report counts requested skips and
+failures separately. In CLI JSON, `disabled_stages` identifies stages switched off and
+`unable_to_run_stages` identifies requested stages that could not run.
+`reused_stages` lists stages whose results came from a validated checkpoint.
+The legacy `skipped_stages` field includes all skipped records.
 
 A whole-config validator rejects contradictory combinations — for example,
 `compute.backend: auto` together with `compute.fallback_to_cpu: false`.
@@ -104,14 +118,13 @@ behavior.
 
 ## Enabling stages
 
-The `stages:` block is a set of boolean flags, one per stage. All default to `true`
-except `ambient_correction` and `integration_gate`, which default to `false`.
+The `stages:` block selects analyses with one boolean flag per stage.
 Setting a flag to `false` marks the stage disabled; the planner records it as skipped
 and the `AnnData` passes through unchanged.
 
 ```yaml
 stages:
-  ambient_correction: false   # off by default
+  ambient_correction: false   # filtered matrix only
   qc_evidence: true
   preprocessing: true
   feature_selection: true
@@ -138,10 +151,11 @@ Notes:
 
 - **`network_analysis` toggles the `ccc_network` stage** (topology + curvature). This
   is the one place where the config flag name differs from the stage name.
-- **Reserved slots.** The flags `integration_gate` and `molecular_inference` are
-  accepted for forward compatibility, but those stages are not yet implemented —
-  enabling them results in a planned stage that is skipped as "not yet implemented",
-  visible in the plan and provenance. `composition` (order=205) is implemented.
+- Older configurations may contain `stages.integration_gate` or
+  `stages.molecular_inference`. CellQuorum ignores those retired flags and warns
+  if either was enabled. Use `integration_benchmark` to compare embeddings.
+  To estimate TF or pathway activity, choose the `activity` method under
+  `enrichment` with `activity_resources: [collectri, progeny]`.
 
 ## Selecting a method per stage
 
@@ -190,7 +204,7 @@ with:
 cellquorum plan --config configs/config.yaml
 ```
 
-which prints, per stage, whether it is enabled, skipped, or unimplemented, and the
+which prints, per stage, whether it is enabled or disabled, and the
 backend it would use. See [`configs/config.yaml`](https://github.com/SecondBook5/cellquorum/blob/main/configs/config.yaml) for a
 complete worked example and [architecture.md](../reference/architecture.md) for how method
 dispatch and data contracts work.

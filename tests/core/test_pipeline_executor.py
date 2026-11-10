@@ -34,7 +34,6 @@ from cellquorum.core.executor import (
     PipelineExecutionResult,
     PipelineExecutor,
     StageRegistry,
-    build_default_stage_registry,
     validate_executor_inputs,
 )
 
@@ -45,7 +44,7 @@ from cellquorum.core.pipeline import build_pipeline_context
 from cellquorum.core.planner import PipelinePlan, PlannedStage
 
 # Import stage result for dummy test stages.
-from cellquorum.core.stage import StageResult
+from cellquorum.core.stage import StageArtifact, StageResult
 
 
 def _record(execution, stage_name):
@@ -312,79 +311,6 @@ def test_a_stage_that_restyles_matplotlib_does_not_leak_into_the_next_one(
     assert after == before
 
 
-def test_default_stage_registry_contains_qc() -> None:
-    """
-    Verify the default registry exposes the implemented stages.
-
-    QC and preprocessing are the first real executable scientific stages.
-    Phase-2A adds dimensionality and clustering.
-    Phase-2B adds integration and annotation.
-    Phase-2D adds ambient_correction.
-    """
-
-    # Build the default registry.
-    registry = build_default_stage_registry()
-
-    # Confirm all implemented stages are registered.
-    assert registry.get("adjudication") is not None
-    assert registry.get("ambient_correction") is not None
-    assert registry.get("qc_splice_metrics") is not None
-    assert registry.get("qc_evidence") is not None
-    assert registry.get("preprocessing") is not None
-    assert registry.get("dimensionality") is not None
-    assert registry.get("clustering") is not None
-    assert registry.get("integration") is not None
-    assert registry.get("integration_benchmark") is not None
-    assert registry.get("annotation") is not None
-    assert registry.get("feature_selection") is not None
-    assert registry.get("population_identity") is not None
-    assert registry.get("reference_mapping") is not None
-    # All implemented stages are registered (sorted alphabetically).
-    assert registry.registered_stage_names() == [
-        "adjudication",
-        "ambient_correction",
-        "annotation",
-        "annotation_consensus",
-        "annotation_diagnostics",
-        "annotation_viz",
-        "ccc_network",
-        "ccc_viz",
-        "cell_cell_communication",
-        "clustering",
-        "coexpression",
-        "composition",
-        "de_viz",
-        "differential_abundance",
-        "differential_expression",
-        "differential_state",
-        "dimensionality",
-        "discovery",
-        "embeddings",
-        "enrichment",
-        "enrichment_viz",
-        "feature_selection",
-        "grn",
-        "integration",
-        "integration_benchmark",
-        "metacells",
-        "module_remodeling",
-        "multicellular_programs",
-        "perturbation",
-        "population_identity",
-        "preprocessing",
-        "qc_evidence",
-        "qc_finalization",
-        "qc_splice_metrics",
-        "query_projection",
-        "reference_mapping",
-        "state_scoring",
-        "state_scoring_viz",
-        "subclustering",
-        "trajectory",
-        "trajectory_viz",
-    ]
-
-
 def test_stage_registry_with_stage_adds_custom_stage() -> None:
     """
     Verify StageRegistry can add custom stage implementations.
@@ -526,14 +452,14 @@ def test_switched_off_stages_are_told_apart_from_stages_that_could_not_run(
     context = build_test_context(tmp_path)
     plan = make_plan(
         make_disabled_stage("qc_evidence"),
-        make_enabled_stage("molecular_inference"),
+        make_enabled_stage("unregistered_test_stage"),
     )
 
     execution_result = PipelineExecutor().run(context=context, plan=plan)
 
-    assert execution_result.skipped_stage_names() == ["qc_evidence", "molecular_inference"]
+    assert execution_result.skipped_stage_names() == ["qc_evidence", "unregistered_test_stage"]
     assert execution_result.disabled_stage_names() == ["qc_evidence"]
-    assert execution_result.unable_to_run_stage_names() == ["molecular_inference"]
+    assert execution_result.unable_to_run_stage_names() == ["unregistered_test_stage"]
 
 
 def test_executor_records_unimplemented_enabled_stage_as_skipped(tmp_path: Path) -> None:
@@ -544,16 +470,16 @@ def test_executor_records_unimplemented_enabled_stage_as_skipped(tmp_path: Path)
     # Build context containing AnnData.
     context = build_test_context(tmp_path)
 
-    # Build a plan with an enabled future stage (molecular_inference not yet
+    # Build a plan with an enabled future stage (unregistered_test_stage not yet
     # implemented; composition WAS this fixture's example until it shipped).
-    plan = make_plan(make_enabled_stage("molecular_inference"))
+    plan = make_plan(make_enabled_stage("unregistered_test_stage"))
 
     # Execute the plan.
     execution_result = PipelineExecutor().run(context=context, plan=plan)
 
-    # Confirm molecular_inference was skipped, not silently ignored.
+    # Confirm unregistered_test_stage was skipped, not silently ignored.
     assert execution_result.succeeded_stage_names() == []
-    assert execution_result.skipped_stage_names() == ["molecular_inference"]
+    assert execution_result.skipped_stage_names() == ["unregistered_test_stage"]
 
     # Confirm skip reason explains missing implementation.
     record = execution_result.stage_execution_records[0]
@@ -722,3 +648,69 @@ def test_a_failed_stage_record_carries_the_traceback(tmp_path: Path) -> None:
     )
     # And it survives the trip into provenance.
     assert "traceback" in record.error.to_dict()
+
+
+@pytest.mark.parametrize(
+    ("registered", "content", "status"),
+    [(False, "old", "failed"), (True, "", "failed"), (True, "new", "success")],
+)
+def test_required_file_must_be_registered_and_nonempty(tmp_path, registered, content, status):
+    context = build_test_context(tmp_path)
+    target = context.paths.results / "evidence.csv"
+    context.config.run.required_outputs["echo"] = ["results/evidence.csv"]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+
+    class EvidenceStage(EchoStage):
+        def run(self, context):
+            result = super().run(context)
+            if registered:
+                result.artifacts.append(StageArtifact("evidence", target, "csv", "Test evidence"))
+            return result
+
+    executor = PipelineExecutor(registry=StageRegistry().with_stage(EvidenceStage()))
+    result = executor.run(context=context, plan=make_plan(make_enabled_stage("echo")))
+    record = result.stage_execution_records[0]
+    assert record.status == status
+    if status == "failed":
+        assert record.error.error_type == "MissingRequiredOutput"
+        assert record.error.details["missing"] == ["results/evidence.csv"]
+
+
+@pytest.mark.parametrize("strict, expected", [(True, "failed"), (False, "success")])
+def test_failed_sensitivity_rounds_remain_visible(tmp_path, strict, expected):
+    context = build_test_context(tmp_path)
+    context.config.run.require_selected_methods = strict
+
+    class PartialStage(EchoStage):
+        def run(self, context):
+            result = super().run(context)
+            result.metrics["incomplete_reasons"] = ["resample 2 was killed"]
+            return result
+
+    executor = PipelineExecutor(registry=StageRegistry().with_stage(PartialStage()))
+    run = executor.run(context=context, plan=make_plan(make_enabled_stage("echo")))
+    record = run.stage_execution_records[0]
+    assert record.status == expected
+    assert record.metrics["incomplete_reasons"] == ["resample 2 was killed"]
+    if strict:
+        assert "resample 2 was killed" in record.error.message
+
+
+def test_strict_run_accepts_a_data_inapplicable_skip_with_no_promised_output(tmp_path):
+    context = build_test_context(tmp_path)
+    context.config.run.require_selected_methods = True
+
+    class EmptyQuery(EchoStage):
+        def run(self, context):
+            return StageResult.skipped(
+                adata=context.require_adata(),
+                reason="no borderline cells to project",
+                metrics={"not_applicable": True, "n_borderline": 0},
+            )
+
+    executor = PipelineExecutor(registry=StageRegistry().with_stage(EmptyQuery()))
+    run = executor.run(context=context, plan=make_plan(make_enabled_stage("echo")))
+    assert run.stage_execution_records[0].not_applicable
+    assert run.unable_to_run_stage_names() == []
+    assert run.failed_stage_names() == []

@@ -194,8 +194,8 @@ def cascade_heatmap(
     axr.tick_params(length=0)
     # Below the column, not above it: a long title runs over the space above the arrows.
     axr.text(
-        1.01,
-        -0.015,
+        1.04,
+        -0.025,
         "Spearman\ncorrelation\nwith time",
         transform=axr.transAxes,
         fontsize=6.6,

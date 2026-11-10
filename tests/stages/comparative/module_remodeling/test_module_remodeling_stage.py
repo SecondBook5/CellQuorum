@@ -47,8 +47,7 @@ CLUSTER_IDENTITY = {"c0": "prog_a", "c1": "prog_c"}
 IDENTITY_LIFT = 1.2
 
 
-@pytest.fixture
-def scored_adata():
+def _scored_adata():
     """A paired cohort carrying a ``state_scoring``-shaped score matrix.
 
     Six donors, each contributing cells to both arms (the paired design the LEC
@@ -94,7 +93,11 @@ def scored_adata():
 
 
 @pytest.fixture
-def mock_context(tmp_path):
+def scored_adata():
+    return _scored_adata()
+
+
+def _context(tmp_path):
     """Stage context with the four run directories and a backend registry."""
 
     class Paths:
@@ -108,6 +111,11 @@ def mock_context(tmp_path):
         backend_registry = build_default_backend_registry()
 
     return Context()
+
+
+@pytest.fixture
+def mock_context(tmp_path):
+    return _context(tmp_path)
 
 
 def _config(**overrides):
@@ -146,6 +154,14 @@ def _run(adata, context, **overrides):
     )
 
     return ModuleRemodelingMethod().run(adata, _config(**overrides), context)
+
+
+@pytest.fixture(scope="module")
+def remodeling_result(tmp_path_factory):
+    from matplotlib import rc_context
+
+    with rc_context():
+        return _run(_scored_adata(), _context(tmp_path_factory.mktemp("paired_remodeling")))
 
 
 def _table(result, name: str) -> pd.DataFrame:
@@ -269,7 +285,7 @@ def test_module_remodeling_reads_the_design_the_project_already_declares():
 # --------------------------------------------------------------------------- #
 # statistics                                                                   #
 # --------------------------------------------------------------------------- #
-def test_module_remodeling_recovers_the_planted_group_specific_shift(scored_adata, mock_context):
+def test_module_remodeling_recovers_the_planted_group_specific_shift(remodeling_result):
     """The end-to-end statistical claim: right module, right group, right sign.
 
     prog_a was planted up in g0 only and prog_b down in both. A group-specific
@@ -277,10 +293,11 @@ def test_module_remodeling_recovers_the_planted_group_specific_shift(scored_adat
     "is this remodeling subtype-restricted?" question the flagship figure asks,
     so the stage has to get it right before the figure means anything.
     """
-    result = _run(scored_adata, mock_context)
-    assert not isinstance(result, MethodSkip), getattr(result, "reason", result)
+    assert not isinstance(remodeling_result, MethodSkip), getattr(
+        remodeling_result, "reason", remodeling_result
+    )
 
-    effects = _table(result, "mr_effect_sizes").set_index(["group", "program"])
+    effects = _table(remodeling_result, "mr_effect_sizes").set_index(["group", "program"])
     for column in ("effect", "ci_low", "ci_high", "p_value", "fdr", "n_donors", "method"):
         assert column in effects.columns, f"house bar requires {column} on every row"
 
@@ -293,11 +310,7 @@ def test_module_remodeling_recovers_the_planted_group_specific_shift(scored_adat
 
     assert (effects["method"] == "lmm").all(), "a paired 6-donor design must fit the mixed model"
 
-
-def test_module_remodeling_reports_a_multivariate_effect_per_group(scored_adata, mock_context):
-    """PERMANOVA on per-sample module vectors, seeded and recorded."""
-    result = _run(scored_adata, mock_context)
-    permanova = _table(result, "mr_permanova")
+    permanova = _table(remodeling_result, "mr_permanova")
     assert set(permanova["group"]) == {"g0", "g1"}
     for column in ("pseudo_F", "R2", "p_value", "n_perm", "seed"):
         assert column in permanova.columns
@@ -315,15 +328,16 @@ def test_module_remodeling_is_deterministic_under_a_fixed_seed(scored_adata, moc
 # --------------------------------------------------------------------------- #
 # obs additions + subtype derivation                                           #
 # --------------------------------------------------------------------------- #
-def test_module_remodeling_labels_clusters_and_writes_the_axis_to_obs(scored_adata, mock_context):
+def test_module_remodeling_labels_clusters_and_writes_the_axis_to_obs(
+    scored_adata, remodeling_result
+):
     """Subtype labels and the contrast index become obs columns, not just CSVs.
 
     Downstream figures (UMAP overlays, ridgelines) read obs, and the checkpoint
     carries obs forward; a label that exists only in a CSV cannot be plotted on
     an embedding.
     """
-    result = _run(scored_adata, mock_context)
-    adata = result.adata
+    adata = remodeling_result.adata
 
     assert "module_subtype" in adata.obs.columns
     assert "contrast_index" in adata.obs.columns
@@ -341,6 +355,17 @@ def test_module_remodeling_labels_clusters_and_writes_the_axis_to_obs(scored_ada
     assert (
         index_by_condition["Lymphedema"] > index_by_condition["Normal"]
     ), "index_up rose and index_down fell in disease; the signed index must follow"
+
+    table = _table(remodeling_result, "mr_subtypes")
+    assert list(table.columns) == [
+        "cluster",
+        "label",
+        "top_signature",
+        "top_z",
+        "second_z",
+        "margin",
+    ]
+    assert len(table) == scored_adata.obs["cluster"].nunique()
 
 
 def test_module_remodeling_records_an_ambiguous_cluster_as_unassigned(scored_adata, mock_context):
@@ -360,7 +385,7 @@ def test_module_remodeling_records_an_ambiguous_cluster_as_unassigned(scored_ada
 # --------------------------------------------------------------------------- #
 # figures — the actual gap                                                     #
 # --------------------------------------------------------------------------- #
-def test_module_remodeling_ships_the_flagship_dot_grid(scored_adata, mock_context):
+def test_module_remodeling_ships_the_flagship_dot_grid(remodeling_result):
     """The figure that does not exist anywhere in the engine today.
 
     Module (rows, grouped by category) x group (columns) dot-grid: colour is the
@@ -371,8 +396,7 @@ def test_module_remodeling_ships_the_flagship_dot_grid(scored_adata, mock_contex
     a figure produced by hand once is a figure that silently stops matching the
     tables next to it.
     """
-    result = _run(scored_adata, mock_context)
-    figures = [a for a in result.artifacts if a.kind in {"figure", "png", "pdf"}]
+    figures = [a for a in remodeling_result.artifacts if a.kind in {"figure", "png", "pdf"}]
     assert figures, "the stage emitted no figure at all"
 
     flagship = next((a for a in figures if "dotgrid" in a.path.name), None)
@@ -380,6 +404,15 @@ def test_module_remodeling_ships_the_flagship_dot_grid(scored_adata, mock_contex
     assert flagship.path.exists() and flagship.path.stat().st_size > 0
     # The house writer's vector twin, so the panel is editable for the figure file.
     assert flagship.path.with_suffix(".pdf").exists()
+
+    names = {a.name for a in remodeling_result.artifacts}
+    assert {
+        "mr_effect_sizes",
+        "mr_permanova",
+        "mr_correlation",
+        "mr_correlation_tests",
+        "mr_subtypes",
+    } <= names
 
 
 def test_module_remodeling_names_the_axes_a_reader_has_to_read(
@@ -435,33 +468,14 @@ def test_program_labels_fall_back_to_the_column_name_made_readable():
     ) == ["EndoMT (LEC)", "protective flow"]
 
 
-def test_module_remodeling_figures_recompute_nothing(scored_adata, mock_context):
-    """Every figure has a table beside it that fully determines it.
-
-    The replot rule: run directories are the rendering source, so a figure must
-    be reproducible from the CSVs without re-running the statistics. Concretely
-    — each figure's underlying numbers ship as a table artifact.
-    """
-    result = _run(scored_adata, mock_context)
-    names = {a.name for a in result.artifacts}
-    assert {
-        "mr_effect_sizes",
-        "mr_permanova",
-        "mr_correlation",
-        "mr_correlation_tests",
-        "mr_subtypes",
-    } <= names
-
-
-def test_module_remodeling_emits_the_correlation_and_index_tables(scored_adata, mock_context):
-    result = _run(scored_adata, mock_context)
-    corr = _table(result, "mr_correlation")
+def test_module_remodeling_emits_the_correlation_and_index_tables(remodeling_result):
+    corr = _table(remodeling_result, "mr_correlation")
     # Square, symmetric, unit diagonal over the five programs.
     corr = corr.set_index(corr.columns[0])
     assert list(corr.columns) == PROGRAMS and list(corr.index) == PROGRAMS
     assert np.allclose(np.diag(corr.to_numpy()), 1.0)
 
-    subtypes = _table(result, "mr_subtypes")
+    subtypes = _table(remodeling_result, "mr_subtypes")
     assert {"cluster", "label", "margin"} <= set(subtypes.columns)
 
 
@@ -469,7 +483,7 @@ def test_module_remodeling_emits_the_correlation_and_index_tables(scored_adata, 
 # the correlation table's unit                                                 #
 # --------------------------------------------------------------------------- #
 def test_the_testable_correlation_is_at_the_sample_level_not_the_cell_level(
-    scored_adata, mock_context
+    scored_adata, remodeling_result
 ):
     """The defect the second table exists to fix.
 
@@ -479,8 +493,7 @@ def test_the_testable_correlation_is_at_the_sample_level_not_the_cell_level(
     ``n_units`` counts samples. A table that reports the cell count here is
     pseudoreplicating whatever it says in its header.
     """
-    result = _run(scored_adata, mock_context)
-    tests = _table(result, "mr_correlation_tests")
+    tests = _table(remodeling_result, "mr_correlation_tests")
 
     n_samples = scored_adata.obs["sample_id"].nunique()
     assert n_samples < scored_adata.n_obs, "fixture cannot distinguish the two units"
@@ -495,22 +508,14 @@ def test_the_testable_correlation_is_at_the_sample_level_not_the_cell_level(
         tests.columns
     )
 
-
-def test_the_correlation_table_follows_the_same_program_order_as_the_matrix(
-    scored_adata, mock_context
-):
-    """Both tables are replot sources for panels sharing one axis, so both are ordered.
-
-    ``module_categories`` puts prog_a/prog_b before prog_c/d/e; a long-form table in
-    groupby order would draw its rows in a different order from the matrix's axes.
-    """
-    result = _run(scored_adata, mock_context)
-    tests = _table(result, "mr_correlation_tests")
     expected = ["prog_a", "prog_b", "prog_c", "prog_d"]
     assert list(dict.fromkeys(tests["program_a"].astype(str))) == expected
     # prog_a-major, with program_b in the shared order inside the first block.
     first_block = tests.loc[tests["program_a"].astype(str) == "prog_a", "program_b"]
     assert list(first_block.astype(str)) == ["prog_b", "prog_c", "prog_d", "prog_e"]
+
+    assert set(tests["shared_genes"].astype(int)) == {-1}
+    assert not tests["shares_genes"].any()
 
 
 def test_no_sample_column_warns_that_cells_are_not_independent(scored_adata, mock_context):
@@ -557,18 +562,6 @@ def test_the_shared_gene_count_travels_from_the_scoring_stage(scored_adata, mock
     }
     assert by_pair[("prog_a", "prog_b")] == (2, True)
     assert by_pair[("prog_a", "prog_c")] == (0, False)
-
-
-def test_absent_gene_lists_mark_the_overlap_unknown_rather_than_zero(scored_adata, mock_context):
-    """ "We did not check" must not render as "the programs are disjoint".
-
-    The fixture's ``uns`` has no gene lists, which is the state of every run made
-    before the scoring stage recorded them. The sentinel keeps that distinguishable
-    from a checked, genuinely empty intersection.
-    """
-    tests = _table(_run(scored_adata, mock_context), "mr_correlation_tests")
-    assert set(tests["shared_genes"].astype(int)) == {-1}
-    assert not tests["shares_genes"].any()
 
 
 def test_module_remodeling_tests_the_contrast_index_it_plots(
@@ -731,22 +724,6 @@ def test_a_run_that_labels_nothing_writes_no_label_table(scored_adata, mock_cont
     assert result.metrics["n_unassigned_clusters"] == 0
 
 
-def test_a_labelling_run_writes_the_full_label_table(scored_adata, mock_context):
-    """And when labelling does run, the table carries every column it computed."""
-    result = _run(scored_adata, mock_context)
-
-    table = _table(result, "mr_subtypes")
-    assert list(table.columns) == [
-        "cluster",
-        "label",
-        "top_signature",
-        "top_z",
-        "second_z",
-        "margin",
-    ]
-    assert len(table) == scored_adata.obs["cluster"].nunique()
-
-
 def test_module_remodeling_reads_program_names_that_came_back_from_disk(
     scored_adata, mock_context, tmp_path
 ):
@@ -851,7 +828,7 @@ def _with_depth(
     return out
 
 
-def test_no_depth_column_warns_instead_of_skipping_the_audit_quietly(scored_adata, mock_context):
+def test_no_depth_column_warns_instead_of_skipping_the_audit_quietly(remodeling_result):
     """An unaudited run must say so, in the warnings and on the headline.
 
     The fixture carries no QC metrics, which is the state a hand-built object arrives
@@ -860,17 +837,18 @@ def test_no_depth_column_warns_instead_of_skipping_the_audit_quietly(scored_adat
     programs without mentioning that none of them was audited invites a reader to
     quote the first number and never reach the second.
     """
-    result = _run(scored_adata, mock_context)
-    assert not isinstance(result, MethodSkip), getattr(result, "reason", result)
+    assert not isinstance(remodeling_result, MethodSkip), getattr(
+        remodeling_result, "reason", remodeling_result
+    )
 
-    assert "mr_depth_audit" not in {a.name for a in result.artifacts}
-    assert "mr_effect_sizes" in {a.name for a in result.artifacts}
+    assert "mr_depth_audit" not in {a.name for a in remodeling_result.artifacts}
+    assert "mr_effect_sizes" in {a.name for a in remodeling_result.artifacts}
     assert any(
-        "depth audit skipped" in w and "n_genes_by_counts" in w for w in result.warnings
-    ), f"the candidates it looked for have to be named so the fix is obvious: {result.warnings}"
-    assert "depth unaudited" in result.notes[0]
-    assert result.metrics["depth_col"] is None
-    assert result.metrics["n_depth_driven"] == 0
+        "depth audit skipped" in w and "n_genes_by_counts" in w for w in remodeling_result.warnings
+    ), f"missing depth columns should be named: {remodeling_result.warnings}"
+    assert "depth unaudited" in remodeling_result.notes[0]
+    assert remodeling_result.metrics["depth_col"] is None
+    assert remodeling_result.metrics["n_depth_driven"] == 0
 
 
 def test_a_configured_depth_column_that_is_absent_does_not_fall_back(scored_adata, mock_context):
@@ -912,20 +890,7 @@ def test_the_audit_covers_every_program_and_the_index_it_plots(scored_adata, moc
         assert column in audit.columns
     assert result.metrics["depth_col"] == "n_genes_by_counts"
 
-
-def test_a_depth_driven_program_is_flagged_and_a_real_one_is_not(scored_adata, mock_context):
-    """The audit has to separate the two, not flag everything that tracks depth.
-
-    ``prog_d`` is nothing but ``log1p(depth)``, and the arms differ in depth, so its
-    condition effect is entirely a library-size readout. ``prog_a`` and ``prog_b``
-    carry the planted effects and were built independent of depth. An audit that
-    flags all three is unusable — it would retract the finding along with the
-    artifact — and one that flags none is not an audit.
-    """
-    adata = _with_depth(scored_adata, depth_shift=600.0)
-    result = _run(adata, mock_context)
-
-    audit = _table(result, "mr_depth_audit").set_index("metric")
+    audit = audit.set_index("metric")
     assert audit.loc[DEPTH_COUPLED, "verdict"] == "depth_driven", audit.loc[
         DEPTH_COUPLED, ["raw_delta", "adjusted_delta", "verdict", "reason"]
     ].to_dict()

@@ -12,8 +12,10 @@ already flips the fingerprint. This is the key that stage-level resume compares.
 
 from __future__ import annotations
 
+import csv
+import glob
 import json
-from hashlib import sha256
+from hashlib import file_digest, sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,7 +36,8 @@ if TYPE_CHECKING:
 # flipped every downstream checkpoint's fingerprint on upgrade even though nothing
 # QC computed changed. Checkpoints written under v2 cannot be compared against v3
 # fingerprints for the same reason v1-vs-v2 couldn't.
-FINGERPRINT_SCHEMA_VERSION = 3
+# v5 also includes source files listed in the library manifest.
+FINGERPRINT_SCHEMA_VERSION = 5
 
 
 def _stable_json(payload: object) -> str:
@@ -203,9 +206,8 @@ def compute_upstream_fingerprint(
     the stage-by-stage loop recompute constantly for no safety gain: a cell-cell
     communication setting cannot retroactively alter what QC produced.
 
-    Conservative and cheap, in the same spirit as the input fingerprint: the input is
-    identified by path and byte size, not by content hash, so replacing a file with
-    different contents at exactly the same path and size is not detected.
+    The input file, manifest and configured upstream reference files are content hashed.
+    A fresh content hash also catches same-length rewrites on coarse-timestamp filesystems.
     """
     through_order = stage_order.get(through_stage)
     if through_order is None:
@@ -230,7 +232,14 @@ def compute_upstream_fingerprint(
                 "through_stage": through_stage,
                 "through_order": through_order,
                 "random_seed": run_block.get("random_seed"),
+                "study_design": _without_unset(config.get("design")),
+                "cohort": _without_unset(config.get("cohort")),
                 "input": _input_signature(config.get("input")),
+                "manifest": _resource_digest((config.get("paths") or {}).get("manifest")),
+                "library_resources": _library_resources(config, upstream, enablement),
+                "upstream_resources": {
+                    n: _stage_resources(config.get(n), n) for n in upstream if enablement.get(n)
+                },
                 "stage_enablement": _without_unset(enablement),
                 "stage_config": _without_outputs(
                     _without_unset({n: config.get(n) for n in upstream if n in config})
@@ -240,27 +249,116 @@ def compute_upstream_fingerprint(
     )
 
 
+def _digest_file(path: Path, identity: tuple[int, int, int, int]) -> str:
+    with path.open("rb") as handle:
+        digest = file_digest(handle, "sha256").hexdigest()
+    stat = path.stat()
+    if identity != (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns):
+        raise ValueError(f"Input changed while computing its SHA256: {path}")
+    return digest
+
+
+def _resource_digest(value: object) -> str | None:
+    if not isinstance(value, Path | str) or not value:
+        return None
+    path = Path(value).resolve()
+    if not path.is_file():
+        return None
+    stat = path.stat()
+    return _digest_file(path, (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+
+
+def resource_checksum(value: Path) -> str | None:
+    """Hash a file or the selected components of a 10x Matrix Market directory."""
+    if not value.is_dir():
+        return _resource_digest(value)
+    names = ("matrix.mtx", "barcodes.tsv", "features.tsv", "genes.tsv")
+    files = {
+        p.name: _resource_digest(p)
+        for p in sorted(value.iterdir())
+        if p.name.removesuffix(".gz") in names
+    }
+    return _hash_str(_stable_json(files)) if files else None
+
+
+def _library_resources(config: dict, upstream: list[str], enabled: dict) -> dict:
+    manifest = (config.get("paths") or {}).get("manifest")
+    active = {name for name in upstream if enabled.get(name)}
+    if (
+        not manifest
+        or not Path(manifest).is_file()
+        or not active.intersection({"ambient_correction", "trajectory", "qc_splice_metrics"})
+    ):
+        return {}
+    resources = {}
+    keys: set[str] = set()
+    if "ambient_correction" in active:
+        keys.update(("raw_matrix_path", "filtered_matrix_path"))
+    if active.intersection({"trajectory", "qc_splice_metrics"}):
+        keys.update(("loom_path", "gtf_path", "bam_path"))
+    source = Path(manifest)
+    base_dir = source.parent if config["paths"].get("relative_to_config") else Path(".")
+    with source.open(newline="", encoding="utf-8-sig") as stream:
+        sep = "\t" if Path(manifest).suffix.lower() == ".tsv" else ","
+        for row in csv.DictReader(stream, delimiter=sep):
+            paths = {base_dir / row[key] for key in keys if row.get(key)}
+            if "ambient_correction" in active and row.get("cellranger_path"):
+                base = (
+                    base_dir
+                    / Path((config.get("ambient_correction") or {}).get("cellranger_root") or ".")
+                    / row["cellranger_path"]
+                )
+                outs = base / "outs" if (base / "outs").is_dir() else base
+                for key, name in (
+                    ("raw_matrix_path", "raw_feature_bc_matrix"),
+                    ("filtered_matrix_path", "filtered_feature_bc_matrix"),
+                ):
+                    if not row.get(key):
+                        h5 = outs / (name + ".h5")
+                        paths.add(h5 if h5.is_file() else outs / name)
+            resources.update({str(path): resource_checksum(path) for path in paths})
+    return resources
+
+
+def _stage_resources(block: object, stage: str) -> dict[str, str | None]:
+    if not isinstance(block, dict):
+        return {}
+    fields = {
+        "grn": ("tfs_path", "motifs_path", "rankings_glob"),
+        "reference_mapping": ("atlas_h5ad",),
+        "cell_cell_communication": (
+            "nichenet_lr_network",
+            "nichenet_ligand_target_matrix",
+            "nichenet_weighted_networks",
+        ),
+        "enrichment": ("gmt_path",),
+    }
+    resources = {}
+    if stage == "trajectory":
+        generation = (block.get("velocity") or {}).get("generation") or {}
+        gtf = generation.get("gtf_path")
+        if gtf:
+            resources[str(gtf)] = _resource_digest(gtf)
+    for entry in [block, *block.get("methods", [])]:
+        if not isinstance(entry, dict):
+            continue
+        for key in fields.get(stage, ()):
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                for filename in sorted(glob.glob(value)) if key.endswith("_glob") else [value]:
+                    resources[filename] = _resource_digest(filename)
+    return resources
+
+
 def _input_signature(input_block: object) -> dict[str, object]:
-    """Identify the run's input by its spec plus each referenced file's byte size."""
+    """Include both the declared input specification and the content of the count-bearing file."""
     if not isinstance(input_block, dict):
         return {"present": False}
-
-    sizes: dict[str, int | None] = {}
-    for key, value in sorted(input_block.items()):
-        if not isinstance(value, str) or not value:
-            continue
-        try:
-            path = Path(value)
-            sizes[key] = path.stat().st_size if path.is_file() else None
-        except OSError:
-            # An unreadable path is still part of the spec; record it as unsized
-            # rather than failing a fingerprint over a stat error.
-            sizes[key] = None
-
-    # The spec is pruned for the same reason every other config block is: the input
-    # block is a resolved model too, so a new optional field on it (a subset rule, a
-    # sample-sheet column) would otherwise invalidate every checkpoint ever written.
-    return {"present": True, "spec": _without_unset(input_block), "sizes": sizes}
+    return {
+        "present": True,
+        "spec": _without_unset(input_block),
+        "sha256": _resource_digest(input_block.get("h5ad")),
+    }
 
 
 __all__ = [

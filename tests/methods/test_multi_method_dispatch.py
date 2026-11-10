@@ -104,7 +104,7 @@ def test_multi_method_tolerates_a_skip():
         name = "skipper"
 
         def _run(self, adata, config, context):
-            return MethodSkip(reason="nothing to do")
+            return MethodSkip(reason="nothing to do", details={"eligible_groups": 0})
 
     reg = _registry()
     reg.register(_Skipper)
@@ -125,6 +125,11 @@ def test_multi_method_tolerates_a_skip():
     # A per-method skip must not abort the remaining methods.
     assert "col_b" in result.adata.obs.columns
     assert "skipper" in " ".join(result.warnings)
+    assert result.status == "success"
+
+    result = stage.run(_Ctx(a, {"toy": {"methods": [{"method": "skipper"}]}}))
+    assert result.status == "skipped" and "skipper" in result.skip_reason
+    assert result.metrics["per_method"][0]["details"] == {"eligible_groups": 0}
 
 
 def test_empty_methods_list_uses_scalar_path():

@@ -65,7 +65,7 @@ def load_config(config_path: str | Path) -> CellQuorumConfig:
     # Validate that the config file has a supported suffix.
     if path.suffix.lower() not in {".yaml", ".yml"}:
         raise ConfigLoadError(
-            "CellQuorum configuration files must use '.yaml' or '.yml'. " f"Received: {path.name}"
+            f"CellQuorum configuration files must use '.yaml' or '.yml'. Received: {path.name}"
         )
 
     # Try loading the YAML file through OmegaConf.
@@ -78,7 +78,41 @@ def load_config(config_path: str | Path) -> CellQuorumConfig:
         raise ConfigLoadError(f"Failed to load configuration file '{path}': {error}") from error
 
     # Validate the loaded OmegaConf object.
-    return validate_omegaconf(raw_config)
+    validated = validate_omegaconf(raw_config)
+    if validated.paths.relative_to_config:
+        for model, fields in (
+            (validated.input, ("h5ad",)),
+            (validated.paths, ("manifest", "data_root", "output_dir", "scratch_root", "run_root")),
+        ):
+            for field in fields:
+                value = getattr(model, field, None)
+                if value is not None and not value.is_absolute():
+                    setattr(model, field, (path.resolve().parent / value).resolve())
+        generation = validated.trajectory.velocity.generation
+        if generation.gtf_path is not None and not generation.gtf_path.is_absolute():
+            generation.gtf_path = (path.resolve().parent / generation.gtf_path).resolve()
+        resource_fields = [
+            (validated.reference_mapping, "atlas_h5ad"),
+            (validated.enrichment, "gmt_path"),
+            *[(validated.grn, key) for key in ("tfs_path", "motifs_path", "rankings_glob")],
+            *[
+                (validated.cell_cell_communication, key)
+                for key in (
+                    "nichenet_lr_network",
+                    "nichenet_weighted_networks",
+                    "nichenet_ligand_target_matrix",
+                )
+            ],
+        ]
+        for resource_model, field in resource_fields:
+            value = getattr(resource_model, field)
+            if value and not Path(value).is_absolute():
+                setattr(resource_model, field, str((path.resolve().parent / value).resolve()))
+        for entry in validated.enrichment.methods:
+            value = entry.get("gmt_path")
+            if value and not Path(value).is_absolute():
+                entry["gmt_path"] = str((path.resolve().parent / value).resolve())
+    return validated
 
 
 def validate_omegaconf(config: DictConfig | ListConfig) -> CellQuorumConfig:
@@ -209,7 +243,7 @@ def save_resolved_config(config: CellQuorumConfig, output_path: str | Path) -> P
 
     if path.suffix.lower() != ".json":
         raise ValueError(
-            "Resolved configuration output must use a '.json' suffix. " f"Received: {path.name}"
+            f"Resolved configuration output must use a '.json' suffix. Received: {path.name}"
         )
 
     # Create the parent directory if needed.

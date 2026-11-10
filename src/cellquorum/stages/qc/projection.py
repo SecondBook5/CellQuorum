@@ -277,7 +277,7 @@ class QueryProjectionStage:
             return StageResult.skipped(
                 adata=adata,
                 reason="no borderline cells to project",
-                metrics={"n_borderline": 0, "n_core": int(core_mask.sum())},
+                metrics={"not_applicable": True, "n_borderline": 0, "n_core": int(core_mask.sum())},
             )
         if core_mask.sum() < 2:
             return StageResult.skipped(

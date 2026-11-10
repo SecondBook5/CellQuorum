@@ -84,42 +84,26 @@ def make_context(
     )
 
 
-def test_preprocessing_stage_name():
-    """Test that PreprocessingStage has the correct name."""
-    stage = PreprocessingStage()
-    assert stage.name == "preprocessing"
+def test_preprocessing_returns_counts_normalized_expression_and_artifacts(tmp_path):
+    adata = make_test_adata()
+    original_counts = adata.X.copy()
+    result = PreprocessingStage().run(make_context(tmp_path, adata=adata))
 
-
-def test_preprocessing_stage_returns_stage_result(tmp_path):
-    """Test that PreprocessingStage.run returns StageResult."""
-    # Build context.
-    context = make_context(tmp_path)
-
-    # Run preprocessing stage.
-    stage = PreprocessingStage()
-    result = stage.run(context)
-
-    # Should return StageResult.
     assert isinstance(result, StageResult)
     assert isinstance(result.adata, ad.AnnData)
-
-
-def test_preprocessing_stage_writes_artifacts(tmp_path):
-    """Test that PreprocessingStage writes expected artifacts."""
-    # Build context.
-    context = make_context(tmp_path)
-
-    # Run preprocessing stage.
-    stage = PreprocessingStage()
-    result = stage.run(context)
-
-    # Should have artifacts.
-    assert len(result.artifacts) > 0
-
-    # preprocessing_summary.json should exist.
-    summary_artifact = next((a for a in result.artifacts if "summary" in a.name), None)
-    assert summary_artifact is not None
-    assert summary_artifact.path.exists()
+    np.testing.assert_array_equal(result.adata.layers["counts"], original_counts)
+    assert "cellquorum_normalized" in result.adata.layers
+    assert result.metrics["stage_name"] == "preprocessing"
+    assert result.metrics["enabled"] is True
+    assert "recipe" in result.metrics
+    assert result.metrics["output_layer"] == "cellquorum_normalized"
+    assert (result.metrics["n_cells"], result.metrics["n_genes"]) == adata.shape
+    assert any("Preprocessing completed" in note for note in result.notes)
+    summary = next(a for a in result.artifacts if "summary" in a.name)
+    assert summary.path.is_file()
+    figures = [a for a in result.artifacts if a.kind == "figure"]
+    assert len(figures) == 4
+    assert all(a.path.is_file() for a in figures)
 
 
 def test_preprocessing_stage_disabled_by_config(tmp_path):
@@ -154,66 +138,6 @@ def test_preprocessing_stage_disabled_by_stages_flag(tmp_path):
     assert len(result.artifacts) == 0
 
 
-def test_preprocessing_stage_metrics_populated(tmp_path):
-    """Test that stage result metrics contain expected fields."""
-    # Build context.
-    context = make_context(tmp_path)
-
-    # Run preprocessing stage.
-    stage = PreprocessingStage()
-    result = stage.run(context)
-
-    # Metrics should contain key fields.
-    assert result.metrics.get("stage_name") == "preprocessing"
-    assert result.metrics.get("enabled") is True
-    assert "recipe" in result.metrics
-    assert result.metrics.get("output_layer") == "cellquorum_normalized"
-    assert result.metrics.get("n_cells") == 3
-    assert result.metrics.get("n_genes") == 4
-
-
-def test_preprocessing_stage_notes_populated(tmp_path):
-    """Test that stage result notes are populated."""
-    # Build context.
-    context = make_context(tmp_path)
-
-    # Run preprocessing stage.
-    stage = PreprocessingStage()
-    result = stage.run(context)
-
-    # Notes should be populated.
-    assert len(result.notes) > 0
-    assert any("Preprocessing completed" in note for note in result.notes)
-
-
-def test_preprocessing_stage_output_adata_has_normalized_layer(tmp_path):
-    """Test that output AnnData has normalized layer."""
-    # Build context.
-    context = make_context(tmp_path)
-
-    # Run preprocessing stage.
-    stage = PreprocessingStage()
-    result = stage.run(context)
-
-    # Output AnnData should have default normalized layer.
-    assert "cellquorum_normalized" in result.adata.layers
-
-
-def test_preprocessing_stage_output_adata_has_counts_layer(tmp_path):
-    """Test that output AnnData preserves raw counts layer."""
-    # Build input adata and context.
-    input_adata = make_test_adata()
-    context = make_context(tmp_path, adata=input_adata)
-
-    # Run preprocessing stage.
-    stage = PreprocessingStage()
-    result = stage.run(context)
-
-    # Output AnnData should have counts layer matching original X.
-    assert "counts" in result.adata.layers
-    assert np.array_equal(result.adata.layers["counts"], input_adata.X)
-
-
 def test_preprocessing_stage_disabled_normalization_includes_shape_metrics(tmp_path):
     """Test that disabled normalization includes n_cells and n_genes in metrics."""
     # Build config with normalization disabled but preprocessing enabled.
@@ -238,14 +162,6 @@ def test_preprocessing_stage_disabled_normalization_includes_shape_metrics(tmp_p
     assert result.metrics.get("n_cells") == input_adata.n_obs
     assert result.metrics.get("n_genes") == input_adata.n_vars
     assert len(result.artifacts) == 0
-
-
-def test_preprocessing_stage_writes_normalization_figures_by_default(tmp_path):
-    result = PreprocessingStage().run(make_context(tmp_path))
-
-    figure_artifacts = [a for a in result.artifacts if a.kind == "figure"]
-    assert len(figure_artifacts) == 4
-    assert all(a.path.exists() for a in figure_artifacts)
 
 
 def test_preprocessing_stage_skips_figures_when_disabled(tmp_path):

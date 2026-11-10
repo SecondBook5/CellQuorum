@@ -194,7 +194,14 @@ def resolve_identity_columns(
     if config.candidate_key is not None:
         if config.candidate_key in obs.columns:
             candidate_key = config.candidate_key
-            candidate_source = "configured"
+            if candidate_key in config.reference_keys:
+                candidate_source = "reference"
+            elif candidate_key in config.annotation_keys:
+                candidate_source = "annotation"
+            elif candidate_key == cluster_key:
+                candidate_source = "cluster"
+            else:
+                candidate_source = "configured"
         else:
             return None
     elif reference_key is not None:
@@ -306,6 +313,10 @@ def build_population_identity_tables(
         "population_by_condition": build_crosstab(obs, "_population_id", resolution.condition_key),
         "population_by_cluster": build_crosstab(obs, "_population_id", resolution.cluster_key),
     }
+    if resolution.annotation_key and resolution.annotation_key != resolution.candidate_key:
+        tables["population_by_annotation"] = build_crosstab(
+            obs, "_population_id", resolution.annotation_key
+        )
     return {key: value for key, value in tables.items() if value is not None}
 
 
@@ -407,6 +418,9 @@ def classify_population(
     if resolution.candidate_source == "annotation":
         reasons.append("Candidate is supported by dataset annotation labels.")
         return "annotation_supported_state", reasons
+    if resolution.candidate_source == "configured":
+        reasons.append("Candidate is defined by the configured observation column.")
+        return "configured_candidate", reasons
     reasons.append("Candidate is derived from dataset-native clustering.")
     return "cluster_native_candidate", reasons
 
@@ -545,7 +559,9 @@ def build_population_identity_audit(
         )
 
     warnings: list[str] = []
-    if resolution.candidate_source == "cluster":
+    if resolution.candidate_source == "cluster" and not (
+        resolution.reference_key or resolution.annotation_key
+    ):
         warnings.append(
             "No atlas/reference or annotation labels were available; populations are "
             "dataset-native cluster candidates, not named cell types."
@@ -599,6 +615,10 @@ def write_population_identity_artifacts(
         "population_by_donor": "Population composition by donor.",
         "population_by_condition": "Population composition by condition.",
         "population_by_cluster": "Population composition by cluster.",
+        "population_by_annotation": (
+            f"Cell counts and fractions for {resolution.annotation_key} "
+            f"within each {resolution.candidate_key} population."
+        ),
     }
     for table_name, table in tables.items():
         artifacts.append(

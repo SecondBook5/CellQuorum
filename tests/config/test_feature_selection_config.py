@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.core.planner import PipelinePlanner
 
 
 def test_feature_selection_config_defaults():
@@ -17,14 +16,3 @@ def test_feature_selection_config_defaults():
     # pinning the state that made `stages.feature_selection: true` reach the stage and skip
     # it — leaving PCA and scVI on all ~33,000 genes.
     assert c.stages.feature_selection is False
-
-
-def test_feature_selection_ordered_between_preprocessing_and_dimensionality():
-    # The planner lists all stages regardless of enabled flag, so this test verifies
-    # the slot ordering in the canonical stage sequence.
-    c = CellQuorumConfig.model_validate({"project": {"name": "t"}})
-    plan = PipelinePlanner(c).build_plan()
-    names = [s.name for s in plan.stages]
-    assert "feature_selection" in names
-    assert names.index("preprocessing") < names.index("feature_selection")
-    assert names.index("feature_selection") < names.index("dimensionality")

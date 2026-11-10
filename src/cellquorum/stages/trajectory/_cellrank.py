@@ -32,12 +32,16 @@ def _pseudotime_kernel(adata: ad.AnnData, time_key: str, notes: list[str]) -> An
     from cellrank.kernels import PseudotimeKernel
 
     try:
-        return PseudotimeKernel(adata, time_key=time_key).compute_transition_matrix()
+        # CellRank starts a multiprocessing manager for progress even with one
+        # worker. A fork after PETSc initialization can abort that child on SIGPIPE.
+        return PseudotimeKernel(adata, time_key=time_key).compute_transition_matrix(
+            show_progress_bar=False
+        )
     except ValueError as exc:
         if "Transition matrix is not row stochastic" not in str(exc):
             raise
         kernel = PseudotimeKernel(adata, time_key=time_key).compute_transition_matrix(
-            threshold_scheme="soft"
+            threshold_scheme="soft", show_progress_bar=False
         )
         notes.append(
             f"pseudotime kernel '{time_key}': hard threshold stranded rows; "
@@ -606,7 +610,15 @@ def run_gpcca(
     else:
         fate_kwargs = {"use_petsc": False, "solver": "direct"}
     try:
-        g.compute_fate_probabilities(show_progress_bar=False, **fate_kwargs)
+        try:
+            g.compute_fate_probabilities(show_progress_bar=False, **fate_kwargs)
+        except AttributeError as exc:
+            # Some CellRank versions call Mat.getVecs, removed by newer PETSc.
+            # Keep the same iterative solver and sparse matrix after SLEPc.
+            if not fate_kwargs["use_petsc"] or "getVecs" not in str(exc):
+                raise
+            notes.append("PETSc Mat.getVecs unavailable; used sparse SciPy GMRES for fates")
+            g.compute_fate_probabilities(show_progress_bar=False, use_petsc=False, solver="gmres")
         fp = g.fate_probabilities
         result["fate_prob"] = np.asarray(fp)
         result["fate_names"] = [str(x) for x in fp.names]

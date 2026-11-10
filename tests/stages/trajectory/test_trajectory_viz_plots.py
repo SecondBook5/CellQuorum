@@ -71,42 +71,26 @@ def _coarse_T():
     return mat, stationary
 
 
-def test_coarse_transition_heatmap_returns_figure():
+def test_coarse_transitions_show_legible_stationary_values_and_explain_negative_entries():
     mat, stationary = _coarse_T()
     fig = plots.coarse_transition_heatmap(mat, stationary)
+
     assert isinstance(fig, Figure)
 
-
-def test_coarse_transition_stationary_text_reads_on_its_own_cell_colour():
-    """Real defect on the lymphedema LEC trajectory: the largest stationary
-    probability sits on the darkest blue of the strip and its fixed dark text
-    was unreadable. Text must flip to white on a dark cell and stay dark on a
-    light one.
-    """
-    mat, stationary = _coarse_T()
-    fig = plots.coarse_transition_heatmap(mat, stationary)
     strip = fig.axes[-1]
     colour = {t.get_text(): t.get_color() for t in strip.texts}
     assert colour["0.46"] == "white"
     assert colour["0.15"] != "white"
 
-
-def _caption(fig):
-    return " ".join(t.get_text() for t in fig.texts)
-
-
-def test_coarse_transition_caption_explains_negative_entries_only_when_present():
-    """Real defect: the coarse-graining projection can leave small negative
-    entries (-0.02 on the lymphedema LEC run), printed as if they were
-    probabilities and clipped to zero by the colour scale. The figure must say
-    what they are; a matrix without any must not carry the note.
-    """
-    mat, stationary = _coarse_T()
-    assert "negative" not in _caption(plots.coarse_transition_heatmap(mat, stationary))
+    assert "negative" not in _caption(fig)
     mat.iloc[0, 2] = -0.02
     caption = _caption(plots.coarse_transition_heatmap(mat, stationary))
     assert "negative" in caption
     assert "not probabilities" in caption
+
+
+def _caption(fig):
+    return " ".join(t.get_text() for t in fig.texts)
 
 
 def test_off_diagonal_vmax_ignores_the_diagonal():
@@ -184,17 +168,12 @@ def test_grouped_violin_applies_labels_without_reordering_groups():
     assert tick_text == ["Perivascular", "1", "Inflammatory"]  # sort order still by raw key
 
 
-def test_grouped_violin_uses_the_house_raincloud_primitive():
-    """Real complaint: this figure should look like the QC violin/boxplots,
-    not like a bare matplotlib violinplot from a different tool. It must
-    reuse figstyle.raincloud (half-violin + compact box + median + jittered
-    points) -- the same primitive every QC distribution figure uses -- not
-    ax.violinplot.
-    """
+def test_grouped_violin_uses_styled_raincloud_components():
     from matplotlib.collections import PathCollection, PolyCollection
 
     groups = {"A": np.random.RandomState(0).rand(30), "B": np.random.RandomState(1).rand(30)}
     fig = plots.grouped_violin(groups, title="t", ylabel="fate prob")
+
     ax = fig.axes[0]
     # The half-violin density (fill_betweenx -> PolyCollection) and the
     # jittered point cloud (scatter -> PathCollection) are both raincloud's
@@ -204,14 +183,6 @@ def test_grouped_violin_uses_the_house_raincloud_primitive():
     # The compact box (a Rectangle patch), also raincloud's, not violinplot's.
     assert ax.patches, "no box patch"
 
-
-def test_grouped_violin_bodies_are_not_the_bare_matplotlib_default_color():
-    """Real complaint: unstyled matplotlib default fill reads as generic /
-    off-house-style next to every other figure in this package.
-    """
-    groups = {"A": np.random.RandomState(0).rand(30), "B": np.random.RandomState(1).rand(30)}
-    fig = plots.grouped_violin(groups, title="t", ylabel="fate prob")
-    ax = fig.axes[0]
     assert ax.patches
     default_blue = (0.12156862745098039, 0.4666666666666667, 0.7058823529411765, 1.0)
     for box in ax.patches:

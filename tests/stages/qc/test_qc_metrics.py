@@ -124,6 +124,13 @@ def make_metrics_config() -> QCConfig:
     )
 
 
+def test_missing_mitochondrial_features_explained_in_qc_warnings() -> None:
+    data = make_metrics_test_adata()
+    data = data[:, ~data.var_names.str.startswith("MT-")].copy()
+    result = calculate_qc_metrics(data, make_metrics_config())
+    assert any("mitochondrial percentage is unmeasured" in message for message in result.warnings)
+
+
 def test_calculate_qc_metrics_returns_expected_cell_metrics_dense() -> None:
     """
     Verify dense AnnData cell-level QC metrics are numerically correct.

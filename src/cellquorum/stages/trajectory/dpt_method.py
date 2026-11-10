@@ -105,11 +105,26 @@ class DptMethod(AnalysisMethod):
         if orient_key and orient_key in work.obs:
             oriented = self._maybe_reorient(work, res, orient_key, notes, warnings)
 
+        pseudotime = np.asarray(res["pseudotime"], dtype=float).copy()
+        disconnected = ~np.isfinite(pseudotime)
+        if disconnected.all():
+            return MethodSkip(
+                reason="DPT produced no finite ordering from the root", details={"method": "dpt"}
+            )
+        if disconnected.any():
+            pseudotime[disconnected] = np.nan
+            res["pseudotime"] = pseudotime
+            work.obs["dpt_pseudotime"] = pseudotime
+            warnings.append(
+                f"{int(disconnected.sum())} cells had no finite diffusion "
+                "distance from the root; their pseudotime is missing."
+            )
         self._writeback(adata, work, res, outlier_mask, warnings)
 
         uns = adata.uns.setdefault("trajectory", {}).setdefault("dpt", {})
         uns.update(
             {
+                "n_unordered": int(disconnected.sum()),
                 "root_index": int(iroot),
                 "root_source": root_source,
                 "n_dcs": res["n_dcs"],
@@ -143,6 +158,7 @@ class DptMethod(AnalysisMethod):
             warnings=warnings,
             metrics={
                 "method": self.name,
+                "n_unordered": int(disconnected.sum()),
                 "root_index": int(iroot),
                 "root_source": root_source,
                 "excluded_outliers": bool(exclude),

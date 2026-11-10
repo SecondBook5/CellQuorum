@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cellquorum.config.base import StrictBaseModel
+from cellquorum.config.base import MethodEntries, StrictBaseModel
 
 
 class EnrichmentVizConfig(StrictBaseModel):
@@ -26,6 +26,7 @@ class EnrichmentVizConfig(StrictBaseModel):
     """
 
     enabled: bool = True
+    methods: MethodEntries = []
     top_k: int = 12
     figure_formats: list[str] = ["pdf", "png"]
     dpi: int = 300

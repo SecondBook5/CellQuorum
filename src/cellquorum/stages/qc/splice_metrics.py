@@ -55,28 +55,35 @@ class QCSpliceMetricsStage:
             resolve_stage_config(context, "qc_splice_metrics")
         )
 
-        try:
-            manifest = context.require_manifest()
-        except Exception:
-            return StageResult.skipped(
-                adata=adata,
-                reason="no manifest available",
-                warnings=["qc_splice_metrics needs a sample manifest with a loom-path column"],
-            )
+        if {"spliced", "unspliced"} <= set(adata.layers):
+            from cellquorum.core.contracts.statistical import assert_integer_valued
 
-        if config.loom_path_col not in manifest.columns:
-            return StageResult.skipped(
-                adata=adata,
-                reason=f"manifest has no '{config.loom_path_col}' column",
-                warnings=[
-                    f"qc_splice_metrics needs manifest column '{config.loom_path_col}' "
-                    "naming each sample's velocyto loom"
-                ],
-            )
+            for layer in ("spliced", "unspliced"):
+                assert_integer_valued(adata.layers[layer], layer=layer)
+            velo_adata, notes = adata, ["Using input splice count layers."]
+        else:
+            try:
+                manifest = context.require_manifest()
+            except Exception:
+                return StageResult.skipped(
+                    adata=adata,
+                    reason="no manifest available",
+                    warnings=["qc_splice_metrics needs a sample manifest with a loom-path column"],
+                )
 
-        velo_adata, notes = reconcile_looms(
-            adata, manifest, sample_col=config.sample_col, loom_path_col=config.loom_path_col
-        )
+            if config.loom_path_col not in manifest.columns:
+                return StageResult.skipped(
+                    adata=adata,
+                    reason=f"manifest has no '{config.loom_path_col}' column",
+                    warnings=[
+                        f"qc_splice_metrics needs manifest column '{config.loom_path_col}' "
+                        "naming each sample's velocyto loom"
+                    ],
+                )
+
+            velo_adata, notes = reconcile_looms(
+                adata, manifest, sample_col=config.sample_col, loom_path_col=config.loom_path_col
+            )
         if velo_adata is None:
             return StageResult.skipped(
                 adata=adata,

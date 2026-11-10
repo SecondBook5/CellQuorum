@@ -70,12 +70,18 @@ def test_a_note_that_fits_is_returned_untouched():
     assert wrap_notes(["short"], width_in=6.0) == ["short"]
 
 
-def test_a_note_that_does_not_fit_is_broken_into_lines_that_do():
+def test_wrapped_notes_fit_the_width_keep_the_words_and_indent_continuations():
     lines = wrap_notes([LONG_NOTE], width_in=2.5)
+
     assert len(lines) > 1
     assert all(width <= 2.5 for width in measure_labels_in(lines, fontsize=7.5))
     # Nothing is dropped in the process: the words are the same words.
     assert " ".join(lines).split() == LONG_NOTE.split()
+
+    assert len(lines) > len(wrap_notes([LONG_NOTE], width_in=5.0))
+
+    assert not lines[0].startswith(" ")
+    assert all(line.startswith("  ") for line in lines[1:])
 
 
 def test_wrapping_is_per_note_so_one_long_caveat_does_not_break_up_the_others():
@@ -84,20 +90,10 @@ def test_wrapping_is_per_note_so_one_long_caveat_does_not_break_up_the_others():
     assert lines[-1] == "short two"
 
 
-def test_a_narrower_figure_wraps_the_same_note_onto_more_lines():
-    assert len(wrap_notes([LONG_NOTE], width_in=2.5)) > len(wrap_notes([LONG_NOTE], width_in=5.0))
-
-
 def test_an_unwrappably_narrow_figure_lets_the_note_run_wide_rather_than_stacking_words():
     """A column of one word per line is less legible than a note that overhangs."""
     lines = wrap_notes([LONG_NOTE], width_in=0.2)
     assert max(len(line.split()) for line in lines) > 1
-
-
-def test_continuation_lines_are_indented_so_one_note_does_not_read_as_two():
-    lines = wrap_notes([LONG_NOTE], width_in=2.5)
-    assert not lines[0].startswith(" ")
-    assert all(line.startswith("  ") for line in lines[1:])
 
 
 def test_a_label_is_wrapped_to_lines_that_all_fit_however_narrow_the_room_is():
@@ -181,6 +177,12 @@ def test_a_long_note_grows_the_data_area_rather_than_a_dead_band():
         plain_data = plain[1].get_position().width * plain[0].get_figwidth()
         noted_data = noted[1].get_position().width * noted[0].get_figwidth()
         assert noted_data > plain_data
+
+        fig = noted[0]
+        write_notes(fig, [LONG_NOTE])
+        renderer = fig.canvas.get_renderer()
+        limit = fig.get_figwidth() * fig.dpi
+        assert all(note.get_window_extent(renderer).x1 <= limit + 1.0 for note in fig.texts)
     finally:
         plt.close(plain[0])
         plt.close(noted[0])
@@ -221,17 +223,6 @@ def test_the_notes_are_stacked_in_reading_order_below_the_axes():
         assert by_text["first"] > by_text["second"] > by_text["third"]
         top = max(by_text.values()) * fig.get_figheight()
         assert top <= ax.get_position().y0 * fig.get_figheight() + 0.01
-    finally:
-        plt.close(fig)
-
-
-def test_a_written_note_stays_inside_the_figure_it_is_written_on():
-    fig, _ax, _ = square_matrix_canvas(n=3, label_in=0.5, notes=[LONG_NOTE])
-    try:
-        write_notes(fig, [LONG_NOTE])
-        renderer = fig.canvas.get_renderer()
-        limit = fig.get_figwidth() * fig.dpi
-        assert all(note.get_window_extent(renderer).x1 <= limit + 1.0 for note in fig.texts)
     finally:
         plt.close(fig)
 

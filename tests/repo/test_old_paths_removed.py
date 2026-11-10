@@ -1,15 +1,10 @@
-"""Freezes the clean break: every retired re-export shim path is gone for good.
-
-Importing any of these must raise ModuleNotFoundError — there is exactly one
-canonical import path per public thing. Task 3 extends this with the step
-packages that moved under `cellquorum.stages.*`.
-"""
+"""Retired imports stay unavailable and moved stages resolve at their public paths."""
 
 import importlib
 
 import pytest
 
-# The 12 re-export shims deleted in the clean break (Deliverable 1).
+# Retired re-export shims.
 REMOVED_SHIM_PATHS = [
     "cellquorum.differential_expression",
     "cellquorum.differential_abundance",
@@ -26,14 +21,7 @@ REMOVED_SHIM_PATHS = [
 ]
 
 
-@pytest.mark.parametrize("path", REMOVED_SHIM_PATHS)
-def test_removed_shim_path_is_gone(path):
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(path)
-
-
-# The 12 pipeline-step packages moved under cellquorum.stages.* (Deliverable 3);
-# their old top-level paths no longer import.
+# Packages that moved under cellquorum.stages.
 MOVED_STEP_PACKAGES = [
     "cellquorum.ambient_correction",
     "cellquorum.qc",
@@ -50,13 +38,10 @@ MOVED_STEP_PACKAGES = [
 ]
 
 
-@pytest.mark.parametrize("path", MOVED_STEP_PACKAGES)
-def test_moved_step_package_old_path_is_gone(path):
+@pytest.mark.parametrize("path", REMOVED_SHIM_PATHS + MOVED_STEP_PACKAGES)
+def test_retired_import_path(path):
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module(path)
-
-
-@pytest.mark.parametrize("path", MOVED_STEP_PACKAGES)
-def test_moved_step_package_resolves_under_stages(path):
-    stages_path = path.replace("cellquorum.", "cellquorum.stages.", 1)
-    assert importlib.import_module(stages_path) is not None
+    if path in MOVED_STEP_PACKAGES:
+        stages_path = path.replace("cellquorum.", "cellquorum.stages.", 1)
+        assert importlib.import_module(stages_path) is not None

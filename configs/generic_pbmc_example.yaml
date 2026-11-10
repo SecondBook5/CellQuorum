@@ -1,12 +1,5 @@
-# Generic, non-KC example config.
-#
-# This demonstrates that the SAME CellQuorum engine runs a different dataset
-# (a generic PBMC-style stimulated-vs-control cohort) purely through config,
-# with no LE/KC-specific literals in code. The structural obs keys are declared
-# once in the central `cohort:` block and every stage resolves from it.
-#
-# Compute is CPU-only and R/GPU-dependent stages are disabled or skip cleanly,
-# so this config is safe to plan/run in any environment.
+# Start a whole-cell study with QC, normalization, Harmony, clustering, and UMAP.
+# Supply your count matrix and edit the cohort keys to match its obs columns.
 
 project:
   name: generic_pbmc_example
@@ -14,8 +7,7 @@ project:
   species_id: 9606
 
 input:
-  # No h5ad path here: this file documents the generic shape. Provide an h5ad
-  # with obs columns [sample_id, donor_id, stim, batch] and a `counts` layer.
+  h5ad: /path/to/your_data.h5ad
   counts_layer: counts
 
 run:
@@ -24,6 +16,10 @@ run:
 
 compute:
   backend: cpu            # portable: never requires CUDA/RAPIDS
+  prefer_gpu: false
+
+r:
+  enabled: false
 
 # --- Central cohort schema: declare structural keys ONCE ---
 cohort:
@@ -44,6 +40,7 @@ design:
 # --- Which stages run ---
 stages:
   ambient_correction: false
+  qc_splice_metrics: false
   qc_evidence: true
   preprocessing: true
   feature_selection: true
@@ -52,18 +49,37 @@ stages:
   clustering: true
   annotation: false
   subclustering: false
-  adjudication: true
+  adjudication: false
   reference_mapping: false   # no atlas in this generic example
   annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  query_projection: false
+  qc_finalization: false
+  metacells: false
   population_identity: true  # falls back to clusters when no reference labels
   integration_benchmark: false
   state_scoring: false
+  state_scoring_viz: false
   discovery: false
   composition: false
   differential_expression: false
-  molecular_inference: false
+  differential_state: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  embeddings: true
+  trajectory: false
+  trajectory_viz: false
   cell_cell_communication: false
   network_analysis: false
+  multicellular_programs: false
+  ccc_viz: false
+  module_remodeling: false
 
 qc_evidence:
   enabled: true
@@ -73,9 +89,12 @@ qc_evidence:
     enabled: false
   ambient:
     enabled: false
+  graded:
+    archetype_audit: false
 
 preprocessing:
   normalization:
+    recipe: cellquorum_log1p_cp10k_v1
     output_layer: cellquorum_normalized
 
 dimensionality:
@@ -92,6 +111,10 @@ clustering:
   enabled: true
   method: leiden
   use_rep: X_pca_harmony
+
+embeddings:
+  embeddings: [umap]
+  methods: [{method: umap}, {method: paga}, {method: categorical_embedding}]
 
 population_identity:
   enabled: true

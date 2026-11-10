@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import networkx  # noqa: F401
 import numpy as np
 import pandas as pd
+import pytest
 from matplotlib.figure import Figure
 
 
@@ -33,7 +34,7 @@ def _lr(n_pairs=3):
                 "ligand": f"L{i}",
                 "receptor": f"R{i}",
                 "weight": 0.1 * (i + 1),
-                "sample": f"s{i%2}",
+                "sample": f"s{i % 2}",
             }
         )
     return pd.DataFrame(rows)
@@ -329,7 +330,7 @@ def test_chord_diagram_invokes_link_kws_handler_when_given():
     assert len(calls) > 0
 
 
-def test_chord_sankey_fallback_when_dep_missing(monkeypatch):
+def test_missing_chord_renderer_is_reported_and_sankey_uses_matplotlib(monkeypatch):
     import builtins
 
     from cellquorum.stages.cell_cell_communication.viz import _plots
@@ -344,7 +345,8 @@ def test_chord_sankey_fallback_when_dep_missing(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     df = _lr(4)
     pal = _plots.celltype_palette(list(set(df["source"]) | set(df["target"])))
-    assert isinstance(_plots.chord_diagram(df, palette=pal), Figure)  # matplotlib fallback
+    with pytest.raises(ImportError, match="pycirclize"):
+        _plots.chord_diagram(df, palette=pal)
     assert isinstance(_plots.sankey_flow(df, palette=pal), Figure)  # matplotlib fallback
 
 
@@ -361,6 +363,18 @@ def test_curvature_network_returns_figure():
     )
     nodes = pd.DataFrame({"node": ["A", "B", "C"], "ricci_curvature": [-0.3, -0.05, 0.2]})
     assert isinstance(curvature_network(edges, nodes), Figure)
+
+
+def test_large_curvature_network_limits_drawn_edges():
+    from cellquorum.stages.cell_cell_communication.viz._plots import curvature_network
+
+    edges = pd.DataFrame(
+        {"source": "TF", "target": [f"G{i}" for i in range(500)], "ricci_curvature": range(500)}
+    )
+    fig = curvature_network(edges, None, top_k=3)
+    assert {t.get_text() for t in fig.axes[0].texts} == {"TF", "G497", "G498", "G499"}
+    assert fig.axes[0].get_title() == "3 displayed edges of 500"
+    plt.close(fig)
 
 
 def test_curvature_network_empty_guarded():
@@ -497,15 +511,7 @@ def _tensor_factor_frames():
     return contexts, senders, receivers, lr_pairs
 
 
-def test_plot_tensor_factors_returns_a_figure_with_one_row_per_factor():
-    """Real gap, confirmed live: tensor_c2c writes 4 real factor-loading
-    tables (contexts/senders/receivers/lr_pairs) and NOTHING ever visualized
-    them -- zero figures existed for real, computed data. One row per
-    factor x 4 columns (contexts/LR-pairs/senders/receivers) is the
-    standard tensor-cell2cell factor-plot layout; unlike topology_facets,
-    comparing loadings ACROSS factors side by side is the entire analytical
-    point, so a combined grid is the deliberate, correct call here.
-    """
+def test_tensor_factors_draw_one_row_per_factor_without_an_unspecified_legend():
     from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
 
     contexts, senders, receivers, lr_pairs = _tensor_factor_frames()
@@ -514,6 +520,8 @@ def test_plot_tensor_factors_returns_a_figure_with_one_row_per_factor():
     assert isinstance(fig, Figure)
     # 2 factors x 4 columns.
     assert len(fig.axes) == 8
+
+    assert fig.axes[0].get_legend() is None
 
 
 def test_plot_tensor_factors_context_legend_names_the_bar_colours():
@@ -555,13 +563,6 @@ def test_plot_tensor_factors_context_legend_covers_none_of_the_bars():
     bars = [p for p in ax.patches if p.get_height() > 0]
     assert bars
     assert not [p for p in bars if key.overlaps(p.get_window_extent(renderer))]
-
-
-def test_plot_tensor_factors_has_no_legend_unless_asked():
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_tensor_factors
-
-    fig = plot_tensor_factors(*_tensor_factor_frames())
-    assert fig.axes[0].get_legend() is None
 
 
 def test_plot_tensor_factors_empty_guarded():
@@ -642,32 +643,60 @@ def _pair_labels(ax):
     return [t.get_text() for t in ax.texts if " - " in t.get_text() and "->" not in t.get_text()]
 
 
-def test_plot_mnn_sample_activity_returns_a_four_panel_figure():
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
-
-    sample_df, source_df = _mnn_sample_and_source_dfs()
-    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+def _assert_mnn_sample_panels(fig):
     assert isinstance(fig, Figure)
     # 4 data panels + legend column.
     assert len(fig.axes) >= 5
 
-
-def test_plot_mnn_sample_activity_rows_name_sender_receiver_and_lr_pair():
-    # Both the route (sender->receiver) box label and the ligand-receptor
-    # pair label render as manual ax.text() calls in panel 1 (axes[0])'s
-    # own negative-x margin, not via set_yticklabels -- a separate
-    # route-box axes collided with panel 1's real y-tick labels on a real
-    # render, so everything now lives in one coordinate system.
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
-
-    sample_df, source_df = _mnn_sample_and_source_dfs()
-    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
     row_text = " ".join(_pair_labels(fig.axes[0]))
     assert "TGFB1 - TGFBR1" in row_text
     assert "CCN2 - FGFR2" in row_text
     route_text = " ".join(t.get_text() for t in fig.axes[0].texts if "->" in t.get_text())
     assert "0 -> 3" in route_text
     assert "3 -> 6" in route_text
+
+    scatter_ylim = fig.axes[0].get_ylim()
+    heatmap_ylim = fig.axes[1].get_ylim()
+    # Both non-inverted (row 0 at the bottom): ylim[0] < ylim[1] on both.
+    assert scatter_ylim[0] < scatter_ylim[1]
+    assert heatmap_ylim[0] < heatmap_ylim[1]
+
+    ax = fig.axes[1]
+    # Two distinct routes in the fixture (0->3 and 3->6) -> at least one
+    # separator line between them.
+    assert len(ax.lines) >= 1
+
+    header_text = " ".join(t.get_text() for t in fig.axes[0].texts)
+    assert "Lymphedema" in header_text
+    assert "Normal" in header_text
+
+
+def _assert_mnn_sample_legend(fig):
+    legend_text = " ".join(t.get_text() for t in fig.axes[4].texts)
+    assert "pseudobulk" in legend_text.lower()
+    assert "specificity" in legend_text.lower()
+    assert "fraction of expression" in legend_text.lower()
+    assert "sufficient presence" in legend_text.lower()
+    # Colorbars are inset axes (children of the legend axes, not top-level
+    # entries in fig.axes) -- at least 4 of them, one per color scale.
+    assert len(fig.axes[4].child_axes) >= 4
+
+    # Colorbars are inset axes (children of the legend axes), not top-level
+    # entries in fig.axes.
+    colorbar_axes = fig.axes[4].child_axes
+    assert len(colorbar_axes) >= 4
+    tick_texts = [t.get_text() for cax in colorbar_axes for t in cax.get_yticklabels()]
+    assert any(t.strip() for t in tick_texts)
+
+
+def test_mnn_sample_activity_links_routes_samples_and_evidence():
+    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
+
+    sample_df, source_df = _mnn_sample_and_source_dfs()
+    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
+
+    _assert_mnn_sample_panels(fig)
+    _assert_mnn_sample_legend(fig)
 
 
 def test_plot_mnn_sample_activity_footnote_explains_the_star_without_pointing_at_code():
@@ -765,48 +794,6 @@ def test_plot_mnn_sample_activity_groups_samples_by_condition_not_alphabetically
     assert max(le_positions) < min(n_positions) or max(n_positions) < min(le_positions)
 
 
-def test_plot_mnn_sample_activity_heatmap_panels_share_scatter_panels_row_order():
-    # Panel 1 (scatter) puts row 0 at the BOTTOM (matplotlib's default,
-    # non-inverted y-axis). imshow's default origin="upper" puts array row 0
-    # at the TOP -- confirmed via ax.get_ylim() on a real render. Left
-    # unfixed, panels 2/3 (imshow) show each row's data on the opposite
-    # horizontal line from its real sample-product/specificity row.
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
-
-    sample_df, source_df = _mnn_sample_and_source_dfs()
-    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    scatter_ylim = fig.axes[0].get_ylim()
-    heatmap_ylim = fig.axes[1].get_ylim()
-    # Both non-inverted (row 0 at the bottom): ylim[0] < ylim[1] on both.
-    assert scatter_ylim[0] < scatter_ylim[1]
-    assert heatmap_ylim[0] < heatmap_ylim[1]
-
-
-def test_plot_mnn_sample_activity_groups_rows_by_sender_receiver_with_separators():
-    # Rows for the same sender->receiver route should sit contiguously
-    # (already true, sorted rows), with a visible separator marking where
-    # one route's block ends and the next begins -- confirmed against a
-    # real render as too flat/cramped to tell routes apart at a glance.
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
-
-    sample_df, source_df = _mnn_sample_and_source_dfs()
-    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    ax = fig.axes[1]
-    # Two distinct routes in the fixture (0->3 and 3->6) -> at least one
-    # separator line between them.
-    assert len(ax.lines) >= 1
-
-
-def test_plot_mnn_sample_activity_labels_sample_groups_above_panel_one():
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
-
-    sample_df, source_df = _mnn_sample_and_source_dfs()
-    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    header_text = " ".join(t.get_text() for t in fig.axes[0].texts)
-    assert "Lymphedema" in header_text
-    assert "Normal" in header_text
-
-
 def test_plot_mnn_sample_activity_sorts_rows_by_score_within_route_block():
     # Within the same sender->receiver route, the stronger interaction
     # (higher prioritization_score) should render closer to the top of
@@ -875,38 +862,6 @@ def test_plot_mnn_sample_activity_marks_significant_cells():
     fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
     marker_text = "".join(t.get_text() for t in fig.axes[1].texts)
     assert "*" in marker_text
-
-
-def test_plot_mnn_sample_activity_legend_has_labeled_colorbars_and_size_keys():
-    # Confirmed against the reference figure: a reader had no way to tell
-    # what a specific color or dot size actually MEANT quantitatively --
-    # inline panel titles alone don't give that. Each colorbar needs its
-    # own title and real numeric tick values, not just a bare gradient.
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
-
-    sample_df, source_df = _mnn_sample_and_source_dfs()
-    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    legend_text = " ".join(t.get_text() for t in fig.axes[4].texts)
-    assert "pseudobulk" in legend_text.lower()
-    assert "specificity" in legend_text.lower()
-    assert "fraction of expression" in legend_text.lower()
-    assert "sufficient presence" in legend_text.lower()
-    # Colorbars are inset axes (children of the legend axes, not top-level
-    # entries in fig.axes) -- at least 4 of them, one per color scale.
-    assert len(fig.axes[4].child_axes) >= 4
-
-
-def test_plot_mnn_sample_activity_colorbars_show_real_numeric_ticks():
-    from cellquorum.stages.cell_cell_communication.viz._plots import plot_mnn_sample_activity
-
-    sample_df, source_df = _mnn_sample_and_source_dfs()
-    fig = plot_mnn_sample_activity(sample_df, source_df, top_n=20)
-    # Colorbars are inset axes (children of the legend axes), not top-level
-    # entries in fig.axes.
-    colorbar_axes = fig.axes[4].child_axes
-    assert len(colorbar_axes) >= 4
-    tick_texts = [t.get_text() for cax in colorbar_axes for t in cax.get_yticklabels()]
-    assert any(t.strip() for t in tick_texts)
 
 
 def test_plot_mnn_sample_activity_long_route_names_do_not_collide_with_pair_labels():
@@ -1003,16 +958,22 @@ def test_mnn_top_lr_lollipop_orders_by_score_and_caps_top_n():
     assert set(labels) == {"TGFB1 - TGFBR1", "IL6 - IL6R"}
 
 
-def test_mnn_top_lr_lollipop_names_the_actual_lr_pair_not_just_cell_types():
-    # This is the whole point over the circos plot: a reader must be able to
-    # tell WHICH ligand-receptor pair each row is, not just which cell types.
+def test_mnn_lollipop_labels_pairs_and_places_its_key_outside():
     from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
 
     df = _mnn_prioritization_df()
     fig = mnn_top_lr_lollipop(df, top_n=10)
+
     labels = [t.get_text() for t in fig.axes[0].get_yticklabels()]
     assert "TGFB1 - TGFBR1" in labels
     assert "CCN2 - FGFR2" in labels
+
+    ax = fig.axes[0]
+    assert ax.get_title(loc="left") == ""
+
+    legend = fig.axes[0].get_legend()
+    anchor = legend.get_bbox_to_anchor()._bbox
+    assert anchor.x0 >= 1.0
 
 
 def test_mnn_top_lr_lollipop_names_its_group_when_the_data_is_one_group():
@@ -1024,13 +985,6 @@ def test_mnn_top_lr_lollipop_names_its_group_when_the_data_is_one_group():
     ax = mnn_top_lr_lollipop(df[df.group == "Lymphedema"], top_n=10).axes[0]
     assert "Lymphedema" in ax.get_title(loc="left")
     assert ax.get_xlabel() == "MultiNicheNet prioritisation score"
-
-
-def test_mnn_top_lr_lollipop_has_no_single_group_title_for_several_groups():
-    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
-
-    ax = mnn_top_lr_lollipop(_mnn_prioritization_df(), top_n=10).axes[0]
-    assert ax.get_title(loc="left") == ""
 
 
 def test_mnn_top_lr_lollipop_empty_guarded():
@@ -1061,20 +1015,6 @@ def test_mnn_top_lr_lollipop_height_stays_reasonable_at_real_scale():
     assert fig.get_size_inches()[1] <= 7.0
 
 
-def test_mnn_top_lr_lollipop_legend_sits_outside_the_axes():
-    # A real MultiNicheNet run's top-N routinely has 20-30 distinct
-    # sender->receiver routes -- loc="lower right" placed that legend ON TOP
-    # of the data (confirmed by rendering against real project data), not
-    # beside it. The legend must anchor outside the axes bounding box.
-    from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
-
-    df = _mnn_prioritization_df()
-    fig = mnn_top_lr_lollipop(df, top_n=10)
-    legend = fig.axes[0].get_legend()
-    anchor = legend.get_bbox_to_anchor()._bbox
-    assert anchor.x0 >= 1.0
-
-
 def test_mnn_top_lr_lollipop_relabels_sender_receiver_in_legend():
     from cellquorum.stages.cell_cell_communication.viz._plots import mnn_top_lr_lollipop
 
@@ -1098,12 +1038,13 @@ def _mnn_focused_df():
     )
 
 
-def test_cluster_focused_circos_filters_to_only_edges_touching_focus():
+def test_focused_circos_labels_only_pairs_touching_the_selected_cluster():
     from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
 
     df = _mnn_focused_df()
     palette = {c: "#123456" for c in "0123456"}
     fig = cluster_focused_circos(df, "6", palette=palette)
+
     text = " ".join(t.get_text() for t in fig.texts)
     # Rows touching "6" (sender or receiver): the WIF1/COL18A1 pair. Rows
     # that never touch "6" (IL6-IL6R, POSTN-ITGAV, CCN2-FGFR2) must not
@@ -1113,14 +1054,6 @@ def test_cluster_focused_circos_filters_to_only_edges_touching_focus():
     assert "POSTN" not in text
     assert "CCN2" not in text
 
-
-def test_cluster_focused_circos_lists_the_lr_pair_for_each_ribbon():
-    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
-
-    df = _mnn_focused_df()
-    palette = {c: "#123456" for c in "0123456"}
-    fig = cluster_focused_circos(df, "6", palette=palette)
-    text = " ".join(t.get_text() for t in fig.texts)
     assert "WIF1 - FZD5" in text
     assert "COL18A1 - ITGAV" in text
 
@@ -1153,22 +1086,9 @@ def test_cluster_focused_circos_empty_guarded():
     assert isinstance(cluster_focused_circos(None, "6", palette=palette), Figure)
 
 
-def test_cluster_focused_circos_relabels_the_ring_nodes(monkeypatch):
-    # Confirmed against a real render: passing cluster_labels only reached
-    # the side legend, not the ring's own sector labels -- the ring kept
-    # showing bare codes ("6") even with a real display-name mapping given.
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name, *a, **k):
-        if name.startswith("pycirclize"):
-            raise ImportError(name)
-        return real_import(name, *a, **k)
-
+def test_cluster_focused_circos_relabels_the_ring_nodes():
     from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
 
-    monkeypatch.setattr(builtins, "__import__", fake_import)
     df = _mnn_focused_df()
     palette = {c: "#123456" for c in "0123456"}
     fig = cluster_focused_circos(
@@ -1191,44 +1111,20 @@ def test_cluster_focused_circos_has_a_title():
     assert "Papillary" in fig._suptitle.get_text()
 
 
-def test_cluster_focused_circos_styles_outgoing_and_incoming_ribbons_differently():
-    # Direction (is the focus cluster sending or receiving) isn't visible
-    # from ribbon color alone (color = route, not direction) -- confirmed
-    # against a real render. The handler chord_diagram() is called with
-    # must style a (focus, other) outgoing link differently from an
-    # (other, focus) incoming one.
-    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
+def test_focused_circos_explains_ribbon_scores_and_distinguishes_incoming_from_outgoing():
+    from unittest.mock import patch
 
-    df = _mnn_focused_df()
+    from cellquorum.stages.cell_cell_communication.viz import _plots
+
     palette = {c: "#123456" for c in "0123456"}
-    captured = {}
+    with patch.object(_plots, "chord_diagram", wraps=_plots.chord_diagram) as chord:
+        fig = _plots.cluster_focused_circos(
+            _mnn_focused_df(), "6", palette=palette, cluster_labels={"6": "Papillary"}
+        )
 
-    import cellquorum.stages.cell_cell_communication.viz._plots as plots_mod
-
-    real_chord = plots_mod.chord_diagram
-
-    def spy(*args, **kwargs):
-        captured["handler"] = kwargs.get("link_kws_handler")
-        return real_chord(*args, **kwargs)
-
-    import unittest.mock as mock
-
-    with mock.patch.object(plots_mod, "chord_diagram", spy):
-        cluster_focused_circos(df, "6", palette=palette, cluster_labels={"6": "Papillary"})
-
-    handler = captured["handler"]
+    handler = chord.call_args.kwargs["link_kws_handler"]
     assert handler is not None
-    outgoing_style = handler("Papillary", "Progenitor-like")
-    incoming_style = handler("Progenitor-like", "Papillary")
-    assert outgoing_style != incoming_style
-
-
-def test_cluster_focused_circos_legend_explains_width_and_direction_encoding():
-    from cellquorum.stages.cell_cell_communication.viz._plots import cluster_focused_circos
-
-    df = _mnn_focused_df()
-    palette = {c: "#123456" for c in "0123456"}
-    fig = cluster_focused_circos(df, "6", palette=palette, cluster_labels={"6": "Papillary"})
+    assert handler("Papillary", "Progenitor-like") != handler("Progenitor-like", "Papillary")
     legend_text = " ".join(t.get_text() for t in fig.texts).lower()
     assert "prioritization" in legend_text or "score" in legend_text
     assert "receiv" in legend_text or "sen" in legend_text
@@ -1415,3 +1311,16 @@ def test_drawing_a_chord_never_changes_matplotlibs_save_settings():
     )
     chord_diagram(edges, palette={"A": "#1f77b4", "B": "#ff7f0e", "C": "#2ca02c"}, top_k=5)
     assert (mpl.rcParams["savefig.pad_inches"], mpl.rcParams["savefig.bbox"]) == before
+
+
+def test_population_overview_keeps_cluster_ids_on_the_ring_and_names_in_the_key():
+    from cellquorum.stages.cell_cell_communication.viz._plots import chord_diagram
+
+    frame = _lr().replace({"A": "Monocytes (C2)", "B": "Monocytes (C8)", "C": "NK cells (C3)"})
+    palette = {"Monocytes (C2)": "#6699CC", "Monocytes (C8)": "#6699CC", "NK cells (C3)": "#882255"}
+    fig = chord_diagram(frame, palette=palette, overview=True)
+    assert {text.get_text() for text in fig.axes[0].texts} == {"C2", "C8", "C3"}
+    key = [text.get_text() for text in fig.axes[1].get_legend().get_texts()]
+    assert "Monocytes   C2, C8" in key
+    assert "NK cells   C3" in key
+    plt.close(fig)

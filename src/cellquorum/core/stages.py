@@ -2,8 +2,7 @@
 
 Importing this module imports every implemented stage module exactly once,
 firing each stage's ``@register_stage`` decorator and populating the
-process-wide catalog. It also registers the planned-but-unimplemented stages
-(which have no class to decorate).
+process-wide catalog.
 
 The executor and planner import :func:`all_stage_specs` from here LAZILY (inside
 the functions that use it) so reading the catalog always sees the fully
@@ -29,7 +28,6 @@ from __future__ import annotations
 from cellquorum.core.stage_catalog import (
     StageSpec,
     iter_stage_specs,
-    register_planned_stage,
 )
 
 # --- Implemented stages (import fires @register_stage) ---
@@ -112,14 +110,9 @@ import cellquorum.stages.cell_cell_communication.viz.stage  # noqa: F401
 import cellquorum.stages.comparative.module_remodeling.stage  # noqa: F401
 # isort: on
 
-# --- Planned-but-unimplemented stages (no class to decorate) ---
-# integration_gate ranks embeddings BEFORE committing expensive clustering.
-register_planned_stage(name="integration_gate", order=70, config_flag="integration_gate")
-register_planned_stage(name="molecular_inference", order=290, config_flag="molecular_inference")
-
 
 def all_stage_specs() -> tuple[StageSpec, ...]:
-    """All registered stage specs (implemented + planned), sorted by order."""
+    """All registered stage specs, sorted by order."""
     return iter_stage_specs()
 
 

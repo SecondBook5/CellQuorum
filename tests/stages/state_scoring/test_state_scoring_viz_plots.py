@@ -105,10 +105,19 @@ def test_state_score_violin_stars_come_from_donors_not_cells():
     assert any("n.s." in t for t in _annotations(fig))
 
 
-def test_state_score_violin_marks_an_effect_every_donor_shows():
+def test_paired_state_score_violin_marks_the_effect_and_keeps_its_legend_clear():
     df = _donor_df(effect=0.3, donor_noise=0.01)
     fig = _violin(df, donor_col="donor", paired=True)
+
     assert any("*" in t for t in _annotations(fig))
+
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    legend = ax.get_legend()
+    assert legend is not None
+    legend_box = legend.get_window_extent()
+    axes_box = ax.get_window_extent()
+    assert legend_box.x0 >= axes_box.x1 - 1  # starts at or beyond the right edge of the axes
 
 
 def test_state_score_violin_draws_no_stars_without_a_donor_column():
@@ -172,17 +181,3 @@ def test_state_score_violin_empty_guarded():
         score_label="score",
     )
     assert isinstance(fig, Figure)
-
-
-def test_state_score_violin_legend_sits_outside_the_data_area():
-    """The legend used to sit inside the axes at the top right, where it covered the mark of the
-    last cluster whenever that cluster's distribution reached the top of the panel."""
-    df = _donor_df(effect=0.3, donor_noise=0.01)
-    fig = _violin(df, donor_col="donor", paired=True)
-    fig.canvas.draw()
-    ax = fig.axes[0]
-    legend = ax.get_legend()
-    assert legend is not None
-    legend_box = legend.get_window_extent()
-    axes_box = ax.get_window_extent()
-    assert legend_box.x0 >= axes_box.x1 - 1  # starts at or beyond the right edge of the axes

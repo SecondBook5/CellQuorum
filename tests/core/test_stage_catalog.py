@@ -119,9 +119,7 @@ def test_empty_catalog_has_no_specs():
     assert len(catalog) == 0
 
 
-PLANNED = {"integration_gate", "molecular_inference"}
-
-# The canonical 36-stage order, frozen. Any reorder/add/remove is a deliberate
+# The canonical stage order, frozen. Any reorder/add/remove is a deliberate
 # change that must update this list together with the config models.
 GOLDEN_STAGE_ORDER = [
     "ambient_correction",
@@ -133,7 +131,6 @@ GOLDEN_STAGE_ORDER = [
     "feature_selection",
     "dimensionality",
     "integration",
-    "integration_gate",
     "clustering",
     "annotation",
     # order=105: place borderline cells on the frozen core manifold, after annotation
@@ -179,7 +176,6 @@ GOLDEN_STAGE_ORDER = [
     "coexpression",
     "grn",
     "perturbation",
-    "molecular_inference",
     "trajectory",
     "trajectory_viz",
     "cell_cell_communication",
@@ -188,10 +184,6 @@ GOLDEN_STAGE_ORDER = [
     "ccc_viz",
     "module_remodeling",
 ]
-
-# The 36 implemented stages, alphabetical — mirrors the executor registry
-# snapshot in tests/core/test_pipeline_executor.py:302-334.
-GOLDEN_IMPLEMENTED_SORTED = sorted(n for n in GOLDEN_STAGE_ORDER if n not in PLANNED)
 
 # CellQuorumConfig fields that are NOT stage sub-blocks.
 NON_STAGE_CONFIG_FIELDS = {
@@ -226,14 +218,36 @@ STAGES_WITHOUT_CATEGORY = {
 }
 
 
-def test_catalog_order_matches_golden():
-    assert [s.name for s in all_stage_specs()] == GOLDEN_STAGE_ORDER
+def test_catalog_and_executor_cover_the_published_stage_order():
+    from cellquorum.core.executor import build_default_stage_registry
 
-
-def test_catalog_implemented_set_matches_golden():
-    impl = sorted(s.name for s in all_stage_specs() if s.is_implemented)
-    assert impl == GOLDEN_IMPLEMENTED_SORTED
-    assert len(GOLDEN_IMPLEMENTED_SORTED) == 41
+    specs = all_stage_specs()
+    registry = build_default_stage_registry()
+    assert [spec.name for spec in specs] == GOLDEN_STAGE_ORDER
+    assert registry.registered_stage_names() == sorted(GOLDEN_STAGE_ORDER)
+    # These public stage names historically had individual dispatch checks.
+    expected_classes = {
+        "annotation_viz": "AnnotationVizStage",
+        "cell_cell_communication": "CellCellCommunicationStage",
+        "de_viz": "DeVizStage",
+        "differential_abundance": "DifferentialAbundanceStage",
+        "differential_expression": "DifferentialExpressionStage",
+        "enrichment": "EnrichmentStage",
+        "enrichment_viz": "EnrichmentVizStage",
+        "multicellular_programs": "MulticellularProgramsStage",
+        "state_scoring_viz": "StateScoringVizStage",
+        "trajectory": "TrajectoryStage",
+    }
+    assert {
+        name: type(registry.get(name)).__name__ for name in expected_classes
+    } == expected_classes
+    for spec in specs:
+        stage = registry.get(spec.name)
+        assert spec.factory is not None and spec.config_field is not None, spec.name
+        assert type(stage) is spec.factory, spec.name
+        assert stage.name == spec.name
+        if spec.category is not None:
+            assert stage.stage_category == spec.category, spec.name
 
 
 def test_orders_are_unique_and_ascending():
@@ -251,16 +265,6 @@ def test_every_implemented_config_field_matches_config_sub_blocks():
     fields = {s.config_field for s in all_stage_specs() if s.is_implemented}
     stage_fields = set(CellQuorumConfig.model_fields) - NON_STAGE_CONFIG_FIELDS
     assert fields == stage_fields
-
-
-def test_planned_and_implemented_invariants():
-    for spec in all_stage_specs():
-        if spec.name in PLANNED:
-            assert spec.factory is None
-            assert spec.config_field is None
-        else:
-            assert spec.factory is not None
-            assert spec.config_field is not None
 
 
 def test_category_matches_golden_identity_invariant():
@@ -294,17 +298,6 @@ def test_config_field_equals_stage_name_for_implemented_stages():
             assert (
                 spec.config_field == spec.name
             ), f"{spec.name} config_field should equal its name, got {spec.config_field!r}"
-
-
-def test_factory_instances_expose_declared_name_and_category():
-    """The decorator actually writes name/stage_category onto each stage class."""
-    for spec in all_stage_specs():
-        if not spec.is_implemented:
-            continue
-        inst = spec.factory()
-        assert inst.name == spec.name
-        if spec.category is not None:
-            assert inst.stage_category == spec.category
 
 
 def test_ccc_network_flag_is_network_analysis():

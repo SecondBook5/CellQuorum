@@ -106,15 +106,24 @@ def test_gsea_runs_and_writes_csv(tmp_path, monkeypatch):
         "leading_edge",
     ]
 
+    _assert_leading_edge_genes(df, genes, net)
+    _assert_raw_and_normalized_scores(df)
+    _assert_single_bh_adjustment(df.set_index("source"), ctx, net)
+
 
 def test_a_permutation_p_is_never_reported_as_zero(tmp_path, monkeypatch):
-    """A permutation test cannot resolve below one permutation.
+    """Cover both legacy zeros and corrected backend p-values at a known boundary."""
+    import decoupler as dc
 
-    Ten permutations is few enough that some source is certain to beat every shuffle, which
-    is exactly when the estimator returns 0. Reporting that as a p-value claims a certainty
-    the test cannot deliver — and a padj of 0.000000 in a supplementary table is the first
-    thing a reviewer circles. The floor is the resolution of the test that was run.
-    """
+    actual_gsea = dc.mt.gsea.func
+
+    def boundary_pvalues(*args, **kwargs):
+        scores, pvalues = actual_gsea(*args, **kwargs)
+        pvalues = pvalues.astype(float, copy=True)
+        pvalues[0, :3] = [0.0, 1 / 11, 0.5]
+        return scores, pvalues
+
+    monkeypatch.setattr(dc.mt.gsea, "func", boundary_pvalues)
     ctx = _Ctx(tmp_path)
     genes, net = _big_net()
     _write_de(tmp_path, genes)
@@ -133,25 +142,13 @@ def test_a_permutation_p_is_never_reported_as_zero(tmp_path, monkeypatch):
     # The flag is what keeps "p is at the limit" distinguishable from "p was measured this
     # small", which the floored value alone cannot say.
     at_limit = df["p_at_resolution_limit"].to_numpy(dtype=bool)
-    assert at_limit.any(), "10 permutations should floor at least one source"
+    assert at_limit.sum() >= 2
+    assert 0.5 in df.loc[~at_limit, "pvalue"].to_numpy()
     assert np.allclose(df.loc[at_limit, "pvalue"], 1.0 / 11)
     assert (df.loc[~at_limit, "pvalue"] >= 1.0 / 11).all()
 
 
-def test_the_table_names_the_genes_that_carry_each_enrichment(tmp_path, monkeypatch):
-    """Without a leading edge a GSEA table says a pathway moved but not which genes, so no
-    membership analysis downstream is reproducible from the output."""
-    ctx = _Ctx(tmp_path)
-    genes, net = _big_net()
-    _write_de(tmp_path, genes)
-    _patch_get_net(monkeypatch, net)
-    GseaMethod()._run(
-        _adata(),
-        {"gene_set_collections": ["hallmark"], "seed": 42, "min_size": 5, "gsea_permutations": 200},
-        ctx,
-    )
-    df = pd.read_csv(tmp_path / "results" / "enrichment_gsea_hallmark.csv")
-
+def _assert_leading_edge_genes(df, genes, net):
     assert df["leading_edge"].notna().all()
     assert (df["set_size"] > 0).all()
     universe = set(genes)
@@ -164,22 +161,7 @@ def test_the_table_names_the_genes_that_carry_each_enrichment(tmp_path, monkeypa
         assert row.leading_edge_size <= row.set_size
 
 
-def test_the_table_carries_both_the_normalized_and_the_raw_score(tmp_path, monkeypatch):
-    """``score`` is decoupler's normalized ES — unbounded, and scaled by how the null came
-    out. The raw ES is bounded, is what the persisted running walk peaks at, and is the only
-    one of the two a reader can reconcile against the leading-edge genes in the same row.
-    """
-    ctx = _Ctx(tmp_path)
-    genes, net = _big_net()
-    _write_de(tmp_path, genes)
-    _patch_get_net(monkeypatch, net)
-    GseaMethod()._run(
-        _adata(),
-        {"gene_set_collections": ["hallmark"], "seed": 42, "min_size": 5, "gsea_permutations": 200},
-        ctx,
-    )
-    df = pd.read_csv(tmp_path / "results" / "enrichment_gsea_hallmark.csv")
-
+def _assert_raw_and_normalized_scores(df):
     assert df["es"].notna().all()
     assert (df["es"].abs() <= 1.0).all(), "a raw enrichment score cannot exceed 1"
     # Normalization divides by the mean of the same-sign permutation scores, so the two
@@ -189,33 +171,7 @@ def test_the_table_carries_both_the_normalized_and_the_raw_score(tmp_path, monke
     assert not np.allclose(df["es"], df["score"])
 
 
-def test_gsea_fdr_is_single_bh_of_reported_pvalue(tmp_path, monkeypatch):
-    """I1 guard: padj must be a SINGLE BH of the reported RAW pvalue.
-
-    Reproduces the old double-FDR defect. Previously the method stored
-    decoupler's already-across-source-adjusted value (dc.mt.gsea returns a
-    BH-corrected p because it registers test=True) as `pvalue`, then ran BH AGAIN
-    to make `padj` — so `pvalue` was mislabeled and `padj` was BH-of-a-q-value.
-    This test pins three facts that only hold with the fix:
-
-    1. `padj` equals one BH pass over the reported `pvalue`.
-    2. `padj` equals what the high-level dc.mt.gsea returns — i.e. exactly one
-       BH pass over the genuine raw permutation p (single, correct correction).
-    3. The reported `pvalue` is the RAW permutation p, distinct from `padj` on at
-       least some sources. Under the OLD code `pvalue` WAS the adjusted value, so
-       it would equal dc.mt.gsea's output and fact (3) would fail — this is the
-       discriminating check the constant-stub tests could never make.
-    """
-    ctx = _Ctx(tmp_path)
-    genes, net = _big_net()
-    _write_de(tmp_path, genes)
-    _patch_get_net(monkeypatch, net)
-    GseaMethod()._run(
-        _adata(),
-        {"gene_set_collections": ["hallmark"], "seed": 42, "min_size": 5, "gsea_permutations": 200},
-        ctx,
-    )
-    df = pd.read_csv(tmp_path / "results" / "enrichment_gsea_hallmark.csv").set_index("source")
+def _assert_single_bh_adjustment(df, ctx, net):
     # Need several sources for BH to actually do something.
     assert len(df) >= 5
 

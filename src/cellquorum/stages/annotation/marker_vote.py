@@ -38,7 +38,9 @@ import scanpy as sc
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
+from cellquorum.core.stage_artifact_writer import StageArtifactWriter
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
+from cellquorum.stages.annotation.pbmc_refinement import CD4, CD8, NK, refine_pbmc
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -115,6 +117,9 @@ class MarkerVoteMethod(AnalysisMethod):
             required_layers=[score_layer],
             expression_layer=score_layer,
             expected_kind="lognorm",
+            expected_recipe="cellquorum_log1p_cp10k_v1"
+            if config.get("lymphocyte_refinement")
+            else None,
         )
 
     def requires_obs(self, config: dict) -> list[str]:
@@ -256,9 +261,36 @@ class MarkerVoteMethod(AnalysisMethod):
                 f"an unsupported best-guess label: {sorted(unassigned_clusters)}."
             )
 
+        artifacts = []
+        refinement = {}
+        if config.get("lymphocyte_refinement"):
+            if not {CD4, CD8, NK}.issubset(panels):
+                raise ValueError(f"human_pbmc_v1 requires marker panels named {CD4}, {CD8}, {NK}")
+            evidence = refine_pbmc(adata, score_layer, key_added, cluster_key)
+            uncertain = evidence["call"].eq(UNASSIGNED)
+            reasons = evidence.loc[uncertain, "reason"].value_counts().astype(int).to_dict()
+            refinement = {
+                "n_cells": len(evidence),
+                "uncertain": int(uncertain.sum()),
+                "reasons": reasons,
+            }
+            writer = StageArtifactWriter.from_context(context, default_subdir="annotation")
+            artifacts.append(
+                writer.table(
+                    evidence,
+                    f"{key_added}_evidence.csv",
+                    name=f"{key_added}_evidence",
+                    description=(
+                        "Cluster vote, final cell call, decision reason and smoothed RNA evidence."
+                    ),
+                )
+            )
+
         return StageResult(
             adata=adata,
+            artifacts=artifacts,
             metrics={
+                **({"pbmc_refinement": refinement} if refinement else {}),
                 "n_types": len(score_cols),
                 "cluster_key": cluster_key,
                 "assignments": assignments,

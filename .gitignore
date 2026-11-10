@@ -69,6 +69,7 @@ docker_build_*.log
 resources/
 
 # Local environment files
+.venv/
 .env
 .envrc
 

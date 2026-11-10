@@ -45,31 +45,34 @@ def _nodes(fig):
     }
 
 
-def test_one_node_per_pathway() -> None:
-    assert set(_nodes(enrichment_map(_table()))) == {"node|A", "node|B", "node|C", "node|D"}
+def test_enrichment_map_draws_pathway_nodes_colours_and_labels() -> None:
+    fig = enrichment_map(_table())
 
+    assert set(_nodes(fig)) == {"node|A", "node|B", "node|C", "node|D"}
 
-def test_pathways_are_joined_only_when_their_leading_edges_overlap_enough() -> None:
-    assert _edges(enrichment_map(_table(), min_jaccard=0.2)) == {"edge|A|B"}
-    assert _edges(enrichment_map(_table(), min_jaccard=0.5)) == set()
-
-
-def test_only_significant_pathways_are_labelled_and_outlined() -> None:
-    fig = enrichment_map(_table(), alpha=0.05)
     labels = {t.get_text() for t in fig.axes[0].texts if t.get_gid() == "node_label"}
     assert labels == {"A", "B", "C"}
     nodes = _nodes(fig)
     assert nodes["node|A"].get_linewidths()[0] > nodes["node|D"].get_linewidths()[0]
 
-
-def test_the_colour_follows_the_sign_of_the_score() -> None:
-    fig = enrichment_map(_table())
     fig.canvas.draw()  # the colormap is applied at draw time
-    nodes = _nodes(fig)
     up = nodes["node|A"].get_facecolor()[0]
     down = nodes["node|C"].get_facecolor()[0]
     assert up[0] > up[2]
     assert down[2] > down[0]
+
+    ax = fig.axes[0]
+    top_node = max(
+        p.get_zorder() for p in ax.collections if (p.get_gid() or "").startswith("node|")
+    )
+    labels = [t for t in ax.texts if t.get_gid() == "node_label"]
+    assert labels
+    assert all(t.get_zorder() > top_node for t in labels)
+
+
+def test_pathways_are_joined_only_when_their_leading_edges_overlap_enough() -> None:
+    assert _edges(enrichment_map(_table(), min_jaccard=0.2)) == {"edge|A|B"}
+    assert _edges(enrichment_map(_table(), min_jaccard=0.5)) == set()
 
 
 def test_the_layout_is_the_same_for_the_same_seed() -> None:
@@ -156,15 +159,3 @@ def test_node_names_in_a_tight_cluster_do_not_print_over_each_other() -> None:
         if boxes[i].overlaps(boxes[j])
     ]
     assert clashes == []
-
-
-def test_node_names_are_drawn_above_every_node() -> None:
-    """After the names were pushed apart some sat under a neighbouring node and were cut off."""
-    fig = enrichment_map(_table())
-    ax = fig.axes[0]
-    top_node = max(
-        p.get_zorder() for p in ax.collections if (p.get_gid() or "").startswith("node|")
-    )
-    labels = [t for t in ax.texts if t.get_gid() == "node_label"]
-    assert labels
-    assert all(t.get_zorder() > top_node for t in labels)

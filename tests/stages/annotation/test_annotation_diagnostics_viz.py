@@ -67,37 +67,23 @@ def test_plot_entropy_by_cell_type_returns_none_without_the_column(tmp_path):
     assert not out.exists()
 
 
-def test_plot_knn_confidence_writes_png_and_a_vector_twin(tmp_path):
+def test_knn_confidence_exports_one_bar_per_cell_type(tmp_path):
+    from unittest.mock import patch
+
+    from cellquorum.stages.annotation.diagnostics import viz
+
     out = tmp_path / "knn.png"
-    result = plot_knn_confidence(_obs(), "cell_type", out)
+    with patch.object(viz, "save_cellquorum_figure", wraps=viz.save_cellquorum_figure) as save:
+        result = plot_knn_confidence(_obs(), "cell_type", out)
 
     assert result == out
     assert out.exists()
     assert out.with_suffix(".pdf").exists()
-
-
-def test_plot_knn_confidence_reduces_to_one_bar_per_cell_type(tmp_path, monkeypatch):
-    """scdiag_knn_prob_group is a population-level stat broadcast onto every
-    member cell -- the figure must reduce it back to one bar per cell type
-    (3), not one bar per row (5).
-    """
-    from cellquorum.stages.annotation.diagnostics import viz as viz_module
-
-    captured = {}
-
-    def fake_save(fig, path, **kwargs):
-        captured["fig"] = fig
-        return [path]
-
-    monkeypatch.setattr(viz_module, "save_cellquorum_figure", fake_save)
-
-    plot_knn_confidence(_obs(), "cell_type", tmp_path / "knn.png")
-
-    ax = captured["fig"].axes[0]
-    bar_patches = [p for p in ax.patches]
-    assert len(bar_patches) == 3
-    labels = [t.get_text() for t in ax.get_xticklabels()]
-    assert sorted(labels) == ["DC", "Fibroblasts", "T/NK"]
+    # The group probability is broadcast across five cells in three cell types.
+    fig = save.call_args.args[0]
+    ax = fig.axes[0]
+    assert len(ax.patches) == 3
+    assert sorted(tick.get_text() for tick in ax.get_xticklabels()) == ["DC", "Fibroblasts", "T/NK"]
 
 
 def test_plot_knn_confidence_returns_none_without_the_column(tmp_path):

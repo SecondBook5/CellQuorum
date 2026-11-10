@@ -460,6 +460,8 @@ def test_bootstrap_pipeline_run_returns_structured_result_and_writes_provenance(
     # Confirm stage execution records CSV was written.
     assert (result.context.paths.provenance / "stage_execution_records.csv").exists()
 
+    _assert_bootstrap_provenance(result)
+
 
 def test_bootstrap_pipeline_run_from_config_file_loads_yaml_and_runs(tmp_path: Path) -> None:
     """
@@ -650,27 +652,7 @@ def test_public_run_pipeline_rejects_unsupported_config_input(tmp_path: Path) ->
         )
 
 
-def test_pipeline_provenance_files_have_expected_content(tmp_path: Path) -> None:
-    """
-    Verify that written provenance files contain expected structured content.
-
-    This guards against accidentally writing empty files or incorrectly shaped
-    provenance payloads while the execution frame evolves.
-    """
-
-    # Build a deterministic test config.
-    config = build_test_config()
-
-    # Build a deterministic test backend registry.
-    registry = build_test_backend_registry()
-
-    # Bootstrap the pipeline run.
-    result = bootstrap_pipeline_run(
-        config,
-        output_dir=tmp_path / "content_run",
-        backend_registry=registry,
-    )
-
+def _assert_bootstrap_provenance(result: PipelineRunResult) -> None:
     # Load the written pipeline plan JSON.
     plan_payload = json.loads(
         (result.context.paths.provenance / "pipeline_plan.json").read_text(encoding="utf-8")

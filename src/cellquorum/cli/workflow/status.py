@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from pathlib import Path
 
 from cellquorum.cli.workflow.scaffold import SCAFFOLD_METHOD_STAGES
 
@@ -65,12 +66,15 @@ def method_status(
         Dict mapping method name to one of: succeeded, failed, missing,
         incomplete, skipped.
     """
-    by_stage = {rec["stage_name"]: rec.get("status", _SKIP) for rec in _records(stage_records)}
+    by_stage = {rec["stage_name"]: rec for rec in _records(stage_records)}
     result: dict[str, str] = {}
     for method in run_methods:
         stages = method_stages[method]
         # ``None`` marks a stage with no execution record on disk.
-        statuses = [by_stage.get(s) for s in stages]
+        if method == "progeny" and stages == ["enrichment"] and "molecular_inference" in by_stage:
+            # Before the routing fix, accounting used the reserved stage's record.
+            stages = ["molecular_inference"]
+        statuses = [by_stage[s].get("status", _SKIP) if s in by_stage else None for s in stages]
         present = [s for s in statuses if s is not None]
         if _FAIL in present:
             result[method] = _FAIL
@@ -89,6 +93,15 @@ def method_status(
         else:
             # Unknown non-success statuses present: not a clean success.
             result[method] = _INCOMPLETE
+        if method == "progeny" and stages == ["enrichment"] and result[method] == _OK:
+            enrichment = by_stage["enrichment"]
+            if not any(
+                Path(a["path"]).name == "enrichment_activity_progeny.csv"
+                for a in enrichment.get("output_artifacts", [])
+                if a.get("path")
+            ):
+                # Older runs can have a successful GSEA sibling in this same stage.
+                result[method] = _INCOMPLETE
     return result
 
 

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from cellquorum.backends.base import BackendRequirement, BaseBackend
 from cellquorum.backends.registry import BackendRegistry
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.planner import PipelinePlanner, build_pipeline_plan
 
 
@@ -32,8 +35,7 @@ def test_pipeline_planner_builds_plan_from_default_config() -> None:
     # Confirm core stages are enabled.
     assert "qc_evidence" in plan.enabled_stage_names()
 
-    # Confirm molecular inference is enabled as a gated capability.
-    assert "molecular_inference" in plan.enabled_stage_names()
+    assert {"integration_gate", "molecular_inference"}.isdisjoint(s.name for s in plan.stages)
 
     # Confirm adjudication is enabled as a gated capability.
     assert "adjudication" in plan.enabled_stage_names()
@@ -49,79 +51,18 @@ def test_pipeline_planner_builds_plan_from_default_config() -> None:
     # (enabled by the stages.network_analysis toggle).
     assert "ccc_network" in plan.enabled_stage_names()
 
-
-def test_ccc_stages_run_in_producer_before_consumer_order() -> None:
-    """
-    Verify the CCC chain is ordered so producers precede consumers.
-
-    A viz stage reads a prior analysis stage's outputs, so it must be planned
-    after the stages that produce those outputs. On a fresh one-command run the
-    order must be: cell_cell_communication (LR tables) -> ccc_network (topology
-    and curvature) -> ccc_viz (figures). The topology stage is registered under
-    the name "ccc_network", so the plan must emit that name rather than the bare
-    "network_analysis" toggle name, or the executor skips it as unimplemented.
-    """
-
-    # Build the default CellQuorum configuration.
-    config = CellQuorumConfig()
-
-    # Build the ordered plan.
-    plan = build_pipeline_plan(config)
-
-    # Read the enabled stage names in canonical run order.
+    # Check the default selection as well as the relative order of its enabled stages.
     order = plan.enabled_stage_names()
-
-    # Confirm the topology stage is planned under its registered name.
-    assert "ccc_network" in order
-
-    # Confirm the orphaned toggle name is not emitted as a stage name.
+    spine = [
+        "differential_expression",
+        "coexpression",
+        "grn",
+        "cell_cell_communication",
+        "ccc_network",
+        "ccc_viz",
+    ]
+    assert [name for name in order if name in spine] == spine
     assert "network_analysis" not in order
-
-    # Confirm producer-before-consumer ordering across the CCC chain.
-    assert (
-        order.index("cell_cell_communication") < order.index("ccc_network") < order.index("ccc_viz")
-    )
-
-
-def test_coexpression_stage_is_planned_in_canonical_order() -> None:
-    """Verify the coexpression (hdWGCNA) stage is planned on a default run.
-
-    The stage is registered in the executor and has a config flag, so the
-    planner's canonical order must emit it — otherwise it is never planned and
-    silently never runs. It slots into the discovery tail after
-    differential_expression and before the CCC chain.
-    """
-
-    # Build the default configuration and ordered plan.
-    config = CellQuorumConfig()
-    plan = build_pipeline_plan(config)
-
-    # Read the enabled stage names in canonical run order.
-    order = plan.enabled_stage_names()
-
-    # Confirm the coexpression stage is planned.
-    assert "coexpression" in order
-
-    # Confirm it runs after DE and before the CCC chain.
-    assert order.index("differential_expression") < order.index("coexpression")
-    assert order.index("coexpression") < order.index("cell_cell_communication")
-
-
-def test_grn_stage_is_planned_in_canonical_order() -> None:
-    """The grn (pySCENIC) stage is registered + config-flagged, so the planner's
-    canonical order must emit it — otherwise it is never planned and silently
-    never runs (the seam missed for the coexpression stage). It slots into the
-    discovery tail after coexpression and before the CCC chain."""
-    from cellquorum.config.models import CellQuorumConfig
-    from cellquorum.core.planner import build_pipeline_plan
-
-    config = CellQuorumConfig()
-    plan = build_pipeline_plan(config)
-    order = plan.enabled_stage_names()
-
-    assert "grn" in order
-    assert order.index("coexpression") < order.index("grn")
-    assert order.index("grn") < order.index("cell_cell_communication")
 
 
 def test_pipeline_planner_respects_disabled_stage_flags() -> None:
@@ -145,7 +86,7 @@ def test_pipeline_planner_respects_disabled_stage_flags() -> None:
             "subclustering": False,
             "composition": True,
             "differential_expression": True,
-            "molecular_inference": True,
+            "integration_benchmark": True,
             "cell_cell_communication": False,
             "network_analysis": True,
         }
@@ -166,8 +107,7 @@ def test_pipeline_planner_respects_disabled_stage_flags() -> None:
     # Confirm disabled communication appears in disabled stages.
     assert "cell_cell_communication" in plan.disabled_stage_names()
 
-    # Confirm enabled molecular inference remains enabled.
-    assert "molecular_inference" in plan.enabled_stage_names()
+    assert "integration_benchmark" in plan.enabled_stage_names()
 
 
 def test_pipeline_plan_to_dict_is_json_serializable_shape() -> None:
@@ -465,3 +405,26 @@ def test_missing_optional_backends_produce_warnings():
     plan = build_pipeline_plan(config, backend_registry=registry)
     assert any("neither rpy2 nor Rscript" in warning for warning in plan.warnings)
     assert any("no GPU/RAPIDS" in warning for warning in plan.warnings)
+
+
+@pytest.mark.parametrize("stage", ["clustering", "unkn0wn"])
+def test_required_files_must_name_an_enabled_stage(stage):
+    config = CellQuorumConfig(
+        stages={"clustering": False}, run={"required_outputs": {stage: ["results/data.csv"]}}
+    )
+    with pytest.raises(CellQuorumConfigError, match="unknown or disabled"):
+        PipelinePlanner(config=config).build_plan()
+
+
+def test_plan_carries_study_selection_reasons():
+    config = CellQuorumConfig(
+        stages={"trajectory": False},
+        run={"disabled_stage_reasons": {"trajectory": "No lineage specified."}},
+    )
+    planner = PipelinePlanner(config=config)
+    plan = planner.build_plan()
+    reasons = {stage.name: stage.reason for stage in plan.stages}
+    assert reasons["trajectory"] == "No lineage specified."
+    config.run.disabled_stage_reasons["typo"] = "Unsupported name"
+    with pytest.raises(CellQuorumConfigError, match="typo"):
+        planner.build_plan()

@@ -1,0 +1,6 @@
+# Direct Python dependencies from the paired SCC installed-wheel run, Python 3.12.
+liana==1.10.0
+cell2cell==0.9.0
+tensorly==0.10.0
+decoupler==2.2.0
+gseapy==1.3.2

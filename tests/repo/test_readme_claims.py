@@ -23,14 +23,12 @@ def test_the_stage_count_matches_the_catalog() -> None:
     assert claimed == {implemented}, f"README says {claimed}, the catalog implements {implemented}"
 
 
-def test_the_method_count_is_a_floor_the_registry_meets() -> None:
-    from cellquorum.core.stages import all_stage_specs  # registers every method
-    from cellquorum.methods.registry import METHOD_REGISTRY
+def test_the_method_count_matches_the_release_catalog() -> None:
+    import runpy
 
-    all_stage_specs()
-    registered = sum(len(methods) for methods in METHOD_REGISTRY._methods.values())
-    claimed = {int(n) for n in re.findall(r"\*\*(\d+)\+ selectable methods", README)}
-    assert len(claimed) == 1 and registered >= claimed.pop(), registered
+    catalog = runpy.run_path(str(ROOT / "scripts" / "study_coverage.py"))["catalog"]()
+    claimed = {int(n) for n in re.findall(r"\*\*(\d+) selectable methods", README)}
+    assert claimed == {sum(len(methods) for methods in catalog.values())}
 
 
 def test_the_python_versions_advertised_are_the_ones_ci_tests() -> None:
@@ -60,7 +58,7 @@ def test_the_quickstart_uses_commands_that_exist() -> None:
 
     from cellquorum.cli.app import app
 
-    section = README.split("## See it work in two minutes")[1].split("\n## ")[0]
+    section = README.split("## Run the CPU demo")[1].split("\n## ")[0]
     block = re.search(r"```bash\n(.*?)```", section, re.S)
     assert block, "the quickstart has no bash block"
     commands = set(get_command(app).commands)

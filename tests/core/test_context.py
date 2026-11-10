@@ -318,7 +318,9 @@ def test_resolve_n_jobs_auto_derives_from_the_machine():
     assert 1 <= resolved <= 8, resolved
     # Capped, not free-running: a worker holds a copy of its slice of the object,
     # so a 64-core node must not silently multiply peak memory by 64.
-    assert resolved == min(8, os.process_cpu_count() or os.cpu_count() or 1)
+    assert resolved == min(
+        8, getattr(os, "process_cpu_count", os.cpu_count)() or os.cpu_count() or 1
+    )
 
     # A stage that pins its own count still wins over auto, in both directions.
     assert resolve_n_jobs(_Ctx(), 1) == 1

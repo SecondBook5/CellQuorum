@@ -126,12 +126,19 @@ def calculate_qc_metrics(
         matrix_source=matrix_source,
     )
 
+    warnings = list(validation_summary.warnings)
+    if not feature_masks[MITO_COLUMN].any():
+        warnings.append(
+            "No gene names matched the configured mitochondrial prefixes. The mitochondrial "
+            "percentage is unmeasured for this input. Check var_names, the feature prefixes, "
+            "and whether mitochondrial genes were retained."
+        )
     return QCMetricsResult(
         cell_metrics=cell_metrics,
         gene_metrics=gene_metrics,
         feature_masks=feature_masks,
         summary=summary,
-        warnings=list(validation_summary.warnings),
+        warnings=warnings,
     )
 
 

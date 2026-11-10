@@ -302,13 +302,6 @@ def test_input_contract_does_not_require_group_by() -> None:
     assert "cell_type" not in contract.required_obs
 
 
-def test_method_registered() -> None:
-    import cellquorum.stages.gene_regulation.coexpression  # noqa: F401
-    from cellquorum.methods.registry import METHOD_REGISTRY
-
-    assert METHOD_REGISTRY.has("coexpression", "hdwgcna")
-
-
 def test_a_failed_optional_r_step_is_reported_not_silent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

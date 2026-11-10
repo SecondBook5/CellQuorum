@@ -10,5 +10,5 @@ dependencies:
   - scipy
   - h5py
   - pyarrow
-  - pyscenic
+  - pyscenic=0.12.1
   - loompy

@@ -105,14 +105,20 @@ def test_the_audit_reports_itself_unavailable_without_the_env() -> None:
 # ═══ The discrimination that justifies the audit ═══════════════════════════════════
 
 
-def test_debris_is_called_debris_and_not_a_lost_population() -> None:
-    """An incoherent excluded vertex means QC is working, and must not raise an alarm."""
+@pytest.fixture(scope="module")
+def debris_audit():
     backend = _partipy_or_skip()
     embedding, counts, names = _three_groups()
 
     audit = audit_archetypes(
         embedding, names, _excluded(names, 340), counts, backend=backend, n_archetypes_max=5
     )
+    return audit, names
+
+
+def test_debris_is_called_debris_and_not_a_lost_population(debris_audit) -> None:
+    """An incoherent excluded vertex means QC is working, and must not raise an alarm."""
+    audit, _ = debris_audit
     assert audit.available, audit.reason
 
     debris_rows = audit.table[audit.table["coherence"] < 0.5]
@@ -168,40 +174,25 @@ def test_a_healthy_cohort_flags_nothing() -> None:
 # ═══ Shape, provenance, and the significance test ══════════════════════════════════
 
 
-def test_the_polytope_significance_is_reported() -> None:
+def test_the_polytope_significance_is_reported(debris_audit) -> None:
     """A polytope can always be fitted, so an unsupported one must be visible as such."""
-    backend = _partipy_or_skip()
-    embedding, counts, names = _three_groups()
-
-    audit = audit_archetypes(
-        embedding, names, _excluded(names, 340), counts, backend=backend, n_archetypes_max=5
-    )
+    audit, _ = debris_audit
     assert audit.n_archetypes >= 2
     assert audit.t_ratio is not None
     assert audit.t_ratio_pvalue is not None
 
 
-def test_every_cell_receives_a_dominant_archetype() -> None:
+def test_every_cell_receives_a_dominant_archetype(debris_audit) -> None:
     """The per-cell label is written to obs, so it must cover the object."""
-    backend = _partipy_or_skip()
-    embedding, counts, names = _three_groups()
-
-    audit = audit_archetypes(
-        embedding, names, _excluded(names, 340), counts, backend=backend, n_archetypes_max=5
-    )
+    audit, names = debris_audit
     assert audit.dominant is not None
     assert audit.dominant.index.equals(names)
     assert audit.dominant.notna().all()
 
 
-def test_the_table_has_one_row_per_archetype_with_the_expected_columns() -> None:
+def test_the_table_has_one_row_per_archetype_with_the_expected_columns(debris_audit) -> None:
     """The audit is user-facing, so its shape is part of the contract."""
-    backend = _partipy_or_skip()
-    embedding, counts, names = _three_groups()
-
-    audit = audit_archetypes(
-        embedding, names, _excluded(names, 340), counts, backend=backend, n_archetypes_max=5
-    )
+    audit, _ = debris_audit
     assert len(audit.table) == audit.n_archetypes
     assert set(audit.table.columns) == {
         "n_supporting",
@@ -270,14 +261,9 @@ def test_nothing_is_flagged_when_the_polytope_is_unsupported() -> None:
     assert not audit.table.empty
 
 
-def test_an_unsupported_polytope_is_distinguishable_from_a_clean_result() -> None:
+def test_an_unsupported_polytope_is_distinguishable_from_a_clean_result(debris_audit) -> None:
     """ "Nothing is wrong" and "this could not tell" must not both surface as silence."""
-    backend = _partipy_or_skip()
-    embedding, counts, names = _three_groups()
-
-    audit = audit_archetypes(
-        embedding, names, _excluded(names, 340), counts, backend=backend, n_archetypes_max=5
-    )
+    audit, _ = debris_audit
     assert audit.available, audit.reason
     # The flag exists and is a real boolean, so a caller can branch on it rather than guessing
     # from an empty table.

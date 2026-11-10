@@ -91,7 +91,7 @@ def _flags(frame: pd.DataFrame, column: str) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(False, index=frame.index, dtype=bool)
     values = frame[column]
-    if values.dtype == object:
+    if pd.api.types.is_string_dtype(values.dtype) or values.dtype == object:
         return values.astype(str).str.strip().str.lower().isin({"true", "t", "1", "yes"})
     return values.fillna(False).astype(bool)
 
@@ -1359,12 +1359,14 @@ class _ChordDrawer:
         signed: bool,
         ribbon_color: str,
         scale: float | None,
+        aligned_labels: bool,
     ) -> None:
         import matplotlib.pyplot as plt
 
         self.d, self.cols, self.flags, self.marks = d, cols, flags, marks
         self.sender_palette, self.receiver_palette = sender_palette, receiver_palette
         self.signed, self.ribbon_color = signed, ribbon_color
+        self.aligned_labels = aligned_labels
 
         self.lig_keys = self._order(cols.sender, cols.ligand, sender_palette)
         self.rec_keys = self._order(cols.receiver, cols.receptor, receiver_palette)
@@ -1409,7 +1411,11 @@ class _ChordDrawer:
 
     def draw(self) -> Figure:
         self._ribbons()
-        self._molecule_labels()
+        if self.aligned_labels:
+            self._aligned_labels(self.lig_keys, self.lig_ang, side=-1)
+            self._aligned_labels(self.rec_keys, self.rec_ang, side=1)
+        else:
+            self._molecule_labels()
         self._start_renderer()
         self._group_arc(self.lig_keys, self.lig_ang, self.sender_palette, "L")
         self._group_arc(self.rec_keys, self.rec_ang, self.receiver_palette, "R")
@@ -1456,7 +1462,21 @@ class _ChordDrawer:
         cols, unit = self.cols, self.unit
         cursor_l = {k: min(v) for k, v in self.lig_ang.items()}
         cursor_r = {k: max(v) for k, v in self.rec_ang.items()}
-        ordered = self.d.assign(strong=self.flags).sort_values("strong")
+        ordered = self.d.assign(strong=self.flags).sort_values("strong", kind="stable")
+        if self.aligned_labels:
+            # Allocate each receptor's incoming ribbons in their order around the sender arc.
+            ordered = ordered.assign(
+                sender_angle=[
+                    self.lig_ang[key][0]
+                    for key in zip(ordered[cols.sender], ordered[cols.ligand], strict=True)
+                ],
+                receiver_angle=[
+                    self.rec_ang[key][0]
+                    for key in zip(ordered[cols.receiver], ordered[cols.receptor], strict=True)
+                ],
+            ).sort_values(
+                ["sender_angle", "receiver_angle"], ascending=[True, False], kind="stable"
+            )
         for row in ordered.to_dict("records"):
             w = row["w_abs"] * unit
             a0 = cursor_l[(row[cols.sender], row[cols.ligand])]
@@ -1482,12 +1502,48 @@ class _ChordDrawer:
                 PathPatch(
                     MplPath(verts, codes),
                     fc=colour,
-                    ec="none",
+                    ec="white" if self.aligned_labels else "none",
+                    lw=0.35 if self.aligned_labels else 0,
                     alpha=0.85 if strong else 0.3,
                     zorder=3 if strong else 2,
                     gid=f"ribbon|{row[cols.ligand]}>{row[cols.receptor]}|{row[cols.receiver]}",
                 )
             )
+
+    def _aligned_labels(
+        self,
+        keys: list[tuple[str, str]],
+        angles: dict[tuple[str, str], tuple[float, float]],
+        side: int,
+    ) -> None:
+        """Set each gene above its population with a leader to the corresponding sector."""
+        anchors = [_chord_pt(1.01, sum(angles[key]) / 2) for key in keys]
+        positions = _chord_spread([y for _, y in anchors], min_gap=0.34)
+        align = "left" if side > 0 else "right"
+        for (group, molecule), (x, y), row_y in zip(keys, anchors, positions, strict=True):
+            self.ax.plot(
+                [x, side * 1.09, side * 1.17],
+                [y, row_y, row_y],
+                color="#AEB8BC",
+                lw=0.55,
+                solid_capstyle="round",
+                zorder=1,
+            )
+            gene = self.ax.text(
+                side * 1.21,
+                row_y,
+                molecule,
+                ha=align,
+                va="bottom",
+                fontsize=8.5,
+                color=self.marks.get(molecule, INK),
+                fontweight="semibold",
+            )
+            gene.set_gid("ligand_label" if side < 0 else "receptor_label")
+            population = self.ax.text(
+                side * 1.21, row_y, group, ha=align, va="top", fontsize=7.25, color="#45535A"
+            )
+            population.set_gid("group_label")
 
     def _molecule_labels(self) -> None:
         marks, ax = self.marks, self.ax
@@ -1572,6 +1628,8 @@ class _ChordDrawer:
             )
         # Small neighbouring sectors would print their names on top of each other, so the names
         # are spread along the arc (a leader line would be the next step if it ever matters).
+        if self.aligned_labels:
+            return
         mids = _chord_spread([(lows[g] + highs[g]) / 2 for g in groups], min_gap=0.24)
         for g, t in zip(groups, mids, strict=True):
             # Beyond the molecule names of its own sector that lie near it on the circle, so the
@@ -1643,6 +1701,7 @@ def ligand_receptor_chord(
     top_n: int | None = None,
     highlight: Mapping[str, str] | None = None,
     ribbon_color: str = "neutral",
+    aligned_labels: bool = False,
     title: str | None = None,
     note: str | None = None,
     sender_col: str = "sender",
@@ -1670,7 +1729,8 @@ def ligand_receptor_chord(
     so the figure says who is signalling and not only that something is. Signed ribbons are always
     red and blue. ``title`` and ``note`` are drawn as given (the function cannot know which
     condition or contrast the weights describe, nor what the colours stand for in the caller's
-    terms): the title above the circle, the note below it.
+    terms): the title above the circle, the note below it. Aligned labels place each gene and
+    population in a horizontal column connected to its sector.
     """
     if ribbon_color not in ("neutral", "sender"):
         raise ValueError(f"ribbon_color must be 'neutral' or 'sender', got {ribbon_color!r}")
@@ -1698,6 +1758,7 @@ def ligand_receptor_chord(
         signed=signed,
         ribbon_color=ribbon_color,
         scale=scale,
+        aligned_labels=aligned_labels,
     )
     drawer.draw()
     return drawer.finish(title, note)

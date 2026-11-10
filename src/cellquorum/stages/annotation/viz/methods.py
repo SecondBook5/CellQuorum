@@ -11,7 +11,7 @@ import pandas as pd
 import scipy.sparse as sp
 
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.stage import StageResult
+from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.visualization.figio import figure_artifacts
 from cellquorum.visualization.figstyle import save_figure
@@ -126,8 +126,16 @@ class MarkerDotplotMethod(AnalysisMethod):
         )
         mean, pct = _panel_tables(adata, panel, groups, group_by=group_by, layer=layer)
         results_dir.mkdir(parents=True, exist_ok=True)
-        mean.to_csv(results_dir / "marker_dotplot_mean.csv")
-        pct.to_csv(results_dir / "marker_dotplot_pct.csv")
+        table_artifacts = []
+        for summary, frame, description in [
+            ("mean", mean, "Mean normalized marker expression by cell group."),
+            ("pct", pct, "Percent of cells expressing each marker by cell group."),
+        ]:
+            path = results_dir / f"marker_dotplot_{summary}.csv"
+            frame.to_csv(path)
+            table_artifacts.append(
+                StageArtifact(f"marker_dotplot_{summary}", path, "csv", description)
+            )
         return StageResult(
             adata=adata,
             artifacts=figure_artifacts(
@@ -137,7 +145,8 @@ class MarkerDotplotMethod(AnalysisMethod):
                     f"Marker panel by {group_by}: dot colour is mean expression, dot size the "
                     "percent of cells expressing; a cream band marks each group's own block."
                 ),
-            ),
+            )
+            + table_artifacts,
             notes=[f"marker_dotplot drew {len(groups)} group(s), {len(highlighted)} highlighted."],
             warnings=[],
             metrics={

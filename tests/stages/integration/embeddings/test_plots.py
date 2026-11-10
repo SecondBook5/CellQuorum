@@ -108,7 +108,7 @@ def _score_by_condition_adata():
     return a
 
 
-def test_plot_score_by_condition_returns_three_panels():
+def test_cluster_and_condition_score_panels_share_the_colour_scale():
     a = _score_by_condition_adata()
     score = np.random.default_rng(2).random(a.n_obs)
     fig = plots.plot_score_by_condition(
@@ -122,36 +122,17 @@ def test_plot_score_by_condition_returns_three_panels():
         case="Lymphedema",
         control="Normal",
     )
+
     assert isinstance(fig, Figure)
     # 3 content panels (state, control, case) + 1 shared colorbar axes.
     assert len(fig.axes) == 4
 
-
-def test_plot_score_by_condition_shares_color_scale_across_condition_panels():
-    """Panels 2 and 3 use the SAME vmin/vmax -- otherwise a dark red dot in one
-
-    panel and a dark red dot in the other can mean different score values,
-    silently defeating the whole point of a shared-scale comparison figure.
-    """
-    a = _score_by_condition_adata()
-    score = np.random.default_rng(2).random(a.n_obs)
-    fig = plots.plot_score_by_condition(
-        a,
-        score=score,
-        score_label="proliferating (UCell)",
-        cluster_key="fibroblast_subcluster",
-        basis="X_umap",
-        axis_labels=("UMAP1", "UMAP2"),
-        condition_col="condition",
-        case="Lymphedema",
-        control="Normal",
-    )
     control_scatter = next(c for c in fig.axes[1].collections if hasattr(c, "get_clim"))
     case_scatter = next(c for c in fig.axes[2].collections if hasattr(c, "get_clim"))
     assert control_scatter.get_clim() == case_scatter.get_clim()
 
 
-def test_plot_score_by_condition_without_the_state_panel_puts_control_left_case_right():
+def test_two_condition_score_panels_fit_control_and_case_side_by_side():
     a = _score_by_condition_adata()
     fig = plots.plot_score_by_condition(
         a,
@@ -173,22 +154,6 @@ def test_plot_score_by_condition_without_the_state_panel_puts_control_left_case_
     left, right = fig.axes[0].get_position().x0, fig.axes[1].get_position().x0
     assert left < right
 
-
-def test_the_two_panel_figure_is_wider_than_it_is_tall_with_no_blank_bands():
-    a = _score_by_condition_adata()
-    fig = plots.plot_score_by_condition(
-        a,
-        score=np.random.default_rng(2).random(a.n_obs),
-        score_label="UCell score",
-        cluster_key="fibroblast_subcluster",
-        basis="X_umap",
-        axis_labels=("UMAP1", "UMAP2"),
-        condition_col="condition",
-        case="Lymphedema",
-        control="Normal",
-        show_state_panel=False,
-    )
-
     width, height = fig.get_size_inches()
     assert height / width < 0.4
 
@@ -205,34 +170,19 @@ def _pooled(a, **kw):
     )
 
 
-def test_a_pooled_score_figure_is_one_panel_with_its_colourbar_and_a_title():
-    a = _score_by_condition_adata()
-
-    fig = _pooled(a)
-
-    assert len(fig.axes) == 2  # the UMAP and its colourbar
-    assert fig.axes[0].get_title() == "Barrier core junctions"
-    assert fig.axes[1].get_ylabel() == "UCell score"
-
-
-def test_a_pooled_score_figure_draws_every_cell_on_the_full_score_range():
+def test_pooled_score_panel_shows_the_cells_scale_and_axis_labels():
     a = _score_by_condition_adata()
     score = np.random.default_rng(2).random(a.n_obs)
-
     fig = _pooled(a, score=score)
 
     cells = next(c for c in fig.axes[0].collections if hasattr(c, "get_clim"))
     assert len(cells.get_offsets()) == a.n_obs
     assert cells.get_clim() == (score.min(), score.max())
 
+    assert len(fig.axes) == 2  # the UMAP and its colourbar
+    assert fig.axes[0].get_title() == "Barrier core junctions"
+    assert fig.axes[1].get_ylabel() == "UCell score"
 
-def test_a_pooled_score_figure_puts_the_highest_scoring_cells_on_top():
-    a = _score_by_condition_adata()
-    score = np.random.default_rng(2).random(a.n_obs)
-
-    fig = _pooled(a, score=score)
-
-    cells = next(c for c in fig.axes[0].collections if hasattr(c, "get_clim"))
     drawn = np.asarray(cells.get_array())
     assert (np.diff(drawn) >= 0).all()
 
@@ -393,7 +343,7 @@ def _two_group_adata():
     return a
 
 
-def test_in_plot_labels_carry_a_halo_so_they_read_over_a_dark_cluster():
+def test_in_plot_labels_have_halos_and_cluster_coloured_boxes():
     from matplotlib import patheffects
 
     fig = plots.categorical_embedding(
@@ -404,6 +354,17 @@ def test_in_plot_labels_carry_a_halo_so_they_read_over_a_dark_cluster():
     assert len(labels) == 2
     for label in labels:
         assert any(isinstance(e, patheffects.withStroke) for e in label.get_path_effects())
+
+    assert len(labels) == 2
+    edges = set()
+    for label in labels:
+        box = label.get_bbox_patch()
+        face = box.get_facecolor()
+        assert min(face[:3]) > 0.95 and face[3] > 0.8  # reads over any cluster
+        edge = box.get_edgecolor()
+        assert edge[3] > 0 and box.get_linewidth() > 0
+        edges.add(tuple(round(c, 3) for c in edge[:3]))
+    assert len(edges) == 2  # each group's edge is its own colour
 
 
 def test_a_label_anchors_on_a_cell_of_its_own_group_even_when_the_median_is_a_hole():
@@ -422,24 +383,6 @@ def test_a_compact_group_is_labelled_at_its_middle():
     anchor = plots._label_anchor(blob)
 
     assert np.linalg.norm(anchor - np.median(blob, axis=0)) < 0.15
-
-
-def test_label_boxes_are_near_white_with_an_edge_in_the_cluster_colour():
-    fig = plots.categorical_embedding(
-        _two_group_adata(), "leiden", basis="X_umap", axis_labels=("UMAP1", "UMAP2")
-    )
-
-    labels = [t for t in fig.axes[0].texts if t.get_text() in {"0", "1"}]
-    assert len(labels) == 2
-    edges = set()
-    for label in labels:
-        box = label.get_bbox_patch()
-        face = box.get_facecolor()
-        assert min(face[:3]) > 0.95 and face[3] > 0.8  # reads over any cluster
-        edge = box.get_edgecolor()
-        assert edge[3] > 0 and box.get_linewidth() > 0
-        edges.add(tuple(round(c, 3) for c in edge[:3]))
-    assert len(edges) == 2  # each group's edge is its own colour
 
 
 def _coloured_adata():
@@ -670,23 +613,14 @@ def _population_cloud():
     return coords, labels, {"A": 0.55, "B": 0.78, "C": 0.64}
 
 
-def test_population_values_draw_one_panel_with_a_labelled_colourbar():
+def test_population_values_reach_each_cell_and_its_colourbar():
     coords, labels, values = _population_cloud()
-
     fig = plots.plot_population_values(
         coords, labels, values, value_label="Augur AUC", axis_labels=("UMAP1", "UMAP2")
     )
 
     assert len(fig.axes) == 2
     assert fig.axes[1].get_ylabel() == "Augur AUC"
-
-
-def test_every_cell_takes_its_populations_value_and_the_highest_are_drawn_last():
-    coords, labels, values = _population_cloud()
-
-    fig = plots.plot_population_values(
-        coords, labels, values, value_label="Augur AUC", axis_labels=("UMAP1", "UMAP2")
-    )
 
     cells = next(c for c in fig.axes[0].collections if hasattr(c, "get_clim"))
     drawn = np.asarray(cells.get_array())

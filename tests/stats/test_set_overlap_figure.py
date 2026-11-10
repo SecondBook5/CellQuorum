@@ -52,8 +52,10 @@ def _texts(fig) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def test_the_upset_draws_one_column_per_occupied_combination():
+def test_upset_counts_match_the_table_and_the_sidebar_has_no_ticks():
+    table = exclusive_combinations(SETS)
     fig = set_overlap_upset(SETS)
+
     try:
         # 4 occupied combinations of the 7 possible, so 4 bars.
         bars = [patch for patch in fig.axes[0].patches if patch.get_height() > 0]
@@ -61,17 +63,14 @@ def test_the_upset_draws_one_column_per_occupied_combination():
         heights = sorted(patch.get_height() for patch in bars)
         # apical_junction only 2, emt only 2, ros only 3, shared 3.
         assert heights == [2.0, 2.0, 3.0, 3.0]
-    finally:
-        plt.close(fig)
 
-
-def test_the_counts_drawn_above_the_bars_are_the_counts_in_the_table():
-    table = exclusive_combinations(SETS)
-    fig = set_overlap_upset(SETS)
-    try:
         text = _texts(fig)
         for size in table["size"]:
             assert str(int(size)) in text
+
+        assert _row_labels(fig)[-1] == "ros"  # the wholly exclusive set comes last
+        sidebar = _sidebar_axes(fig)
+        assert all(tick.tick1line.get_markersize() == 0 for tick in sidebar.yaxis.get_major_ticks())
     finally:
         plt.close(fig)
 
@@ -108,14 +107,7 @@ def test_every_set_gets_a_row_labelled_for_reading():
         plt.close(fig)
 
 
-def test_rows_lead_with_the_least_exclusive_set_because_that_is_the_finding():
-    # `emt` and `apical_junction` each keep 2 of 5; `ros` shares nothing.
-    fig = set_overlap_upset(SETS)
-    try:
-        assert _row_labels(fig)[-1] == "ros"
-    finally:
-        plt.close(fig)
-
+def test_upset_can_order_sets_by_size():
     fig = set_overlap_upset(SETS, sort_sets="size")
     try:
         # Largest first, and `ros` (3 genes) is smallest, so it lands last either
@@ -173,17 +165,6 @@ def test_the_row_labels_get_a_gutter_wide_enough_for_them():
         plt.close(fig)
 
 
-def test_the_sidebar_carries_no_tick_marks_of_its_own():
-    """The house axis style resets tick length, so hiding a tick before it is styled
-    puts the tick back — a row of orphan dashes floating left of the sidebar."""
-    fig = set_overlap_upset(SETS)
-    try:
-        sidebar = _sidebar_axes(fig)
-        assert all(tick.tick1line.get_markersize() == 0 for tick in sidebar.yaxis.get_major_ticks())
-    finally:
-        plt.close(fig)
-
-
 def test_a_truncated_upset_says_how_much_it_is_not_showing():
     """Silent truncation would make a shared panel look like an independent one."""
     fig = set_overlap_upset(SETS, max_combinations=2)
@@ -218,9 +199,11 @@ def test_a_min_size_that_removes_everything_raises_rather_than_drawing_nothing()
 # --------------------------------------------------------------------------- #
 
 
-def test_the_matrix_colours_the_lower_triangle_and_leaves_the_diagonal_empty():
+def test_overlap_matrix_shows_counts_significance_and_table_notes():
     overlaps = set_overlap_tests(SETS, universe=UNIVERSE)
+    notes = set_overlap_notes(overlaps)
     fig = set_overlap_matrix(overlaps)
+
     try:
         image = fig.axes[0].images[0]
         data = image.get_array()
@@ -231,14 +214,7 @@ def test_the_matrix_colours_the_lower_triangle_and_leaves_the_diagonal_empty():
         assert np.ma.is_masked(data[0, 1])
         assert not np.ma.is_masked(data[1, 0])
         assert data[1, 0] == pytest.approx(3 / 7)  # apical_junction/emt Jaccard
-    finally:
-        plt.close(fig)
 
-
-def test_a_significant_pair_is_starred_and_a_chance_pair_is_bare():
-    overlaps = set_overlap_tests(SETS, universe=UNIVERSE)
-    fig = set_overlap_matrix(overlaps)
-    try:
         # One starred cell: the real overlap. The two disjoint pairs sit at FDR 1.
         stars = [
             artist.get_text() for artist in fig.axes[0].texts if set(artist.get_text()) == {"*"}
@@ -247,20 +223,16 @@ def test_a_significant_pair_is_starred_and_a_chance_pair_is_bare():
         # 1.8e-3. A figure marked from the uncorrected p-value would say ***.
         assert stars == ["**"]
         assert float(overlaps["fdr"].min()) == pytest.approx(1.798e-3, rel=1e-2)
-    finally:
-        plt.close(fig)
 
-
-def test_each_drawn_cell_prints_the_count_of_shared_elements():
-    """The count is checkable in a way a Jaccard is not, and it survives a flat scale."""
-    overlaps = set_overlap_tests(SETS, universe=UNIVERSE)
-    fig = set_overlap_matrix(overlaps)
-    try:
         printed = [artist.get_text() for artist in fig.axes[0].texts]
         assert printed.count("3") == 1  # apical_junction/emt share 3 genes
         # A pair sharing nothing gets no number — a printed 0 would compete with the
         # counts that matter, and the pale cell already says it.
         assert "0" not in printed
+
+        drawn = _texts(fig)
+        for note in notes:
+            assert note in drawn
     finally:
         plt.close(fig)
 
@@ -332,18 +304,6 @@ def test_dropped_members_are_footnoted_once_not_per_pair():
     notes = set_overlap_notes(set_overlap_tests(sets, universe=UNIVERSE))
     outside = [note for note in notes if "outside the universe" in note]
     assert len(outside) == 1
-
-
-def test_the_notes_a_panel_draws_are_the_notes_the_table_yields():
-    overlaps = set_overlap_tests(SETS, universe=UNIVERSE)
-    notes = set_overlap_notes(overlaps)
-    fig = set_overlap_matrix(overlaps)
-    try:
-        drawn = _texts(fig)
-        for note in notes:
-            assert note in drawn
-    finally:
-        plt.close(fig)
 
 
 def test_a_panel_drawn_into_a_given_axes_leaves_the_notes_to_its_caller():

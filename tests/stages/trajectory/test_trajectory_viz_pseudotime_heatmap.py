@@ -10,7 +10,6 @@ import pandas as pd
 
 import cellquorum.stages.trajectory.viz  # noqa: F401  (registers methods)
 from cellquorum.methods.base import MethodSkip
-from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.trajectory.viz._pseudotime_plots import PseudotimeHeatmapVizMethod
 
 
@@ -36,10 +35,6 @@ def _context(tmp_path, case="LE", control="Normal"):
     config = types.SimpleNamespace(design=design, trajectory_viz=None)
     paths = types.SimpleNamespace(results=str(tmp_path / "results"), figures=str(figures))
     return types.SimpleNamespace(config=config, paths=paths), figures
-
-
-def test_registered():
-    assert METHOD_REGISTRY.has("trajectory_viz", "pseudotime_heatmap")
 
 
 def test_skips_when_no_pseudotime(tmp_path):

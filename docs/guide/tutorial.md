@@ -1,109 +1,74 @@
-# Tutorial: your first run
+# Your first study
 
-This walkthrough takes you from a raw `.h5ad` to a provenance-tracked CellQuorum
-run and its figures, tables, and report — using the shipped, dataset-agnostic
-example config so nothing here is specific to any one study. By the end you will
-know how to point the engine at your own data, preview what it will do, run it,
-and read every output it writes.
+Start with a human or mouse count-bearing AnnData file, Cell Ranger output directory, standalone 10x H5 or Matrix Market matrix, or a CSV/TSV sample sheet. For gene-family QC, use gene symbols in `var_names`. Install the base package on
+Linux, macOS or WSL. [Installation guide](https://github.com/SecondBook5/cellquorum#installation).
 
-If you have not installed CellQuorum yet, see the
-[README](https://github.com/SecondBook5/cellquorum#readme) for installation and
-the [Backends & environments](backends.md) guide for the optional R/GPU
-backends. Confirm the CLI is on your path first:
+## 1. Set up the study
 
 ```bash
-cellquorum --version
+cellquorum init my_study --input /path/to/study.h5ad
 ```
 
-## 1. Start from the example config
+For several libraries, use one row per library. Paths are relative to the sheet. Use a biological replicate ID consistently across repeated measurements.
 
-CellQuorum runs are driven entirely by one validated YAML file — no code
-changes per dataset. Copy the shipped generic example as your starting point:
-
-```bash
-cp configs/generic_pbmc_example.yaml configs/my_run.yaml
+```csv
+sample_id,path,donor,condition,metadata_path
+D1_normal,D1_normal/outs,D1,normal,D1_normal/cells.csv
+D1_tumor,D1_tumor/outs,D1,tumor,D1_tumor/cells.csv
 ```
 
-Three blocks do the important work. The **`cohort`** block declares your
-structural obs keys *once*, and every stage resolves from it — so you never
-repeat "which column is the sample?" per stage:
+`metadata_path` is optional. Its table has a `barcode` column and one row for every barcode in the filtered library. Add your cell labels there. Additional sheet fields are library-level metadata. For AnnData entries with transformed `X`, declare `counts_layer`. Recognized sidecars include `raw_matrix_path`, `loom_path`, `bam_path` and `gtf_path`. A matrix-only study can run expression analyses and DPT as its design allows. Velocity needs splice evidence. For a sample sheet, run `cellquorum init my_study --input samples.csv`. It writes the reusable configuration, merged counts and normalized manifest into the new study directory.
 
-```yaml
-cohort:
-  sample_key: sample_id
-  donor_key: donor_id
-  condition_key: stim          # e.g. "control" vs "stimulated"
-  batch_key: batch
-  condition_levels: [control, stimulated]
-```
+Choose the question you want to answer.
 
-The **`design`** block names the primary comparison for the differential
-stages:
+| Choice | What to supply | What to open first |
+|---|---|---|
+| `discovery` | Counts plus the study design, label sources, reference resources and biological questions the available evidence supports | Manuscript gallery, exclusions and study report |
+| `questions` | Selected question families and their inputs. Replicated comparisons can also request leave-one-donor-out abundance sensitivity | Panels, donor tables, resolved settings and inferred program results |
+| `explore` | Raw counts, organism and preparation | The cluster UMAP and QC figures in the HTML report |
+| `abundance` | The same inputs plus existing cell-type labels, biological replicate IDs and two conditions | The composition figure and `results/da_proportion_ttest.csv` |
 
-```yaml
-design:
-  donor_col: donor_id
-  condition_col: stim
-  case: stimulated
-  control: control
-  paired: false                # set true for matched within-donor designs
-```
+The prompts list the count matrices and observation columns in your file. Specify whole cells,
+nuclei or mixed preparation so QC can interpret nuclear-retained signal appropriately. Give
+a library ID column if you have one. For a mixed study with several values identifying
+nuclei, add them to `qc_evidence.graded.nuclei_values` in the saved config.
 
-The **`stages`** block is the on/off switch per analysis step. The example
-keeps the portable, CPU-only stages on and leaves the R/GPU-dependent ones off
-so it runs anywhere:
+For abundance, choose the biological replicate, such as a mouse or a patient. In a study measuring
+the same people before and after treatment, choose the patient ID, set the reference to the
+baseline condition, and choose `paired`. The setup shows the number of replicates in each arm
+and how many appear in both. A paired test requires at least two complete pairs and uses the
+donors with both measurements. For groups of different individuals choose `independent`.
 
-```yaml
-stages:
-  qc_evidence: true
-  preprocessing: true
-  dimensionality: true
-  integration: true            # Harmony over cohort.batch_key
-  clustering: true
-  population_identity: true
-  differential_expression: false   # turn on once your R backend is available
-  cell_cell_communication: false
-```
+## 2. Review the saved configuration
 
-## 2. Point it at your data
+Open `my_study/config.yaml`. The input and output paths are absolute, so the same config works
+from another directory on the same machine. The `stages` block lists the analyses selected.
+The baseline QC applies floors of 200 detected genes per cell and three cells per gene.
+Review those thresholds for the assay. Ambient correction and doublet detection are off in
+both starters.
 
-Set the input path and tell the engine which layer holds raw counts:
-
-```yaml
-input:
-  h5ad: /path/to/your_data.h5ad
-  counts_layer: counts
-```
-
-Your `.h5ad` needs the obs columns your `cohort` block names — in the example,
-`sample_id`, `donor_id`, `stim`, and `batch` — and a `counts` layer with raw
-(un-normalized) counts. The engine validates this at load time and fails loud
-with the exact missing key rather than producing wrong results silently.
-
-!!! tip "No column to group by yet?"
-    Every key is resolved defensively: if a declared grouping column is absent
-    from a given object, the stage falls back gracefully (for example, QC
-    figures collapse to a single ungrouped distribution) instead of crashing.
+For abundance, check `design.donor_col`, `design.condition_col`, `design.control`, `design.case`
+and `design.paired`. An effect of +5 percentage points means that the cell type accounts for
+five more percentage points of the sampled cells, on average, in the comparison condition.
+Check the donor counts and adjusted p-values alongside the effect. The test measures relative
+composition.
 
 ## 3. Preview the plan
 
-Before running anything heavy, ask the engine what it *will* do. `plan`
-validates the config, checks which backends are actually available, and prints
-the resolved stage list — marking each stage as planned, skipped (backend
-unavailable), or disabled:
+`plan` validates the YAML and lists the stages enabled in your configuration
+alongside the available backends.
 
 ```bash
-cellquorum plan -c configs/my_run.yaml
+cellquorum plan -c my_study/config.yaml
 ```
 
-This is the fastest way to catch a config mistake or a missing backend: if a
-stage you wanted shows up as *skipped*, the plan tells you which backend it
-needs before you spend compute. Add `--json` for machine-readable output.
+Dataset and method checks run during execution. Inspect the report for their
+outcomes. Add `--json` to the plan command for machine-readable output.
 
 ## 4. Run it
 
 ```bash
-cellquorum run -c configs/my_run.yaml -o runs/my_run
+cellquorum run -c my_study/config.yaml
 ```
 
 The engine creates the standardized run directory, executes each enabled stage
@@ -122,7 +87,7 @@ records provenance as it goes. Useful flags:
 Every run writes the same directory contract, so you always know where to look:
 
 ```
-runs/my_run/
+my_study/run/
 ├── reports/       # human-readable HTML + Markdown report — start here
 ├── figures/       # generated figures (QC, embeddings, DE, …)
 ├── results/       # machine-readable result tables (CSV/TSV)
@@ -132,15 +97,29 @@ runs/my_run/
 └── logs/          # execution logs and per-stage warnings
 ```
 
-Open `reports/` first for the narrative summary, then drill into `figures/` and
-`results/`. `provenance/` is what makes a run reproducible and citable: it
+Open `reports/report.html` and expand an analysis under **Analysis outputs** to
+open its registered figures and tables. Keep the run directory together when sharing it
+so the links continue to work. The `provenance/` directory
 captures the exact resolved config, the plan that ran, which backends were
 present, and the software/environment versions — so a run can be re-created or
 audited later.
 
-## 6. Adapt to your own study
+## Try a public paired study
 
-To take this to a real dataset, you typically only touch the config:
+Download the [Kang AnnData file](https://scverse-exampledata.s3.eu-west-1.amazonaws.com/pertpy/kang_2018.h5ad)
+and run `cellquorum init kang --input kang_2018.h5ad`. Select `abundance`, `X`, `human`
+and `cells`. Leave the library field empty. Choose `cell_type` for the annotation,
+`replicate` for the donor and `label` for the condition. Select `ctrl` as the reference,
+`stim` as the comparison and `paired` for the design. [Dataset description](https://pertpy.scverse.org/en/latest/api/data/pertpy.data.kang_2018.html).
+
+Run `cellquorum run -c kang/config.yaml`. The tested file contained 24,673 cells from
+eight donors. With the starter settings, 24,562 cells cleared the QC floors and all eight
+cell types had results from eight paired donors. This file contains no mitochondrial
+gene names matching `MT-`, so mitochondrial percentage is unavailable.
+
+## 6. Extend the analysis
+
+Edit the saved configuration to extend a study.
 
 - **Rename the cohort keys** to match your obs columns — nothing downstream
   hardcodes them.

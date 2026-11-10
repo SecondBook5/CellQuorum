@@ -85,9 +85,16 @@ def _compose(**kwargs):
     return ligand_receiver_composite(**base)
 
 
-def test_rows_are_the_top_n_best_first() -> None:
+def test_top_receiver_ligands_and_panels_with_available_evidence() -> None:
     fig = _compose()
+
     assert _row_labels(fig) == LIGANDS[:5]
+
+    assert {ax.get_label() for ax in fig.axes if ax.get_label()} == {
+        "activity",
+        "expression",
+        "targets",
+    }
 
 
 def test_a_named_ligand_outside_the_top_rows_is_still_a_row() -> None:
@@ -112,13 +119,20 @@ def test_a_ligand_the_comparison_receiver_never_ranked_reads_as_absent_not_rank_
 
 
 def test_only_changes_that_clear_the_fdr_are_outlined_and_carry_the_donor_count() -> None:
-    fig = _compose(change=_change())
+    change = _change()
+    fig = _compose(change=change)
     sig = _cell(fig, "change", "TGFB1", "Fibroblasts")
     ns = _cell(fig, "change", "TGFB1", "Macrophages")
     assert sig.get_linewidth() > ns.get_linewidth()
     assert ns.get_alpha() < sig.get_alpha()
     counts = [t.get_text() for t in _axis(fig, "change").texts]
     assert counts == ["9"]
+    (count,) = _axis(fig, "change").texts
+    assert count.get_color() == "white"
+
+    faint = change.assign(effect=lambda d: d.effect.where(~d.fdr.lt(0.05), 0.02))
+    (count,) = _axis(_compose(change=faint), "change").texts
+    assert count.get_color() != "white"
 
 
 def test_a_missing_change_measurement_is_blank_grey_not_zero_change() -> None:
@@ -129,15 +143,6 @@ def test_a_missing_change_measurement_is_blank_grey_not_zero_change() -> None:
     zero_change = _cell(fig, "change", "TNF", "Macrophages")
     assert tuple(missing.get_facecolor())[:3] != tuple(zero_change.get_facecolor())[:3]
     assert missing.get_gid() == "TNF|T/NK"
-
-
-def test_panels_without_their_inputs_are_left_out() -> None:
-    fig = _compose()
-    assert {ax.get_label() for ax in fig.axes if ax.get_label()} == {
-        "activity",
-        "expression",
-        "targets",
-    }
 
 
 def test_no_overlap_between_the_ranking_and_the_expression_frame_is_an_error() -> None:
@@ -161,14 +166,3 @@ def test_a_sender_with_no_name_is_an_error_not_a_column_called_nan() -> None:
     expression.loc[expression.index[0], "sender"] = np.nan
     with pytest.raises(ValueError, match="sender"):
         _compose(expression=expression)
-
-
-def test_the_donor_count_is_legible_on_a_saturated_cell() -> None:
-    change = _change()
-    change.loc[(change.sender == "Fibroblasts") & (change.ligand == "TGFB1"), "effect"] = 0.4
-    fig = _compose(change=change)
-    (count,) = _axis(fig, "change").texts
-    assert count.get_color() == "white"
-    faint = change.assign(effect=lambda d: d.effect.where(~d.fdr.lt(0.05), 0.02))
-    (count,) = _axis(_compose(change=faint), "change").texts
-    assert count.get_color() != "white"

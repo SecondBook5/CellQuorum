@@ -9,7 +9,6 @@ import numpy as np
 
 import cellquorum.stages.comparative.differential_expression.viz  # noqa: F401  (registers the method)
 from cellquorum.methods.base import MethodSkip
-from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.comparative.differential_expression.viz.volcano_viz import VolcanoVizMethod
 
 
@@ -31,10 +30,6 @@ def _context(tmp_path, *, case="LE", control="Normal"):
 
 def _adata():
     return ad.AnnData(np.zeros((4, 3), dtype="float32"))
-
-
-def test_registered():
-    assert METHOD_REGISTRY.has("de_viz", "volcano_viz")
 
 
 def test_skips_when_no_csv(tmp_path):

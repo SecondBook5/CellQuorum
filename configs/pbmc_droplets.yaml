@@ -1,0 +1,74 @@
+project:
+  name: pbmc_droplets
+  organism: human
+paths:
+  manifest: libraries.csv
+  output_dir: runs/pbmc_droplets
+input:
+  h5ad: input.h5ad
+run:
+  profile: publication
+  require_selected_methods: true
+  random_seed: 42
+stages:
+  ambient_correction: true
+  qc_splice_metrics: false
+  qc_evidence: true
+  preprocessing: false
+  feature_selection: false
+  dimensionality: false
+  integration: false
+  integration_benchmark: false
+  clustering: false
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: false
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+compute:
+  n_jobs: 2
+  backend: cpu
+  prefer_gpu: false
+report:
+  fail_on_report_error: true
+r:
+  enabled: true
+cohort:
+  sample_key: sample_id
+ambient_correction:
+  enabled: true
+  resume: false
+qc_evidence:
+  metrics:
+    layer: counts
+  doublets:
+    enabled: false
+  ambient:
+    enabled: false

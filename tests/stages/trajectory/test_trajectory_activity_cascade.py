@@ -104,15 +104,6 @@ def test_cascade_heatmap_returns_figure_and_saves(tmp_path):
         assert Path(p).exists()
 
 
-def test_cascade_heatmap_says_what_the_arrow_numbers_are():
-    """The right-hand ``up 0.31`` / ``down 0.30`` ticks were a bare number: a reader could not
-    tell they are rank correlations with pseudotime."""
-    df, pt = _monotone_activity()
-    fig = cascade.cascade_heatmap(df, pt)
-    texts = " ".join(t.get_text() for ax in fig.axes for t in ax.texts)
-    assert "Spearman" in texts
-
-
 def test_cascade_key_sits_below_the_arrow_column_where_no_title_can_reach():
     """Real defect on the lymphedema LEC run: with the house fonts the key above the arrow column
     ran into the end of a long title. A title can extend over the space above the column but never
@@ -124,7 +115,12 @@ def test_cascade_key_sits_below_the_arrow_column_where_no_title_can_reach():
     keys = [t for a in fig.axes for t in a.texts if "Spearman" in t.get_text()]
     assert keys
     axes_box = fig.axes[0].get_window_extent(renderer)
-    assert keys[0].get_window_extent(renderer).y1 <= axes_box.y0 + 1
+    key_box = keys[0].get_window_extent(renderer)
+    assert key_box.y1 <= axes_box.y0 + 1
+    assert all(
+        not key_box.overlaps(tick.get_window_extent(renderer))
+        for tick in fig.axes[0].get_xticklabels()
+    )
 
 
 def test_cascade_heatmap_diagonal_row_order():
@@ -144,12 +140,6 @@ def test_cascade_heatmap_none_when_no_association():
 
 
 # ── method: registration + skip path + offline glue ──────────────────────────
-
-
-def test_activity_cascade_registered():
-    from cellquorum.methods.registry import METHOD_REGISTRY
-
-    assert METHOD_REGISTRY.has("trajectory_viz", "activity_cascade")
 
 
 class _Ctx:

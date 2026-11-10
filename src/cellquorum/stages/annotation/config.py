@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from cellquorum.config.base import MethodEntries, StrictBaseModel
@@ -21,6 +23,9 @@ class AnnotationConfig(StrictBaseModel):
 
     # Celltype -> marker gene list used by marker-vote scoring.
     marker_panels: dict[str, list[str]] = {}
+
+    # Optional cell-level refinement for the named human PBMC panels.
+    lymphocyte_refinement: Literal["human_pbmc_v1"] | None = None
 
     # Layer to score on (must be log-normalized).
     score_layer: str = "cellquorum_normalized"

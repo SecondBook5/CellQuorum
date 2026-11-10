@@ -44,41 +44,28 @@ def _curves(fig):
     }
 
 
-def test_one_smoothed_curve_per_condition_control_first() -> None:
+def test_score_curves_show_cells_trends_and_uncertainty_by_condition() -> None:
     fig = _draw()
+
     curves = _curves(fig)
     assert list(curves) == ["curve|Normal", "curve|Lymphedema"]
 
-
-def test_each_curve_follows_a_score_that_rises_along_the_axis() -> None:
-    fig = _draw()
-    for line in _curves(fig).values():
+    for line in curves.values():
         y = np.asarray(line.get_ydata())
         assert y[-1] > y[0]
 
-
-def test_lymphedema_curve_sits_above_the_normal_one_for_these_data() -> None:
-    curves = _curves(_draw())
     normal, lymphedema = (
         np.asarray(curves[f"curve|{c}"].get_ydata()) for c in ("Normal", "Lymphedema")
     )
     assert float(np.mean(lymphedema - normal)) > 0.3
 
-
-def test_every_cell_is_drawn_as_a_faint_point() -> None:
-    fig = _draw()
     points = sum(len(c.get_offsets()) for c in fig.axes[0].collections if c.get_gid() == "cells")
     assert points == 300
 
-
-def test_a_band_of_resampling_uncertainty_is_drawn_for_each_curve() -> None:
-    fig = _draw()
     bands = [c for c in fig.axes[0].collections if (c.get_gid() or "").startswith("band|")]
     assert len(bands) == 2
 
-
-def test_the_axes_are_named() -> None:
-    ax = _draw().axes[0]
+    ax = fig.axes[0]
     assert ax.get_xlabel() == "EndoMT index"
     assert ax.get_ylabel() == "TEAD activity"
 

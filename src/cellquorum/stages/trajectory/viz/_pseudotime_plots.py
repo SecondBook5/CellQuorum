@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import anndata as ad
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumConfigError
@@ -124,21 +126,68 @@ class GeneTrendVizMethod(AnalysisMethod):
         if not present:
             return self._skip("no requested gene in var_names", requested=list(genes))
 
-        import matplotlib.pyplot as plt
-
         figures_dir = Path(context.paths.figures) / "trajectory"
         formats = tuple(config.get("figure_formats", ["pdf", "png"]))
         dpi = int(config.get("dpi", 300))
         apply_theme("notebook")
         warnings: list[str] = []
         try:
-            model = cr.models.GAM(fate)
-            cr.pl.gene_trends(fate, model=model, genes=present, show=False)
-            paths = _helpers.save_figure(
-                plt.gcf(), figures_dir, "gene_trends", formats=formats, dpi=dpi
+            distribution = config.get("gam_distribution", "gamma")
+            link = config.get("gam_link", "log")
+            layer = config.get("gene_trend_layer", "X")
+            if layer != "X" and layer not in fate.layers:
+                return self._skip(f"Gene trend expression layer {layer!r} is unavailable")
+            model = cr.models.GAM(fate, distribution=distribution, link=link)
+            candidates = config.get("pseudotime_keys") or _helpers.available_pseudotimes(fate, None)
+            time_key = next((key for key in candidates if key in fate.obs), None)
+            if time_key is None:
+                return self._skip("no configured pseudotime in the fitted fate object")
+            before = set(plt.get_fignums())
+            models = cr.pl.gene_trends(
+                fate,
+                model=model,
+                genes=present,
+                time_key=time_key,
+                return_models=True,
+                data_key=layer,
+                show_progress_bar=False,
             )
+            created = set(plt.get_fignums()) - before
+            if len(created) != 1:
+                return self._skip("CellRank did not return one gene-trends figure")
+            fig = plt.figure(created.pop())
+            curves = []
+            for gene, fits in models.items():
+                for lineage, fit in fits.items():
+                    if not fit:
+                        warnings.append(f"CellRank GAM did not fit {gene} in {lineage}.")
+                        continue
+                    curves.append(
+                        pd.DataFrame(
+                            {
+                                "gene": gene,
+                                "lineage": lineage,
+                                "pseudotime": np.asarray(fit.x_test).ravel(),
+                                "fitted_expression": np.asarray(fit.y_test).ravel(),
+                            }
+                        )
+                    )
+            if not curves:
+                plt.close(fig)
+                return self._skip("CellRank produced no fitted gene trends")
+            table_path = Path(context.paths.results) / "trajectory" / "gene_trends.csv"
+            pd.concat(curves, ignore_index=True).to_csv(table_path, index=False)
+            paths = _helpers.save_figure(fig, figures_dir, "gene_trends", formats=formats, dpi=dpi)
             artifacts = _helpers.figure_artifacts(
                 paths, name="trajectory_figure", description=f"GAM gene trends: {present}."
+            )
+            artifacts.append(
+                StageArtifact(
+                    name="gene_trend_curves",
+                    path=table_path,
+                    kind="table",
+                    description="Fitted expression by gene, lineage and pseudotime.",
+                )
             )
         except Exception as exc:  # noqa: BLE001
             return self._skip(f"gene_trends failed ({str(exc)[:200]})")
@@ -147,7 +196,16 @@ class GeneTrendVizMethod(AnalysisMethod):
             artifacts=artifacts,
             notes=[f"gene_trend_viz rendered trends for {present}."],
             warnings=warnings,
-            metrics={"method": self.name, "n_figures": 1, "genes": present},
+            metrics={
+                "method": self.name,
+                "n_figures": 1,
+                "genes": present,
+                "fitted_curves": len(curves),
+                "expression_layer": layer,
+                "distribution": distribution,
+                "link": link,
+                "pseudotime_key": time_key,
+            },
             backend="python",
         )
 
@@ -388,7 +446,8 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
                 gene_order,
                 condition_order=condition_order,
                 expr_cmap=config.get("heatmap_expr_cmap", figstyle.SEQUENTIAL_CMAP),
-                title=f"Expression along {pt_key}",
+                title=f"Expression along {pt_key.replace('_', ' ')}",
+                score_label=score_key.replace("_", " ") if score_key else "Score",
                 gene_group_labels=gene_group_labels,
             )
         except Exception as exc:  # noqa: BLE001

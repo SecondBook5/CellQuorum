@@ -428,6 +428,7 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         # ---- Program-stability diagnostic (guarded resample orchestration). ----
         per_program_stability: dict[str, float] = {}
         program_stability_df: pd.DataFrame | None = None
+        incomplete: list[str] = []
         if settings.stability_resamples > 0 and not run.programs.empty:
             per_program_stability, program_stability_df, stability_notes = (
                 self._orchestrate_stability(
@@ -437,10 +438,11 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                     scratch_root=scratch_root,
                     settings=settings,
                     n_samples=n_samples,
-                    warnings=warnings,
+                    warnings=incomplete,
                 )
             )
             notes.extend(stability_notes)
+            warnings.extend(incomplete)
         elif settings.stability_resamples == 0:
             notes.append("program stability disabled (stability_resamples=0)")
 
@@ -459,6 +461,8 @@ class MulticellularProgramsMethod(RAnalysisMethod):
         metrics = {
             "n_programs": n_programs_recovered,
             "n_programs_requested": settings.n_programs,
+            "stability_resamples_requested": settings.stability_resamples,
+            "incomplete_reasons": incomplete,
             "n_cell_types_used": len(run.cell_types_used),
             "cell_types_used": run.cell_types_used,
             "n_samples": n_samples,
@@ -535,7 +539,12 @@ class MulticellularProgramsMethod(RAnalysisMethod):
                     timeout=settings.timeout,
                 )
                 if rproc.returncode != 0:
-                    warnings.append(f"stability resample {r} failed (nonzero R exit)")
+                    detail = (rproc.stderr or "").strip()[-300:]
+                    if rproc.returncode in (-9, 137):
+                        detail = "worker was killed; check the memory limit and host OOM log"
+                    warnings.append(
+                        f"stability resample {r} failed (R exit {rproc.returncode}): {detail}"
+                    )
                     continue
                 round_programs = read_dialogue_outputs(round_out)["programs"]
                 match_dicts.append(match_program_loadings(full_programs, round_programs))

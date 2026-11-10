@@ -172,7 +172,7 @@ def _flags(frame: pd.DataFrame, column: str) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(False, index=frame.index, dtype=bool)
     values = frame[column]
-    if values.dtype == object:
+    if pd.api.types.is_string_dtype(values.dtype) or values.dtype == object:
         return values.astype(str).str.strip().str.lower().isin({"true", "1", "yes"})
     return values.fillna(False).astype(bool)
 

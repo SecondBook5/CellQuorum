@@ -52,15 +52,19 @@ def _context(tmp_path, adata, **cfg):
     return build_pipeline_context(config, output_dir=tmp_path / "run").with_adata(adata)
 
 
-def test_detects_the_genuinely_shifted_program_as_significant(tmp_path):
+def test_shifted_and_flat_programs_agree_with_the_reported_counts(tmp_path):
     context = _context(tmp_path, _adata())
     result = DifferentialStateStage().run(context)
+
     assert result.status == "success"
     csv_path = next(a.path for a in result.artifacts if a.name == "differential_state_results")
     table = pd.read_csv(csv_path).set_index("program")
     assert table.loc["state_up", "significant"]
     assert table.loc["state_up", "effect"] > 0
     assert not table.loc["state_flat", "significant"]
+
+    assert result.metrics["n_programs_tested"] == 2
+    assert result.metrics["n_significant"] == 1
 
 
 def test_skips_when_case_control_not_configured(tmp_path):
@@ -101,10 +105,3 @@ def test_min_cells_per_donor_excludes_a_thin_donor_without_crashing(tmp_path):
     context = _context(tmp_path, adata)
     result = DifferentialStateStage().run(context)
     assert result.status == "success"  # other 7 donors still carry the test
-
-
-def test_metrics_report_n_programs_tested_and_significant(tmp_path):
-    context = _context(tmp_path, _adata())
-    result = DifferentialStateStage().run(context)
-    assert result.metrics["n_programs_tested"] == 2
-    assert result.metrics["n_significant"] == 1

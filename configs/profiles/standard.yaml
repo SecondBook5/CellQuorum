@@ -1,0 +1,3 @@
+state_scoring:
+  methods: [{method: score_genes}, {method: aucell}]
+  builtin_programs: [interferon_isg, stress_hsp, hypoxia_hif]

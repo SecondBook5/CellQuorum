@@ -88,14 +88,7 @@ def test_the_corrected_reference_latent_is_saved(tmp_path: Path) -> None:
     assert np.allclose(prepared.obsm["X_scANVI"][:, 0], np.arange(0, 36, 3))
 
 
-def test_labels_use_the_query_prediction_column_name(tmp_path: Path) -> None:
-    """scDiagnostics takes ONE column name for both sides, so they must agree.
-
-    The reference's own column is ``Cell_type_granular`` and the query's predictions land in
-    ``ref_cell_type_granular``; passing the latter meant R stopped with "Reference h5ad missing
-    cell_type column: ref_cell_type_granular".
-    """
-
+def test_prepared_atlas_preserves_labels_query_genes_and_batches(tmp_path: Path):
     prepared, _ = _write(tmp_path)
 
     assert "ref_cell_type_granular" in prepared.obs.columns
@@ -104,6 +97,11 @@ def test_labels_use_the_query_prediction_column_name(tmp_path: Path) -> None:
         "Capillary EC FABP4 hi",
         "Fibroblast CCL19+",
     }
+
+    assert list(prepared.var_names) == _GENES
+
+    assert "biosample_id" in prepared.obs.columns
+    assert prepared.obs["biosample_id"].nunique() == 3
 
 
 def test_the_coarse_resolution_comes_along(tmp_path: Path) -> None:
@@ -147,21 +145,6 @@ def test_x_is_log_normalized_and_counts_are_kept(tmp_path: Path) -> None:
     assert not np.allclose(x, np.round(x)), "X looks like counts, not log-normalized values"
     assert x.max() < 12, "X is not on a log scale"
     assert prepared.uns["cellquorum_prepared_reference"]["x_is"] == "log1p CP10K"
-
-
-def test_the_gene_space_is_the_query_shared_one(tmp_path: Path) -> None:
-    """Symbols, not Ensembl IDs — the mismatch that gave zero shared genes."""
-
-    prepared, _ = _write(tmp_path)
-    assert list(prepared.var_names) == _GENES
-
-
-def test_the_reference_batch_is_carried_through(tmp_path: Path) -> None:
-    """So a consumer can model or inspect reference batch rather than guess at it."""
-
-    prepared, _ = _write(tmp_path)
-    assert "biosample_id" in prepared.obs.columns
-    assert prepared.obs["biosample_id"].nunique() == 3
 
 
 def test_a_missing_batch_column_is_not_fatal(tmp_path: Path) -> None:

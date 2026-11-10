@@ -18,6 +18,8 @@ would trade that for nine characters of axis label.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
 #: MSigDB collections, keyed by the name a config uses. decoupler ships a dedicated
@@ -84,6 +86,13 @@ def _msigdb_collection(collection: str, organism: str, license: str) -> pd.DataF
     return net.drop_duplicates(["source", "target"]).reset_index(drop=True)
 
 
+def collection_names(names: list[str], gmt_path: str | None) -> list[str]:
+    """A single GMT supplies one collection, even when registry defaults list several."""
+    if gmt_path and len(names) > 1:
+        return [Path(gmt_path).stem]
+    return names
+
+
 def get_net(
     collection: str,
     organism: str = "human",
@@ -139,4 +148,9 @@ def get_net(
         raise PriorFetchError(f"failed to fetch '{collection}': {exc}") from exc
 
 
-__all__ = ["MSIGDB_COLLECTIONS", "PriorFetchError", "get_net"]
+def activity_batch_size(n_vars: int) -> int:
+    """Bound each dense cell-by-gene work array to 32 MiB at float64 precision."""
+    return min(1024, max(1, (32 * 1024 * 1024) // (max(1, n_vars) * 8)))
+
+
+__all__ = ["MSIGDB_COLLECTIONS", "PriorFetchError", "activity_batch_size", "get_net"]

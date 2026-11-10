@@ -1,12 +1,5 @@
 from cellquorum.config.models import CellQuorumConfig
-from cellquorum.core.executor import build_default_stage_registry
 from cellquorum.core.planner import PipelinePlanner
-
-
-def test_registry_contains_embeddings():
-    reg = build_default_stage_registry()
-    assert reg.get("embeddings") is not None
-    assert "embeddings" in reg.registered_stage_names()
 
 
 def test_planner_schedules_embeddings_before_de():

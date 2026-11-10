@@ -210,13 +210,17 @@ def test_condition_split_heatmap_single_panel_when_one_condition():
     profiles = {"all": prof}
     fig = heatmap.condition_split_heatmap(
         profiles,
-        {},
+        {"all": np.linspace(0, 1, n_bins)},
         [],
         [f"G{i}" for i in range(n_genes)],
         np.arange(n_genes),
         condition_order=["all"],
+        score_label="G2M score",
     )
+    assert "G2M score" in {ax.get_ylabel() for ax in fig.axes}
+    assert "all" not in {ax.get_title() for ax in fig.axes}
     assert len(fig.axes) >= 2  # pseudotime gradient row + expression row at least
+    assert "pseudotime rank within condition (percentile)" in {ax.get_xlabel() for ax in fig.axes}
 
 
 def test_condition_split_heatmap_last_panel_is_as_wide_as_the_tracks_above_it():

@@ -5,8 +5,7 @@ directory. Order and identity are defined by each stage's `@register_stage`
 decorator — this table is test-pinned to the live catalog
 (`cellquorum.core.stages.all_stage_specs`), so it cannot drift when stages are
 added, removed, or reordered. Each implemented stage's module opens with a
-matching `# Pipeline step (order=…)` header; `planned` rows are reserved orders
-that have no module yet.
+matching `# Pipeline step (order=…)` header.
 
 | Order | Stage | Status |
 |---|---|---|
@@ -17,7 +16,6 @@ that have no module yet.
 | 40 | `feature_selection` | implemented |
 | 50 | `dimensionality` | implemented |
 | 60 | `integration` | implemented |
-| 70 | `integration_gate` | planned |
 | 80 | `clustering` | implemented |
 | 90 | `annotation` | implemented |
 | 105 | `query_projection` | implemented |
@@ -45,7 +43,6 @@ that have no module yet.
 | 260 | `coexpression` | implemented |
 | 270 | `grn` | implemented |
 | 280 | `perturbation` | implemented |
-| 290 | `molecular_inference` | planned |
 | 300 | `trajectory` | implemented |
 | 310 | `trajectory_viz` | implemented |
 | 320 | `cell_cell_communication` | implemented |

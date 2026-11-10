@@ -5,7 +5,6 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cellquorum.methods.registry import METHOD_REGISTRY
 from cellquorum.stages.trajectory.stage import TrajectoryStage
 
 
@@ -67,10 +66,6 @@ class _Ctx:
         return self._manifest
 
 
-def test_velocity_registered():
-    assert METHOD_REGISTRY.has("trajectory", "velocity")
-
-
 def test_stage_injects_default_velocity_method():
     stage = TrajectoryStage()
     augmented = stage._augment_config(_Ctx.__new__(_Ctx), {"enabled": True})
@@ -88,5 +83,5 @@ def test_stage_skips_when_no_looms(tmp_path):
     )
     a.var_names = genes
     result = TrajectoryStage().run(_Ctx(tmp_path, a, manifest=None))
-    assert result.status == "success"
+    assert result.status == "skipped"
     assert any("skipped" in w for w in result.warnings)

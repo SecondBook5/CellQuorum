@@ -139,67 +139,16 @@ def test_the_core_eight_keep_every_pair_apart() -> None:
     )
 
 
-def test_the_full_palette_keeps_consecutive_colours_apart() -> None:
-    """
-    Verify all 18 slots are separated from their NEIGHBOURS under every vision.
-
-    This is the guarantee the overflow tier was ordered to satisfy, and it is what
-    makes an 18-band stacked bar or an ordered legend readable.
-    """
-
+def test_full_palette_separation_contrast_and_print_lightness():
     audit = audit_palette(list(CATEGORICAL_PALETTE))
 
     assert audit.worst_adjacent >= ADJACENT_FLOOR, format_audit(audit)
-
-
-def test_the_full_palette_is_not_all_pairs_safe_and_that_is_recorded() -> None:
-    """
-    Pin the measured fact that the overflow tier contains look-alike pairs.
-
-    ``figstyle`` claims the whole 18 clears the CVD-separation gate. Measured, it does
-    not: the closest pair is 0.7 apart under deuteranomaly (slots 6 and 12, the
-    textbook green/crimson collision) and 3.5 apart under NORMAL vision (slots 3 and
-    11, aqua and emerald -- a near-duplicate every reader sees). This test exists so
-    that fact is a checked statement rather than a comment, and so the day someone
-    repairs the tier this test fails and forces the docs to be updated with it. A
-    repaired tier reaching 7.0 has been demonstrated, but changing these hues repaints
-    every published figure, so it is a deliberate decision and not a silent fix.
-
-    Perceptual space simply does not hold 18 mutually distinct hues at usable
-    lightness; past about eight categories, identity has to come from direct labels or
-    position, which is why every categorical figure in the engine carries them.
-    """
-
-    audit = audit_palette(list(CATEGORICAL_PALETTE))
 
     assert audit.worst_all_pairs < CORE_ALL_PAIRS_FLOOR, format_audit(audit)
     assert audit.worst_all_pairs_view.view == "deuteranomaly"
     assert audit.worst_all_pairs_view.worst_pair == (6, 12)
 
-
-def test_no_palette_colour_disappears_into_the_chart_surface() -> None:
-    """
-    Verify every colour is separated from the paper it is drawn on.
-
-    A palette can be internally perfect and still produce an invisible series: the
-    surface is effectively a nineteenth category that every mark must clear.
-    """
-
-    audit = audit_palette(list(CATEGORICAL_PALETTE))
-
     assert audit.min_vs_surface >= 20.0, format_audit(audit)
-
-
-def test_the_palette_spans_enough_lightness_for_greyscale_print() -> None:
-    """
-    Verify the palette keeps a wide lightness range.
-
-    Journals still print in greyscale, where hue is gone entirely and lightness is
-    the only channel left. A palette tuned purely for hue separation can collapse to
-    a single grey.
-    """
-
-    audit = audit_palette(list(CATEGORICAL_PALETTE))
 
     assert audit.lightness_span >= 30.0, format_audit(audit)
 

@@ -59,7 +59,11 @@ class ActivityVizMethod(AnalysisMethod):
         case = config.get("case") or getattr(design, "case", None)
         control = config.get("control") or getattr(design, "control", None)
 
-        resources = collections_from_glob(results_dir, "enrichment_activity_")
+        resources = [
+            r
+            for r in collections_from_glob(results_dir, "enrichment_activity_")
+            if not r.endswith("_by_donor")
+        ]
         if wanted:
             resources = [r for r in resources if r in set(wanted)]
         if not resources:
@@ -77,13 +81,18 @@ class ActivityVizMethod(AnalysisMethod):
                 warnings.append(f"activity_viz: {resource} CSV is empty")
                 continue
             try:
-                if "condition" in df.columns and case and control:
+                condition_col = config.get("condition_col") or getattr(
+                    design, "condition_col", None
+                )
+                if not condition_col or condition_col not in df.columns:
+                    condition_col = "condition"
+                if condition_col in df.columns and case and control:
                     fig = plots.cross_group_dotplot_by_condition(
                         df,
                         row_col="source",
                         col_col="cell_type",
                         value_col="mean_score",
-                        condition_col="condition",
+                        condition_col=condition_col,
                         control=control,
                         case=case,
                         top_k=top_k,
@@ -150,7 +159,11 @@ class GseaVizMethod(AnalysisMethod):
 
         # Discover summary CSVs, excluding the runningES companion files.
         all_cols = collections_from_glob(results_dir, "enrichment_gsea_")
-        collections = [c for c in all_cols if not c.startswith("runningES_")]
+        collections = [
+            c
+            for c in all_cols
+            if not c.startswith("runningES_") and not c.endswith("_by_cell_type")
+        ]
         if wanted:
             collections = [c for c in collections if c in set(wanted)]
         if not collections:

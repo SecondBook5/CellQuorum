@@ -50,7 +50,14 @@ class VelocityMethod(AnalysisMethod):
         notes: list[str] = []
 
         # 2. Optionally generate missing looms, then attach spliced/unspliced.
-        if manifest is not None:
+        if {"spliced", "unspliced"}.issubset(adata.layers):
+            from cellquorum.core.contracts.statistical import assert_integer_valued
+
+            for layer in ("spliced", "unspliced"):
+                assert_integer_valued(adata.layers[layer], layer=layer)
+            velo_adata = adata
+            notes.append("Used spliced and unspliced count layers from the input object.")
+        elif manifest is not None:
             manifest = self._maybe_generate(manifest, config, sample_col, loom_path_col, notes)
             velo_adata, io_notes = reconcile_looms(
                 adata, manifest, sample_col=sample_col, loom_path_col=loom_path_col
@@ -145,6 +152,11 @@ class VelocityMethod(AnalysisMethod):
             if whole_artifact is not None:
                 artifacts.append(whole_artifact)
 
+        if not artifacts:
+            return MethodSkip(
+                reason="velocity produced no fitted object: " + "; ".join(warnings or notes),
+                details={"method": self.name, "per_group": per_group},
+            )
         return StageResult(
             adata=adata,
             artifacts=artifacts,
@@ -259,7 +271,7 @@ class VelocityMethod(AnalysisMethod):
             if not isinstance(gen_dict, VelocityGenerationConfig)
             else gen_dict
         )
-        if not gen.generate_missing or gen.bam_dir is None:
+        if not gen.generate_missing or (gen.bam_dir is None and "cellranger_path" not in manifest):
             return manifest
         manifest = manifest.copy()
         if loom_path_col not in manifest.columns:
@@ -269,7 +281,14 @@ class VelocityMethod(AnalysisMethod):
             if existing is not None and str(existing) and Path(str(existing)).exists():
                 continue
             sample_id = str(manifest.at[idx, sample_col])
-            sample_dir = Path(gen.bam_dir) / sample_id
+            library = manifest.loc[idx].get("cellranger_path")
+            if pd.notna(library) and library:
+                sample_dir = Path(library)
+            elif gen.bam_dir is not None:
+                sample_dir = Path(gen.bam_dir) / sample_id
+            else:
+                notes.append(f"{sample_id}: supply its Cell Ranger directory to generate a loom.")
+                continue
             loom, reason = ensure_loom(sample_id, sample_dir, gen)
             notes.append(f"{sample_id}: {reason}")
             if loom is not None:
@@ -302,6 +321,8 @@ class VelocityMethod(AnalysisMethod):
         warnings: list[str] = []
         mask = (velo_adata.obs[grouping_col].astype(str) == group).to_numpy()
         sub = velo_adata[mask].copy()
+        # The global DPT root is indexed into the full atlas, not this lineage slice.
+        sub.uns.pop("iroot", None)
         min_cells = int(config.get("min_cells", 30))
         if sub.n_obs < min_cells:
             # Configured, expected and harmless: min_cells is the gate doing its

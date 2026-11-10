@@ -47,7 +47,7 @@ MANDATORY_STAGES: list[str] = [
 #   rna_velocity          -> trajectory (scVelo/CellRank) + trajectory figures
 #   phate_pseudotime      -> embeddings (PHATE) driving pseudotime ordering
 #   cell_cell_communication -> CCC + CCC figures + network analysis
-#   progeny               -> pathway-activity inference (molecular_inference)
+#   progeny               -> PROGENy pathway scores (enrichment activity method)
 SCAFFOLD_METHOD_STAGES: dict[str, list[str]] = {
     "pseudobulk": ["differential_expression", "de_viz"],
     "subclustering": ["subclustering", "adjudication"],
@@ -59,7 +59,7 @@ SCAFFOLD_METHOD_STAGES: dict[str, list[str]] = {
         "ccc_viz",
         "network_analysis",
     ],
-    "progeny": ["molecular_inference"],
+    "progeny": ["enrichment"],
 }
 
 # Every stage flag gen_configs may toggle OFF (all legal flags minus mandatory).
