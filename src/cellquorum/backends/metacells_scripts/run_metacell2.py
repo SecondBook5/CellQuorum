@@ -132,6 +132,7 @@ def main(argv: list[str]) -> int:
 
     # ---- Run the MetaCell2 pipeline ---- #
     import numpy as np
+    from scipy import sparse
 
     if layer != "X":
         full.X = full.layers[layer]
@@ -140,11 +141,10 @@ def main(argv: list[str]) -> int:
     # int64/int32 counts (the common on-disk dtype) fail that assertion with
     # no informative message, deep inside the pipeline. Synthetic data built
     # with float32 by construction never exercised this.
-    from scipy import sparse
-
     counts = full.X
     if not isinstance(counts, np.ndarray | sparse.spmatrix | sparse.sparray):
-        raise ValueError("MetaCell2 requires a dense or sparse count matrix")
+        _write_empty(out_dir, "MetaCell2 requires a dense or sparse count matrix")
+        return 0
     if counts.dtype != np.float32:
         counts = counts.astype(np.float32)
         full.X = counts
