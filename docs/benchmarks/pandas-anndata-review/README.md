@@ -42,8 +42,8 @@ On the same 3,696 cells and reference recipe, the repaired wheel completed Palan
 stochastic scVelo, CellRank and CytoTRACE 2. The analysis environment used pandas
 3.1.1, AnnData 0.13.4 and NumPy 2.3.5. CytoTRACE 2 used its 19-model ensemble
 with pandas 2.3.3 and NumPy 1.26.4 in a separate CPU worker. Both environments
-passed `pip check`. The CLI took 3 min 45 s and reached 6.48 GiB peak resident
-memory in the Linux/WSL validation run. [Installation instructions](../../../envs/README.md#extended-pancreas-lineage-from-a-clean-python-312-install)
+passed `pip check`. The CLI took 3 min 34 s and reached 6.48 GiB peak resident
+memory in the Linux/WSL validation run. [Installation instructions](../reference-studies.md#extended-pancreas-lineage-from-a-clean-python-312-install)
 
 | Population | Cells | Median potency |
 |---|---:|---:|
@@ -67,7 +67,12 @@ The 4,800 fitted values across 24 gene–lineage curves agreed within 10⁻¹⁴
 The two restored publication pages use the same Palantir panel. Their eight
 bar lengths reproduce the median pseudotime from the final analysis object.
 The largest absolute difference in a plotted median was 2.23 × 10⁻¹⁶.
-The rendered pages differ in 1.65% and 3.81% of pixels, respectively, at 150 dpi.
+With Matplotlib 3.11.2 and Pillow 13.0.0, the standalone and assembled pages
+differed from baseline in 1.65% and 3.81% of pixels at 150 dpi. Repeating the
+full run with the baseline renderer (Matplotlib 3.10.9 and Pillow 12.3.0)
+reproduced both pages pixel for pixel and all nine diagnostic PNGs exactly.
+The lineage constraints now pin that renderer.
+[Diagnostic PNG comparisons](pancreas/diagnostic-pngs.csv)
 [Plotted data](pancreas/lineage.palantir.csv) ·
 [Standalone PDF](pancreas/lineage.palantir.pdf) · [Standalone SVG](pancreas/lineage.palantir.svg) ·
 [Assembled PDF](pancreas/lineage.pdf) · [Assembled SVG](pancreas/lineage.svg)

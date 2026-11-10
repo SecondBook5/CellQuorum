@@ -9,8 +9,8 @@
   "fitted_curve_points": 4800,
   "max_abs_curve_expression_change": 8.43769498715119e-15,
   "max_abs_panel_median_change": 2.220446049250313e-16,
-  "lineage.palantir_pixel_rms_0_to_255": 16.703882773166832,
-  "lineage.palantir_fraction_changed_pixels": 0.01649774774774775,
-  "lineage_pixel_rms_0_to_255": 30.175119414108963,
-  "lineage_fraction_changed_pixels": 0.038142165871423515
+  "lineage.palantir_pixel_rms_0_to_255": 0.0,
+  "lineage.palantir_fraction_changed_pixels": 0.0,
+  "lineage_pixel_rms_0_to_255": 0.0,
+  "lineage_fraction_changed_pixels": 0.0
 }
