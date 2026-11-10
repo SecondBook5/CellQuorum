@@ -1,0 +1,8 @@
+panel,baseline,candidate,shared,max_delta,pearson
+communication.liana,15,15,15,0.7908117891050198,0.48069340640131697
+communication.mnn,10,10,10,0.0,0.9999999999999999
+communication.targets,6,6,6,0.0,1.0
+communication.tensor,18,18,18,0.0320765758511361,0.8213054366355064
+regulation.collectri,19,19,19,8.326672684688674e-17,1.0
+regulation.scenic,15,15,15,0.0,1.0
+regulation.targets,8,8,8,0.0,1.0

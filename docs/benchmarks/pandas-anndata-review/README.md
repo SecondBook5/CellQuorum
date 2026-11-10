@@ -18,6 +18,16 @@ Each run used the same normalized SCC object, LIANA resource and CellQuorum reci
 
 The inferred CD8 T cell HMGB1 to keratinocyte SDC1 interaction entered the top 100 in seven libraries with LIANA 2.1.1, up from four with 1.10.0. Across the same 18 libraries, the three optimally matched Tensor-cell2cell sample factors had Pearson correlations of 0.821, 0.973 and 0.958. Matching maximized total sample-loading correlation across factor permutations.
 
+## What changes in the manuscript figures?
+
+![Paired TGFB1 to ENG and communication factor panels from the baseline and candidate reports](scc-manuscript-comparison.png)
+
+These are the rendered CellQuorum manuscript panels. Each line connects measurements from the same patient. The original panels scale their vertical axes independently. Lower LIANA ranks indicate stronger inferred interactions. The candidate report used the same full ligand and receptor complexes for the LIANA, NicheNet and MultiNicheNet panels.
+
+In all five patients with both TGFB1–ENG measurements, the tumor had a lower LIANA rank and a higher MultiNicheNet product than the matched normal sample in both environments. The median paired rank difference changed from −0.276 to −0.457. The expression-based MultiNicheNet products and all six NicheNet target weights were identical. Tensor factor 1 declined in six of eight paired patients on baseline and four of eight on the candidate. These factor loadings support different donor-level interpretations. The three regulatory panel sources matched to floating-point precision.
+
+[Plotted sample measurements](scc-panel-measurements.csv) · [Paired differences](scc-publication-donor-differences.csv) · [Seven-panel source comparison](scc-publication-sources.csv)
+
 ## Figure and source data
 
 - [All matched magnitude scores and percentiles (gzip CSV)](scc-magnitude-interactions.csv.gz)
