@@ -4,7 +4,7 @@
 # the gate and the tests report failures that are not in this code. Move these together, in their
 # own commit, when both are rechecked against newer releases.
 anndata==0.12.10
-pandas==2.3.3
+pandas==3.1.1
 numpy==2.4.6
 scipy==1.16.3
 matplotlib==3.10.8
