@@ -209,11 +209,18 @@ class TensorCell2CellMethod(AnalysisMethod):
         # CRITICAL DEVIATION: use sample_key="sample" (the standardized literal from
         # LianaMethod), NOT sample_key=sample_col which would pass "sample_id" and fail.
         try:
-            tensor = li.multi.to_tensor_c2c(
+            # LIANA 2 moved the converter and renamed its score transform.
+            if hasattr(li, "ms"):
+                convert = li.ms.to_tensor_c2c
+                transform_key = "inverse_fn"
+            else:
+                convert = li.multi.to_tensor_c2c
+                transform_key = "inverse_fun"
+            tensor = convert(
                 adata,
                 sample_key="sample",
                 score_key="magnitude_rank",
-                inverse_fun=lambda x: 1 - x,
+                **{transform_key: lambda rank: 1 - rank},
                 non_negative=True,
                 how=config.get("tensor_how", "outer"),
                 outer_fraction=float(config.get("outer_fraction", 1.0 / 3.0)),

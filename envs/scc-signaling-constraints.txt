@@ -1,5 +1,5 @@
-# Direct Python dependencies from the paired SCC installed-wheel run, Python 3.12.
-liana==1.10.0
+# Python 3.12 inputs for the paired SCC signaling recipe.
+liana==2.1.1
 cell2cell==0.9.0
 tensorly==0.10.0
 decoupler==2.2.0

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import anndata as ad
+import h5py
 import numpy as np
 import pandas as pd
 from optional_deps import requires_parquet
@@ -243,12 +244,22 @@ def test_scratch_h5ad_keeps_obsm_but_not_unrelated_layers(tmp_path: Path) -> Non
             return SimpleNamespace(returncode=1, stderr="stop after write")
 
     a = _adata()
+    a.obs_names = pd.Index(a.obs_names, dtype="string")
+    a.obs["study_label"] = pd.array(["donor"] * (a.n_obs - 1) + [None], dtype="string")
     a.layers["huge_unrelated_layer"] = np.zeros_like(a.layers["counts"])
 
     res = CellOracleMethod()._run(a, {"launcher": "python"}, _ctx(tmp_path, FakeBackend()))
     assert isinstance(res, MethodSkip)
 
     written = ad.read_h5ad(tmp_path / "scr" / "perturbation_input.h5ad")
+    with h5py.File(tmp_path / "scr" / "perturbation_input.h5ad") as handle:
+        encodings = []
+        handle.visititems(lambda _, node: encodings.append(node.attrs.get("encoding-type")))
+        assert "nullable-string-array" not in encodings
+    assert written.obs_names.tolist() == a.obs_names.tolist()
+    np.testing.assert_array_equal(written.obs["study_label"].isna(), a.obs["study_label"].isna())
+    assert set(written.obs["study_label"].dropna()) == {"donor"}
+    assert isinstance(a.obs["study_label"].dtype, pd.StringDtype)
     assert "huge_unrelated_layer" not in written.layers
     assert "X_umap" in written.obsm
     assert written.obsm["X_umap"].shape == a.obsm["X_umap"].shape

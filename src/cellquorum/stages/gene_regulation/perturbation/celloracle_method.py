@@ -133,29 +133,40 @@ def _check_prerequisites(adata, settings: _Settings, context) -> Any:  # noqa: A
     return backend
 
 
+def _legacy_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Encode string metadata for the isolated CellOracle H5AD reader."""
+    frame = frame.copy()
+    if isinstance(frame.index.dtype, pd.StringDtype):
+        frame.index = frame.index.astype(object)
+    for key, values in frame.items():
+        if isinstance(values.dtype, pd.StringDtype):
+            categories = pd.Index(values.dropna().unique(), dtype=object)
+            frame[key] = pd.Categorical(values, categories=categories)
+        elif isinstance(values.dtype, pd.CategoricalDtype) and isinstance(
+            values.cat.categories.dtype, pd.StringDtype
+        ):
+            frame[key] = values.cat.rename_categories(values.cat.categories.astype(object))
+    return frame
+
+
 def _write_scratch_input(adata, settings: _Settings, context) -> Path:  # noqa: ANN001
     """Write the counts h5ad (highly-variable genes only) the KO script reads."""
     scratch = Path(getattr(context.paths, "scratch", "."))
     scratch.mkdir(parents=True, exist_ok=True)
     h5ad = scratch / "perturbation_input.h5ad"
     layer = settings.layer
-    # Genuinely shallow, matching the same fix already applied in this stage
-    # category (grn/pyscenic_method.py, coexpression/hdwgcna_method.py):
-    # adata.copy() duplicates every LAYER (each a full gene-space matrix) just
-    # to change which one is X, then write_h5ad serializes all of it. Unlike
-    # those two methods' scripts, celloracle_ko.py DOES read
-    # adata.obsm[embedding_key] (verified directly), so obsm is preserved here
-    # -- it is cheap (a handful of dimensions per cell) next to the layers,
-    # which are the actual multi-GB cost.
-    if layer and layer != "X" and layer in adata.layers:
-        work = ad.AnnData(
-            X=adata.layers[layer],
-            obs=adata.obs.copy(),
-            var=adata.var.copy(),
-            obsm=dict(adata.obsm),
-        )
-    else:
-        work = adata
+    # The worker reads X, the axes and embeddings. Share the large matrices and
+    # encode the axis metadata for its older AnnData, including missing labels.
+    matrix = adata.layers[layer] if layer and layer != "X" and layer in adata.layers else adata.X
+    work = ad.AnnData(
+        X=matrix,
+        obs=_legacy_frame(adata.obs),
+        var=_legacy_frame(adata.var),
+        obsm={
+            key: _legacy_frame(value) if isinstance(value, pd.DataFrame) else value
+            for key, value in adata.obsm.items()
+        },
+    )
 
     # Restrict to highly-variable genes before CellOracle ever sees the
     # object. CellOracle's own perform_PCA() runs a dense SVD over
