@@ -17,7 +17,7 @@ import scanpy as sc
 
 from cellquorum.backends.celloracle_backend import CELLORACLE_KO_PY
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.h5ad_io import write_h5ad
+from cellquorum.core.h5ad_io import legacy_string_frame, write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.gene_regulation.perturbation import perturbation_figures as pfig
@@ -133,26 +133,6 @@ def _check_prerequisites(adata, settings: _Settings, context) -> Any:  # noqa: A
     return backend
 
 
-def _legacy_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    """Encode string metadata for the isolated CellOracle H5AD reader."""
-    frame = frame.copy()
-    if isinstance(frame.index.dtype, pd.StringDtype):
-        frame.index = frame.index.astype(object)
-    for key, values in frame.items():
-        if isinstance(values.dtype, pd.StringDtype):
-            categories = pd.Index(values.dropna().unique(), dtype=object)
-            frame[key] = pd.Categorical(values, categories=categories)
-        elif isinstance(values.dtype, pd.CategoricalDtype) and isinstance(
-            values.cat.categories.dtype, pd.StringDtype
-        ):
-            frame[key] = pd.Categorical.from_codes(
-                values.cat.codes,
-                categories=values.cat.categories.astype(object),
-                ordered=values.cat.ordered,
-            )
-    return frame
-
-
 def _write_scratch_input(adata, settings: _Settings, context) -> Path:  # noqa: ANN001
     """Write the counts h5ad (highly-variable genes only) the KO script reads."""
     scratch = Path(getattr(context.paths, "scratch", "."))
@@ -164,11 +144,11 @@ def _write_scratch_input(adata, settings: _Settings, context) -> Path:  # noqa: 
     matrix = adata.layers[layer] if layer and layer != "X" and layer in adata.layers else adata.X
     work = ad.AnnData(
         X=matrix,
-        obs=_legacy_frame(adata.obs),
-        var=_legacy_frame(adata.var),
+        obs=legacy_string_frame(adata.obs),
+        var=legacy_string_frame(adata.var),
     )
     for key, value in adata.obsm.items():
-        work.obsm[key] = _legacy_frame(value) if isinstance(value, pd.DataFrame) else value
+        work.obsm[key] = legacy_string_frame(value) if isinstance(value, pd.DataFrame) else value
 
     # Restrict to highly-variable genes before CellOracle ever sees the
     # object. CellOracle's own perform_PCA() runs a dense SVD over

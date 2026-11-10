@@ -122,7 +122,11 @@ def _communication(
             else settings.nichenet_sender
         )
         priorities = priorities[priorities.sender.isin(senders or [])]
-    liana = liana.rename(
+    # LIANA 2 exports component genes alongside the complex identifiers.
+    # The join and plotted rank both describe the complete interaction.
+    liana = liana[
+        ["sample", "source", "target", "ligand_complex", "receptor_complex", "magnitude_rank"]
+    ].rename(
         columns={
             "source": "sender",
             "target": "receiver",

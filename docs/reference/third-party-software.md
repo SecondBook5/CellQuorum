@@ -16,6 +16,7 @@ submit a paper.
 |---|---|---|---|
 | [anndata](https://github.com/scverse/anndata) | The data object every stage shares | BSD-3-Clause | Virshup et al., *JOSS* 2024, [10.21105/joss.04371](https://doi.org/10.21105/joss.04371) |
 | [Scanpy](https://github.com/scverse/scanpy) | Neighbours, UMAP, scoring, plotting helpers | BSD-3-Clause | Wolf, Angerer & Theis, *Genome Biol* 2018, [10.1186/s13059-017-1382-0](https://doi.org/10.1186/s13059-017-1382-0) |
+| [umap-learn](https://github.com/lmcinnes/umap) | Approximate neighbor graphs and UMAP embeddings | BSD-3-Clause | McInnes et al., *JOSS* 2018, [10.21105/joss.00861](https://doi.org/10.21105/joss.00861) |
 | [leidenalg](https://github.com/vtraag/leidenalg) | Leiden clustering | GPL-3.0-or-later | Traag, Waltman & van Eck, *Sci Rep* 2019, [10.1038/s41598-019-41695-z](https://doi.org/10.1038/s41598-019-41695-z) |
 | [harmonypy](https://github.com/slowkow/harmonypy) | Harmony batch integration | GPL-3 (license file; the package metadata says MIT) | Korsunsky et al., *Nat Methods* 2019, [10.1038/s41592-019-0619-0](https://doi.org/10.1038/s41592-019-0619-0) |
 | [kneed](https://github.com/arvkevi/kneed) | Choosing the number of principal components | BSD-3-Clause | Satopaa et al., *ICDCSW* 2011, [10.1109/ICDCSW.2011.20](https://doi.org/10.1109/ICDCSW.2011.20) |

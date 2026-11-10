@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "H5adWriteError",
+    "legacy_string_frame",
     "sanitize_for_h5ad",
     "write_h5ad",
 ]
@@ -59,6 +60,26 @@ __all__ = [
 
 class H5adWriteError(RuntimeError):
     """Raised when an AnnData could not be written to h5ad."""
+
+
+def legacy_string_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Encode string metadata for older H5AD readers and NumPy-based analysis workers."""
+    frame = frame.copy()
+    if isinstance(frame.index.dtype, pd.StringDtype):
+        frame.index = frame.index.astype(object)
+    for key, values in frame.items():
+        if isinstance(values.dtype, pd.StringDtype):
+            categories = pd.Index(values.dropna().unique(), dtype=object)
+            frame[key] = pd.Categorical(values, categories=categories)
+        elif isinstance(values.dtype, pd.CategoricalDtype) and isinstance(
+            values.cat.categories.dtype, pd.StringDtype
+        ):
+            frame[key] = pd.Categorical.from_codes(
+                values.cat.codes,
+                categories=values.cat.categories.astype(object),
+                ordered=values.cat.ordered,
+            )
+    return frame
 
 
 def write_h5ad(adata: ad.AnnData, path: Path | str, *, sanitize: bool = True) -> list[str]:
@@ -269,8 +290,7 @@ def _coerce_unwritable_columns(frame: pd.DataFrame, *, axis: str) -> list[str]:
             # when a projection matched no cells at all.
             frame[col] = pd.Categorical([None] * len(series))
             notes.append(
-                f"{axis}['{col}']: entirely missing with no dtype; "
-                "written as an empty categorical"
+                f"{axis}['{col}']: entirely missing with no dtype; written as an empty categorical"
             )
             continue
         if all(isinstance(v, str) for v in present):

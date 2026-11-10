@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import anndata as ad
+import h5py
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -125,6 +126,10 @@ def test_success_path_writes_metacell_id_and_artifacts(tmp_path: Path) -> None:
             return True
 
         def run_script(self, _script, args, *, timeout=None):  # noqa: ANN001, ANN003
+            with h5py.File(args[0]) as handle:
+                for axis in ("obs", "var"):
+                    index_key = handle[axis].attrs["_index"]
+                    assert handle[axis][index_key].attrs["encoding-type"] == "string-array"
             out_dir = Path(args[1])
             _write_canned_outputs(out_dir, adata)
             return subprocess.CompletedProcess(args, 0, stdout="ok", stderr="")
