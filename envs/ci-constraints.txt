@@ -5,7 +5,7 @@
 # own commit, when both are rechecked against newer releases.
 anndata==0.12.10
 pandas==2.3.3
-numpy==2.4.6
+numpy==2.5.4
 scipy==1.16.3
 matplotlib==3.10.8
 scanpy==1.12.5

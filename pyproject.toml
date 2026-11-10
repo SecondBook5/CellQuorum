@@ -74,7 +74,7 @@ r = [
   "rpy2>=3.5",
 ]
 lineage = [
-  "numpy>=1.24,<2.4",
+  "numpy>=1.24,<2.6",
   "scvelo==0.3.4",
   "palantir>=1.3",
   "cellrank>=2.1,<3",
