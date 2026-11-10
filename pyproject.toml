@@ -124,9 +124,9 @@ dev = [
   # Git hook runner, so `pre-commit install` needs no separate global install.
   "pre-commit==4.3.0",
   # Documentation site.
-  "mkdocs-material==9.7.7",
+  "mkdocs-material==9.8.0",
   "mkdocs-jupyter==0.27.0",
-  "mkdocstrings[python]==1.0.6",
+  "mkdocstrings[python]==1.0.8",
   # mkdocstrings 1.0 calls Highlight without the Markdown instance required since 12.2.
   "pymdown-extensions<12.2",
 ]
