@@ -10,6 +10,8 @@ import pandas as pd
 import scipy.io
 import scipy.sparse as sp
 
+from cellquorum.core.anndata_access import memory_matrix, obs_frame
+
 
 def export_sce_inputs(
     adata: ad.AnnData, obs_cols: list[str], scratch: Path, *, subdir: str
@@ -35,10 +37,9 @@ def export_sce_inputs(
     scratch.mkdir(parents=True, exist_ok=True)
 
     # genes x cells (R/Bioconductor orientation).
-    mat = adata.X
-    mat = sp.csr_matrix(mat) if not sp.issparse(mat) else mat
+    mat = sp.coo_matrix(memory_matrix(adata.X))
     counts = scratch / "counts.mtx"
-    scipy.io.mmwrite(counts, mat.T.tocoo())
+    scipy.io.mmwrite(counts, mat.T)
 
     genes = scratch / "genes.csv"
     pd.DataFrame({"gene": list(adata.var_names)}).to_csv(genes, index=False)
@@ -47,7 +48,7 @@ def export_sce_inputs(
     pd.DataFrame({"barcode": list(adata.obs_names)}).to_csv(barcodes, index=False)
 
     obs = scratch / "obs.csv"
-    meta = adata.obs[list(obs_cols)].copy()
+    meta = obs_frame(adata)[list(obs_cols)].copy()
     meta.insert(0, "barcode", list(adata.obs_names))
     meta.to_csv(obs, index=False)
 

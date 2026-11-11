@@ -6,7 +6,7 @@ from __future__ import annotations
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -16,7 +16,7 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_field="annotation_diagnostics",
     category="annotation_diagnostics",
 )
-class AnnotationDiagnosticsStage(MethodDispatchStage):
+class AnnotationDiagnosticsStage(DefaultMethodStage):
     """Config-driven annotation-confidence diagnostic stage.
 
     Computes annotation confidence metrics (anomaly detection, kNN probabilities,
@@ -24,9 +24,7 @@ class AnnotationDiagnosticsStage(MethodDispatchStage):
     columns but never modifies cell_type or embeddings.
     """
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured diagnostic method (default 'scdiagnostics')."""
-        return config.get("method", "scdiagnostics")
+    default_method = "scdiagnostics"
 
     def _validate_output(self, result: StageResult) -> None:
         """Assert diagnostic metrics were recorded (non-skip only)."""

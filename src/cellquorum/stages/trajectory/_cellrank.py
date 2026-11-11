@@ -26,6 +26,18 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame, var_frame
+from cellquorum.core.anndata_access import resolve_use_rep as _resolve_use_rep
+
+
+def copy_with_private_obs(adata: ad.AnnData) -> ad.AnnData:
+    """Give CellRank private observation metadata while sharing expression and graphs."""
+    work = ad.AnnData(X=adata.X, obs=obs_frame(adata).copy(), var=var_frame(adata), uns=adata.uns)
+    work.obsm.update(adata.obsm.items())
+    work.obsp.update(adata.obsp.items())
+    work.layers.update(adata.layers.items())
+    return work
+
 
 def _pseudotime_kernel(adata: ad.AnnData, time_key: str, notes: list[str]) -> Any:
     """Use native hard bias, falling back to soft bias for stranded rows only."""
@@ -138,16 +150,6 @@ class RealTimeKernelFailed(CellRankComputeError):
     """moscot TemporalProblem solve / RealTimeKernel construction raised."""
 
 
-def _resolve_use_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) -> str | None:
-    """Return a rep present in obsm, or None."""
-    if configured and configured in adata.obsm:
-        return configured
-    for candidate in fallback:
-        if candidate in adata.obsm:
-            return candidate
-    return None
-
-
 def _build_realtime_kernel(
     adata: ad.AnnData,
     time_key: str,
@@ -184,15 +186,7 @@ def _build_realtime_kernel(
         # instead, which is the only part being written. At stage 30 the object carries counts,
         # the normalized layer, the sparse denoised layer, spliced/unspliced from the velocyto
         # looms and four embeddings, so the copy is the largest in the pipeline.
-        tp_adata = ad.AnnData(
-            X=adata.X,
-            obs=adata.obs.copy(),
-            var=adata.var,
-            obsm=adata.obsm,
-            obsp=adata.obsp,
-            layers=adata.layers,
-            uns=adata.uns,
-        )
+        tp_adata = copy_with_private_obs(adata)
         levels = sorted(time_numeric.dropna().unique())
         tp_adata.obs["_cq_time"] = pd.Categorical(
             time_numeric.to_numpy(), categories=levels, ordered=True

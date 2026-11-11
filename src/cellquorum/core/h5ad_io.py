@@ -47,11 +47,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame, var_frame
+
 if TYPE_CHECKING:
     import anndata as ad
+    from anndata.experimental.backed import Dataset2D
 
 __all__ = [
     "H5adWriteError",
+    "legacy_string_frame",
     "sanitize_for_h5ad",
     "write_h5ad",
 ]
@@ -59,6 +63,26 @@ __all__ = [
 
 class H5adWriteError(RuntimeError):
     """Raised when an AnnData could not be written to h5ad."""
+
+
+def legacy_string_frame(frame: pd.DataFrame | Dataset2D) -> pd.DataFrame:
+    """Encode string metadata for older H5AD readers and NumPy-based analysis workers."""
+    frame = frame.copy() if isinstance(frame, pd.DataFrame) else frame.to_memory(copy=True)
+    if isinstance(frame.index.dtype, pd.StringDtype):
+        frame.index = frame.index.astype(object)
+    for key, values in frame.items():
+        if isinstance(values.dtype, pd.StringDtype):
+            categories = pd.Index(values.dropna().unique(), dtype=object)
+            frame[key] = pd.Categorical(values, categories=categories)
+        elif isinstance(values.dtype, pd.CategoricalDtype) and isinstance(
+            values.cat.categories.dtype, pd.StringDtype
+        ):
+            frame[key] = pd.Categorical.from_codes(
+                values.cat.codes,
+                categories=values.cat.categories.astype(object),
+                ordered=values.cat.ordered,
+            )
+    return frame
 
 
 def write_h5ad(adata: ad.AnnData, path: Path | str, *, sanitize: bool = True) -> list[str]:
@@ -156,12 +180,12 @@ def sanitize_for_h5ad(adata: ad.AnnData) -> list[str]:
     """
     notes: list[str] = []
     notes += _sanitize_uns_keys(adata.uns)
-    notes += _sanitize_frame_columns(adata.obs, axis="obs")
-    notes += _sanitize_frame_columns(adata.var, axis="var")
+    notes += _sanitize_frame_columns(obs_frame(adata), axis="obs")
+    notes += _sanitize_frame_columns(var_frame(adata), axis="var")
     notes += _sanitize_mapping_keys(adata.obsm, name="obsm")
     notes += _sanitize_mapping_keys(adata.varm, name="varm")
-    notes += _coerce_unwritable_columns(adata.obs, axis="obs")
-    notes += _coerce_unwritable_columns(adata.var, axis="var")
+    notes += _coerce_unwritable_columns(obs_frame(adata), axis="obs")
+    notes += _coerce_unwritable_columns(var_frame(adata), axis="var")
     notes += _coerce_cellrank_lineage_arrays(adata)
     notes += _jsonify_unwritable_uns(adata.uns)
     return notes
@@ -269,8 +293,7 @@ def _coerce_unwritable_columns(frame: pd.DataFrame, *, axis: str) -> list[str]:
             # when a projection matched no cells at all.
             frame[col] = pd.Categorical([None] * len(series))
             notes.append(
-                f"{axis}['{col}']: entirely missing with no dtype; "
-                "written as an empty categorical"
+                f"{axis}['{col}']: entirely missing with no dtype; written as an empty categorical"
             )
             continue
         if all(isinstance(v, str) for v in present):

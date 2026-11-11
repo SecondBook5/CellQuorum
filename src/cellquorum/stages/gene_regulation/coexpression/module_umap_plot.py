@@ -31,6 +31,7 @@ from matplotlib.lines import Line2D
 from matplotlib.text import Text
 
 from cellquorum.visualization import figstyle
+from cellquorum.visualization.figstyle import adjust_labels
 
 logger = logging.getLogger(__name__)
 
@@ -138,17 +139,12 @@ def _build_figure(
             )
             t.set_path_effects([pe.withStroke(linewidth=1.6, foreground="white")])
             labels.append(t)
-    try:
-        from adjustText import adjust_text
-
-        adjust_text(
-            labels,
-            ax=ax,
-            only_move={"points": "xy", "text": "xy"},
-            arrowprops=dict(arrowstyle="-", color="#888", lw=0.4),
-        )
-    except Exception:
-        pass  # labels still render, just un-repelled
+    adjust_labels(
+        labels,
+        ax=ax,
+        only_move={"points": "xy", "text": "xy"},
+        arrowprops=dict(arrowstyle="-", color="#888", lw=0.4),
+    )
 
     # Trim whitespace to the data extent + 6% pad
     xpad = (df.UMAP1.max() - df.UMAP1.min()) * 0.06

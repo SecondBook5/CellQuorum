@@ -26,7 +26,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
-from cellquorum.visualization.figstyle import get_group_palette
+from cellquorum.core.anndata_access import obs_frame
+from cellquorum.visualization.figstyle import adjust_labels, get_group_palette
 
 if TYPE_CHECKING:
     import anndata as ad
@@ -148,19 +149,14 @@ def _label_groups(
             )
         )
     if len(texts) > 1:
-        try:
-            from adjustText import adjust_text
-
-            adjust_text(
-                texts,
-                ax=ax,
-                only_move={"text": "xy"},
-                expand=(1.12, 1.22),
-                force_text=(0.28, 0.36),
-                arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
-            )
-        except Exception:  # noqa: BLE001 — cosmetic only
-            pass
+        adjust_labels(
+            texts,
+            ax=ax,
+            only_move={"text": "xy"},
+            expand=(1.12, 1.22),
+            force_text=(0.28, 0.36),
+            arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
+        )
 
 
 def velocity_stream_figure(
@@ -369,7 +365,7 @@ def velocity_diagnostics_figure(
 
     ax = axes[-1]
     key = "velocity_confidence" if "velocity_confidence" in adata.obs else metrics[0][0]
-    data = [adata.obs.loc[groups == g, key].to_numpy(dtype=float) for g in order]
+    data = [obs_frame(adata).loc[groups == g, key].to_numpy(dtype=float) for g in order]
     parts = ax.boxplot(data, patch_artist=True, widths=0.62, showfliers=False)
     for patch, group in zip(parts["boxes"], order, strict=False):
         patch.set_facecolor(palette.get(group, "#9a9a9a"))

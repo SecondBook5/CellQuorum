@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, NamedTuple
 import anndata as ad
 import numpy as np
 import pandas as pd
-import scipy.sparse as sp
 
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -239,8 +239,7 @@ def _panel_tables(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Mean expression and percent expressing: panel genes (rows, panel order) by group."""
     genes = [g for block in panel.values() for g in block if g in adata.var_names]
-    matrix = adata.layers[layer][:, adata.var_names.get_indexer(genes)]
-    matrix = matrix.toarray() if sp.issparse(matrix) else np.asarray(matrix)
+    matrix = dense_matrix(adata[:, genes].layers[layer])
     labels = adata.obs[group_by].astype(str).to_numpy()
     mean = np.column_stack([matrix[labels == g].mean(axis=0) for g in groups])
     pct = np.column_stack([(matrix[labels == g] > 0).mean(axis=0) * 100.0 for g in groups])

@@ -12,6 +12,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.context import resolve_n_jobs
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
@@ -256,7 +257,7 @@ def _fit_sampleqc_if_enabled(
 
 def _drop_sampleqc_traces(adata: ad.AnnData) -> None:
     """Remove SampleQC's columns and record from an object that was not scored by it."""
-    adata.obs.drop(
+    obs_frame(adata).drop(
         columns=[
             "sampleqc_distance",
             "sampleqc_pvalue",
@@ -566,7 +567,7 @@ class QCStage:
         # would have reported no differential attrition on precisely the cohort where the
         # mast-cell arm difference was real.
         attrition_audit = audit_qc_stage_attrition(
-            obs=adata.obs,
+            obs=obs_frame(adata),
             keep=_analysable_mask(adata, output_adata, floors.cell_keep),
             config=qc_config,
             cohort=cohort,
@@ -749,7 +750,7 @@ class QCStage:
             doublet_matrix, doublet_source = get_qc_matrix(output_adata, qc_config)
             doublet_adata = ad.AnnData(
                 X=doublet_matrix,
-                obs=output_adata.obs.copy(),
+                obs=obs_frame(output_adata).copy(),
                 var=pd.DataFrame(
                     index=(
                         output_adata.raw.var_names
@@ -911,7 +912,7 @@ def _lineage_null_grouping(
         return None, None
     lineage = lineage.reindex(output_adata.obs_names)
     null_grouping = resolve_null_groups(
-        output_adata.obs,
+        obs_frame(output_adata),
         sample_key=sample_key if sample_key in output_adata.obs.columns else None,
         lineage=lineage,
         min_cells=graded_config.lineage_min_cells,
@@ -1079,7 +1080,7 @@ def _audit_archetypes(
         (
             output_adata.layers[qc_config.metrics.layer][placed]
             if qc_config.metrics.layer in output_adata.layers
-            else output_adata.X[placed]
+            else output_adata[placed].X
         ),
         n_archetypes_max=graded_config.archetype_max,
         bootstrap=graded_config.archetype_bootstrap,

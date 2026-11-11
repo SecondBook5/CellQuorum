@@ -80,7 +80,7 @@ def diagnostic_odds_ratio(
 
     work = adata[:, genes] if genes is not None else adata
     X = work.layers[layer] if layer else work.X
-    X = sparse.csr_matrix(X) if not sparse.issparse(X) else X.tocsr()
+    X = sparse.csr_matrix(X)
     detected = X.copy()
     detected.data = np.ones_like(detected.data)
 

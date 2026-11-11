@@ -1,0 +1,124 @@
+{
+  "dimensions": [
+    11352,
+    1000
+  ],
+  "technologies": {
+    "Pancreas inDrop": 8391,
+    "Pancreas SS2": 2961
+  },
+  "layers_max_difference": {
+    "counts": 0.0,
+    "cellquorum_normalized": 0.0
+  },
+  "coordinates_max_difference": {
+    "X_pca": 0.0,
+    "X_pca_harmony": 0.0,
+    "X_umap": 0.0
+  },
+  "changed_clusters": 0,
+  "metric_count": 18,
+  "integration_metric_max_difference": 0.0,
+  "graph_connectivity": {
+    "X_pca": 0.9869899189581584,
+    "X_pca_harmony": 0.9868237776952048
+  },
+  "biological_checks": {
+    "baseline_iLISI": 0.004922151565551758,
+    "harmony_iLISI": 0.33362698554992676,
+    "baseline_NMI": 0.7368518454720607,
+    "harmony_NMI": 0.7380630887797722
+  },
+  "figures": {
+    "figures/dimensionality_scree.png": {
+      "changed_pixels": 0,
+      "pixels": 516538
+    },
+    "figures/embeddings/categorical_umap_cell_type.png": {
+      "changed_pixels": 0,
+      "pixels": 2697300
+    },
+    "figures/embeddings/categorical_umap_cell_type_paga.png": {
+      "changed_pixels": 0,
+      "pixels": 2697300
+    },
+    "figures/embeddings/categorical_umap_study.png": {
+      "changed_pixels": 0,
+      "pixels": 2652345
+    },
+    "figures/feature_selection_hvg.png": {
+      "changed_pixels": 0,
+      "pixels": 661995
+    },
+    "figures/preprocessing/normalization_depth_correlation_before_after.png": {
+      "changed_pixels": 0,
+      "pixels": 4108955
+    },
+    "figures/preprocessing/normalization_expression_distribution_before_after.png": {
+      "changed_pixels": 0,
+      "pixels": 4165023
+    },
+    "figures/preprocessing/normalization_gene_mean_variance.png": {
+      "changed_pixels": 0,
+      "pixels": 2007792
+    },
+    "figures/preprocessing/normalization_total_counts_before_after.png": {
+      "changed_pixels": 0,
+      "pixels": 4159050
+    }
+  },
+  "scc": {
+    "rows": 54450,
+    "libraries": 18,
+    "max_difference": {
+      "magnitude_rank": 0.0,
+      "specificity_rank": 0.0
+    }
+  },
+  "environment": {
+    "anndata": "0.13.4",
+    "pandas": "3.1.1",
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scanpy": "1.12.5",
+    "scib-metrics": "0.5.10",
+    "liana": "2.1.1",
+    "torch": "2.8.0+cpu"
+  },
+  "lock_sha256": "d68cbc3662ce07731417fba8c25278f4518c9d305674bf2817801cbac34c32f9",
+  "input_sha256": {
+    "clean": "8a640f9d4f7c374eb68a3e4115b720f2a404fcfeae8f9e492d64bcd79ddbdcd3",
+    "scc": "0e714ca0a6555c577a14f8992c2cf9dbff852565f2f2211960633233ff8b876c"
+  },
+  "benchmark_cells": 4500,
+  "stage_reuse": {
+    "initial": {
+      "status": "success",
+      "reused": false,
+      "input_fingerprint": "aa9ac748ff01496c1dfee15efc43b5907e40d28eae48a8693f85707f6e45b56b",
+      "harmony_nmi": 0.7380630887797722,
+      "exported_table_sha256": "4d947db03338a973533660ddc61d497e606ad9000a577c33f60d850d2253d5c0"
+    },
+    "repeat": {
+      "status": "skipped",
+      "reused": true,
+      "input_fingerprint": "aa9ac748ff01496c1dfee15efc43b5907e40d28eae48a8693f85707f6e45b56b",
+      "harmony_nmi": 0.7380630887797722,
+      "exported_table_sha256": "4d947db03338a973533660ddc61d497e606ad9000a577c33f60d850d2253d5c0"
+    },
+    "altered": {
+      "status": "success",
+      "reused": false,
+      "input_fingerprint": "aa9ac748ff01496c1dfee15efc43b5907e40d28eae48a8693f85707f6e45b56b",
+      "harmony_nmi": 0.7380630887797722,
+      "exported_table_sha256": "4d947db03338a973533660ddc61d497e606ad9000a577c33f60d850d2253d5c0"
+    },
+    "shuffled": {
+      "status": "success",
+      "reused": false,
+      "input_fingerprint": "2ef2327fccca7c1403f971e0f6c95fef26e92dc5cc2ebf2ffc02c318cf28c957",
+      "harmony_nmi": 0.006993130515903058,
+      "exported_table_sha256": "a6a329cea25cbd007f163cfcf652f4bf1214fb64148d6a5af9fbc43cc2b95c19"
+    }
+  }
+}

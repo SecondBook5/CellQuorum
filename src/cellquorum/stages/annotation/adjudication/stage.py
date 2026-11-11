@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import pandas as pd
 
+from cellquorum.config.cohort import resolve_design_columns
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
@@ -235,37 +236,11 @@ def resolve_design_keys(
 
     if config.donor_key and config.condition_key:
         return config.donor_key, config.condition_key
-
-    context_config = getattr(context, "config", None)
-
-    # Cohort schema wins when it declares the structural keys (declare-once),
-    # matching population_identity's resolve_design_keys -- otherwise a real
-    # cohort whose donor column is e.g. "donor_id" silently falls through to
-    # the "patient_id" default below instead of the column that actually exists.
-    from cellquorum.config.cohort import resolve_cohort_key
-
-    donor_key = resolve_cohort_key(context_config, attr="donor_key", stage_value=config.donor_key)
-    condition_key = resolve_cohort_key(
-        context_config, attr="condition_key", stage_value=config.condition_key
+    return resolve_design_columns(
+        getattr(context, "config", None),
+        donor_key=config.donor_key,
+        condition_key=config.condition_key,
     )
-
-    design = getattr(context_config, "design", None)
-    if isinstance(context_config, Mapping):
-        design = context_config.get("design", {})
-
-    if donor_key is None:
-        donor_key = (
-            design.get("donor_col", "patient_id")
-            if isinstance(design, Mapping)
-            else getattr(design, "donor_col", "patient_id")
-        )
-    if condition_key is None:
-        condition_key = (
-            design.get("condition_col", "condition")
-            if isinstance(design, Mapping)
-            else getattr(design, "condition_col", "condition")
-        )
-    return donor_key, condition_key
 
 
 __all__ = [

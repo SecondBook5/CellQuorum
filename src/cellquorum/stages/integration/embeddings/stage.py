@@ -6,9 +6,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.integration.embeddings  # noqa: F401
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
+from cellquorum.stages.integration.embeddings.config import OverlayConfig
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -60,11 +60,10 @@ _DEFAULT_METHODS = [
     config_field="embeddings",
     category="embeddings",
 )
-class EmbeddingsStage(MethodDispatchStage):
+class EmbeddingsStage(DefaultMethodStage):
     """Compute embeddings and render house-style figures + overlays."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "umap")
+    default_method = "umap"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Bridge config.embeddings; inject method list + structural resolver keys."""
@@ -100,11 +99,23 @@ class EmbeddingsStage(MethodDispatchStage):
         if "granular_key" not in augmented:
             augmented["granular_key"] = "cell_type_granular"
         if not augmented.get("methods") and "method" not in augmented:
-            augmented["methods"] = [dict(m) for m in _DEFAULT_METHODS]
+            bases = augmented.get("embeddings", ["umap", "phate"])
+            overlay = OverlayConfig.model_validate(augmented.get("overlay") or {})
+            declared = getattr(getattr(config, "markers", None), "panels", {})
+            include_overlay = bool(
+                overlay.genes
+                or overlay.programs
+                or overlay.obs_columns
+                or overlay.cell_cycle
+                or declared
+            )
+            augmented["methods"] = [
+                dict(m)
+                for m in _DEFAULT_METHODS
+                if (m["method"] not in {"umap", "phate"} or m["method"] in bases)
+                and (m["method"] != "continuous_overlay" or include_overlay)
+            ]
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: figures + obsm are written per-method; no strict postcondition."""  # noqa: B027
 
 
 __all__ = ["EmbeddingsStage"]

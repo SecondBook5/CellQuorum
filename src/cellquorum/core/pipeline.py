@@ -7,7 +7,7 @@ import logging
 import platform
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,7 @@ import pandas as pd
 from cellquorum.backends.registry import BackendRegistry, build_default_backend_registry
 from cellquorum.config.loader import load_config, save_resolved_config
 from cellquorum.config.models import CellQuorumConfig
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.context import PipelineContext, PipelinePaths
 from cellquorum.core.executor import PipelineExecutionResult, PipelineExecutor
@@ -28,6 +29,7 @@ from cellquorum.core.output_hygiene import (
     format_inherited_artifacts,
 )
 from cellquorum.core.planner import PipelinePlan, build_pipeline_plan
+from cellquorum.core.resume import completion_path, completion_payload, missing_outputs
 from cellquorum.core.run_reporter import RunReporter
 from cellquorum.core.stage import StageArtifact, StageExecutionRecord
 from cellquorum.io import load_adata
@@ -480,70 +482,6 @@ def _stage_execution_records_dataframe(
     )
 
 
-def _stage_completion_sidecar_payload(record: StageExecutionRecord) -> dict[str, object]:
-    """
-    Build the durable per-stage completion sidecar payload.
-
-    The sidecar is intentionally redundant with ``stage_execution_records.json``.
-    Resume logic should be able to inspect one stage's completion state without
-    parsing the whole run log.
-
-    Args:
-        record: Successful stage execution record.
-
-    Returns:
-        JSON-safe completion sidecar payload.
-    """
-
-    # Build artifact existence summaries at sidecar-write time.
-    artifact_status = [
-        {
-            **artifact.to_dict(),
-            "exists": artifact.path.exists(),
-        }
-        for artifact in record.output_artifacts
-    ]
-
-    return {
-        "schema_version": 1,
-        "stage_name": record.stage_name,
-        "status": record.status,
-        "completed_at_utc": record.ended_at_utc.isoformat(),
-        "duration_seconds": record.duration_seconds,
-        "backend_used": record.backend_used,
-        "method_version": record.method_version,
-        "device": record.device,
-        "input_fingerprint": record.input_fingerprint,
-        "output_fingerprint": record.output_fingerprint,
-        "checkpoint_path": None if record.checkpoint_path is None else str(record.checkpoint_path),
-        "n_output_artifacts": len(record.output_artifacts),
-        "output_artifacts": artifact_status,
-        "metrics": dict(record.metrics),
-        "warnings": list(record.warnings),
-        "notes": list(record.notes),
-    }
-
-
-def _stage_completion_sidecar_path(stage_name: str) -> Path:
-    """
-    Return a stable relative sidecar path for a stage.
-
-    Args:
-        stage_name: Stage name from the execution record.
-
-    Returns:
-        Relative path under the run root.
-    """
-
-    # Stage names are registry-controlled, but keep this safe for custom stages.
-    safe_stage_name = "".join(
-        char if char.isalnum() or char in {"_", "-"} else "_" for char in stage_name
-    ).strip("_")
-    if not safe_stage_name:
-        safe_stage_name = "stage"
-    return Path("provenance") / "stages" / safe_stage_name / "completion.json"
-
-
 def _write_stage_completion_sidecars(
     artifact_manager: ArtifactManager,
     records: list[StageExecutionRecord],
@@ -561,9 +499,9 @@ def _write_stage_completion_sidecars(
         if record.status != "success":
             continue
         artifact_manager.write_json(
-            _stage_completion_sidecar_payload(record),
+            completion_payload(record),
             name=f"stage_completion_{record.stage_name}",
-            relative_path=_stage_completion_sidecar_path(record.stage_name),
+            relative_path=completion_path(Path("provenance"), record.stage_name),
             description=f"Durable completion marker for stage '{record.stage_name}'.",
         )
 
@@ -657,7 +595,7 @@ def _write_run_report_after_provenance(
             config=config,
             records=records,
             artifact_manager=artifact_manager,
-            obs=context.adata.obs if context.adata is not None else None,
+            obs=obs_frame(context.adata) if context.adata is not None else None,
         )
         for warning in warnings:
             logger.warning("%s", warning)
@@ -916,28 +854,6 @@ def bootstrap_pipeline_run(
         )
 
 
-def _restrict_plan_from_stage(plan: PipelinePlan, from_stage: str) -> PipelinePlan:
-    """Return `plan` with stages before `from_stage` removed.
-
-    Their results already live in the checkpoint being loaded, so re-running them
-    would both waste time and risk producing a different object than the one the
-    checkpoint recorded.
-    """
-    import dataclasses
-
-    from cellquorum.core.stages import stage_order_map
-
-    order_of = stage_order_map()
-    start = order_of.get(from_stage)
-    if start is None:
-        return plan
-    # PlannedStage records enablement, not order, so the cut point comes from the
-    # catalog. Stages missing from the catalog are kept rather than dropped: losing
-    # a stage silently is worse than running one extra.
-    kept = [s for s in plan.stages if order_of.get(s.name, start) >= start]
-    return dataclasses.replace(plan, stages=kept)
-
-
 def _write_inherited_artifacts_report(
     *, context: PipelineContext, artifacts: list[InheritedArtifact]
 ) -> Path:
@@ -1013,19 +929,20 @@ def _config_disabled_stage_names(
     return sorted(disabled)
 
 
-def _context_from_checkpoint(
-    context: PipelineContext, config: CellQuorumConfig, from_stage: str
-) -> PipelineContext:
+def _resume_from_checkpoint(
+    context: PipelineContext, config: CellQuorumConfig, from_stage: str, plan: PipelinePlan
+) -> tuple[PipelineContext, PipelinePlan, list[StageExecutionRecord]]:
     """Return ``context`` carrying the checkpoint object that ``from_stage`` resumes from.
 
     Raises if no usable checkpoint exists, or if the one found was written under settings this
     run is not using.
     """
     from cellquorum.core.checkpoint import (
+        CheckpointError,
         load_checkpoint,
         resolve_start_checkpoint,
     )
-    from cellquorum.core.fingerprint import compute_upstream_fingerprint
+    from cellquorum.core.fingerprint import compute_upstream_fingerprint, resource_checksum
     from cellquorum.core.stages import stage_order_map
 
     stage_order = stage_order_map()
@@ -1036,7 +953,7 @@ def _context_from_checkpoint(
     # this the run would resume happily and report success while its numbers came
     # from a config nobody chose, and resolved_config.json would disagree with the
     # object on disk.
-    return context.with_adata(
+    context = context.with_adata(
         load_checkpoint(
             start_record,
             expected_upstream_fingerprint=compute_upstream_fingerprint(
@@ -1046,6 +963,48 @@ def _context_from_checkpoint(
             ),
         )
     )
+
+    remaining = [
+        s
+        for s in plan.stages
+        if stage_order.get(s.name, start_record.order + 1) > start_record.order
+    ]
+    replay = [
+        s.name
+        for s in remaining
+        if s.enabled and stage_order.get(s.name, 0) < stage_order[from_stage]
+    ]
+    if replay:
+        plan.warnings.append(
+            f"Restored '{start_record.stage}'; replaying {', '.join(replay)} before '{from_stage}'."
+        )
+    records = []
+    for row in start_record.execution_records or []:
+        if row.status == "success" or row.reused_from_checkpoint:
+            promised = config.run.required_outputs.get(row.stage_name, [])
+            registered = {artifact.path for artifact in row.output_artifacts}
+            missing = [str(p) for p in registered if not p.exists()]
+            missing.extend(
+                str(p)
+                for p in missing_outputs(
+                    tuple(context.paths.root / name for name in promised), registered
+                )
+            )
+            if missing:
+                raise CheckpointError(
+                    f"Checkpoint '{start_record.stage}' is missing outputs for "
+                    f"'{row.stage_name}': {', '.join(sorted(set(missing)))}. Re-run that stage."
+                )
+            for path in registered:
+                expected = (start_record.artifact_checksums or {}).get(str(path))
+                if expected is not None and resource_checksum(path) != expected:
+                    raise CheckpointError(
+                        f"Output '{path}' changed after the '{start_record.stage}' checkpoint. "
+                        f"Re-run '{row.stage_name}' to restore its evidence."
+                    )
+            row = row.as_reused(f"Restored from the '{start_record.stage}' AnnData checkpoint")
+        records.append(row)
+    return context, replace(plan, stages=remaining), records
 
 
 def _runnable_stage_names(
@@ -1191,13 +1150,29 @@ def execute_pipeline_run(
             until_stage=until_stage,
         )
 
+        if executor is not None and until_stage is not None:
+            resolved_executor = replace(executor, until_stage=until_stage)
+
         # Resume from a checkpoint when asked to start mid-pipeline. Done here, after
         # the plan exists, because the plan is what gets restricted — and it must fail
         # loudly rather than silently starting from raw input, which would look like a
         # resume while producing different numbers.
+        execution_plan = plan
+        restored_records: list[StageExecutionRecord] = []
+        if from_stage and until_stage:
+            names = [stage.name for stage in plan.stages]
+            if (
+                from_stage in names
+                and until_stage in names
+                and names.index(until_stage) < names.index(from_stage)
+            ):
+                raise ValueError(f"Stop stage '{until_stage}' precedes start stage '{from_stage}'.")
         if from_stage:
-            context = _context_from_checkpoint(context, config, from_stage)
-            plan = _restrict_plan_from_stage(plan, from_stage)
+            context, execution_plan, restored_records = _resume_from_checkpoint(
+                context, config, from_stage, plan
+            )
+        if until_stage is not None and until_stage not in {s.name for s in execution_plan.stages}:
+            raise ValueError(f"Stop stage '{until_stage}' is outside the execution plan.")
 
         reporter = RunReporter(
             verbose=config.run.verbose,
@@ -1232,8 +1207,9 @@ def execute_pipeline_run(
         # Execute registered stages from the plan with progress reporting.
         execution_result = resolved_executor.run(
             context=context,
-            plan=plan,
+            plan=execution_plan,
             reporter=reporter,
+            **({"restored_records": restored_records} if restored_records else {}),
         )
 
         # Measure elapsed wall-clock time.

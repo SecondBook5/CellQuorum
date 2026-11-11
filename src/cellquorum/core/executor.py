@@ -262,6 +262,7 @@ class PipelineExecutor:
         context: PipelineContext,
         plan: PipelinePlan,
         reporter: RunReporter | None = None,
+        restored_records: list[StageExecutionRecord] | None = None,
     ) -> PipelineExecutionResult:
         """
         Execute a pipeline plan against a pipeline context.
@@ -286,7 +287,7 @@ class PipelineExecutor:
 
         # Initialize mutable execution state.
         current_context = context
-        stage_execution_records: list[StageExecutionRecord] = []
+        stage_execution_records = list(restored_records or [])
 
         # Execute or skip every planned stage in order, with progress tracking.
         with reporter.progress(total=len(plan.stages)) as bar:
@@ -414,6 +415,7 @@ class PipelineExecutor:
                     planned_stage=planned_stage,
                     stage_result=stage_result,
                     reporter=reporter,
+                    execution_records=stage_execution_records,
                 )
 
                 # Stop after the requested stage, so a pipeline can be advanced one
@@ -441,6 +443,7 @@ class PipelineExecutor:
         planned_stage: object,
         stage_result: object,
         reporter: object,
+        execution_records: list[StageExecutionRecord] | None = None,
     ) -> None:
         """Write this stage's checkpoint when configured. Never fails the run.
 
@@ -487,6 +490,7 @@ class PipelineExecutor:
                 order=order_of.get(stage_name, -1),
                 input_fingerprint=getattr(stage_result, "input_fingerprint", None),
                 upstream_fingerprint=upstream_fingerprint,
+                execution_records=execution_records,
             )
         except CheckpointError as exc:
             if hasattr(reporter, "stage_note"):
@@ -605,19 +609,8 @@ class PipelineExecutor:
             except Exception:  # pragma: no cover - resume is best-effort
                 decision = None
 
-            if decision is not None and decision.resume:
-                ended_at = datetime.now(UTC)
-                record = StageExecutionRecord.skipped(
-                    stage_name=planned_stage.name,
-                    reason=decision.reason,
-                    started_at_utc=started_at,
-                    ended_at_utc=ended_at,
-                    backend_used=None,
-                    details={"resumed": True},
-                    notes=[f"Resumed: {decision.reason}"],
-                    input_fingerprint=input_fingerprint,
-                )
-                return None, replace(record, output_artifacts=list(decision.artifacts))
+            if decision is not None and decision.resume and decision.original is not None:
+                return None, decision.original.as_reused(decision.reason)
 
         # Execute the registered stage.
         try:

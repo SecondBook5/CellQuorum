@@ -1,0 +1,10 @@
+figure,same_dimensions,identical_pixels,different_pixel_fraction
+preprocessing/normalization_depth_correlation_before_after.png,True,True,0.0
+preprocessing/normalization_expression_distribution_before_after.png,True,True,0.0
+preprocessing/normalization_gene_mean_variance.png,True,True,0.0
+preprocessing/normalization_total_counts_before_after.png,True,True,0.0
+trajectory/activity_cascade_hallmark.png,True,True,0.0
+trajectory/gene_trends.png,True,True,0.0
+trajectory/pseudotime_heatmap.png,True,True,0.0
+trajectory/velocity_diagnostics.png,True,True,0.0
+trajectory/velocity_stream.png,True,True,0.0

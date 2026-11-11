@@ -7,10 +7,10 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.sparse as sp
 import seaborn as sns
 from anndata import AnnData
 
+from cellquorum.core.anndata_access import memory_matrix
 from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.visualization.figstyle import (
     CELLQUORUM_BLUE,
@@ -158,8 +158,8 @@ def _plot_total_counts_before_after(
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
     # Before: counts
-    counts_matrix = adata.layers[counts_layer]
-    if sp.issparse(counts_matrix):
+    counts_matrix = memory_matrix(adata.layers[counts_layer])
+    if not isinstance(counts_matrix, np.ndarray):
         counts_total = np.asarray(counts_matrix.sum(axis=1)).flatten()
     else:
         counts_total = counts_matrix.sum(axis=1)
@@ -180,8 +180,8 @@ def _plot_total_counts_before_after(
     apply_cellquorum_axis_style(ax1)
 
     # After: normalized
-    norm_matrix = adata.layers[normalized_layer]
-    if sp.issparse(norm_matrix):
+    norm_matrix = memory_matrix(adata.layers[normalized_layer])
+    if not isinstance(norm_matrix, np.ndarray):
         norm_total = np.asarray(norm_matrix.sum(axis=1)).flatten()
     else:
         norm_total = norm_matrix.sum(axis=1)
@@ -221,8 +221,8 @@ def _plot_expression_distribution_before_after(
     max_values = 100000
 
     # Before: counts (nonzero only for sparse)
-    counts_matrix = adata.layers[counts_layer]
-    if sp.issparse(counts_matrix):
+    counts_matrix = memory_matrix(adata.layers[counts_layer])
+    if not isinstance(counts_matrix, np.ndarray):
         # Sample from nonzero values
         counts_data = counts_matrix.data
         if len(counts_data) > max_values:
@@ -253,8 +253,8 @@ def _plot_expression_distribution_before_after(
     apply_cellquorum_axis_style(ax1)
 
     # After: normalized
-    norm_matrix = adata.layers[normalized_layer]
-    if sp.issparse(norm_matrix):
+    norm_matrix = memory_matrix(adata.layers[normalized_layer])
+    if not isinstance(norm_matrix, np.ndarray):
         # Sample from nonzero values
         norm_data = norm_matrix.data
         if len(norm_data) > max_values:
@@ -296,14 +296,14 @@ def _plot_depth_correlation_before_after(
     n_cells = adata.n_obs
 
     # Calculate cell depths
-    counts_matrix = adata.layers[counts_layer]
-    if sp.issparse(counts_matrix):
+    counts_matrix = memory_matrix(adata.layers[counts_layer])
+    if not isinstance(counts_matrix, np.ndarray):
         counts_depth = np.asarray(counts_matrix.sum(axis=1)).flatten()
     else:
         counts_depth = np.asarray(counts_matrix.sum(axis=1)).flatten()
 
     # Before: mean expression vs depth
-    if sp.issparse(counts_matrix):
+    if not isinstance(counts_matrix, np.ndarray):
         counts_mean = np.asarray(counts_matrix.mean(axis=1)).flatten()
     else:
         counts_mean = np.asarray(counts_matrix.mean(axis=1)).flatten()
@@ -323,8 +323,8 @@ def _plot_depth_correlation_before_after(
     apply_cellquorum_axis_style(ax1)
 
     # After: mean expression vs original depth
-    norm_matrix = adata.layers[normalized_layer]
-    if sp.issparse(norm_matrix):
+    norm_matrix = memory_matrix(adata.layers[normalized_layer])
+    if not isinstance(norm_matrix, np.ndarray):
         norm_mean = np.asarray(norm_matrix.mean(axis=1)).flatten()
     else:
         norm_mean = np.asarray(norm_matrix.mean(axis=1)).flatten()
@@ -354,8 +354,8 @@ def _plot_gene_mean_variance(
     fig, ax = plt.subplots(figsize=CELLQUORUM_FIGSIZE_SMALL)
 
     # Calculate gene means and variances
-    norm_matrix = adata.layers[normalized_layer]
-    if sp.issparse(norm_matrix):
+    norm_matrix = memory_matrix(adata.layers[normalized_layer])
+    if not isinstance(norm_matrix, np.ndarray):
         gene_means = np.asarray(norm_matrix.mean(axis=0)).flatten()
         gene_vars = np.asarray(norm_matrix.power(2).mean(axis=0)).flatten() - gene_means**2
     else:

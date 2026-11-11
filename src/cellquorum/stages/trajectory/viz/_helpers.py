@@ -15,12 +15,12 @@ import anndata as ad
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import TwoSlopeNorm
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 
 from cellquorum.visualization.figio import figure_artifacts, save_figure
 from cellquorum.visualization.figstyle import MUTED_PALETTE, SEQUENTIAL_CMAP
+from cellquorum.visualization.figstyle import diverging_norm as _signed_norm
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -78,16 +78,6 @@ def results_file(context: PipelineContext, *parts: str) -> Path:
 # ══════════════════════════════════════════════════════════════════════════════
 # Plotting primitives (from plots.py)
 # ══════════════════════════════════════════════════════════════════════════════
-
-
-def _signed_norm(values: np.ndarray) -> TwoSlopeNorm:
-    arr = np.asarray(values, dtype=float)
-    finite = arr[np.isfinite(arr)]
-    lo = float(finite.min()) if finite.size else 0.0
-    hi = float(finite.max()) if finite.size else 0.0
-    mag = max(abs(lo), abs(hi), 1e-6)
-    eps = mag * 1e-3
-    return TwoSlopeNorm(vmin=min(lo, -eps), vcenter=0.0, vmax=max(hi, eps))
 
 
 def embedding_scatter(coords: Any, values: Any, *, title: str, cbar_label: str) -> Figure:

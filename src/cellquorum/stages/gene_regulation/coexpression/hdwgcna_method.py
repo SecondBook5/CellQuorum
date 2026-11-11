@@ -13,6 +13,7 @@ import anndata as ad
 import pandas as pd
 
 from cellquorum.backends.hdwgcna_backend import HDWGCNA_R
+from cellquorum.core.anndata_access import obs_frame, var_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.h5ad_io import write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -157,8 +158,8 @@ def _write_scratch_input(adata: ad.AnnData, settings: _Settings, context: Pipeli
         write_h5ad(
             ad.AnnData(
                 X=adata.layers[layer],
-                obs=adata.obs.copy(),
-                var=adata.var.copy(),
+                obs=obs_frame(adata).copy(),
+                var=var_frame(adata).copy(),
             ),
             h5ad,
         )
@@ -446,21 +447,7 @@ class HdwgcnaMethod(AnalysisMethod):
         """
         layer = config.get("layer", "counts")
 
-        return DataContract(
-            required_layers=[layer],
-            required_obs=[],
-            expression_layer=layer,
-            expected_kind="counts",
-        )
-
-    def requires_obs(self, config: dict) -> list[str]:
-        """Return obs columns required for co-expression analysis.
-
-        Returns empty list to avoid over-constraining since group_by can fall back
-        to obs-present columns or R "all" fallback.
-        """
-        # Don't hard-require columns that may be absent - the R script handles fallbacks
-        return []
+        return DataContract.counts_layer(layer)
 
     def _run(
         self, adata: ad.AnnData, config: dict, context: PipelineContext

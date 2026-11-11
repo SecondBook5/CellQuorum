@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, ClassVar
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.stages.qc.lineage import NullGrouping
 from cellquorum.stages.qc.validation import resolve_qc_matrix
@@ -851,7 +852,7 @@ def build_evidence_table(
             the posterior for cell identity is the mixture model's job, not this module's.
     """
     expression_adata = adata if expression_adata is None else expression_adata
-    obs = adata.obs
+    obs = obs_frame(adata)
     groups = obs[group_key] if group_key and group_key in obs.columns else None
 
     def severity_of(

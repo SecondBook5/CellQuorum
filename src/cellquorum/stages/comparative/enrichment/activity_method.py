@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import anndata as ad
+import pandas as pd
 
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
@@ -31,12 +32,7 @@ class ActivityMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         cell_type_col = config.get("cell_type_col", "cell_type")
         layer = config.get("layer", "cellquorum_normalized")
-        return DataContract(
-            required_obs=[cell_type_col],
-            required_layers=[layer] if layer != "X" else [],
-            expression_layer=layer,
-            expected_kind="lognorm",
-        )
+        return DataContract.lognorm(layer, required_obs=[cell_type_col])
 
     def configured_layers(self, config: dict) -> list[str]:
         return self.input_contract(config).required_layers
@@ -115,6 +111,8 @@ class ActivityMethod(AnalysisMethod):
                 )
                 source = adata if result is None else result
                 es = source.obsm.pop("score_ulm")
+                if not isinstance(es, pd.DataFrame):
+                    raise ValueError("decoupler returned scores without cell and program labels")
                 source.obsm.pop("padj_ulm", None)
                 # decoupler preserves obs names on the returned index, so realign
                 # the cell-type labels to that (possibly shortened) index instead

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
@@ -102,7 +102,7 @@ class StageResult:
         metrics: JSON-serializable structured metrics for summaries and reports.
     """
 
-    adata: ad.AnnData
+    adata: ad.AnnData | None
 
     artifacts: list[StageArtifact] = field(default_factory=list)
 
@@ -131,6 +131,14 @@ class StageResult:
     output_fingerprint: str | None = None
 
     checkpoint_path: Path | None = None
+
+    def require_adata(self) -> ad.AnnData:
+        """Return the output object for a method whose contract requires one."""
+        if self.adata is None:
+            from cellquorum.core.contracts import CellQuorumContractError
+
+            raise CellQuorumContractError("The stage returned no analysis object")
+        return self.adata
 
     def __post_init__(self) -> None:
         """
@@ -426,11 +434,23 @@ class StageExecutionRecord:
     def from_dict(cls, row: dict) -> StageExecutionRecord:
         """Restore an execution record written by provenance, including its artifact paths."""
         values = dict(row)
+        for key in (
+            "schema_version",
+            "completed_at_utc",
+            "n_output_artifacts",
+            "artifact_checksums",
+        ):
+            values.pop(key, None)
         for key in ("started_at_utc", "ended_at_utc"):
             values[key] = datetime.fromisoformat(values[key])
         for key in ("input_artifacts", "output_artifacts"):
             values[key] = [
-                StageArtifact(**{**item, "path": Path(item["path"])})
+                StageArtifact(
+                    name=item["name"],
+                    path=Path(item["path"]),
+                    kind=item["kind"],
+                    description=item["description"],
+                )
                 for item in values.get(key, [])
             ]
         if values.get("skip_reason"):
@@ -440,6 +460,14 @@ class StageExecutionRecord:
         if values.get("checkpoint_path"):
             values["checkpoint_path"] = Path(values["checkpoint_path"])
         return cls(**values)
+
+    def as_reused(self, reason: str) -> StageExecutionRecord:
+        """Keep the original scientific evidence when its outputs are reused."""
+        return replace(
+            self,
+            status="skipped",
+            skip_reason=StageSkipReason(self.stage_name, reason, {"resumed": True}),
+        )
 
     @property
     def reused_from_checkpoint(self) -> bool:

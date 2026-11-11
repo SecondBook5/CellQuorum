@@ -9,7 +9,14 @@ can mock it and so every failure is retyped into a recoverable
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
+from importlib.metadata import version
+from importlib.resources import files
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import anndata as ad
 import numpy as np
@@ -160,6 +167,32 @@ def _feature_gene_mask(var_names: list[str], species: str) -> np.ndarray | None:
     return mask
 
 
+def worker_python() -> str:
+    """Return the interpreter selected for both preflight and scoring."""
+    return os.environ.get("CELLQUORUM_CYTOTRACE2_PYTHON") or sys.executable
+
+
+def worker_issue() -> str | None:
+    """Probe the selected interpreter before upstream lineage computations start."""
+    probe = (
+        "from importlib.metadata import version; import sys; "
+        "from cytotrace2_py.cytotrace2_py import cytotrace2; "
+        "sys.exit('CytoTRACE 2 1.1.0.4 needs pandas 2 for gene mapping') "
+        "if version('cytotrace2-py') == '1.1.0.4' and int(version('pandas').split('.')[0]) >= 3 "
+        "else None"
+    )
+    try:
+        result = subprocess.run(
+            [worker_python(), "-I", "-c", probe], capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0:
+            return None
+        reason = (result.stderr.strip().splitlines() or [f"exit {result.returncode}"])[-1]
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        reason = str(exc)
+    return f"Set CELLQUORUM_CYTOTRACE2_PYTHON to the installed CytoTRACE 2 worker ({reason})."
+
+
 def run_cytotrace2(
     counts: np.ndarray | sp.spmatrix,
     var_names: list[str],
@@ -180,43 +213,104 @@ def run_cytotrace2(
     cell name. Any failure (import or run) is retyped to a
     ``CytoTraceComputeError`` subclass.
     """
-    try:
-        from cytotrace2_py.cytotrace2_py import cytotrace2
-    except Exception as exc:  # noqa: BLE001 — any import failure → skip
-        raise CytoTraceUnavailable(f"cytotrace2-py unavailable: {exc}") from exc
-
-    work = Path(workdir)
+    settings = dict(
+        species=species,
+        seed=seed,
+        disable_parallelization=disable_parallelization,
+        batch_size=batch_size,
+        smooth_batch_size=smooth_batch_size,
+    )
+    work = Path(workdir).resolve()
+    worker = worker_python()
+    log = work / "cytotrace2-worker.log"
     try:
         work.mkdir(parents=True, exist_ok=True)
-        # Drop genes outside the model feature panel BEFORE writing. This is
-        # numerically identical to passing them (cytotrace2 discards them in
-        # preprocess) but shrinks the table the library must load into RAM.
-        mask = _feature_gene_mask(var_names, species)
-        if mask is not None:
-            counts = counts[:, mask]
-            var_names = [v for v, keep in zip(var_names, mask, strict=False) if keep]
-        # CytoTRACE 2 expects genes as rows, cells as columns. Stream the table
-        # in gene-row chunks so the full object is never densified at once.
-        input_path = work / "cytotrace2_input.tsv"
-        _write_counts_tsv(counts, var_names, obs_names, input_path)
-        out_dir = work / "cytotrace2_results"
-        cytotrace2(
-            str(input_path),
-            species=species,
-            output_dir=str(out_dir),
-            seed=int(seed),
-            disable_plotting=True,
-            disable_parallelization=bool(disable_parallelization),
-            batch_size=int(batch_size),
-            smooth_batch_size=int(smooth_batch_size),
-        )
-        results_path = out_dir / "cytotrace2_results.txt"
-        frame = pd.read_csv(results_path, sep="\t", index_col=0)
+        # The model, mapping tables and human feature mask use the same interpreter.
+        with TemporaryDirectory(dir=work) as temp:
+            exchange = Path(temp)
+            if sp.issparse(counts):
+                sp.save_npz(exchange / "counts.npz", counts, compressed=False)
+            else:
+                np.save(exchange / "counts.npy", counts, allow_pickle=False)
+            (exchange / "input.json").write_text(json.dumps([var_names, obs_names, settings]))
+            with log.open("w") as handle:
+                subprocess.run(
+                    [worker, "-I", __file__, str(work)],
+                    cwd=exchange,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
+            result = Path("cytotrace2_results/cytotrace2_results.txt")
+            frame = pd.read_csv(exchange / result, sep="\t", dtype={0: str}, keep_default_na=False)
+            frame = frame.set_index(frame.columns[0])
+            if not frame.index.is_unique or set(frame.index) != set(obs_names):
+                raise CytoTraceFailed("CytoTRACE 2 returned incomplete or duplicate cell IDs")
+            scores = frame["CytoTRACE2_Score"].astype(float)
+            if not scores.between(0, 1).all():
+                raise CytoTraceFailed("CytoTRACE 2 returned missing or invalid potency scores")
+            (work / result.parent).mkdir(exist_ok=True)
+            (exchange / result).replace(work / result)
+            (exchange / "cytotrace2-runtime.json").replace(work / "cytotrace2-runtime.json")
+            return frame
     except CytoTraceComputeError:
         raise
-    except Exception as exc:  # noqa: BLE001 — retype any run failure
+    except subprocess.CalledProcessError as exc:
+        raise CytoTraceFailed(
+            f"CytoTRACE 2 worker exited {exc.returncode}. Check CELLQUORUM_CYTOTRACE2_PYTHON "
+            f"and the worker log at {log}"
+        ) from exc
+    except (FileNotFoundError, PermissionError) as exc:
+        raise CytoTraceUnavailable(
+            f"Check CELLQUORUM_CYTOTRACE2_PYTHON and worker files: {exc}"
+        ) from exc
+    except Exception as exc:
         raise CytoTraceFailed(f"cytotrace2 run failed: {exc}") from exc
-    return frame
+
+
+def _score_counts(
+    counts: np.ndarray | sp.spmatrix,
+    var_names: list[str],
+    obs_names: list[str],
+    work: Path,
+    settings: dict,
+) -> None:
+    try:
+        from cytotrace2_py.cytotrace2_py import cytotrace2
+    except ImportError as exc:
+        raise CytoTraceUnavailable(
+            f"Set CELLQUORUM_CYTOTRACE2_PYTHON to the CytoTRACE 2 environment: {exc}"
+        ) from exc
+    mask = _feature_gene_mask(var_names, settings["species"])
+    if mask is not None:
+        counts = counts[:, mask]
+        var_names = [v for v, keep in zip(var_names, mask, strict=True) if keep]
+    input_path = work / "cytotrace2_input.tsv"
+    _write_counts_tsv(counts, var_names, obs_names, input_path)
+    # Upstream passes output_dir to a shell. Use a fixed name in the private
+    # working directory so paths with spaces are safe and stale outputs impossible.
+    cytotrace2(str(input_path), output_dir="cytotrace2_results", disable_plotting=True, **settings)
+    if version("cytotrace2-py") == "1.1.0.4":
+        models = files("cytotrace2_py") / "resources" / "models"
+        missing = [i for i in range(1, 20) if not (models / f"model{i}.pt").is_file()]
+        if missing:
+            raise CytoTraceFailed(f"Incomplete CytoTRACE 2 ensemble, missing models {missing}")
+    packages = ("cytotrace2-py", "numpy", "pandas", "scanpy", "torch")
+    runtime = {name: version(name) for name in packages}
+    Path("cytotrace2-runtime.json").write_text(json.dumps(runtime, indent=2) + "\n")
+
+
+if __name__ == "__main__":
+    exchange = Path.cwd()
+    workdir = Path(sys.argv[1])
+    names, cells, options = json.loads((exchange / "input.json").read_text())
+    sparse_input = exchange / "counts.npz"
+    counts = (
+        sp.load_npz(sparse_input)
+        if sparse_input.exists()
+        else np.load(exchange / "counts.npy", mmap_mode="r")
+    )
+    _score_counts(counts, names, cells, workdir, options)
 
 
 __all__ = [

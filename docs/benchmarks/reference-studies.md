@@ -30,7 +30,7 @@ The public-study catalog contains 41 stages and 82 method registrations. Every e
 
 For the two Kang supplements, generate the specimen-labelled input once with `python "$recipes/helpers/prepare_kang_specimens.py" runs/kang_paired_analysis/objects/final_annotated.h5ad kang_sensitivity_input.h5ad`. For SCC, run the paired signaling recipe first. Both network and program recipes use the published four-population slice. After the program run, `python "$recipes/helpers/figure_scc_programs.py" runs/scc_programs` exports the editable four-panel figure, individual source tables and legend in `reports/publication/scc_programs/`.
 
-For the extended lineage recipe, install the `lineage` extra with the shipped `lineage-constraints.txt` into the current analysis environment and provision the CytoTRACE2 models. The reference used scVelo 0.3.4 with NumPy 2.3.5. Install the standard CellOracle environment including loompy and pyarrow for its separate perturbation run. The SCC program run needs memory for both the Python parent and its R worker. In a 10 GiB container two stability resamples exhausted the cgroup limit. The 14 GiB container completed the five resamples. Strict execution treats a killed resample as an incomplete requested analysis. A whole-VM restart interrupts live computation. The file `logs/stage_events.jsonl` records stage boundaries per attempt. Use a persistent output volume and configured checkpoints for resume. In the endocrine reference, resuming at `trajectory_viz` from the saved trajectory checkpoint reproduced the clean run’s potency scores, pseudotimes, fate probabilities and 4,800 fitted curve coordinates exactly.
+For the extended lineage recipe, follow the [clean lineage and CytoTRACE 2 installation](#extended-pancreas-lineage-from-a-clean-python-312-install) and provision the model ensemble. The reference used scVelo 0.3.4 with NumPy 2.3.5. Install the standard CellOracle environment including loompy and pyarrow for its separate perturbation run. The SCC program run needs memory for both the Python parent and its R worker. In a 10 GiB container two stability resamples exhausted the cgroup limit. The 14 GiB container completed the five resamples. Strict execution treats a killed resample as an incomplete requested analysis. A whole-VM restart interrupts live computation. The file `logs/stage_events.jsonl` records stage boundaries per attempt. Use a persistent output volume and configured checkpoints for resume. In the endocrine reference, resuming at `trajectory_viz` from the saved trajectory checkpoint reproduced the clean run’s potency scores, pseudotimes, fate probabilities and 4,800 fitted curve coordinates exactly.
 
 ![Expression programs, metacells, coexpression modules and paired keratinocyte scores](scc-programs/scc_programs.svg)
 
@@ -58,3 +58,31 @@ An independent wet-lab handoff is outstanding. Give the researcher the [quicksta
 4. Retrieve its editable panel, exact source table, legend and resolved settings. Check one plotted value against the table.
 
 A maintainer or automated fixture can verify the files and numbers. Record completion of the human handoff only after an independent researcher performs those tasks.
+
+## Extended pancreas lineage from a clean Python 3.12 install
+
+Run these commands from the source checkout on Linux or WSL. The lineage
+constraints select the tested pandas and AnnData pair, NumPy for stochastic
+velocity, and the upstream PyGPCCA revision compatible with the report renderer.
+Git is needed to install that revision.
+
+```bash
+python3.12 -m venv .venvs/lineage
+.venvs/lineage/bin/python -m pip install '.[lineage]' -c envs/lineage-constraints.txt
+.venvs/lineage/bin/python -m pip check
+
+python3.12 -m venv .venvs/cytotrace2
+.venvs/cytotrace2/bin/python -m pip install -r envs/cytotrace2-requirements.txt
+.venvs/cytotrace2/bin/python -m pip check
+export CELLQUORUM_CYTOTRACE2_PYTHON="$PWD/.venvs/cytotrace2/bin/python"
+export PATH="$PWD/.venvs/lineage/bin:$PATH"
+```
+
+CytoTRACE 2 1.1.0.4 needs NumPy 1 and pandas 2 for the upstream gene mapping.
+CellQuorum passes counts and original barcodes to the worker and records its
+package versions with the per-cell results. On first use the model downloads its
+19 weights. For offline reuse, copy the complete model1.pt through model19.pt
+ensemble from a matching installation into the worker's
+`cytotrace2_py/resources/models` directory. The lineage constraints and worker
+requirements also ship under `share/cellquorum/benchmarks` in the installed
+wheel. Use the same exported interpreter for `cellquorum plan` and `cellquorum run`.

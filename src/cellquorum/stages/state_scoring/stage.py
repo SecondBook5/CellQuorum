@@ -6,9 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.state_scoring  # noqa: F401
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -21,11 +20,10 @@ if TYPE_CHECKING:
     config_field="state_scoring",
     category="state_scoring",
 )
-class StateScoringStage(MethodDispatchStage):
+class StateScoringStage(DefaultMethodStage):
     """Score cell-state programs with the configured method(s)."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "score_genes")
+    default_method = "score_genes"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Default to running both methods (obs scores + obsm AUCs) when unset."""
@@ -33,9 +31,6 @@ class StateScoringStage(MethodDispatchStage):
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [{"method": "score_genes"}, {"method": "aucell"}]
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: state scoring writes obs/obsm + a table, no strict postcondition."""
 
 
 __all__ = ["StateScoringStage"]

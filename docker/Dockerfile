@@ -68,11 +68,10 @@ RUN micromamba create -y -n cellquorum-gpu -f /tmp/gpu.conda-lock.yml && microma
 # the env yml) because the source is present at /opt/cellquorum by now and the
 # yml's relative path would resolve against /tmp inside the image.
 RUN micromamba run -n cellquorum-gpu pip install -e .
-# Run the CLI IN the GPU env so runtime capability-detection
-# (compute/router.py: cupy + rapids_singlecell import + CUDA device) can see the
-# GPU. cellquorum-gpu is a superset of cellquorum-core, so every in-process
-# stage still works here. Without this override the GPU image would inherit the
-# cpu ENTRYPOINT and run in cellquorum-core, leaving all GPU acceleration dead.
+COPY --chown=$MAMBA_USER:$MAMBA_USER envs/rapids-worker-requirements.txt /tmp/rapids-worker.txt
+RUN micromamba run -n cellquorum-gpu python -m venv /opt/conda/envs/cellquorum-rapids && \
+    /opt/conda/envs/cellquorum-rapids/bin/pip install -r /tmp/rapids-worker.txt
+ENV CELLQUORUM_RAPIDS_PYTHON=/opt/conda/envs/cellquorum-rapids/bin/python
 ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "micromamba", "run", "-n", "cellquorum-gpu", "cellquorum"]
 CMD ["--help"]
 

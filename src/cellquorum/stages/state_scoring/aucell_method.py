@@ -42,11 +42,7 @@ class AucellMethod(AnalysisMethod):
 
     def input_contract(self, config: dict) -> DataContract:
         layer = config.get("layer", "cellquorum_normalized")
-        return DataContract(
-            required_layers=[layer] if layer != "X" else [],
-            expression_layer=layer,
-            expected_kind="lognorm",
-        )
+        return DataContract.lognorm(layer)
 
     def requires_layers(self) -> list[str]:
         # Config-less base hook; guard the default lognorm layer. The contract
@@ -125,6 +121,8 @@ class AucellMethod(AnalysisMethod):
         source = adata if result is None else result
         try:
             es = source.obsm.pop("score_aucell")
+            if not isinstance(es, pd.DataFrame):
+                return self._skip("AUCell returned scores without cell and program labels")
         except KeyError:
             return self._skip("AUCell produced no program columns")
         aligned = es.reindex(adata.obs_names)

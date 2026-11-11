@@ -18,6 +18,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.config.cohort import resolve_design_columns
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.artifacts import ArtifactManager
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_catalog import register_stage
@@ -184,7 +186,7 @@ def resolve_identity_columns(
 ) -> IdentityResolution | None:
     """Resolve candidate population and supporting evidence columns."""
 
-    obs = adata.obs
+    obs = obs_frame(adata)
     reference_key = first_present_column(obs, config.reference_keys)
     annotation_key = first_present_column(obs, config.annotation_keys)
     cluster_key = config.cluster_key if config.cluster_key in obs.columns else None
@@ -255,33 +257,11 @@ def resolve_design_keys(
 ) -> tuple[str, str]:
     """Resolve donor and condition columns from config or design settings."""
 
-    context_config = getattr(context, "config", None)
-
-    # Cohort schema wins when it declares the structural keys (declare-once).
-    from cellquorum.config.cohort import resolve_cohort_key
-
-    donor_key = resolve_cohort_key(context_config, attr="donor_key", stage_value=config.donor_key)
-    condition_key = resolve_cohort_key(
-        context_config, attr="condition_key", stage_value=config.condition_key
+    return resolve_design_columns(
+        getattr(context, "config", None),
+        donor_key=config.donor_key,
+        condition_key=config.condition_key,
     )
-
-    design = getattr(context_config, "design", None)
-    if isinstance(context_config, Mapping):
-        design = context_config.get("design", {})
-
-    if donor_key is None:
-        donor_key = (
-            design.get("donor_col", "patient_id")
-            if isinstance(design, Mapping)
-            else getattr(design, "donor_col", "patient_id")
-        )
-    if condition_key is None:
-        condition_key = (
-            design.get("condition_col", "condition")
-            if isinstance(design, Mapping)
-            else getattr(design, "condition_col", "condition")
-        )
-    return donor_key, condition_key
 
 
 def resolve_case_control(context: PipelineContext) -> tuple[str | None, str | None]:
@@ -303,7 +283,7 @@ def build_population_identity_tables(
 ) -> dict[str, pd.DataFrame]:
     """Build all population-identity evidence tables."""
 
-    obs = adata.obs.copy()
+    obs = obs_frame(adata).copy()
     obs["_population_id"] = obs[resolution.candidate_key].astype(str).fillna("NA")
     summary = build_population_summary(obs, resolution, config)
     tables = {

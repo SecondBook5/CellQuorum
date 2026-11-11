@@ -29,12 +29,7 @@ class LianaMethod(AnalysisMethod):
         cell_type_col = config.get("cell_type_col", "cell_type")
         sample_col = config.get("sample_col", "sample_id")
         layer = config.get("layer", "cellquorum_normalized")
-        return DataContract(
-            required_obs=[cell_type_col, sample_col],
-            required_layers=[layer] if layer != "X" else [],
-            expression_layer=layer,
-            expected_kind="lognorm",
-        )
+        return DataContract.lognorm(layer, required_obs=[cell_type_col, sample_col])
 
     def requires_obs(self, config: dict) -> list[str]:
         return [

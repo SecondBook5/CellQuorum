@@ -48,6 +48,7 @@ from cellquorum.config.factorial_design import (
     resolve_factorial_columns,
     validate_factorial_design,
 )
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.context import resolve_n_jobs
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumConfigError
@@ -355,7 +356,9 @@ class PseudobulkDreamMethod(RAnalysisMethod):
             )
 
         columns = required_specimen_columns(design, sample_col=sample_col, subject_col=subject_col)
-        universe = build_specimen_universe(adata.obs, sample_col=sample_col, metadata_cols=columns)
+        universe = build_specimen_universe(
+            obs_frame(adata), sample_col=sample_col, metadata_cols=columns
+        )
         specimens = universe.drop(columns="n_cells_total")
 
         # A design with no random effect is an ordinary fixed-effect fit (dream reduces to
@@ -390,7 +393,7 @@ class PseudobulkDreamMethod(RAnalysisMethod):
         # universe above was built from EVERY cell, so a specimen whose cells are all
         # QC-excluded stays visible; eligibility only decides whose counts enter a profile.
         # QC state present but its DE masks missing is fatal (never a silent fall-back).
-        eligible = de_eligible_cells(adata.obs)
+        eligible = de_eligible_cells(obs_frame(adata))
         n_total = int(adata.n_obs)
         n_eligible = n_total if eligible is None else int(eligible.sum())
         eligibility: dict[str, Any] = {
@@ -532,7 +535,11 @@ class _PopulationFit:
         contributing = in_population if eligible_mask is None else in_population & eligible_mask
         self.subset = adata[contributing]
         self.observed_n_cells = (
-            adata.obs.loc[in_population, sample_col].astype(str).value_counts().astype(np.int64)
+            obs_frame(adata)
+            .loc[in_population, sample_col]
+            .astype(str)
+            .value_counts()
+            .astype(np.int64)
         )
         self.row = {
             "cell_type": self.label,

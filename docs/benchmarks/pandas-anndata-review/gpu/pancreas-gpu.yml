@@ -1,0 +1,104 @@
+project:
+  name: pancreas_latent_sensitivity
+  organism: human
+paths:
+  output_dir: runs/pancreas-gpu
+input:
+  h5ad: integration.h5ad
+run:
+  profile: publication
+  random_seed: 42
+  require_selected_methods: true
+  continue_on_stage_failure: false
+stages:
+  ambient_correction: false
+  qc_splice_metrics: false
+  qc_evidence: false
+  preprocessing: true
+  feature_selection: true
+  dimensionality: true
+  integration: true
+  integration_benchmark: false
+  clustering: true
+  annotation: false
+  annotation_diagnostics: false
+  annotation_consensus: false
+  annotation_viz: false
+  reference_mapping: false
+  population_identity: false
+  state_scoring: false
+  state_scoring_viz: false
+  discovery: false
+  subclustering: false
+  query_projection: false
+  qc_finalization: false
+  adjudication: false
+  metacells: false
+  composition: false
+  differential_expression: false
+  differential_state: false
+  coexpression: false
+  grn: false
+  perturbation: false
+  differential_abundance: false
+  enrichment: false
+  enrichment_viz: false
+  de_viz: false
+  ccc_viz: false
+  embeddings: true
+  trajectory: false
+  trajectory_viz: false
+  cell_cell_communication: false
+  network_analysis: false
+  multicellular_programs: false
+  module_remodeling: false
+compute:
+  n_jobs: 2
+  backend: gpu
+  prefer_gpu: true
+  fallback_to_cpu: false
+report:
+  fail_on_report_error: true
+preprocessing:
+  normalization:
+    recipe: cellquorum_log1p_cp10k_v1
+    preserve_counts_layer: counts
+    output_layer: cellquorum_normalized
+feature_selection:
+  counts_layer: counts
+  n_top_genes: 800
+  method: pearson_residuals
+dimensionality:
+  input_layer: cellquorum_normalized
+  n_pcs: 30
+integration:
+  batch_key: study
+  label_key: cell_type
+  n_latent: 15
+  max_epochs: 35
+  random_state: 42
+  methods:
+  - method: harmony
+    output_rep: X_pca_harmony
+  - method: scvi
+    output_rep: X_scvi
+  - method: scanvi
+    output_rep: X_scanvi
+integration_benchmark:
+  enabled: true
+  batch_key: study
+  label_key: cell_type
+  mode: full
+  embeddings:
+  - X_pca
+  - X_pca_harmony
+  max_cells: 4500
+clustering:
+  use_rep: X_pca_harmony
+embeddings:
+  embeddings:
+  - umap
+  use_rep: X_pca_harmony
+  color_by:
+  - cell_type
+  - study

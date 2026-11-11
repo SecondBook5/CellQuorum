@@ -11,7 +11,7 @@ from __future__ import annotations
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -24,14 +24,10 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     # otherwise shape the biological reference every later stage is measured against.
     cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
-class IntegrationStage(MethodDispatchStage):
+class IntegrationStage(DefaultMethodStage):
     """Config-driven batch-integration stage."""
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured integration method (default 'harmony')."""
-
-        # Read the method key from the resolved sub-block.
-        return config.get("method", "harmony")
+    default_method = "harmony"
 
     def _validate_output(self, result: StageResult) -> None:
         """Validate that the corrected embedding was written (non-skip only)."""
@@ -43,7 +39,7 @@ class IntegrationStage(MethodDispatchStage):
         # Resolve the expected output embedding key from provenance/metrics and
         # assert it exists — turns a silent Harmony fallback into a loud failure.
         output_rep = str(result.metrics.get("output_rep", "X_pca_harmony"))
-        DataContract(required_obsm=[output_rep]).validate(result.adata)
+        DataContract(required_obsm=[output_rep]).validate(result.require_adata())
 
 
 __all__ = ["IntegrationStage"]

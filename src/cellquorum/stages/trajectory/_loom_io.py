@@ -16,6 +16,8 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from scipy.sparse import csr_matrix
@@ -137,7 +139,9 @@ def reconcile_looms(
         obj_names = adata.obs_names[(atlas_samples == sample_id).to_numpy()]
         prefix = f"{sample_id}_"
         bare_to_obj: dict[str, str] = {}
-        original = adata.obs.loc[obj_names, "barcode"] if "barcode" in adata.obs else None
+        original = (
+            obs_frame(adata).loc[obj_names, "barcode"] if "barcode" in obs_frame(adata) else None
+        )
         for name in obj_names:
             if original is not None:
                 bare = str(original.loc[name])

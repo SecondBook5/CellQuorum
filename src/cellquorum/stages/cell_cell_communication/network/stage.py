@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING
 
 import cellquorum.stages.cell_cell_communication.network  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -22,11 +21,10 @@ if TYPE_CHECKING:
     config_field="ccc_network",
     category="ccc_network",
 )
-class CCCNetworkStage(MethodDispatchStage):
+class CCCNetworkStage(DefaultMethodStage):
     """Run the configured ccc_network method(s): topology then ricci."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "topology")
+    default_method = "topology"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
@@ -65,9 +63,6 @@ class CCCNetworkStage(MethodDispatchStage):
             augmented["methods"] = [{"method": "topology"}, {"method": "ricci"}]
 
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: writes CSV artifacts + uns['ccc_network']; no obs/var postcondition."""
 
 
 __all__ = ["CCCNetworkStage"]

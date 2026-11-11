@@ -19,29 +19,13 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize, TwoSlopeNorm
 from matplotlib.figure import Figure
 
+from cellquorum.visualization.figstyle import diverging_norm as signed_norm
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 # Discrete p-value anchors for the dot-size significance legend.
 _SIZE_LEGEND_PVALUES = (0.05, 0.01, 1e-4)
-
-
-def signed_norm(values: np.ndarray) -> TwoSlopeNorm:
-    """TwoSlopeNorm centered at 0, guaranteed vmin < 0 < vmax.
-
-    TwoSlopeNorm requires vmin < vcenter < vmax; data that does not straddle zero
-    would raise. We pad the missing side with a small epsilon derived from the data
-    magnitude so a purely-positive (or empty) input still yields a valid norm.
-    """
-    arr = np.asarray(values, dtype=float)
-    finite = arr[np.isfinite(arr)]
-    lo = float(finite.min()) if finite.size else 0.0
-    hi = float(finite.max()) if finite.size else 0.0
-    mag = max(abs(lo), abs(hi), 1e-6)
-    eps = mag * 1e-3
-    vmin = min(lo, -eps)
-    vmax = max(hi, eps)
-    return TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
 
 
 def pvalue_to_stars(p: float) -> str:

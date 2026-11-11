@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
+from cellquorum.core.stage import StageExecutionRecord
+
 
 def require(condition: bool, message: str) -> None:
     if not condition:
@@ -348,9 +350,11 @@ def check_integration(run: Path, data: Path) -> dict:
         for domain in ["bio", "batch"]
         for key, score in domains[domain].items()
     ]
-    table = pd.DataFrame(rows, columns=["embedding", "category", "metric", "value"])
+    columns = ["embedding", "category", "metric"]
+    expected = pd.DataFrame(rows, columns=[*columns, "value"]).set_index(columns).sort_index()
+    table = pd.read_csv(run / "reports/integration_quality.csv").set_index(columns).sort_index()
+    pd.testing.assert_frame_equal(table, expected, check_exact=False, rtol=1e-12, atol=1e-14)
     require(np.isfinite(table.value).all(), "Integration metric missing.")
-    table.to_csv(run / "reports/integration_quality.csv", index=False)
     raw, harmony = scores["X_pca"], scores["X_pca_harmony"]
     require(
         harmony["batch"]["ilisi"] > raw["batch"]["ilisi"]
@@ -603,6 +607,25 @@ def check_extended_lineage(run: Path, data: Path) -> dict:
             "median_potency": medians.to_dict(),
             "fates": fates.shape[1],
         }
+        publication = run / "reports/publication"
+        for stem in ("lineage.palantir", "lineage"):
+            for extension in ("pdf", "svg"):
+                page = publication / f"{stem}.{extension}"
+                require(page.is_file() and page.stat().st_size > 0, f"Missing figure: {page.name}")
+        panel = pd.read_csv(publication / "lineage.palantir.csv").set_index("group")
+        expected = obj.obs.groupby("clusters", observed=True).palantir_pseudotime.agg(
+            ["count", "median"]
+        )
+        require(
+            panel.index.is_unique and set(expected.index) == set(panel.index),
+            "Palantir figure populations differ from the analysis object.",
+        )
+        expected = expected.loc[panel.index]
+        require(
+            np.array_equal(panel.n_cells, expected["count"])
+            and np.allclose(panel.value, expected["median"], rtol=0, atol=1e-12),
+            "Palantir figure cell counts or medians differ from the analysis object.",
+        )
         settings = json.loads((run / "provenance/resolved_config.json").read_text())[
             "trajectory_viz"
         ]
@@ -817,7 +840,11 @@ def main() -> None:
     records = json.loads((run / "provenance/stage_execution_records.json").read_text())
     plan = json.loads((run / "provenance/pipeline_plan.json").read_text())
     enabled = {s["name"] for s in plan["stages"] if s["enabled"]}
-    complete = {r["stage_name"] for r in records if r["status"] == "success"}
+    complete = {
+        record.stage_name
+        for record in map(StageExecutionRecord.from_dict, records)
+        if record.status == "success" or record.reused_from_checkpoint
+    }
     require(
         enabled <= complete,
         f"Enabled stages without successful execution: {sorted(enabled - complete)}",

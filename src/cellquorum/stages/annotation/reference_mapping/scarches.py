@@ -18,6 +18,7 @@ from scipy.stats import entropy
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 
+from cellquorum.core.anndata_access import dense_matrix, memory_matrix, obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumDataError, CellQuorumStageError
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -96,7 +97,7 @@ def _select_hvg_genes(
         if hvg_layer == "_hvg_lognorm":
             del atlas_train.layers[hvg_layer]
 
-    hvg_mask = atlas_train.var["highly_variable"].values
+    hvg_mask = atlas_train.var["highly_variable"].to_numpy(dtype=bool)
     hvg_set = set(atlas_train.var_names[hvg_mask])
     for gene in force_genes:
         if gene in atlas_train.var_names:
@@ -169,7 +170,7 @@ def _align_atlas_gene_space(
     # an OOM after several minutes of atlas loading, in service of nothing. The caller passes
     # ownership and rebinds the return value.
     atlas.var["_original_var_names"] = atlas.var_names.astype(str)
-    atlas.var_names = pd.Index(atlas.var[best_column].astype(str))
+    atlas.var_names = atlas.var[best_column].astype(str).tolist()
 
     # Symbol columns are not unique — several Ensembl IDs map to one symbol, and CellxGene
     # keeps them all. Collapse to the first occurrence so the re-index is 1:1; a duplicate
@@ -235,7 +236,7 @@ def _write_prepared_reference(
 
     labels = atlas_train.obs["_labels"].astype(str)
     prepared = ad.AnnData(
-        X=atlas_train.X.copy(),
+        X=memory_matrix(atlas_train.X).copy(),
         obs=pd.DataFrame(index=atlas_train.obs_names.astype(str)),
         var=pd.DataFrame(index=atlas_train.var_names.astype(str)),
     )
@@ -255,7 +256,7 @@ def _write_prepared_reference(
     # Counts kept as a layer, and X made log-normalized. R's diagnostics want a `logcounts`
     # assay, and normalizing here rather than in R keeps the transform in one language and
     # matched to the counts the model itself saw.
-    prepared.layers[counts_layer] = atlas_train.X.copy()
+    prepared.layers[counts_layer] = memory_matrix(atlas_train.X).copy()
     sc_local.pp.normalize_total(prepared, target_sum=1e4)
     sc_local.pp.log1p(prepared)
     # NOTE: the collapse check for ref_latent lives at its PRODUCTION site
@@ -305,7 +306,6 @@ def _resolve_counts(adata: ad.AnnData, counts_layer: str, *, what: str) -> Any:
         CellQuorumDataError: If no integer-valued matrix can be found.
     """
     import numpy as np
-    import scipy.sparse as sp
 
     if counts_layer in adata.layers:
         return adata.layers[counts_layer]
@@ -315,14 +315,15 @@ def _resolve_counts(adata: ad.AnnData, counts_layer: str, *, what: str) -> Any:
         return adata.raw[:, adata.var_names].X
 
     matrix = adata.X
-    sample = (matrix[:200] if not sp.issparse(matrix) else matrix[:200].toarray()).ravel()
+    sample = dense_matrix(adata[:200].X).ravel()
     finite = sample[np.isfinite(sample)]
     if finite.size and np.allclose(finite, np.round(finite)) and float(finite.max()) > 1.0:
         return matrix
 
+    present = sorted(str(key) for key in adata.layers.keys())
     raise CellQuorumDataError(
         f"reference_mapping needs raw counts for the {what}, and none were found: no "
-        f"layers[{counts_layer!r}] (present: {sorted(adata.layers)}), no .raw, and X does not "
+        f"layers[{counts_layer!r}] (present: {present}), no .raw, and X does not "
         f"look like counts. scArches fits a negative binomial, so log-normalized values would "
         f"give a plausible but wrong embedding — hence failing rather than guessing."
     )
@@ -351,7 +352,7 @@ def _label_hierarchy(atlas: ad.AnnData, fine_key: str, coarse_key: str) -> dict[
                 f"Available: {sorted(atlas.obs.columns)[:20]}"
             )
 
-    pairs = atlas.obs[[fine_key, coarse_key]].astype(str)
+    pairs = obs_frame(atlas)[[fine_key, coarse_key]].astype(str)
     per_fine = pairs.groupby(fine_key, observed=True)[coarse_key].unique()
     ambiguous = {k: sorted(v) for k, v in per_fine.items() if len(v) > 1}
     if ambiguous:
@@ -676,7 +677,7 @@ def _prepare_training_sets(
     # `.raw` has now been read and nothing reads it again, so drop it. On the filtered skin
     # atlas that releases roughly 2.4 GB, which matters because the atlas is held fully in
     # memory alongside the query, the shared-gene subset, and the HVG subset.
-    atlas.raw = None
+    del atlas.raw
     atlas.obs["_labels"] = atlas.obs[label_key].astype(str).copy()
 
     # Learn the label hierarchy from the atlas itself, before the atlas is subset to shared
@@ -1236,7 +1237,7 @@ def _write_artifacts(
                 for col in result_query.obs.columns
                 if col == key_added or col.startswith(f"{key_added}_") or col.startswith("refprob_")
             ]
-            assignments = result_query.obs[assignment_cols].copy()
+            assignments = obs_frame(result_query)[assignment_cols].copy()
             assignments.insert(0, "cell_id", result_query.obs_names)
             writer = StageArtifactWriter.from_context(context)
             artifacts.append(
@@ -1271,7 +1272,7 @@ def _write_artifacts(
 
             # Uncertainty histograms.
             uncertainty_path = figures_path / f"{key_added}_uncertainty.png"
-            plot_uncertainty(result_query.obs, key_added, uncertainty_path)
+            plot_uncertainty(obs_frame(result_query), key_added, uncertainty_path)
             artifacts.append(
                 StageArtifact(
                     name="uncertainty",
@@ -1396,8 +1397,8 @@ def _build_seed_checkpoint_meta(
     label_key: str,
     counts_layer: str,
     key_added: str,
-    query_obs_names: Sequence[str],
-    atlas_obs_names: Sequence[str],
+    query_obs_names: Sequence[str] | pd.Index,
+    atlas_obs_names: Sequence[str] | pd.Index,
     hvg_list: Sequence[str],
     n_shared: int,
     knn_k: int,
@@ -1423,7 +1424,7 @@ def _build_seed_checkpoint_meta(
     }
 
 
-def _digest_strings(values: Sequence[str]) -> str:
+def _digest_strings(values: Sequence[str] | pd.Index) -> str:
     """Return a stable digest for an ordered string sequence."""
 
     digest = sha256()

@@ -10,15 +10,9 @@ enabled, a stage may be skipped when:
 3. the stage is *side-effect only* — it does not transform the AnnData that
    flows downstream.
 
-Condition (3) is the conservative guardrail for this first implementation: the
-completion sidecar stores artifact paths and fingerprints, but NOT the AnnData
-state at that point. A stage that mutates ``adata`` (QC filtering, PCA,
-clustering, integration) therefore cannot be resumed yet — skipping it would
-lose the transformed matrix for downstream stages. Read-only/diagnostic stages
-(annotation diagnostics, integration benchmark, population identity, report)
-pass ``adata`` through unchanged, so skipping them on a fingerprint match is
-safe. AnnData-checkpoint resume for compute-heavy stages is a documented
-follow-up.
+The integration benchmark returns metrics and leaves its input object unchanged.
+Annotation diagnostics write cell-level evidence into obs, and population identity
+writes its audit into uns. Both must run to reconstruct the downstream object.
 """
 
 from __future__ import annotations
@@ -27,19 +21,13 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from cellquorum.core.stage import StageArtifact
+from cellquorum.core.fingerprint import artifact_file_checksums
+from cellquorum.core.stage import StageArtifact, StageExecutionRecord
 
 # Stages whose ``run`` does not change the AnnData that flows downstream. Only
 # these are eligible for resume until AnnData checkpointing exists. Keep this
 # conservative: when in doubt, a stage is NOT listed and simply re-runs.
-RESUMABLE_STAGES: frozenset[str] = frozenset(
-    {
-        "annotation_diagnostics",
-        "integration_benchmark",
-        "population_identity",
-        "report",
-    }
-)
+RESUMABLE_STAGES: frozenset[str] = frozenset({"integration_benchmark"})
 
 
 @dataclass(frozen=True)
@@ -51,10 +39,33 @@ class ResumeDecision:
 
     # Human-readable reason (for notes/records) whether or not resuming.
     reason: str
-    artifacts: tuple[StageArtifact, ...] = ()
+    original: StageExecutionRecord | None = None
+
+    @property
+    def artifacts(self) -> tuple[StageArtifact, ...]:
+        return tuple(self.original.output_artifacts) if self.original else ()
 
 
-def _completion_sidecar_path(provenance_dir: Path, stage_name: str) -> Path:
+def completion_payload(record: StageExecutionRecord) -> dict:
+    """Store a restorable execution record alongside the artifact existence snapshot."""
+    payload = record.to_dict()
+    payload.update(
+        schema_version=1,
+        completed_at_utc=record.ended_at_utc.isoformat(),
+        n_output_artifacts=len(record.output_artifacts),
+        output_artifacts=[
+            {**artifact.to_dict(), "exists": artifact.path.exists()}
+            for artifact in record.output_artifacts
+        ],
+    )
+    if record.stage_name in RESUMABLE_STAGES:
+        payload["artifact_checksums"] = artifact_file_checksums(
+            a.path for a in record.output_artifacts
+        )
+    return payload
+
+
+def completion_path(provenance_dir: Path, stage_name: str) -> Path:
     """Return the completion.json path for a stage under a provenance dir."""
 
     safe_stage_name = "".join(
@@ -95,7 +106,7 @@ def decide_stage_resume(
     if input_fingerprint is None:
         return ResumeDecision(False, "no input fingerprint; re-running")
 
-    sidecar_path = _completion_sidecar_path(provenance_dir, stage_name)
+    sidecar_path = completion_path(provenance_dir, stage_name)
     if not sidecar_path.exists():
         return ResumeDecision(False, "no prior completion marker; re-running")
 
@@ -106,7 +117,7 @@ def decide_stage_resume(
         return ResumeDecision(False, "unreadable completion marker; re-running")
 
     # Only prior *successful* completions are reusable.
-    if payload.get("status") != "success":
+    if not isinstance(payload, dict) or payload.get("status") != "success":
         return ResumeDecision(False, "prior stage did not succeed; re-running")
 
     # The fingerprint must match, or an input/config change invalidated it.
@@ -114,29 +125,25 @@ def decide_stage_resume(
     if prior_fingerprint is None or prior_fingerprint != input_fingerprint:
         return ResumeDecision(False, "input fingerprint changed; re-running")
 
-    # Every recorded artifact must still exist, or outputs are incomplete.
-    artifacts = []
-    for artifact in payload.get("output_artifacts", []):
-        artifact_path = artifact.get("path")
-        if artifact_path is None or not Path(artifact_path).exists():
-            return ResumeDecision(False, "a recorded artifact is missing; re-running")
-        path = Path(artifact_path)
-        artifacts.append(
-            StageArtifact(
-                name=artifact.get("name", path.name),
-                path=path,
-                kind=artifact.get("kind", "file"),
-                description=artifact.get("description", ""),
-            )
+    try:
+        original = StageExecutionRecord.from_dict(payload)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return ResumeDecision(False, "missing original execution evidence; re-running")
+    if original.stage_name != stage_name:
+        return ResumeDecision(False, "original stage name differs; re-running")
+    registered = {a.path for a in original.output_artifacts}
+    if any(not path.exists() for path in registered):
+        return ResumeDecision(False, "a recorded artifact is missing; re-running")
+    if payload.get("artifact_checksums") != artifact_file_checksums(registered):
+        return ResumeDecision(
+            False, "output contents have not been verified or changed; re-running"
         )
+    if original.metrics.get("incomplete_reasons") or original.metrics.get("mode") == "fallback":
+        return ResumeDecision(False, "incomplete benchmark; re-running")
 
-    if required_outputs:
-        registered = {a.path for a in artifacts}
-        if missing_outputs(required_outputs, registered):
-            return ResumeDecision(False, "a required stage output is missing or empty; re-running")
-    return ResumeDecision(
-        True, "resumed from completion marker (fingerprint match)", tuple(artifacts)
-    )
+    if missing_outputs(required_outputs, registered):
+        return ResumeDecision(False, "a required stage output is missing or empty; re-running")
+    return ResumeDecision(True, "resumed from completion marker (fingerprint match)", original)
 
 
 def missing_outputs(required: tuple[Path, ...], registered: set[Path]) -> list[Path]:

@@ -21,7 +21,10 @@ and the like) live in their own environments and are not checked here.
 from __future__ import annotations
 
 import importlib
+import os
+import subprocess
 import sys
+from pathlib import Path
 
 CORE = [
     "anndata",
@@ -60,16 +63,11 @@ CORE = [
     "cellquorum",
 ]
 GPU = ["cupy", "cuml", "cugraph", "cuvs", "rapids_singlecell"]
-PROFILES = {"core": CORE, "gpu": CORE + GPU}
 
 
-def main() -> int:
-    profile = sys.argv[1] if len(sys.argv) > 1 else "core"
-    if profile not in PROFILES:
-        print(f"unknown profile {profile!r}; use one of {sorted(PROFILES)}")
-        return 2
+def check_imports(names: list[str]) -> bool:
     failed = []
-    for name in PROFILES[profile]:
+    for name in names:
         try:
             module = importlib.import_module(name)
         except Exception as error:  # noqa: BLE001 - any failure to import is the finding
@@ -77,17 +75,43 @@ def main() -> int:
             print(f"FAIL  {name}: {type(error).__name__}: {str(error)[:100]}")
         else:
             print(f"ok    {name} {getattr(module, '__version__', '')}")
-    if profile == "gpu":
-        import cupy
-        import torch
+    print(f"{len(names) - len(failed)} of {len(names)} imports ok", flush=True)
+    return not failed
 
-        devices = cupy.cuda.runtime.getDeviceCount()
-        available = torch.cuda.is_available()
-        print(f"GPU devices visible to cupy: {devices}; torch.cuda.is_available(): {available}")
-        if devices < 1 or not available:
-            failed.append("gpu-device")
-    print(f"\n{len(PROFILES[profile]) - len(failed)} of {len(PROFILES[profile])} imports ok")
-    return 1 if failed else 0
+
+def check_rapids() -> bool:
+    if not check_imports(GPU):
+        return False
+    import cupy
+
+    devices = cupy.cuda.runtime.getDeviceCount()
+    print(f"GPU devices visible to CuPy: {devices}")
+    return devices > 0
+
+
+def main() -> int:
+    profile = sys.argv[1] if len(sys.argv) > 1 else "core"
+    if profile == "rapids-worker":
+        return int(not check_rapids())
+    if profile not in {"core", "gpu"}:
+        print(f"unknown profile {profile!r}; use core or gpu")
+        return 2
+    core_ok = check_imports(CORE)
+    if profile == "core":
+        return int(not core_ok)
+    worker = os.environ.get("CELLQUORUM_RAPIDS_PYTHON")
+    if worker:
+        result = subprocess.run([worker, "-I", str(Path(__file__).resolve()), "rapids-worker"])
+        rapids_ok = result.returncode == 0
+    else:
+        rapids_ok = check_rapids()
+    if not core_ok:
+        return 1
+    import torch
+
+    available = torch.cuda.is_available()
+    print(f"torch.cuda.is_available(): {available}")
+    return int(not (rapids_ok and available))
 
 
 if __name__ == "__main__":

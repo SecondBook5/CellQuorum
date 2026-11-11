@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.exceptions import CellQuorumDataError
 
 # Exclusion reasons written to the support table (stable, machine-readable).
@@ -287,8 +288,8 @@ def aggregate_pseudobulk(
         key_cols = [str(donor_col), str(condition_col)]
         carried = [*key_cols, *(extra_obs or [])]
     carried = list(dict.fromkeys(carried))
-    _require_columns(adata.obs, [*key_cols, *carried])
-    _reject_null_keys(adata.obs, key_cols)
+    _require_columns(obs_frame(adata), [*key_cols, *carried])
+    _reject_null_keys(obs_frame(adata), key_cols)
 
     # Build the pseudobulk-unit key per cell.
     if specimen_mode:
@@ -323,7 +324,7 @@ def aggregate_pseudobulk(
     )
 
     # Declared sample-level metadata, validated constant + fully observed per unit.
-    sample_meta = _group_metadata(adata.obs, group_key, groups, carried, optional=optional)
+    sample_meta = _group_metadata(obs_frame(adata), group_key, groups, carried, optional=optional)
     n_cells = pd.Series(np.bincount(rows, minlength=len(groups)), index=groups, name="n_cells")
 
     return PseudobulkResult(counts=counts_df, sample_meta=sample_meta, n_cells=n_cells)

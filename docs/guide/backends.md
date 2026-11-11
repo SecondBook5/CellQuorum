@@ -17,7 +17,7 @@ commands, dependency-isolation rationales, and `make lock` usage, see
 |---|---|
 | `cellquorum-core` | The main runtime (scanpy, anndata ≥ 0.11, scvi-tools, …). The `cellquorum` CLI is invoked from here. |
 | `cellquorum-dev` | `cellquorum-core` plus testing/linting/build tooling (pytest, ruff, mypy, docs). |
-| `cellquorum-gpu` | `cellquorum-core` plus CUDA PyTorch, scvi-tools, and the RAPIDS stack for GPU acceleration. |
+| `cellquorum-gpu` | `cellquorum-core` with CUDA PyTorch and scvi-tools. An isolated RAPIDS worker runs with its supported pandas version. Set `CELLQUORUM_RAPIDS_PYTHON` to its Python executable. |
 | `cellquorum-r` | The R bridge: Seurat, zellkonverter, rpy2, anndata2ri for R/Bioconductor methods. |
 
 ## Isolated backend environments

@@ -11,6 +11,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts.layer_tags import get_layer_tag, set_layer_tag
 from cellquorum.core.exceptions import CellQuorumDataError
 
@@ -255,7 +256,7 @@ def _load_adata_subset(
             mask = np.ones(n_before, dtype=bool)
         else:
             column_as_str = _require_obs_column(
-                backed.obs, subset_column, setting="input.subset.column"
+                obs_frame(backed), subset_column, setting="input.subset.column"
             )
             wanted = {str(value) for value in subset_values}
             mask = column_as_str.isin(wanted).to_numpy()
@@ -266,7 +267,7 @@ def _load_adata_subset(
 
         if exclude_column is not None:
             exclude_as_str = _require_obs_column(
-                backed.obs, exclude_column, setting="input.exclude.column"
+                obs_frame(backed), exclude_column, setting="input.exclude.column"
             )
             unwanted = {str(value) for value in (exclude_values or [])}
 
@@ -295,7 +296,7 @@ def _load_adata_subset(
         if agreement_column is not None:
             assert column_as_str is not None  # guarded by load_adata
             agreement_as_str = _require_obs_column(
-                backed.obs, agreement_column, setting="input.subset.require_agreement"
+                obs_frame(backed), agreement_column, setting="input.subset.require_agreement"
             )
 
             # Guard the VOCABULARY before the cells. A label the second annotation
@@ -381,7 +382,7 @@ def declare_layer_kinds(adata: ad.AnnData, kinds: Mapping[str, str]) -> None:
         if layer not in adata.layers:
             raise AnnDataLoadError(
                 f"input.layer_kinds names layer '{layer}', which is not in the file "
-                f"(layers: {sorted(k for k in adata.layers if k is not None)})"
+                f"(layers: {sorted(k for k in adata.layers.keys() if k is not None)})"
             )
         existing = get_layer_tag(adata, layer)
         if existing is not None and existing["kind"] != kind:

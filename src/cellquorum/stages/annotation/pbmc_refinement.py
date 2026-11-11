@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
+from cellquorum.core.anndata_access import dense_matrix
+
 CD4, CD8, NK = "CD4 T cells", "CD8 T cells", "NK cells"
 GROUPS = {
     "T_lineage": ["CD3D", "CD3E", "CD3G", "TRAC"],
@@ -26,8 +28,7 @@ def refine_pbmc(adata: ad.AnnData, layer: str, key: str, cluster_key: str) -> pd
     missing = [name for name, indices in columns.items() if not indices]
     if missing:
         raise ValueError(f"human_pbmc_v1 lacks all RNA markers for {missing}")
-    matrix = adata.layers[layer][:, adata.var_names.get_indexer(genes)]
-    values = matrix.toarray() if sparse.issparse(matrix) else np.asarray(matrix)
+    values = dense_matrix(adata[:, genes].layers[layer])
     graph = sparse.csr_matrix(adata.obsp["connectivities"])
     mass = np.asarray(graph.sum(axis=1)).ravel()
     graph = graph.multiply((1 / np.maximum(mass, 1e-12))[:, None]).tocsr()

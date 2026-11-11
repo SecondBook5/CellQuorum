@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import anndata as ad
 import numpy as np
 
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -92,6 +93,7 @@ class UmapMethod(AnalysisMethod):
                 random_state=_seed(config, context),
                 use_rep=use_rep,
                 n_neighbors=int(n_neighbors) if n_neighbors is not None else None,
+                context=context,
             )
         except compute.EmbeddingsComputeError as exc:
             return self._skip(f"{exc}")
@@ -518,7 +520,7 @@ class ContinuousOverlayMethod(AnalysisMethod):
             if spec is None or spec["obsm"] not in adata.obsm:
                 warnings.append(f"continuous_overlay: embedding '{tag}' unavailable")
                 continue
-            coords = adata.obsm[spec["obsm"]]
+            coords = dense_matrix(adata.obsm[spec["obsm"]])
             expr_cmap = str(overlay_cfg.expression_cmap)
             score_cmap = str(overlay_cfg.score_cmap)
             # Track used stems per embedding to detect and de-duplicate collisions.

@@ -11,7 +11,7 @@ from __future__ import annotations
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -24,21 +24,17 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     # otherwise shape the biological reference every later stage is measured against.
     cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
-class DimensionalityStage(MethodDispatchStage):
+class DimensionalityStage(DefaultMethodStage):
     """Config-driven dimensionality-reduction stage."""
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured reduction method (default 'pca')."""
-
-        # Read the method key from the resolved sub-block.
-        return config.get("method", "pca")
+    default_method = "pca"
 
     def _validate_output(self, result: StageResult) -> None:
         """Validate that the reduction produced an X_pca embedding."""
 
         # Skipped results pass through without validation.
         if not result.metrics.get("skipped"):
-            DataContract(required_obsm=["X_pca"]).validate(result.adata)
+            DataContract(required_obsm=["X_pca"]).validate(result.require_adata())
 
 
 __all__ = ["DimensionalityStage"]

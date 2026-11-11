@@ -25,6 +25,7 @@ from cellquorum.backends.harmonypy_backend import (
     HarmonyDiagnostics,
     harmony_correct,
 )
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod
@@ -83,13 +84,14 @@ class HarmonyMethod(AnalysisMethod):
             The corrected embedding as written by harmony_integrate.
         """
 
-        import rapids_singlecell as rsc
+        from cellquorum.backends.rapids_worker import run_rapids
 
         # harmony_integrate moves obsm[basis] to the device itself and writes a host
         # array back, so no whole-object GPU transfer is needed. flavor="harmony1" is
         # the original algorithm, i.e. what the CPU path runs.
-        rsc.pp.harmony_integrate(
+        run_rapids(
             adata,
+            "harmony",
             key=batch_key,
             basis=input_rep,
             adjusted_basis=output_rep,
@@ -223,7 +225,7 @@ class HarmonyMethod(AnalysisMethod):
         # Recorded rather than ignored, because the alternative is a declaration that reads
         # as compliant while nothing enforces it — the precise failure the cell_scope contract
         # was added to prevent. scVI and scANVI have real encoders and do honour the scope.
-        if fitting_cells(adata.obs) is not None:
+        if fitting_cells(obs_frame(adata)) is not None:
             notes.append(
                 "Harmony fitted on all cells: it has no out-of-sample transform, so the QC "
                 "fit population could not be honoured. The corrected embedding is influenced "

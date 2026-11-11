@@ -81,9 +81,9 @@ class CellTypistMethod(AnalysisMethod):
             X=adata.layers[counts_layer].copy(),
             obs=pd.DataFrame(index=adata.obs_names),
             var=pd.DataFrame(index=adata.var_names),
-            obsp={key: adata.obsp[key] for key in adata.obsp},
             uns={"neighbors": adata.uns["neighbors"]} if "neighbors" in adata.uns else {},
         )
+        work.obsp.update(adata.obsp.items())
         sc.pp.normalize_total(work, target_sum=1e4)
         sc.pp.log1p(work)
 

@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING
 
 import anndata as ad
 import pandas as pd
-import scipy.sparse as sp
 
 from cellquorum.backends.script_paths import r_script_path
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import MethodSkip
@@ -107,9 +107,7 @@ class DeHeatmapMethod(RAnalysisMethod):
 
         cluster_labels = config.get("cluster_labels") or {}
 
-        X = adata[:, genes].layers[layer]
-        if sp.issparse(X):
-            X = X.toarray()
+        X = dense_matrix(adata[:, genes].layers[layer])
         expr = pd.DataFrame(X, columns=genes, index=adata.obs_names)
         cluster = adata.obs[cell_type_col].astype("string").replace(cluster_labels)
         condition = adata.obs[condition_col].astype("string")

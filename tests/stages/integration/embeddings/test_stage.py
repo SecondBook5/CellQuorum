@@ -21,7 +21,7 @@ def test_stage_augment_injects_method_list_and_keys():
             embeddings = ["umap", "phate"]
             figure_formats = ["png"]
             dpi = 80
-            overlay = {"genes": []}
+            overlay = {"genes": ["INS"]}
             magic = {"enabled": False}
 
         class annotation:
@@ -72,4 +72,5 @@ def test_stage_runs_end_to_end(tmp_path):
     result = EmbeddingsStage().run(_Ctx())
     assert "X_umap" in result.adata.obsm
     assert "paga" in result.adata.uns
-    assert result.metrics["n_methods"] == 5
+    assert result.metrics["n_methods"] == 3
+    assert all(not m.get("skipped") for m in result.metrics["per_method"])

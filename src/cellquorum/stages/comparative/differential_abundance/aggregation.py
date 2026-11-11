@@ -13,6 +13,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.labels import as_label_strings
 from cellquorum.visualization.qc.summarise import natural_sort_key
 
@@ -94,7 +95,7 @@ def aggregate_celltype_counts(
     # other type's proportion. Its size is a property of the FILTER rather than of
     # the biology, and filters are rarely balanced across arms, so leaving it in
     # tests the exclusion rule as though it were a cell state.
-    obs = adata.obs
+    obs = obs_frame(adata)
     labeled = obs[list(group_cols)].notna().all(axis=1).to_numpy()
     n_unlabeled = int(labeled.size - labeled.sum())
     notes: tuple[str, ...] = ()

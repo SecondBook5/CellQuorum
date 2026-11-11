@@ -283,7 +283,7 @@ class PipelineContext:
 
         return self.manifest
 
-    def with_adata(self, adata: ad.AnnData) -> PipelineContext:
+    def with_adata(self, adata: ad.AnnData | None) -> PipelineContext:
         """
         Return a shallow context copy with an updated AnnData object.
 

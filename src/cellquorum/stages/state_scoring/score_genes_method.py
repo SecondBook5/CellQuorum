@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
@@ -35,11 +36,7 @@ class ScoreGenesMethod(AnalysisMethod):
 
     def input_contract(self, config: dict) -> DataContract:
         layer = config.get("layer", "cellquorum_normalized")
-        return DataContract(
-            required_layers=[layer] if layer != "X" else [],
-            expression_layer=layer,
-            expected_kind="lognorm",
-        )
+        return DataContract.lognorm(layer)
 
     def requires_layers(self) -> list[str]:
         # Config-less base hook; guard the default lognorm layer. The contract
@@ -98,7 +95,7 @@ class ScoreGenesMethod(AnalysisMethod):
 
         if new_columns:
             adata.obs = pd.concat(
-                [adata.obs, pd.DataFrame(new_columns, index=adata.obs_names)], axis=1
+                [obs_frame(adata), pd.DataFrame(new_columns, index=adata.obs_names)], axis=1
             )
 
         if not done:
@@ -112,7 +109,7 @@ class ScoreGenesMethod(AnalysisMethod):
         artifacts = []
         writer = StageArtifactWriter.from_context(context)
         if cell_type_col in adata.obs.columns:
-            frame = adata.obs[[cell_type_col, *score_cols.values()]].copy()
+            frame = obs_frame(adata)[[cell_type_col, *score_cols.values()]].copy()
             frame[cell_type_col] = frame[cell_type_col].astype(str)
             per_ct = frame.groupby(cell_type_col).mean()
             per_ct.columns = list(score_cols.keys())

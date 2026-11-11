@@ -6,9 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.comparative.differential_expression.viz  # noqa: F401  (side-effect: method registration)
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -30,11 +29,10 @@ _VIZ_CONFIG_KEYS = (
 @register_stage(
     name="de_viz", order=250, config_flag="de_viz", config_field="de_viz", category="de_viz"
 )
-class DeVizStage(MethodDispatchStage):
+class DeVizStage(DefaultMethodStage):
     """Render publication figures from the DE stage's CSV outputs."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "volcano_viz")
+    default_method = "volcano_viz"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
@@ -56,9 +54,6 @@ class DeVizStage(MethodDispatchStage):
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [{"method": "volcano_viz"}]
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: this stage writes figures, no obs/var postcondition."""
 
 
 __all__ = ["DeVizStage"]

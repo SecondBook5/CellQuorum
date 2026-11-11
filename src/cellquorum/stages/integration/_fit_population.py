@@ -28,6 +28,7 @@ from collections.abc import Sequence
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.stages.qc.eligibility import fitting_cells
 
 logger = logging.getLogger(__name__)
@@ -55,11 +56,11 @@ def resolve_training_set(
         the core — so non-core cells influenced the latent space. This must reach
         ``StageResult.warnings``, not just notes, or it is invisible outside verbose runs.
     """
-    fitting = fitting_cells(work.obs)
+    fitting = fitting_cells(obs_frame(work))
     if fitting is None:
         return work, None, None
 
-    missing = _categories_absent_from(work.obs, fitting, conditioning_keys)
+    missing = _categories_absent_from(obs_frame(work), fitting, conditioning_keys)
     if missing:
         warning = (
             f"Integration trained on all cells: the QC fit population is missing "

@@ -43,6 +43,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.core.stage_artifact_writer import StageArtifactWriter
@@ -339,7 +340,7 @@ class ModuleRemodelingMethod(AnalysisMethod):
             return axis
         group_values, subtype_table = axis
 
-        metadata = adata.obs.copy()
+        metadata = obs_frame(adata).copy()
         group_field = group_col or key_added
         # Overwrite rather than add: when the caller supplied ``group_col`` the
         # statistics read that column by name, so the rendered labels have to land

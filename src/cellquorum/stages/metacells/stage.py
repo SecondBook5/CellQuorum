@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import cellquorum.stages.metacells  # noqa: F401  (registers the method as a side effect)
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -26,15 +25,10 @@ from cellquorum.methods.stage_base import MethodDispatchStage
         ),
     ),
 )
-class MetacellsStage(MethodDispatchStage):
+class MetacellsStage(DefaultMethodStage):
     """Run the configured metacell (MetaCell2) method."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "metacells")
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No structural postcondition; the stage writes a metacell_id obs column plus
-        tables/figures."""
+    default_method = "metacells"
 
 
 __all__ = ["MetacellsStage"]

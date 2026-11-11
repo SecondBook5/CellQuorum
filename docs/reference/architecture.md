@@ -78,6 +78,12 @@ packages; a GPU method checks for a capable device — and skip with a reason wh
 their backend is absent. This keeps method selection declarative (in YAML) and makes
 backend availability a runtime concern rather than an install-time hard dependency.
 
+For a stage with a fixed default, set `default_method` on `DefaultMethodStage`.
+The planner and executor both use that registry name when a study omits the method.
+Stages with a custom selector can implement `_select_method_name` on `MethodDispatchStage`.
+Differential expression, differential abundance and enrichment share the primary
+contrast settings. Explicit method settings, including `paired: false`, take precedence.
+
 R/Bioconductor methods share one abstraction, `cellquorum.methods.r_method.RAnalysisMethod`,
 which centralizes Rscript resolution and R-package availability checks for the
 edgeR, Milo, propeller, NicheNet, MultiNicheNet, and scDiagnostics adapters.

@@ -17,6 +17,8 @@ from cellquorum.methods.base import MethodSkip
 from cellquorum.methods.registry import METHOD_REGISTRY, MethodRegistry
 
 if TYPE_CHECKING:
+    import anndata as ad
+
     from cellquorum.config.models import CellQuorumConfig
     from cellquorum.core.context import PipelineContext
 
@@ -124,7 +126,7 @@ class MethodDispatchStage(ABC):
 
     def _run_single_method(
         self,
-        adata: object,
+        adata: ad.AnnData,
         method_config: dict,
         context: PipelineContext,
     ) -> StageResult | MethodSkip:
@@ -152,7 +154,7 @@ class MethodDispatchStage(ABC):
 
     def _run_methods_list(
         self,
-        adata: object,
+        adata: ad.AnnData,
         stage_config: dict,
         methods: list[dict],
         context: PipelineContext,
@@ -206,7 +208,7 @@ class MethodDispatchStage(ABC):
 
             # Validate and thread this method's AnnData into the next method.
             self._validate_output(outcome)
-            current = outcome.adata
+            current = outcome.require_adata()
             notes.extend(outcome.notes)
             warnings.extend(outcome.warnings)
             artifacts.extend(outcome.artifacts)
@@ -281,6 +283,18 @@ class MethodDispatchStage(ABC):
         """
 
 
+class DefaultMethodStage(MethodDispatchStage):
+    """Dispatch a named method, using the stage's declared default when omitted."""
+
+    @property
+    @abstractmethod
+    def default_method(self) -> str:
+        """Registry name used by a study that omits the method key."""
+
+    def _select_method_name(self, config: dict) -> str:
+        return config.get("method", self.default_method)
+
+
 # Cohort attributes that overlay onto same-named stage config keys. These are
 # the structural obs columns a dataset declares once (config.cohort). When a
 # cohort field is set it takes precedence, so the biological structure is
@@ -329,4 +343,4 @@ def _apply_cohort_overlay(context: PipelineContext, stage_config: dict) -> dict:
     return overlay_cohort_keys(getattr(context, "config", None), stage_config)
 
 
-__all__ = ["MethodDispatchStage"]
+__all__ = ["DefaultMethodStage", "MethodDispatchStage"]

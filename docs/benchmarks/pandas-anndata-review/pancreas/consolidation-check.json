@@ -1,0 +1,30 @@
+{
+  "cells": 3696,
+  "median_potency": {
+    "Ductal": 0.30062673237806425,
+    "Ngn3 low EP": 0.19688771254527415,
+    "Ngn3 high EP": 0.08337791565194314,
+    "Pre-endocrine": 0.07024311483081029,
+    "Beta": 0.04815135022072501,
+    "Alpha": 0.08126301456645117,
+    "Delta": 0.0776648864533567,
+    "Epsilon": 0.10863032642093637
+  },
+  "fates": 6,
+  "fitted_gene_lineage_curves": 24,
+  "max_potency_difference": 0.0,
+  "max_fate_difference": 0.0,
+  "matched_cell_order": true,
+  "panels_changed_pixels": {
+    "activity_cascade_hallmark.png": 0,
+    "gene_trends.png": 0,
+    "pseudotime_heatmap.png": 0,
+    "velocity_diagnostics.png": 0,
+    "velocity_stream.png": 0,
+    "lineage.pdf": 0,
+    "lineage.palantir.pdf": 0
+  },
+  "trend_rows": 4800,
+  "all_trend_rows_identical": true,
+  "pdf_comparison": "First page rasterized with pdftoppm at a 1600-pixel long edge; both publications are single-page PDFs."
+}

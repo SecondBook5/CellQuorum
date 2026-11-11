@@ -24,7 +24,13 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
-from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP, empty_figure
+from cellquorum.visualization.figstyle import (
+    CATEGORICAL_PALETTE,
+    SEQUENTIAL_CMAP,
+    adjust_labels,
+    empty_figure,
+)
+from cellquorum.visualization.figstyle import diverging_norm as signed_norm
 from cellquorum.visualization.figstyle import get_group_palette as _get_group_palette
 
 if TYPE_CHECKING:
@@ -47,17 +53,6 @@ def _clean_id(v: object) -> str:
     if isinstance(v, float) and v.is_integer():
         return str(int(v))
     return str(v)
-
-
-def signed_norm(values: np.ndarray) -> TwoSlopeNorm:
-    """TwoSlopeNorm centered at 0, guaranteed vmin < 0 < vmax."""
-    arr = np.asarray(values, dtype=float)
-    finite = arr[np.isfinite(arr)]
-    lo = float(finite.min()) if finite.size else 0.0
-    hi = float(finite.max()) if finite.size else 0.0
-    mag = max(abs(lo), abs(hi), 1e-6)
-    eps = mag * 1e-3
-    return TwoSlopeNorm(vmin=min(lo, -eps), vcenter=0.0, vmax=max(hi, eps))
 
 
 def celltype_palette(cell_types: list[str]) -> dict[str, str]:
@@ -1645,17 +1640,12 @@ def curvature_network(
     # A wider k still leaves close-together nodes (a real, dense TF/target
     # pair) with their labels dead-centered on the marker and touching each
     # other -- the same repulsion module_umap_plot's hub labels already use.
-    try:
-        from adjustText import adjust_text
-
-        adjust_text(
-            label_texts,
-            ax=ax,
-            only_move={"points": "xy", "text": "xy"},
-            arrowprops=dict(arrowstyle="-", color="#999", lw=0.4),
-        )
-    except Exception:
-        pass  # labels still render, just un-repelled
+    adjust_labels(
+        label_texts,
+        ax=ax,
+        only_move={"points": "xy", "text": "xy"},
+        arrowprops=dict(arrowstyle="-", color="#999", lw=0.4),
+    )
     fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=curvature_col, shrink=0.8)
     ax.set_axis_off()
     ax.margins(0.1)

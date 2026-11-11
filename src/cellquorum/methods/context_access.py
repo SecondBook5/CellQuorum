@@ -1,11 +1,4 @@
-"""Resolve a stage's config sub-block from a pipeline context.
-
-The real ``PipelineContext.config`` is a ``CellQuorumConfig`` pydantic object, so
-a stage reads its own settings via ``getattr(config, stage_name).model_dump()``.
-Unit tests, however, often pass a plain dict context. This helper accepts either
-and always returns a plain dict, so ``MethodDispatchStage`` subclasses work in
-both settings without branching.
-"""
+"""Resolve study and stage settings for analysis methods."""
 
 from __future__ import annotations
 
@@ -49,4 +42,27 @@ def resolve_stage_config(context: PipelineContext, stage_name: str) -> dict:
     return {}
 
 
-__all__ = ["resolve_stage_config"]
+def with_study_contrast(context: PipelineContext, stage_config: dict) -> dict:
+    """Fill missing comparison settings from the cohort and primary study design."""
+    from cellquorum.config.cohort import resolve_design_columns
+
+    settings = dict(stage_config)
+    config = getattr(context, "config", None)
+    design = getattr(config, "design", None)
+    if design is None:
+        return settings
+
+    donor, condition = resolve_design_columns(config, donor_key=None, condition_key=None)
+    for key, value in (
+        ("donor_col", donor),
+        ("condition_col", condition),
+        ("case", getattr(design, "case", None)),
+        ("control", getattr(design, "control", None)),
+    ):
+        if not settings.get(key):
+            settings[key] = value
+    settings.setdefault("paired", bool(getattr(design, "paired", False)))
+    return settings
+
+
+__all__ = ["resolve_stage_config", "with_study_contrast"]

@@ -1,0 +1,16 @@
+{
+  "cells": 3696,
+  "changed_potency_classes": 0,
+  "max_abs_potency_change": 4.180016499599759e-09,
+  "potency_spearman": 0.9999999999999998,
+  "max_abs_pseudotime_change": 1.3322676295501878e-15,
+  "palantir_max_abs_probability_change": 0.0,
+  "cellrank_max_abs_probability_change": 0.0,
+  "fitted_curve_points": 4800,
+  "max_abs_curve_expression_change": 8.43769498715119e-15,
+  "max_abs_panel_median_change": 2.220446049250313e-16,
+  "lineage.palantir_pixel_rms_0_to_255": 0.0,
+  "lineage.palantir_fraction_changed_pixels": 0.0,
+  "lineage_pixel_rms_0_to_255": 0.0,
+  "lineage_fraction_changed_pixels": 0.0
+}

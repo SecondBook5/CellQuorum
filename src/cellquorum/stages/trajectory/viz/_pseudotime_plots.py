@@ -333,12 +333,11 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
         # real cohort's full matrix (201,871 x 33,417) is ~54 GB, to compute a
         # per-gene correlation that only ever needs one n_cells-length column at
         # once.
-        matrix = adata.X
         finite = np.isfinite(pt)
         n_genes = adata.n_vars
         rhos = np.zeros(n_genes)
         for j in range(n_genes):
-            col = _dense(matrix[:, j]).ravel()
+            col = _dense(adata[:, j].X).ravel()
             r, _ = spearmanr(col[finite], pt[finite])
             rhos[j] = 0.0 if np.isnan(r) else abs(r)
         idx = np.where(rhos > corr_cut)[0]
@@ -366,14 +365,13 @@ class PseudotimeHeatmapVizMethod(AnalysisMethod):
             genes = self._select_genes(adata, pt, config)
             if not genes:
                 return self._skip("no genes resolved")
-            gi = [adata.var_names.get_loc(g) for g in genes]
             # Subset to the selected genes BEFORE densifying, not after: densifying
             # the full matrix first (201,871 x 33,417 on a real cohort, ~54 GB) to
-            # then throw away all but `len(gi)` (<= heatmap_max_genes, default 60)
+            # then throw away all but `len(genes)` (<= heatmap_max_genes, default 60)
             # columns is the same class of waste as _select_genes' correlation loop
             # above.
-            source = adata.layers["magic"] if "magic" in adata.layers else adata.X
-            M = _dense(source[:, gi])
+            selected = adata[:, genes]
+            M = _dense(selected.layers["magic"] if "magic" in selected.layers else selected.X)
 
             score_key = self._resolve_key(adata, config.get("heatmap_score_key"), _SCORE_FALLBACKS)
             cond_key = config.get("condition_col")

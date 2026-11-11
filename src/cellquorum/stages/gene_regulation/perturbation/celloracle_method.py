@@ -17,7 +17,7 @@ import scanpy as sc
 
 from cellquorum.backends.celloracle_backend import CELLORACLE_KO_PY
 from cellquorum.core.contracts import DataContract
-from cellquorum.core.h5ad_io import write_h5ad
+from cellquorum.core.h5ad_io import legacy_string_frame, write_h5ad
 from cellquorum.core.stage import StageArtifact, StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
 from cellquorum.stages.gene_regulation.perturbation import perturbation_figures as pfig
@@ -139,23 +139,16 @@ def _write_scratch_input(adata, settings: _Settings, context) -> Path:  # noqa: 
     scratch.mkdir(parents=True, exist_ok=True)
     h5ad = scratch / "perturbation_input.h5ad"
     layer = settings.layer
-    # Genuinely shallow, matching the same fix already applied in this stage
-    # category (grn/pyscenic_method.py, coexpression/hdwgcna_method.py):
-    # adata.copy() duplicates every LAYER (each a full gene-space matrix) just
-    # to change which one is X, then write_h5ad serializes all of it. Unlike
-    # those two methods' scripts, celloracle_ko.py DOES read
-    # adata.obsm[embedding_key] (verified directly), so obsm is preserved here
-    # -- it is cheap (a handful of dimensions per cell) next to the layers,
-    # which are the actual multi-GB cost.
-    if layer and layer != "X" and layer in adata.layers:
-        work = ad.AnnData(
-            X=adata.layers[layer],
-            obs=adata.obs.copy(),
-            var=adata.var.copy(),
-            obsm=dict(adata.obsm),
-        )
-    else:
-        work = adata
+    # The worker reads X, the axes and embeddings. Share the large matrices and
+    # encode the axis metadata for its older AnnData, including missing labels.
+    matrix = adata.layers[layer] if layer and layer != "X" and layer in adata.layers else adata.X
+    work = ad.AnnData(
+        X=matrix,
+        obs=legacy_string_frame(adata.obs),
+        var=legacy_string_frame(adata.var),
+    )
+    for key, value in adata.obsm.items():
+        work.obsm[key] = legacy_string_frame(value) if isinstance(value, pd.DataFrame) else value
 
     # Restrict to highly-variable genes before CellOracle ever sees the
     # object. CellOracle's own perform_PCA() runs a dense SVD over
@@ -489,15 +482,7 @@ class CellOracleMethod(AnalysisMethod):
         contract instead of allowing the fallback (the grn/hdWGCNA lesson).
         """
         layer = config.get("layer", "counts")
-        return DataContract(
-            required_layers=[layer],
-            required_obs=[],
-            expression_layer=layer,
-            expected_kind="counts",
-        )
-
-    def requires_obs(self, config: dict) -> list[str]:
-        return []
+        return DataContract.counts_layer(layer)
 
     def _run(self, adata, config, context) -> StageResult | MethodSkip:  # noqa: ANN001
         settings = _Settings.from_config(config, adata)

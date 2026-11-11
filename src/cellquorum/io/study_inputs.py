@@ -9,6 +9,8 @@ import scanpy as sc
 from scipy.io import mmread
 from scipy.sparse import csr_matrix
 
+from cellquorum.core.anndata_access import copy_x_to_layer, memory_matrix
+
 
 def _first(directory: Path, names: tuple[str, ...]) -> Path:
     for name in names:
@@ -123,9 +125,10 @@ def import_libraries(source: Path, destination: Path) -> pd.DataFrame:
                 )
             if "cellquorum_input_X" in data.layers:
                 raise ValueError(f"Reserved layer cellquorum_input_X already exists in {sample}.")
-            data.layers["cellquorum_input_X"] = data.X.copy()
+            copy_x_to_layer(data, "cellquorum_input_X")
             data.X = data.layers[row["counts_layer"]].copy()
-        values = data.X.data if hasattr(data.X, "tocsr") else np.asarray(data.X)
+        matrix = memory_matrix(data.X)
+        values = matrix if isinstance(matrix, np.ndarray) else matrix.data
         if not (np.isfinite(values) & (values >= 0) & (values == np.floor(values))).all():
             raise ValueError(
                 f"{sample} needs nonnegative integer raw counts in X or a counts_layer."
@@ -137,7 +140,8 @@ def import_libraries(source: Path, destination: Path) -> pd.DataFrame:
             if not metadata.index.is_unique or set(metadata.index) != set(data.obs_names):
                 raise ValueError(f"Cell metadata barcodes must match {sample} exactly.")
             aligned = metadata.loc[data.obs_names]
-            for key in aligned:
+            for column in aligned.columns:
+                key = str(column)
                 if key in data.obs and not data.obs[key].astype(str).equals(
                     aligned[key].astype(str)
                 ):

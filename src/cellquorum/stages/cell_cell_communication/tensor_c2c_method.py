@@ -105,12 +105,7 @@ class TensorCell2CellMethod(AnalysisMethod):
         cell_type_col = config.get("cell_type_col", "cell_type")
         sample_col = config.get("sample_col", "sample_id")
         layer = config.get("layer", "cellquorum_normalized")
-        return DataContract(
-            required_obs=[cell_type_col, sample_col],
-            required_layers=[layer] if layer != "X" else [],
-            expression_layer=layer,
-            expected_kind="lognorm",
-        )
+        return DataContract.lognorm(layer, required_obs=[cell_type_col, sample_col])
 
     def requires_obs(self, config: dict) -> list[str]:
         return [
@@ -209,11 +204,18 @@ class TensorCell2CellMethod(AnalysisMethod):
         # CRITICAL DEVIATION: use sample_key="sample" (the standardized literal from
         # LianaMethod), NOT sample_key=sample_col which would pass "sample_id" and fail.
         try:
-            tensor = li.multi.to_tensor_c2c(
+            # LIANA 2 moved the converter and renamed its score transform.
+            if hasattr(li, "ms"):
+                convert = li.ms.to_tensor_c2c
+                transform_key = "inverse_fn"
+            else:
+                convert = li.multi.to_tensor_c2c
+                transform_key = "inverse_fun"
+            tensor = convert(
                 adata,
                 sample_key="sample",
                 score_key="magnitude_rank",
-                inverse_fun=lambda x: 1 - x,
+                **{transform_key: lambda rank: 1 - rank},
                 non_negative=True,
                 how=config.get("tensor_how", "outer"),
                 outer_fraction=float(config.get("outer_fraction", 1.0 / 3.0)),

@@ -6,7 +6,7 @@ from __future__ import annotations
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -16,14 +16,10 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_field="reference_mapping",
     category="reference_mapping",
 )
-class ReferenceMappingStage(MethodDispatchStage):
+class ReferenceMappingStage(DefaultMethodStage):
     """Config-driven reference mapping stage."""
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured reference mapping method (default 'scarches')."""
-
-        # Read the method key from the resolved sub-block.
-        return config.get("method", "scarches")
+    default_method = "scarches"
 
     def _validate_output(self, result: StageResult) -> None:
         """Validate the transferred label and embedding landed in adata."""
@@ -37,7 +33,9 @@ class ReferenceMappingStage(MethodDispatchStage):
         key_added = str(result.metrics.get("key_added", "ref_state"))
 
         # scANVI embedding must be present in obsm.
-        DataContract(required_obs=[key_added], required_obsm=["X_scANVI"]).validate(result.adata)
+        DataContract(required_obs=[key_added], required_obsm=["X_scANVI"]).validate(
+            result.require_adata()
+        )
 
 
 __all__ = ["ReferenceMappingStage"]

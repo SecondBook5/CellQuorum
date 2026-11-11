@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import anndata as ad
 import numpy as np
 
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.methods.base import AnalysisMethod, MethodSkip
@@ -120,7 +121,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
         labels = adata.obs[label_col].to_numpy() if label_col else None
 
         # Pre-embedding for pcr_comparison.
-        X_pre = adata.obsm[pre_embedding]
+        X_pre = dense_matrix(adata.obsm[pre_embedding])
 
         # Compute metrics for each embedding.
         # ``caveats``, not ``notes``, for two reasons. It is spelled that way because
@@ -136,7 +137,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
                 continue
 
-            X_post = adata.obsm[emb_key]
+            X_post = dense_matrix(adata.obsm[emb_key])
             batch_metrics, bio_metrics, emb_caveats = self._compute_metrics(
                 X_pre=X_pre,
                 X_post=X_post,
@@ -145,7 +146,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 n_neighbors=n_neighbors,
                 mode=mode,
             )
-            caveats.extend(emb_caveats)
+            caveats.extend(f"{emb_key}: {message}" for message in emb_caveats)
 
             # Aggregate score.
             aggregate = self._aggregate_score(batch_metrics, bio_metrics, batch_weight, bio_weight)
@@ -173,6 +174,8 @@ class ScibBenchmarkMethod(AnalysisMethod):
         # READ-ONLY, and the object returned is the FULL one. `adata` above may be a subsampled
         # view used for the metrics; returning it would silently drop cells from every later
         # stage, which is a far worse failure than a slow benchmark.
+        if caveats:
+            metrics["incomplete_reasons"] = list(caveats)
         if subsample_note:
             caveats.append(subsample_note)
         return StageResult(adata=full_adata, metrics=metrics, warnings=caveats)
@@ -276,8 +279,11 @@ class ScibBenchmarkMethod(AnalysisMethod):
             result = func(*args, **kwargs)
             # kbet returns (acceptance_rate, stat, pval); we use acceptance_rate.
             if isinstance(result, tuple | list):
-                return float(result[0])
-            return float(result)
+                result = result[0]
+            value = float(result)
+            if not np.isfinite(value):
+                caveats.append(f"{metric_name} returned a non-finite score.")
+            return value
         except Exception as e:
             caveats.append(f"{metric_name} failed: {e}")
             return float("nan")
@@ -296,7 +302,10 @@ class ScibBenchmarkMethod(AnalysisMethod):
         caller reads a missing ``nmi`` as nan.
         """
         try:
-            return dict(func(*args, **kwargs))
+            result = dict(func(*args, **kwargs))
+            if not np.isfinite(result.get("nmi", np.nan)):
+                caveats.append(f"{metric_name} returned no finite NMI.")
+            return result
         except Exception as e:
             caveats.append(f"{metric_name} failed: {e}")
             return {}
@@ -356,7 +365,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 caveats.append(f"Embedding '{emb_key}' not in obsm; skipped.")
                 continue
 
-            X = adata.obsm[emb_key]
+            X = dense_matrix(adata.obsm[emb_key])
             metadata_df = adata.obs[[batch_key]]
             if label_col:
                 metadata_df = adata.obs[[batch_key, label_col]]
@@ -402,6 +411,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
             "ranking": ranking,
             "label_used": label_col,
             "mode": "fallback",
+            "incomplete_reasons": list(caveats),
         }
 
         return StageResult(adata=adata, metrics=metrics, warnings=caveats)

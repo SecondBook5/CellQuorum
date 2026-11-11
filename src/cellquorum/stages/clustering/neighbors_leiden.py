@@ -153,26 +153,21 @@ def run_neighbors_leiden_routed(
 
     if routing["use_gpu"]:
         try:
-            import rapids_singlecell as rsc
+            from cellquorum.backends.rapids_worker import run_rapids
 
-            rsc.get.anndata_to_GPU(target)
-            rsc.pp.neighbors(
-                target, n_neighbors=n_neighbors, use_rep=use_rep, random_state=random_state
+            run_rapids(
+                target,
+                "cluster",
+                n_neighbors=n_neighbors,
+                use_rep=use_rep,
+                resolution=resolution,
+                random_state=random_state,
+                key_added=key_added,
             )
-            rsc.tl.leiden(
-                target, resolution=resolution, random_state=random_state, key_added=key_added
-            )
-            rsc.get.anndata_to_CPU(target)
             compute_used = "gpu"
         except Exception as exc:  # noqa: BLE001
             if not routing["fallback_to_cpu"]:
                 raise
-            try:
-                import rapids_singlecell as rsc
-
-                rsc.get.anndata_to_CPU(target)
-            except Exception:
-                pass
             gpu_fallback_note = (
                 f"GPU clustering failed ({type(exc).__name__}: {str(exc)[:80]}); "
                 "fell back to CPU."

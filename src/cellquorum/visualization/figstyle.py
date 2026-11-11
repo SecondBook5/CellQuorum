@@ -16,6 +16,7 @@ import colorsys
 import contextlib
 import math
 import re
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from functools import cache
 from pathlib import Path
@@ -33,6 +34,7 @@ from matplotlib.figure import Figure
 
 if TYPE_CHECKING:
     import anndata as ad
+    from matplotlib.text import Text
 
     from cellquorum.stats.donor_comparison import TwoGroupTest
 
@@ -660,6 +662,27 @@ def raincloud(
             zorder=2,
             rasterized=rasterize_points,
         )
+
+
+def adjust_labels(
+    texts: Sequence[Text], *, ax: Axes, warning: str | None = None, **options: Any
+) -> None:
+    """Separate labels with a fixed iteration budget, independent of rendering speed."""
+    if not texts:
+        return
+    try:
+        from adjustText import adjust_text
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+        fig = ax.get_figure()
+        if isinstance(fig, Figure) and not hasattr(fig.canvas, "get_renderer"):
+            FigureCanvasAgg(fig)
+        adjust_text(texts, ax=ax, iter_lim=200, **options)
+    except ImportError:
+        return
+    except Exception as exc:
+        if warning:
+            warnings.warn(f"{warning}: {exc}", stacklevel=2)
 
 
 def diverging_norm(values: np.ndarray, *, vmax: float | None = None) -> TwoSlopeNorm:

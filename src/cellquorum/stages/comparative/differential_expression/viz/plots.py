@@ -8,8 +8,6 @@ no config objects, no biological literals.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
@@ -17,6 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.text import Text
 
 from cellquorum.visualization import figstyle
+from cellquorum.visualization.figstyle import adjust_labels
 
 _QUAD_RED = "#FFE4E6"
 _QUAD_BLUE = "#E6F0FF"
@@ -28,15 +27,17 @@ def _spread_crowded_labels(ax: Axes, texts: list[Text]) -> bool:
     """Give densely overlapping gene names separate rows and connect them to their points."""
     if len(texts) < 4:
         return False
-    boxes = [t.get_window_extent() for t in texts]
+    fig = ax.get_figure()
+    assert isinstance(fig, Figure)
+    # Allow three manuscript points around each name for its marker and leader line.
+    padding = 3 * fig.dpi / 72
+    boxes = [t.get_window_extent().padded(padding) for t in texts]
     if not any(box.count_overlaps(boxes) >= 4 for box in boxes):
         return False
 
     sides = [[t for t in texts if (t.get_position()[0] < 0) == left] for left in (True, False)]
     # Reserve the bottom of the panel for the count legend; measure row spacing in points.
     low, high = 0.15, 0.975
-    fig = ax.get_figure()
-    assert isinstance(fig, Figure)
     height = max(
         fig.get_figheight(),
         10 * max(map(len, sides)) / (72 * ax.get_position().height * (high - low)),
@@ -227,20 +228,14 @@ def volcano(
     ax.set_xlim(-x_lim, x_lim)
     ax.set_ylim(0, y_lim)
     if texts and not _spread_crowded_labels(ax, texts):
-        try:
-            from adjustText import adjust_text
-
-            adjust_text(
-                texts,
-                ax=ax,
-                arrowprops={"arrowstyle": "-", "color": "gray", "lw": 0.3, "alpha": 0.5},
-                expand_points=(1.5, 1.5),
-                force_text=(0.5, 0.5),
-            )
-        except ImportError:
-            pass
-        except Exception as exc:
-            warnings.warn(f"Could not adjust volcano labels: {exc}", stacklevel=2)
+        adjust_labels(
+            texts,
+            ax=ax,
+            warning="Could not adjust volcano labels",
+            arrowprops={"arrowstyle": "-", "color": "gray", "lw": 0.3, "alpha": 0.5},
+            expand_points=(1.5, 1.5),
+            force_text=(0.5, 0.5),
+        )
 
     stats_text = f"FDR<{fdr_cut} & |log2FC|>{fc_cut}:\n  {n_up} up, {n_down} down"
     ax.text(

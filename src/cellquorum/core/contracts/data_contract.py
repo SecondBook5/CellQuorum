@@ -49,6 +49,21 @@ class DataContract(StrictBaseModel):
     # Guardrail: reject imputed data where statistics are not allowed.
     forbid_imputed: bool = False
 
+    @classmethod
+    def counts_layer(cls, layer: str) -> DataContract:
+        """Require a named count layer and validate its provenance and values."""
+        return cls(required_layers=[layer], expression_layer=layer, expected_kind="counts")
+
+    @classmethod
+    def lognorm(cls, layer: str, *, required_obs: list[str] | None = None) -> DataContract:
+        """Validate normalized expression in X or a named layer alongside metadata requirements."""
+        return cls(
+            required_layers=[] if layer == "X" else [layer],
+            required_obs=required_obs or [],
+            expression_layer=layer,
+            expected_kind="lognorm",
+        )
+
     def validate(self, adata: ad.AnnData) -> None:  # type: ignore[override]  # shadows pydantic's deprecated BaseModel.validate on purpose
         """
         Validate an AnnData object against this contract.

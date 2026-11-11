@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 
+from cellquorum.core.anndata_access import copy_x_to_layer, obs_frame
 from cellquorum.core.contracts import set_layer_tag
 from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.stages.preprocessing.config import NormalizationConfig
@@ -280,7 +281,7 @@ def preserve_raw_counts(
 
     # Preserve X when input_layer is None.
     if input_layer is None:
-        adata.layers[preserve_layer] = adata.X.copy()
+        copy_x_to_layer(adata, preserve_layer)
     else:
         # Preserve named input layer.
         adata.layers[preserve_layer] = adata.layers[input_layer].copy()
@@ -588,7 +589,7 @@ def run_scclr_pflog(
     # fit_scope=CORE.
     target, fit_note = _fit_scclr_target(
         counts,
-        fitting=fitting_cells(adata.obs),
+        fitting=fitting_cells(obs_frame(adata)),
         requested_target=requested_target,
         backend=backend,
         scratch=scratch,

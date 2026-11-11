@@ -41,6 +41,19 @@ failures separately. In CLI JSON, `disabled_stages` identifies stages switched o
 `reused_stages` lists stages whose results came from a validated checkpoint.
 The legacy `skipped_stages` field includes all skipped records.
 
+With `--from-stage`, CellQuorum loads the latest compatible checkpoint before
+the requested stage and replays any enabled stages between them. The report
+retains the original upstream metrics, methods, and output paths. A missing or
+modified registered output file identifies the stage to rerun. Changes to
+upstream inputs, compute settings, or analysis settings also invalidate the
+checkpoint. Studies saved with fingerprint version 5 or earlier need one fresh
+upstream run to create version 6 checkpoints.
+
+With `run.resume: true`, the integration benchmark can reuse a completed
+measurement of the same labels, batches and embedding coordinates. Annotation
+diagnostics and population identity run again when rebuilding the object so
+downstream analyses receive the cell-level evidence.
+
 A whole-config validator rejects contradictory combinations — for example,
 `compute.backend: auto` together with `compute.fallback_to_cpu: false`.
 

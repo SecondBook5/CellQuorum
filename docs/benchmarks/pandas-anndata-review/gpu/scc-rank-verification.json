@@ -1,0 +1,21 @@
+{
+  "source": "Frozen normalized SCC reference object",
+  "input_sha256": "0e714ca0a6555c577a14f8992c2cf9dbff852565f2f2211960633233ff8b876c",
+  "pipeline": "installed CellQuorum CLI; LIANA rank_aggregate, CPU",
+  "libraries": 18,
+  "matched_interactions": 54450,
+  "reference_table_sha256": "1dea4350d1d1dc7de3a9e38b6936393db17e1dd7b1708e4d9d0f9be77539af69",
+  "ranking_sha256": "1dea4350d1d1dc7de3a9e38b6936393db17e1dd7b1708e4d9d0f9be77539af69",
+  "magnitude_rank": {
+    "max_abs_diff": 0.0,
+    "exact_matches": 54450,
+    "min_within_library_rank_correlation": 0.9999999999999998
+  },
+  "specificity_rank": {
+    "max_abs_diff": 0.0,
+    "exact_matches": 54450,
+    "min_within_library_rank_correlation": 0.9999999999999998
+  },
+  "cli_complete": "success",
+  "gpu_workstation_lock_sha256": "4014bb5b0d4350560b76ba47cb92e3e198345aee7f274441ac2edbdbb786f9ec"
+}

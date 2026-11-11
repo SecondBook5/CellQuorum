@@ -16,6 +16,7 @@ import numpy as np
 import scanpy as sc
 import scipy.sparse as sp
 
+from cellquorum.core.anndata_access import dense_matrix
 from cellquorum.core.contracts.layer_tags import set_layer_tag
 from cellquorum.stages.integration.embeddings.config import OverlayConfig
 
@@ -175,12 +176,9 @@ class FeatureValues:
 
 def _gene_vector(adata: ad.AnnData, gene: str, layer: str | None) -> np.ndarray:
     """Return the per-cell expression vector for a gene from X or a layer."""
-    idx = adata.var_names.get_loc(gene)
-    matrix = adata.layers[layer] if layer is not None else adata.X
-    col = matrix[:, idx]
-    if sp.issparse(col):
-        col = col.toarray()
-    return np.asarray(col).ravel().astype(float)
+    gene_data = adata[:, [gene]]
+    col = gene_data.layers[layer] if layer is not None else gene_data.X
+    return dense_matrix(col).ravel().astype(float)
 
 
 def _expression_layer(

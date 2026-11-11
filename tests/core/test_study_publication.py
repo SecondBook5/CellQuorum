@@ -6,7 +6,11 @@ import pandas as pd
 
 from cellquorum.config.models import CellQuorumConfig
 from cellquorum.core.artifacts import ArtifactManager
-from cellquorum.core.publication import abundance_sensitivity, write_publication_bundle
+from cellquorum.core.publication import (
+    _communication,
+    abundance_sensitivity,
+    write_publication_bundle,
+)
 from cellquorum.core.study_preflight import study_blockers
 
 
@@ -235,3 +239,33 @@ def test_liana_publication_keeps_the_native_ribbons_and_their_exact_source(tmp_p
     assert source.weight.round(3).tolist() == [0.8, 0.7]
     assert source.sender_label.tolist() == ["Mono (C0)", "Mono (C1)"]
     assert "Dimitrov" in (gallery / "citations.md").read_text()
+
+
+def test_communication_joins_complete_complexes_when_liana_exports_component_genes(tmp_path):
+    cfg = CellQuorumConfig()
+    cfg.design.case = "Tumor"
+    cfg.cell_cell_communication.nichenet_receiver = "B"
+    cfg.cell_cell_communication.nichenet_sender = "A"
+    inputs = {
+        "mnn_prioritization.csv": (
+            "sender,receiver,ligand,receptor,group,prioritization_score\nA,B,L,R1_R2,Tumor,0.9\n"
+        ),
+        "liana_ranks.csv": (
+            "sample,source,target,ligand,receptor,ligand_complex,receptor_complex,magnitude_rank\n"
+            "S1,A,B,L,R1,L,R1_R2,0.03\n"
+        ),
+        "nichenet_activities.csv": "test_ligand,rank\nL,1\n",
+        "nichenet_ligand_receptor_weights.csv": "ligand,receptor,weight\nL,R1_R2,1\n",
+        "nichenet_ligand_target_weights.csv": "ligand,target,weight\nL,T,0.4\n",
+        "mnn_sample_prioritization.csv": (
+            "sample,sender,receiver,ligand,receptor,scaled_LR_pb_prod\nS1,A,B,L,R1_R2,2.3\n"
+        ),
+    }
+    files = {name: tmp_path / name for name in inputs}
+    for name, data in inputs.items():
+        files[name].write_text(data)
+    panels = {panel.key: panel.values for panel in _communication(files, pd.DataFrame(), cfg)}
+    assert panels["communication.liana"][["ligand", "receptor", "value"]].values.tolist() == [
+        ["L", "R1_R2", 0.03]
+    ]
+    assert panels["communication.mnn"]["value"].tolist() == [2.3]

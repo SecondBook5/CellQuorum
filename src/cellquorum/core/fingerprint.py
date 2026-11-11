@@ -1,13 +1,8 @@
 """Deterministic stage input fingerprints for resume/caching.
 
-A stage's ``input_fingerprint`` answers one question on rerun: "are the inputs
-to this stage the same as last time?" It is intentionally *conservative and
-cheap* — it hashes the resolved stage config, the random seed, and the salient
-shape/identity of the input AnnData (dimensions, var names, and which
-layers/obsm/obs columns are present), but NOT the full expression matrices.
-Hashing whole matrices would be slow and is unnecessary: within a single
-project the upstream data is stable, and any config or dimensionality change
-already flips the fingerprint. This is the key that stage-level resume compares.
+Fingerprints cover resolved settings and the identity and structure of stage inputs.
+The read-only integration benchmark also hashes the actual labels, batches and
+embedding coordinates it scores, so equally shaped inputs can invalidate its cache.
 """
 
 from __future__ import annotations
@@ -15,6 +10,7 @@ from __future__ import annotations
 import csv
 import glob
 import json
+from collections.abc import Iterable
 from hashlib import file_digest, sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,7 +33,8 @@ if TYPE_CHECKING:
 # QC computed changed. Checkpoints written under v2 cannot be compared against v3
 # fingerprints for the same reason v1-vs-v2 couldn't.
 # v5 also includes source files listed in the library manifest.
-FINGERPRINT_SCHEMA_VERSION = 5
+# v6 binds checkpoints to compute settings and benchmarks to observed labels/coordinates.
+FINGERPRINT_SCHEMA_VERSION = 6
 
 
 def _stable_json(payload: object) -> str:
@@ -149,6 +146,72 @@ def _adata_signature(adata: ad.AnnData | None) -> dict[str, object]:
     }
 
 
+def _benchmark_inputs(adata: ad.AnnData, config: dict) -> dict:
+    """Hash the observations and numerical coordinates used by scib-benchmark."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    import numpy as np
+    import pandas as pd
+
+    from cellquorum.core.anndata_access import dense_matrix
+
+    # Method-list entries can override the stage-level representations and labels.
+    variants = [
+        config,
+        *({**config, **m} for m in (config.get("methods") or []) if isinstance(m, dict)),
+    ]
+    columns: set[str] = set()
+    embeddings: set[str] = set()
+    for options in variants:
+        columns.update(
+            key
+            for key in (
+                options.get("batch_key", "batch"),
+                options.get("label_key", "cell_type"),
+                options.get("label_key_fallback"),
+            )
+            if isinstance(key, str) and key in adata.obs
+        )
+        embeddings.update(options.get("embeddings") or [])
+        embeddings.add(options.get("pre_embedding", "X_pca"))
+    obs = adata.obs[sorted(columns)]
+    if not isinstance(obs, pd.DataFrame):
+        obs = obs.to_memory()
+    labels = pd.util.hash_pandas_object(obs, index=True).to_numpy()
+    coordinates = {}
+    for name in sorted(embeddings.intersection(adata.obsm)):
+        matrix = adata.obsm[name]
+        digest = sha256(str((matrix.shape, str(getattr(matrix, "dtype", None)))).encode())
+        for start in range(0, adata.n_obs, 4096):
+            block = (
+                matrix.iloc[start : start + 4096]
+                if isinstance(matrix, pd.DataFrame)
+                else matrix[start : start + 4096]
+            )
+            values = dense_matrix(block)
+            digest.update(np.ascontiguousarray(values).tobytes())
+        coordinates[name] = digest.hexdigest()
+    versions: dict[str, str | None] = {}
+    for package in (
+        "scib-metrics",
+        "harmonypy",
+        "numpy",
+        "scikit-learn",
+        "jax",
+        "jaxlib",
+        "pynndescent",
+    ):
+        try:
+            versions[package] = version(package)
+        except PackageNotFoundError:
+            versions[package] = None
+    return {
+        "labels": sha256(labels.tobytes()).hexdigest(),
+        "embeddings": coordinates,
+        "versions": versions,
+    }
+
+
 def compute_input_fingerprint(
     *,
     stage_name: str,
@@ -176,6 +239,8 @@ def compute_input_fingerprint(
         "config": _without_outputs(_without_unset(stage_config or {})),
         "adata": _adata_signature(adata),
     }
+    if stage_name == "integration_benchmark" and adata is not None:
+        payload["benchmark_inputs"] = _benchmark_inputs(adata, stage_config or {})
     return _hash_str(_stable_json(payload))
 
 
@@ -232,6 +297,10 @@ def compute_upstream_fingerprint(
                 "through_stage": through_stage,
                 "through_order": through_order,
                 "random_seed": run_block.get("random_seed"),
+                "compute": _without_unset(config.get("compute")),
+                "organism": (config.get("project") or {}).get("organism"),
+                "species_id": (config.get("project") or {}).get("species_id"),
+                "require_selected_methods": run_block.get("require_selected_methods", False),
                 "study_design": _without_unset(config.get("design")),
                 "cohort": _without_unset(config.get("cohort")),
                 "input": _input_signature(config.get("input")),
@@ -279,6 +348,15 @@ def resource_checksum(value: Path) -> str | None:
         if p.name.removesuffix(".gz") in names
     }
     return _hash_str(_stable_json(files)) if files else None
+
+
+def artifact_file_checksums(paths: Iterable[Path]) -> dict[str, str]:
+    """Snapshot registered files so restored evidence can be verified before reuse."""
+    return {
+        str(path): digest
+        for path in set(paths)
+        if path.is_file() and (digest := resource_checksum(path)) is not None
+    }
 
 
 def _library_resources(config: dict, upstream: list[str], enabled: dict) -> dict:

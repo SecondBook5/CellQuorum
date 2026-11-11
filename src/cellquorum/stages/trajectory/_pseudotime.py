@@ -10,6 +10,8 @@ from __future__ import annotations
 import anndata as ad
 import numpy as np
 
+from cellquorum.core.anndata_access import resolve_use_rep as resolve_rep
+
 
 class PseudotimeComputeError(Exception):
     """Base for recoverable pseudotime failures (→ MethodSkip)."""
@@ -33,16 +35,6 @@ class DiffmapFailed(PseudotimeComputeError):
 
 class PseudotimeFailed(PseudotimeComputeError):
     """dpt / run_palantir raised."""
-
-
-def resolve_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) -> str | None:
-    """Return a rep present in obsm (configured first, then fallback), or None."""
-    if configured and configured in adata.obsm:
-        return configured
-    for candidate in fallback:
-        if candidate in adata.obsm:
-            return candidate
-    return None
 
 
 def numeric_obs(adata: ad.AnnData, key: str) -> np.ndarray:

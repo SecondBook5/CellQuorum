@@ -14,6 +14,7 @@ import anndata as ad
 import numpy as np
 import scipy.sparse as sp
 
+from cellquorum.core.anndata_access import obs_frame, var_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumDataError
 from cellquorum.core.stage import StageResult
@@ -215,8 +216,8 @@ class ScVIMethod(AnalysisMethod):
         # the matrices. obs is copied because a label column is written into it below.
         work = ad.AnnData(
             X=adata.layers["counts"],
-            obs=adata.obs.copy(),
-            var=adata.var.copy(),
+            obs=obs_frame(adata).copy(),
+            var=var_frame(adata).copy(),
         )
 
         # Restrict to highly variable genes before training. Shared with scANVI so the two

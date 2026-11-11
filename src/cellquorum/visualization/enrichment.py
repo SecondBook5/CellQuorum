@@ -42,6 +42,7 @@ from cellquorum.visualization.figstyle import (
     CATEGORICAL_PALETTE,
     LE_RED,
     NORMAL_BLUE,
+    adjust_labels,
     apply_cellquorum_axis_style,
     apply_theme,
     pretty_label,
@@ -1109,19 +1110,11 @@ def enrichment_map(
     if len(drawn_labels) > 1:
         # Pathways with shared leading edges sit on top of each other and so do their names; push
         # the names apart (best effort: without the package they stay where they were put).
-        try:
-            from adjustText import adjust_text
-            from matplotlib.backends.backend_agg import FigureCanvasAgg
-
-            if not hasattr(fig.canvas, "get_renderer"):
-                FigureCanvasAgg(fig)
-            adjust_text(
-                drawn_labels,
-                ax=ax,
-                arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
-            )
-        except Exception:  # noqa: BLE001 -- cosmetic; keep the unrepelled labels
-            pass
+        adjust_labels(
+            drawn_labels,
+            ax=ax,
+            arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
+        )
     ax.axis("off")
     bar = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap="RdBu_r"), ax=ax, fraction=0.03, pad=0.01, shrink=0.4

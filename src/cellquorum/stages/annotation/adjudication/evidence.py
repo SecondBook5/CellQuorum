@@ -5,6 +5,7 @@ from __future__ import annotations
 import anndata as ad
 import pandas as pd
 
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.stages.annotation.adjudication.adjudicate import ClusterEvidence
 from cellquorum.stages.annotation.adjudication.config import AdjudicationConfig
 
@@ -39,7 +40,7 @@ def build_cluster_evidence_table(
         raise KeyError(f"Missing required adjudication obs column(s): {missing}.")
 
     # Work with strings for stable grouping/reporting.
-    obs = adata.obs.copy()
+    obs = obs_frame(adata).copy()
     obs[config.cluster_key] = obs[config.cluster_key].astype(str)
     obs[donor_key] = obs[donor_key].astype(str)
     obs[condition_key] = obs[condition_key].astype(str)

@@ -15,6 +15,7 @@ from cellquorum.config.design import (
     validate_design_against_obs,
     validate_design_matrix,
 )
+from cellquorum.core.anndata_access import obs_frame
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.exceptions import CellQuorumConfigError
 from cellquorum.core.stage import StageArtifact, StageResult
@@ -311,8 +312,8 @@ class PseudobulkEdgeRMethod(RAnalysisMethod):
         # including its replicate counts and estimability checks. ``None`` means QC never
         # ran, so every cell is eligible; QC state without its DE masks raises. The returned
         # object is never subset: eligibility scopes what is analysed, not what is kept.
-        eligible = de_eligible_cells(adata.obs)
-        de_obs = adata.obs if eligible is None else adata.obs.loc[eligible.to_numpy()]
+        eligible = de_eligible_cells(obs_frame(adata))
+        de_obs = obs_frame(adata) if eligible is None else obs_frame(adata).loc[eligible.to_numpy()]
         n_qc_ineligible = 0 if eligible is None else int((~eligible).sum())
 
         _validate_interactions(de_obs, settings)

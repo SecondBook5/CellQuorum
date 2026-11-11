@@ -320,3 +320,24 @@ def test_panel_letter_places_bold_text(tmp_path):
     figstyle.panel_letter(ax, "a")
     texts = [t.get_text() for t in ax.texts]
     assert "a" in texts
+
+
+def test_gene_label_placement_is_independent_of_rendering_speed(monkeypatch):
+    from itertools import count
+
+    import adjustText
+    from matplotlib.figure import Figure
+
+    from cellquorum.visualization.figstyle import adjust_labels
+
+    def positions(tick):
+        monkeypatch.setattr(adjustText, "timer", count(0, tick).__next__)
+        ax = Figure(figsize=(3, 2)).subplots()
+        texts = [
+            ax.text(x, 0.5, gene)
+            for x, gene in ((0.49, "STAT1"), (0.50, "ISG15"), (0.51, "CXCL10"))
+        ]
+        adjust_labels(texts, ax=ax)
+        return [text.get_position() for text in texts]
+
+    assert positions(2) == positions(0.02)
