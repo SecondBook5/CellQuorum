@@ -434,7 +434,12 @@ class StageExecutionRecord:
     def from_dict(cls, row: dict) -> StageExecutionRecord:
         """Restore an execution record written by provenance, including its artifact paths."""
         values = dict(row)
-        for key in ("schema_version", "completed_at_utc", "n_output_artifacts"):
+        for key in (
+            "schema_version",
+            "completed_at_utc",
+            "n_output_artifacts",
+            "artifact_checksums",
+        ):
             values.pop(key, None)
         for key in ("started_at_utc", "ended_at_utc"):
             values[key] = datetime.fromisoformat(values[key])

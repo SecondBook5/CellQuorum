@@ -21,6 +21,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from cellquorum.core.fingerprint import artifact_file_checksums
 from cellquorum.core.stage import StageArtifact, StageExecutionRecord
 
 # Stages whose ``run`` does not change the AnnData that flows downstream. Only
@@ -47,16 +48,21 @@ class ResumeDecision:
 
 def completion_payload(record: StageExecutionRecord) -> dict:
     """Store a restorable execution record alongside the artifact existence snapshot."""
-    return {
-        **record.to_dict(),
-        "schema_version": 1,
-        "completed_at_utc": record.ended_at_utc.isoformat(),
-        "n_output_artifacts": len(record.output_artifacts),
-        "output_artifacts": [
+    payload = record.to_dict()
+    payload.update(
+        schema_version=1,
+        completed_at_utc=record.ended_at_utc.isoformat(),
+        n_output_artifacts=len(record.output_artifacts),
+        output_artifacts=[
             {**artifact.to_dict(), "exists": artifact.path.exists()}
             for artifact in record.output_artifacts
         ],
-    }
+    )
+    if record.stage_name in RESUMABLE_STAGES:
+        payload["artifact_checksums"] = artifact_file_checksums(
+            a.path for a in record.output_artifacts
+        )
+    return payload
 
 
 def completion_path(provenance_dir: Path, stage_name: str) -> Path:
@@ -128,6 +134,10 @@ def decide_stage_resume(
     registered = {a.path for a in original.output_artifacts}
     if any(not path.exists() for path in registered):
         return ResumeDecision(False, "a recorded artifact is missing; re-running")
+    if payload.get("artifact_checksums") != artifact_file_checksums(registered):
+        return ResumeDecision(
+            False, "output contents have not been verified or changed; re-running"
+        )
     if original.metrics.get("incomplete_reasons") or original.metrics.get("mode") == "fallback":
         return ResumeDecision(False, "incomplete benchmark; re-running")
 

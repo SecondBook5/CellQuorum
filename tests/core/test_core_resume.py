@@ -134,6 +134,8 @@ def test_required_output_must_belong_to_the_checkpoint_and_contain_data(tmp_path
     _write_sidecar(provenance, "integration_benchmark", artifacts=[target])
     assert not decide_stage_resume(**args).resume
     target.write_text("value")
+    assert not decide_stage_resume(**args).resume
+    _write_sidecar(provenance, "integration_benchmark", artifacts=[target])
     decision = decide_stage_resume(**args)
     assert decision.resume and decision.artifacts[0].path == target
     _write_sidecar(provenance, "integration_benchmark", artifacts=[])

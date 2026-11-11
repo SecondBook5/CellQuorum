@@ -99,6 +99,12 @@ The lineage constraints now pin that renderer.
 
 ![Assembled lineage page](pancreas/lineage.png)
 
+The shared lineage embedding selector and figure scales were also exercised on
+the 3,696-cell endocrine pancreas reference. All cell-level potency scores,
+six fate probabilities per cell, and 4,800 fitted expression values across
+24 gene–lineage curves matched the prior candidate. The five trajectory PNGs
+and the two rendered publication PDFs had identical pixels. [Lineage comparison](pancreas/consolidation-check.json)
+
 ## GPU workstation validation
 
 A clean install of the Linux GPU lock ran the CellQuorum wheel outside the checkout, with pandas 3.1.1 and AnnData 0.13.4 in the analysis process. The CUDA worker used pandas 3.0.6 with cuDF 26.10.2 and RAPIDS-singlecell 0.18.1. Both environments passed `pip check`. The reference recipe required GPU execution for the routed methods and treated skipped selected analyses as failures.
@@ -130,7 +136,9 @@ the integration benchmark and UMAP. On 4,500 cells sampled from the 11,352-cell
 cohort, Harmony increased iLISI from 0.005 to 0.334. Label agreement (NMI) was
 0.737 before Harmony and 0.738 after it. Graph connectivity was 0.987 in both
 embeddings. With pandas 3, scib-metrics 0.5.9 failed to compute that metric.
-Version 0.5.10 produced all 18 scores.
+Version 0.5.10 produced all 18 scores. The stage writes them to
+`reports/integration_quality.csv` and links the table from the HTML report.
+The reference check compares the delivered table against the recorded metrics.
 
 A second run stopped after preprocessing and requested a restart at clustering.
 It restored preprocessing and replayed feature selection, PCA and Harmony.
@@ -138,6 +146,7 @@ The counts, normalized expression, coordinates, Leiden assignments and all 18
 scores matched the clean run exactly. All nine PNG panels had identical pixels.
 
 A repeat benchmark on the same final object reused the original measurements.
+Overwriting the score table triggered recomputation and restored the same file hash.
 Permuting the published cell-type labels with seed 65 caused a fresh calculation
 and reduced Harmony NMI to 0.007. In a separate CPU LIANA run on the frozen SCC
 analysis object, all 54,450 rows across 18 libraries matched the candidate

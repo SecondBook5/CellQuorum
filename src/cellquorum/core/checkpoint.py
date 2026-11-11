@@ -45,7 +45,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cellquorum.core.fingerprint import FINGERPRINT_SCHEMA_VERSION, resource_checksum
+from cellquorum.core.fingerprint import FINGERPRINT_SCHEMA_VERSION, artifact_file_checksums
 from cellquorum.core.stage import StageExecutionRecord
 
 if TYPE_CHECKING:
@@ -164,12 +164,9 @@ def write_checkpoint(
     except (OSError, H5adWriteError) as exc:
         raise CheckpointError(f"could not write checkpoint for '{stage}': {exc}") from exc
 
-    artifacts = {a.path for row in execution_records or [] for a in row.output_artifacts}
-    checksums = {
-        str(path): digest
-        for path in artifacts
-        if path.is_file() and (digest := resource_checksum(path)) is not None
-    }
+    checksums = artifact_file_checksums(
+        a.path for row in execution_records or [] for a in row.output_artifacts
+    )
     record = CheckpointRecord(
         stage=stage,
         order=int(order),

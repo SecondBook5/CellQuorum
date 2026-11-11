@@ -96,19 +96,29 @@
       "status": "success",
       "reused": false,
       "input_fingerprint": "aa9ac748ff01496c1dfee15efc43b5907e40d28eae48a8693f85707f6e45b56b",
-      "harmony_nmi": 0.7380630887797722
+      "harmony_nmi": 0.7380630887797722,
+      "exported_table_sha256": "4d947db03338a973533660ddc61d497e606ad9000a577c33f60d850d2253d5c0"
     },
     "repeat": {
       "status": "skipped",
       "reused": true,
       "input_fingerprint": "aa9ac748ff01496c1dfee15efc43b5907e40d28eae48a8693f85707f6e45b56b",
-      "harmony_nmi": 0.7380630887797722
+      "harmony_nmi": 0.7380630887797722,
+      "exported_table_sha256": "4d947db03338a973533660ddc61d497e606ad9000a577c33f60d850d2253d5c0"
+    },
+    "altered": {
+      "status": "success",
+      "reused": false,
+      "input_fingerprint": "aa9ac748ff01496c1dfee15efc43b5907e40d28eae48a8693f85707f6e45b56b",
+      "harmony_nmi": 0.7380630887797722,
+      "exported_table_sha256": "4d947db03338a973533660ddc61d497e606ad9000a577c33f60d850d2253d5c0"
     },
     "shuffled": {
       "status": "success",
       "reused": false,
       "input_fingerprint": "2ef2327fccca7c1403f971e0f6c95fef26e92dc5cc2ebf2ffc02c318cf28c957",
-      "harmony_nmi": 0.006993130515903058
+      "harmony_nmi": 0.006993130515903058,
+      "exported_table_sha256": "a6a329cea25cbd007f163cfcf652f4bf1214fb64148d6a5af9fbc43cc2b95c19"
     }
   }
 }

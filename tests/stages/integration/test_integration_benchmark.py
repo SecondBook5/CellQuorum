@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import pytest
 from optional_deps import requires
 
@@ -23,7 +24,11 @@ def _adata(n=300, seed=0):
 
 
 @requires("scib_metrics")
-def test_benchmark_records_batch_and_bio_metrics():
+def test_benchmark_records_batch_and_bio_metrics(tmp_path):
+    from cellquorum.config.models import CellQuorumConfig
+    from cellquorum.core.pipeline import build_pipeline_context
+    from cellquorum.stages.integration.benchmark.stage import IntegrationBenchmarkStage
+
     a = _adata()
     cfg = {
         "method": "scib_benchmark",
@@ -38,7 +43,14 @@ def test_benchmark_records_batch_and_bio_metrics():
     }
     obsm_before = set(a.obsm.keys())
     obs_before = set(a.obs.columns)
-    result = ScibBenchmarkMethod().run(a, cfg, context=None)
+    config = CellQuorumConfig(integration_benchmark={**cfg, "enabled": True})
+    context = build_pipeline_context(config, output_dir=tmp_path).with_adata(a)
+    result = IntegrationBenchmarkStage().run(context)
+    table = pd.read_csv(result.artifacts[0].path)
+    assert result.artifacts[0].path == tmp_path / "reports/integration_quality.csv"
+    assert table.embedding.unique().tolist() == ["X_pca_harmony"]
+    assert set(table.category) == {"batch", "bio"}
+
     m = result.metrics
     assert any("X_absent" in reason for reason in m["incomplete_reasons"])
     # per-embedding entry with an aggregate score present

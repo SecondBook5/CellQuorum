@@ -350,9 +350,11 @@ def check_integration(run: Path, data: Path) -> dict:
         for domain in ["bio", "batch"]
         for key, score in domains[domain].items()
     ]
-    table = pd.DataFrame(rows, columns=["embedding", "category", "metric", "value"])
+    columns = ["embedding", "category", "metric"]
+    expected = pd.DataFrame(rows, columns=[*columns, "value"]).set_index(columns).sort_index()
+    table = pd.read_csv(run / "reports/integration_quality.csv").set_index(columns).sort_index()
+    pd.testing.assert_frame_equal(table, expected, check_exact=False, rtol=1e-12, atol=1e-14)
     require(np.isfinite(table.value).all(), "Integration metric missing.")
-    table.to_csv(run / "reports/integration_quality.csv", index=False)
     raw, harmony = scores["X_pca"], scores["X_pca_harmony"]
     require(
         harmony["batch"]["ilisi"] > raw["batch"]["ilisi"]

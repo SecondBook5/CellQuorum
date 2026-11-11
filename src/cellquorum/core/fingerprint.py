@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import glob
 import json
+from collections.abc import Iterable
 from hashlib import file_digest, sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -347,6 +348,15 @@ def resource_checksum(value: Path) -> str | None:
         if p.name.removesuffix(".gz") in names
     }
     return _hash_str(_stable_json(files)) if files else None
+
+
+def artifact_file_checksums(paths: Iterable[Path]) -> dict[str, str]:
+    """Snapshot registered files so restored evidence can be verified before reuse."""
+    return {
+        str(path): digest
+        for path in set(paths)
+        if path.is_file() and (digest := resource_checksum(path)) is not None
+    }
 
 
 def _library_resources(config: dict, upstream: list[str], enabled: dict) -> dict:
