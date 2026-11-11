@@ -27,15 +27,17 @@ def _spread_crowded_labels(ax: Axes, texts: list[Text]) -> bool:
     """Give densely overlapping gene names separate rows and connect them to their points."""
     if len(texts) < 4:
         return False
-    boxes = [t.get_window_extent() for t in texts]
+    fig = ax.get_figure()
+    assert isinstance(fig, Figure)
+    # Allow three manuscript points around each name for its marker and leader line.
+    padding = 3 * fig.dpi / 72
+    boxes = [t.get_window_extent().padded(padding) for t in texts]
     if not any(box.count_overlaps(boxes) >= 4 for box in boxes):
         return False
 
     sides = [[t for t in texts if (t.get_position()[0] < 0) == left] for left in (True, False)]
     # Reserve the bottom of the panel for the count legend; measure row spacing in points.
     low, high = 0.15, 0.975
-    fig = ax.get_figure()
-    assert isinstance(fig, Figure)
     height = max(
         fig.get_figheight(),
         10 * max(map(len, sides)) / (72 * ax.get_position().height * (high - low)),

@@ -176,3 +176,14 @@ def test_a_bad_volcano_cutoff_names_the_value_that_was_passed():
         volcano(table, fc_cut=1, fdr_cut=1.5, **kwargs)
     with pytest.raises(ValueError, match="fc_cut.*nan"):
         volcano(table, fc_cut=np.nan, fdr_cut=0.05, **kwargs)
+
+
+def test_volcano_reserves_marker_space_when_routing_gene_labels():
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(4, 4))
+    ax = fig.subplots()
+    texts = [ax.text(0.4, 0.25 + i * 0.02, f"Gene{i}", fontsize=6) for i in range(4)]
+    assert plots._spread_crowded_labels(ax, texts)
+    assert len({text.get_position() for text in ax.texts}) == len(texts)
+    assert all(text.arrow_patch is not None for text in ax.texts)
