@@ -30,7 +30,7 @@ def test_benchmark_records_batch_and_bio_metrics():
         "batch_key": "batch",
         "label_key": "cell_type",
         "pre_embedding": "X_pca",
-        "embeddings": ["X_pca_harmony"],
+        "embeddings": ["X_pca_harmony", "X_absent"],
         "n_neighbors": 30,
         "mode": "full",
         "batch_weight": 0.4,
@@ -40,6 +40,7 @@ def test_benchmark_records_batch_and_bio_metrics():
     obs_before = set(a.obs.columns)
     result = ScibBenchmarkMethod().run(a, cfg, context=None)
     m = result.metrics
+    assert any("X_absent" in reason for reason in m["incomplete_reasons"])
     # per-embedding entry with an aggregate score present
     assert "X_pca_harmony" in m["embeddings"]
     assert "aggregate" in m["embeddings"]["X_pca_harmony"]

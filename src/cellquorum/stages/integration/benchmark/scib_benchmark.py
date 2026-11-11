@@ -146,7 +146,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
                 n_neighbors=n_neighbors,
                 mode=mode,
             )
-            caveats.extend(emb_caveats)
+            caveats.extend(f"{emb_key}: {message}" for message in emb_caveats)
 
             # Aggregate score.
             aggregate = self._aggregate_score(batch_metrics, bio_metrics, batch_weight, bio_weight)
@@ -174,6 +174,8 @@ class ScibBenchmarkMethod(AnalysisMethod):
         # READ-ONLY, and the object returned is the FULL one. `adata` above may be a subsampled
         # view used for the metrics; returning it would silently drop cells from every later
         # stage, which is a far worse failure than a slow benchmark.
+        if caveats:
+            metrics["incomplete_reasons"] = list(caveats)
         if subsample_note:
             caveats.append(subsample_note)
         return StageResult(adata=full_adata, metrics=metrics, warnings=caveats)
@@ -277,8 +279,11 @@ class ScibBenchmarkMethod(AnalysisMethod):
             result = func(*args, **kwargs)
             # kbet returns (acceptance_rate, stat, pval); we use acceptance_rate.
             if isinstance(result, tuple | list):
-                return float(result[0])
-            return float(result)
+                result = result[0]
+            value = float(result)
+            if not np.isfinite(value):
+                caveats.append(f"{metric_name} returned a non-finite score.")
+            return value
         except Exception as e:
             caveats.append(f"{metric_name} failed: {e}")
             return float("nan")
@@ -297,7 +302,10 @@ class ScibBenchmarkMethod(AnalysisMethod):
         caller reads a missing ``nmi`` as nan.
         """
         try:
-            return dict(func(*args, **kwargs))
+            result = dict(func(*args, **kwargs))
+            if not np.isfinite(result.get("nmi", np.nan)):
+                caveats.append(f"{metric_name} returned no finite NMI.")
+            return result
         except Exception as e:
             caveats.append(f"{metric_name} failed: {e}")
             return {}
@@ -403,6 +411,7 @@ class ScibBenchmarkMethod(AnalysisMethod):
             "ranking": ranking,
             "label_used": label_col,
             "mode": "fallback",
+            "incomplete_reasons": list(caveats),
         }
 
         return StageResult(adata=adata, metrics=metrics, warnings=caveats)

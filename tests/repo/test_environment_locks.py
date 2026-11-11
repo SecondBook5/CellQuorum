@@ -55,11 +55,12 @@ def test_workstation_lock_integrity(profile):
     torch = by_name["torch"]
     assert torch["version"].endswith("+cpu" if profile == "core" else "+cu129")
     assert by_name["python"]["version"].startswith("3.12.")
+    assert by_name["pandas"]["version"] == "3.1.1"
+    assert by_name["anndata"]["version"] == "0.13.4"
     if profile == "core":
+        assert by_name["scib-metrics"]["version"] == "0.5.10"
         assert not any(name.startswith("nvidia-") for name in by_name)
     else:
-        assert by_name["pandas"]["version"] == "3.1.1"
-        assert by_name["anndata"]["version"] == "0.13.4"
         worker = {
             r.name: r
             for line in (ENVS / "rapids-worker-requirements.txt").read_text().splitlines()

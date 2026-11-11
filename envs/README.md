@@ -5,24 +5,22 @@ CellQuorum uses a layered environment strategy to isolate incompatible dependenc
 ## Primary Environments
 
 ### `cellquorum-core`
-The main runtime environment containing CellQuorum's core dependencies. Install
-the CellQuorum wheel separately after creating the environment. Both CPU and GPU
-recipes bound AnnData to 0.12 for CellRank compatibility and use the same pinned
-upstream pygpcca source to avoid its released Jinja2 dependency conflict. PyTorch
-2.8.0's CPU wheel avoids downloading CUDA libraries for CPU workstations.
-Both recipes select Python 3.12/Linux x86_64 PyTorch wheels using direct URLs
-and SHA-256 hashes published in the official PyTorch wheel index. This avoids
-pip index-option lines that `conda-lock` cannot parse. These recipes are not
-native Windows, macOS, or ARM profiles.
-SciPy is pinned to 1.16.3 in both recipes, matching the validated runtime and
-preventing the mixed conda/pip solver from assigning it to both package managers
-at different versions.
+The Linux x86_64 CPU and GPU controllers use Python 3.12, pandas 3.1.1,
+AnnData 0.13.4, SciPy 1.16.3 and CellRank 2.3.3. Both use a pinned pygpcca
+revision and a hashed PyTorch wheel. The CPU lock includes PyTorch 2.8.0+cpu
+and scib-metrics 0.5.10 for the full integration benchmark.
 
-A fresh recipe-created CPU environment, followed by wheel/pytest/Cython
-installation, passed all nine installed-analysis, checkpoint, CellRank estimator,
-and PETSc signal-handling checks. `pip check` was clean. Cython is now included in
-the recipe itself. This is local Linux/WSL validation; it does not cover every
-optional method or establish a fully locked environment.
+Install the CPU lock and the CellQuorum wheel from the repository root.
+
+~~~bash
+conda-lock install --micromamba -n cellquorum-core envs/cellquorum-core.conda-lock.yml
+micromamba run -n cellquorum-core python -m pip install --no-deps dist/cellquorum-*.whl
+micromamba run -n cellquorum-core python -m pip check
+~~~
+
+The installed CPU workflow was checked on human pancreas integration and
+sample-level SCC signaling. The [reference results](../docs/benchmarks/pandas-anndata-review/README.md#cpu-workstation-validation)
+include the clean-run comparison and the checks on resumed results.
 
 ### `cellquorum-dev`
 Development environment extending `cellquorum-core` with testing, linting, and build tools (pytest, ruff, mypy, sphinx, etc.).
@@ -171,7 +169,7 @@ conda-lock install --micromamba -n cellquorum-core-locked envs/cellquorum-core.c
 conda-lock install --micromamba -n cellquorum-gpu-locked envs/cellquorum-gpu.conda-lock.yml
 ```
 
-The GPU instructions above include the separate RAPIDS worker. Installed-wheel acceptance for the current general CPU lock remains outstanding.
+The GPU instructions above include the separate RAPIDS worker.
 
 Locks are solved for **linux-64 only** — the platform the Docker image builds
 on. This is deliberate: the GPU env selects Linux CUDA/RAPIDS packages and a

@@ -121,3 +121,38 @@ All 34 analysis and five RAPIDS package imports passed in their respective inter
 [Editable figure](gpu/categorical_umap_cell_type.pdf) · [Same coordinates by study](gpu/categorical_umap_study.png) · [Per-cell coordinates, cell type, study and Leiden cluster](gpu/pancreas-umap-source.csv.gz) · [Validated versions, checks and measurements](gpu/validation.json) · [Portable run configuration](gpu/pancreas-gpu.yml)
 
 To reproduce the comparison, follow the GPU installation in `envs/README.md`. Place the [prepared pancreas reference](../reference-studies.md) and the provided YAML in the same directory, then run `cellquorum run -c pancreas-gpu.yml` there. From the repository, run `python scripts/verify_reference_study.py /path/to/runs/pancreas-gpu --data /path/to/input` for the cross-study check.
+
+## CPU workstation validation
+
+A fresh Linux CPU installation ran the published inDrop and Smart-seq2 human
+pancreas counts through preprocessing, feature selection, PCA, Harmony, Leiden,
+the integration benchmark and UMAP. On 4,500 cells sampled from the 11,352-cell
+cohort, Harmony increased iLISI from 0.005 to 0.334. Label agreement (NMI) was
+0.737 before Harmony and 0.738 after it. Graph connectivity was 0.987 in both
+embeddings. With pandas 3, scib-metrics 0.5.9 failed to compute that metric.
+Version 0.5.10 produced all 18 scores.
+
+A second run stopped after preprocessing and requested a restart at clustering.
+It restored preprocessing and replayed feature selection, PCA and Harmony.
+The counts, normalized expression, coordinates, Leiden assignments and all 18
+scores matched the clean run exactly. All nine PNG panels had identical pixels.
+
+A repeat benchmark on the same final object reused the original measurements.
+Permuting the published cell-type labels with seed 65 caused a fresh calculation
+and reduced Harmony NMI to 0.007. In a separate CPU LIANA run on the frozen SCC
+analysis object, all 54,450 rows across 18 libraries matched the candidate
+release in magnitude and specificity rank.
+
+To reproduce the checkpoint comparison, place the prepared human pancreas
+input and the [CPU study configuration](cpu/pancreas-cpu.yml) in the same directory
+and run these commands from that directory.
+
+~~~bash
+cellquorum run -c pancreas-cpu.yml -o runs/clean
+cellquorum run -c pancreas-cpu.yml -o runs/resumed --until-stage preprocessing
+cellquorum run -c pancreas-cpu.yml -o runs/resumed --from-stage clustering
+~~~
+
+The [measurements and file hashes](cpu/validation.json) include pixel comparisons
+for every panel, the maximum difference for each embedding, input and lock hashes,
+the SCC rank comparison, and the benchmark fingerprints before and after shuffling.

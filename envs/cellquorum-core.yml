@@ -12,34 +12,32 @@ dependencies:
   - cython
 
   # Core numerical and statistical stack.
-  - numpy>=1.24
+  - numpy=2.3.5
   - scipy=1.16.3
-  - pandas>=2.1
+  - pandas=3.1.1
   - scikit-learn>=1.4
   - statsmodels>=0.14
   - numba>=0.59
 
   # Single-cell data structures and analysis.
-  - anndata>=0.12,<0.13
+  - anndata=0.13.4
   # mudata (a scvi-tools and liana dependency) imports Settings from scverse-misc, which needs scverse-misc's
   # `settings` extra: pydantic-settings and python-dotenv. A conda install of scverse-misc does not bring
   # extras, so without these two `import mudata`, `import scvi` and `import liana` fail.
   - pydantic-settings
   - python-dotenv
-  - scanpy>=1.10
+  - pooch>=1.8,<2
+  - scanpy=1.12.5
   - h5py>=3.10
   - zarr>=2.17
   - natsort>=8.4
 
   # Neighbor graphs, dimensionality reduction, and clustering.
-  - umap-learn>=0.5
+  - umap-learn=0.5.12
   - pynndescent>=0.5
   - python-igraph>=0.11
   - leidenalg>=0.10
   - louvain>=0.8
-
-  # HVG and preprocessing support.
-  - scikit-misc>=0.3
 
   # CellRank sparse Schur solver (SLEPc/PETSc), as CONDA packages — building
   # these from pip is fragile (PETSc configures + compiles from source). Without
@@ -60,7 +58,7 @@ dependencies:
   - scrublet>=0.2
 
   # Biological activity and molecular inference.
-  - decoupler-py>=1.8
+  - decoupler-py=2.2.0
 
   # Network/statistical utilities.
   - networkx>=3.2
@@ -99,7 +97,7 @@ dependencies:
   # this env; the cellquorum-gpu env installs the CUDA build.
   - pip:
       - torch @ https://download-r2.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl#sha256=cb9a8ba8137ab24e36bf1742cb79a1294bd374db570f09fc15a5e1318160db4e
-      - anndata==0.12.19
+      - scikit-misc==0.5.3
       - pygpcca @ git+https://github.com/msmdev/pygpcca.git@773c463cc5043a5d40e6f31bbbc20f4e49587008
       # NOTE: the editable install of the repo (`pip install -e .`) is NOT done
       # here — at env-create time the source is not yet copied into the image,
@@ -107,15 +105,19 @@ dependencies:
       # the image), where no package exists. The Dockerfile installs the package
       # editable in a dedicated RUN step after `COPY . /opt/cellquorum`.
       # Cell-cell communication (in-process).
-      - liana==1.7.1
-      - cell2cell==0.8.4
-      - tensorly==0.9.0
+      - liana==2.1.1
+      - cell2cell==0.9.0
+      - tensorly==0.10.0
       # Trajectory / RNA velocity / potency (in-process).
       - scvelo==0.3.4
-      - cellrank==2.3.2
+      - cellrank==2.3.3
       - palantir==1.4.4
       # Deep generative models (scVI/scArches); pulls torch.
-      - scvi-tools==1.4.3
+      - scvi-tools==1.5.2
+      # Integration quality on the two-study human pancreas reference.
+      - scib-metrics==0.5.10
+      - chex==0.1.90
+      - plottable==0.1.5
       # Imported lazily by stages that otherwise skip or fail without them: PHATE embeddings, CellTypist
       # annotation, and the chord and Sankey communication figures. They worked on a workstation because
       # someone installed them by hand, and were missing from every fresh install and the container.
