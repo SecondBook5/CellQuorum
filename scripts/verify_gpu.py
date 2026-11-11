@@ -14,6 +14,12 @@ import argparse
 
 def verify_rapids() -> int:
     try:
+        from cellquorum.backends.rapids_worker import worker_python, worker_status
+
+        if worker := worker_python():
+            print("OK: isolated RAPIDS kernel", worker_status(worker))
+            return 0
+
         import cupy as cp
         import rapids_singlecell
 

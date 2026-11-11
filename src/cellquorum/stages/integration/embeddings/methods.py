@@ -93,6 +93,7 @@ class UmapMethod(AnalysisMethod):
                 random_state=_seed(config, context),
                 use_rep=use_rep,
                 n_neighbors=int(n_neighbors) if n_neighbors is not None else None,
+                context=context,
             )
         except compute.EmbeddingsComputeError as exc:
             return self._skip(f"{exc}")

@@ -9,6 +9,7 @@ import cellquorum.stages.integration.embeddings  # noqa: F401
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
 from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.stages.integration.embeddings.config import OverlayConfig
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -100,7 +101,22 @@ class EmbeddingsStage(MethodDispatchStage):
         if "granular_key" not in augmented:
             augmented["granular_key"] = "cell_type_granular"
         if not augmented.get("methods") and "method" not in augmented:
-            augmented["methods"] = [dict(m) for m in _DEFAULT_METHODS]
+            bases = augmented.get("embeddings", ["umap", "phate"])
+            overlay = OverlayConfig.model_validate(augmented.get("overlay") or {})
+            declared = getattr(getattr(config, "markers", None), "panels", {})
+            include_overlay = bool(
+                overlay.genes
+                or overlay.programs
+                or overlay.obs_columns
+                or overlay.cell_cycle
+                or declared
+            )
+            augmented["methods"] = [
+                dict(m)
+                for m in _DEFAULT_METHODS
+                if (m["method"] not in {"umap", "phate"} or m["method"] in bases)
+                and (m["method"] != "continuous_overlay" or include_overlay)
+            ]
         return augmented
 
     def _validate_output(self, result: StageResult) -> None:

@@ -84,13 +84,14 @@ class HarmonyMethod(AnalysisMethod):
             The corrected embedding as written by harmony_integrate.
         """
 
-        import rapids_singlecell as rsc
+        from cellquorum.backends.rapids_worker import run_rapids
 
         # harmony_integrate moves obsm[basis] to the device itself and writes a host
         # array back, so no whole-object GPU transfer is needed. flavor="harmony1" is
         # the original algorithm, i.e. what the CPU path runs.
-        rsc.pp.harmony_integrate(
+        run_rapids(
             adata,
+            "harmony",
             key=batch_key,
             basis=input_rep,
             adjusted_basis=output_rep,

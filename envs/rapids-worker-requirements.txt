@@ -1,0 +1,12 @@
+# Linux x86_64, Python 3.12, CUDA 12. Install separately from CellQuorum.
+rapids-singlecell-cu12[rapids]==0.18.1
+cupy-cuda12x==14.2.0
+cudf-cu12==26.10.2
+cugraph-cu12==26.10.0
+cuml-cu12==26.10.0
+cuvs-cu12==26.10.0
+pandas==3.0.6
+anndata==0.13.4
+numpy==2.3.5
+scipy==1.16.3
+scanpy==1.12.5

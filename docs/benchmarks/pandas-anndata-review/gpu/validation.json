@@ -1,0 +1,66 @@
+{
+  "input_sha256": "8a640f9d4f7c374eb68a3e4115b720f2a404fcfeae8f9e492d64bcd79ddbdcd3",
+  "recipe": "pancreas-gpu.yml",
+  "cells": 11352,
+  "genes": 1000,
+  "studies": {
+    "Pancreas inDrop": 8391,
+    "Pancreas SS2": 2961
+  },
+  "reference_cell_types": 8,
+  "clusters": 18,
+  "input_X_matches_final_counts_and_axis_order": true,
+  "graph_nonempty_for_every_cell": true,
+  "strict_gpu": true,
+  "successful_stages": [
+    "clustering",
+    "dimensionality",
+    "embeddings",
+    "feature_selection",
+    "integration",
+    "preprocessing"
+  ],
+  "routed_compute": {
+    "PCA": "gpu",
+    "Harmony": "gpu",
+    "neighbors_and_Leiden": "gpu",
+    "UMAP": "gpu"
+  },
+  "cuda_training_launches": 3,
+  "controller_packages": {
+    "pandas": "3.1.1",
+    "anndata": "0.13.4",
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "torch": "2.8.0+cu129",
+    "scvi-tools": "1.5.2",
+    "scanpy": "1.12.5"
+  },
+  "gpu_probe": [
+    "OK: isolated RAPIDS kernel {'cuda_visible': True, 'cuda_device_count': 1, 'device': 'NVIDIA RTX 4000 Ada Generation', 'versions': {'rapids-singlecell-cu12': '0.18.1', 'cudf-cu12': '26.10.2', 'pandas': '3.0.6', 'anndata': '0.13.4'}}",
+    "torch 2.8.0+cu129  cuda_build=12.9  is_built=True  is_available=True",
+    "OK: NVIDIA RTX 4000 Ada Generation - CUDA tensor op succeeded.",
+    "OK: scvi-tools importable."
+  ],
+  "pip_check": {
+    "controller": "No broken requirements found.",
+    "worker": "No broken requirements found."
+  },
+  "input_to_report_wall_time": "2:23.97",
+  "max_rss_kib": 2252788,
+  "device_peak_used_mib": 2738,
+  "device_peak_utilization_percent": 53,
+  "device_sampling_interval_seconds": 1,
+  "cross_study_nearest_neighbor_label_agreement": {
+    "X_pca": 0.8394996476391825,
+    "X_scvi": 0.8123678646934461,
+    "X_scanvi": 0.8974630021141649,
+    "X_pca_harmony": 0.8080514446793516
+  },
+  "earlier_reference_label_agreement": {
+    "X_pca": 0.8394996476391825,
+    "X_scvi": 0.8123678646934461,
+    "X_scanvi": 0.8974630021141649
+  },
+  "gpu_lock_sha256": "78b2ad09ccdb02fff4e5c7ba927d3b60b4eaeb9fdd92d1582d97a28cccf116ee"
+}

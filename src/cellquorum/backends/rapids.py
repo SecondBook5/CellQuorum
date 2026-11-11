@@ -84,6 +84,29 @@ class RapidsBackend(BaseBackend):
             warnings, and backend details.
         """
 
+        from cellquorum.backends.rapids_worker import worker_python, worker_status
+
+        if worker := worker_python():
+            try:
+                worker_details = worker_status(worker)
+            except (OSError, RuntimeError, ValueError) as exc:
+                return BackendStatus(
+                    name=self.name,
+                    kind=self.kind,
+                    available=False,
+                    missing=["RAPIDS worker"],
+                    warnings=[str(exc)],
+                    details={"python": worker},
+                    requirements=self.requirements(),
+                )
+            return BackendStatus(
+                name=self.name,
+                kind=self.kind,
+                available=True,
+                details={**worker_details, "python": worker},
+                requirements=self.requirements(),
+            )
+
         missing: list[str] = []
 
         warnings: list[str] = []

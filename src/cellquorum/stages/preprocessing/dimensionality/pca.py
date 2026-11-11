@@ -549,30 +549,21 @@ class PCAMethod(AnalysisMethod):
 
         if routing["use_gpu"]:
             try:
-                import rapids_singlecell as rsc
+                from cellquorum.backends.rapids_worker import run_rapids
 
-                # Move to GPU, run rapids PCA, move back — same output key X_pca.
-                rsc.get.anndata_to_GPU(adata)
-                rsc.pp.pca(
+                run_rapids(
                     adata,
+                    "pca",
                     n_comps=n_comps,
                     mask_var=mask_var,
                     random_state=random_state,
                     layer=input_layer,
                 )
-                rsc.get.anndata_to_CPU(adata)
                 compute_used = "gpu"
             except Exception as exc:  # noqa: BLE001
                 # GPU path failed; fall back to CPU when permitted.
                 if not routing["fallback_to_cpu"]:
                     raise
-                # Ensure any partial GPU state is returned to CPU before retrying.
-                try:
-                    import rapids_singlecell as rsc
-
-                    rsc.get.anndata_to_CPU(adata)
-                except Exception:
-                    pass
                 gpu_fallback_note = (
                     f"GPU PCA failed ({type(exc).__name__}: {str(exc)[:80]}); fell back to CPU."
                 )

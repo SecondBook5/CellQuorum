@@ -58,4 +58,18 @@ def test_workstation_lock_integrity(profile):
     if profile == "core":
         assert not any(name.startswith("nvidia-") for name in by_name)
     else:
-        assert {"cupy", "cudf", "cuml", "cugraph", "cuvs"} <= by_name.keys()
+        assert by_name["pandas"]["version"] == "3.1.1"
+        assert by_name["anndata"]["version"] == "0.13.4"
+        worker = {
+            r.name: r
+            for line in (ENVS / "rapids-worker-requirements.txt").read_text().splitlines()
+            if line and not line.startswith("#") and (r := Requirement(line))
+        }
+        assert {
+            "rapids-singlecell-cu12",
+            "cudf-cu12",
+            "cuml-cu12",
+            "cugraph-cu12",
+            "cuvs-cu12",
+        } <= worker.keys()
+        assert str(worker["pandas"].specifier) == "==3.0.6"

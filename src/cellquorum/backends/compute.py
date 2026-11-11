@@ -33,6 +33,14 @@ def gpu_compute_available() -> bool:
         Whether GPU compute (rapids-singlecell) is usable in this process.
     """
 
+    from cellquorum.backends.rapids_worker import worker_python, worker_status
+
+    if worker := worker_python():
+        try:
+            return bool(worker_status(worker)["cuda_visible"])
+        except (OSError, RuntimeError, ValueError):
+            return False
+
     global _GPU_AVAILABLE
     if _GPU_AVAILABLE is not None:
         return _GPU_AVAILABLE

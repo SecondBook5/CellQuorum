@@ -28,39 +28,23 @@ optional method or establish a fully locked environment.
 Development environment extending `cellquorum-core` with testing, linting, and build tools (pytest, ruff, mypy, sphinx, etc.).
 
 ### `cellquorum-gpu`
-GPU-enabled environment for GPU-accelerated analyses, extending `cellquorum-core` with CUDA-enabled PyTorch and scvi-tools.
 
-The recipe now selects CUDA 12.9, RAPIDS 26.4, CuPy 14.1.1, and the PyTorch
-2.8.0 CUDA-12.9 wheel. CellRank 2.3.2 uses AnnData 0.12 because its import fails
-with AnnData 0.13. The exact upstream pygpcca commit removes the obsolete Jinja2
-pin in its PyPI release. Git is included for that source installation.
+The Linux x86_64 analysis process runs pandas 3.1.1, AnnData 0.13.4 and the CUDA 12.9 PyTorch wheel. The RAPIDS worker uses cuDF 26.10.2, which requires pandas 3.0.x, and the same AnnData version. PCA, Harmony, neighbors, Leiden and UMAP exchange their inputs and results as indexed H5AD files. scVI and scANVI train in the analysis process. [Published cuDF requirements](https://pypi.org/pypi/cudf-cu12/26.10.2/json)
 
-A fresh Linux/WSL environment assembled with these corrections passed 14 tests:
-installed GPU analysis and checkpoint recovery, scVI/scANVI CUDA training, and
-CellRank/PETSc execution checks. Both GPU probes passed. This does not validate
-every optional method, hardware model, or production-scale dataset. A generated
-lockfile now records the resolved dependencies; fresh installation and workflow
-validation of that exact repository lock remain outstanding. Conda RAPIDS packages also expose Python
-metadata inconsistent with their CUDA-12/native conda dependencies, so `pip check`
-is not clean. That packaging issue remains unresolved.
-
-Create using flexible channel priority and the declared channels, then install
-the built CellQuorum wheel separately:
+From the checkout, with micromamba, conda-lock 4.0.5 and a CUDA 12.9-compatible driver installed, run:
 
 ```bash
-micromamba create --override-channels --channel-priority flexible -f envs/cellquorum-gpu.yml
-micromamba run -n cellquorum-gpu python -m pip install dist/cellquorum-*.whl
+conda-lock install --micromamba -n cellquorum-gpu envs/cellquorum-gpu.conda-lock.yml
+micromamba run -n cellquorum-gpu python -m pip install --no-deps dist/cellquorum-*.whl
+micromamba run -n cellquorum-gpu python -m venv "$HOME/.venvs/cellquorum-rapids"
+export CELLQUORUM_RAPIDS_PYTHON="$HOME/.venvs/cellquorum-rapids/bin/python"
+"$CELLQUORUM_RAPIDS_PYTHON" -m pip install -r envs/rapids-worker-requirements.txt
+"$CELLQUORUM_RAPIDS_PYTHON" -m pip check
+micromamba run -n cellquorum-gpu python -m pip check
 micromamba run -n cellquorum-gpu python scripts/verify_gpu.py --profile all
 ```
 
-Activate the environment or use `micromamba run`; direct interpreter invocation
-without activation initially failed CUDA header discovery during validation.
-
-Validate both accelerator families with `python scripts/verify_gpu.py --profile all`,
-then run installed-wheel acceptance with `CELLQUORUM_ACCEPTANCE_BACKEND=gpu`.
-The probes exercise device operations; the acceptance test exercises PCA,
-clustering, saved outputs, and checkpoint continuation. Neither establishes
-production-scale memory limits or validates every optional method.
+Export the same worker path in shells that launch the pipeline. The GPU Docker target sets it in the image. Environments with compatible in-process RAPIDS can still use the native backend. Set `compute.backend: gpu` and `compute.fallback_to_cpu: false` to require GPU acceleration for the routed methods. The [human pancreas reference run](../docs/benchmarks/pandas-anndata-review/README.md#gpu-workstation-validation) exercises the installed wheel and both CUDA stacks.
 
 ### `cellquorum-r`
 R bridge environment for the R/Bioconductor methods dispatched over the Rscript
@@ -175,8 +159,7 @@ make lock LOCK_PYTHON=python
 conda-lock 4.0.5, including 2.27 used by JAX and NVIDIA wheels. It retains the
 tool's glibc ceiling and target-version filtering. Changing conda-lock versions
 requires reviewing this workaround; the wrapper refuses an unreviewed version.
-The repository contains Linux CPU (417 package records) and GPU (528 package
-records) locks. CI checks package ownership across conda/pip, artifact hashes,
+The repository contains Linux CPU and GPU analysis-environment locks. CI checks package ownership across conda/pip, artifact hashes,
 immutable Git revisions, direct pip requirements, and CPU/GPU profile selection.
 These structural checks do not establish successful installation, complete recipe
 freshness, runtime compatibility, or scientific accuracy.
@@ -188,11 +171,7 @@ conda-lock install --micromamba -n cellquorum-core-locked envs/cellquorum-core.c
 conda-lock install --micromamba -n cellquorum-gpu-locked envs/cellquorum-gpu.conda-lock.yml
 ```
 
-The previous temporary validation environments and unfinished test logs are no
-longer available. Fresh installation and installed-wheel acceptance of these
-exact repository locks must therefore be repeated before calling them validated
-deployment profiles. The earlier recipe-based test results above remain separate
-evidence.
+The GPU instructions above include the separate RAPIDS worker. Installed-wheel acceptance for the current general CPU lock remains outstanding.
 
 Locks are solved for **linux-64 only** — the platform the Docker image builds
 on. This is deliberate: the GPU env selects Linux CUDA/RAPIDS packages and a

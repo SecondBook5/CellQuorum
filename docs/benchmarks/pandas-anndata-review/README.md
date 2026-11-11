@@ -28,6 +28,24 @@ In all five patients with both TGFB1–ENG measurements, the tumor had a lower L
 
 [Plotted sample measurements](scc-panel-measurements.csv) · [Paired differences](scc-publication-donor-differences.csv) · [Seven-panel source comparison](scc-publication-sources.csv)
 
+## Which SCC conclusions survive the new ranking?
+
+The 18 libraries cover ten patients, eight with both tumor and normal tissue. For each sender, receiver, ligand and receptor combination, we compared the within-library magnitude rank percentile in tumor with the percentile in normal tissue from the same patient. Negative differences mean the interaction ranked higher in tumor. A missing score in either tissue excludes that pair. Of 10,469 distinct combinations, 4,031 had a complete pair and 973 had five or more. Among those 973, **801 kept the direction of their median difference and 172 reversed it** (17.7%).
+
+| Finding | LIANA 1.10.0 | LIANA 2.1.1 | Interpretation |
+|---|---:|---:|---|
+| Keratinocyte TGFB1 → fibroblast ENG | Tumor ranked higher in 5/5 | 5/5 | Paired direction and independent expression-product evidence persist. The raw magnitude-score difference grows, while the median within-library advantage shrinks from 32.9 to 24.6 percentile points. |
+| Matched Tensor factor 1 | Lower in tumor in 6/8 | 4/8 | The majority decline disappears. P2 and P10 cross zero, both with small loadings. |
+| CD8 T-cell HMGB1 → keratinocyte SDC1 | Top 100 in 4 libraries | Top 100 in 7 | P2, P4 and P9 tumor libraries enter the top 100. In both versions only 2/4 complete pairs rank higher in tumor. |
+| Fibroblast COL18A1 → fibroblast ITGB5 | Tumor ranked higher in 2/5 | 4/5 | Median tumor minus normal changes from +24.0 to −47.0 percentile points. |
+| Keratinocyte NAMPT → fibroblast ITGA5–ITGB1 | Tumor ranked higher in 4/6 | 1/6 | Median difference changes from −26.1 to +19.2 percentile points. |
+
+The last two examples have the largest reversals when sorted by the smaller absolute median difference in the two versions. Neither interaction entered any library’s top 100. Across the 973 comparisons, **none met a 5% false-discovery threshold** in either version (two-sided paired sign test, ties excluded, Benjamini–Hochberg correction applied separately per version). These ranks support prioritizing candidate signals for follow-up. They cannot establish ligand binding or a change in signaling activity.
+
+![Paired tumor minus normal differences for the published interaction, matched tensor factor, and two rank reversals](scc-paired-rank-changes.png)
+
+Each row is one patient. The dashed line marks equal tumor and normal values. Panels A and B use the original quantities plotted in the manuscript panels. Panels C and D use rank percentile points. [Editable donor figure](scc-paired-rank-changes.svg) · [All paired donor differences](scc-paired-rank-donors.csv.gz) · [Interaction summaries and adjusted tests](scc-paired-rank-summary.csv.gz)
+
 ## Figure and source data
 
 - [All matched magnitude scores and percentiles (gzip CSV)](scc-magnitude-interactions.csv.gz)
@@ -80,3 +98,24 @@ The lineage constraints now pin that renderer.
 ![Standalone Palantir panel](pancreas/lineage.palantir.png)
 
 ![Assembled lineage page](pancreas/lineage.png)
+
+## GPU workstation validation
+
+A clean install of the Linux GPU lock ran the CellQuorum wheel outside the checkout, with pandas 3.1.1 and AnnData 0.13.4 in the analysis process. The CUDA worker used pandas 3.0.6 with cuDF 26.10.2 and RAPIDS-singlecell 0.18.1. Both environments passed `pip check`. The reference recipe required GPU execution for the routed methods and treated skipped selected analyses as failures.
+
+The input was the public human pancreas reference with 8,391 inDrop cells and 2,961 Smart-seq2 cells, eight published cell types and 1,000 genes. All six selected analysis stages completed and produced the HTML report. The output count layer and cell and gene order matched the input. The graph covered every cell, Leiden produced 18 clusters, and every cell had finite PCA, Harmony, scVI, scANVI and UMAP coordinates.
+
+| Measurement | Earlier reference | New GPU install |
+|---|---:|---:|
+| Cross-study nearest-neighbor cell-type agreement, PCA | 83.95% | 83.95% |
+| Harmony | — | 80.81% |
+| scVI | 81.24% | 81.24% |
+| scANVI | 89.75% | 89.75% |
+
+For each cell we found its closest cell from the other study and compared the published labels. scANVI used those labels during training, so its agreement measures label preservation. The earlier latent-model recipe omitted Harmony. Stage records identify RAPIDS for PCA, Harmony, neighbors/Leiden and UMAP. Lightning recorded CUDA training for scVI, the scANVI pretraining model and scANVI. Input to report took 2 min 24 s on one RTX 4000 Ada. One-second device-wide samples peaked at 53% utilization and 2,738 MiB used, including other processes. The validation covers this workstation, installed wheel and study.
+
+![Pancreas GPU UMAP colored by the published cell types](gpu/categorical_umap_cell_type.png)
+
+[Editable figure](gpu/categorical_umap_cell_type.pdf) · [Same coordinates by study](gpu/categorical_umap_study.png) · [Per-cell coordinates, cell type, study and Leiden cluster](gpu/pancreas-umap-source.csv.gz) · [Validated versions, checks and measurements](gpu/validation.json) · [Portable run configuration](gpu/pancreas-gpu.yml)
+
+To reproduce the comparison, follow the GPU installation in `envs/README.md`. Place the [prepared pancreas reference](../reference-studies.md) and the provided YAML in the same directory, then run `cellquorum run -c pancreas-gpu.yml` there. From the repository, run `python scripts/verify_reference_study.py /path/to/runs/pancreas-gpu --data /path/to/input` for the cross-study check.

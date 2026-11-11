@@ -9,11 +9,15 @@ stochastic call.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 import scanpy as sc
+
+if TYPE_CHECKING:
+    from cellquorum.core.context import PipelineContext
 
 
 class EmbeddingsComputeError(Exception):
@@ -122,6 +126,7 @@ def compute_umap(
     random_state: int,
     use_rep: str | None = None,
     n_neighbors: int | None = None,
+    context: PipelineContext | None = None,
 ) -> tuple[str, str | None]:
     """Compute UMAP on the neighbors graph; write obsm['X_umap'].
 
@@ -171,16 +176,28 @@ def compute_umap(
     # CPU path. A CPU-path failure (e.g. a neighbors graph too small for UMAP's
     # spectral init) is retyped as ComputeFailed so the method skips, never
     # crashing the pipeline.
-    gpu_note = None
-    try:
-        import rapids_singlecell as rsc
-    except ImportError:
-        rsc = None  # not installed: plain CPU run, nothing to explain
-    if rsc is not None:
+    from cellquorum.backends.compute import resolve_compute
+    from cellquorum.backends.rapids_worker import run_rapids, worker_python
+
+    if context is not None:
+        routing = resolve_compute(context)
+    else:
+        # Standalone callers historically attempt UMAP whenever RAPIDS imports.
         try:
-            rsc.tl.umap(adata, min_dist=min_dist, random_state=random_state)
+            import rapids_singlecell  # noqa: F401
+
+            installed = True
+        except ImportError:
+            installed = False
+        routing = {"use_gpu": bool(worker_python()) or installed, "fallback_to_cpu": True}
+    gpu_note = routing.get("fallback_reason")
+    if routing["use_gpu"]:
+        try:
+            run_rapids(adata, "umap", min_dist=min_dist, random_state=random_state)
             return "gpu", None
         except Exception as exc:  # noqa: BLE001 — fall back to CPU, and say so
+            if not routing["fallback_to_cpu"]:
+                raise
             gpu_note = (
                 f"GPU UMAP failed ({type(exc).__name__}: {str(exc)[:80]}); computed on the CPU "
                 "instead, which gives a different layout."
