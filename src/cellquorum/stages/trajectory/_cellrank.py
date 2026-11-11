@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.core.anndata_access import obs_frame, var_frame
+from cellquorum.core.anndata_access import resolve_use_rep as _resolve_use_rep
 
 
 def copy_with_private_obs(adata: ad.AnnData) -> ad.AnnData:
@@ -147,16 +148,6 @@ class MoscotUnavailable(CellRankComputeError):
 
 class RealTimeKernelFailed(CellRankComputeError):
     """moscot TemporalProblem solve / RealTimeKernel construction raised."""
-
-
-def _resolve_use_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) -> str | None:
-    """Return a rep present in obsm, or None."""
-    if configured and configured in adata.obsm:
-        return configured
-    for candidate in fallback:
-        if candidate in adata.obsm:
-            return candidate
-    return None
 
 
 def _build_realtime_kernel(

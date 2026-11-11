@@ -482,15 +482,7 @@ class CellOracleMethod(AnalysisMethod):
         contract instead of allowing the fallback (the grn/hdWGCNA lesson).
         """
         layer = config.get("layer", "counts")
-        return DataContract(
-            required_layers=[layer],
-            required_obs=[],
-            expression_layer=layer,
-            expected_kind="counts",
-        )
-
-    def requires_obs(self, config: dict) -> list[str]:
-        return []
+        return DataContract.counts_layer(layer)
 
     def _run(self, adata, config, context) -> StageResult | MethodSkip:  # noqa: ANN001
         settings = _Settings.from_config(config, adata)

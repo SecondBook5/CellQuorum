@@ -447,21 +447,7 @@ class HdwgcnaMethod(AnalysisMethod):
         """
         layer = config.get("layer", "counts")
 
-        return DataContract(
-            required_layers=[layer],
-            required_obs=[],
-            expression_layer=layer,
-            expected_kind="counts",
-        )
-
-    def requires_obs(self, config: dict) -> list[str]:
-        """Return obs columns required for co-expression analysis.
-
-        Returns empty list to avoid over-constraining since group_by can fall back
-        to obs-present columns or R "all" fallback.
-        """
-        # Don't hard-require columns that may be absent - the R script handles fallbacks
-        return []
+        return DataContract.counts_layer(layer)
 
     def _run(
         self, adata: ad.AnnData, config: dict, context: PipelineContext

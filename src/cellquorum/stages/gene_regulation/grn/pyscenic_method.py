@@ -500,15 +500,7 @@ class PyscenicMethod(AnalysisMethod):
         would hard-fail the contract instead of allowing the graceful fallback.
         """
         layer = config.get("layer", "counts")
-        return DataContract(
-            required_layers=[layer],
-            required_obs=[],
-            expression_layer=layer,
-            expected_kind="counts",
-        )
-
-    def requires_obs(self, config: dict) -> list[str]:
-        return []
+        return DataContract.counts_layer(layer)
 
     def _skip_or_partial(
         self,

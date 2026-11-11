@@ -14,6 +14,8 @@ from typing import Any
 import anndata as ad
 import numpy as np
 
+from cellquorum.core.anndata_access import resolve_use_rep as resolve_use_rep
+
 
 class TrajectoryComputeError(Exception):
     """Base for recoverable trajectory-compute failures (→ MethodSkip)."""
@@ -25,16 +27,6 @@ class ScveloUnavailable(TrajectoryComputeError):
 
 class VelocityComputeFailed(TrajectoryComputeError):
     """A scVelo backend step raised (non-convergence, degenerate input, …)."""
-
-
-def resolve_use_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) -> str | None:
-    """Return the representation to use for moments, or None if none present."""
-    if configured and configured in adata.obsm:
-        return configured
-    for candidate in fallback:
-        if candidate in adata.obsm:
-            return candidate
-    return None
 
 
 def embedding_bases(adata: ad.AnnData) -> list[str]:

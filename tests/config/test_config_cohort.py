@@ -34,6 +34,17 @@ def test_resolve_cohort_key_prefers_cohort_over_stage_value() -> None:
     assert resolve_cohort_key(cfg, attr="donor_key", stage_value="patient_id") == "patient_id"
 
 
+def test_saved_study_design_resolves_cohort_then_stage_then_design():
+    from cellquorum.config.cohort import resolve_design_columns
+
+    saved = {"cohort": {"donor_key": "patient"}, "design": {"condition_col": "treatment"}}
+    assert resolve_design_columns(saved, donor_key="library", condition_key=None) == (
+        "patient",
+        "treatment",
+    )
+    assert resolve_design_columns(saved, donor_key=None, condition_key="arm") == ("patient", "arm")
+
+
 def test_resolve_cohort_key_handles_missing_cohort() -> None:
     """A config without a cohort attribute falls back to the stage value."""
 

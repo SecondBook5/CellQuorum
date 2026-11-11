@@ -15,6 +15,8 @@ purely additive and existing configs behave identically.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from cellquorum.config.base import StrictBaseModel
 
 
@@ -76,12 +78,28 @@ def resolve_cohort_key(
         The cohort value when set, else ``stage_value``.
     """
 
-    cohort = getattr(config, "cohort", None)
-    if cohort is not None:
-        cohort_value = getattr(cohort, attr, None)
-        if cohort_value:
-            return cohort_value
-    return stage_value
+    cohort = (
+        config.get("cohort") if isinstance(config, Mapping) else getattr(config, "cohort", None)
+    )
+    value = cohort.get(attr) if isinstance(cohort, Mapping) else getattr(cohort, attr, None)
+    return value or stage_value
+
+
+def resolve_design_columns(
+    config: object, *, donor_key: str | None, condition_key: str | None
+) -> tuple[str, str]:
+    """Resolve cohort and stage column names, with the study design as their fallback."""
+    design = (
+        config.get("design") if isinstance(config, Mapping) else getattr(config, "design", None)
+    )
+    donor = resolve_cohort_key(config, attr="donor_key", stage_value=donor_key)
+    condition = resolve_cohort_key(config, attr="condition_key", stage_value=condition_key)
+    if isinstance(design, Mapping):
+        design_donor, design_condition = design.get("donor_col"), design.get("condition_col")
+    else:
+        design_donor = getattr(design, "donor_col", None)
+        design_condition = getattr(design, "condition_col", None)
+    return donor or design_donor or "patient_id", condition or design_condition or "condition"
 
 
 def validate_cohort_against_obs(obs_columns: list[str], *, cohort: CohortConfig) -> list[str]:
@@ -117,5 +135,6 @@ __all__ = [
     "CohortConfig",
     "FocusLineageConfig",
     "resolve_cohort_key",
+    "resolve_design_columns",
     "validate_cohort_against_obs",
 ]

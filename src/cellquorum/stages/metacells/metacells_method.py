@@ -97,15 +97,7 @@ class MetacellsMethod(AnalysisMethod):
 
     def input_contract(self, config: dict) -> DataContract:
         layer = config.get("layer", "counts")
-        return DataContract(
-            required_layers=[layer],
-            required_obs=[],
-            expression_layer=layer,
-            expected_kind="counts",
-        )
-
-    def requires_obs(self, config: dict) -> list[str]:
-        return []
+        return DataContract.counts_layer(layer)
 
     def _run(self, adata, config, context) -> StageResult | MethodSkip:  # noqa: ANN001
         settings = _MetacellSettings.from_config(config)

@@ -12,6 +12,13 @@ if TYPE_CHECKING:
     import anndata as ad
 
 
+def resolve_use_rep(adata: ad.AnnData, configured: str | None, fallback: list[str]) -> str | None:
+    """Select the requested embedding or the first available fallback in the given order."""
+    if configured and configured in adata.obsm:
+        return configured
+    return next((name for name in fallback if name in adata.obsm), None)
+
+
 def obs_frame(adata: ad.AnnData) -> pd.DataFrame:
     """Return the object's writable cell metadata, materializing only that axis if lazy."""
     if not isinstance(adata.obs, pd.DataFrame):

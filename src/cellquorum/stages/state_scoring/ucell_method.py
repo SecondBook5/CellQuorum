@@ -44,11 +44,7 @@ class UcellMethod(AnalysisMethod):
 
     def input_contract(self, config: dict) -> DataContract:
         layer = config.get("layer", "cellquorum_normalized")
-        return DataContract(
-            required_layers=[layer] if layer != "X" else [],
-            expression_layer=layer,
-            expected_kind="lognorm",
-        )
+        return DataContract.lognorm(layer)
 
     def requires_layers(self) -> list[str]:
         return ["cellquorum_normalized"]

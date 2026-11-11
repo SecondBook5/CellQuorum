@@ -32,12 +32,7 @@ class ActivityMethod(AnalysisMethod):
     def input_contract(self, config: dict) -> DataContract:
         cell_type_col = config.get("cell_type_col", "cell_type")
         layer = config.get("layer", "cellquorum_normalized")
-        return DataContract(
-            required_obs=[cell_type_col],
-            required_layers=[layer] if layer != "X" else [],
-            expression_layer=layer,
-            expected_kind="lognorm",
-        )
+        return DataContract.lognorm(layer, required_obs=[cell_type_col])
 
     def configured_layers(self, config: dict) -> list[str]:
         return self.input_contract(config).required_layers
