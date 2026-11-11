@@ -6,9 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.comparative.enrichment.viz  # noqa: F401
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -32,11 +31,10 @@ _VIZ_CONFIG_KEYS = (
     config_field="enrichment_viz",
     category="enrichment_viz",
 )
-class EnrichmentVizStage(MethodDispatchStage):
+class EnrichmentVizStage(DefaultMethodStage):
     """Render publication figures from the enrichment stage's CSV outputs."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "gsea_viz")
+    default_method = "gsea_viz"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Bridge config.enrichment_viz into the method config; inject method list."""
@@ -58,9 +56,6 @@ class EnrichmentVizStage(MethodDispatchStage):
                 {"method": "activity_viz"},
             ]
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: this stage writes figures, no obs/var postcondition."""
 
 
 __all__ = ["EnrichmentVizStage"]

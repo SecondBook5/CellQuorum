@@ -6,20 +6,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.gene_regulation.grn  # noqa: F401  (registers the method as a side effect)
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
 
 
 @register_stage(name="grn", order=270, config_flag="grn", config_field="grn", category="grn")
-class GrnStage(MethodDispatchStage):
+class GrnStage(DefaultMethodStage):
     """Run the configured GRN (pySCENIC) method."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "pyscenic")
+    default_method = "pyscenic"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
@@ -34,9 +32,6 @@ class GrnStage(MethodDispatchStage):
             if not augmented.get("control"):
                 augmented["control"] = getattr(design, "control", None)
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No structural postcondition; the stage writes tables + figures."""
 
 
 __all__ = ["GrnStage"]

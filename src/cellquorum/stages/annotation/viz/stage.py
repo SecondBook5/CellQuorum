@@ -11,9 +11,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.annotation.viz  # noqa: F401  (side-effect: registers methods)
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -37,11 +36,10 @@ _DEFAULT_METHODS = ["marker_dotplot", "lineage_dotplot"]
     config_field="annotation_viz",
     category="annotation_viz",
 )
-class AnnotationVizStage(MethodDispatchStage):
+class AnnotationVizStage(DefaultMethodStage):
     """Render the marker dotplots from the annotation stage's own panel."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "marker_dotplot")
+    default_method = "marker_dotplot"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
@@ -62,9 +60,6 @@ class AnnotationVizStage(MethodDispatchStage):
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [{"method": m} for m in _DEFAULT_METHODS]
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: this stage writes figures, no obs/var postcondition."""
 
 
 __all__ = ["AnnotationVizStage"]

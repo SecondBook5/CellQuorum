@@ -6,9 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.trajectory  # noqa: F401
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -111,11 +110,10 @@ _CYTOTRACE_KEYS = (
     config_field="trajectory",
     category="trajectory",
 )
-class TrajectoryStage(MethodDispatchStage):
+class TrajectoryStage(DefaultMethodStage):
     """Run the configured trajectory method(s). Spec #1 registers 'velocity'."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "velocity")
+    default_method = "velocity"
 
     # method name -> (config.trajectory.<attr>, flatten keys) for that block.
     _METHOD_BLOCKS = {
@@ -190,9 +188,6 @@ class TrajectoryStage(MethodDispatchStage):
             augmented["methods"] = [{"method": "velocity"}]
 
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: writes h5ad artifacts + uns keys, no obs/var postcondition."""
 
 
 __all__ = ["TrajectoryStage"]

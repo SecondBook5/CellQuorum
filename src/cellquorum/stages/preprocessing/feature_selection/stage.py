@@ -6,7 +6,7 @@ from __future__ import annotations
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -19,13 +19,10 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     # otherwise shape the biological reference every later stage is measured against.
     cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
-class FeatureSelectionStage(MethodDispatchStage):
+class FeatureSelectionStage(DefaultMethodStage):
     """Config-driven highly-variable-gene selection stage."""
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured HVG method. Fallback matches FeatureSelectionConfig.method."""
-
-        return config.get("method", "seurat_v3")
+    default_method = "seurat_v3"
 
     def _validate_output(self, result: StageResult) -> None:
         """Assert HVGs were flagged (non-skip only)."""

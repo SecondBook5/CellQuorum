@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import cellquorum.stages.discovery  # noqa: F401
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -16,14 +15,10 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_field="discovery",
     category="discovery",
 )
-class DiscoveryStage(MethodDispatchStage):
+class DiscoveryStage(DefaultMethodStage):
     """Discover unbiased gene programs with the configured method (default NMF)."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "nmf")
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: discovery writes obsm/uns + tables, no strict postcondition."""
+    default_method = "nmf"
 
 
 __all__ = ["DiscoveryStage"]

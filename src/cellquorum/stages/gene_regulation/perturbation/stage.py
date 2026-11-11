@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import cellquorum.stages.gene_regulation.perturbation  # noqa: F401  (registers the method as a side effect)
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -16,14 +15,10 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_field="perturbation",
     category="perturbation",
 )
-class PerturbationStage(MethodDispatchStage):
+class PerturbationStage(DefaultMethodStage):
     """Run the configured CellOracle or scTenifoldKnk perturbation method."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "celloracle")
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No structural postcondition; the stage writes tables + figures."""
+    default_method = "celloracle"
 
 
 __all__ = ["PerturbationStage"]

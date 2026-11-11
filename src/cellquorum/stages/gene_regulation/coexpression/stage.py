@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING
 
 import cellquorum.stages.gene_regulation.coexpression  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -22,14 +21,10 @@ if TYPE_CHECKING:
     config_field="coexpression",
     category="coexpression",
 )
-class CoexpressionStage(MethodDispatchStage):
+class CoexpressionStage(DefaultMethodStage):
     """Run the configured co-expression (hdWGCNA) method."""
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured co-expression method name."""
-
-        # Default to hdWGCNA.
-        return config.get("method", "hdwgcna")
+    default_method = "hdwgcna"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """
@@ -67,6 +62,3 @@ class CoexpressionStage(MethodDispatchStage):
             )
 
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No structural postcondition on obs/var; the stage writes tables + a figure."""

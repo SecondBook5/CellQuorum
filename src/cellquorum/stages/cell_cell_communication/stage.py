@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING
 
 import cellquorum.stages.cell_cell_communication  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -25,11 +24,10 @@ _METHOD_ORDER = {"liana": 0, "tensor_c2c": 1}
     config_field="cell_cell_communication",
     category="cell_cell_communication",
 )
-class CellCellCommunicationStage(MethodDispatchStage):
+class CellCellCommunicationStage(DefaultMethodStage):
     """Run the configured CCC method(s): LIANA (LR) then Tensor-cell2cell."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "liana")
+    default_method = "liana"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
@@ -84,9 +82,6 @@ class CellCellCommunicationStage(MethodDispatchStage):
                     config, attr="donor_key", stage_value=getattr(design, "donor_col", "donor_id")
                 )
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: writes table artifacts + uns keys, no obs/var postcondition."""
 
 
 __all__ = ["CellCellCommunicationStage"]

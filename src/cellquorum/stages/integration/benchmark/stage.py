@@ -10,7 +10,7 @@ from cellquorum.core.context import PipelineContext
 from cellquorum.core.contracts import CellQuorumContractError
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -20,7 +20,7 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_field="integration_benchmark",
     category="integration_benchmark",
 )
-class IntegrationBenchmarkStage(MethodDispatchStage):
+class IntegrationBenchmarkStage(DefaultMethodStage):
     """Config-driven integration-quality evaluation stage.
 
     Measures batch-correction quality (iLISI/kBET/pcr) and biological-structure
@@ -29,9 +29,7 @@ class IntegrationBenchmarkStage(MethodDispatchStage):
     and per-embedding measurements in the run report.
     """
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured benchmark method (default 'scib_benchmark')."""
-        return config.get("method", "scib_benchmark")
+    default_method = "scib_benchmark"
 
     def run(self, context: PipelineContext) -> StageResult:
         result = super().run(context)

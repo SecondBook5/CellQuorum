@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING
 
 import cellquorum.stages.comparative.module_remodeling  # noqa: F401
 from cellquorum.config.cohort import resolve_cohort_key
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -22,7 +21,7 @@ if TYPE_CHECKING:
     config_field="module_remodeling",
     category="module_remodeling",
 )
-class ModuleRemodelingStage(MethodDispatchStage):
+class ModuleRemodelingStage(DefaultMethodStage):
     """Run the configured module-remodeling method.
 
     Ordered last on purpose: it is the synthesis stage. It reads the module scores
@@ -30,8 +29,7 @@ class ModuleRemodelingStage(MethodDispatchStage):
     the cohort declares, so anything earlier would run before its inputs exist.
     """
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "module_remodeling")
+    default_method = "module_remodeling"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Bridge the project-level ``design``/``cohort`` blocks into this config.
@@ -75,15 +73,6 @@ class ModuleRemodelingStage(MethodDispatchStage):
                 augmented["paired"] = bool(getattr(design, "paired", False))
 
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: the obs additions are config-named and optional by design.
-
-        ``key_added`` is only written when the stage labels a partition itself
-        (a caller supplying ``group_col`` already has the labels), and the
-        contrast index only when both sides of it are configured. A postcondition
-        on either would fail runs that are behaving correctly.
-        """
 
 
 __all__ = ["ModuleRemodelingStage"]

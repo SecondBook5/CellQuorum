@@ -6,9 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.integration.embeddings  # noqa: F401
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 from cellquorum.stages.integration.embeddings.config import OverlayConfig
 
 if TYPE_CHECKING:
@@ -61,11 +60,10 @@ _DEFAULT_METHODS = [
     config_field="embeddings",
     category="embeddings",
 )
-class EmbeddingsStage(MethodDispatchStage):
+class EmbeddingsStage(DefaultMethodStage):
     """Compute embeddings and render house-style figures + overlays."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "umap")
+    default_method = "umap"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Bridge config.embeddings; inject method list + structural resolver keys."""
@@ -118,9 +116,6 @@ class EmbeddingsStage(MethodDispatchStage):
                 and (m["method"] != "continuous_overlay" or include_overlay)
             ]
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: figures + obsm are written per-method; no strict postcondition."""  # noqa: B027
 
 
 __all__ = ["EmbeddingsStage"]

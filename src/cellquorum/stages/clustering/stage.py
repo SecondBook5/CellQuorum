@@ -14,7 +14,7 @@ from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import CellScope, CellScopePolicy, register_stage
 from cellquorum.methods.registry import MethodRegistry
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     # otherwise shape the biological reference every later stage is measured against.
     cell_scope=CellScopePolicy(fit_scope=CellScope.CORE),
 )
-class ClusteringStage(MethodDispatchStage):
+class ClusteringStage(DefaultMethodStage):
     """Config-driven clustering stage."""
 
     def __init__(self, registry: MethodRegistry | None = None) -> None:
@@ -40,11 +40,7 @@ class ClusteringStage(MethodDispatchStage):
         self._auto_coupled_use_rep: str | None = None
         self._integration_output_missing: str | None = None
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured clustering method (default 'leiden')."""
-
-        # Read the method key from the resolved sub-block.
-        return config.get("method", "leiden")
+    default_method = "leiden"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         """Store key_added for validation, and auto-couple use_rep to integration's output.

@@ -6,9 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import cellquorum.stages.cell_cell_communication.viz  # noqa: F401  (side-effect: registers methods)
-from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 if TYPE_CHECKING:
     from cellquorum.core.context import PipelineContext
@@ -40,11 +39,10 @@ _DEFAULT_METHODS = [
 @register_stage(
     name="ccc_viz", order=350, config_flag="ccc_viz", config_field="ccc_viz", category="ccc_viz"
 )
-class CccVizStage(MethodDispatchStage):
+class CccVizStage(DefaultMethodStage):
     """Render publication figures from the CCC stages' CSV/uns outputs."""
 
-    def _select_method_name(self, config: dict) -> str:
-        return config.get("method", "dotplot_viz")
+    default_method = "dotplot_viz"
 
     def _augment_config(self, context: PipelineContext, stage_config: dict) -> dict:
         augmented = dict(stage_config)
@@ -59,9 +57,6 @@ class CccVizStage(MethodDispatchStage):
         if not augmented.get("methods") and "method" not in augmented:
             augmented["methods"] = [{"method": m} for m in _DEFAULT_METHODS]
         return augmented
-
-    def _validate_output(self, result: StageResult) -> None:
-        """No-op: this stage writes figures, no obs/var postcondition."""
 
 
 __all__ = ["CccVizStage"]

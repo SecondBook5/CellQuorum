@@ -6,7 +6,7 @@ from __future__ import annotations
 from cellquorum.core.contracts import DataContract
 from cellquorum.core.stage import StageResult
 from cellquorum.core.stage_catalog import register_stage
-from cellquorum.methods.stage_base import MethodDispatchStage
+from cellquorum.methods.stage_base import DefaultMethodStage
 
 
 @register_stage(
@@ -16,14 +16,10 @@ from cellquorum.methods.stage_base import MethodDispatchStage
     config_field="annotation",
     category="annotation",
 )
-class AnnotationStage(MethodDispatchStage):
+class AnnotationStage(DefaultMethodStage):
     """Config-driven annotation stage."""
 
-    def _select_method_name(self, config: dict) -> str:
-        """Return the configured annotation method (default 'marker_vote')."""
-
-        # Read the method key from the resolved sub-block.
-        return config.get("method", "marker_vote")
+    default_method = "marker_vote"
 
     def _validate_output(self, result: StageResult) -> None:
         """Validate the cell-type label landed in obs (non-skip only)."""
