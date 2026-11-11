@@ -34,7 +34,7 @@ The 18 libraries cover ten patients, eight with both tumor and normal tissue. Fo
 
 | Finding | LIANA 1.10.0 | LIANA 2.1.1 | Interpretation |
 |---|---:|---:|---|
-| Keratinocyte TGFB1 → fibroblast ENG | Tumor ranked higher in 5/5 | 5/5 | Paired direction and independent expression-product evidence persist. The raw magnitude-score difference grows, while the median within-library advantage shrinks from 32.9 to 24.6 percentile points. |
+| Keratinocyte TGFB1 → fibroblast ENG | Tumor ranked higher in 5/5 | 5/5 | MultiNicheNet expression products also favor tumor in the same five pairs. The raw magnitude-score difference grows, while the median within-library advantage shrinks from 32.9 to 24.6 percentile points. |
 | Matched Tensor factor 1 | Lower in tumor in 6/8 | 4/8 | The majority decline disappears. P2 and P10 cross zero, both with small loadings. |
 | CD8 T-cell HMGB1 → keratinocyte SDC1 | Top 100 in 4 libraries | Top 100 in 7 | P2, P4 and P9 tumor libraries enter the top 100. In both versions only 2/4 complete pairs rank higher in tumor. |
 | Fibroblast COL18A1 → fibroblast ITGB5 | Tumor ranked higher in 2/5 | 4/5 | Median tumor minus normal changes from +24.0 to −47.0 percentile points. |
@@ -103,7 +103,7 @@ The lineage constraints now pin that renderer.
 
 A clean install of the Linux GPU lock ran the CellQuorum wheel outside the checkout, with pandas 3.1.1 and AnnData 0.13.4 in the analysis process. The CUDA worker used pandas 3.0.6 with cuDF 26.10.2 and RAPIDS-singlecell 0.18.1. Both environments passed `pip check`. The reference recipe required GPU execution for the routed methods and treated skipped selected analyses as failures.
 
-The input was the public human pancreas reference with 8,391 inDrop cells and 2,961 Smart-seq2 cells, eight published cell types and 1,000 genes. All six selected analysis stages completed and produced the HTML report. The output count layer and cell and gene order matched the input. The graph covered every cell, Leiden produced 18 clusters, and every cell had finite PCA, Harmony, scVI, scANVI and UMAP coordinates.
+The input was the public human pancreas reference with 8,391 inDrop cells and 2,961 Smart-seq2 cells, eight published cell types and 1,000 genes. All six selected analysis stages completed and produced the HTML report. The output count layer and cell and gene order matched the input. The graph covered every cell, Leiden produced 17 clusters, and every cell had finite PCA, Harmony, scVI, scANVI and UMAP coordinates.
 
 | Measurement | Earlier reference | New GPU install |
 |---|---:|---:|
@@ -112,7 +112,9 @@ The input was the public human pancreas reference with 8,391 inDrop cells and 2,
 | scVI | 81.24% | 81.24% |
 | scANVI | 89.75% | 89.75% |
 
-For each cell we found its closest cell from the other study and compared the published labels. scANVI used those labels during training, so its agreement measures label preservation. The earlier latent-model recipe omitted Harmony. Stage records identify RAPIDS for PCA, Harmony, neighbors/Leiden and UMAP. Lightning recorded CUDA training for scVI, the scANVI pretraining model and scANVI. Input to report took 2 min 24 s on one RTX 4000 Ada. One-second device-wide samples peaked at 53% utilization and 2,738 MiB used, including other processes. The validation covers this workstation, installed wheel and study.
+For each cell we found its closest cell from the other study and compared the published labels. scANVI used those labels during training, so its agreement measures label preservation. The earlier latent-model recipe omitted Harmony. Stage records identify RAPIDS for PCA, Harmony, neighbors/Leiden and UMAP. Lightning recorded CUDA training for scVI, the scANVI pretraining model and scANVI. Input to report took 2 min 8 s on one RTX 4000 Ada. One-second device-wide samples peaked at 42% utilization and 2,619 MiB used, including other processes. An earlier GPU install gave the same four cross-study agreement values and 18 Leiden clusters. Agreement between the two partitions was 0.932 by adjusted Rand index. The UMAP images differed across the two runs. The final install added the missing LIANA orthology dependency, pooch.
+
+All 34 analysis and five RAPIDS package imports passed in their respective interpreters. A second CLI run on the frozen SCC input recomputed LIANA on CPU in this GPU workstation installation. All 54,450 magnitude scores and all 54,450 specificity scores matched the candidate SCC analysis exactly across all 18 libraries. [SCC rerun evidence](gpu/scc-rank-verification.json)
 
 ![Pancreas GPU UMAP colored by the published cell types](gpu/categorical_umap_cell_type.png)
 

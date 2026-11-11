@@ -13,7 +13,7 @@
 version: 1
 metadata:
   content_hash:
-    linux-64: 6e2873bd1f8abdde7034fffa4f75a76484f8d10f375b502b1b140c64a21b507b
+    linux-64: ef6198adf415a87d61855e0fbf32d269ea61d1f19911128d5c1f03cb3ff5600a
   channels:
   - url: conda-forge
     used_env_vars: []
@@ -4134,6 +4134,21 @@ package:
   hash:
     md5: 07cf1805b475a26f12362b1a65b62d48
     sha256: 8bbb25f131001457e5fd19385000e9d6a8047223a35f4c507d92113eb68d42f9
+  category: main
+  optional: false
+- name: pooch
+  version: 1.9.0
+  manager: conda
+  platform: linux-64
+  dependencies:
+    packaging: '>=20.0'
+    platformdirs: '>=2.5.0'
+    python: '>=3.10'
+    requests: '>=2.19.0'
+  url: https://conda.anaconda.org/conda-forge/noarch/pooch-1.9.0-pyhd8ed1ab_0.conda
+  hash:
+    md5: dd4b6337bf8886855db6905b336db3c8
+    sha256: 081e52c4612830bf1fd4a9c78eebaf335d1385d74ddfd328b1b2f26b983848eb
   category: main
   optional: false
 - name: prometheus-cpp

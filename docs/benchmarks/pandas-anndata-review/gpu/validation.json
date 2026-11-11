@@ -8,7 +8,7 @@
     "Pancreas SS2": 2961
   },
   "reference_cell_types": 8,
-  "clusters": 18,
+  "clusters": 17,
   "input_X_matches_final_counts_and_axis_order": true,
   "graph_nonempty_for_every_cell": true,
   "strict_gpu": true,
@@ -46,10 +46,10 @@
     "controller": "No broken requirements found.",
     "worker": "No broken requirements found."
   },
-  "input_to_report_wall_time": "2:23.97",
-  "max_rss_kib": 2252788,
-  "device_peak_used_mib": 2738,
-  "device_peak_utilization_percent": 53,
+  "input_to_report_wall_time": "2:07.74",
+  "max_rss_kib": 2252224,
+  "device_peak_used_mib": 2619,
+  "device_peak_utilization_percent": 42,
   "device_sampling_interval_seconds": 1,
   "cross_study_nearest_neighbor_label_agreement": {
     "X_pca": 0.8394996476391825,
@@ -62,5 +62,18 @@
     "X_scvi": 0.8123678646934461,
     "X_scanvi": 0.8974630021141649
   },
-  "gpu_lock_sha256": "78b2ad09ccdb02fff4e5c7ba927d3b60b4eaeb9fdd92d1582d97a28cccf116ee"
+  "gpu_lock_sha256": "4014bb5b0d4350560b76ba47cb92e3e198345aee7f274441ac2edbdbb786f9ec",
+  "previous_gpu_run_comparison": {
+    "leiden_adjusted_rand_index": 0.9318026825681062,
+    "clusters_in_runs": [
+      18,
+      17
+    ],
+    "umap_procrustes_disparity": 0.0038451434474198244,
+    "cell_type_umap_pixels_identical": false
+  },
+  "import_check": {
+    "controller_passed": 34,
+    "worker_passed": 5
+  }
 }

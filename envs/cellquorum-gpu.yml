@@ -21,6 +21,8 @@ dependencies:
 # `settings` extra: pydantic-settings and python-dotenv. A conda install of scverse-misc does not bring
 # extras, so without these two `import mudata`, `import scvi` and `import liana` fail.
 - pydantic-settings
+# LIANA imports pooch when loading its orthology resources.
+- pooch>=1.8,<2
 - python-dotenv
 - scanpy=1.12.5
 - h5py>=3.10

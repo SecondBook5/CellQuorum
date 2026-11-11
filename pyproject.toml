@@ -67,7 +67,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-signaling = ["liana>=1.10,<3", "cell2cell>=0.9,<1", "decoupler>=2.2,<3"]
+signaling = ["liana>=1.10,<3", "pooch>=1.8,<2", "cell2cell>=0.9,<1", "decoupler>=2.2,<3"]
 
 enrichment = [
   "decoupler>=2.1.6,<3",
