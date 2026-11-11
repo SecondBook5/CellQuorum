@@ -134,3 +134,23 @@ def test_a_set_config_field_still_flips_the_fingerprint() -> None:
         random_seed=1337,
     )
     assert valued != unset
+
+
+def test_benchmark_fingerprint_tracks_labels_coordinates_and_cell_order():
+    a = _adata()
+    a.obs["study"] = ["A", "B"] * 3
+    a.obsm["X_harmony"] = np.ones((6, 2))
+    opts = {"batch_key": "study", "embeddings": ["X_harmony"]}
+
+    def fingerprint():
+        return compute_input_fingerprint(
+            stage_name="integration_benchmark", stage_config=opts, adata=a, random_seed=42
+        )
+
+    original = fingerprint()
+    a.obs["study"] = ["B", "A"] * 3
+    changed_labels = fingerprint()
+    a.obsm["X_harmony"][0, 0] += 1
+    changed_coordinates = fingerprint()
+    a.obs_names = a.obs_names[::-1]
+    assert len({original, changed_labels, changed_coordinates, fingerprint()}) == 4

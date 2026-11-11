@@ -182,9 +182,17 @@ def test_installed_analysis_checkpoint_and_outputs(tmp_path: Path) -> None:
     )
     assert stopped.execution_result.succeeded_stage_names() == ["qc_evidence"]
     resumed = run_pipeline(
-        config, output_dir=resumed_dir, backend_registry=registry(), from_stage="preprocessing"
+        config, output_dir=resumed_dir, backend_registry=registry(), from_stage="clustering"
     )
     assert not resumed.execution_result.has_failures()
+    records = {r.stage_name: r for r in resumed.execution_result.stage_execution_records}
+    assert records["qc_evidence"].reused_from_checkpoint
+    assert (
+        records["qc_evidence"].metrics
+        == stopped.execution_result.stage_execution_records[-1].metrics
+    )
+    assert records["preprocessing"].status == records["dimensionality"].status == "success"
+    assert all(a.path.exists() for a in records["qc_evidence"].output_artifacts)
     assert (resumed.context.adata.layers["counts"] != final.layers["counts"]).nnz == 0
     np.testing.assert_allclose(
         final.obsm["X_pca"], resumed.context.adata.obsm["X_pca"], rtol=1e-5, atol=1e-6
@@ -196,4 +204,11 @@ def test_installed_analysis_checkpoint_and_outputs(tmp_path: Path) -> None:
     with pytest.raises(CheckpointError, match="(?i)fingerprint|settings|config.*chang|stale"):
         run_pipeline(
             changed, output_dir=resumed_dir, backend_registry=registry(), from_stage="preprocessing"
+        )
+
+    comparisons = next(resumed_dir.rglob("qc_donor_comparisons.csv"))
+    comparisons.write_text("altered donor evidence\n")
+    with pytest.raises(CheckpointError, match="changed after.*checkpoint"):
+        run_pipeline(
+            config, output_dir=resumed_dir, backend_registry=registry(), from_stage="preprocessing"
         )

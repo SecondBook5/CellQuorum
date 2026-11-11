@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
-from cellquorum.core.resume import RESUMABLE_STAGES, decide_stage_resume
+from cellquorum.core.resume import RESUMABLE_STAGES, completion_payload, decide_stage_resume
+from cellquorum.core.stage import StageArtifact, StageExecutionRecord
 
 
 def _write_sidecar(
@@ -20,13 +22,21 @@ def _write_sidecar(
 
     stage_dir = provenance_dir / "stages" / stage_name
     stage_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema_version": 1,
-        "stage_name": stage_name,
-        "status": status,
-        "input_fingerprint": input_fingerprint,
-        "output_artifacts": [{"path": str(p)} for p in (artifacts or [])],
-    }
+    now = datetime.now(UTC)
+    record = StageExecutionRecord(
+        stage_name=stage_name,
+        status=status,
+        started_at_utc=now,
+        ended_at_utc=now,
+        duration_seconds=0,
+        input_fingerprint=input_fingerprint,
+        output_artifacts=[
+            StageArtifact(name=p.name, path=p, kind="file", description="test")
+            for p in artifacts or []
+        ],
+        metrics={"ranking": ["X_pca"]},
+    )
+    payload = completion_payload(record)
     (stage_dir / "completion.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
@@ -48,6 +58,7 @@ def test_resume_when_fingerprint_matches_and_artifacts_exist(tmp_path: Path) -> 
         input_fingerprint="fp-1",
     )
     assert decision.resume is True
+    assert decision.original.metrics == {"ranking": ["X_pca"]}
 
 
 def test_no_resume_when_fingerprint_differs(tmp_path: Path) -> None:
@@ -93,7 +104,9 @@ def test_no_resume_for_adata_transforming_stage(tmp_path: Path) -> None:
         stage_name="qc", provenance_dir=provenance, input_fingerprint="fp-1"
     )
     assert decision.resume is False
-    assert "qc" not in RESUMABLE_STAGES
+    assert not {"qc", "annotation_diagnostics", "population_identity"}.intersection(
+        RESUMABLE_STAGES
+    )
 
 
 def test_no_resume_without_prior_marker(tmp_path: Path) -> None:

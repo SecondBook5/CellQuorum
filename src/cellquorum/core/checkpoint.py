@@ -38,7 +38,6 @@ early checkpoint.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import shutil
 from dataclasses import dataclass
@@ -46,7 +45,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cellquorum.core.fingerprint import FINGERPRINT_SCHEMA_VERSION
+from cellquorum.core.fingerprint import FINGERPRINT_SCHEMA_VERSION, resource_checksum
+from cellquorum.core.stage import StageExecutionRecord
 
 if TYPE_CHECKING:
     import anndata as ad
@@ -92,6 +92,9 @@ class CheckpointRecord:
     # settings genuinely changed, and the staleness message accuses the wrong thing.
     fingerprint_schema_version: int = FINGERPRINT_SCHEMA_VERSION
 
+    execution_records: list[StageExecutionRecord] | None = None
+    artifact_checksums: dict[str, str] | None = None
+
     @property
     def object_path(self) -> Path:
         return self.path / _OBJECT_NAME
@@ -132,6 +135,7 @@ def write_checkpoint(
     order: int,
     input_fingerprint: str | None,
     upstream_fingerprint: str | None = None,
+    execution_records: list[StageExecutionRecord] | None = None,
 ) -> CheckpointRecord | None:
     """Write ``adata`` as ``stage``'s checkpoint. None when there is nothing to write.
 
@@ -150,18 +154,22 @@ def write_checkpoint(
     # holding X and obs and nothing else, which is unusable as a resume point but
     # looks like a checkpoint on disk.
     from cellquorum.core.h5ad_io import H5adWriteError, write_h5ad
+    from cellquorum.core.provenance import to_json_safe
 
+    marker = target / _SIDECAR_NAME
     try:
+        # A killed writer must never pair a new object with the previous receipt.
+        marker.unlink(missing_ok=True)
         write_h5ad(adata, object_path)
-    except H5adWriteError as exc:
-        # The writer has already removed any object left at that path, so drop the
-        # sidecar too: discovery keys on the sidecar, and one without its object is
-        # a checkpoint that exists as far as `--from-stage` is concerned and then
-        # fails on read. Half a checkpoint is worse than none.
-        with contextlib.suppress(OSError):
-            (target / _SIDECAR_NAME).unlink(missing_ok=True)
+    except (OSError, H5adWriteError) as exc:
         raise CheckpointError(f"could not write checkpoint for '{stage}': {exc}") from exc
 
+    artifacts = {a.path for row in execution_records or [] for a in row.output_artifacts}
+    checksums = {
+        str(path): digest
+        for path in artifacts
+        if path.is_file() and (digest := resource_checksum(path)) is not None
+    }
     record = CheckpointRecord(
         stage=stage,
         order=int(order),
@@ -170,24 +178,35 @@ def write_checkpoint(
         n_vars=int(adata.n_vars),
         path=target,
         upstream_fingerprint=upstream_fingerprint,
+        execution_records=execution_records,
+        artifact_checksums=checksums,
     )
-    (target / _SIDECAR_NAME).write_text(
-        json.dumps(
-            {
-                "schema_version": CHECKPOINT_SCHEMA_VERSION,
-                "fingerprint_schema_version": record.fingerprint_schema_version,
-                "stage": record.stage,
-                "order": record.order,
-                "input_fingerprint": record.input_fingerprint,
-                "upstream_fingerprint": record.upstream_fingerprint,
-                "n_obs": record.n_obs,
-                "n_vars": record.n_vars,
-                "object": _OBJECT_NAME,
-            },
-            indent=2,
+    pending = marker.with_suffix(".tmp")
+    try:
+        pending.write_text(
+            json.dumps(
+                {
+                    "schema_version": CHECKPOINT_SCHEMA_VERSION,
+                    "fingerprint_schema_version": record.fingerprint_schema_version,
+                    "stage": record.stage,
+                    "order": record.order,
+                    "input_fingerprint": record.input_fingerprint,
+                    "upstream_fingerprint": record.upstream_fingerprint,
+                    "n_obs": record.n_obs,
+                    "n_vars": record.n_vars,
+                    "object": _OBJECT_NAME,
+                    "artifact_checksums": record.artifact_checksums,
+                    "execution_records": None
+                    if execution_records is None
+                    else to_json_safe([row.to_dict() for row in execution_records]),
+                },
+                indent=2,
+            )
+            + "\n"
         )
-        + "\n"
-    )
+        pending.replace(marker)
+    except (ValueError, TypeError, OSError) as exc:
+        raise CheckpointError(f"could not publish checkpoint for '{stage}': {exc}") from exc
     return record
 
 
@@ -199,22 +218,27 @@ def read_checkpoint_record(paths: object, stage: str) -> CheckpointRecord | None
         return None
     try:
         payload = json.loads(sidecar.read_text())
-    except Exception:  # noqa: BLE001 — a corrupt sidecar is simply "no checkpoint"
+        if payload["schema_version"] != CHECKPOINT_SCHEMA_VERSION or payload["stage"] != stage:
+            return None
+        rows = payload.get("execution_records")
+        return CheckpointRecord(
+            stage=stage,
+            order=int(payload["order"]),
+            input_fingerprint=payload.get("input_fingerprint"),
+            n_obs=int(payload["n_obs"]),
+            n_vars=int(payload["n_vars"]),
+            path=target,
+            upstream_fingerprint=payload.get("upstream_fingerprint"),
+            fingerprint_schema_version=int(
+                payload.get("fingerprint_schema_version", _UNRECORDED_FINGERPRINT_SCHEMA)
+            ),
+            artifact_checksums=payload.get("artifact_checksums"),
+            execution_records=None
+            if rows is None
+            else [StageExecutionRecord.from_dict(r) for r in rows],
+        )
+    except (OSError, KeyError, TypeError, ValueError, AttributeError):
         return None
-    if int(payload.get("schema_version", 0)) != CHECKPOINT_SCHEMA_VERSION:
-        return None
-    return CheckpointRecord(
-        stage=str(payload.get("stage", stage)),
-        order=int(payload.get("order", -1)),
-        input_fingerprint=payload.get("input_fingerprint"),
-        n_obs=int(payload.get("n_obs", -1)),
-        n_vars=int(payload.get("n_vars", -1)),
-        path=target,
-        upstream_fingerprint=payload.get("upstream_fingerprint"),
-        fingerprint_schema_version=int(
-            payload.get("fingerprint_schema_version", _UNRECORDED_FINGERPRINT_SCHEMA)
-        ),
-    )
 
 
 def available_checkpoints(paths: object) -> list[CheckpointRecord]:
@@ -250,7 +274,11 @@ def resolve_start_checkpoint(
             f"unknown stage '{from_stage}'; expected one of {sorted(stage_order)}"
         )
     target_order = stage_order[from_stage]
-    candidates = [r for r in available_checkpoints(paths) if r.order < target_order]
+    candidates = [
+        r
+        for r in available_checkpoints(paths)
+        if stage_order.get(r.stage) == r.order and r.order < target_order
+    ]
     if not candidates:
         existing = [r.stage for r in available_checkpoints(paths)]
         pruned = [entry["stage"] for entry in _read_pruned_record(paths).get("pruned", [])]

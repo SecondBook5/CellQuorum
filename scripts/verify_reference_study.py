@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
+from cellquorum.core.stage import StageExecutionRecord
+
 
 def require(condition: bool, message: str) -> None:
     if not condition:
@@ -836,7 +838,11 @@ def main() -> None:
     records = json.loads((run / "provenance/stage_execution_records.json").read_text())
     plan = json.loads((run / "provenance/pipeline_plan.json").read_text())
     enabled = {s["name"] for s in plan["stages"] if s["enabled"]}
-    complete = {r["stage_name"] for r in records if r["status"] == "success"}
+    complete = {
+        record.stage_name
+        for record in map(StageExecutionRecord.from_dict, records)
+        if record.status == "success" or record.reused_from_checkpoint
+    }
     require(
         enabled <= complete,
         f"Enabled stages without successful execution: {sorted(enabled - complete)}",
