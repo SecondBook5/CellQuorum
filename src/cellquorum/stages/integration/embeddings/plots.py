@@ -25,7 +25,7 @@ from cellquorum.core.anndata_access import memory_matrix
 from cellquorum.visualization.figio import figure_artifacts, save_figure
 from cellquorum.visualization.figstyle import ORANGE_CMAP as _SEQUENTIAL_CMAP
 from cellquorum.visualization.figstyle import TEXT as _TEXT
-from cellquorum.visualization.figstyle import muted_palette_colors
+from cellquorum.visualization.figstyle import adjust_labels, muted_palette_colors
 
 # Single source of truth: tag -> obsm key + axis labels.
 EMBEDDING_REGISTRY: dict[str, dict] = {
@@ -306,22 +306,11 @@ def _repel_labels(ax: Axes, texts: list) -> None:
     """
     if len(texts) < 2:
         return
-    try:
-        from adjustText import adjust_text
-        from matplotlib.backends.backend_agg import FigureCanvasAgg
-
-        fig = ax.get_figure()
-        # A bare Figure() has no renderer; adjustText needs one to measure
-        # text extents. Attaching an Agg canvas provides it without pyplot.
-        if isinstance(fig, Figure) and not hasattr(fig.canvas, "get_renderer"):
-            FigureCanvasAgg(fig)
-        adjust_text(
-            texts,
-            ax=ax,
-            arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
-        )
-    except Exception:  # noqa: BLE001 — cosmetic; degrade to un-repelled labels
-        pass
+    adjust_labels(
+        texts,
+        ax=ax,
+        arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
+    )
 
 
 def categorical_embedding(

@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from cellquorum.visualization import figstyle
+from cellquorum.visualization.figstyle import adjust_labels
 
 
 def _style_embedding_axes(ax: plt.Axes) -> None:
@@ -75,17 +76,12 @@ def _label_groups(
         texts.append(t)
     if not texts:
         return
-    try:
-        from adjustText import adjust_text
-
-        adjust_text(
-            texts,
-            ax=ax,
-            only_move={"points": "xy", "text": "xy"},
-            arrowprops=dict(arrowstyle="-", color="#888", lw=0.5),
-        )
-    except Exception:
-        pass  # labels still render, just un-repelled
+    adjust_labels(
+        texts,
+        ax=ax,
+        only_move={"points": "xy", "text": "xy"},
+        arrowprops=dict(arrowstyle="-", color="#888", lw=0.5),
+    )
 
 
 def _grid_density_mask(

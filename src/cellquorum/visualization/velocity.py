@@ -27,7 +27,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from cellquorum.core.anndata_access import obs_frame
-from cellquorum.visualization.figstyle import get_group_palette
+from cellquorum.visualization.figstyle import adjust_labels, get_group_palette
 
 if TYPE_CHECKING:
     import anndata as ad
@@ -149,19 +149,14 @@ def _label_groups(
             )
         )
     if len(texts) > 1:
-        try:
-            from adjustText import adjust_text
-
-            adjust_text(
-                texts,
-                ax=ax,
-                only_move={"text": "xy"},
-                expand=(1.12, 1.22),
-                force_text=(0.28, 0.36),
-                arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
-            )
-        except Exception:  # noqa: BLE001 — cosmetic only
-            pass
+        adjust_labels(
+            texts,
+            ax=ax,
+            only_move={"text": "xy"},
+            expand=(1.12, 1.22),
+            force_text=(0.28, 0.36),
+            arrowprops={"arrowstyle": "-", "color": "#9a9a9a", "lw": 0.4},
+        )
 
 
 def velocity_stream_figure(

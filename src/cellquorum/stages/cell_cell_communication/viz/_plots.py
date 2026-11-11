@@ -24,7 +24,12 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
-from cellquorum.visualization.figstyle import CATEGORICAL_PALETTE, SEQUENTIAL_CMAP, empty_figure
+from cellquorum.visualization.figstyle import (
+    CATEGORICAL_PALETTE,
+    SEQUENTIAL_CMAP,
+    adjust_labels,
+    empty_figure,
+)
 from cellquorum.visualization.figstyle import diverging_norm as signed_norm
 from cellquorum.visualization.figstyle import get_group_palette as _get_group_palette
 
@@ -1635,17 +1640,12 @@ def curvature_network(
     # A wider k still leaves close-together nodes (a real, dense TF/target
     # pair) with their labels dead-centered on the marker and touching each
     # other -- the same repulsion module_umap_plot's hub labels already use.
-    try:
-        from adjustText import adjust_text
-
-        adjust_text(
-            label_texts,
-            ax=ax,
-            only_move={"points": "xy", "text": "xy"},
-            arrowprops=dict(arrowstyle="-", color="#999", lw=0.4),
-        )
-    except Exception:
-        pass  # labels still render, just un-repelled
+    adjust_labels(
+        label_texts,
+        ax=ax,
+        only_move={"points": "xy", "text": "xy"},
+        arrowprops=dict(arrowstyle="-", color="#999", lw=0.4),
+    )
     fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, label=curvature_col, shrink=0.8)
     ax.set_axis_off()
     ax.margins(0.1)

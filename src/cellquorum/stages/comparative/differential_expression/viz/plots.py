@@ -8,8 +8,6 @@ no config objects, no biological literals.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
@@ -17,6 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.text import Text
 
 from cellquorum.visualization import figstyle
+from cellquorum.visualization.figstyle import adjust_labels
 
 _QUAD_RED = "#FFE4E6"
 _QUAD_BLUE = "#E6F0FF"
@@ -227,20 +226,14 @@ def volcano(
     ax.set_xlim(-x_lim, x_lim)
     ax.set_ylim(0, y_lim)
     if texts and not _spread_crowded_labels(ax, texts):
-        try:
-            from adjustText import adjust_text
-
-            adjust_text(
-                texts,
-                ax=ax,
-                arrowprops={"arrowstyle": "-", "color": "gray", "lw": 0.3, "alpha": 0.5},
-                expand_points=(1.5, 1.5),
-                force_text=(0.5, 0.5),
-            )
-        except ImportError:
-            pass
-        except Exception as exc:
-            warnings.warn(f"Could not adjust volcano labels: {exc}", stacklevel=2)
+        adjust_labels(
+            texts,
+            ax=ax,
+            warning="Could not adjust volcano labels",
+            arrowprops={"arrowstyle": "-", "color": "gray", "lw": 0.3, "alpha": 0.5},
+            expand_points=(1.5, 1.5),
+            force_text=(0.5, 0.5),
+        )
 
     stats_text = f"FDR<{fdr_cut} & |log2FC|>{fc_cut}:\n  {n_up} up, {n_down} down"
     ax.text(
